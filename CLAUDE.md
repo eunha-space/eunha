@@ -44,6 +44,8 @@ Running an instance:
 
  -  *docs/operating/first-account.md*: `eunha accounts create`.
  -  *docs/operating/migrations.md*: `eunha migrate` and the startup check.
+ -  *docs/operating/importing.md*: `eunha import-mastodon` and
+    `eunha import-media`, and what each of them refuses.
  -  *docs/operating/redis.md*: key prefixes, ACLs, the coordination pool.
  -  *docs/operating/instances.md*: several instances in one process, the
     tenants directory, admission limits, `SIGHUP` reload, host aliases, and

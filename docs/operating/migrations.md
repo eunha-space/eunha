@@ -15,8 +15,8 @@ script can gate on it.
 
 `public.schema_migrations` is what makes a database self-describing: it is
 seeded for everything through 4.6.0 by `007_mastodon_schema_versions.sql`, and
-`scripts/migrate_from_mastodon.sh` refuses a dump whose newest migration is not
-the one eunha builds. A migration whose work depends on the instance rather than
-the schema — so far only the move of local signing keys into `keypairs` — is
-applied from code at startup and records itself then; `mastodon:plan` lists
+[`eunha import-mastodon`](./importing) refuses a dump whose newest migration is
+not the one eunha builds. A migration whose work depends on the instance rather
+than the schema — so far only the move of local signing keys into `keypairs` —
+is applied from code at startup and records itself then; `mastodon:plan` lists
 those separately from ones still to write.

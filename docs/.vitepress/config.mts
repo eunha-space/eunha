@@ -21,6 +21,7 @@ export default defineConfig({
         items: [
           { text: "The first account", link: "/operating/first-account" },
           { text: "Migrations", link: "/operating/migrations" },
+          { text: "Importing a Mastodon instance", link: "/operating/importing" },
           { text: "Shared Redis", link: "/operating/redis" },
           { text: "Several instances in one process", link: "/operating/instances" },
           { text: "Invites", link: "/operating/invites" },
