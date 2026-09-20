@@ -53,6 +53,11 @@ struct Args {
     /// request per file for nothing.
     #[arg(long)]
     skip_existing: bool,
+    /// Carry the instance's cache of other servers' media too. Without
+    /// `--config` there is no database to tell the two apart, and everything
+    /// is carried regardless.
+    #[arg(long)]
+    include_cached_remote: bool,
 }
 
 #[tokio::main]
@@ -64,8 +69,11 @@ async fn main() -> Result<()> {
         .config
         .as_deref()
         .map(eunha::config::Config::from_file)
-        .transpose()?
-        .map(|config| config.media_storage);
+        .transpose()?;
+    let configured_database = configured
+        .as_ref()
+        .map(|config| config.database_url.clone());
+    let configured = configured.map(|config| config.media_storage);
     let storage = MediaStorageConfig {
         bucket: args
             .bucket
@@ -98,11 +106,29 @@ async fn main() -> Result<()> {
             .unwrap_or_default(),
     };
 
+    // Telling an instance's own media from its cache of other servers' needs
+    // the database that says which is which, so this filters only when it was
+    // given a config to find one in.
+    let own = match (args.include_cached_remote, configured_database) {
+        (false, Some(database_url)) => {
+            let db = eunha::tenants::connect(
+                &database_url,
+                &eunha::config::DatabasePoolConfig {
+                    max_connections: 1,
+                    ..Default::default()
+                },
+            )
+            .await?;
+            Some(eunha::import::OwnMedia::read(&db).await?)
+        }
+        _ => None,
+    };
     let uploaded = eunha::import::upload_media(
         &storage,
         &PathBuf::from(&args.media_dir),
         args.concurrency,
         args.skip_existing,
+        own.as_ref(),
     )
     .await?;
 
@@ -112,6 +138,7 @@ async fn main() -> Result<()> {
     println!("files: {}", uploaded.total);
     println!("uploaded: {}", uploaded.sent);
     println!("skipped: {}", uploaded.skipped);
+    println!("cached elsewhere: {}", uploaded.cached);
     println!("key prefix: {}", uploaded.key_prefix);
     Ok(())
 }

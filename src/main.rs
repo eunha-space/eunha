@@ -82,6 +82,15 @@ enum Command {
     ImportMedia {
         /// The instance's `public/system` tree, or a copy of its bucket.
         media_dir: PathBuf,
+        /// Carry the instance's cache of other servers' media too.
+        ///
+        /// Most of a Mastodon media directory is usually this: every remote
+        /// avatar, attachment, emoji and preview it has shown. It is a copy of
+        /// somebody else's file and is fetched again when it is missing, so it
+        /// is left behind by default. Carry it to spare the re-fetching, or to
+        /// keep copies of media whose origin has since gone.
+        #[arg(long)]
+        include_cached_remote: bool,
         /// Concurrent uploads.
         #[arg(long, default_value_t = 32)]
         concurrency: usize,
@@ -216,22 +225,31 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Command::ImportMedia {
             media_dir,
+            include_cached_remote,
             concurrency,
             skip_existing,
             instance,
         }) => {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            // Which files are the instance's own is a question only its
+            // database answers, so it is read before anything is sent.
+            let own = match include_cached_remote {
+                true => None,
+                false => Some(import::OwnMedia::read(&command_database(&config).await?).await?),
+            };
             let uploaded = import::upload_media(
                 &config.media_storage,
                 &media_dir,
                 concurrency,
                 skip_existing,
+                own.as_ref(),
             )
             .await?;
             println!("OK");
             println!("files: {}", uploaded.total);
             println!("uploaded: {}", uploaded.sent);
             println!("skipped: {}", uploaded.skipped);
+            println!("cached elsewhere: {}", uploaded.cached);
             println!("key prefix: {}", uploaded.key_prefix);
             return Ok(());
         }

@@ -13,6 +13,14 @@
 //! Its `public/system` tree is laid out by exactly those keys, which makes the
 //! move a copy rather than a translation.
 //!
+//! Most of that tree is usually not the instance's. Mastodon caches every
+//! remote avatar, attachment, emoji and link preview it has ever shown, and on
+//! an instance with any reach the cache dwarfs what its own people posted. None
+//! of it is the instance's to carry: it is a copy of somebody else's file, kept
+//! because fetching it again costs a request, and fetching it again is exactly
+//! what happens when it is not there. So an import moves the originals — the
+//! files that exist nowhere else — and leaves the cache behind.
+//!
 //! The domain is checked after the restore rather than before it. Nothing in a
 //! custom-format dump answers "which instance is this?" without reading the
 //! `accounts` data out of it, which costs as much as restoring it, so the
@@ -34,6 +42,8 @@ use aws_sdk_s3::primitives::ByteStream;
 use futures::StreamExt;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use std::collections::HashSet;
 
 use crate::{config::MediaStorageConfig, media, migrate, version};
 
@@ -531,11 +541,101 @@ pub struct Uploaded {
     pub sent: usize,
     /// Files the bucket already had, with `skip_existing`.
     pub skipped: usize,
+    /// Files left behind as somebody else's, cached rather than created here.
+    pub cached: usize,
     /// The namespace the objects went under, which is what keeps one instance's
     /// media apart from another's in a bucket they share. Reported because
     /// uploading a library to the wrong prefix looks exactly like uploading it
     /// to the right one until somebody asks for a picture.
     pub key_prefix: String,
+}
+
+/// Which files in a `public/system` tree are the instance's own.
+///
+/// Built from the database rather than from the tree, because the tree does not
+/// say: a remote account's avatar and a local one's sit in the same directory
+/// under the same shape of path. What the path does carry is the row's id, and
+/// the row says where it came from.
+pub struct OwnMedia {
+    accounts: HashSet<i64>,
+    attachments: HashSet<i64>,
+    emojis: HashSet<i64>,
+}
+
+impl OwnMedia {
+    /// Read the ids of everything this instance made itself.
+    pub async fn read(db: &PgPool) -> Result<Self> {
+        Ok(Self {
+            accounts: sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM public.accounts WHERE domain IS NULL",
+            )
+            .fetch_all(db)
+            .await
+            .context("reading the instance's own accounts")?
+            .into_iter()
+            .collect(),
+            // Mastodon marks a local attachment by having no remote to have
+            // taken it from.
+            attachments: sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM public.media_attachments WHERE remote_url = ''",
+            )
+            .fetch_all(db)
+            .await
+            .context("reading the instance's own attachments")?
+            .into_iter()
+            .collect(),
+            emojis: sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM public.custom_emojis WHERE domain IS NULL",
+            )
+            .fetch_all(db)
+            .await
+            .context("reading the instance's own emojis")?
+            .into_iter()
+            .collect(),
+        })
+    }
+
+    /// Whether a file at this path, relative to `public/system`, is one of the
+    /// instance's own.
+    ///
+    /// A path this does not recognise is kept. The cost of carrying a file that
+    /// turns out to be a cached copy is a wasted upload; the cost of leaving
+    /// one that turns out to be an original is that it is gone.
+    pub fn keeps(&self, relative: &str) -> bool {
+        let owner = |prefix: &str, ids: &HashSet<i64>| {
+            path_owner(relative, prefix).map(|id| ids.contains(&id))
+        };
+        if let Some(mine) = owner("media_attachments/files/", &self.attachments) {
+            return mine;
+        }
+        if let Some(mine) = owner("accounts/avatars/", &self.accounts)
+            .or_else(|| owner("accounts/headers/", &self.accounts))
+        {
+            return mine;
+        }
+        if let Some(mine) = owner("custom_emojis/images/", &self.emojis) {
+            return mine;
+        }
+        // A link preview's image is a copy of a page somebody else published;
+        // there is no local one to keep.
+        !relative.starts_with("preview_cards/")
+    }
+}
+
+/// The row id a media path belongs to, for a path under `prefix`.
+///
+/// Mastodon's Paperclip layout puts the id between the prefix and the style —
+/// `media_attachments/files/109/372/487/123/456/789/original/name.jpg` — zero
+/// padded to nine digits and cut into threes, which for a snowflake id is six
+/// segments rather than three. Rejoining whatever lies before the style and
+/// reading it as a number recovers the id without having to know how many.
+fn path_owner(relative: &str, prefix: &str) -> Option<i64> {
+    let rest = relative.strip_prefix(prefix)?;
+    let digits: String = rest
+        .split('/')
+        .take_while(|segment| segment.bytes().all(|byte| byte.is_ascii_digit()))
+        .collect();
+    digits.parse().ok()
 }
 
 /// Copy a Mastodon `public/system` tree into an instance's own storage.
@@ -554,6 +654,7 @@ pub async fn upload_media(
     media_dir: &Path,
     concurrency: usize,
     skip_existing: bool,
+    own: Option<&OwnMedia>,
 ) -> Result<Uploaded> {
     anyhow::ensure!(
         media_dir.is_dir(),
@@ -580,10 +681,23 @@ pub async fn upload_media(
             .build(),
     ));
 
-    let files = collect_files(media_dir)?;
+    let found = collect_files(media_dir)?;
+    let found_count = found.len();
+    let files: Vec<PathBuf> = match own {
+        Some(own) => found
+            .into_iter()
+            .filter(|path| {
+                path.strip_prefix(media_dir)
+                    .map(|relative| own.keeps(&relative.to_string_lossy().replace('\\', "/")))
+                    .unwrap_or(true)
+            })
+            .collect(),
+        None => found,
+    };
     let total = files.len();
+    let cached = found_count - total;
     tracing::info!(
-        "uploading {total} files from {} (concurrency={concurrency})",
+        "uploading {total} files from {} ({cached} cached from elsewhere, concurrency={concurrency})",
         media_dir.display()
     );
     let bucket = Arc::new(storage.bucket.clone());
@@ -655,6 +769,7 @@ pub async fn upload_media(
         total,
         sent: total - skipped,
         skipped,
+        cached,
         key_prefix: storage.key_prefix.trim_matches('/').to_owned(),
     })
 }
@@ -700,5 +815,65 @@ mod media_tests {
         // slash that would make every key a different object.
         assert_eq!(prefixed_key("", logical), logical);
         assert_eq!(prefixed_key("/t/one/", logical), format!("t/one/{logical}"));
+    }
+}
+
+#[cfg(test)]
+mod own_media_tests {
+    use super::{path_owner, OwnMedia};
+    use std::collections::HashSet;
+
+    fn own(accounts: &[i64], attachments: &[i64], emojis: &[i64]) -> OwnMedia {
+        OwnMedia {
+            accounts: accounts.iter().copied().collect::<HashSet<_>>(),
+            attachments: attachments.iter().copied().collect(),
+            emojis: emojis.iter().copied().collect(),
+        }
+    }
+
+    #[test]
+    fn an_id_is_read_back_out_of_a_path_however_long_it_is() {
+        assert_eq!(
+            path_owner(
+                "media_attachments/files/109/372/487/123/456/789/original/a.jpg",
+                "media_attachments/files/"
+            ),
+            Some(109_372_487_123_456_789)
+        );
+        // A small id is padded to nine digits, which is three segments.
+        assert_eq!(
+            path_owner(
+                "accounts/avatars/000/000/042/original/a.png",
+                "accounts/avatars/"
+            ),
+            Some(42)
+        );
+        assert_eq!(
+            path_owner("site_uploads/files/1/original/a.png", "accounts/avatars/"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_instances_own_files_are_kept_and_its_cache_of_other_servers_is_not() {
+        let own = own(&[42], &[109_372_487_123_456_789], &[7]);
+        assert!(own.keeps("media_attachments/files/109/372/487/123/456/789/original/a.jpg"));
+        assert!(own.keeps("media_attachments/files/109/372/487/123/456/789/small/a.jpg"));
+        assert!(!own.keeps("media_attachments/files/109/999/999/999/999/999/original/b.jpg"));
+        assert!(own.keeps("accounts/avatars/000/000/042/original/a.png"));
+        assert!(own.keeps("accounts/headers/000/000/042/original/a.png"));
+        assert!(!own.keeps("accounts/avatars/000/000/043/original/a.png"));
+        assert!(own.keeps("custom_emojis/images/000/000/007/original/a.png"));
+        assert!(!own.keeps("custom_emojis/images/000/000/008/original/a.png"));
+    }
+
+    #[test]
+    fn a_link_preview_is_never_local_and_an_unknown_path_always_is() {
+        let own = own(&[], &[], &[]);
+        assert!(!own.keeps("preview_cards/images/000/000/001/original/a.png"));
+        // Nothing but this instance ever wrote these, and a file wrongly left
+        // behind is gone where a file wrongly carried is a wasted upload.
+        assert!(own.keeps("site_uploads/files/000/000/001/original/a.png"));
+        assert!(own.keeps("instance/icon/abc.png"));
     }
 }
