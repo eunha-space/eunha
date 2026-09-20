@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use eunha::{accounts, config, migrate, software_updates, tenants};
+use eunha::{accounts, config, import, migrate, software_updates, tenants};
 use std::{path::PathBuf, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -41,6 +41,34 @@ enum Command {
     Accounts {
         #[command(subcommand)]
         command: AccountsCommand,
+    },
+    /// Import an existing Mastodon instance into this database.
+    ///
+    /// Eunha builds the schema of the Mastodon release it tracks, so an
+    /// instance moves here by having its data restored into a database this
+    /// binary has already migrated. The database must be empty of Mastodon
+    /// data and the connection a superuser's, because a data-only restore
+    /// loads through the schema's foreign keys.
+    ImportMastodon {
+        /// A custom-format dump, as `pg_dump -Fc` writes.
+        dump: PathBuf,
+        /// The domain the imported instance answers to afterwards.
+        #[arg(long, value_name = "DOMAIN")]
+        domain: String,
+        /// The domain the dump was written under, when the instance is moving.
+        ///
+        /// Remote servers remember an instance's accounts at the domain they
+        /// were seen under and will not follow them to a new one, so this
+        /// abandons the identity it rewrites. Leave it out to import an
+        /// instance as itself.
+        #[arg(long, value_name = "DOMAIN")]
+        rename_from: Option<String>,
+        /// Report what the dump holds and whether it fits, writing nothing.
+        #[arg(long)]
+        check: bool,
+        /// Restore a dump from another Mastodon release anyway.
+        #[arg(long)]
+        allow_schema_mismatch: bool,
     },
 }
 
@@ -143,6 +171,24 @@ async fn main() -> anyhow::Result<()> {
             println!("New password: {password}");
             return Ok(());
         }
+        Some(Command::ImportMastodon {
+            dump,
+            domain,
+            rename_from,
+            check,
+            allow_schema_mismatch,
+        }) => {
+            return import_mastodon(
+                import::Import {
+                    dump,
+                    domain,
+                    rename_from,
+                    allow_schema_mismatch,
+                },
+                check,
+            )
+            .await;
+        }
         None => {}
     }
 
@@ -244,6 +290,62 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
     }
     if behind {
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Restore a Mastodon dump into this instance's database, or with `check`
+/// report on whether it would fit.
+///
+/// The connection is the one `migrate` uses, for the same reason: an import
+/// needs a database and nothing else, and loading a full config would make it
+/// fail for want of an S3 bucket that has no bearing on the restore.
+async fn import_mastodon(import: import::Import, check: bool) -> anyhow::Result<()> {
+    let database_url = migration_database_url()?;
+    let db = tenants::connect(
+        &database_url,
+        &config::DatabasePoolConfig {
+            max_connections: 1,
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    if check {
+        let plan = import::plan(&db, &import).await?;
+        println!(
+            "dump          Mastodon schema {}",
+            plan.dump_schema_version.as_deref().unwrap_or("unrecorded")
+        );
+        println!(
+            "this eunha    Mastodon schema {}",
+            plan.expected_schema_version
+        );
+        for warning in plan.warnings() {
+            println!("warning       {warning}");
+        }
+        let refusals = plan.refusals(&import);
+        if refusals.is_empty() {
+            println!(
+                "OK            the dump can be imported as {}",
+                import.domain
+            );
+            return Ok(());
+        }
+        for refusal in &refusals {
+            println!("refused       {refusal}");
+        }
+        std::process::exit(1);
+    }
+
+    let report = import::run(&db, &database_url, &import).await?;
+    println!("OK");
+    println!("domain: {}", report.domain);
+    if let Some(old) = &report.renamed_from {
+        println!("renamed from: {old}");
+    }
+    for (table, count) in &report.counts {
+        println!("{table}: {count}");
     }
     Ok(())
 }
