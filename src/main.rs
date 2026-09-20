@@ -70,6 +70,31 @@ enum Command {
         #[arg(long)]
         allow_schema_mismatch: bool,
     },
+    /// Upload an existing Mastodon instance's media into this instance's
+    /// storage.
+    ///
+    /// Mastodon stores a file's name rather than its address and derives the
+    /// object key from the row, so the media has to arrive under the keys the
+    /// instance already minted. Its `public/system` tree is laid out by exactly
+    /// those keys, which makes this a copy. Each file goes under the prefix the
+    /// instance's `media_storage` namespaces its objects with, which is what
+    /// keeps instances sharing a bucket apart.
+    ImportMedia {
+        /// The instance's `public/system` tree, or a copy of its bucket.
+        media_dir: PathBuf,
+        /// Concurrent uploads.
+        #[arg(long, default_value_t = 32)]
+        concurrency: usize,
+        /// Ask for each object before sending it, and send only what is
+        /// missing. This is how an interrupted upload resumes cheaply; a first
+        /// run pays a request per file for nothing.
+        #[arg(long)]
+        skip_existing: bool,
+        /// With `--tenants`, the instance to upload into, by its domain or one
+        /// of its aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -188,6 +213,27 @@ async fn main() -> anyhow::Result<()> {
                 check,
             )
             .await;
+        }
+        Some(Command::ImportMedia {
+            media_dir,
+            concurrency,
+            skip_existing,
+            instance,
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let uploaded = import::upload_media(
+                &config.media_storage,
+                &media_dir,
+                concurrency,
+                skip_existing,
+            )
+            .await?;
+            println!("OK");
+            println!("files: {}", uploaded.total);
+            println!("uploaded: {}", uploaded.sent);
+            println!("skipped: {}", uploaded.skipped);
+            println!("key prefix: {}", uploaded.key_prefix);
+            return Ok(());
         }
         None => {}
     }

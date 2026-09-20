@@ -7,6 +7,12 @@
 //! own migration ledger instead of the dump's, and proving afterwards that what
 //! landed is the instance the caller named.
 //!
+//! An instance's media moves the same way and for the same reason. Mastodon
+//! stores a file's name, never its address, and derives the object key from the
+//! row, so the media has to arrive under the keys the instance already minted.
+//! Its `public/system` tree is laid out by exactly those keys, which makes the
+//! move a copy rather than a translation.
+//!
 //! The domain is checked after the restore rather than before it. Nothing in a
 //! custom-format dump answers "which instance is this?" without reading the
 //! `accounts` data out of it, which costs as much as restoring it, so the
@@ -17,13 +23,19 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use anyhow::{bail, Context, Result};
+use aws_sdk_s3::primitives::ByteStream;
+use futures::StreamExt;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{migrate, version};
+use crate::{config::MediaStorageConfig, media, migrate, version};
 
 /// Mastodon's reserved `accounts` row for the instance actor, whose `username`
 /// is the instance's own domain. Every federating Mastodon has one, which makes
@@ -507,5 +519,186 @@ mod tests {
         assert!(kept
             .iter()
             .all(|line| line.contains("accounts") || line.contains("statuses")));
+    }
+}
+
+/// What an upload of an instance's media moved.
+#[derive(Debug, Default)]
+pub struct Uploaded {
+    /// Files found under the media directory.
+    pub total: usize,
+    /// Files sent to the bucket.
+    pub sent: usize,
+    /// Files the bucket already had, with `skip_existing`.
+    pub skipped: usize,
+    /// The namespace the objects went under, which is what keeps one instance's
+    /// media apart from another's in a bucket they share. Reported because
+    /// uploading a library to the wrong prefix looks exactly like uploading it
+    /// to the right one until somebody asks for a picture.
+    pub key_prefix: String,
+}
+
+/// Copy a Mastodon `public/system` tree into an instance's own storage.
+///
+/// The tree's layout is the instance's object keys, so each file's path
+/// relative to the directory is the key it goes to, under whatever prefix the
+/// instance's storage namespaces it with.
+///
+/// `skip_existing` asks for each object before sending it. An upload that was
+/// interrupted then resumes at the cost of a request per file it already moved
+/// rather than the file again, which over a whole media library is the
+/// difference between minutes and hours; a first run would pay that for
+/// nothing, so the caller chooses.
+pub async fn upload_media(
+    storage: &MediaStorageConfig,
+    media_dir: &Path,
+    concurrency: usize,
+    skip_existing: bool,
+) -> Result<Uploaded> {
+    anyhow::ensure!(
+        media_dir.is_dir(),
+        "no media directory at {}",
+        media_dir.display()
+    );
+    let endpoint = storage
+        .endpoint
+        .clone()
+        .context("the instance's media storage has no endpoint")?;
+    let credentials = aws_sdk_s3::config::Credentials::new(
+        &storage.access_key_id,
+        &storage.secret_access_key,
+        None,
+        None,
+        "static",
+    );
+    let client = Arc::new(aws_sdk_s3::Client::from_conf(
+        aws_sdk_s3::config::Builder::new()
+            .region(aws_sdk_s3::config::Region::new("auto".to_string()))
+            .credentials_provider(credentials)
+            .endpoint_url(&endpoint)
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .build(),
+    ));
+
+    let files = collect_files(media_dir)?;
+    let total = files.len();
+    tracing::info!(
+        "uploading {total} files from {} (concurrency={concurrency})",
+        media_dir.display()
+    );
+    let bucket = Arc::new(storage.bucket.clone());
+    let key_prefix = Arc::new(storage.key_prefix.clone());
+    let root = Arc::new(media_dir.to_path_buf());
+    let done = Arc::new(AtomicUsize::new(0));
+    let skipped = Arc::new(AtomicUsize::new(0));
+
+    futures::stream::iter(files)
+        .map(|path| {
+            let (client, bucket, key_prefix, root) = (
+                client.clone(),
+                bucket.clone(),
+                key_prefix.clone(),
+                root.clone(),
+            );
+            let (done, skipped) = (done.clone(), skipped.clone());
+            async move {
+                let relative = path
+                    .strip_prefix(root.as_ref())
+                    .expect("collected under the media directory");
+                let key = media::prefixed_key(
+                    &key_prefix,
+                    &relative.to_string_lossy().replace('\\', "/"),
+                );
+                let already_there = skip_existing
+                    && client
+                        .head_object()
+                        .bucket(bucket.as_ref())
+                        .key(&key)
+                        .send()
+                        .await
+                        .is_ok();
+                if !already_there {
+                    let body = tokio::fs::read(&path)
+                        .await
+                        .with_context(|| format!("reading {}", path.display()))?;
+                    client
+                        .put_object()
+                        .bucket(bucket.as_ref())
+                        .key(&key)
+                        .body(ByteStream::from(body))
+                        .content_type(
+                            mime_guess::from_path(&path)
+                                .first_or_octet_stream()
+                                .to_string(),
+                        )
+                        .send()
+                        .await
+                        .with_context(|| format!("uploading {key}"))?;
+                } else {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                }
+                let moved = done.fetch_add(1, Ordering::Relaxed) + 1;
+                if moved.is_multiple_of(100) {
+                    tracing::info!("  {moved}/{total} files");
+                }
+                Ok::<(), anyhow::Error>(())
+            }
+        })
+        .buffer_unordered(concurrency)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<()>>()?;
+
+    let skipped = skipped.load(Ordering::Relaxed);
+    Ok(Uploaded {
+        total,
+        sent: total - skipped,
+        skipped,
+        key_prefix: storage.key_prefix.trim_matches('/').to_owned(),
+    })
+}
+
+/// Every file under the tree, ignoring the dotfiles a copy leaves behind.
+fn collect_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    collect_files_into(dir, &mut files)?;
+    Ok(files)
+}
+
+fn collect_files_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_files_into(&path, out)?;
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| !name.starts_with('.'))
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod media_tests {
+    use crate::media::prefixed_key;
+
+    /// A tenant sharing a bucket is kept apart from its neighbours by its
+    /// prefix alone, so an upload has to put a file exactly where the serving
+    /// process will look for it.
+    #[test]
+    fn an_uploaded_file_lands_where_the_instance_will_look_for_it() {
+        let logical = "media_attachments/files/109/372/original/a1b2.jpg";
+        assert_eq!(
+            prefixed_key("t/8f14e45f-ea8d-4b41-9d0a-1b2c3d4e5f60", logical),
+            "t/8f14e45f-ea8d-4b41-9d0a-1b2c3d4e5f60/media_attachments/files/109/372/original/a1b2.jpg"
+        );
+        // A dedicated bucket namespaces nothing, and must not gain a leading
+        // slash that would make every key a different object.
+        assert_eq!(prefixed_key("", logical), logical);
+        assert_eq!(prefixed_key("/t/one/", logical), format!("t/one/{logical}"));
     }
 }
