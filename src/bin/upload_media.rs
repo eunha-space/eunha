@@ -41,6 +41,20 @@ struct Args {
     /// Number of concurrent S3 uploads (default: 32).
     #[arg(long, default_value_t = 32)]
     concurrency: usize,
+    /// Ask for each object before sending it, and send only what is missing.
+    ///
+    /// A re-run of an upload that was interrupted costs one HEAD per file it
+    /// already moved instead of the file again, which on an instance's whole
+    /// media library is the difference between minutes and hours. A first run
+    /// pays a request per file for nothing, so it is not the default.
+    #[arg(long)]
+    skip_existing: bool,
+}
+
+/// What the upload moved, for whoever is driving this.
+struct Uploaded {
+    sent: usize,
+    skipped: usize,
 }
 
 #[tokio::main]
@@ -107,11 +121,16 @@ async fn main() -> Result<()> {
         media_dir_arc,
         files,
         args.concurrency,
+        args.skip_existing,
     )
     .await?;
-    tracing::info!("uploaded {} files total", uploaded);
 
-    tracing::info!("done");
+    // Progress goes to the log; this is the result, and it is on stdout so a
+    // caller can read it without reading the log.
+    println!("OK");
+    println!("files: {total}");
+    println!("uploaded: {}", uploaded.sent);
+    println!("skipped: {}", uploaded.skipped);
     Ok(())
 }
 
@@ -138,6 +157,7 @@ fn collect_files_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upload_parallel(
     client: Arc<aws_sdk_s3::Client>,
     bucket: Arc<String>,
@@ -145,9 +165,11 @@ async fn upload_parallel(
     root: Arc<PathBuf>,
     files: Vec<PathBuf>,
     concurrency: usize,
-) -> Result<usize> {
+    skip_existing: bool,
+) -> Result<Uploaded> {
     let total = files.len();
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let skipped = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     futures::stream::iter(files)
         .map(|path| {
@@ -156,10 +178,24 @@ async fn upload_parallel(
             let key_prefix = key_prefix.clone();
             let root = root.clone();
             let counter = counter.clone();
+            let skipped = skipped.clone();
             async move {
                 let rel = path.strip_prefix(root.as_ref()).unwrap();
                 let logical_key = rel.to_string_lossy().replace('\\', "/");
                 let key = eunha::media::prefixed_key(&key_prefix, &logical_key);
+                if skip_existing
+                    && client
+                        .head_object()
+                        .bucket(bucket.as_ref())
+                        .key(&key)
+                        .send()
+                        .await
+                        .is_ok()
+                {
+                    skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(());
+                }
                 let data = tokio::fs::read(&path)
                     .await
                     .with_context(|| format!("reading {}", path.display()))?;
@@ -188,5 +224,9 @@ async fn upload_parallel(
         .into_iter()
         .collect::<Result<()>>()?;
 
-    Ok(total)
+    let skipped = skipped.load(std::sync::atomic::Ordering::Relaxed);
+    Ok(Uploaded {
+        sent: total - skipped,
+        skipped,
+    })
 }
