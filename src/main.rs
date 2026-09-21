@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use eunha::{accounts, config, import, migrate, software_updates, tenants};
+use eunha::{accounts, config, import, migrate, software_updates, tenants, version};
 use std::{path::PathBuf, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -36,6 +36,28 @@ enum Command {
         /// a database is behind this binary.
         #[arg(long)]
         check: bool,
+    },
+    /// Rehearse this binary's pending migrations against a copy of live data.
+    ///
+    /// A migration gets one attempt against data nobody has tested it on. This
+    /// clones a database, applies what is pending the way the server would,
+    /// and reports every table whose row count moved plus whether the result
+    /// still matches the Mastodon release eunha tracks. The source is only
+    /// read from. Run it on the database host, where cloning does not cross a
+    /// network.
+    RehearseMigration {
+        /// The database to copy. Only read from.
+        source_database_url: String,
+        /// What to call the clone. Defaults to a name with the time in it.
+        #[arg(long, value_name = "NAME")]
+        clone_name: Option<String>,
+        /// Drop an existing database of that name first.
+        #[arg(long)]
+        replace: bool,
+        /// Drop the clone when the rehearsal is done, instead of leaving it to
+        /// be looked at.
+        #[arg(long)]
+        drop_clone: bool,
     },
     /// Manage local accounts, as `tootctl accounts` does.
     Accounts {
@@ -253,6 +275,14 @@ async fn main() -> anyhow::Result<()> {
             println!("key prefix: {}", uploaded.key_prefix);
             return Ok(());
         }
+        Some(Command::RehearseMigration {
+            source_database_url,
+            clone_name,
+            replace,
+            drop_clone,
+        }) => {
+            return rehearse_migration(&source_database_url, clone_name, replace, drop_clone).await;
+        }
         None => {}
     }
 
@@ -353,6 +383,75 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
         }
     }
     if behind {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Rehearse pending migrations against a copy of a live database, and report
+/// what they did to it.
+async fn rehearse_migration(
+    source: &str,
+    clone_name: Option<String>,
+    replace: bool,
+    drop_clone: bool,
+) -> anyhow::Result<()> {
+    let clone_name = clone_name
+        .unwrap_or_else(|| format!("rehearsal_{}", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+    let rehearsal = migrate::rehearse(source, &clone_name, replace).await?;
+
+    println!("OK");
+    println!(
+        "migrations applied: {}{}",
+        rehearsal.applied.len(),
+        match rehearsal.applied.as_slice() {
+            [] => String::new(),
+            versions => format!(
+                " ({})",
+                versions
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    );
+    // How long the instance would be down for, which is the number an operator
+    // is deciding a maintenance window from.
+    println!("took: {:.1?}", rehearsal.elapsed);
+    println!("tables: {}", rehearsal.tables);
+    match rehearsal.changed.as_slice() {
+        [] => println!("rows: no table gained or lost rows"),
+        changed => {
+            println!("rows: {} table(s) changed", changed.len());
+            for change in changed {
+                println!("  {change}");
+            }
+        }
+    }
+    match rehearsal.findings.as_slice() {
+        [] => println!("schema: matches Mastodon {}", version::MASTODON),
+        findings => {
+            println!(
+                "schema: {} difference(s) from Mastodon {}",
+                findings.len(),
+                version::MASTODON
+            );
+            for finding in findings {
+                println!("  {finding}");
+            }
+        }
+    }
+
+    if drop_clone {
+        migrate::drop_clone(source, &rehearsal.clone).await?;
+        println!("clone: dropped");
+    } else {
+        println!("clone: {} — drop it when done", rehearsal.clone);
+    }
+    // A migration that moved rows it should not, or a schema that no longer
+    // matches, is the whole point of rehearsing; say so in the exit code too.
+    if !rehearsal.findings.is_empty() {
         std::process::exit(1);
     }
     Ok(())

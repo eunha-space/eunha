@@ -43,7 +43,8 @@ Where things are documented
 Running an instance:
 
  -  *docs/operating/first-account.md*: `eunha accounts create`.
- -  *docs/operating/migrations.md*: `eunha migrate` and the startup check.
+ -  *docs/operating/migrations.md*: `eunha migrate`, the startup check, and
+    `eunha rehearse-migration`.
  -  *docs/operating/importing.md*: `eunha import-mastodon` and
     `eunha import-media`, and what each of them refuses.
  -  *docs/operating/redis.md*: key prefixes, ACLs, the coordination pool.

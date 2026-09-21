@@ -86,10 +86,12 @@ Adopting a release
     at a migration:
 
     ~~~~
-    scripts/rehearse_migration.sh postgres://user@localhost/seoul_earth
+    eunha rehearse-migration postgres://user@localhost/seoul_earth
     ~~~~
 
     That clones the database (reading only), runs the pending migrations over
-    the clone as the server would, and reports every table whose row count
-    changed plus the schema check. Anything that moves rows it should not is
-    visible there rather than in production.
+    the clone as the server would — they are the ones compiled into the binary,
+    so there is no `migrations/` path to get wrong — and reports how long they
+    took, every table whose row count changed, and the schema check. Anything
+    that moves rows it should not is visible there rather than in production.
+    It leaves the clone to be looked at; `--drop-clone` does not.

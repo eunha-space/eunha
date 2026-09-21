@@ -7,6 +7,13 @@ merge deletes rows — so running them from a deploy script, before the new bina
 starts, means a failure is found with the old version still serving rather than
 with nothing serving at all.
 
+A migration gets one attempt against an instance's own data, which no fixture
+contains. `eunha rehearse-migration <database-url>` clones a live database,
+applies what is pending over the copy, and reports how long it took, every table
+whose row count moved, and whether the result still matches the Mastodon release
+eunha tracks — see [tracking Mastodon](../mastodon/tracking). The source is only
+read from, and the clone is left in place to be looked at.
+
 Starting the server checks instead: an instance whose database is behind its
 binary refuses to serve and says so, rather than running queries against a shape
 that has moved. `eunha migrate --check` answers the same question without

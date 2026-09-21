@@ -45,7 +45,7 @@ use uuid::Uuid;
 
 use std::collections::HashSet;
 
-use crate::{config::MediaStorageConfig, media, migrate, version};
+use crate::{config::MediaStorageConfig, media, migrate, migrate::pg_command, version};
 
 /// Mastodon's reserved `accounts` row for the instance actor, whose `username`
 /// is the instance's own domain. Every federating Mastodon has one, which makes
@@ -222,15 +222,6 @@ pub async fn run(db: &PgPool, database_url: &str, import: &Import) -> Result<Rep
         renamed_from: import.rename_from.clone(),
         counts: counts(db).await?,
     })
-}
-
-/// `pg_restore`, `pg_dump` and friends, from `PGBIN` when they are not on PATH.
-fn pg_command(name: &str) -> tokio::process::Command {
-    let binary = match std::env::var("PGBIN") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir).join(name),
-        _ => PathBuf::from(name),
-    };
-    tokio::process::Command::new(binary)
 }
 
 /// The newest Mastodon migration the dump records.
