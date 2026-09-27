@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Router;
 use serde_json::{json, Value};
 
 use helpers::TestContext;
@@ -53,7 +53,12 @@ async fn spawn_remote_actor(
             get(
                 |State((document, fetches)): State<(Value, Arc<AtomicUsize>)>| async move {
                     fetches.fetch_add(1, Ordering::SeqCst);
-                    Json(document)
+                    // As a server does: a fetch trusts ActivityPub's media
+                    // types only, never plain JSON.
+                    (
+                        [("content-type", "application/activity+json")],
+                        document.to_string(),
+                    )
                 },
             ),
         )

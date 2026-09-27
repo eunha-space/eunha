@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::state::AppState;
 
 /// The instance actor's signing key, as feder takes it.
-async fn instance_key(state: &AppState) -> anyhow::Result<feder::delivery::SenderKey> {
+pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<feder::delivery::SenderKey> {
     Ok(feder::delivery::SenderKey {
         key_id: crate::federation::instance_actor::key_id(&state.instance.domain),
         private_key: crate::federation::instance_actor::signing_key(state).await?,

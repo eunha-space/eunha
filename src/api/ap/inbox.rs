@@ -1,14 +1,6 @@
-use axum::{
-    extract::{Extension, OriginalUri},
-    http::StatusCode,
-};
 use serde_json::Value;
 
-use crate::{
-    error::{AppError, AppResult},
-    middleware::ResolvedInstance,
-    state::AppState,
-};
+use crate::{error::AppResult, state::AppState};
 
 mod attachment;
 mod collection;
@@ -17,7 +9,6 @@ mod fetch;
 mod follow;
 mod moderation;
 mod quote;
-mod signature;
 mod status;
 use collection::{handle_add, handle_remove};
 use create::handle_create;
@@ -28,7 +19,6 @@ pub use fetch::{
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
 use quote::{handle_feature_request, handle_quote_request};
-use signature::{verify_inbound_signature, verify_object_integrity};
 use status::{handle_announce, handle_delete, handle_like, handle_update};
 
 /// Returns true if a tag's `type` field equals `type_name`, handling both
@@ -184,97 +174,42 @@ pub(super) async fn acquire_create_lock(state: &AppState, uri: &str) -> Option<R
     None
 }
 
-/// Handles both `/inbox` (shared inbox) and `/users/:username/inbox`.
-pub async fn shared_inbox(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    OriginalUri(uri): OriginalUri,
-    headers: axum::http::HeaderMap,
-    body: axum::body::Bytes,
-) -> AppResult<StatusCode> {
-    let activity: Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(_) => return Ok(StatusCode::BAD_REQUEST),
-    };
-
-    let activity_type = activity.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-    // The path as well as the activity: this one handler serves both
-    // `/users/{username}/inbox` and the instance-wide `/inbox`, and which of
-    // them a peer chose is otherwise invisible. Mastodon only picks the shared
-    // inbox when two accounts here follow the same actor there, so without this
-    // there is no way to tell whether that path has ever been exercised.
-    tracing::debug!(
-        instance = %instance.domain,
-        inbox = %uri.path(),
-        activity_type,
-        body = %activity,
-        "received ActivityPub activity"
-    );
-
-    // The actor that the activity claims to be from. Used both to enforce the
-    // signature (the signing key must belong to this actor) and by handlers.
+/// An activity feder has received and authenticated: queued for the ingress
+/// worker, or, in tests, handled at once.
+///
+/// Feder's inbox (`super::serving`) has already done what this handler used
+/// to: refused a suspended domain's activities before fetching a key for
+/// them, verified the HTTP Signature or, failing it, an FEP-8b32 proof,
+/// accepted and dropped a Delete it could not verify, and checked that the
+/// actor and the activity are on the sender's origin. `activity` is the one
+/// the sender sent, with anything embedded that the sender could not vouch
+/// for reduced to its id, so a handler that reads an embedded object reads
+/// one its sender owns and fetches anything else.
+pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
+    let activity_type = activity
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_owned();
     let actor_uri = activity
         .get("actor")
         .and_then(|a| a.as_str().or_else(|| a.get("id").and_then(|i| i.as_str())))
         .unwrap_or("")
-        .to_string();
-
-    // Drop activities from domains we've defederated (admin domain block at
-    // suspend severity). Mastodon silently discards these with HTTP 202 to avoid
-    // backscatter, so we do the same rather than returning an error.
-    if crate::federation::moderation::actor_is_suspended(&state, &actor_uri).await {
-        tracing::debug!(actor = %actor_uri, activity_type, "dropping activity from suspended domain");
-        return Ok(StatusCode::ACCEPTED);
-    }
-
-    // Enforce the HTTP Signature. An activity with a missing or invalid
-    // signature is rejected, except `Delete` activities we cannot verify: the
-    // signing actor (or its key) may already be gone, and rejecting them would
-    // create backscatter, so we accept-and-ignore those (matching Mastodon).
-    // The signer covered the path *and* any query string, so pass both.
-    let path_and_query = uri.path_and_query().map_or(uri.path(), |pq| pq.as_str());
-    if let Err(reason) =
-        verify_inbound_signature(&state, &headers, path_and_query, &body, &actor_uri).await
-    {
-        // Fall back to the FEP-8b32 Object Integrity Proof. Fedify-based servers
-        // (GoToSocial, hackers.pub) sign activities with an `eddsa-jcs-2022`
-        // proof, and their HTTP Signature may use a spec we don't parse or come
-        // from a different host on shared-inbox/forwarded delivery. The proof
-        // authenticates the activity itself, so accept when it verifies.
-        if let Err(proof_reason) = verify_object_integrity(&state, &activity, &actor_uri).await {
-            if activity_type == "Delete" {
-                tracing::debug!(actor = %actor_uri, %reason, "unverified Delete; accepting without processing");
-                return Ok(StatusCode::ACCEPTED);
-            }
-            tracing::warn!(
-                actor = %actor_uri,
-                activity_type,
-                http_signature = %reason,
-                integrity_proof = %proof_reason,
-                "rejecting activity: neither HTTP Signature nor integrity proof verified"
-            );
-            return Err(AppError::Unauthorized);
-        }
-        tracing::info!(
-            actor = %actor_uri,
-            activity_type,
-            "accepted via FEP-8b32 integrity proof (HTTP Signature unverified)"
-        );
-    }
-
-    // The signature checked out, so the activity is authentic and ours to
-    // process — but the work itself (DB writes, remote fetches, fan-out) need
-    // not happen on the sender's connection. Enqueue and return 202, matching
-    // Mastodon's ActivityPub::ProcessingWorker. Tests opt into inline
-    // processing so they can assert on the result without racing the worker.
+        .to_owned();
+    tracing::debug!(
+        instance = %state.instance.domain,
+        activity_type,
+        body = %activity,
+        "received ActivityPub activity"
+    );
+    // The work itself (DB writes, remote fetches, fan-out) need not happen on
+    // the sender's connection: it is queued, as Mastodon's
+    // ActivityPub::ProcessingWorker does. Tests opt into inline processing so
+    // they can assert on the result without racing the worker.
     if !sync_ingress() {
-        enqueue_activity(&state, activity_type, &actor_uri, &activity).await?;
-        return Ok(StatusCode::ACCEPTED);
+        return enqueue_activity(state, &activity_type, &actor_uri, &activity).await;
     }
-
-    process_activity(&state, &instance, activity_type, &activity).await?;
-    Ok(StatusCode::ACCEPTED)
+    process_activity(state, &state.instance.clone(), &activity_type, &activity).await
 }
 
 /// Dispatch a verified activity to its handler. Runs on the ingress queue in

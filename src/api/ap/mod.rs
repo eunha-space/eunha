@@ -7,24 +7,21 @@ pub mod serving;
 use axum::{
     extract::Path,
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::get,
     Router,
 };
 
 use crate::state::AppState;
 
-/// The inboxes, and where a browser that opens an ActivityPub URI is sent.
-/// Everything a server fetches is feder's (`serving`), answered before these
+/// Where a browser that opens an ActivityPub URI is sent. Everything a
+/// server fetches or sends is feder's (`serving`), answered before these
 /// routes when ActivityPub is asked for.
 pub fn router() -> Router {
     Router::new()
         .route("/users/{username}", get(profile_by_username))
-        .route("/users/{username}/inbox", post(inbox::shared_inbox))
         .route("/users/{username}/statuses/{id}", get(status_by_username))
         .route("/ap/users/{id}", get(profile_by_id))
-        .route("/ap/users/{id}/inbox", post(inbox::shared_inbox))
         .route("/ap/users/{id}/statuses/{status_id}", get(status_by_id))
-        .route("/inbox", post(inbox::shared_inbox))
 }
 
 // A person who opens an actor or a status in a browser is sent to its page,

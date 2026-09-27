@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT public_key FROM accounts WHERE uri = $1 AND public_key != ''",
+  "query": "SELECT public_key FROM accounts WHERE uri = $1 AND domain IS NOT NULL AND public_key != ''",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "e92c558bcedb7b7fc004547c7c593366719005325960e9295fd928a5f40e0dad"
+  "hash": "426cbc70680d58db6148923c7b67d0e7577b705eb855e21925dcbb53958a8411"
 }

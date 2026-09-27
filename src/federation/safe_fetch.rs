@@ -100,6 +100,12 @@ pub fn set_allowed_private_networks(nets: Vec<ipnet::IpNet>) {
     let _ = ALLOWED_PRIVATE.set(nets);
 }
 
+/// The private networks this process may reach: what the first call to
+/// [`set_allowed_private_networks`] declared, and none before one.
+pub fn allowed_private_networks() -> Vec<ipnet::IpNet> {
+    ALLOWED_PRIVATE.get().cloned().unwrap_or_default()
+}
+
 fn is_allowed_private(ip: IpAddr) -> bool {
     ALLOWED_PRIVATE
         .get()

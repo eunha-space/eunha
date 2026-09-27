@@ -108,7 +108,10 @@ impl AppState {
 
         // Deliveries and fetches share one guarded client and its pool.
         let federation_client = feder::client::Client::new(feder::client::ClientConfig {
-            allow_private: allowed.clone(),
+            // The process's list, which the first instance to start set: the
+            // same one the SSRF guard above answers to, so that feder's
+            // client and eunha's older one agree on what may be reached.
+            allow_private: crate::federation::safe_fetch::allowed_private_networks(),
             user_agent: crate::version::USER_AGENT.to_string(),
             ..feder::client::ClientConfig::default()
         })

@@ -12,6 +12,11 @@
 //! A request to one of these paths that asks for a page rather than
 //! ActivityPub goes on to eunha's own routes (`super::router`), which send a
 //! browser to the profile or the status.
+//!
+//! The inboxes are feder's too. What arrives in them is authenticated by
+//! feder, with the keys eunha already holds in `accounts` tried first, and
+//! handed to eunha's own dispatcher (`super::inbox::received`) reduced to
+//! what its sender can vouch for.
 
 use feder::federation::{
     ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Usage,
@@ -123,7 +128,64 @@ pub fn federation() -> Federation<AppState> {
             }
         })
         .nodeinfo(nodeinfo)
-        .on_error(|error| tracing::error!(error = %error, "serving ActivityPub"));
+        .on_error(|error| tracing::error!(error = %error, "ActivityPub"))
+        .inbox("actor", "/users/{username}/inbox")
+        .inbox("actor_by_id", "/ap/users/{id}/inbox")
+        .shared_inbox("/inbox")
+        // Every tenant fetches with its own fetcher (`fetcher_for`); this
+        // one is only what the builder needs to be given. Keys fetched are
+        // kept in memory for an hour; the keys of accounts eunha knows come
+        // from `accounts` first.
+        .signed_fetch(
+            std::sync::Arc::new(feder::fetch::Fetcher::new(
+                feder::client::Client::new(feder::client::ClientConfig::default())
+                    .expect("an HTTP client"),
+                feder::delivery::Scheme::DraftCavage,
+            )),
+            feder::kv::MemoryKvStore::new(),
+            std::time::Duration::from_secs(60 * 60),
+            // Signed as the instance actor, for peers in authorized-fetch mode.
+            |ctx: Ctx| async move {
+                crate::federation::fetch::instance_key(ctx.data())
+                    .await
+                    .map(Some)
+            },
+        )
+        .fetcher_for(|state: &AppState| state.fetcher.clone())
+        .known_key(|ctx: Ctx, key_id: String| async move { known_key(&ctx, &key_id).await })
+        // An actor seen for the first time is created from the document
+        // fetched for its key, as Mastodon does, rather than fetched again
+        // by the worker for the activity it sent. Two first activities race
+        // to create it; the loser's insert fails on the account's uniqueness,
+        // and its worker finds the winner's row.
+        .key_fetched(|ctx: Ctx, actor: Value| async move {
+            let Some(id) = actor.get("id").and_then(Value::as_str).map(str::to_owned) else {
+                return;
+            };
+            if actor.get("inbox").is_none() {
+                return;
+            }
+            if let Err(error) =
+                super::inbox::resolve_or_fetch_remote_account_prefetched(ctx.data(), &id, actor)
+                    .await
+            {
+                tracing::debug!(actor = %id, %error, "account not created from its key fetch");
+            }
+        })
+        // A suspended domain's activities are dropped before any key is
+        // fetched for them, as Mastodon drops them.
+        .blocked(|ctx: Ctx, host: String| async move {
+            Ok::<_, AppError>(
+                crate::federation::moderation::actor_is_suspended(
+                    ctx.data(),
+                    &format!("https://{host}/"),
+                )
+                .await,
+            )
+        })
+        .on_any(|ctx: Ctx, received: feder::federation::Received<feder_vocab::generated::AnyObject>| async move {
+            super::inbox::received(ctx.data(), received.vouched).await
+        });
 
     for scheme in [Scheme::Username, Scheme::Id] {
         builder =
@@ -188,6 +250,24 @@ pub fn federation() -> Federation<AppState> {
                 );
     }
     builder.build().expect("eunha's federation is well formed")
+}
+
+/// The key eunha holds for `key_id`: the public key of the remote account
+/// whose actor the key ID names.
+async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<feder::federation::KnownKey>> {
+    let owner = feder_runtime::verification::key_owner(key_id);
+    let pem = sqlx::query_scalar!(
+        "SELECT public_key FROM accounts WHERE uri = $1 AND domain IS NOT NULL AND public_key != ''",
+        owner,
+    )
+    .fetch_optional(&ctx.data().db)
+    .await?;
+    Ok(pem.and_then(|pem| {
+        Some(feder::federation::KnownKey {
+            pem,
+            actor: Url::parse(owner).ok()?,
+        })
+    }))
 }
 
 fn domain(ctx: &Ctx) -> &str {
