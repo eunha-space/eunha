@@ -426,11 +426,15 @@ async fn resolve_or_fetch_remote_account_inner(
         .and_then(|o| o.as_str())
         .unwrap_or("")
         .to_string();
-    let shared_inbox_url = actor
-        .get("endpoints")
-        .and_then(|e| e.get("sharedInbox"))
-        .and_then(|s| s.as_str())
-        .map(str::to_owned);
+    // As Mastodon's ProcessAccountService reads it, and stored as '' when
+    // absent: the column is NOT NULL, and plenty of actors have no shared inbox.
+    let shared_inbox_url = match actor.get("endpoints") {
+        Some(endpoints) if endpoints.is_object() => endpoints.get("sharedInbox"),
+        _ => actor.get("sharedInbox"),
+    }
+    .and_then(|s| s.as_str())
+    .unwrap_or("")
+    .to_string();
     let public_key = actor
         .get("publicKey")
         .and_then(|k| k.get("publicKeyPem"))
