@@ -185,6 +185,11 @@ pub fn federation() -> Federation<AppState> {
         })
         .on_any(|ctx: Ctx, received: feder::federation::Received<feder_vocab::generated::AnyObject>| async move {
             super::inbox::received(ctx.data(), received.vouched).await
+        })
+        // A reply to a local post, addressed to its author's followers, is
+        // passed on to them (ActivityPub §7.1.2), signed by the author.
+        .forward(|ctx: Ctx, forward: feder::federation::Forward| async move {
+            forward_to_collections(&ctx, forward).await.map_err(|error| error.to_string())
         });
 
     for scheme in [Scheme::Username, Scheme::Id] {
@@ -250,6 +255,37 @@ pub fn federation() -> Federation<AppState> {
                 );
     }
     builder.build().expect("eunha's federation is well formed")
+}
+
+/// Forward `forward`'s activity to the followers of the local accounts whose
+/// followers collections it names. Eunha is no portable actor's gateway, so
+/// there is nothing to forward to gateways.
+async fn forward_to_collections(ctx: &Ctx, forward: feder::federation::Forward) -> AppResult<()> {
+    let feder::federation::ForwardTo::Collections(collections) = forward.to else {
+        return Ok(());
+    };
+    for collection in collections {
+        let scheme = if collection.kind == Scheme::Username.kind("followers") {
+            Scheme::Username
+        } else if collection.kind == Scheme::Id.kind("followers") {
+            Scheme::Id
+        } else {
+            continue;
+        };
+        let Some(account) = scheme.account(ctx, &collection.identifier).await? else {
+            continue;
+        };
+        let actor = crate::federation::tag::account_uri_of(domain(ctx), &account);
+        crate::federation::delivery::forward_to_followers(
+            ctx.data(),
+            forward.activity.clone(),
+            account.id,
+            format!("{actor}#main-key"),
+        )
+        .await
+        .map_err(AppError::Internal)?;
+    }
+    Ok(())
 }
 
 /// The key eunha holds for `key_id`: the public key of the remote account

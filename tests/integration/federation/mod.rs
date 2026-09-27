@@ -2,6 +2,7 @@
 
 mod account_delete;
 mod delivery_queue;
+mod forwarding;
 mod handles;
 mod ingress;
 mod instance_actor;

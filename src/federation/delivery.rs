@@ -188,6 +188,28 @@ pub async fn fanout_to_followers(
     actor_account_id: i64,
     key_id: String,
 ) -> anyhow::Result<u64> {
+    let inboxes = follower_inboxes(state, actor_account_id).await?;
+    enqueue_to_inboxes(state, activity, inboxes, key_id).await
+}
+
+/// Forward another server's `activity` to the remote followers of
+/// `account_id`, signed by that account, as Mastodon forwards a reply to a
+/// local post to its author's followers (ActivityPub §7.1.2). It goes as it
+/// arrived: a proof of ours on someone else's activity would say nothing
+/// true, and would replace the author's.
+pub async fn forward_to_followers(
+    state: &AppState,
+    activity: Value,
+    account_id: i64,
+    key_id: String,
+) -> anyhow::Result<u64> {
+    let inboxes = follower_inboxes(state, account_id).await?;
+    enqueue(state, activity, inboxes, key_id, false).await
+}
+
+/// The inboxes of `actor_account_id`'s remote followers, a shared inbox once
+/// for all the followers behind it, without unavailable domains.
+async fn follower_inboxes(state: &AppState, actor_account_id: i64) -> anyhow::Result<Vec<String>> {
     let inboxes = sqlx::query!(
         r#"SELECT DISTINCT
              CASE WHEN a.shared_inbox_url IS NOT NULL AND a.shared_inbox_url <> ''
@@ -219,8 +241,7 @@ pub async fn fanout_to_followers(
             }
         })
         .collect();
-
-    enqueue_to_inboxes(state, activity, inboxes, key_id).await
+    Ok(inboxes)
 }
 
 /// Compute the set of remote inboxes that should receive an account-level
@@ -462,6 +483,18 @@ async fn enqueue_to_inboxes(
     inboxes: Vec<String>,
     key_id: String,
 ) -> anyhow::Result<u64> {
+    enqueue(state, activity, inboxes, key_id, true).await
+}
+
+/// Queue `activity` for `inboxes`, signed by `key_id`'s account, with that
+/// account's integrity proof when `prove`.
+async fn enqueue(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+    prove: bool,
+) -> anyhow::Result<u64> {
     // Record the signing account, not its private key: the key is loaded from
     // `accounts` at send time so the secret lives in exactly one place.
     let actor_account_id = signing_account_id(state, &key_id).await?;
@@ -490,7 +523,11 @@ async fn enqueue_to_inboxes(
 
     // Sign once, before the fan-out: every inbox receives the same bytes, and
     // the proof travels with the activity rather than with the connection.
-    let activity = attach_integrity_proof(state, activity, actor_account_id, &key_id).await;
+    let activity = if prove {
+        attach_integrity_proof(state, activity, actor_account_id, &key_id).await
+    } else {
+        activity
+    };
 
     // One statement for the whole fan-out: a per-inbox INSERT costs a
     // round-trip per follower, which for a large account is the dominant cost
