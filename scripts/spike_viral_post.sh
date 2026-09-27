@@ -218,11 +218,14 @@ echo 0 > "$WORK/snap"
 memory_snapshot() {
   local moment=$1 eunha pg
   echo $(( $(cat "$WORK/snap") + 1 )) > "$WORK/snap"
-  eunha=$(vmmap --summary "$eunha_pid" 2>/dev/null | awk "$MIB_FN"'
+  # The whole region table is kept too: when the footprint is not malloc's,
+  # it says whose it is.
+  vmmap --summary "$eunha_pid" > "$RESULTS/vmmap-${moment// /-}.txt" 2>/dev/null
+  eunha=$(awk "$MIB_FN"'
     /^Physical footprint:/ { fp = mib($3) }
     /^MALLOC ZONE/ { zones = 1 }
     zones && /^TOTAL/ { dirty = mib($4); live = mib($7); free = mib($8) }
-    END { printf "%s,%s,%s,%s", fp, dirty, live, free }')
+    END { printf "%s,%s,%s,%s", fp, dirty, live, free }' "$RESULTS/vmmap-${moment// /-}.txt")
   pg=$(for pid in $(q "SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()"); do
       vmmap --summary "$pid" 2>/dev/null | awk "$MIB_FN"'
         /^Physical footprint:/ { fp = mib($3) }
@@ -238,6 +241,7 @@ memory_snapshot() {
 echo baseline > "$WORK/phase"
 # Samples once a second, and keeps going whatever one probe does: a gap in the
 # record is worse than a bad value in it.
+ms() { [ -n "$1" ] && awk -v s="$1" 'BEGIN{printf "%.1f", s*1000}'; }
 sample_loop() {
   set +e +o pipefail
   echo "t,phase,inbox_pending,inbox_failed,delivery_pending,db_active,db_idle,db_lock_waits,eunha_cpu,eunha_rss_mib,home_ms,context_ms,notifications_ms,home_status,eunha_footprint_mib,redis_used_mib"
@@ -252,9 +256,16 @@ sample_loop() {
                     count(*) FILTER (WHERE wait_event_type = 'Lock')
              FROM pg_stat_activity WHERE datname = current_database()" 2>/dev/null | tr '|' ',')
     ps_row=$(ps -o %cpu=,rss= -p "$eunha_pid" 2>/dev/null | awk '{printf "%s,%.1f", $1, $2/1024}')
-    home=$(api -m 30 -o /dev/null -w '%{time_total},%{http_code}' "http://127.0.0.1:$EUNHA_PORT/api/v1/timelines/home?limit=20")
-    ctx=$(api -m 30 -o /dev/null -w '%{time_total}' "http://127.0.0.1:$EUNHA_PORT/api/v1/statuses/$status_id/context")
-    notif=$(api -m 30 -o /dev/null -w '%{time_total}' "http://127.0.0.1:$EUNHA_PORT/api/v1/notifications?limit=20")
+    # The probes are load too — the thread alone renders up to 4,096 replies
+    # for a signed-in viewer, as Mastodon does — so cooldown, which measures
+    # what an idle instance keeps, sends none.
+    if [ "$(cat "$WORK/phase")" = cooldown ]; then
+      home=",";  ctx=""; notif=""
+    else
+      home=$(api -m 30 -o /dev/null -w '%{time_total},%{http_code}' "http://127.0.0.1:$EUNHA_PORT/api/v1/timelines/home?limit=20")
+      ctx=$(api -m 30 -o /dev/null -w '%{time_total}' "http://127.0.0.1:$EUNHA_PORT/api/v1/statuses/$status_id/context")
+      notif=$(api -m 30 -o /dev/null -w '%{time_total}' "http://127.0.0.1:$EUNHA_PORT/api/v1/notifications?limit=20")
+    fi
     # phys_footprint, not RSS: RSS counts the binary's shared text pages.
     fp=$(top -l 1 -pid "$eunha_pid" -stats mem 2>/dev/null | awk 'END { print mib($1) } '"$MIB_FN")
     redis_mib=$(redis-cli -n 14 info memory 2>/dev/null | awk -F: '/^used_memory:/ {printf "%.1f", $2 / 1048576}')
@@ -262,9 +273,7 @@ sample_loop() {
     # Overlapped a memory snapshot: kept, but marked and left out of the summary.
     if [ "$snap" != "$(cat "$WORK/snap")" ] || [ $((snap % 2)) = 1 ]; then phase="$phase (paused)"; fi
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' $((SECONDS - start)) "$phase" "${row:-,,,,,}" "${ps_row:-,}" \
-      "$(awk -v s="${home%,*}" 'BEGIN{printf "%.1f", s*1000}')" \
-      "$(awk -v s="$ctx" 'BEGIN{printf "%.1f", s*1000}')" \
-      "$(awk -v s="$notif" 'BEGIN{printf "%.1f", s*1000}')" "${home#*,}" "$fp" "$redis_mib"
+      "$(ms "${home%,*}")" "$(ms "$ctx")" "$(ms "$notif")" "${home#*,}" "$fp" "$redis_mib"
     # Every internet socket eunha holds, and whether its peer is loopback. An
     # audit that did not run is recorded as such, so that a dead auditor cannot
     # pass for a clean one.
@@ -356,9 +365,10 @@ const sim = JSON.parse(fs.readFileSync(`${dir}/fedisim.json`));
 const rows = fs.readFileSync(`${dir}/timeseries.csv`, "utf8").trim().split("\n");
 const head = rows.shift().split(",");
 const data = rows.map(r => Object.fromEntries(r.split(",").map((v, i) => [head[i], v])));
-const pct = (xs, p) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.round(p / 100 * (s.length - 1))] : 0; };
+const pct = (xs, p) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.round(p / 100 * (s.length - 1))] : undefined; };
 const by = ph => data.filter(r => r.phase === ph);
-const col = (rs, c) => rs.map(r => Number(r[c]));
+const col = (rs, c) => rs.map(r => (r[c] === "" ? NaN : Number(r[c])));
+const ms = v => (v === undefined ? "–" : `${v} ms`);
 const t = sim.totals;
 const peakSecond = sim.timeline.reduce((a, b) => (b.sent > a.sent ? b : a), { sent: 0 });
 console.log(`# Viral post spike\n`);
@@ -379,12 +389,12 @@ console.log(`| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`);
 for (const ph of ["baseline", "spike", "recovery", "cooldown"]) {
   const rs = by(ph);
   if (!rs.length) continue;
-  console.log(`| ${ph} | ${Math.max(...col(rs, "inbox_pending"))} | ${pct(col(rs, "eunha_cpu"), 95)}% | ${Math.max(...col(rs, "eunha_footprint_mib"))} MiB | ${pct(col(rs, "home_ms"), 95)} ms | ${pct(col(rs, "context_ms"), 95)} ms | ${pct(col(rs, "notifications_ms"), 95)} ms | ${Math.max(...col(rs, "db_active"))} | ${Math.max(...col(rs, "db_lock_waits"))} |`);
+  console.log(`| ${ph} | ${Math.max(...col(rs, "inbox_pending"))} | ${pct(col(rs, "eunha_cpu"), 95) ?? 0}% | ${Math.max(...col(rs, "eunha_footprint_mib"))} MiB | ${ms(pct(col(rs, "home_ms"), 95))} | ${ms(pct(col(rs, "context_ms"), 95))} | ${ms(pct(col(rs, "notifications_ms"), 95))} | ${Math.max(...col(rs, "db_active"))} | ${Math.max(...col(rs, "db_lock_waits"))} |`);
 }
 const mem = fs.readFileSync(`${dir}/memory.csv`, "utf8").trim().split("\n").map(r => r.split(","));
 mem.shift();
 console.log(`\n## Memory\n`);
-console.log(`eunha's footprint, and of its malloc zones what is live and what is dirty but free (fragmentation). PostgreSQL is this database's backends, costed privately; the shared buffer pool is not included. Redis is the whole server.\n`);
+console.log(`eunha's footprint, and of its malloc zones what is live and what is dirty but free (fragmentation). Footprint counts pages the OS has compressed, so an idle process whose RSS falls has not given memory back unless its footprint falls too. Each moment's full region table is in vmmap-*.txt. PostgreSQL is this database's backends, costed privately; the shared buffer pool is not included. Redis is the whole server.\n`);
 console.log(`| Moment | eunha footprint | malloc live | malloc free | PG backends | PG private | Redis | Database on disk |`);
 console.log(`| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`);
 for (const [moment, fp, , live, free, backends, pgPrivate, redis, db] of mem)

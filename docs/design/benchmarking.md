@@ -613,6 +613,81 @@ curl 127.0.0.1:18990/__stats
 ~~~~
 
 
+2026-09-27 viral post
+---------------------
+
+Measured on the same Mac17,2, against a fresh database holding the ten
+benchmark users, with a five-connection pool. 50,000 actors on 200 simulated
+servers liked, boosted and replied to one post, peaking at 1,000 activities a
+second 20 seconds in, for two minutes: about 46,000 activities, every one from
+an actor the instance had never seen. Every run caught the canary, refused no
+other host, and found no socket that was not loopback.
+
+At a tenth of that — 10,000 actors, peaking at 100 a second — the queue never
+held more than 16 jobs and eunha used a third of a core. The instance barely
+noticed. At 1,000 a second it did. Ranges are over two runs before the changes
+below and three after:
+
+|                                   |        Before |         After |
+| --------------------------------- | ------------: | ------------: |
+| Activities accepted               |          100% |          100% |
+| Actor documents fetched per actor |           2.0 |           1.0 |
+| Inbox queue at its peak           | 18,631–20,888 | 11,002–13,356 |
+| eunha CPU p95 during the spike    |      152–156% |      132–149% |
+| Jobs failed                       |             0 |             0 |
+
+The queue drained as the curve decayed, before the last activity arrived. A
+local user's home timeline and notifications stayed under 75 ms at p95; their
+view of the post's thread did not, at 90–230 ms, because by then it held
+thousands of replies and a signed-in viewer is sent up to 4,096 of them, as
+Mastodon does.
+
+The peak flamegraph found where the CPU went, and it was not verifying the
+activities' signatures (5%). It was eunha signing its own requests: every
+actor seen for the first time is fetched with a signed GET, and that was a fifth
+of all on-CPU time. Two things made it worse than it had to be, and both are
+fixed:
+
+ -  **Every new actor was fetched twice**: once by signature verification for
+    its key, whose document was then thrown away, and again by the inbox worker
+    to create the account. The first fetch now creates the account, as
+    Mastodon's `FetchRemoteKeyService` does. A viral post is exactly when this
+    matters, as it doubled the requests to the very servers sending the flood.
+ -  **The instance actor's key was reloaded and reparsed for every GET**: read
+    from the database, decrypted, and parsed from PEM with its CRT values
+    precomputed, which together cost more than the signature. It is now parsed
+    once per instance, through feder's `PrivateKey`.
+
+Writing a test for the first also turned up an actor with no shared inbox
+failing every activity with a 500, as its account could not be stored. It is
+stored with an empty shared inbox now, as Mastodon does.
+
+### Memory after a spike
+
+|                         |  Before | Spike ended | Queue drained | Idle 120 s |
+| ----------------------- | ------: | ----------: | ------------: | ---------: |
+| eunha footprint         |  12 MiB |     325 MiB |       388 MiB |    151 MiB |
+| of which live in malloc | 2.6 MiB |      15 MiB |        15 MiB |     10 MiB |
+| Database on disk        |  15 MiB |     116 MiB |       116 MiB |    116 MiB |
+
+eunha's live data never exceeded 15 MiB. Nearly all of the rest is *Malloc
+Large (empty)* in vmmap: large blocks already freed, which macOS's allocator
+keeps for reuse and returns on its own schedule — 331 MiB of it when the queue
+drained, 107 MiB two minutes later. The largest allocations are responses, and
+the thread is the largest response: while the harness still asked for it once a
+second during cooldown, each request added about 7 MiB.
+
+Two traps for anyone reading these numbers. RSS fell to 29 MiB while the
+footprint stayed above 150 MiB, because macOS compresses an idle process's
+dirty pages, which RSS does not count and footprint does; the process had not
+given them back. And vmmap suspends the process it reads, which is why the
+harness marks and discards the latency samples that overlap a snapshot, and
+takes no snapshot during the spike itself.
+
+Peak footprint and tail latency varied between runs as much as they did between
+builds, so neither is claimed to have changed.
+
+
 Not yet measured
 ----------------
 
