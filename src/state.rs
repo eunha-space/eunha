@@ -19,6 +19,10 @@ pub struct AppState {
     /// SSRF-guarded client for fetching untrusted remote content (ActivityPub
     /// objects, actor keys, link previews). See [`crate::federation::safe_fetch`].
     pub fetch: reqwest::Client,
+    /// Fetches ActivityPub documents, signed as the instance actor, through
+    /// feder's guarded client: each redirect is checked and signed again,
+    /// and a document is trusted only from its own origin.
+    pub fetcher: Arc<feder::fetch::Fetcher>,
     pub email: EmailSender,
     pub streaming: StreamBus,
     pub storage: Arc<Storage>,
@@ -102,11 +106,22 @@ impl AppState {
             crate::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
         });
 
+        // Deliveries and fetches share one guarded client and its pool.
+        let federation_client = feder::client::Client::new(feder::client::ClientConfig {
+            allow_private: allowed.clone(),
+            user_agent: crate::version::USER_AGENT.to_string(),
+            ..feder::client::ClientConfig::default()
+        })
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let fetcher = Arc::new(feder::fetch::Fetcher::new(
+            federation_client.clone(),
+            feder::delivery::Scheme::DraftCavage,
+        ));
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
             db.clone(),
             encryptor.clone(),
             &config.workers.sanitized(),
-            allowed.clone(),
+            federation_client,
         )?);
 
         let instance = Arc::new(config.instance.clone());
@@ -119,6 +134,7 @@ impl AppState {
             instance,
             http,
             fetch,
+            fetcher,
             email,
             streaming: StreamBus::new(),
             storage,

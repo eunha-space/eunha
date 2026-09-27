@@ -52,16 +52,10 @@ pub fn deliverer(
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
     workers: &crate::config::WorkersConfig,
-    allowed_private_networks: Vec<ipnet::IpNet>,
+    client: feder::client::Client,
 ) -> anyhow::Result<Deliverer> {
     let queue = feder_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let client = feder::client::Client::new(feder::client::ClientConfig {
-        allow_private: allowed_private_networks,
-        user_agent: crate::version::USER_AGENT.to_string(),
-        ..feder::client::ClientConfig::default()
-    })
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
     let config = feder::deliverer::DelivererConfig {
         batch: usize::try_from(workers.delivery_batch).unwrap_or(50).max(1),
         concurrency: workers.delivery_concurrency.max(1),

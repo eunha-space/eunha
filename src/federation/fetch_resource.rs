@@ -45,10 +45,6 @@ pub const OBJECT_TYPES: [&str; 8] = [
 /// `FeaturedCollection`, which `FetchResourceService#expected_type?` also accepts.
 pub const COLLECTION_TYPES: [&str; 1] = ["FeaturedCollection"];
 
-/// Mastodon's `body_with_limit`: a remote server does not get to hand us an
-/// unbounded document.
-const MAX_BODY: usize = 1024 * 1024;
-
 /// An object fetched from the server that claims it.
 pub struct FetchedResource {
     /// Where the object was finally served from, which is also its `id`.
@@ -87,29 +83,28 @@ async fn process(
     terminal: bool,
     code: &mut Option<u16>,
 ) -> Option<FetchedResource> {
-    if crate::federation::safe_fetch::validate_url(url).is_err() {
-        return None;
-    }
     let resp = crate::federation::fetch::signed_get(state, url, ACCEPT)
         .await
         .ok()?;
-    *code = Some(resp.status().as_u16());
-    if resp.status() != reqwest::StatusCode::OK {
+    *code = Some(resp.status);
+    if resp.status != 200 {
         return None;
     }
 
     let content_type = resp
-        .headers()
+        .headers
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_owned();
+    // Redirects are followed by the fetcher, each hop signed again; what the
+    // body is compared with is where it was finally served from.
+    let served = resp.url.as_str();
 
-    if valid_activitypub_content_type(&content_type) {
-        let body = body_with_limit(resp).await?;
-        return match read_activitypub(url, &body) {
+    if feder::fetch::is_activity_content_type(&content_type) {
+        return match read_activitypub(served, &resp.body) {
             ApBody::Resource(json) => Some(FetchedResource {
-                url: url.to_owned(),
+                url: served.to_owned(),
                 json,
             }),
             // Served from somewhere other than the id it claims: ask the id
@@ -125,15 +120,13 @@ async fn process(
     }
 
     // Not ActivityPub. Follow the alternate link, if the page names one.
-    if let Some(href) = link_header_alternate(resp.headers()) {
+    if let Some(href) = link_header_alternate(&resp.headers) {
         return Box::pin(process(state, &href, true, code)).await;
     }
     if mime_type(&content_type) != "text/html" {
         return None;
     }
-    let base = url::Url::parse(url).ok()?;
-    let body = body_with_limit(resp).await?;
-    let href = html_alternate(&String::from_utf8_lossy(&body), &base)?;
+    let href = html_alternate(&String::from_utf8_lossy(&resp.body), &resp.url)?;
     Box::pin(process(state, &href, true, code)).await
 }
 
@@ -163,19 +156,6 @@ fn read_activitypub(url: &str, body: &[u8]) -> ApBody {
     }
 }
 
-/// Read a response body, refusing one larger than [`MAX_BODY`].
-async fn body_with_limit(resp: reqwest::Response) -> Option<Vec<u8>> {
-    let mut resp = resp;
-    let mut body = Vec::new();
-    while let Some(chunk) = resp.chunk().await.ok()? {
-        if body.len() + chunk.len() > MAX_BODY {
-            return None;
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Some(body)
-}
-
 /// The media type of a `Content-Type`, without its parameters.
 fn mime_type(content_type: &str) -> String {
     content_type
@@ -184,20 +164,6 @@ fn mime_type(content_type: &str) -> String {
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase()
-}
-
-/// `JsonLdHelper#valid_activitypub_content_type?`: `application/activity+json`,
-/// or `application/ld+json` carrying the ActivityStreams profile — plain
-/// `application/ld+json` is some other JSON-LD document, not ours.
-fn valid_activitypub_content_type(content_type: &str) -> bool {
-    match mime_type(content_type).as_str() {
-        "application/activity+json" => true,
-        "application/ld+json" => content_type
-            .split(';')
-            .map(str::trim)
-            .any(|param| param == "profile=\"https://www.w3.org/ns/activitystreams\""),
-        _ => false,
-    }
 }
 
 /// `JsonLdHelper#supported_context?`.
@@ -341,17 +307,23 @@ mod tests {
 
     #[test]
     fn content_type_needs_the_activitystreams_profile() {
-        assert!(valid_activitypub_content_type("application/activity+json"));
-        assert!(valid_activitypub_content_type(
+        assert!(feder::fetch::is_activity_content_type(
+            "application/activity+json"
+        ));
+        assert!(feder::fetch::is_activity_content_type(
             "application/activity+json; charset=utf-8"
         ));
-        assert!(valid_activitypub_content_type(
+        assert!(feder::fetch::is_activity_content_type(
             "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
         ));
         // JSON-LD that is not ActivityStreams, and plain pages, are not objects.
-        assert!(!valid_activitypub_content_type("application/ld+json"));
-        assert!(!valid_activitypub_content_type("application/json"));
-        assert!(!valid_activitypub_content_type("text/html; charset=utf-8"));
+        assert!(!feder::fetch::is_activity_content_type(
+            "application/ld+json"
+        ));
+        assert!(!feder::fetch::is_activity_content_type("application/json"));
+        assert!(!feder::fetch::is_activity_content_type(
+            "text/html; charset=utf-8"
+        ));
     }
 
     #[test]
