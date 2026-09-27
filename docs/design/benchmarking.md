@@ -506,13 +506,120 @@ In order of what the measurements say they are worth:
     be measured.
 6.  **More machines,** placing tenants by measured memory rather than by count.
 
+Spikes
+======
+
+The benchmarks above hold a steady load. A spike is the other thing an instance
+meets: a sudden, bounded burst that it has to absorb and then recover from.
+`scripts/spike_viral_post.sh` runs the classic one — a local post goes viral,
+and thousands of remote actors the instance has never seen like, boost and
+reply to it within a few minutes.
+
+~~~~ sh
+cargo build --release --bin eunha --bin eunha-fedisim
+cargo install --locked inferno rustfilt
+scripts/spike_viral_post.sh
+~~~~
+
+The remote side is `eunha-fedisim`, one process that plays every remote
+server: `s<n>.fedisim.test`, each with its own actors. It serves their actor
+documents and notes when eunha fetches them, signs the activities they send
+with real RSA keys through feder, and sends them along a curve that rises to
+`EUNHA_SPIKE_PEAK_RPS` at `EUNHA_SPIKE_RISE_SECONDS` and then decays. Each
+actor likes, boosts and replies at most once. The load is open-loop: when eunha
+falls behind, activities beyond the in-flight limit are counted as shed rather
+than delayed, so the offered load stays what the curve says.
+
+Around the spike the script records, once a second, the inbox queue, database
+connections and lock waits, eunha's CPU and phys\_footprint, Redis's memory,
+and the latency a local user sees on their home timeline, the post's thread and
+their notifications.
+
+Memory is also taken whole at four moments: before the spike, when it ends,
+when the queue has drained, and after `EUNHA_SPIKE_COOLDOWN_SECONDS` idle. At
+each one it records eunha's footprint and, of its malloc zones, what is live and
+what is dirty but free. It also records the private memory of this database's
+PostgreSQL backends, Redis, and the database's size on disk. That last moment
+answers whether a spike's memory is ever given back. `vmmap` suspends the
+process it reads, so a latency probe that overlaps a snapshot is marked
+`(paused)` in *timeseries.csv* and left out of the summary.
+It takes a flamegraph at baseline, at the peak and during recovery, with
+macOS's `sample` — only stacks that were on CPU, demangled — and keeps the
+unfiltered stacks beside them. It then waits for the queue to drain and writes
+`summary.md` below `benchmark-results/`. Every knob is an `EUNHA_SPIKE_*`
+variable at the top of the script.
+
+### Nothing leaves the machine
+
+A spike is only safe to run against a copy of a real instance if nothing it
+provokes reaches the real fediverse, a push service or a mail provider. Three
+things make sure of that, and each run reports on all three:
+
+ -  **eunha's only proxy is the simulator.** Every HTTP client eunha has
+    honours `HTTP_PROXY` and `HTTPS_PROXY`, and the simulator answers only for
+    its own hosts. Any other request — every `https://` `CONNECT` included — is
+    refused and counted by host. Media storage points at the simulator too,
+    which accepts uploads and discards them.
+ -  **eunha and the simulator are sandboxed.** Both run under `sandbox-exec`
+    with outbound networking denied except loopback and PostgreSQL's socket.
+    Name resolution is denied too, as nothing needs it. Before starting, the
+    script checks that the sandbox really does refuse a request to the internet.
+ -  **Every socket is audited.** Once a second the script lists eunha's
+    sockets. A peer that is not loopback fails the run, and so does an audit
+    that never ran.
+
+The status that goes viral links to `https://example.com/`, as a canary: eunha
+fetches a preview for it, so the proxy's refusal count must show exactly that
+host. A canary that is not seen means the count cannot be trusted. Set
+`EUNHA_SPIKE_OFFLINE=0` to run without the sandbox.
+
+### Against a copy of a real instance
+
+Left alone, the script creates a database holding the other benchmarks' ten
+users. A copy of a real instance gives realistic table sizes and indexes. Make
+the copy with `eunha rehearse-migration` on the database host, and name it in
+`EUNHA_SPIKE_DATABASE`. The script refuses a name without `spike`, `clone` or
+`rehearsal` in it, because it deletes the copy's push subscriptions and adds an
+access token:
+
+~~~~ sh
+EUNHA_SPIKE_DATABASE=seoul_earth_spike EUNHA_SPIKE_DOMAIN=seoul.earth \
+  EUNHA_SPIKE_ACCOUNT=someone \
+  EUNHA_SPIKE_CONFIG_APPEND=encryption.toml \
+  scripts/spike_viral_post.sh
+~~~~
+
+`encryption.toml` holds only the instance's `[active_record_encryption]`
+table, which the copy needs to read its own signing keys.
+
+Spiking a copy on the production host still shares that host's CPU and its
+PostgreSQL server with the real instance. Run it somewhere else, or accept that
+the real instance will feel the spike too.
+
+### Driving it by hand
+
+The simulator can also be run on its own and spiked on demand, for watching an
+instance under load rather than measuring it. Start eunha with `HTTP_PROXY`
+and `HTTPS_PROXY` pointing at the simulator, as the script does, or it cannot
+reach the simulated servers:
+
+~~~~ sh
+eunha-fedisim --eunha http://127.0.0.1:3000 --domain example.test
+curl -X POST 127.0.0.1:18990/__spikes -d '{
+  "status_uri": "https://example.test/users/alice/statuses/1",
+  "author_uri": "https://example.test/users/alice",
+  "peak_rps": 200, "rise_seconds": 20, "duration_seconds": 120 }'
+curl 127.0.0.1:18990/__stats
+~~~~
+
 
 Not yet measured
 ----------------
 
  -  **Federation.** Inbound activities (signature verification, fetching remote
     actors) and outbound delivery fan-out are likely the largest CPU cost of a
-    well-connected instance, and none of this load includes them.
+    well-connected instance. The viral-post spike covers inbound activities
+    from actors seen for the first time. Outbound fan-out is not covered yet.
  -  **Media.** Image decoding and blurhash are CPU-bound and bursty.
  -  **Streaming.** What each open WebSocket costs.
  -  **Real data.** Every database here was empty.

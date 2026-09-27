@@ -33,6 +33,10 @@ path = "src/bin/generate_secrets.rs"
 name = "eunha-schema"
 path = "src/bin/schema.rs"
 
+[[bin]]
+name = "eunha-fedisim"
+path = "src/bin/fedisim.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.8", features = ["multipart", "macros", "ws"] }
