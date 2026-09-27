@@ -40,18 +40,10 @@ pub async fn fetch_remote_status_prefetched(
 const MAX_FETCH_DEPTH: u8 = 2;
 
 /// Whether two URIs name the same HTTP(S) host, which is how Mastodon decides
-/// whether an object's attribution can be believed.
+/// whether an object's attribution can be believed; for portable ids, the
+/// same DID, whose proof is what vouches for them.
 fn same_host(a: &str, b: &str) -> bool {
-    fn host(uri: &str) -> Option<String> {
-        let parsed = url::Url::parse(uri).ok()?;
-        matches!(parsed.scheme(), "http" | "https")
-            .then(|| parsed.host_str().map(str::to_ascii_lowercase))
-            .flatten()
-    }
-    match (host(a), host(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
+    crate::federation::portable::same_authority(a, b)
 }
 
 async fn fetch_remote_status_depth(
@@ -63,6 +55,11 @@ async fn fetch_remote_status_depth(
     if uri.is_empty() {
         return Ok(None);
     }
+    // Fetched by the id as given, hints and all, and stored and looked up by
+    // its canonical form.
+    let fetch_uri = uri;
+    let canonical = crate::federation::portable::canonical(uri);
+    let uri = canonical.as_str();
     if let Some(id) = sqlx::query_scalar!(
         "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
         uri,
@@ -75,7 +72,7 @@ async fn fetch_remote_status_depth(
 
     let fetched: Value = match prefetched {
         Some(json) => json,
-        None => match crate::federation::fetch::signed_get_json(state, uri).await {
+        None => match crate::federation::fetch::signed_get_json(state, fetch_uri).await {
             Ok(v) => v,
             Err(_) => return Ok(None),
         },
@@ -334,6 +331,11 @@ async fn resolve_or_fetch_remote_account_inner(
     actor_uri: &str,
     prefetched: Option<Value>,
 ) -> AppResult<i64> {
+    // A portable actor is fetched by the id as given, whose location hints
+    // say where, and known by its canonical id.
+    let fetch_uri = actor_uri;
+    let canonical = crate::federation::portable::canonical(actor_uri);
+    let actor_uri = canonical.as_str();
     // An actor URI on our own domain is a *local* account, not a remote one.
     // Resolve it directly (local accounts store an empty `uri`, so the lookup
     // below would miss it) rather than signed-fetching our own actor endpoint,
@@ -388,19 +390,23 @@ async fn resolve_or_fetch_remote_account_inner(
 
     let actor: Value = match prefetched {
         Some(json) => json,
-        None => crate::federation::fetch::signed_get_json(state, actor_uri)
+        None => crate::federation::fetch::signed_get_json(state, fetch_uri)
             .await
             .map_err(AppError::Internal)?,
     };
+    let portable = crate::federation::portable::reach(&actor);
 
     let username = actor
         .get("preferredUsername")
         .and_then(|u| u.as_str())
         .unwrap_or("unknown");
-    let domain = url::Url::parse(actor_uri)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .unwrap_or_default();
+    let domain = match &portable {
+        Some(reach) => reach.domain.clone(),
+        None => url::Url::parse(actor_uri)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default(),
+    };
     let display_name = actor
         .get("name")
         .and_then(|n| n.as_str())
@@ -435,6 +441,12 @@ async fn resolve_or_fetch_remote_account_inner(
     .and_then(|s| s.as_str())
     .unwrap_or("")
     .to_string();
+    // A portable actor's endpoints are `ap` ids too; it is reached at its
+    // first gateway.
+    let (inbox_url, outbox_url, shared_inbox_url) = match portable {
+        Some(reach) => (reach.inbox, reach.outbox, reach.shared_inbox),
+        None => (inbox_url, outbox_url, shared_inbox_url),
+    };
     let public_key = actor
         .get("publicKey")
         .and_then(|k| k.get("publicKeyPem"))

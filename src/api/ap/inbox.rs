@@ -44,12 +44,10 @@ pub(super) fn as_string_vec(v: Option<&Value>) -> Vec<String> {
     }
 }
 
-/// Returns true when the two URI strings share the same host.
+/// Returns true when the two URI strings share the same host, or for
+/// portable ids the same DID.
 pub(super) fn same_host(a: &str, b: &str) -> bool {
-    match (url::Url::parse(a), url::Url::parse(b)) {
-        (Ok(ua), Ok(ub)) => ua.host_str() == ub.host_str(),
-        _ => false,
-    }
+    crate::federation::portable::same_authority(a, b)
 }
 
 /// TTL of a "delete arrived first" tombstone, matching Mastodon's 6 hours.
@@ -206,6 +204,22 @@ pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
     // the sender's connection: it is queued, as Mastodon's
     // ActivityPub::ProcessingWorker does. Tests opt into inline processing so
     // they can assert on the result without racing the worker.
+    // A portable actor is named with the gateways it can be fetched from,
+    // and known by its canonical id: it is fetched now, while the hints are
+    // there, and every handler after sees the canonical id.
+    let mut activity = activity;
+    let actor_uri = if feder_core::portable::ApUri::parse(&actor_uri).is_some() {
+        if let Err(error) = resolve_or_fetch_remote_account(state, &actor_uri).await {
+            tracing::warn!(actor_uri, %error, "could not fetch a portable actor");
+        }
+        let canonical = crate::federation::portable::canonical(&actor_uri);
+        if activity.get("actor").is_some_and(Value::is_string) {
+            activity["actor"] = Value::String(canonical.clone());
+        }
+        canonical
+    } else {
+        actor_uri
+    };
     if !sync_ingress() {
         return enqueue_activity(state, &activity_type, &actor_uri, &activity).await;
     }

@@ -15,8 +15,7 @@ use vocab::{AnyActor, AnyObject, Iri};
 use super::activity::with_context;
 
 fn iri(s: &str) -> anyhow::Result<Iri> {
-    s.parse::<Iri>()
-        .map_err(|e| anyhow::anyhow!("invalid ActivityPub IRI {s:?}: {e}"))
+    crate::federation::portable::iri(s)
 }
 
 fn object_iri(s: &str) -> anyhow::Result<AnyObject> {

@@ -15,8 +15,7 @@ use vocab::{AnyActor, AnyObject, Iri};
 pub const AS_PUBLIC: &str = vocab::ACTIVITYSTREAMS_PUBLIC;
 
 fn iri(s: &str) -> anyhow::Result<Iri> {
-    s.parse::<Iri>()
-        .map_err(|e| anyhow::anyhow!("invalid ActivityPub IRI {s:?}: {e}"))
+    crate::federation::portable::iri(s)
 }
 
 fn object_iri(s: &str) -> anyhow::Result<AnyObject> {

@@ -248,9 +248,9 @@ pub(super) async fn handle_follow(
     // Decide what to do via feder-core's portable inbound logic; eunha executes
     // the returned Actions against Postgres + delivery.
     let (Ok(follow_id), Ok(actor_iri), Ok(object_iri)) = (
-        activity_uri.parse::<feder_vocab::Iri>(),
-        actor_uri.parse::<feder_vocab::Iri>(),
-        object_uri.parse::<feder_vocab::Iri>(),
+        crate::federation::portable::iri(activity_uri),
+        crate::federation::portable::iri(actor_uri),
+        crate::federation::portable::iri(object_uri),
     ) else {
         return Ok(());
     };

@@ -133,3 +133,167 @@ async fn test_first_contact_fetches_the_actor_once() {
 async fn test_actor_without_shared_inbox_is_accepted() {
     follow_from_new_actor("no-shared-inbox", false).await;
 }
+
+/// A gateway serving one portable actor (FEP-ef61), recording what is
+/// delivered to its inbox.
+async fn spawn_gateway(
+    signer: &feder::portable::Ed25519Signer,
+) -> (String, Arc<std::sync::Mutex<Vec<Value>>>) {
+    use feder::portable::ProofSigner;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gateway = format!("http://{}", listener.local_addr().unwrap());
+    let did = signer.did().to_owned();
+    let actor = json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/data-integrity/v1",
+            "https://w3id.org/fep/ef61"
+        ],
+        "id": format!("ap://{did}/actor"),
+        "type": "Person",
+        "preferredUsername": "portable",
+        "inbox": format!("ap://{did}/actor/inbox"),
+        "outbox": format!("ap://{did}/actor/outbox"),
+        "gateways": [gateway],
+    });
+    let actor = signer.prove(&actor).await.unwrap();
+    let delivered = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = Router::new()
+        .route(
+            &format!("/.well-known/apgateway/{did}/actor"),
+            get(move || async move {
+                (
+                    [(
+                        "content-type",
+                        "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"",
+                    )],
+                    actor.to_string(),
+                )
+            }),
+        )
+        .route(
+            &format!("/.well-known/apgateway/{did}/actor/inbox"),
+            axum::routing::post(
+                |State(delivered): State<Arc<std::sync::Mutex<Vec<Value>>>>,
+                 body: axum::body::Bytes| async move {
+                    delivered
+                        .lock()
+                        .unwrap()
+                        .push(serde_json::from_slice(&body).unwrap());
+                    axum::http::StatusCode::ACCEPTED
+                },
+            ),
+        )
+        .with_state(delivered.clone());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (gateway, delivered)
+}
+
+/// A portable actor follows a local account: it is authenticated by its
+/// proof alone, fetched from the gateway its id hints at, stored by its
+/// canonical id with the gateway as its domain, and reached at the gateway.
+#[tokio::test]
+async fn test_a_portable_actor_follows() {
+    use feder::portable::{Ed25519Signer, ProofSigner};
+
+    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
+        .parse()
+        .unwrap()]);
+    let ctx = TestContext::new("portable-follow").await;
+    // Only an account with a signing key answers a Follow.
+    let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    sqlx::query(
+        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    )
+    .bind(&private_pem)
+    .bind(&public_pem)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let signer = Ed25519Signer::generate();
+    let (gateway, _delivered) = spawn_gateway(&signer).await;
+    let did = signer.did();
+    let hinted = format!(
+        "ap://{did}/actor?@gateway={}",
+        gateway.replace(':', "%3A").replace('/', "%2F")
+    );
+    let follow = signer
+        .prove(&json!({
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/security/data-integrity/v1"
+            ],
+            "id": format!("ap://{did}/follows/1"),
+            "type": "Follow",
+            "actor": hinted,
+            "object": format!("https://{}/users/alice", ctx.domain),
+        }))
+        .await
+        .unwrap();
+
+    let resp = ctx.api.post_json("/inbox", None, &follow).await;
+    let status = resp.status();
+    assert!(
+        status.is_success(),
+        "inbox refused: {status} {}",
+        resp.text().await.unwrap_or_default()
+    );
+
+    let canonical = format!("ap://{did}/actor");
+    let row = sqlx::query_as::<_, (Option<String>, String, String)>(
+        "SELECT domain, inbox_url, username FROM accounts WHERE uri = $1",
+    )
+    .bind(&canonical)
+    .fetch_optional(&ctx.db)
+    .await
+    .unwrap()
+    .expect("the portable actor is stored by its canonical id");
+    let host = gateway.trim_start_matches("http://");
+    let host = host.split(':').next().unwrap();
+    assert_eq!(row.0.as_deref(), Some(host));
+    assert_eq!(
+        row.1,
+        format!("{gateway}/.well-known/apgateway/{did}/actor/inbox")
+    );
+    assert_eq!(row.2, "portable");
+    let follows = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.account_id WHERE a.uri = $1",
+    )
+    .bind(&canonical)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(follows, 1, "the follow landed");
+
+    // The Accept goes to the portable actor's inbox at its gateway: queued
+    // for the gateway's URL, or already delivered there.
+    let queued = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM eunha.feder_queue WHERE payload->>'inbox' = $1",
+    )
+    .bind(format!("{gateway}/.well-known/apgateway/{did}/actor/inbox"))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let delivered = _delivered.lock().unwrap().clone();
+    assert!(
+        queued == 1 || delivered.iter().any(|a| a["type"] == "Accept"),
+        "the Accept is neither queued for the gateway nor delivered: {delivered:?}; queued: {:?}",
+        sqlx::query_scalar::<_, String>("SELECT payload::text FROM eunha.feder_queue")
+            .fetch_all(&ctx.db)
+            .await
+            .unwrap()
+    );
+    if let Some(accept) = delivered.iter().find(|a| a["type"] == "Accept") {
+        assert_eq!(accept["object"]["actor"], canonical.as_str());
+    }
+
+    // Signed by another key, it is refused.
+    let mallory = Ed25519Signer::generate();
+    let mut forged = follow.clone();
+    forged.as_object_mut().unwrap().remove("proof");
+    forged["id"] = json!(format!("ap://{did}/follows/2"));
+    let forged = mallory.prove(&forged).await.unwrap();
+    let resp = ctx.api.post_json("/inbox", None, &forged).await;
+    assert_eq!(resp.status(), 401);
+}

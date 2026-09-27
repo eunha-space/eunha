@@ -7,6 +7,7 @@ pub mod handle;
 pub mod instance_actor;
 pub mod keypair;
 pub mod moderation;
+pub mod portable;
 pub mod safe_fetch;
 pub mod signature;
 pub mod tag;
