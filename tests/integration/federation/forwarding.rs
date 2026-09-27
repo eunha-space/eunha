@@ -163,9 +163,14 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
     .await
     .unwrap();
 
-    let dry = eunha::accounts::update_profiles(&ctx.state, &eunha::accounts::Selection::All, true)
-        .await
-        .unwrap();
+    let dry = eunha::accounts::update_profiles(
+        &ctx.state,
+        &eunha::accounts::Selection::All,
+        &Default::default(),
+        true,
+    )
+    .await
+    .unwrap();
     assert_eq!(dry.sent, vec![("alice".to_owned(), 1)]);
     assert!(
         queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty(),
@@ -176,10 +181,14 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
         "bob cannot sign"
     );
 
-    let report =
-        eunha::accounts::update_profiles(&ctx.state, &eunha::accounts::Selection::All, false)
-            .await
-            .unwrap();
+    let report = eunha::accounts::update_profiles(
+        &ctx.state,
+        &eunha::accounts::Selection::All,
+        &Default::default(),
+        false,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         report.sent,
         vec![("alice".to_owned(), 1)],
@@ -199,6 +208,7 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
     let report = eunha::accounts::update_profiles(
         &ctx.state,
         &eunha::accounts::Selection::Usernames(vec!["alice".into(), "nobody".into()]),
+        &Default::default(),
         false,
     )
     .await
@@ -267,21 +277,40 @@ async fn test_followers_are_moved_from_a_previous_domain() {
 
     // A domain the instance never had is refused before anything is sent.
     let selection = eunha::accounts::Selection::All;
-    assert!(
-        eunha::accounts::move_followers(&ctx.state, &selection, "elsewhere.invalid", false)
-            .await
-            .is_err()
-    );
+    assert!(eunha::accounts::move_followers(
+        &ctx.state,
+        &selection,
+        "elsewhere.invalid",
+        &Default::default(),
+        false
+    )
+    .await
+    .is_err());
 
-    let dry = eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, true)
-        .await
-        .unwrap();
+    let dry = eunha::accounts::move_followers(
+        &ctx.state,
+        &selection,
+        &old_domain,
+        &Default::default(),
+        true,
+    )
+    .await
+    .unwrap();
     assert_eq!(dry.sent, vec![("alice".to_owned(), 1)]);
     assert!(queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty());
 
-    eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, false)
+    let batch = feder::deliverer::Batch {
+        tag: Some("move:test".into()),
+        deadline: Some(std::time::SystemTime::now() + std::time::Duration::from_secs(3600)),
+    };
+    eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, &batch, false)
         .await
         .unwrap();
+    let status = eunha::accounts::batch_status(&ctx.db, "move:test")
+        .await
+        .unwrap();
+    assert_eq!(status.pending, 1, "the Move to nina is followed by its tag");
+    assert!(status.failed.is_empty());
     let queued: Vec<(Value, String)> = sqlx::query_as(
         "SELECT payload->'activity', payload->>'sender' FROM eunha.feder_queue
          WHERE queue = 'delivery' AND payload->>'inbox' = $1",

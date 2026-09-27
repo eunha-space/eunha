@@ -319,6 +319,7 @@ pub async fn distribute_profile(
     state: &crate::state::AppState,
     domain: &str,
     account: &crate::db::models::Account,
+    batch: Option<&feder::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     if account.domain.is_some()
         || !crate::federation::keypair::has_signing_key(state, account.id)
@@ -339,13 +340,18 @@ pub async fn distribute_profile(
     );
     let activity = crate::federation::activity::update_actor(&update_id, &actor_url, actor)?;
     let inboxes = crate::federation::delivery::account_reach_inboxes(state, account.id).await?;
-    crate::federation::delivery::deliver_to_inboxes(
-        state,
-        activity,
-        inboxes,
-        format!("{actor_url}#main-key"),
-    )
-    .await
+    let key_id = format!("{actor_url}#main-key");
+    match batch {
+        Some(batch) => {
+            crate::federation::delivery::deliver_to_inboxes_in_batch(
+                state, activity, inboxes, key_id, batch,
+            )
+            .await
+        }
+        None => {
+            crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await
+        }
+    }
 }
 
 /// Which local accounts a batch acts on.
@@ -400,6 +406,7 @@ pub async fn select(
 pub async fn update_profiles(
     state: &crate::state::AppState,
     selection: &Selection,
+    batch: &feder::deliverer::Batch,
     dry_run: bool,
 ) -> anyhow::Result<BatchReport> {
     let (accounts, unknown) = select(&state.db, selection).await?;
@@ -423,7 +430,7 @@ pub async fn update_profiles(
                 .await?
                 .len() as u64
         } else {
-            distribute_profile(state, &domain, account).await?
+            distribute_profile(state, &domain, account, Some(batch)).await?
         };
         report.sent.push((account.username.clone(), queued));
     }
@@ -446,6 +453,7 @@ pub async fn move_followers(
     state: &crate::state::AppState,
     selection: &Selection,
     from: &str,
+    batch: &feder::deliverer::Batch,
     dry_run: bool,
 ) -> anyhow::Result<BatchReport> {
     anyhow::ensure!(
@@ -492,12 +500,44 @@ pub async fn move_followers(
                 activity,
                 account.id,
                 format!("{old}#main-key"),
+                Some(batch),
             )
             .await?
         };
         report.sent.push((account.username.clone(), queued));
     }
     Ok(report)
+}
+
+/// Where a batch's deliveries stand: how many are still to be tried, and
+/// which were given up on and why. A delivery that went through leaves the
+/// queue, so what a batch queued less these is what was delivered.
+#[derive(Debug, Default)]
+pub struct BatchStatus {
+    pub pending: u64,
+    pub failed: Vec<(String, String)>,
+}
+
+/// Where the deliveries tagged `tag` stand.
+pub async fn batch_status(db: &sqlx::PgPool, tag: &str) -> anyhow::Result<BatchStatus> {
+    let rows: Vec<(String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT payload->>'inbox', failed_at IS NOT NULL, last_error
+         FROM eunha.feder_queue
+         WHERE queue = 'delivery' AND payload->>'tag' = $1
+         ORDER BY id",
+    )
+    .bind(tag)
+    .fetch_all(db)
+    .await?;
+    let mut status = BatchStatus::default();
+    for (inbox, failed, error) in rows {
+        if failed {
+            status.failed.push((inbox, error.unwrap_or_default()));
+        } else {
+            status.pending += 1;
+        }
+    }
+    Ok(status)
 }
 
 #[cfg(test)]

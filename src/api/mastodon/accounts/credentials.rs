@@ -533,7 +533,7 @@ async fn do_update_credentials(
 }
 
 async fn distribute_account_update(state: &AppState, domain: &str, account: &Account) {
-    if let Err(e) = crate::accounts::distribute_profile(state, domain, account).await {
+    if let Err(e) = crate::accounts::distribute_profile(state, domain, account, None).await {
         tracing::warn!(error = %e, "failed to enqueue account Update fanout");
     }
 }

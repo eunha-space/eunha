@@ -176,6 +176,15 @@ enum AccountsCommand {
         /// Say what would be sent, and to how many inboxes, sending nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Give up on a delivery that has not gone through by then, so that
+        /// a server that is down or too slow does not hold the batch open:
+        /// `90s`, `30m`, `1h`, `2d`.
+        #[arg(long, value_name = "DURATION", default_value = "1h", value_parser = parse_duration)]
+        give_up_after: std::time::Duration,
+        /// Stay until every delivery has gone through or been given up on,
+        /// then list what was given up on.
+        #[arg(long)]
+        wait: bool,
         /// With `--tenants`, the instance, by its domain or one of its
         /// aliases.
         #[arg(long, value_name = "HOST")]
@@ -208,6 +217,24 @@ enum AccountsCommand {
         /// Say what would be sent, and to how many inboxes, sending nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Give up on a delivery that has not gone through by then, so that
+        /// a server that is down or too slow does not hold the batch open:
+        /// `90s`, `30m`, `1h`, `2d`.
+        #[arg(long, value_name = "DURATION", default_value = "1h", value_parser = parse_duration)]
+        give_up_after: std::time::Duration,
+        /// Stay until every delivery has gone through or been given up on,
+        /// then list what was given up on.
+        #[arg(long)]
+        wait: bool,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
+    /// Where a batch sent by `accounts update` or `accounts move` stands.
+    BatchStatus {
+        /// The batch's tag, as the command that sent it printed it.
+        tag: String,
         /// With `--tenants`, the instance, by its domain or one of its
         /// aliases.
         #[arg(long, value_name = "HOST")]
@@ -293,6 +320,8 @@ async fn main() -> anyhow::Result<()> {
                     all,
                     username,
                     dry_run,
+                    give_up_after,
+                    wait,
                     instance,
                 },
         }) => {
@@ -304,8 +333,9 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 accounts::Selection::Usernames(username)
             };
-            let report = accounts::update_profiles(&state, &selection, dry_run).await?;
-            print_batch(&report, dry_run)?;
+            let (tag, batch) = batch("update", give_up_after);
+            let report = accounts::update_profiles(&state, &selection, &batch, dry_run).await?;
+            finish_batch(&state.db, &tag, &report, dry_run, wait).await?;
             return Ok(());
         }
         Some(Command::Accounts {
@@ -315,6 +345,8 @@ async fn main() -> anyhow::Result<()> {
                     all,
                     username,
                     dry_run,
+                    give_up_after,
+                    wait,
                     instance,
                 },
         }) => {
@@ -326,8 +358,18 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 accounts::Selection::Usernames(username)
             };
-            let report = accounts::move_followers(&state, &selection, &from, dry_run).await?;
-            print_batch(&report, dry_run)?;
+            let (tag, batch) = batch("move", give_up_after);
+            let report =
+                accounts::move_followers(&state, &selection, &from, &batch, dry_run).await?;
+            finish_batch(&state.db, &tag, &report, dry_run, wait).await?;
+            return Ok(());
+        }
+        Some(Command::Accounts {
+            command: AccountsCommand::BatchStatus { tag, instance },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database(&config).await?;
+            print_status(&accounts::batch_status(&db, &tag).await?);
             return Ok(());
         }
         Some(Command::ImportMastodon {
@@ -642,6 +684,87 @@ fn print_batch(report: &accounts::BatchReport, dry_run: bool) -> anyhow::Result<
         "some usernames are not local accounts"
     );
     Ok(())
+}
+
+/// A new batch of `kind`, tagged to be followed, given up on after
+/// `give_up_after`.
+fn batch(kind: &str, give_up_after: std::time::Duration) -> (String, feder::deliverer::Batch) {
+    let tag = format!("{kind}:{}", eunha::snowflake::next_id());
+    let batch = feder::deliverer::Batch {
+        tag: Some(tag.clone()),
+        deadline: Some(std::time::SystemTime::now() + give_up_after),
+    };
+    (tag, batch)
+}
+
+/// Report a batch, and with `wait`, follow it until nothing is pending.
+async fn finish_batch(
+    db: &sqlx::PgPool,
+    tag: &str,
+    report: &accounts::BatchReport,
+    dry_run: bool,
+    wait: bool,
+) -> anyhow::Result<()> {
+    print_batch(report, dry_run)?;
+    if dry_run {
+        return Ok(());
+    }
+    println!("Batch {tag}; `eunha accounts batch-status {tag}` says where it stands");
+    if !wait {
+        return Ok(());
+    }
+    let mut last = None;
+    loop {
+        let status = accounts::batch_status(db, tag).await?;
+        let now = (status.pending, status.failed.len());
+        if last != Some(now) {
+            println!("{} pending, {} given up on", now.0, now.1);
+            last = Some(now);
+        }
+        if status.pending == 0 {
+            print_status(&status);
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    }
+}
+
+fn print_status(status: &accounts::BatchStatus) {
+    println!(
+        "{} pending, {} given up on",
+        status.pending,
+        status.failed.len()
+    );
+    for (inbox, error) in &status.failed {
+        let error: String = error
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(120)
+            .collect();
+        println!("  {inbox}: {error}");
+    }
+}
+
+/// `90s`, `30m`, `1h` or `2d`; a bare number is seconds.
+fn parse_duration(text: &str) -> Result<std::time::Duration, String> {
+    let text = text.trim();
+    let (number, unit) = match text.find(|c: char| !c.is_ascii_digit()) {
+        Some(split) => text.split_at(split),
+        None => (text, "s"),
+    };
+    let number: u64 = number
+        .parse()
+        .map_err(|_| format!("{text:?} is not a duration such as 30m or 1h"))?;
+    let seconds = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86400,
+        _ => return Err(format!("{text:?} is not a duration such as 30m or 1h")),
+    };
+    Ok(std::time::Duration::from_secs(number * seconds))
 }
 
 fn command_config(

@@ -204,7 +204,7 @@ pub async fn forward_to_followers(
     key_id: String,
 ) -> anyhow::Result<u64> {
     let inboxes = follower_inboxes(state, account_id).await?;
-    enqueue(state, activity, inboxes, key_id, false).await
+    enqueue(state, activity, inboxes, key_id, false, None).await
 }
 
 /// Send `activity` to the remote followers of `account_id`, signed with
@@ -216,9 +216,10 @@ pub async fn fanout_to_followers_unproven(
     activity: Value,
     account_id: i64,
     key_id: String,
+    batch: Option<&feder::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     let inboxes = follower_inboxes(state, account_id).await?;
-    enqueue(state, activity, inboxes, key_id, false).await
+    enqueue(state, activity, inboxes, key_id, false, batch).await
 }
 
 /// The inboxes of `actor_account_id`'s remote followers, a shared inbox once
@@ -444,6 +445,18 @@ pub async fn deliver_to_inboxes(
     enqueue_to_inboxes(state, activity, inboxes, key_id).await
 }
 
+/// [`deliver_to_inboxes`], in `batch`: tagged, and given up on at its
+/// deadline, so that a batch of many accounts finishes.
+pub async fn deliver_to_inboxes_in_batch(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+    batch: &feder::deliverer::Batch,
+) -> anyhow::Result<u64> {
+    enqueue(state, activity, inboxes, key_id, true, Some(batch)).await
+}
+
 /// Resolve the local signing account id from a `key_id` of the form
 /// `{actor_url}#main-key`. The actor URL follows the account's id_scheme — either
 /// `https://{domain}/users/{username}` or `https://{domain}/ap/users/{id}`
@@ -500,7 +513,7 @@ async fn enqueue_to_inboxes(
     inboxes: Vec<String>,
     key_id: String,
 ) -> anyhow::Result<u64> {
-    enqueue(state, activity, inboxes, key_id, true).await
+    enqueue(state, activity, inboxes, key_id, true, None).await
 }
 
 /// Queue `activity` for `inboxes`, signed by `key_id`'s account, with that
@@ -511,6 +524,7 @@ async fn enqueue(
     inboxes: Vec<String>,
     key_id: String,
     prove: bool,
+    batch: Option<&feder::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     // Record the signing account, not its private key: the key is loaded from
     // `accounts` at send time so the secret lives in exactly one place.
@@ -563,7 +577,12 @@ async fn enqueue(
     let queued = urls.len() as u64;
     state
         .deliverer
-        .send(&key_id, &activity, urls)
+        .send_batch(
+            &key_id,
+            &activity,
+            urls,
+            batch.unwrap_or(&Default::default()),
+        )
         .await
         .map_err(|e| anyhow::anyhow!("queueing deliveries: {e}"))?;
 
