@@ -40,6 +40,29 @@ pub(super) async fn handle_create(
         return Ok(());
     }
 
+    // An embedded note is its sender's to vouch for only when it is on the
+    // sender's origin and says the sender wrote it. Anything else is fetched
+    // from where its id says it lives, and trusted as that server serves it:
+    // otherwise any server could store a note under someone else's URI, which
+    // the real one could then never take.
+    let attributed: Vec<&str> = match object.get("attributedTo") {
+        Some(Value::String(uri)) => vec![uri.as_str()],
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| item.as_str().or_else(|| item.get("id")?.as_str()))
+            .collect(),
+        Some(item @ Value::Object(_)) => {
+            item.get("id").and_then(Value::as_str).into_iter().collect()
+        }
+        _ => Vec::new(),
+    };
+    if !feder_core::origin::same_origin(note_uri, actor_uri)
+        || (!attributed.is_empty() && !attributed.contains(&actor_uri))
+    {
+        let _ = fetch_remote_status(state, note_uri).await?;
+        return Ok(());
+    }
+
     // Serialize against a concurrent Delete for this uri so its `delete_later`
     // can't slip in between the check below and our insert. Held for the whole
     // creation (released when this guard drops on return).

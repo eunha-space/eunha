@@ -478,6 +478,16 @@ pub(super) async fn handle_update(
             if actor_uri.is_empty() {
                 return Ok(());
             }
+            // An actor updates itself and nobody else. Without this, any server
+            // could rewrite any account's profile and public key, and then sign
+            // as that account.
+            if Some(actor_uri) != activity.get("actor").and_then(|a| a.as_str()) {
+                tracing::warn!(
+                    object = actor_uri,
+                    "refused an Update of an actor other than its sender"
+                );
+                return Ok(());
+            }
 
             let display_name = object
                 .get("name")
@@ -591,6 +601,11 @@ pub(super) async fn handle_update(
                    SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,
                        edited_at = COALESCE($6, edited_at), updated_at = now()
                    WHERE uri = $1 AND deleted_at IS NULL
+                     -- Only the sender's own status: any server could
+                     -- otherwise rewrite any status it named.
+                     AND account_id = (
+                         SELECT id FROM accounts WHERE uri = $7 AND domain IS NOT NULL
+                     )
                    RETURNING id, account_id"#,
                 note_uri,
                 text,
@@ -598,6 +613,10 @@ pub(super) async fn handle_update(
                 sensitive,
                 language,
                 edited_at,
+                activity
+                    .get("actor")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or_default(),
             )
             .fetch_optional(&state.db)
             .await?;

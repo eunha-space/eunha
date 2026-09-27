@@ -8,6 +8,7 @@ mod instance_actor;
 mod integrity_proofs;
 mod keypairs;
 mod objects;
+mod ownership;
 mod quote;
 mod serving;
 mod signature;
