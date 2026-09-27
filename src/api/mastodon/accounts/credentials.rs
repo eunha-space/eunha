@@ -533,40 +533,7 @@ async fn do_update_credentials(
 }
 
 async fn distribute_account_update(state: &AppState, domain: &str, account: &Account) {
-    if !crate::federation::keypair::has_signing_key(state, account.id)
-        .await
-        .unwrap_or(false)
-    {
-        return;
-    }
-    if account.domain.is_some() {
-        return;
-    }
-    let actor_url = crate::federation::tag::account_uri_of(domain, account);
-    let Ok(actor) = crate::api::ap::objects::actor_json(state, domain, account).await else {
-        return;
-    };
-    let update_id = format!(
-        "{}#updates/{}",
-        actor_url,
-        account.updated_at.and_utc().timestamp()
-    );
-    let Ok(activity) = crate::federation::activity::update_actor(&update_id, &actor_url, actor)
-    else {
-        return;
-    };
-    let key_id = format!("{}#main-key", actor_url);
-    let inboxes = match crate::federation::delivery::account_reach_inboxes(state, account.id).await
-    {
-        Ok(inboxes) => inboxes,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to compute account Update reach");
-            return;
-        }
-    };
-    if let Err(e) =
-        crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await
-    {
+    if let Err(e) = crate::accounts::distribute_profile(state, domain, account).await {
         tracing::warn!(error = %e, "failed to enqueue account Update fanout");
     }
 }

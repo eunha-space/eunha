@@ -153,6 +153,22 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    /// Send local accounts' profiles to the servers that know them.
+    ///
+    /// What editing a profile does, for every account at once: each goes out
+    /// as an `Update` of its actor to its followers' servers and the others
+    /// that know it. Other servers keep the avatar and header URLs they last
+    /// saw, so after an instance's media has moved, this is what tells them
+    /// where it went. Deliveries are queued for the running server to send.
+    Distribute {
+        /// Only this account.
+        #[arg(long)]
+        username: Option<String>,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
     /// Modify a user account.
     ///
     /// `tootctl accounts modify`, of which eunha implements `--reset-password`.
@@ -225,6 +241,17 @@ async fn main() -> anyhow::Result<()> {
             let password = accounts::reset_password(&db, &username).await?;
             println!("OK");
             println!("New password: {password}");
+            return Ok(());
+        }
+        Some(Command::Accounts {
+            command: AccountsCommand::Distribute { username, instance },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database(&config).await?;
+            let state = eunha::state::AppState::new(db, config).await?;
+            let (accounts, inboxes) =
+                accounts::distribute_profiles(&state, username.as_deref()).await?;
+            println!("Queued {accounts} profiles for {inboxes} inboxes");
             return Ok(());
         }
         Some(Command::ImportMastodon {

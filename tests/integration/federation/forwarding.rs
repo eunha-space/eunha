@@ -124,3 +124,57 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
     assert!(resp.status().is_success());
     assert_eq!(queued_for(&ctx, &nina_inbox).await.len(), before + 1);
 }
+
+/// Every local profile can be sent again to the servers that know it, with
+/// the avatar where it is now: other servers keep the URL they last saw, and
+/// after an instance's media has moved, that URL is gone.
+#[tokio::test]
+async fn test_profiles_are_distributed_with_their_avatar() {
+    let ctx = TestContext::new("distribute-profiles").await;
+    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    sqlx::query(
+        "UPDATE accounts SET private_key = $1, public_key = $2,
+             avatar_file_name = 'face.png', avatar_content_type = 'image/png',
+             avatar_storage_schema_version = 1
+         WHERE username = 'alice' AND domain IS NULL",
+    )
+    .bind(&priv_pem)
+    .bind(&pub_pem)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let alice_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'alice' AND domain IS NULL")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let (nina_id, nina, _) = seed_remote(&ctx, "nina", "nina.invalid").await;
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(nina_id)
+    .bind(alice_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let (accounts, inboxes) = eunha::accounts::distribute_profiles(&ctx.state, None)
+        .await
+        .unwrap();
+    assert_eq!((accounts, inboxes), (1, 1), "alice alone can sign, to nina");
+
+    let queued = queued_for(&ctx, &format!("{nina}/inbox")).await;
+    let update = queued.last().expect("an Update is queued for nina");
+    assert_eq!(update["type"], "Update");
+    let icon = update["object"]["icon"]["url"].as_str().unwrap_or_default();
+    assert!(icon.ends_with("/face.png"), "the avatar where it is now: {icon}");
+
+    // Sent twice, it is two activities: a server drops an id it has seen.
+    eunha::accounts::distribute_profiles(&ctx.state, Some("alice"))
+        .await
+        .unwrap();
+    let queued = queued_for(&ctx, &format!("{nina}/inbox")).await;
+    assert_ne!(queued[queued.len() - 1]["id"], queued[queued.len() - 2]["id"]);
+}

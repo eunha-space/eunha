@@ -324,3 +324,69 @@ mod tests {
         assert!(!valid_email("owner%relay@example.com"));
     }
 }
+
+/// Send `account`'s profile, as an `Update` of its actor, to every server
+/// that knows it: its followers', and the others Mastodon's reach finder
+/// counts. What an edit to the profile does, and what tells other servers
+/// where its avatar and header now are after the media has moved. Returns
+/// how many inboxes it was queued for; nothing for an account that cannot
+/// sign or is not local.
+pub async fn distribute_profile(
+    state: &crate::state::AppState,
+    domain: &str,
+    account: &crate::db::models::Account,
+) -> anyhow::Result<u64> {
+    if account.domain.is_some()
+        || !crate::federation::keypair::has_signing_key(state, account.id)
+            .await
+            .unwrap_or(false)
+    {
+        return Ok(0);
+    }
+    let actor_url = crate::federation::tag::account_uri_of(domain, account);
+    let actor = crate::api::ap::objects::actor_json(state, domain, account)
+        .await
+        .map_err(|e| anyhow::anyhow!("building the actor: {e:?}"))?;
+    // A new id each time: a server that has seen an activity's id drops it
+    // again, and this may be sent twice for one profile.
+    let update_id = format!(
+        "{actor_url}#updates/{}",
+        chrono::Utc::now().timestamp_millis()
+    );
+    let activity = crate::federation::activity::update_actor(&update_id, &actor_url, actor)?;
+    let inboxes = crate::federation::delivery::account_reach_inboxes(state, account.id).await?;
+    crate::federation::delivery::deliver_to_inboxes(
+        state,
+        activity,
+        inboxes,
+        format!("{actor_url}#main-key"),
+    )
+    .await
+}
+
+/// [`distribute_profile`] for every local account that is not suspended, or
+/// the one named `username`. Returns how many accounts and inboxes.
+pub async fn distribute_profiles(
+    state: &crate::state::AppState,
+    username: Option<&str>,
+) -> anyhow::Result<(u64, u64)> {
+    let accounts: Vec<crate::db::models::Account> = sqlx::query_as(
+        "SELECT * FROM accounts
+         WHERE domain IS NULL AND id > 0 AND suspended_at IS NULL
+           AND ($1::text IS NULL OR username = $1)
+         ORDER BY id",
+    )
+    .bind(username)
+    .fetch_all(&state.db)
+    .await?;
+    let domain = state.instance.domain.clone();
+    let (mut sent, mut inboxes) = (0, 0);
+    for account in &accounts {
+        let queued = distribute_profile(state, &domain, account).await?;
+        if queued > 0 {
+            sent += 1;
+            inboxes += queued;
+        }
+    }
+    Ok((sent, inboxes))
+}
