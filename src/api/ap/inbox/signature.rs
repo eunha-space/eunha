@@ -295,7 +295,26 @@ async fn fetch_public_key(state: &AppState, actor_url: &str) -> anyhow::Result<S
         return Ok(pem);
     }
 
-    refresh_public_key(state, actor_url).await
+    // Seen for the first time. The activity this request carries will need
+    // the account, so create it from the document fetched for its key, as
+    // Mastodon does, rather than leave the inbox worker to fetch the same
+    // document again. A key published apart from its actor falls through to
+    // the key alone.
+    let actor = crate::federation::fetch::signed_get_json(state, actor_url).await?;
+    let pem = public_key_from_actor(&actor)?;
+    let is_the_actor =
+        actor.get("id").and_then(Value::as_str) == Some(actor_url) && actor.get("inbox").is_some();
+    if is_the_actor {
+        // Two first activities from one actor race to create it; the loser's
+        // insert fails on the account's uniqueness, and its worker finds the
+        // winner's row. Verification needs only the key either way.
+        if let Err(e) =
+            super::fetch::resolve_or_fetch_remote_account_prefetched(state, actor_url, actor).await
+        {
+            tracing::debug!(actor = actor_url, error = %e, "account not created from its key fetch");
+        }
+    }
+    Ok(pem)
 }
 
 async fn refresh_public_key(state: &AppState, actor_url: &str) -> anyhow::Result<String> {

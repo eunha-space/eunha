@@ -110,6 +110,18 @@ async fn follow_from_new_actor(label: &str, shared_inbox: bool) -> usize {
     fetches.load(Ordering::SeqCst)
 }
 
+/// The document fetched to verify a first activity's signature is the one the
+/// account is created from: the actor is fetched once, not once for its key
+/// and again for the account.
+#[tokio::test]
+async fn test_first_contact_fetches_the_actor_once() {
+    assert_eq!(
+        follow_from_new_actor("first-contact", true).await,
+        1,
+        "the actor was fetched more than once"
+    );
+}
+
 /// An actor with no shared inbox is an account like any other. Mastodon's
 /// column is NOT NULL, and the missing endpoint is stored as ''.
 #[tokio::test]
