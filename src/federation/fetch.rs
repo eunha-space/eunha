@@ -20,10 +20,10 @@ pub async fn signed_get(
 ) -> anyhow::Result<reqwest::Response> {
     crate::federation::safe_fetch::validate_url(url)?;
 
-    let (private_key, _) = crate::federation::instance_actor::get_or_create(state).await?;
+    let key = crate::federation::instance_actor::signing_key(state).await?;
     let key_id = crate::federation::instance_actor::key_id(&state.instance.domain);
 
-    let signed = feder_runtime::signature::sign_get(url, &key_id, &private_key)?;
+    let signed = feder_runtime::signature::sign_get_with_key(url, &key_id, &key)?;
 
     Ok(state
         .fetch

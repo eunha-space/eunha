@@ -6,6 +6,8 @@
 //! reserved `accounts` row with id `-99`; Eunha follows that shape so restored
 //! Mastodon databases can keep their existing instance actor keypair.
 
+use std::sync::Arc;
+
 use crate::state::AppState;
 
 pub const INSTANCE_ACTOR_ID: i64 = -99;
@@ -61,6 +63,27 @@ pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)>
     .await?;
 
     Ok((key.private_key, key.public_key))
+}
+
+/// The instance actor's private key, parsed once per instance and kept.
+///
+/// Nothing replaces the instance actor's keypair once it exists, so the key
+/// read the first time is the key for the life of the process.
+pub async fn signing_key(
+    state: &AppState,
+) -> anyhow::Result<Arc<feder_runtime::signature::PrivateKey>> {
+    state
+        .instance_actor_key
+        .get_or_try_init(|| async {
+            let (private_pem, _) = get_or_create(state).await?;
+            let key = crate::tenants::spawn_blocking(move || {
+                feder_runtime::signature::PrivateKey::from_pem(&private_pem)
+            })
+            .await??;
+            Ok(Arc::new(key))
+        })
+        .await
+        .cloned()
 }
 
 /// Return just the instance actor's public key PEM (generating if needed).

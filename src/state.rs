@@ -26,6 +26,10 @@ pub struct AppState {
     /// `None` when the instance has not been given the encryption keys, in
     /// which case signing keys stay in the legacy `accounts` columns.
     pub encryptor: Option<crate::rails_encryption::Encryptor>,
+    /// The instance actor's signing key, parsed on first use. Every signed GET
+    /// uses it, and loading, decrypting and parsing an RSA key costs more than
+    /// signing with it — a post going viral had that at a tenth of eunha's CPU.
+    pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<feder_runtime::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,
     /// This instance's domain and media locations, which every URL it serves is
@@ -110,6 +114,7 @@ impl AppState {
             streaming: StreamBus::new(),
             storage,
             encryptor,
+            instance_actor_key: Arc::default(),
             queues: Arc::default(),
             urls,
             stop: tokio_util::sync::CancellationToken::new(),
