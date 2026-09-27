@@ -440,7 +440,9 @@ pub async fn update_profiles(
 /// Move the followers of the accounts `selection` names from their actors
 /// under `from`, a domain the instance had before, to their actors now: a
 /// `Move` from each old actor to its new one, signed with the old actor's key
-/// id, to its followers' servers. They hold that key from when they followed,
+/// id, to its followers' servers. Each account also follows again, from its
+/// new actor, the remote accounts it followed, whose servers would otherwise
+/// go on delivering to the old one. They hold that key from when they followed,
 /// so nothing has to be served under `from`; each fetches the new actor,
 /// finds the old one in its `alsoKnownAs`, and follows it there. With
 /// `dry_run`, only report what would be sent.
@@ -484,29 +486,80 @@ pub async fn move_followers(
             &account.username,
         );
         let new = crate::federation::tag::account_uri_of(&domain, account);
+        let following = remote_follows(state, account.id).await?;
         let queued = if dry_run {
             crate::federation::delivery::follower_inboxes(state, account.id)
                 .await?
                 .len() as u64
+                + following.len() as u64
         } else {
+            // The servers of the accounts this one follows still send their
+            // posts to the old actor's inbox; following again from the new
+            // actor is what brings them here. A Move carries only followers.
+            let key_id = format!("{new}#main-key");
+            let mut refollowed = 0;
+            for (table, id, target, inbox) in &following {
+                let follow_id = format!("{new}#follows/{}", crate::snowflake::next_id());
+                let activity = crate::federation::activity::follow(&follow_id, &new, target)?;
+                refollowed += crate::federation::delivery::deliver_to_inboxes_in_batch(
+                    state,
+                    activity,
+                    vec![inbox.clone()],
+                    key_id.clone(),
+                    batch,
+                )
+                .await?;
+                sqlx::query(&format!("UPDATE {table} SET uri = $2 WHERE id = $1"))
+                    .bind(id)
+                    .bind(&follow_id)
+                    .execute(&state.db)
+                    .await?;
+            }
             let activity = crate::federation::activity::move_actor(
                 &format!("{old}#moves/{}", crate::snowflake::next_id()),
                 &old,
                 &old,
                 &new,
             );
-            crate::federation::delivery::fanout_to_followers_unproven(
+            let moved = crate::federation::delivery::fanout_to_followers_unproven(
                 state,
                 activity,
                 account.id,
                 format!("{old}#main-key"),
                 Some(batch),
             )
-            .await?
+            .await?;
+            moved + refollowed
         };
         report.sent.push((account.username.clone(), queued));
     }
     Ok(report)
+}
+
+/// The remote accounts `account_id` follows or has asked to follow: which
+/// table, the row, the account's actor id, and the inbox to send to.
+async fn remote_follows(
+    state: &crate::state::AppState,
+    account_id: i64,
+) -> anyhow::Result<Vec<(&'static str, i64, String, String)>> {
+    let mut found = Vec::new();
+    for table in ["follows", "follow_requests"] {
+        let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
+            "SELECT f.id, a.uri,
+                    CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
+             FROM {table} f JOIN accounts a ON a.id = f.target_account_id
+             WHERE f.account_id = $1 AND a.domain IS NOT NULL
+               AND a.inbox_url <> '' AND a.uri <> '' AND a.suspended_at IS NULL"
+        ))
+        .bind(account_id)
+        .fetch_all(&state.db)
+        .await?;
+        found.extend(
+            rows.into_iter()
+                .map(|(id, uri, inbox)| (table, id, uri, inbox)),
+        );
+    }
+    Ok(found)
 }
 
 /// Where a batch's deliveries stand: how many are still to be tried, and

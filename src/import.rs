@@ -319,7 +319,7 @@ async fn restore(dump: &Path, database_url: &str) -> Result<()> {
 /// somebody else, which is what these columns are. The instance actor is
 /// renamed with them: its `username` *is* the domain, and nothing else would
 /// notice it was stale.
-async fn rename(db: &PgPool, old: &str, new: &str) -> Result<()> {
+pub async fn rename(db: &PgPool, old: &str, new: &str) -> Result<()> {
     let mut tx = db.begin().await?;
     sqlx::query(
         r#"UPDATE public.accounts SET
@@ -356,6 +356,17 @@ async fn rename(db: &PgPool, old: &str, new: &str) -> Result<()> {
     .execute(&mut *tx)
     .await
     .context("rewriting local status URLs")?;
+    // The ids of Follows and Blocks local accounts sent, which an Undo names.
+    for table in ["follows", "follow_requests", "blocks"] {
+        sqlx::query(&format!(
+            "UPDATE public.{table} SET uri = replace(uri, $1, $2) WHERE uri LIKE $1 || '%'"
+        ))
+        .bind(format!("https://{old}"))
+        .bind(format!("https://{new}"))
+        .execute(&mut *tx)
+        .await
+        .with_context(|| format!("rewriting local {table} ids"))?;
+    }
     tx.commit().await?;
     Ok(())
 }

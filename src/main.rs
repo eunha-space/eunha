@@ -64,6 +64,26 @@ enum Command {
         #[command(subcommand)]
         command: AccountsCommand,
     },
+    /// Rewrite the addresses local accounts and posts were given under a
+    /// domain the instance had before.
+    ///
+    /// Mastodon stores the ids it has handed out, a post's among them, so
+    /// after a domain change they still name the old domain, and the new one
+    /// would serve posts other servers refuse for claiming to be from
+    /// elsewhere. Run before the instance is served under `--to`; running it
+    /// again changes nothing.
+    RenameDomain {
+        /// The domain the addresses were minted under.
+        #[arg(long, value_name = "DOMAIN")]
+        from: String,
+        /// The domain the instance has now.
+        #[arg(long, value_name = "DOMAIN")]
+        to: String,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
     /// Import an existing Mastodon instance into this database.
     ///
     /// Eunha builds the schema of the Mastodon release it tracks, so an
@@ -370,6 +390,13 @@ async fn main() -> anyhow::Result<()> {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
             let db = command_database(&config).await?;
             print_status(&accounts::batch_status(&db, &tag).await?);
+            return Ok(());
+        }
+        Some(Command::RenameDomain { from, to, instance }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database(&config).await?;
+            import::rename(&db, &from, &to).await?;
+            println!("OK");
             return Ok(());
         }
         Some(Command::ImportMastodon {

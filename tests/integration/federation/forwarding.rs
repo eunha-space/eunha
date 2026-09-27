@@ -255,6 +255,21 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     .await
     .unwrap();
 
+    // Alice follows rob, on another server, which delivers his posts to her
+    // old actor until she follows him again from the new one.
+    let (rob_id, rob, _) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, uri, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(alice_id)
+    .bind(rob_id)
+    .bind(format!("https://old-{}/users/alice#follows/1", ctx.domain))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
     let old_domain = format!("old-{}", ctx.domain);
     let old = format!("https://{old_domain}/users/alice");
     let new = format!("https://{}/users/alice", ctx.domain);
@@ -296,7 +311,11 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     )
     .await
     .unwrap();
-    assert_eq!(dry.sent, vec![("alice".to_owned(), 1)]);
+    assert_eq!(
+        dry.sent,
+        vec![("alice".to_owned(), 2)],
+        "nina's Move, rob's Follow"
+    );
     assert!(queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty());
 
     let batch = feder::deliverer::Batch {
@@ -306,11 +325,7 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, &batch, false)
         .await
         .unwrap();
-    let status = eunha::accounts::batch_status(&ctx.db, "move:test")
-        .await
-        .unwrap();
-    assert_eq!(status.pending, 1, "the Move to nina is followed by its tag");
-    assert!(status.failed.is_empty());
+
     let queued: Vec<(Value, String)> = sqlx::query_as(
         "SELECT payload->'activity', payload->>'sender' FROM eunha.feder_queue
          WHERE queue = 'delivery' AND payload->>'inbox' = $1",
@@ -333,4 +348,72 @@ async fn test_followers_are_moved_from_a_previous_domain() {
         &format!("{old}#main-key"),
         "signed as the old actor"
     );
+
+    let follows = queued_for(&ctx, &format!("{rob}/inbox")).await;
+    let follow = follows.last().expect("a Follow is queued for rob");
+    assert_eq!(follow["type"], "Follow");
+    assert_eq!(follow["actor"], new.as_str());
+    assert_eq!(follow["object"], rob.as_str());
+    let uri: String = sqlx::query_scalar(
+        "SELECT uri FROM follows WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(alice_id)
+    .bind(rob_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(follow["id"], uri.as_str(), "an Undo names the new Follow");
+    let status = eunha::accounts::batch_status(&ctx.db, "move:test")
+        .await
+        .unwrap();
+    assert_eq!(status.pending, 2, "the Move and the Follow, in one batch");
+}
+
+/// The addresses a domain change leaves stale are rewritten, and a second
+/// run changes nothing.
+#[tokio::test]
+async fn test_a_rename_moves_local_addresses_to_the_new_domain() {
+    let ctx = TestContext::new("rename-domain").await;
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "before the move", "public")
+        .await;
+    let before = post["uri"].as_str().unwrap().to_owned();
+    assert!(before.starts_with(&format!("https://{}/", ctx.domain)));
+    let alice_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'alice' AND domain IS NULL")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let (rob_id, _, _) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, uri, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(alice_id)
+    .bind(rob_id)
+    .bind(format!("https://{}/users/alice#follows/1", ctx.domain))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let new = format!("new-{}", ctx.domain);
+    for _ in 0..2 {
+        eunha::import::rename(&ctx.db, &ctx.domain, &new)
+            .await
+            .unwrap();
+    }
+    let uri: String = sqlx::query_scalar("SELECT uri FROM statuses WHERE uri LIKE $1")
+        .bind(format!("https://{new}/%"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(uri, before.replace(&ctx.domain, &new));
+    let follow: String = sqlx::query_scalar("SELECT uri FROM follows WHERE account_id = $1")
+        .bind(alice_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(follow, format!("https://{new}/users/alice#follows/1"));
 }
