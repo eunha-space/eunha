@@ -49,7 +49,11 @@ pub async fn signed_get_json(state: &AppState, url: &str) -> anyhow::Result<Valu
     // A portable id names a key, not a host: feder asks the gateways it
     // hints at, and keeps a copy only when its proof by the key holds.
     if let Some(portable) = feder_core::portable::ApUri::parse(url) {
-        return Ok(state.fetcher.portable(&portable, &[], Some(&key)).await?.json);
+        return Ok(state
+            .fetcher
+            .portable(&portable, &[], Some(&key))
+            .await?
+            .json);
     }
     let url = parse(url)?;
     Ok(state.fetcher.document(&url, Some(&key)).await?.json)

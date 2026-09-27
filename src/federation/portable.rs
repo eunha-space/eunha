@@ -169,9 +169,7 @@ mod tests {
             Some(Reach {
                 domain: "server1.example".into(),
                 inbox: format!("https://server1.example/.well-known/apgateway/{DID}/actor/inbox"),
-                outbox: format!(
-                    "https://server1.example/.well-known/apgateway/{DID}/actor/outbox"
-                ),
+                outbox: format!("https://server1.example/.well-known/apgateway/{DID}/actor/outbox"),
                 shared_inbox: String::new(),
             })
         );

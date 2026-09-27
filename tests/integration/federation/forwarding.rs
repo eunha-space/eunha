@@ -71,7 +71,10 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
         .api
         .post_status(&ctx.alice_token, "a post to reply to", "public")
         .await;
-    let post_uri = post["uri"].as_str().expect("the status has a uri").to_owned();
+    let post_uri = post["uri"]
+        .as_str()
+        .expect("the status has a uri")
+        .to_owned();
     let nina_inbox = format!("{nina}/inbox");
     let before = queued_for(&ctx, &nina_inbox).await.len();
 
@@ -129,7 +132,7 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
 /// the avatar where it is now: other servers keep the URL they last saw, and
 /// after an instance's media has moved, that URL is gone.
 #[tokio::test]
-async fn test_profiles_are_distributed_with_their_avatar() {
+async fn test_profiles_are_updated_in_batch_with_their_avatar() {
     let ctx = TestContext::new("distribute-profiles").await;
     let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
     sqlx::query(
@@ -160,21 +163,50 @@ async fn test_profiles_are_distributed_with_their_avatar() {
     .await
     .unwrap();
 
-    let (accounts, inboxes) = eunha::accounts::distribute_profiles(&ctx.state, None)
+    let dry = eunha::accounts::update_profiles(&ctx.state, &eunha::accounts::Selection::All, true)
         .await
         .unwrap();
-    assert_eq!((accounts, inboxes), (1, 1), "alice alone can sign, to nina");
+    assert_eq!(dry.sent, vec![("alice".to_owned(), 1)]);
+    assert!(
+        queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty(),
+        "a dry run sends nothing"
+    );
+    assert!(
+        dry.skipped.iter().any(|(name, _)| name == "bob"),
+        "bob cannot sign"
+    );
+
+    let report =
+        eunha::accounts::update_profiles(&ctx.state, &eunha::accounts::Selection::All, false)
+            .await
+            .unwrap();
+    assert_eq!(
+        report.sent,
+        vec![("alice".to_owned(), 1)],
+        "alice alone can sign, to nina"
+    );
 
     let queued = queued_for(&ctx, &format!("{nina}/inbox")).await;
     let update = queued.last().expect("an Update is queued for nina");
     assert_eq!(update["type"], "Update");
     let icon = update["object"]["icon"]["url"].as_str().unwrap_or_default();
-    assert!(icon.ends_with("/face.png"), "the avatar where it is now: {icon}");
+    assert!(
+        icon.ends_with("/face.png"),
+        "the avatar where it is now: {icon}"
+    );
 
     // Sent twice, it is two activities: a server drops an id it has seen.
-    eunha::accounts::distribute_profiles(&ctx.state, Some("alice"))
-        .await
-        .unwrap();
+    let report = eunha::accounts::update_profiles(
+        &ctx.state,
+        &eunha::accounts::Selection::Usernames(vec!["alice".into(), "nobody".into()]),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.unknown, vec!["nobody".to_owned()]);
     let queued = queued_for(&ctx, &format!("{nina}/inbox")).await;
-    assert_ne!(queued[queued.len() - 1]["id"], queued[queued.len() - 2]["id"]);
+    assert_ne!(
+        queued[queued.len() - 1]["id"],
+        queued[queued.len() - 2]["id"]
+    );
 }

@@ -309,22 +309,6 @@ fn valid_email(email: &str) -> bool {
             .any(|c| c.is_whitespace() || matches!(c, '%' | ',' | '"'))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::valid_email;
-
-    #[test]
-    fn test_valid_email_requires_one_at_between_two_parts() {
-        assert!(valid_email("owner@example.com"));
-        assert!(!valid_email("owner"));
-        assert!(!valid_email("@example.com"));
-        assert!(!valid_email("owner@"));
-        assert!(!valid_email("owner@example@com"));
-        assert!(!valid_email("own er@example.com"));
-        assert!(!valid_email("owner%relay@example.com"));
-    }
-}
-
 /// Send `account`'s profile, as an `Update` of its actor, to every server
 /// that knows it: its followers', and the others Mastodon's reach finder
 /// counts. What an edit to the profile does, and what tells other servers
@@ -364,29 +348,100 @@ pub async fn distribute_profile(
     .await
 }
 
-/// [`distribute_profile`] for every local account that is not suspended, or
-/// the one named `username`. Returns how many accounts and inboxes.
-pub async fn distribute_profiles(
-    state: &crate::state::AppState,
-    username: Option<&str>,
-) -> anyhow::Result<(u64, u64)> {
+/// Which local accounts a batch acts on.
+#[derive(Clone, Debug)]
+pub enum Selection {
+    /// Every local account that is not suspended or being deleted.
+    All,
+    /// These, by username.
+    Usernames(Vec<String>),
+}
+
+/// What a batch did, or with `dry_run`, would do: for each account, how many
+/// inboxes it was queued for, or why it was passed over.
+#[derive(Debug, Default)]
+pub struct BatchReport {
+    pub sent: Vec<(String, u64)>,
+    pub skipped: Vec<(String, &'static str)>,
+    pub unknown: Vec<String>,
+}
+
+/// The local accounts `selection` names, and the usernames it names that are
+/// not local accounts.
+pub async fn select(
+    db: &sqlx::PgPool,
+    selection: &Selection,
+) -> anyhow::Result<(Vec<crate::db::models::Account>, Vec<String>)> {
+    let names: Option<Vec<String>> = match selection {
+        Selection::All => None,
+        Selection::Usernames(names) => Some(names.clone()),
+    };
     let accounts: Vec<crate::db::models::Account> = sqlx::query_as(
         "SELECT * FROM accounts
-         WHERE domain IS NULL AND id > 0 AND suspended_at IS NULL
-           AND ($1::text IS NULL OR username = $1)
+         WHERE domain IS NULL AND id > 0
+           AND suspended_at IS NULL AND requested_deletion_at IS NULL
+           AND ($1::text[] IS NULL OR username = ANY($1))
          ORDER BY id",
     )
-    .bind(username)
-    .fetch_all(&state.db)
+    .bind(&names)
+    .fetch_all(db)
     .await?;
+    let unknown = names
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|name| !accounts.iter().any(|account| &account.username == name))
+        .collect();
+    Ok((accounts, unknown))
+}
+
+/// Send the profiles of the accounts `selection` names to the servers that
+/// know them, as [`distribute_profile`] does for one. With `dry_run`, only
+/// report what would be sent.
+pub async fn update_profiles(
+    state: &crate::state::AppState,
+    selection: &Selection,
+    dry_run: bool,
+) -> anyhow::Result<BatchReport> {
+    let (accounts, unknown) = select(&state.db, selection).await?;
     let domain = state.instance.domain.clone();
-    let (mut sent, mut inboxes) = (0, 0);
+    let mut report = BatchReport {
+        unknown,
+        ..BatchReport::default()
+    };
     for account in &accounts {
-        let queued = distribute_profile(state, &domain, account).await?;
-        if queued > 0 {
-            sent += 1;
-            inboxes += queued;
+        if !crate::federation::keypair::has_signing_key(state, account.id)
+            .await
+            .unwrap_or(false)
+        {
+            report
+                .skipped
+                .push((account.username.clone(), "no signing key"));
+            continue;
         }
+        let queued = if dry_run {
+            crate::federation::delivery::account_reach_inboxes(state, account.id)
+                .await?
+                .len() as u64
+        } else {
+            distribute_profile(state, &domain, account).await?
+        };
+        report.sent.push((account.username.clone(), queued));
     }
-    Ok((sent, inboxes))
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_email;
+
+    #[test]
+    fn test_valid_email_requires_one_at_between_two_parts() {
+        assert!(valid_email("owner@example.com"));
+        assert!(!valid_email("owner"));
+        assert!(!valid_email("@example.com"));
+        assert!(!valid_email("owner@"));
+        assert!(!valid_email("owner@example@com"));
+        assert!(!valid_email("own er@example.com"));
+        assert!(!valid_email("owner%relay@example.com"));
+    }
 }

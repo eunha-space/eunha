@@ -153,17 +153,29 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
-    /// Send local accounts' profiles to the servers that know them.
+    /// Send accounts' profiles again to the servers that know them.
     ///
-    /// What editing a profile does, for every account at once: each goes out
+    /// What editing a profile does, for many accounts at once: each goes out
     /// as an `Update` of its actor to its followers' servers and the others
-    /// that know it. Other servers keep the avatar and header URLs they last
-    /// saw, so after an instance's media has moved, this is what tells them
-    /// where it went. Deliveries are queued for the running server to send.
-    Distribute {
-        /// Only this account.
+    /// that know it. Other servers keep what they last saw of an account, its
+    /// avatar and header URLs among it; after an instance's media has moved,
+    /// or anything else about its accounts has changed without an edit, this
+    /// is what tells them. Deliveries are queued for the running server to
+    /// send.
+    Update {
+        /// Every local account that is not suspended or being deleted.
+        #[arg(
+            long,
+            conflicts_with = "username",
+            required_unless_present = "username"
+        )]
+        all: bool,
+        /// This account; may be given more than once.
         #[arg(long)]
-        username: Option<String>,
+        username: Vec<String>,
+        /// Say what would be sent, and to how many inboxes, sending nothing.
+        #[arg(long)]
+        dry_run: bool,
         /// With `--tenants`, the instance, by its domain or one of its
         /// aliases.
         #[arg(long, value_name = "HOST")]
@@ -244,14 +256,43 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Some(Command::Accounts {
-            command: AccountsCommand::Distribute { username, instance },
+            command:
+                AccountsCommand::Update {
+                    all,
+                    username,
+                    dry_run,
+                    instance,
+                },
         }) => {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
             let db = command_database(&config).await?;
             let state = eunha::state::AppState::new(db, config).await?;
-            let (accounts, inboxes) =
-                accounts::distribute_profiles(&state, username.as_deref()).await?;
-            println!("Queued {accounts} profiles for {inboxes} inboxes");
+            let selection = if all {
+                accounts::Selection::All
+            } else {
+                accounts::Selection::Usernames(username)
+            };
+            let report = accounts::update_profiles(&state, &selection, dry_run).await?;
+            let verb = if dry_run { "would queue" } else { "queued" };
+            for (name, inboxes) in &report.sent {
+                println!("{name}: {verb} for {inboxes} inboxes");
+            }
+            for (name, why) in &report.skipped {
+                println!("{name}: skipped, {why}");
+            }
+            for name in &report.unknown {
+                println!("{name}: no such local account");
+            }
+            let total: u64 = report.sent.iter().map(|(_, inboxes)| inboxes).sum();
+            println!(
+                "{} accounts {verb} for {total} inboxes, {} skipped",
+                report.sent.len(),
+                report.skipped.len()
+            );
+            anyhow::ensure!(
+                report.unknown.is_empty(),
+                "some usernames are not local accounts"
+            );
             return Ok(());
         }
         Some(Command::ImportMastodon {
