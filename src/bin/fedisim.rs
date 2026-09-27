@@ -92,6 +92,10 @@ struct Bucket {
     latency_us: Vec<u32>,
     served_actor: u64,
     served_note: u64,
+    /// Scheduler ticks that woke more than 50 ms late: the machine, not the
+    /// instance, holding the load back.
+    late_ticks: u64,
+    worst_tick_ms: u64,
     served_other: u64,
     received_post: u64,
     blocked: u64,
@@ -425,6 +429,8 @@ fn stats(sim: &Sim, since: u64) -> Value {
                 "served_other": b.served_other,
                 "received_post": b.received_post,
                 "blocked": b.blocked,
+                "late_ticks": b.late_ticks,
+                "worst_tick_ms": b.worst_tick_ms,
             })
         })
         .collect();
@@ -459,6 +465,8 @@ fn stats(sim: &Sim, since: u64) -> Value {
             "served_note": sum(|b| b.served_note),
             "received_post": sum(|b| b.received_post),
             "blocked": sum(|b| b.blocked),
+            "late_ticks": sum(|b| b.late_ticks),
+            "worst_tick_ms": timeline.iter().filter(|(s, _)| **s >= since).map(|(_, b)| b.worst_tick_ms).max().unwrap_or(0),
             "p50_ms": percentile(&all_latency, 50.0),
             "p95_ms": percentile(&all_latency, 95.0),
             "p99_ms": percentile(&all_latency, 99.0),
@@ -507,7 +515,16 @@ async fn run_spike(sim: Arc<Sim>, spike: SpikeRequest) {
         "spike started"
     );
 
+    let mut last = Instant::now();
     while start.elapsed().as_secs_f64() < spike.duration_seconds {
+        let lateness = last.elapsed().saturating_sub(tick).as_millis() as u64;
+        last = Instant::now();
+        if lateness > 50 {
+            sim.record(|b| {
+                b.late_ticks += 1;
+                b.worst_tick_ms = b.worst_tick_ms.max(lateness);
+            });
+        }
         let t = start.elapsed().as_secs_f64();
         owed += rate_at(t, spike.peak_rps, spike.rise_seconds) * tick.as_secs_f64();
         while owed >= 1.0 {

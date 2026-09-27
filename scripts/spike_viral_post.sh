@@ -34,7 +34,8 @@ FLAME_SECONDS=${EUNHA_SPIKE_FLAME_SECONDS:-10}
 EUNHA_PORT=${EUNHA_SPIKE_PORT:-18900}
 SIM_PORT=${EUNHA_SPIKE_SIM_PORT:-18990}
 
-EUNHA="$ROOT/target/release/eunha"
+# Another build to measure, such as one saved from before a change.
+EUNHA=${EUNHA_SPIKE_EUNHA:-$ROOT/target/release/eunha}
 FEDISIM="$ROOT/target/release/eunha-fedisim"
 for bin in "$EUNHA" "$FEDISIM"; do
   [ -x "$bin" ] || { echo "missing $bin: cargo build --release --bin eunha --bin eunha-fedisim" >&2; exit 1; }
@@ -308,6 +309,7 @@ flamegraph() {
 
 set_phase() { echo "$1" > "$WORK/phase"; echo "[$(date +%T)] $1"; }
 
+load_before=$(sysctl -n vm.loadavg | awk '{print $2, $3, $4}')
 set_phase baseline
 flamegraph baseline & flame_pid=$!
 sleep "$BASELINE"
@@ -358,7 +360,8 @@ q "SELECT
      (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NOT NULL)" > "$WORK/outcome"
 IFS='|' read -r favs boosts replies remote_accounts notifications failed < "$WORK/outcome"
 
-node - "$RESULTS" "$drained" "$RECOVERY" "$favs" "$boosts" "$replies" "$remote_accounts" "$notifications" "$failed" <<'EOF' | tee "$RESULTS/summary.md"
+load_after=$(sysctl -n vm.loadavg | awk '{print $2, $3, $4}')
+LOAD_BEFORE=$load_before LOAD_AFTER=$load_after node - "$RESULTS" "$drained" "$RECOVERY" "$favs" "$boosts" "$replies" "$remote_accounts" "$notifications" "$failed" <<'EOF' | tee "$RESULTS/summary.md"
 const fs = require("fs");
 const [dir, drained, recovery, favs, boosts, replies, accounts, notifications, failed] = process.argv.slice(2);
 const sim = JSON.parse(fs.readFileSync(`${dir}/fedisim.json`));
@@ -373,6 +376,7 @@ const t = sim.totals;
 const peakSecond = sim.timeline.reduce((a, b) => (b.sent > a.sent ? b : a), { sent: 0 });
 console.log(`# Viral post spike\n`);
 console.log(`Offered ${t.sent + t.shed} activities, peak ${peakSecond.sent}/s. Accepted ${t.ok}, refused ${t.client_error}, failed ${t.server_error + t.transport_error}, shed ${t.shed} (client concurrency cap).`);
+console.log(`Host load average (1, 5, 15 min): ${process.env.LOAD_BEFORE} before, ${process.env.LOAD_AFTER} after. The simulator woke late ${t.late_ticks} times, worst ${t.worst_tick_ms} ms${t.late_ticks > 10 ? " — **the machine was contended: this run's load was not delivered as offered, so do not compare it**" : ""}.`);
 console.log(`Inbox POST latency: p50 ${t.p50_ms} ms, p95 ${t.p95_ms} ms, p99 ${t.p99_ms} ms.`);
 const blockedHosts = sim.blocked_hosts;
 const others = Object.keys(blockedHosts).filter(h => h !== "example.com");

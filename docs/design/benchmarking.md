@@ -543,11 +543,23 @@ PostgreSQL backends, Redis, and the database's size on disk. That last moment
 answers whether a spike's memory is ever given back. `vmmap` suspends the
 process it reads, so a latency probe that overlaps a snapshot is marked
 `(paused)` in *timeseries.csv* and left out of the summary.
+
 It takes a flamegraph at baseline, at the peak and during recovery, with
 macOS's `sample` — only stacks that were on CPU, demangled — and keeps the
 unfiltered stacks beside them. It then waits for the queue to drain and writes
 `summary.md` below `benchmark-results/`. Every knob is an `EUNHA_SPIKE_*`
-variable at the top of the script.
+variable at the top of the script. `EUNHA_SPIKE_EUNHA` measures another build
+than *target/release/eunha*, such as one saved from before a change.
+
+A spike is only comparable with another if the load was delivered as offered,
+and on a shared machine it may not be: another build or test run starves the
+simulator as well as eunha, and the result looks like eunha stalling. The
+summary records the host's load average, and the simulator counts every time
+its scheduler woke more than 50 ms late. A run with more than a handful is
+flagged as contended and should not be compared. Two of four runs on
+2026-09-28 were, with load averages near six: their p95 was 0.5–1.1 s against
+8 ms for the same build uncontended, and the simulator's own send rate showed
+it.
 
 ### Nothing leaves the machine
 
