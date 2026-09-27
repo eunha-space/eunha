@@ -3,21 +3,39 @@
 //! A requester sends a `*Request`; the target replies with an `Accept` carrying
 //! a `result` authorization URI, or a `Reject`. The same pattern backs quote
 //! posts (`QuoteRequest`/`QuoteAuthorization`) and account features
-//! (`FeatureRequest`/`FeatureAuthorization`). These helpers serialize feder's
-//! typed consent vocabulary into delivery-ready JSON.
+//! (`FeatureRequest`/`FeatureAuthorization`). These helpers write feder's
+//! generated consent vocabulary as delivery-ready JSON, under a context that
+//! defines the consent terms, as Mastodon's `context_helper` does: a strict
+//! JSON-LD consumer drops a type its context does not define.
 
-use anyhow::Context as _;
 use feder_vocab as vocab;
-use serde_json::Value;
-use vocab::{AuthorizationType, Iri, Reference, RequestType};
+use serde_json::{json, Value};
+use vocab::{AnyActor, AnyObject, Iri};
+
+use super::activity::with_context;
 
 fn iri(s: &str) -> anyhow::Result<Iri> {
     s.parse::<Iri>()
         .map_err(|e| anyhow::anyhow!("invalid ActivityPub IRI {s:?}: {e}"))
 }
 
-fn to_value<T: serde::Serialize>(v: &T) -> anyhow::Result<Value> {
-    serde_json::to_value(v).context("serialize consent activity")
+fn object_iri(s: &str) -> anyhow::Result<AnyObject> {
+    iri(s).map(AnyObject::Iri)
+}
+
+/// The ActivityStreams context, and the terms of one consent type.
+fn context(terms: Value) -> Value {
+    json!([vocab::ACTIVITYSTREAMS_CONTEXT, terms])
+}
+
+/// The terms an authorization stamp's interaction properties need.
+fn authorization_terms(kind: &str, iri: &str) -> Value {
+    json!({
+        "gts": "https://gotosocial.org/ns#",
+        kind: iri,
+        "interactingObject": {"@id": "gts:interactingObject", "@type": "@id"},
+        "interactionTarget": {"@id": "gts:interactionTarget", "@type": "@id"},
+    })
 }
 
 /// Build a `FeatureRequest` (collection owner asks a remote account for consent
@@ -29,14 +47,17 @@ pub fn feature_request(
     account: &str,
     collection: &str,
 ) -> anyhow::Result<Value> {
-    let mut req = vocab::ConsentRequest::new(
-        RequestType::FeatureRequest,
-        iri(id)?,
-        iri(account)?,
-        iri(collection)?,
-    );
-    req.actor = Some(Reference::id(iri(actor)?));
-    to_value(&req)
+    let request = vocab::FeatureRequest {
+        id: Some(iri(id)?),
+        actors: vec![AnyActor::Iri(iri(actor)?)],
+        objects: vec![object_iri(account)?],
+        instruments: vec![object_iri(collection)?],
+        ..Default::default()
+    };
+    Ok(with_context(
+        &request,
+        context(json!({"FeatureRequest": "https://w3id.org/fep/7aa9#FeatureRequest"})),
+    ))
 }
 
 /// Build a `QuoteRequest` (we ask a remote author for consent to quote their
@@ -48,14 +69,17 @@ pub fn quote_request(
     quoted_status: &str,
     quoting_status: &str,
 ) -> anyhow::Result<Value> {
-    let mut req = vocab::ConsentRequest::new(
-        RequestType::QuoteRequest,
-        iri(id)?,
-        iri(quoted_status)?,
-        iri(quoting_status)?,
-    );
-    req.actor = Some(Reference::id(iri(actor)?));
-    to_value(&req)
+    let request = vocab::QuoteRequest {
+        id: Some(iri(id)?),
+        actors: vec![AnyActor::Iri(iri(actor)?)],
+        objects: vec![object_iri(quoted_status)?],
+        instruments: vec![object_iri(quoting_status)?],
+        ..Default::default()
+    };
+    Ok(with_context(
+        &request,
+        context(json!({"QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest"})),
+    ))
 }
 
 /// Build an `Accept` granting a request, pointing `result` at an authorization
@@ -67,32 +91,44 @@ pub fn accept(
     request_uri: &str,
     authorization_uri: &str,
 ) -> anyhow::Result<Value> {
-    let mut a = vocab::ConsentAccept::new(
-        iri(id)?,
-        Reference::id(iri(actor)?),
-        iri(request_uri)?,
-        iri(authorization_uri)?,
-    );
-    a.to = Some(iri(to)?);
-    to_value(&a)
+    let accept = vocab::Accept {
+        id: Some(iri(id)?),
+        actors: vec![AnyActor::Iri(iri(actor)?)],
+        objects: vec![object_iri(request_uri)?],
+        results: vec![object_iri(authorization_uri)?],
+        tos: vec![object_iri(to)?],
+        ..Default::default()
+    };
+    Ok(super::activity::document(&accept))
 }
 
 /// Build a `Reject` declining a request.
 pub fn reject(id: &str, actor: &str, to: &str, request_uri: &str) -> anyhow::Result<Value> {
-    let mut r = vocab::ConsentReject::new(iri(id)?, Reference::id(iri(actor)?), iri(request_uri)?);
-    r.to = Some(iri(to)?);
-    to_value(&r)
+    let reject = vocab::Reject {
+        id: Some(iri(id)?),
+        actors: vec![AnyActor::Iri(iri(actor)?)],
+        objects: vec![object_iri(request_uri)?],
+        tos: vec![object_iri(to)?],
+        ..Default::default()
+    };
+    Ok(super::activity::document(&reject))
 }
 
 /// Build a `FeatureAuthorization` stamp object (served at `id`).
 pub fn feature_authorization(id: &str, collection: &str, account: &str) -> anyhow::Result<Value> {
-    let auth = vocab::Authorization::new(
-        AuthorizationType::FeatureAuthorization,
-        iri(id)?,
-        iri(collection)?,
-        iri(account)?,
-    );
-    to_value(&auth)
+    let authorization = vocab::FeatureAuthorization {
+        id: Some(iri(id)?),
+        interacting_object: Some(object_iri(collection)?),
+        interaction_target: Some(object_iri(account)?),
+        ..Default::default()
+    };
+    Ok(with_context(
+        &authorization,
+        context(authorization_terms(
+            "FeatureAuthorization",
+            "https://w3id.org/fep/7aa9#FeatureAuthorization",
+        )),
+    ))
 }
 
 /// Build a `QuoteAuthorization` stamp object (served at `id`).
@@ -102,14 +138,20 @@ pub fn quote_authorization(
     quoting_status: &str,
     quoted_status: &str,
 ) -> anyhow::Result<Value> {
-    let mut auth = vocab::Authorization::new(
-        AuthorizationType::QuoteAuthorization,
-        iri(id)?,
-        iri(quoting_status)?,
-        iri(quoted_status)?,
-    );
-    auth.attributed_to = Some(Reference::id(iri(quoted_account)?));
-    to_value(&auth)
+    let authorization = vocab::QuoteAuthorization {
+        id: Some(iri(id)?),
+        attributions: vec![AnyActor::Iri(iri(quoted_account)?)],
+        interacting_object: Some(object_iri(quoting_status)?),
+        interaction_target: Some(object_iri(quoted_status)?),
+        ..Default::default()
+    };
+    Ok(with_context(
+        &authorization,
+        context(authorization_terms(
+            "QuoteAuthorization",
+            "https://w3id.org/fep/044f#QuoteAuthorization",
+        )),
+    ))
 }
 
 #[cfg(test)]

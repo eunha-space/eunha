@@ -254,11 +254,12 @@ pub(super) async fn handle_follow(
     ) else {
         return Ok(());
     };
-    let follow = feder_vocab::Follow::new(
-        follow_id,
-        feder_vocab::Reference::id(actor_iri),
-        feder_vocab::Reference::id(object_iri.clone()),
-    );
+    let follow = feder_vocab::Follow {
+        id: Some(follow_id),
+        actors: vec![feder_vocab::AnyActor::Iri(actor_iri)],
+        objects: vec![feder_vocab::AnyObject::Iri(object_iri.clone())],
+        ..Default::default()
+    };
     let accept_id = format!(
         "https://{}/activities/{}",
         instance.domain,
@@ -376,8 +377,7 @@ pub(super) async fn handle_follow(
                     );
                     continue;
                 };
-                let activity = serde_json::to_value(&accept)
-                    .map_err(|e| crate::error::AppError::Internal(e.into()))?;
+                let activity = crate::federation::activity::document(&*accept);
                 let actor_url = crate::federation::tag::account_uri(
                     &instance.domain,
                     target.id,
