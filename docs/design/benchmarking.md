@@ -699,6 +699,46 @@ takes no snapshot during the spike itself.
 Peak footprint and tail latency varied between runs as much as they did between
 builds, so neither is claimed to have changed.
 
+### 2026-09-28: JSON-LD
+
+Moving eunha's federation onto feder brought JSON-LD normalisation with it:
+feder's inbox expanded and compacted every activity against its own context
+before any listener saw it. The same spike, three builds, two uncontended runs
+each, interleaved:
+
+|                            |   Normalised | Cached contexts |   As written |
+| -------------------------- | -----------: | --------------: | -----------: |
+| Inbox p95                  | 15.9–21.6 ms |      7.8–9.0 ms |   7.5–7.8 ms |
+| Inbox p99                  | 24.9–38.1 ms |     8.9–12.4 ms |   8.5–9.5 ms |
+| Inbox queue at its peak    |  11.0k–11.4k |       7.8k–9.5k |    7.8k–7.9k |
+| eunha CPU p95              |     166–176% |        128–140% |     128–135% |
+| On-CPU samples at the peak |        4,215 |    2,283 (−46%) | 2,035 (−52%) |
+| … of them in JSON-LD       |        55.6% |            9.8% |           0% |
+
+Every activity was accepted in every run, and the actor documents fetched
+matched the accounts created one for one.
+
+Most of the cost was not reading documents but reading their contexts:
+normalising a four-field `Like` took 370 µs, nearly all of it processing the
+ActivityStreams context from scratch, and feder's own context, parsed from a
+string, on top. Feder now keeps processed contexts in a cache its caller
+supplies, bounded in the inbox, and the same `Like` takes 25 µs; every
+document in feder's corpus of real servers' documents normalises exactly as it
+did uncached. That is the middle column.
+
+The right column is what eunha now does. Its one listener reads the activity as
+its sender wrote it, as Mastodon reads it, and never read the normalised form;
+[the protocol design](./protocol#json-ld-in-shape-never-in-processing) had
+already said eunha does not process JSON-LD. Feder's inbox is told not to
+(`read_inbox_as_written`), which also stops it refusing an activity whose
+context cannot be processed. The cache stays in feder for whatever does
+normalise.
+
+The about 74 MiB of live memory that a burst of new actors leaves behind is the
+same in all three: feder's in-memory key-value store, which keeps an expired
+entry until its own key is read again, holding every key fetched and every
+forwarded reply. It is not yet addressed.
+
 
 Not yet measured
 ----------------

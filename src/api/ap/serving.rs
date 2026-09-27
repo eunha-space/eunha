@@ -183,6 +183,12 @@ pub fn federation() -> Federation<AppState> {
                 .await,
             )
         })
+        // Activities are read as JSON, as Mastodon reads them, never
+        // expanded and compacted (docs/design/protocol.md, "JSON-LD in shape,
+        // never in processing"). The one listener reads the activity as its
+        // sender wrote it, so normalising it was work nothing used: under a
+        // viral post, more than half the CPU.
+        .read_inbox_as_written()
         .on_any(|ctx: Ctx, received: feder::federation::Received<feder_vocab::generated::AnyObject>| async move {
             super::inbox::received(ctx.data(), received.vouched).await
         })

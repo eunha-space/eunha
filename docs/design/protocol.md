@@ -113,6 +113,12 @@ does not do, and will not. Fetching a context at verification time is an SSRF
 surface, an availability dependency on someone else's web server, and a source
 of nondeterminism in a security path.
 
+Feder's inbox normalises every activity by default; eunha asks it not to
+(`read_inbox_as_written`) and reads the activity as its sender wrote it. The
+cost was measured as well as argued: with normalisation, a burst of 1,000
+activities a second spent more than half of eunha's CPU on it (see
+[benchmarking](./benchmarking)).
+
 JSON-LD *canonicalisation* for signatures (URDNA2015/RDFC) is the dangerous one:
 graph normalisation as a signature input is where the LD Signature forgery bugs
 came from. Eunha signs with JCS (RFC 8785) via the `eddsa-jcs-2022` cryptosuite,
