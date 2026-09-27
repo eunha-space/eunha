@@ -181,6 +181,38 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    /// Move accounts' followers from a domain the instance had before.
+    ///
+    /// After an instance's domain changes, its followers' servers still
+    /// follow its accounts' actors under the old domain. This sends each of
+    /// them a `Move` from the old actor to the new one, signed with the old
+    /// actor's key id: they hold that key from when they followed, so nothing
+    /// has to be served on the old domain. Each server fetches the new actor,
+    /// finds the old one in its `alsoKnownAs`, and follows it. The old domain
+    /// has to be in `instance.previous_domains` for that, and the new domain
+    /// serving, before this runs. Posts stay where they were.
+    Move {
+        /// The domain the accounts had.
+        #[arg(long, value_name = "DOMAIN")]
+        from: String,
+        /// Every local account that is not suspended or being deleted.
+        #[arg(
+            long,
+            conflicts_with = "username",
+            required_unless_present = "username"
+        )]
+        all: bool,
+        /// This account; may be given more than once.
+        #[arg(long)]
+        username: Vec<String>,
+        /// Say what would be sent, and to how many inboxes, sending nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
     /// Modify a user account.
     ///
     /// `tootctl accounts modify`, of which eunha implements `--reset-password`.
@@ -273,26 +305,29 @@ async fn main() -> anyhow::Result<()> {
                 accounts::Selection::Usernames(username)
             };
             let report = accounts::update_profiles(&state, &selection, dry_run).await?;
-            let verb = if dry_run { "would queue" } else { "queued" };
-            for (name, inboxes) in &report.sent {
-                println!("{name}: {verb} for {inboxes} inboxes");
-            }
-            for (name, why) in &report.skipped {
-                println!("{name}: skipped, {why}");
-            }
-            for name in &report.unknown {
-                println!("{name}: no such local account");
-            }
-            let total: u64 = report.sent.iter().map(|(_, inboxes)| inboxes).sum();
-            println!(
-                "{} accounts {verb} for {total} inboxes, {} skipped",
-                report.sent.len(),
-                report.skipped.len()
-            );
-            anyhow::ensure!(
-                report.unknown.is_empty(),
-                "some usernames are not local accounts"
-            );
+            print_batch(&report, dry_run)?;
+            return Ok(());
+        }
+        Some(Command::Accounts {
+            command:
+                AccountsCommand::Move {
+                    from,
+                    all,
+                    username,
+                    dry_run,
+                    instance,
+                },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database(&config).await?;
+            let state = eunha::state::AppState::new(db, config).await?;
+            let selection = if all {
+                accounts::Selection::All
+            } else {
+                accounts::Selection::Usernames(username)
+            };
+            let report = accounts::move_followers(&state, &selection, &from, dry_run).await?;
+            print_batch(&report, dry_run)?;
             return Ok(());
         }
         Some(Command::ImportMastodon {
@@ -583,6 +618,32 @@ async fn import_mastodon(import: import::Import, check: bool) -> anyhow::Result<
 
 /// The configuration a one-off command acts on: the single instance's, or with
 /// `tenants` the one tenant answering to `instance`.
+/// Print what a batch of account updates did, and fail when it named
+/// accounts that are not there.
+fn print_batch(report: &accounts::BatchReport, dry_run: bool) -> anyhow::Result<()> {
+    let verb = if dry_run { "would queue" } else { "queued" };
+    for (name, inboxes) in &report.sent {
+        println!("{name}: {verb} for {inboxes} inboxes");
+    }
+    for (name, why) in &report.skipped {
+        println!("{name}: skipped, {why}");
+    }
+    for name in &report.unknown {
+        println!("{name}: no such local account");
+    }
+    let total: u64 = report.sent.iter().map(|(_, inboxes)| inboxes).sum();
+    println!(
+        "{} accounts {verb} for {total} inboxes, {} skipped",
+        report.sent.len(),
+        report.skipped.len()
+    );
+    anyhow::ensure!(
+        report.unknown.is_empty(),
+        "some usernames are not local accounts"
+    );
+    Ok(())
+}
+
 fn command_config(
     tenants: Option<&std::path::Path>,
     instance: Option<&str>,

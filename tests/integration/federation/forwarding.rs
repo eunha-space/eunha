@@ -210,3 +210,98 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
         queued[queued.len() - 2]["id"]
     );
 }
+
+/// After a domain change, followers are moved from each account's actor
+/// under the old domain to the new one: a Move signed as the old actor,
+/// whose key the followers' servers already hold, to the new actor, which
+/// lists the old one in `alsoKnownAs`. Nothing needs serving on the old
+/// domain.
+#[tokio::test]
+async fn test_followers_are_moved_from_a_previous_domain() {
+    let ctx = TestContext::new("move-domain").await;
+    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    sqlx::query(
+        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    )
+    .bind(&priv_pem)
+    .bind(&pub_pem)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let alice_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'alice' AND domain IS NULL")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let (nina_id, nina, _) = seed_remote(&ctx, "nina", "nina.invalid").await;
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(nina_id)
+    .bind(alice_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let old_domain = format!("old-{}", ctx.domain);
+    let old = format!("https://{old_domain}/users/alice");
+    let new = format!("https://{}/users/alice", ctx.domain);
+
+    // The new actor names the old one, which is what a server checks.
+    let actor: Value = ctx
+        .api
+        .ap_get("/users/alice", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        actor["alsoKnownAs"]
+            .as_array()
+            .is_some_and(|aka| aka.iter().any(|a| a == old.as_str())),
+        "{}",
+        actor["alsoKnownAs"]
+    );
+
+    // A domain the instance never had is refused before anything is sent.
+    let selection = eunha::accounts::Selection::All;
+    assert!(
+        eunha::accounts::move_followers(&ctx.state, &selection, "elsewhere.invalid", false)
+            .await
+            .is_err()
+    );
+
+    let dry = eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, true)
+        .await
+        .unwrap();
+    assert_eq!(dry.sent, vec![("alice".to_owned(), 1)]);
+    assert!(queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty());
+
+    eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, false)
+        .await
+        .unwrap();
+    let queued: Vec<(Value, String)> = sqlx::query_as(
+        "SELECT payload->'activity', payload->>'sender' FROM eunha.feder_queue
+         WHERE queue = 'delivery' AND payload->>'inbox' = $1",
+    )
+    .bind(format!("{nina}/inbox"))
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    let (activity, sender) = queued.last().expect("a Move is queued for nina");
+    assert_eq!(activity["type"], "Move");
+    assert_eq!(activity["actor"], old.as_str());
+    assert_eq!(activity["object"], old.as_str());
+    assert_eq!(activity["target"], new.as_str());
+    assert!(
+        activity.get("proof").is_none(),
+        "no proof naming a dead domain"
+    );
+    assert_eq!(
+        sender,
+        &format!("{old}#main-key"),
+        "signed as the old actor"
+    );
+}

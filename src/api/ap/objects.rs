@@ -120,12 +120,25 @@ pub async fn actor_json(
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
 
     // Account migration metadata: aliases (alsoKnownAs) + movedTo target URI.
-    let also_known_as: Vec<String> = sqlx::query_scalar!(
+    let mut also_known_as: Vec<String> = sqlx::query_scalar!(
         "SELECT uri FROM account_aliases WHERE account_id = $1 ORDER BY created_at",
         account.id,
     )
     .fetch_all(&state.db)
     .await?;
+    // The account's actors under the domains the instance had before, which
+    // its followers were following: `eunha accounts move` names them.
+    for previous in &state.instance.previous_domains {
+        let old = crate::federation::tag::account_uri(
+            previous,
+            account.id,
+            account.id_scheme,
+            &account.username,
+        );
+        if old != actor_url && !also_known_as.contains(&old) {
+            also_known_as.push(old);
+        }
+    }
     let moved_to: Option<String> = if let Some(moved_id) = account.moved_to_account_id {
         sqlx::query!(
             "SELECT id, id_scheme, username, domain, uri FROM accounts WHERE id = $1",

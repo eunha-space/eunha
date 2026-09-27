@@ -430,6 +430,76 @@ pub async fn update_profiles(
     Ok(report)
 }
 
+/// Move the followers of the accounts `selection` names from their actors
+/// under `from`, a domain the instance had before, to their actors now: a
+/// `Move` from each old actor to its new one, signed with the old actor's key
+/// id, to its followers' servers. They hold that key from when they followed,
+/// so nothing has to be served under `from`; each fetches the new actor,
+/// finds the old one in its `alsoKnownAs`, and follows it there. With
+/// `dry_run`, only report what would be sent.
+///
+/// # Errors
+///
+/// When `from` is not among the instance's `previous_domains`: the new actors
+/// would not list the old ones, and every server would refuse the Move.
+pub async fn move_followers(
+    state: &crate::state::AppState,
+    selection: &Selection,
+    from: &str,
+    dry_run: bool,
+) -> anyhow::Result<BatchReport> {
+    anyhow::ensure!(
+        state.instance.previous_domains.iter().any(|d| d == from),
+        "{from} is not in instance.previous_domains, so no actor lists its old id there \
+         and every server would refuse the Move; add it and restart first"
+    );
+    let (accounts, unknown) = select(&state.db, selection).await?;
+    let domain = state.instance.domain.clone();
+    let mut report = BatchReport {
+        unknown,
+        ..BatchReport::default()
+    };
+    for account in &accounts {
+        if !crate::federation::keypair::has_signing_key(state, account.id)
+            .await
+            .unwrap_or(false)
+        {
+            report
+                .skipped
+                .push((account.username.clone(), "no signing key"));
+            continue;
+        }
+        let old = crate::federation::tag::account_uri(
+            from,
+            account.id,
+            account.id_scheme,
+            &account.username,
+        );
+        let new = crate::federation::tag::account_uri_of(&domain, account);
+        let queued = if dry_run {
+            crate::federation::delivery::follower_inboxes(state, account.id)
+                .await?
+                .len() as u64
+        } else {
+            let activity = crate::federation::activity::move_actor(
+                &format!("{old}#moves/{}", crate::snowflake::next_id()),
+                &old,
+                &old,
+                &new,
+            );
+            crate::federation::delivery::fanout_to_followers_unproven(
+                state,
+                activity,
+                account.id,
+                format!("{old}#main-key"),
+            )
+            .await?
+        };
+        report.sent.push((account.username.clone(), queued));
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::valid_email;

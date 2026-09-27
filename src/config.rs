@@ -384,6 +384,13 @@ pub struct InstanceConfig {
     /// its canonical ActivityPub identity or emitted URLs.
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// Domains this instance's accounts had before `domain`, whose actors
+    /// they were. Each actor lists its id under each of them in
+    /// `alsoKnownAs`, which is what a follower's server checks before it
+    /// honours `eunha accounts move` and follows the account to `domain`.
+    /// Nothing is served on them.
+    #[serde(default)]
+    pub previous_domains: Vec<String>,
     pub title: String,
     #[serde(default)]
     pub description: String,

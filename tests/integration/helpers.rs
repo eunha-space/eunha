@@ -566,6 +566,7 @@ impl TestContext {
             instance: eunha::config::InstanceConfig {
                 domain: domain.clone(),
                 aliases: Vec::new(),
+                previous_domains: vec![format!("old-{domain}")],
                 title: "c2s test".into(),
                 description: String::new(),
                 short_description: String::new(),

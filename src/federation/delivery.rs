@@ -207,9 +207,26 @@ pub async fn forward_to_followers(
     enqueue(state, activity, inboxes, key_id, false).await
 }
 
+/// Send `activity` to the remote followers of `account_id`, signed with
+/// `key_id`, without an integrity proof: for an activity signed as an
+/// identity whose actor is no longer served, where a proof would name a key
+/// nobody can fetch.
+pub async fn fanout_to_followers_unproven(
+    state: &AppState,
+    activity: Value,
+    account_id: i64,
+    key_id: String,
+) -> anyhow::Result<u64> {
+    let inboxes = follower_inboxes(state, account_id).await?;
+    enqueue(state, activity, inboxes, key_id, false).await
+}
+
 /// The inboxes of `actor_account_id`'s remote followers, a shared inbox once
 /// for all the followers behind it, without unavailable domains.
-async fn follower_inboxes(state: &AppState, actor_account_id: i64) -> anyhow::Result<Vec<String>> {
+pub async fn follower_inboxes(
+    state: &AppState,
+    actor_account_id: i64,
+) -> anyhow::Result<Vec<String>> {
     let inboxes = sqlx::query!(
         r#"SELECT DISTINCT
              CASE WHEN a.shared_inbox_url IS NOT NULL AND a.shared_inbox_url <> ''
