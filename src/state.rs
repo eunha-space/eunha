@@ -32,6 +32,8 @@ pub struct AppState {
     pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<feder_runtime::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,
+    /// Outgoing deliveries, queued in `eunha.feder_queue` (federation::delivery).
+    pub deliverer: Arc<crate::federation::delivery::Deliverer>,
     /// This instance's domain and media locations, which every URL it serves is
     /// built from. Held here rather than process-wide, so that one process can
     /// serve several instances.
@@ -70,7 +72,7 @@ impl AppState {
                 "federation may reach these private networks; this relaxes an SSRF protection"
             );
         }
-        crate::federation::safe_fetch::set_allowed_private_networks(allowed);
+        crate::federation::safe_fetch::set_allowed_private_networks(allowed.clone());
 
         let fetch = crate::federation::safe_fetch::build_client();
 
@@ -100,6 +102,13 @@ impl AppState {
             crate::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
         });
 
+        let deliverer = Arc::new(crate::federation::delivery::deliverer(
+            db.clone(),
+            encryptor.clone(),
+            &config.workers.sanitized(),
+            allowed.clone(),
+        )?);
+
         let instance = Arc::new(config.instance.clone());
         Ok(Self {
             db,
@@ -116,6 +125,7 @@ impl AppState {
             encryptor,
             instance_actor_key: Arc::default(),
             queues: Arc::default(),
+            deliverer,
             urls,
             stop: tokio_util::sync::CancellationToken::new(),
         })

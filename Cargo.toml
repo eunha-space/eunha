@@ -93,6 +93,9 @@ feder-vocab = { git = "https://github.com/limeburst/feder.git" }
 feder-core = { git = "https://github.com/limeburst/feder.git" }
 # Std runtime building blocks (HTTP signatures, WebFinger)
 feder-runtime = { git = "https://github.com/limeburst/feder.git" }
+# Queued delivery: the deliverer, and its queue in `eunha.feder_queue`.
+feder = { git = "https://github.com/limeburst/feder.git" }
+feder-postgres = { git = "https://github.com/limeburst/feder.git" }
 
 # Config / environment
 config = "0.15"
@@ -148,6 +151,9 @@ sha2 = "0.10"
 base64 = "0.22"
 chrono = "0.4"
 feder-runtime = { git = "https://github.com/limeburst/feder.git" }
+# The checks every feder queue backend has to pass, run against the table
+# eunha's migrations build.
+feder = { git = "https://github.com/limeburst/feder.git", features = ["testing"] }
 reqwest = { version = "0.12", features = ["json", "multipart"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 tokio-tungstenite = "0.26"

@@ -42,6 +42,16 @@ pub struct SigningKey {
 /// A revoked or expired keypair is skipped, matching the model's `usable`
 /// scope, and the legacy columns answer for accounts whose key never moved.
 pub async fn signing_key(state: &AppState, account_id: i64) -> Result<SigningKey> {
+    signing_key_in(&state.db, state.encryptor.as_ref(), account_id).await
+}
+
+/// [`signing_key`], from a pool and an encryptor rather than the whole
+/// state: what the deliverer, which the state holds, reads keys with.
+pub async fn signing_key_in(
+    db: &sqlx::PgPool,
+    encryptor: Option<&crate::rails_encryption::Encryptor>,
+    account_id: i64,
+) -> Result<SigningKey> {
     let stored = sqlx::query!(
         r#"SELECT private_key, public_key
            FROM keypairs
@@ -54,7 +64,7 @@ pub async fn signing_key(state: &AppState, account_id: i64) -> Result<SigningKey
         account_id,
         MAIN_KEY_FRAGMENT,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?;
 
     if let Some(row) = stored {
@@ -62,7 +72,7 @@ pub async fn signing_key(state: &AppState, account_id: i64) -> Result<SigningKey
             .private_key
             .filter(|key| !key.is_empty())
             .ok_or_else(|| anyhow!("keypair for account {account_id} has no private key"))?;
-        let encryptor = state.encryptor.as_ref().ok_or_else(|| {
+        let encryptor = encryptor.ok_or_else(|| {
             anyhow!(
                 "account {account_id} keeps its signing key in `keypairs`, which is encrypted, \
                  but no ActiveRecord encryption keys are configured"
@@ -80,7 +90,7 @@ pub async fn signing_key(state: &AppState, account_id: i64) -> Result<SigningKey
         "SELECT private_key, public_key FROM accounts WHERE id = $1",
         account_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or_else(|| anyhow!("account {account_id} does not exist"))?;
 

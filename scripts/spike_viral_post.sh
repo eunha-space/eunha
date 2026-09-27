@@ -250,7 +250,7 @@ sample_loop() {
     snap=$(cat "$WORK/snap")
     row=$(q "SELECT (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NULL),
                     (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NOT NULL),
-                    (SELECT count(*) FROM eunha.activity_delivery_jobs),
+                    (SELECT count(*) FROM eunha.feder_queue WHERE queue = 'delivery' AND failed_at IS NULL),
                     count(*) FILTER (WHERE state = 'active' AND pid <> pg_backend_pid()),
                     count(*) FILTER (WHERE state = 'idle'),
                     count(*) FILTER (WHERE wait_event_type = 'Lock')

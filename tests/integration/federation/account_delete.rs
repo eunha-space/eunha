@@ -52,8 +52,8 @@ async fn test_self_deletion_federates_delete_actor() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let job: (serde_json::Value, String) = sqlx::query_as(
-        r#"SELECT activity, inbox_url FROM eunha.activity_delivery_jobs
-           WHERE activity->>'type' = 'Delete'"#,
+        r#"SELECT payload->'activity', payload->>'inbox' FROM eunha.feder_queue
+           WHERE queue = 'delivery' AND payload->'activity'->>'type' = 'Delete'"#,
     )
     .fetch_one(&ctx.db)
     .await

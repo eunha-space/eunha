@@ -1907,7 +1907,9 @@ dependencies = [
  "config",
  "dotenvy",
  "emojis",
+ "feder",
  "feder-core",
+ "feder-postgres",
  "feder-runtime",
  "feder-vocab",
  "flate2",
@@ -1993,9 +1995,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "feder"
+version = "0.1.0"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
+dependencies = [
+ "feder-runtime",
+ "futures-util",
+ "ipnet",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "feder-core"
 version = "0.1.0"
-source = "git+https://github.com/limeburst/feder.git#5eeb2d5cb2fde038b82384f03bb41a5aaa3b9ef6"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
 dependencies = [
  "feder-vocab",
 ]
@@ -2003,16 +2019,26 @@ dependencies = [
 [[package]]
 name = "feder-jsonld"
 version = "0.1.0"
-source = "git+https://github.com/limeburst/feder.git#5eeb2d5cb2fde038b82384f03bb41a5aaa3b9ef6"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
 dependencies = [
  "iri-string",
  "serde_json",
 ]
 
 [[package]]
+name = "feder-postgres"
+version = "0.1.0"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
+dependencies = [
+ "feder",
+ "serde_json",
+ "sqlx",
+]
+
+[[package]]
 name = "feder-runtime"
 version = "0.1.0"
-source = "git+https://github.com/limeburst/feder.git#5eeb2d5cb2fde038b82384f03bb41a5aaa3b9ef6"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2032,7 +2058,7 @@ dependencies = [
 [[package]]
 name = "feder-vocab"
 version = "0.1.0"
-source = "git+https://github.com/limeburst/feder.git#5eeb2d5cb2fde038b82384f03bb41a5aaa3b9ef6"
+source = "git+https://github.com/limeburst/feder.git#1b873611b0852819c5a9216c9c25a1b2dc647b9a"
 dependencies = [
  "feder-jsonld",
  "iri-string",
@@ -2752,7 +2778,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -4072,7 +4098,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.40",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4109,7 +4135,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]

@@ -51,12 +51,12 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
     // with `FOR UPDATE SKIP LOCKED`, so adding loops within this process scales
     // the same way adding processes would.
     let workers = state.config.workers.sanitized();
-    for index in 0..workers.delivery_workers {
-        tasks.push(until_stopped(
-            &state,
-            "delivery queue",
-            crate::federation::delivery::run_delivery_queue(state.clone(), index),
-        ));
+    for _ in 0..workers.delivery_workers {
+        let deliverer = state.deliverer.clone();
+        let stop = state.stop.clone();
+        tasks.push(until_stopped(&state, "delivery queue", async move {
+            deliverer.run_until(stop.cancelled_owned()).await;
+        }));
     }
     for index in 0..workers.inbox_workers {
         tasks.push(until_stopped(

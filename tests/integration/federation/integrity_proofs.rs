@@ -59,7 +59,7 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     // The queued activity is what every inbox receives.
     let activity: Value = sqlx::query_scalar(
-        "SELECT activity FROM eunha.activity_delivery_jobs ORDER BY id DESC LIMIT 1",
+        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue = 'delivery' ORDER BY id DESC LIMIT 1",
     )
     .fetch_one(&ctx.db)
     .await
@@ -181,7 +181,7 @@ async fn test_proofs_are_not_attached_unless_asked_for() {
         .await;
 
     let activity: Value = sqlx::query_scalar(
-        "SELECT activity FROM eunha.activity_delivery_jobs ORDER BY id DESC LIMIT 1",
+        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue = 'delivery' ORDER BY id DESC LIMIT 1",
     )
     .fetch_one(&ctx.db)
     .await
