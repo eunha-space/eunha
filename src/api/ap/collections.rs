@@ -8,18 +8,11 @@
 //! featuring *remote* accounts with their consent) is not yet implemented; only
 //! locally-owned collections and their accepted items are federated outbound.
 
-use axum::{
-    extract::{Extension, Path},
-    http::{header, StatusCode},
-    response::{IntoResponse, Response},
-    Json,
-};
 use serde_json::{json, Value};
 
-use super::objects::{AccountRef, CONTENT_TYPE};
+use super::objects::AccountRef;
 use crate::{
     error::{AppError, AppResult},
-    middleware::ResolvedInstance,
     state::AppState,
 };
 
@@ -58,7 +51,7 @@ fn actor_uri(domain: &str, username: &str) -> String {
 /// Resolve a member account's actor URI. Local accounts use their id_scheme-aware
 /// canonical URI (the stored `uri` is empty for Mastodon-imported locals); remote
 /// accounts use their stored `uri`.
-fn resolve_actor_uri(
+pub(super) fn resolve_actor_uri(
     domain: &str,
     stored: Option<String>,
     is_local: bool,
@@ -205,50 +198,23 @@ pub async fn featured_collection_body(
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
-/// GET /collections/{id} — the FeaturedCollection AP object.
-pub async fn get_collection(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-) -> AppResult<Response> {
-    let c = load_ap_collection(&state, id)
+/// `/collections/{id}` — the FeaturedCollection AP object.
+pub async fn collection_document(state: &AppState, domain: &str, id: i64) -> AppResult<Value> {
+    let c = load_ap_collection(state, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let mut body = featured_collection_body(&state, &instance.domain, &c).await?;
+    let mut body = featured_collection_body(state, domain, &c).await?;
     body["@context"] = collection_context();
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
+    Ok(body)
 }
 
-/// GET /users/{username}/collections — an OrderedCollection of the account's
+/// `/users/{username}/collections` — an OrderedCollection of the account's
 /// FeaturedCollection object URIs.
-pub async fn get_account_collections(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(username): Path<String>,
-) -> AppResult<Response> {
-    account_collections(&state, &instance.domain, AccountRef::Username(&username)).await
-}
-
-/// Numeric-scheme collections (`/ap/users/{id}/collections`).
-pub async fn get_account_collections_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-) -> AppResult<Response> {
-    account_collections(&state, &instance.domain, AccountRef::Id(id)).await
-}
-
-async fn account_collections(
+pub async fn account_collections(
     state: &AppState,
     domain: &str,
     who: AccountRef<'_>,
-) -> AppResult<Response> {
+) -> AppResult<Value> {
     let account = super::objects::load_local_account(state, who).await?;
 
     let ids = sqlx::query_scalar!(
@@ -273,22 +239,17 @@ async fn account_collections(
         "totalItems": items.len(),
         "orderedItems": items,
     });
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
+    Ok(body)
 }
 
-/// GET /users/{username}/feature_authorizations/{id} — the FeatureAuthorization
+/// `/users/{username}/feature_authorizations/{id}` — the FeatureAuthorization
 /// stamp proving a local account consented to being featured in a collection.
-pub async fn get_feature_authorization(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((username, id)): Path<(String, i64)>,
-) -> AppResult<Response> {
+pub async fn feature_authorization_document(
+    state: &AppState,
+    domain: &str,
+    username: &str,
+    id: i64,
+) -> AppResult<Value> {
     let row = sqlx::query!(
         r#"SELECT c.local AS collection_local, c.id AS collection_id,
                   c.uri AS "collection_uri?", a.uri AS "account_uri?"
@@ -304,7 +265,6 @@ pub async fn get_feature_authorization(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let domain = &instance.domain;
     let auth_id = format!("https://{domain}/users/{username}/feature_authorizations/{id}");
     let collection_uri = match row.collection_uri {
         Some(uri) if !uri.is_empty() => uri,
@@ -312,7 +272,7 @@ pub async fn get_feature_authorization(
     };
     let account_uri = match row.account_uri {
         Some(uri) if !uri.is_empty() => uri,
-        _ => actor_uri(domain, &username),
+        _ => actor_uri(domain, username),
     };
 
     let mut body =
@@ -327,22 +287,17 @@ pub async fn get_feature_authorization(
             "interactionTarget": { "@id": "toot:interactionTarget", "@type": "@id" },
         }
     ]);
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
+    Ok(body)
 }
 
-/// GET /users/{username}/quote_authorizations/{id} — the QuoteAuthorization
+/// `/users/{username}/quote_authorizations/{id}` — the QuoteAuthorization
 /// stamp proving a local account authorized a quote of one of its posts.
-pub async fn get_quote_authorization(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((username, id)): Path<(String, i64)>,
-) -> AppResult<Response> {
+pub async fn quote_authorization_document(
+    state: &AppState,
+    domain: &str,
+    username: &str,
+    id: i64,
+) -> AppResult<Value> {
     let row = sqlx::query!(
         r#"SELECT qs.uri AS "quoted_status_uri?", ss.uri AS "quoting_status_uri?",
                   qa.id AS quoted_account_id, qa.id_scheme AS quoted_account_id_scheme
@@ -365,14 +320,13 @@ pub async fn get_quote_authorization(
         return Err(AppError::NotFound);
     };
 
-    let domain = &instance.domain;
     let auth_id = format!("https://{domain}/users/{username}/quote_authorizations/{id}");
     // The quoted account is local, so its actor id follows from its id scheme.
     let quoted_account_uri = crate::federation::tag::account_uri(
         domain,
         row.quoted_account_id,
         row.quoted_account_id_scheme,
-        &username,
+        username,
     );
     let mut body = crate::federation::consent::quote_authorization(
         &auth_id,
@@ -390,295 +344,7 @@ pub async fn get_quote_authorization(
             "interactionTarget": { "@id": "toot:interactionTarget", "@type": "@id" },
         }
     ]);
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
-}
-
-// ── followers / following / featured collections ──────────────────────────────
-
-#[derive(serde::Deserialize)]
-pub struct PageQuery {
-    pub page: Option<bool>,
-    pub max_id: Option<i64>,
-}
-
-/// Whether a relation collection (followers/following) is paged.
-enum Relation {
-    Followers,
-    Following,
-}
-
-/// GET /users/{username}/followers — an OrderedCollection of follower actor URIs.
-pub async fn get_followers(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(username): Path<String>,
-    axum::extract::Query(q): axum::extract::Query<PageQuery>,
-) -> AppResult<Response> {
-    relation_collection(
-        &state,
-        &instance.domain,
-        AccountRef::Username(&username),
-        Relation::Followers,
-        q,
-    )
-    .await
-}
-
-/// GET /users/{username}/following — an OrderedCollection of followed actor URIs.
-pub async fn get_following(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(username): Path<String>,
-    axum::extract::Query(q): axum::extract::Query<PageQuery>,
-) -> AppResult<Response> {
-    relation_collection(
-        &state,
-        &instance.domain,
-        AccountRef::Username(&username),
-        Relation::Following,
-        q,
-    )
-    .await
-}
-
-/// Numeric-scheme followers (`/ap/users/{id}/followers`).
-pub async fn get_followers_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-    axum::extract::Query(q): axum::extract::Query<PageQuery>,
-) -> AppResult<Response> {
-    relation_collection(
-        &state,
-        &instance.domain,
-        AccountRef::Id(id),
-        Relation::Followers,
-        q,
-    )
-    .await
-}
-
-/// Numeric-scheme following (`/ap/users/{id}/following`).
-pub async fn get_following_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-    axum::extract::Query(q): axum::extract::Query<PageQuery>,
-) -> AppResult<Response> {
-    relation_collection(
-        &state,
-        &instance.domain,
-        AccountRef::Id(id),
-        Relation::Following,
-        q,
-    )
-    .await
-}
-
-async fn relation_collection(
-    state: &AppState,
-    domain: &str,
-    who: AccountRef<'_>,
-    rel: Relation,
-    q: PageQuery,
-) -> AppResult<Response> {
-    let account = super::objects::load_local_account(state, who).await?;
-
-    let (rel_name, total): (&str, i64) = match rel {
-        Relation::Followers => (
-            "followers",
-            sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM follows WHERE target_account_id = $1",
-                account.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(0),
-        ),
-        Relation::Following => (
-            "following",
-            sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM follows WHERE account_id = $1",
-                account.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(0),
-        ),
-    };
-
-    let base = format!(
-        "{}/{rel_name}",
-        crate::federation::tag::account_uri_of(domain, &account)
-    );
-    let hidden = account.hide_collections.unwrap_or(false);
-
-    // Summary view: advertise the count, and a first page only when not hidden.
-    if q.page != Some(true) {
-        let mut body = json!({
-            "@context": "https://www.w3.org/ns/activitystreams",
-            "id": base,
-            "type": "OrderedCollection",
-            "totalItems": total,
-        });
-        if !hidden {
-            body["first"] = json!(format!("{base}?page=true"));
-        }
-        return Ok((
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, CONTENT_TYPE)],
-            Json(body),
-        )
-            .into_response());
-    }
-
-    // Hidden collections expose only the count, never the membership.
-    if hidden {
-        let body = json!({
-            "@context": "https://www.w3.org/ns/activitystreams",
-            "id": format!("{base}?page=true"),
-            "type": "OrderedCollectionPage",
-            "partOf": base,
-            "totalItems": total,
-            "orderedItems": [],
-        });
-        return Ok((
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, CONTENT_TYPE)],
-            Json(body),
-        )
-            .into_response());
-    }
-
-    const PAGE_SIZE: i64 = 40;
-    // (follow_id, resolved actor uri) pairs, newest follow first.
-    let rows: Vec<(i64, String)> = match rel {
-        Relation::Followers => sqlx::query!(
-            r#"SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
-               FROM follows f JOIN accounts a ON a.id = f.account_id
-               WHERE f.target_account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)
-               ORDER BY f.id DESC LIMIT $3"#,
-            account.id,
-            q.max_id,
-            PAGE_SIZE,
-        )
-        .fetch_all(&state.db)
-        .await?
-        .into_iter()
-        .map(|r| (r.id, resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username)))
-        .collect(),
-        Relation::Following => sqlx::query!(
-            r#"SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
-               FROM follows f JOIN accounts a ON a.id = f.target_account_id
-               WHERE f.account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)
-               ORDER BY f.id DESC LIMIT $3"#,
-            account.id,
-            q.max_id,
-            PAGE_SIZE,
-        )
-        .fetch_all(&state.db)
-        .await?
-        .into_iter()
-        .map(|r| (r.id, resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username)))
-        .collect(),
-    };
-
-    let items: Vec<String> = rows.iter().map(|(_, uri)| uri.clone()).collect();
-    let next = (rows.len() as i64 == PAGE_SIZE)
-        .then(|| {
-            rows.last()
-                .map(|(id, _)| format!("{base}?page=true&max_id={id}"))
-        })
-        .flatten();
-
-    let mut body = json!({
-        "@context": "https://www.w3.org/ns/activitystreams",
-        "id": format!("{base}?page=true{}", q.max_id.map(|m| format!("&max_id={m}")).unwrap_or_default()),
-        "type": "OrderedCollectionPage",
-        "partOf": base,
-        "totalItems": total,
-        "orderedItems": items,
-    });
-    if let Some(next) = next {
-        body["next"] = json!(next);
-    }
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
-}
-
-/// GET /users/{username}/collections/featured — an OrderedCollection of the
-/// account's pinned status URIs (Mastodon's `featured` collection).
-pub async fn get_featured(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(username): Path<String>,
-) -> AppResult<Response> {
-    featured_collection(&state, &instance.domain, AccountRef::Username(&username)).await
-}
-
-/// Numeric-scheme featured collection (`/ap/users/{id}/collections/featured`).
-pub async fn get_featured_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-) -> AppResult<Response> {
-    featured_collection(&state, &instance.domain, AccountRef::Id(id)).await
-}
-
-async fn featured_collection(
-    state: &AppState,
-    domain: &str,
-    who: AccountRef<'_>,
-) -> AppResult<Response> {
-    let account = super::objects::load_local_account(state, who).await?;
-
-    // Pinned, publicly-visible statuses, newest pin first (mirrors Mastodon).
-    let rows = sqlx::query!(
-        r#"SELECT s.id, s.uri AS "uri?"
-           FROM status_pins p JOIN statuses s ON s.id = p.status_id
-           WHERE p.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
-           ORDER BY p.id DESC"#,
-        account.id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    // The account's own scheme, not the one it was asked under: an actor has a
-    // single canonical URI, and the collection has to be a path beneath it.
-    let actor = crate::federation::tag::account_uri_of(domain, &account);
-    let items: Vec<String> = rows
-        .iter()
-        .map(|r| {
-            r.uri
-                .clone()
-                .filter(|u| !u.is_empty())
-                .unwrap_or_else(|| format!("{actor}/statuses/{}", r.id))
-        })
-        .collect();
-
-    let body = json!({
-        "@context": "https://www.w3.org/ns/activitystreams",
-        "id": format!("{actor}/collections/featured"),
-        "type": "OrderedCollection",
-        "totalItems": items.len(),
-        "orderedItems": items,
-    });
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response())
+    Ok(body)
 }
 
 // ── Activity builders (for outbound distribution to followers) ─────────────────

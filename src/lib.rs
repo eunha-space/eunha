@@ -31,7 +31,6 @@ pub mod tenants;
 pub mod upstream;
 pub mod version;
 pub mod web;
-pub mod well_known;
 
 use axum::{extract::Request, middleware as axum_middleware, response::IntoResponse, Router};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
@@ -40,14 +39,18 @@ use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLay
 /// request belongs to rides on the request itself, put there by the tenant
 /// dispatcher, so these routes are shared by every instance the process serves.
 pub fn build_app() -> Router {
-    let compressed = Router::new()
-        .merge(well_known::router())
+    let routes = Router::new()
         .merge(api::mastodon::router())
         .merge(api::account::router())
         .merge(api::eunha::router())
         .merge(api::ap::router())
-        .fallback(axum::routing::any(fallback))
-        .layer(CompressionLayer::new());
+        .fallback(axum::routing::any(fallback));
+    // What other servers fetch, WebFinger and NodeInfo included, is feder's,
+    // for the instance the tenant dispatcher put on the request.
+    let compressed = feder_axum::wrap(routes, api::ap::serving::federation(), |parts| {
+        parts.extensions.get::<state::AppState>().cloned()
+    })
+    .layer(CompressionLayer::new());
 
     Router::new()
         .merge(compressed)

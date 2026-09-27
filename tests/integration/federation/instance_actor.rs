@@ -10,7 +10,7 @@ use crate::helpers::TestContext;
 async fn test_instance_actor_served_with_public_key() {
     let ctx = TestContext::new("inst-actor").await;
 
-    let resp = ctx.api.get("/actor", None).await;
+    let resp = ctx.api.ap_get("/actor", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let actor: Value = resp.json().await.unwrap();
 
@@ -37,6 +37,6 @@ async fn test_instance_actor_served_with_public_key() {
     );
 
     // The key is persisted, so a second fetch returns the same one.
-    let actor2: Value = ctx.api.get("/actor", None).await.json().await.unwrap();
+    let actor2: Value = ctx.api.ap_get("/actor", None).await.json().await.unwrap();
     assert_eq!(actor2["publicKey"]["publicKeyPem"].as_str(), Some(pem));
 }

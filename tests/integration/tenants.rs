@@ -301,7 +301,12 @@ async fn test_discovery_answers_only_for_the_tenant_asked() {
     }
 
     for (client, domain) in [(&to_a, &a.domain), (&to_b, &b.domain)] {
-        let actor: Value = client.get("/users/alice", None).await.json().await.unwrap();
+        let actor: Value = client
+            .ap_get("/users/alice", None)
+            .await
+            .json()
+            .await
+            .unwrap();
         assert_eq!(
             actor["id"].as_str(),
             Some(format!("https://{domain}/users/alice").as_str()),

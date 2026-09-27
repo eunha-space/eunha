@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS \"is_local!\"\n               FROM follows f JOIN accounts a ON a.id = f.target_account_id\n               WHERE f.account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)\n               ORDER BY f.id DESC LIMIT $3",
+  "query": "SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS \"is_local!\"\n                       FROM follows f JOIN accounts a ON a.id = f.target_account_id\n                       WHERE f.account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)\n                       ORDER BY f.id DESC LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -50,5 +50,5 @@
       null
     ]
   },
-  "hash": "e244444a514aa35eea4692ae53470af126e43507a9d2c8ceb57efb4294d004d0"
+  "hash": "d6657741a25460882ebba441f3471eb4652706e9b00902421261d0a670b4373d"
 }

@@ -233,7 +233,7 @@ async fn test_quote_consent_handshake_between_instances() {
     let auth_path = approval_uri
         .strip_prefix(&format!("https://{}", b.domain))
         .unwrap();
-    let auth: Value = b.api.get(auth_path, None).await.json().await.unwrap();
+    let auth: Value = b.api.ap_get(auth_path, None).await.json().await.unwrap();
     assert_eq!(auth["type"].as_str(), Some("QuoteAuthorization"));
     assert_eq!(auth["interactionTarget"].as_str(), Some(s_uri.as_str()));
     assert_eq!(

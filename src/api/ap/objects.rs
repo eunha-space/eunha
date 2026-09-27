@@ -1,27 +1,20 @@
-use axum::{
-    extract::{Extension, Path},
-    http::{header, StatusCode},
-    response::{IntoResponse, Response},
-    Json,
-};
+//! The documents local actors and their statuses are served as; feder serves
+//! them (`super::serving`).
+
 use serde_json::{json, Value};
 
 use crate::{
     error::{AppError, AppResult},
-    middleware::ResolvedInstance,
     state::AppState,
 };
 
 pub const ACTIVITY_STREAMS: &str = "application/activity+json";
-pub const CONTENT_TYPE: &str = "application/activity+json; charset=utf-8";
 
-/// Serve the instance actor at `/actor`: an Application actor whose public key
+/// The instance actor, served at `/actor`: an Application actor whose public key
 /// remote servers fetch to verify our signed authorized-fetch GET requests.
-pub async fn get_instance_actor(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-) -> AppResult<Response> {
-    let public_key = crate::federation::instance_actor::public_key(&state)
+pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
+    let instance = &state.instance;
+    let public_key = crate::federation::instance_actor::public_key(state)
         .await
         .map_err(AppError::Internal)?;
     let actor_url = crate::federation::instance_actor::actor_url(&instance.domain);
@@ -44,74 +37,7 @@ pub async fn get_instance_actor(
         },
     });
 
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(actor),
-    )
-        .into_response())
-}
-
-/// Serve a local status as a bare ActivityPub `Note` object — username scheme
-/// (`/users/{username}/statuses/{id}`).
-pub async fn get_status(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((username, id)): Path<(String, i64)>,
-) -> AppResult<Response> {
-    let bundle = status_bundle(
-        &state,
-        &instance.domain,
-        AccountRef::Username(&username),
-        id,
-    )
-    .await?;
-    Ok(note_response(bundle.into_note()))
-}
-
-/// Numeric-scheme status (`/ap/users/{account_id}/statuses/{id}`).
-pub async fn get_status_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((account_id, id)): Path<(i64, i64)>,
-) -> AppResult<Response> {
-    let bundle = status_bundle(&state, &instance.domain, AccountRef::Id(account_id), id).await?;
-    Ok(note_response(bundle.into_note()))
-}
-
-/// Serve the `Create(Note)` wrapper at `{status}/activity` — username scheme.
-pub async fn get_status_activity(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((username, id)): Path<(String, i64)>,
-) -> AppResult<Response> {
-    let bundle = status_bundle(
-        &state,
-        &instance.domain,
-        AccountRef::Username(&username),
-        id,
-    )
-    .await?;
-    Ok(note_response(bundle.into_create()))
-}
-
-/// Numeric-scheme `{status}/activity`.
-pub async fn get_status_activity_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path((account_id, id)): Path<(i64, i64)>,
-) -> AppResult<Response> {
-    let bundle = status_bundle(&state, &instance.domain, AccountRef::Id(account_id), id).await?;
-    Ok(note_response(bundle.into_create()))
-}
-
-fn note_response(body: Value) -> Response {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, CONTENT_TYPE)],
-        Json(body),
-    )
-        .into_response()
+    Ok(actor)
 }
 
 /// How a local account is addressed in a request path: by `username`
@@ -153,7 +79,7 @@ pub async fn load_local_account(
 /// Load a status bundle, enforcing that it belongs to the addressed account and
 /// is publicly dereferenceable (public or unlisted). Private/direct posts are
 /// not served over unauthenticated AP GET.
-async fn status_bundle(
+pub(crate) async fn status_bundle(
     state: &AppState,
     domain: &str,
     who: AccountRef<'_>,
@@ -183,28 +109,6 @@ async fn status_bundle(
     super::note::build_note(state, domain, id)
         .await?
         .ok_or(AppError::NotFound)
-}
-
-/// Serve the actor — username scheme (`/users/{username}`).
-pub async fn get_actor(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(username): Path<String>,
-) -> AppResult<Response> {
-    let account = load_local_account(&state, AccountRef::Username(&username)).await?;
-    let actor = actor_json(&state, &instance.domain, &account).await?;
-    Ok(note_response(actor))
-}
-
-/// Serve the actor — numeric scheme (`/ap/users/{id}`).
-pub async fn get_actor_by_id(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Path(id): Path<i64>,
-) -> AppResult<Response> {
-    let account = load_local_account(&state, AccountRef::Id(id)).await?;
-    let actor = actor_json(&state, &instance.domain, &account).await?;
-    Ok(note_response(actor))
 }
 
 pub async fn actor_json(

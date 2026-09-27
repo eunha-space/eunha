@@ -96,6 +96,20 @@ impl ApiClient {
         req.send().await.unwrap()
     }
 
+    /// GET asking for ActivityPub, as another server does. Without it an
+    /// actor's or a status's URI answers with the page a browser is sent to.
+    pub async fn ap_get(&self, path: &str, token: Option<&str>) -> reqwest::Response {
+        let mut req = self
+            .http
+            .get(self.url(path))
+            .header("host", &self.host)
+            .header("accept", "application/activity+json");
+        if let Some(t) = token {
+            req = req.bearer_auth(t);
+        }
+        req.send().await.unwrap()
+    }
+
     pub async fn post_json(
         &self,
         path: &str,

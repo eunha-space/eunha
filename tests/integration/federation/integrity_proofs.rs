@@ -87,7 +87,7 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
     // The actor document publishes the key the proof names.
     let actor: Value = ctx
         .api
-        .get(&format!("/ap/users/{alice_id}"), None)
+        .ap_get(&format!("/ap/users/{alice_id}"), None)
         .await
         .json()
         .await
@@ -121,7 +121,7 @@ async fn test_an_unused_account_publishes_no_key() {
 
     let actor: Value = ctx
         .api
-        .get(&format!("/ap/users/{bob_id}"), None)
+        .ap_get(&format!("/ap/users/{bob_id}"), None)
         .await
         .json()
         .await

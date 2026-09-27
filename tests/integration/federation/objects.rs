@@ -50,7 +50,7 @@ async fn test_preview_card_is_served_as_a_link_attachment() {
 
     let note: Value = ctx
         .api
-        .get(&format!("/users/alice/statuses/{id}"), None)
+        .ap_get(&format!("/users/alice/statuses/{id}"), None)
         .await
         .json()
         .await
@@ -79,7 +79,7 @@ async fn test_status_served_as_ap_note() {
 
     let resp = ctx
         .api
-        .get(&format!("/users/alice/statuses/{id}"), None)
+        .ap_get(&format!("/users/alice/statuses/{id}"), None)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let note: Value = resp.json().await.unwrap();
@@ -103,7 +103,7 @@ async fn test_status_served_as_ap_note() {
     // The /activity wrapper is a Create around the same Note.
     let resp = ctx
         .api
-        .get(&format!("/users/alice/statuses/{id}/activity"), None)
+        .ap_get(&format!("/users/alice/statuses/{id}/activity"), None)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let create: Value = resp.json().await.unwrap();
@@ -127,7 +127,7 @@ async fn test_private_status_not_dereferenceable() {
 
     let resp = ctx
         .api
-        .get(&format!("/users/alice/statuses/{id}"), None)
+        .ap_get(&format!("/users/alice/statuses/{id}"), None)
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
@@ -151,7 +151,7 @@ async fn test_followers_following_collections() {
     // bob's followers collection counts alice.
     let followers: Value = ctx
         .api
-        .get("/users/bob/followers", None)
+        .ap_get("/users/bob/followers", None)
         .await
         .json()
         .await
@@ -159,13 +159,10 @@ async fn test_followers_following_collections() {
     assert_eq!(followers["type"].as_str(), Some("OrderedCollection"));
     assert_eq!(followers["totalItems"].as_i64(), Some(1));
 
-    let page: Value = ctx
-        .api
-        .get("/users/bob/followers?page=true", None)
-        .await
-        .json()
-        .await
-        .unwrap();
+    // The first page, where the collection says it is.
+    let first = url::Url::parse(followers["first"].as_str().expect("a first page")).unwrap();
+    let first = format!("{}?{}", first.path(), first.query().unwrap_or_default());
+    let page: Value = ctx.api.ap_get(&first, None).await.json().await.unwrap();
     let alice_uri = format!("https://{}/users/alice", ctx.domain);
     assert!(
         page["orderedItems"]
@@ -177,7 +174,7 @@ async fn test_followers_following_collections() {
     // alice's following collection counts bob.
     let following: Value = ctx
         .api
-        .get("/users/alice/following", None)
+        .ap_get("/users/alice/following", None)
         .await
         .json()
         .await
@@ -203,7 +200,7 @@ async fn test_featured_collection_lists_pins() {
 
     let featured: Value = ctx
         .api
-        .get("/users/alice/collections/featured", None)
+        .ap_get("/users/alice/collections/featured", None)
         .await
         .json()
         .await
@@ -249,7 +246,7 @@ async fn test_numeric_scheme_serves_its_advertised_collections() {
     // Whatever the actor says it has, fetched exactly as a peer would.
     let actor: Value = ctx
         .api
-        .get(&format!("/ap/users/{}", ctx.alice_id), None)
+        .ap_get(&format!("/ap/users/{}", ctx.alice_id), None)
         .await
         .json()
         .await
@@ -268,7 +265,7 @@ async fn test_numeric_scheme_serves_its_advertised_collections() {
         format!("/ap/users/{}/collections/featured", ctx.alice_id),
         format!("/ap/users/{}/collections", ctx.alice_id),
     ] {
-        let resp = ctx.api.get(&path, None).await;
+        let resp = ctx.api.ap_get(&path, None).await;
         let status = resp.status();
         // Read as text first: without the route this is the SPA's index.html,
         // and `json()` would panic on the decode rather than say what arrived.
@@ -291,7 +288,7 @@ async fn test_numeric_scheme_serves_its_advertised_collections() {
 
     let featured: Value = ctx
         .api
-        .get(
+        .ap_get(
             &format!("/ap/users/{}/collections/featured", ctx.alice_id),
             None,
         )
@@ -341,7 +338,7 @@ async fn test_actor_serializes_profile_fields() {
 
     let actor: Value = ctx
         .api
-        .get("/users/alice", None)
+        .ap_get("/users/alice", None)
         .await
         .json()
         .await

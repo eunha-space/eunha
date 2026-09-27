@@ -9,5 +9,6 @@ mod integrity_proofs;
 mod keypairs;
 mod objects;
 mod quote;
+mod serving;
 mod signature;
 mod signature_rfc9421;

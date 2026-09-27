@@ -300,7 +300,7 @@ async fn test_collection_activitypub_representation() {
     // Actor advertises its collections endpoint.
     let actor: Value = ctx
         .api
-        .get("/users/alice", None)
+        .ap_get("/users/alice", None)
         .await
         .json()
         .await
@@ -316,7 +316,7 @@ async fn test_collection_activitypub_representation() {
     // The account collections OrderedCollection lists the collection URI.
     let oc: Value = ctx
         .api
-        .get("/users/alice/collections", None)
+        .ap_get("/users/alice/collections", None)
         .await
         .json()
         .await
@@ -333,7 +333,7 @@ async fn test_collection_activitypub_representation() {
     // The FeaturedCollection object itself.
     let obj: Value = ctx
         .api
-        .get(&format!("/collections/{cid}"), None)
+        .ap_get(&format!("/collections/{cid}"), None)
         .await
         .json()
         .await

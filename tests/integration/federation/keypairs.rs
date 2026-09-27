@@ -145,7 +145,10 @@ async fn test_actor_document_serves_the_moved_public_key() {
 
     keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
 
-    let resp = ctx.api.get(&format!("/ap/users/{account_id}"), None).await;
+    let resp = ctx
+        .api
+        .ap_get(&format!("/ap/users/{account_id}"), None)
+        .await;
     let actor: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(
         actor["publicKey"]["publicKeyPem"].as_str(),
