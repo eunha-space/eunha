@@ -605,11 +605,13 @@ for the run: by default 85% quickly, 10% in one to four seconds, 3% with a 503,
 1% never (the client gives up after 30 seconds), and 1% with 410 Gone
 (`EUNHA_SPIKE_INBOXES`). Every delivery's HTTP signature is checked against the
 key eunha publishes, as Mastodon checks it, and one that fails is answered 401.
-The summary reports, for each post and each class of server, how many were
-reached and how long after the post the median, the 99th percentile and the
-last of them received it; how many deliveries failed to verify; how many were
-sent again to a server that had already accepted them; and what the queue still
-held at the end.
+After the last post the account also sends a direct message to one follower
+on a fast server (`EUNHA_SPIKE_DIRECT=0` sends none), to see how long a
+delivery to one inbox waits behind a fan-out. The summary reports, for each
+post and each class of server, how many were reached and how long after the
+post the median, the 99th percentile and the last of them received it; how many
+deliveries failed to verify; how many were sent again to a server that had
+already accepted them; and what the queue still held at the end.
 
 ### Against a copy of a real instance
 
@@ -836,8 +838,17 @@ run ended at 117 MiB. It still peaked at 5,080 sockets, so a service run under
 launchd, whose default is 256 open files, needs its limit raised.
 
 The queue is first in, first out, so a second post waits for the first to
-reach everyone. What is left at the end is the servers that answered 503 or
-nothing, retried with backoff, as it should be.
+reach everyone. So did everything else: a direct message to one follower, sent
+just after the third post, arrived 148 seconds later, behind every delivery of
+all three. Mastodon's deliveries share one queue in the same way. Sends to at
+most eight inboxes — a direct message, a reply, a follow and its answer — now
+wait in a queue of their own, which the delivery loop fills its free slots
+from first (feder's `DelivererConfig::priority`). The same message arrived in
+0.3 seconds, and the three posts reached every fast server as quickly as
+before.
+
+What is left at the end is the servers that answered 503 or nothing, retried
+with backoff, as it should be.
 
 
 Not yet measured

@@ -576,10 +576,15 @@ pub async fn batch_status(db: &sqlx::PgPool, tag: &str) -> anyhow::Result<BatchS
     let rows: Vec<(String, bool, Option<String>)> = sqlx::query_as(
         "SELECT payload->>'inbox', failed_at IS NOT NULL, last_error
          FROM eunha.feder_queue
-         WHERE queue = 'delivery' AND payload->>'tag' = $1
+         WHERE queue = ANY($2) AND payload->>'tag' = $1
          ORDER BY id",
     )
     .bind(tag)
+    // A small batch's deliveries wait in the priority queue.
+    .bind([
+        crate::federation::delivery::QUEUE,
+        crate::federation::delivery::PRIORITY_QUEUE,
+    ])
     .fetch_all(db)
     .await?;
     let mut status = BatchStatus::default();

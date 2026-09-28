@@ -27,7 +27,7 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 
 async fn queued_for(ctx: &TestContext, inbox: &str) -> Vec<Value> {
     sqlx::query_scalar(
-        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue = 'delivery' AND payload->>'inbox' = $1",
+        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
     )
     .bind(inbox)
     .fetch_all(&ctx.db)
@@ -328,7 +328,7 @@ async fn test_followers_are_moved_from_a_previous_domain() {
 
     let queued: Vec<(Value, String)> = sqlx::query_as(
         "SELECT payload->'activity', payload->>'sender' FROM eunha.feder_queue
-         WHERE queue = 'delivery' AND payload->>'inbox' = $1",
+         WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
     )
     .bind(format!("{nina}/inbox"))
     .fetch_all(&ctx.db)

@@ -40,6 +40,17 @@ const DELIVERY_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 /// The table feder keeps eunha's queue in (migrations/011_feder_queue.sql).
 pub const QUEUE_TABLE: &str = "eunha.feder_queue";
 
+/// The queue deliveries wait in, within [`QUEUE_TABLE`].
+pub const QUEUE: &str = "delivery";
+
+/// The queue a send to at most [`PRIORITY_MAX_INBOXES`] inboxes waits in, and
+/// whose deliveries take free slots first: a direct message, a reply, a
+/// follow or its answer is not held behind a post to thousands of servers.
+pub const PRIORITY_QUEUE: &str = "delivery-priority";
+
+/// How many inboxes a send may have and still go ahead of a fan-out.
+pub const PRIORITY_MAX_INBOXES: usize = 8;
+
 /// An instance's deliverer.
 pub type Deliverer = feder::deliverer::Deliverer<feder_postgres::PostgresQueue, SigningKeys>;
 
@@ -63,6 +74,11 @@ pub fn deliverer(
         per_host: workers.delivery_concurrency.max(1),
         idle_poll: Duration::from_secs(workers.queue_idle_poll_seconds.max(1)),
         shared_limit: Some(delivery_permits()),
+        queue: QUEUE.to_owned(),
+        priority: Some(feder::deliverer::Priority {
+            queue: PRIORITY_QUEUE.to_owned(),
+            max_inboxes: PRIORITY_MAX_INBOXES,
+        }),
         ..feder::deliverer::DelivererConfig::default()
     };
     let unavailable_db = db.clone();

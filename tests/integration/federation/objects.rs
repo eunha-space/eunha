@@ -426,7 +426,7 @@ async fn test_profile_update_reaches_recently_followed() {
 
     let delivered: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM eunha.feder_queue
-         WHERE queue = 'delivery' AND payload->>'inbox' = $1
+         WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1
            AND payload->'activity'->'object'->>'type' = 'Person'",
     )
     .bind(remote_inbox)
