@@ -66,40 +66,61 @@ pub fn deliverer(
         ..feder::deliverer::DelivererConfig::default()
     };
     let unavailable_db = db.clone();
-    Ok(
-        feder::deliverer::Deliverer::new(queue, SigningKeys { db, encryptor }, client, config)
-            .on_failure(move |failure| {
-                tracing::warn!(
-                    inbox = %failure.inbox,
-                    status = ?failure.status,
-                    error = %crate::error::sanitize_error_text(&failure.error),
-                    "gave up on a delivery"
-                );
-                // 410 Gone is a definitive signal the inbox no longer exists, so stop
-                // delivering to its domain.
-                if failure.status == Some(410) {
-                    if let Some(domain) = failure.inbox.host_str().map(str::to_owned) {
-                        let db = unavailable_db.clone();
-                        crate::tenants::spawn(async move {
-                            mark_domain_unavailable(&db, &domain).await
-                        });
-                    }
-                }
-            }),
+    Ok(feder::deliverer::Deliverer::new(
+        queue,
+        SigningKeys {
+            db,
+            encryptor,
+            parsed: Default::default(),
+        },
+        client,
+        config,
     )
+    .on_failure(move |failure| {
+        tracing::warn!(
+            inbox = %failure.inbox,
+            status = ?failure.status,
+            error = %crate::error::sanitize_error_text(&failure.error),
+            "gave up on a delivery"
+        );
+        // 410 Gone is a definitive signal the inbox no longer exists, so stop
+        // delivering to its domain.
+        if failure.status == Some(410) {
+            if let Some(domain) = failure.inbox.host_str().map(str::to_owned) {
+                let db = unavailable_db.clone();
+                crate::tenants::spawn(async move { mark_domain_unavailable(&db, &domain).await });
+            }
+        }
+    }))
 }
 
 /// The key a delivery is signed with, found by the key ID it was queued with.
 pub struct SigningKeys {
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
+    /// Keys already loaded, decrypted and parsed, by key ID. A post fans out
+    /// to thousands of inboxes signed with one key, and loading it for each
+    /// took two queries apiece: with many deliveries in flight they held the
+    /// instance's whole connection pool, and its own requests timed out.
+    parsed: std::sync::Mutex<
+        std::collections::HashMap<String, (std::time::Instant, feder::delivery::SenderKey)>,
+    >,
 }
+
+/// How long a loaded signing key is used before it is loaded again, so that a
+/// key replaced in the database is signed with soon after.
+const SIGNING_KEY_TTL: Duration = Duration::from_secs(300);
 
 impl feder::deliverer::SenderKeys for SigningKeys {
     async fn key(
         &self,
         key_id: &str,
     ) -> Result<Option<feder::delivery::SenderKey>, feder::queue::QueueError> {
+        if let Some((loaded, key)) = self.parsed.lock().expect("signing keys").get(key_id) {
+            if loaded.elapsed() < SIGNING_KEY_TTL {
+                return Ok(Some(key.clone()));
+            }
+        }
         let transient = |e: anyhow::Error| feder::queue::QueueError(e.to_string());
         let account_id = match signing_account_id_in(&self.db, key_id).await {
             Ok(id) => id,
@@ -123,10 +144,17 @@ impl feder::deliverer::SenderKeys for SigningKeys {
             }
         };
         match feder::delivery::PrivateKey::from_pem(&pem) {
-            Ok(private_key) => Ok(Some(feder::delivery::SenderKey {
-                key_id: key_id.to_owned(),
-                private_key: Arc::new(private_key),
-            })),
+            Ok(private_key) => {
+                let key = feder::delivery::SenderKey {
+                    key_id: key_id.to_owned(),
+                    private_key: Arc::new(private_key),
+                };
+                let mut parsed = self.parsed.lock().expect("signing keys");
+                // Only the keys signing now are worth keeping.
+                parsed.retain(|_, (loaded, _)| loaded.elapsed() < SIGNING_KEY_TTL);
+                parsed.insert(key_id.to_owned(), (std::time::Instant::now(), key.clone()));
+                Ok(Some(key))
+            }
             Err(e) => {
                 tracing::error!(key_id, error = %e, "signing key does not parse; the delivery fails");
                 Ok(None)
