@@ -119,7 +119,7 @@ pub struct SigningKeys {
     /// took two queries apiece: with many deliveries in flight they held the
     /// instance's whole connection pool, and its own requests timed out.
     parsed: std::sync::Mutex<
-        std::collections::HashMap<String, (std::time::Instant, ojak::delivery::SenderKey)>,
+        std::collections::HashMap<String, (std::time::Instant, ojak::sig::SenderKey)>,
     >,
 }
 
@@ -131,7 +131,7 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
     async fn key(
         &self,
         key_id: &str,
-    ) -> Result<Option<ojak::delivery::SenderKey>, ojak::queue::QueueError> {
+    ) -> Result<Option<ojak::sig::SenderKey>, ojak::queue::QueueError> {
         if let Some((loaded, key)) = self.parsed.lock().expect("signing keys").get(key_id) {
             if loaded.elapsed() < SIGNING_KEY_TTL {
                 return Ok(Some(key.clone()));
@@ -159,9 +159,9 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
                 return Ok(None);
             }
         };
-        match ojak::delivery::PrivateKey::from_pem(&pem) {
+        match ojak::sig::PrivateKey::from_pem(&pem) {
             Ok(private_key) => {
-                let key = ojak::delivery::SenderKey {
+                let key = ojak::sig::SenderKey {
                     key_id: key_id.to_owned(),
                     private_key: Arc::new(private_key),
                 };
@@ -177,20 +177,6 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
             }
         }
     }
-}
-
-/// Deliver an activity to a single remote inbox, signed with the given key,
-/// once and not through the queue.
-pub async fn deliver(
-    http: &reqwest::Client,
-    activity: &Value,
-    inbox_url: &str,
-    key_id: &str,
-    private_key_pem: &str,
-) -> anyhow::Result<()> {
-    let body = serde_json::to_vec(activity)?;
-    tracing::debug!(inbox = inbox_url, "delivering ActivityPub activity");
-    ojak_runtime::delivery::deliver(http, &body, inbox_url, key_id, private_key_pem).await
 }
 
 /// Record a domain as unavailable so future fan-outs skip it.
@@ -681,7 +667,7 @@ async fn attach_integrity_proof(
         None => return activity,
     };
 
-    match ojak_runtime::integrity::sign_object_integrity_proof(
+    match ojak::sig::integrity::sign_object_integrity_proof(
         &with_context,
         &verification_method,
         &key.seed,

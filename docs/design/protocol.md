@@ -274,8 +274,8 @@ That gives a promotion rule: a piece graduates into ojak when something that is
 not eunha implements it. A second implementation is what turns a design into a
 specification, whatever the document is called.
 
-Ojak needs no extension points for this. It is sans-IO — `ojak-core` is a pure
-state machine and `ojak-runtime` is standalone primitives — and composition
+Ojak needs no extension points for this. Its signature and proof primitives,
+`ojak::sig`, are standalone and do no I/O, and composition
 already happens in eunha, which tries the HTTP Signature and falls back to the
 integrity proof itself (`src/api/ap/inbox.rs`). An extension supplies a third
 primitive and eunha composes three instead of two. No hooks, no inversion of

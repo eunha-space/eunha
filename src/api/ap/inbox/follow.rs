@@ -245,7 +245,7 @@ pub(super) async fn handle_follow(
         return Ok(());
     }
 
-    // Decide what to do via ojak-core's portable inbound logic; eunha executes
+    // Decide what to do via eunha's follow policy (federation::follow); eunha executes
     // the returned Actions against Postgres + delivery.
     let (Ok(follow_id), Ok(actor_iri), Ok(object_iri)) = (
         crate::federation::portable::iri(activity_uri),
@@ -271,7 +271,7 @@ pub(super) async fn handle_follow(
 
     // A locked target, or a silenced follower, holds the follow as a request
     // (Mastodon: target.locked? || account.silenced?).
-    let actions = ojak_core::inbound::on_follow(
+    let actions = crate::federation::follow::on_follow(
         follow,
         &object_iri,
         target.locked || follower_silenced,
@@ -280,7 +280,7 @@ pub(super) async fn handle_follow(
 
     for action in actions {
         match action {
-            ojak_core::inbound::Action::RecordFollowRequest => {
+            crate::federation::follow::Action::RecordFollowRequest => {
                 sqlx::query!(
                     r#"INSERT INTO follow_requests (account_id, target_account_id, uri, created_at, updated_at)
                        VALUES ($1, $2, $3, now(), now())
@@ -310,7 +310,7 @@ pub(super) async fn handle_follow(
                     .await;
                 }
             }
-            ojak_core::inbound::Action::RecordFollow => {
+            crate::federation::follow::Action::RecordFollow => {
                 // `RETURNING` distinguishes a new follow from a redelivery of
                 // one already recorded: federation repeats, and counting on
                 // every arrival would inflate the follower count.
@@ -355,7 +355,7 @@ pub(super) async fn handle_follow(
                     .await;
                 }
             }
-            ojak_core::inbound::Action::SendAccept(accept) => {
+            crate::federation::follow::Action::SendAccept(accept) => {
                 if !crate::federation::keypair::has_signing_key(state, target.id)
                     .await
                     .unwrap_or(false)

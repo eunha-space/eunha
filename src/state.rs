@@ -33,7 +33,7 @@ pub struct AppState {
     /// The instance actor's signing key, parsed on first use. Every signed GET
     /// uses it, and loading, decrypting and parsing an RSA key costs more than
     /// signing with it — a post going viral had that at a tenth of eunha's CPU.
-    pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<ojak_runtime::signature::PrivateKey>>>,
+    pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<ojak::sig::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,
     /// Outgoing deliveries, queued in `eunha.ojak_queue` (federation::delivery).
@@ -118,7 +118,7 @@ impl AppState {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
         let fetcher = Arc::new(ojak::fetch::Fetcher::new(
             federation_client.clone(),
-            ojak::delivery::Scheme::DraftCavage,
+            ojak::sig::Scheme::DraftCavage,
         ));
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
             db.clone(),

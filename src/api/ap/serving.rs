@@ -151,7 +151,7 @@ pub fn federation() -> Federation<AppState> {
             std::sync::Arc::new(ojak::fetch::Fetcher::new(
                 ojak::client::Client::new(ojak::client::ClientConfig::default())
                     .expect("an HTTP client"),
-                ojak::delivery::Scheme::DraftCavage,
+                ojak::sig::Scheme::DraftCavage,
             )),
             ojak::kv::MemoryKvStore::with_capacity(KV_CAPACITY),
             std::time::Duration::from_secs(60 * 60),
@@ -317,7 +317,7 @@ async fn forward_to_collections(ctx: &Ctx, forward: ojak::federation::Forward) -
 /// The key eunha holds for `key_id`: the public key of the remote account
 /// whose actor the key ID names.
 async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<ojak::federation::KnownKey>> {
-    let owner = ojak_runtime::verification::key_owner(key_id);
+    let owner = ojak::sig::verification::key_owner(key_id);
     let pem = sqlx::query_scalar!(
         "SELECT public_key FROM accounts WHERE uri = $1 AND domain IS NOT NULL AND public_key != ''",
         owner,

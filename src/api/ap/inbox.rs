@@ -208,7 +208,7 @@ pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
     // and known by its canonical id: it is fetched now, while the hints are
     // there, and every handler after sees the canonical id.
     let mut activity = activity;
-    let actor_uri = if ojak_core::portable::ApUri::parse(&actor_uri).is_some() {
+    let actor_uri = if ojak::portable::ApUri::parse(&actor_uri).is_some() {
         if let Err(error) = resolve_or_fetch_remote_account(state, &actor_uri).await {
             tracing::warn!(actor_uri, %error, "could not fetch a portable actor");
         }

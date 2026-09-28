@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::state::AppState;
 
 /// The instance actor's signing key, as ojak takes it.
-pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<ojak::delivery::SenderKey> {
-    Ok(ojak::delivery::SenderKey {
+pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<ojak::sig::SenderKey> {
+    Ok(ojak::sig::SenderKey {
         key_id: crate::federation::instance_actor::key_id(&state.instance.domain),
         private_key: crate::federation::instance_actor::signing_key(state).await?,
     })
@@ -48,7 +48,7 @@ pub async fn signed_get_json(state: &AppState, url: &str) -> anyhow::Result<Valu
     let key = instance_key(state).await?;
     // A portable id names a key, not a host: ojak asks the gateways it
     // hints at, and keeps a copy only when its proof by the key holds.
-    if let Some(portable) = ojak_core::portable::ApUri::parse(url) {
+    if let Some(portable) = ojak::portable::ApUri::parse(url) {
         return Ok(state
             .fetcher
             .portable(&portable, &[], Some(&key))

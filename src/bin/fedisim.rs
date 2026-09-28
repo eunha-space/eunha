@@ -489,7 +489,7 @@ async fn inbox(sim: &Sim, host: &str, req: Request) -> Response {
         .find(|(name, _)| name == "signature")
         .map(|(_, value)| value.clone())
         .unwrap_or_default();
-    let key_id = ojak_runtime::signature::key_id_from_header(&signature).map(str::to_owned);
+    let key_id = ojak::sig::signature::key_id_from_header(&signature).map(str::to_owned);
     let verified = match key_id {
         Some(key_id) if !headers.iter().any(|(name, _)| name == "signature-input") => {
             match sim.eunha_key(&key_id).await {
@@ -498,8 +498,7 @@ async fn inbox(sim: &Sim, host: &str, req: Request) -> Response {
                         .iter()
                         .map(|(k, v)| (k.as_str(), v.as_str()))
                         .collect();
-                    ojak_runtime::signature::verify_request("post", &path, &refs, &body, &pem)
-                        .is_ok()
+                    ojak::sig::signature::verify_request("post", &path, &refs, &body, &pem).is_ok()
                 }
                 None => false,
             }
@@ -909,7 +908,7 @@ async fn send(sim: &Sim, spike: &SpikeRequest, kind: Kind, actor_index: usize, s
 
     // Signed as a request to the instance's own domain, then sent to wherever
     // it is actually listening with that domain as its `Host`.
-    let signed = match ojak_runtime::signature::sign_request(
+    let signed = match ojak::sig::signature::sign_request(
         "post",
         &format!("https://{}/inbox", sim.args.domain),
         &body,

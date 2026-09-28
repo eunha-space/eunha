@@ -71,13 +71,13 @@ pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)>
 /// read the first time is the key for the life of the process.
 pub async fn signing_key(
     state: &AppState,
-) -> anyhow::Result<Arc<ojak_runtime::signature::PrivateKey>> {
+) -> anyhow::Result<Arc<ojak::sig::signature::PrivateKey>> {
     state
         .instance_actor_key
         .get_or_try_init(|| async {
             let (private_pem, _) = get_or_create(state).await?;
             let key = crate::tenants::spawn_blocking(move || {
-                ojak_runtime::signature::PrivateKey::from_pem(&private_pem)
+                ojak::sig::signature::PrivateKey::from_pem(&private_pem)
             })
             .await??;
             Ok(Arc::new(key))

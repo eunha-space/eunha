@@ -10,8 +10,8 @@
 //! `https` URL at that gateway, so that delivering to it is delivering to
 //! any other inbox.
 
-use ojak_core::origin::Origin;
-use ojak_core::portable::ApUri;
+use ojak::origin::Origin;
+use ojak::portable::ApUri;
 use serde_json::Value;
 
 /// `uri` in the spelling it is stored and compared in: a portable id's

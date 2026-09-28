@@ -143,12 +143,12 @@ impl ApiClient {
         let body_bytes = serde_json::to_vec(body).unwrap();
         // Signed against the public host, which is what the sender addressed.
         let signing_url = format!("https://{}{}", self.host, path);
-        let signed = ojak_runtime::rfc9421::sign_request(
+        let signed = ojak::sig::rfc9421::sign_request(
             "post",
             &signing_url,
             Some(&body_bytes),
             key_id,
-            &ojak_runtime::rfc9421::SigningKey::RsaPem(private_key_pem),
+            &ojak::sig::rfc9421::SigningKey::RsaPem(private_key_pem),
         )
         .expect("sign request");
         let mut request = self

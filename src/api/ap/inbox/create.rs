@@ -56,7 +56,7 @@ pub(super) async fn handle_create(
         }
         _ => Vec::new(),
     };
-    if !ojak_core::origin::same_origin(note_uri, actor_uri)
+    if !ojak::origin::same_origin(note_uri, actor_uri)
         || (!attributed.is_empty() && !attributed.contains(&actor_uri))
     {
         let _ = fetch_remote_status(state, note_uri).await?;

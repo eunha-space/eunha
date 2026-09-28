@@ -88,12 +88,10 @@ pkcs8 = { version = "0.10", features = ["pem"] }
 # HTTP client (federation)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
-# ActivityPub vocabulary (typed activity construction) + portable protocol logic
+# ActivityPub vocabulary (typed activity construction)
 ojak-vocab = { git = "https://github.com/eunha-space/ojak.git" }
-ojak-core = { git = "https://github.com/eunha-space/ojak.git" }
-# Std runtime building blocks (HTTP signatures, WebFinger)
-ojak-runtime = { git = "https://github.com/eunha-space/ojak.git" }
-# Queued delivery: the deliverer, and its queue in `eunha.ojak_queue`.
+# The framework: serving, the inbox, signatures (`ojak::sig`), and queued
+# delivery, with its queue in `eunha.ojak_queue`.
 ojak = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-postgres = { git = "https://github.com/eunha-space/ojak.git" }
 # Serving what other servers fetch (src/api/ap/serving.rs).
@@ -155,7 +153,6 @@ rsa = { version = "0.9", features = ["sha2", "pem"] }
 sha2 = "0.10"
 base64 = "0.22"
 chrono = "0.4"
-ojak-runtime = { git = "https://github.com/eunha-space/ojak.git" }
 # The checks every ojak queue backend has to pass, run against the table
 # eunha's migrations build.
 ojak = { git = "https://github.com/eunha-space/ojak.git", features = ["testing"] }

@@ -105,10 +105,10 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     // And the proof holds against it.
     let multikey = method["publicKeyMultibase"].as_str().unwrap();
-    let key = ojak_runtime::integrity::decode_multikey(multikey).expect("decode published key");
+    let key = ojak::sig::integrity::decode_multikey(multikey).expect("decode published key");
     let (parsed, _, _) =
-        ojak_runtime::integrity::extract_integrity_proof(&activity).expect("extract proof");
-    ojak_runtime::integrity::verify_object_integrity_proof(&activity, &parsed, &key)
+        ojak::sig::integrity::extract_integrity_proof(&activity).expect("extract proof");
+    ojak::sig::integrity::verify_object_integrity_proof(&activity, &parsed, &key)
         .expect("eunha's own proof must verify against the key it publishes");
 }
 
