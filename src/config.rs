@@ -175,11 +175,21 @@ pub struct WorkersConfig {
     /// within a process and across processes.
     #[serde(default = "default_delivery_workers")]
     pub delivery_workers: usize,
-    /// Jobs claimed per batch by a single delivery loop.
+    /// The most jobs one claim takes. A delivery loop claims as its slots
+    /// free up, a quarter of them at a time, up to this many.
     #[serde(default = "default_delivery_batch")]
     pub delivery_batch: i64,
     /// In-flight inbox POSTs per delivery loop. Total delivery concurrency is
-    /// `delivery_workers * delivery_concurrency`.
+    /// `delivery_workers * delivery_concurrency`, and the process's
+    /// `process_delivery_concurrency` caps it across instances.
+    ///
+    /// A delivery mostly waits on the network, and remote servers are slow or
+    /// silent often enough to decide the rate: with one in ten taking seconds
+    /// and one in a hundred never answering, a slot averages over half a
+    /// second a delivery. Sixteen slots took seven minutes to send one post to
+    /// 9,258 servers; 128 took 48 seconds, at under a third of a core, with
+    /// the instance's own requests unaffected (docs/design/benchmarking.md,
+    /// “Fan-out”).
     #[serde(default = "default_delivery_concurrency")]
     pub delivery_concurrency: usize,
     /// Number of concurrent inbound (ingress) queue loops.
@@ -254,7 +264,7 @@ fn default_delivery_batch() -> i64 {
 }
 
 fn default_delivery_concurrency() -> usize {
-    16
+    128
 }
 
 fn default_inbox_workers() -> usize {

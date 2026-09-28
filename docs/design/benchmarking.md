@@ -789,14 +789,64 @@ Across the eight runs before the change the live figure was 73–76 MiB. The 13
 MiB above the 10 MiB eunha held before it moved onto feder is those activity
 IDs, and it leaves when they expire or when newer ones displace them.
 
+### 2026-09-28: Fan-out
+
+One account, 50,000 followers on 9,258 servers, three posts two seconds apart:
+27,774 deliveries, each signed and checked at the other end. The servers
+answered as the defaults above have them. Every delivery that arrived verified,
+none was sent twice to a server that had already accepted it, and every
+server that answered 410 was given up on and skipped for later posts.
+
+When the last fast server received each post, after it was posted:
+
+| Build                               |                   Post 1 | Post 2 |  Post 3 |
+| ----------------------------------- | -----------------------: | -----: | ------: |
+| Before: a batch at a time, 16 slots | 4,067 of 7,901 in 21 min |   none |    none |
+| Deliveries kept in flight, 16 slots |                    411 s |  821 s | 1,235 s |
+| In flight, keys cached, 128 slots   |                     48 s |   98 s |   149 s |
+
+Four things stood in the way, and each is fixed:
+
+ -  **A batch at a time.** Feder's delivery loop claimed fifty deliveries,
+    sent them sixteen at a time, and claimed no more until all fifty were
+    done, so one server that never answered held forty-nine others for the
+    client's thirty-second timeout. Deliveries arrived fifty at a time, thirty
+    seconds apart. Feder now keeps every slot busy, claiming as slots free up.
+ -  **Too few slots.** Sixteen in flight at once is no longer head-of-line
+    blocked, but it is still sixteen: a slot averages over half a second a
+    delivery when a tenth of servers take seconds and a hundredth never
+    answer, and a post to 9,258 servers took seven minutes. The default is now
+    128, and the process-wide limit of 256 still bounds a process of many
+    instances.
+ -  **The signing key, loaded for every delivery.** Each delivery read its
+    key from the database twice over, decrypted it and parsed it, and with 128
+    in flight that held the whole five-connection pool: the instance's own
+    requests timed out with 401s and 500s. The key is kept, parsed, for five
+    minutes.
+ -  **A claim that starved what it waited for.** The first version of the
+    new loop awaited its next claim without polling the deliveries in flight,
+    which may hold the connections the claim is waiting for. With 128 in flight
+    that stopped every delivery. The claim is now polled alongside them.
+
+What the fast build costs: under a third of a core, and a local user's home
+timeline at 7–25 ms p95 throughout. The HTTP client had kept every connection
+open for reuse for ninety seconds, to every host, which held 370 MiB and
+thousands of sockets; it now keeps two a host for ten seconds, and the same
+run ended at 117 MiB. It still peaked at 5,080 sockets, so a service run under
+launchd, whose default is 256 open files, needs its limit raised.
+
+The queue is first in, first out, so a second post waits for the first to
+reach everyone. What is left at the end is the servers that answered 503 or
+nothing, retried with backoff, as it should be.
+
 
 Not yet measured
 ----------------
 
  -  **Federation.** Inbound activities (signature verification, fetching remote
     actors) and outbound delivery fan-out are likely the largest CPU cost of a
-    well-connected instance. The viral-post spike covers inbound activities
-    from actors seen for the first time. Outbound fan-out is not covered yet.
+    well-connected instance. The two spikes cover each on its own; a real
+    instance meets both at once.
  -  **Media.** Image decoding and blurhash are CPU-bound and bursty.
  -  **Streaming.** What each open WebSocket costs.
  -  **Real data.** Every database here was empty.
