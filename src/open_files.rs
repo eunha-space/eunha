@@ -28,28 +28,7 @@ pub fn raise() -> std::io::Result<(u64, u64)> {
         return Err(std::io::Error::last_os_error());
     }
     let before = limit.rlim_cur;
-    let mut target = limit.rlim_max;
-    // macOS refuses a soft limit above `kern.maxfilesperproc`, including the
-    // "unlimited" its hard limit usually is.
-    #[cfg(target_os = "macos")]
-    {
-        let mut max: libc::c_int = 0;
-        let mut size = std::mem::size_of::<libc::c_int>();
-        // SAFETY: the name is a NUL-terminated string, and `max` and `size`
-        // describe a buffer that lives for the call.
-        let read = unsafe {
-            libc::sysctlbyname(
-                c"kern.maxfilesperproc".as_ptr(),
-                (&mut max as *mut libc::c_int).cast(),
-                &mut size,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        if read == 0 && max > 0 {
-            target = target.min(max as libc::rlim_t);
-        }
-    }
+    let target = system_cap(limit.rlim_max);
     if target <= before {
         return Ok((before, before));
     }
@@ -59,6 +38,36 @@ pub fn raise() -> std::io::Result<(u64, u64)> {
         return Err(std::io::Error::last_os_error());
     }
     Ok((before, target))
+}
+
+/// The most a soft limit may be set to. macOS refuses one above
+/// `kern.maxfilesperproc`, including the "unlimited" its hard limit usually is.
+#[cfg(target_os = "macos")]
+fn system_cap(hard: libc::rlim_t) -> libc::rlim_t {
+    let mut max: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is a NUL-terminated string, and `max` and `size`
+    // describe a buffer that lives for the call.
+    let read = unsafe {
+        libc::sysctlbyname(
+            c"kern.maxfilesperproc".as_ptr(),
+            (&mut max as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if read == 0 && max > 0 {
+        hard.min(max as libc::rlim_t)
+    } else {
+        hard
+    }
+}
+
+/// The most a soft limit may be set to: elsewhere, the hard limit.
+#[cfg(not(target_os = "macos"))]
+fn system_cap(hard: libc::rlim_t) -> libc::rlim_t {
+    hard
 }
 
 #[cfg(test)]
