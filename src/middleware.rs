@@ -138,13 +138,19 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
 /// Never the body, nor the query string: a refused password grant, sign-up or
 /// password reset carries the very credentials that were refused, and a
 /// streaming URL can carry an access token.
-pub async fn log_failures(req: Request, next: Next) -> Response {
+pub async fn log_failures(mut req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     // For a refused delivery: the key it claimed to be signed with, which
     // names the sender when nothing else about the request can be trusted.
     let inbox_post = method == axum::http::Method::POST && path.ends_with("/inbox");
     let key_id = inbox_post.then(|| claimed_key_id(req.headers())).flatten();
+    if inbox_post {
+        // An inbox answers in a few bytes, so compressing them saves nothing,
+        // and a compressed refusal cannot be logged as the reason it gives.
+        req.headers_mut()
+            .remove(axum::http::header::ACCEPT_ENCODING);
+    }
 
     let response = next.run(req).await;
     let status = response.status();
