@@ -638,6 +638,18 @@ async fn control(sim: &Arc<Sim>, req: Request) -> Response {
             }
         }
         (Method::GET, "/__deliveries") => Json(deliveries(sim)).into_response(),
+        // The first of the servers expected whose class is the one asked for.
+        (Method::GET, p) if p.starts_with("/__server/") => {
+            let class = p.trim_start_matches("/__server/");
+            let expected = sim.expected.lock().unwrap().clone();
+            match expected
+                .into_iter()
+                .find(|host| sim.class_of(host).is_some_and(|c| c.name == class))
+            {
+                Some(host) => host.into_response(),
+                None => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
         (Method::GET, "/__clock") => Json(json!({ "now_ms": sim.millis() })).into_response(),
         (Method::GET, "/__stats") => {
             let since: u64 = req

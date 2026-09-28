@@ -44,6 +44,9 @@ FOLLOWERS=${EUNHA_SPIKE_FOLLOWERS:-50000}
 FOLLOWER_SERVERS=${EUNHA_SPIKE_FOLLOWER_SERVERS:-10000}
 SKEW=${EUNHA_SPIKE_SKEW:-3}
 POSTS=${EUNHA_SPIKE_POSTS:-5}
+# After the last post, a direct message to one follower on a fast server:
+# how long a delivery to one inbox waits behind a fan-out. 0 sends none.
+DIRECT=${EUNHA_SPIKE_DIRECT:-1}
 POST_INTERVAL=${EUNHA_SPIKE_POST_INTERVAL_SECONDS:-2}
 # How the servers answer: a share of them slow, failing, silent or gone.
 INBOXES=${EUNHA_SPIKE_INBOXES:-'[
@@ -316,7 +319,7 @@ sample_loop() {
     snap=$(cat "$WORK/snap")
     row=$(q "SELECT (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NULL),
                     (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NOT NULL),
-                    (SELECT count(*) FROM eunha.feder_queue WHERE queue = 'delivery' AND failed_at IS NULL),
+                    (SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL),
                     count(*) FILTER (WHERE state = 'active' AND pid <> pg_backend_pid()),
                     count(*) FILTER (WHERE state = 'idle'),
                     count(*) FILTER (WHERE wait_event_type = 'Lock')
@@ -387,7 +390,7 @@ memory_snapshot before
 set_phase spike
 sim_offset=$(curl -s "http://127.0.0.1:$SIM_PORT/__stats?since=999999" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).now_second))')
 sim_ms() { curl -s "http://127.0.0.1:$SIM_PORT/__clock" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).now_ms))'; }
-first_attempts() { q "SELECT count(*) FROM eunha.feder_queue WHERE queue = 'delivery' AND failed_at IS NULL AND attempts = 0"; }
+first_attempts() { q "SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL AND attempts = 0"; }
 if [ "$SCENARIO" = viral ]; then
   curl -sf -X POST "http://127.0.0.1:$SIM_PORT/__spikes" -H 'Content-Type: application/json' -d "{
     \"status_uri\": \"$status_uri\", \"author_uri\": \"$author_uri\",
@@ -411,6 +414,16 @@ else
     echo "$n,$at,$(ms "${answer%,*}"),${answer#*,},$uri" >> "$RESULTS/posts.csv"
     [ "$n" -lt "$POSTS" ] && sleep "$POST_INTERVAL"
   done
+  if [ "$DIRECT" = 1 ]; then
+    server=$(curl -sf "http://127.0.0.1:$SIM_PORT/__server/fast")
+    follower=$(q "SELECT username FROM accounts WHERE domain = '$server' ORDER BY id LIMIT 1")
+    at=$(sim_ms)
+    answer=$(api -m 60 -o "$WORK/post.json" -w '%{time_total},%{http_code}' -X POST -H 'Content-Type: application/json' \
+      -d "{\"status\": \"@$follower@$server only you.\", \"visibility\": \"direct\"}" \
+      "http://127.0.0.1:$EUNHA_PORT/api/v1/statuses")
+    uri=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).uri)}catch{console.log("")}' "$WORK/post.json")
+    echo "direct,$at,$(ms "${answer%,*}"),${answer#*,},$uri" >> "$RESULTS/posts.csv"
+  fi
   wait "$flame_pid" || true
   # The spike lasts until every delivery has been tried once; what is left
   # after that is retries, which recovery waits out.
@@ -429,7 +442,7 @@ while [ $((SECONDS - recovery_start)) -lt "$RECOVERY" ]; do
   if [ "$SCENARIO" = viral ]; then
     pending=$(q "SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NULL")
   else
-    pending=$(q "SELECT count(*) FROM eunha.feder_queue WHERE queue = 'delivery' AND failed_at IS NULL")
+    pending=$(q "SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL")
   fi
   if [ "$pending" = 0 ]; then drained=$((SECONDS - recovery_start)); break; fi
   sleep 1
@@ -447,7 +460,7 @@ q "SELECT count(*) FILTER (WHERE failed_at IS NULL AND attempts = 0),
           count(*) FILTER (WHERE failed_at IS NULL AND attempts > 0),
           count(*) FILTER (WHERE failed_at IS NOT NULL),
           coalesce(max(attempts), 0)
-   FROM eunha.feder_queue WHERE queue = 'delivery'" | tr '|' ' ' > "$RESULTS/delivery-queue.txt"
+   FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority')" | tr '|' ' ' > "$RESULTS/delivery-queue.txt"
 if [ "$pgss" = 1 ]; then
   q "SELECT calls, round(total_exec_time)::bigint AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms,
             regexp_replace(left(query, 160), '\s+', ' ', 'g')
@@ -496,8 +509,10 @@ if (!fanout) {
   console.log(`Landed: ${favs} favourites, ${boosts} boosts, ${replies} replies, ${accounts} new remote accounts, ${notifications} notifications for the author.\n`);
 } else {
   const deliveries = JSON.parse(fs.readFileSync(`${dir}/deliveries.json`));
-  const posts = fs.readFileSync(`${dir}/posts.csv`, "utf8").trim().split("\n").slice(1)
+  const all = fs.readFileSync(`${dir}/posts.csv`, "utf8").trim().split("\n").slice(1)
     .map(r => { const [n, at, api, status, uri] = r.split(","); return { n, at: Number(at), api, status, uri }; });
+  const posts = all.filter(p => p.n !== "direct");
+  const direct = all.find(p => p.n === "direct");
   const [firstLeft, retrying, gaveUp, maxAttempts] = fs.readFileSync(`${dir}/delivery-queue.txt`, "utf8").trim().split(/\s+/).map(Number);
   const s = v => (v / 1000).toFixed(1);
   const expected = deliveries.expected_by_class;
@@ -505,6 +520,11 @@ if (!fanout) {
   const firstDone = Number(process.env.FIRST_ATTEMPTED);
   console.log(`Every delivery had been tried once ${firstDone ? s(firstDone - posts[0].at) + " s after the first post" : "— **not within the recovery window**"}.`);
   console.log(`The simulated servers received ${t.deliveries} signed deliveries; **${t.bad_signatures} had a signature that did not verify**, ${t.duplicates} were resent to a server that had already accepted them. A server answering with an error counts as reached when it was tried.`);
+  if (direct) {
+    const activity = deliveries.activities.find(a => direct.uri && a.id.startsWith(direct.uri));
+    const arrived = activity && Object.values(activity.classes)[0];
+    console.log(`A direct message to one follower, sent right after the last post, ${arrived ? `**arrived ${s(arrived.first_ms - direct.at)} s later**` : "**never arrived**"}.`);
+  }
   console.log(`Left in the queue at the end: ${firstLeft} never tried, ${retrying} waiting to retry (up to ${maxAttempts} attempts so far), ${gaveUp} given up on; drained ${drained ? "in " + drained + " s of recovery" : "NOT within " + recovery + " s"}.\n`);
   const classes = Object.keys(expected);
   console.log(`| Post | ${classes.map(c => `${c}: reached | p50 | p99 | last`).join(" | ")} |`);
