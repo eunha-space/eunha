@@ -1,14 +1,14 @@
-//! Builders for the FEP-style consent handshake (feder's reusable pattern).
+//! Builders for the FEP-style consent handshake (ojak's reusable pattern).
 //!
 //! A requester sends a `*Request`; the target replies with an `Accept` carrying
 //! a `result` authorization URI, or a `Reject`. The same pattern backs quote
 //! posts (`QuoteRequest`/`QuoteAuthorization`) and account features
-//! (`FeatureRequest`/`FeatureAuthorization`). These helpers write feder's
+//! (`FeatureRequest`/`FeatureAuthorization`). These helpers write ojak's
 //! generated consent vocabulary as delivery-ready JSON, under a context that
 //! defines the consent terms, as Mastodon's `context_helper` does: a strict
 //! JSON-LD consumer drops a type its context does not define.
 
-use feder_vocab as vocab;
+use ojak_vocab as vocab;
 use serde_json::{json, Value};
 use vocab::{AnyActor, AnyObject, Iri};
 

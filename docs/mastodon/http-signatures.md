@@ -7,7 +7,7 @@ answers 400 or 401 — the order Mastodon 4.7 uses. Inbound requests are verifie
 either way: a `Signature-Input` alongside the `Signature` selects RFC 9421,
 where the covered components must include the body's `content-digest` and the
 signature must be fresh, just as the draft path requires a covered `digest` and
-a recent `Date`. Both live in [feder], which also refuses a request signed for
+a recent `Date`. Both live in [ojak], which also refuses a request signed for
 a host other than the instance's domain or one of its aliases, and a key the
 signer's actor document does not publish under the key ID that signed.
 
@@ -19,4 +19,4 @@ from the header list it is given — but emitting what the rest of the network
 emits keeps eunha clear of anything that verifies more strictly than it should.
 
 [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
-[feder]: https://github.com/limeburst/feder
+[ojak]: https://github.com/eunha-space/ojak

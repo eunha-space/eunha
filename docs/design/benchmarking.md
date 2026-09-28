@@ -529,7 +529,7 @@ scripts/spike.sh fanout
 The remote side is `eunha-fedisim`, one process that plays every remote
 server: `s<n>.fedisim.test`, each with its own actors. It serves their actor
 documents and notes when eunha fetches them, signs the activities they send
-with real RSA keys through feder, and sends them along a curve that rises to
+with real RSA keys through ojak, and sends them along a curve that rises to
 `EUNHA_SPIKE_PEAK_RPS` at `EUNHA_SPIKE_RISE_SECONDS` and then decays. Each
 actor likes, boosts and replies at most once. The load is open-loop: when eunha
 falls behind, activities beyond the in-flight limit are counted as shed rather
@@ -696,7 +696,7 @@ fixed:
  -  **The instance actor's key was reloaded and reparsed for every GET**: read
     from the database, decrypted, and parsed from PEM with its CRT values
     precomputed, which together cost more than the signature. It is now parsed
-    once per instance, through feder's `PrivateKey`.
+    once per instance, through ojak's `PrivateKey`.
 
 Writing a test for the first also turned up an actor with no shared inbox
 failing every activity with a 500, as its account could not be stored. It is
@@ -729,8 +729,8 @@ builds, so neither is claimed to have changed.
 
 ### 2026-09-28: JSON-LD
 
-Moving eunha's federation onto feder brought JSON-LD normalisation with it:
-feder's inbox expanded and compacted every activity against its own context
+Moving eunha's federation onto ojak brought JSON-LD normalisation with it:
+ojak's inbox expanded and compacted every activity against its own context
 before any listener saw it. The same spike, three builds, two uncontended runs
 each, interleaved:
 
@@ -748,35 +748,35 @@ matched the accounts created one for one.
 
 Most of the cost was not reading documents but reading their contexts:
 normalising a four-field `Like` took 370 µs, nearly all of it processing the
-ActivityStreams context from scratch, and feder's own context, parsed from a
-string, on top. Feder now keeps processed contexts in a cache its caller
+ActivityStreams context from scratch, and ojak's own context, parsed from a
+string, on top. Ojak now keeps processed contexts in a cache its caller
 supplies, bounded in the inbox, and the same `Like` takes 25 µs; every
-document in feder's corpus of real servers' documents normalises exactly as it
+document in ojak's corpus of real servers' documents normalises exactly as it
 did uncached. That is the middle column.
 
 The right column is what eunha now does. Its one listener reads the activity as
 its sender wrote it, as Mastodon reads it, and never read the normalised form;
 [the protocol design](./protocol#json-ld-in-shape-never-in-processing) had
-already said eunha does not process JSON-LD. Feder's inbox is told not to
+already said eunha does not process JSON-LD. Ojak's inbox is told not to
 (`read_inbox_as_written`), which also stops it refusing an activity whose
-context cannot be processed. The cache stays in feder for whatever does
+context cannot be processed. The cache stays in ojak for whatever does
 normalise.
 
 The about 74 MiB of allocated memory that a burst of new actors leaves behind
 is the same in all three, and is addressed below.
 
-### 2026-09-28: What feder remembers
+### 2026-09-28: What ojak remembers
 
-What was left behind was feder's in-memory key-value store, one for the
+What was left behind was ojak's in-memory key-value store, one for the
 process. It removed an expired entry only when that entry's own key was asked
 for again, which for an actor seen once or an activity processed once is never,
 so it grew for as long as the process ran. And most of it was remote keys held
 twice: each new actor's key was cached for an hour although eunha had already
 stored it with the account, and hands it back from there through `known_key`.
 
-Feder now sweeps expired entries as the store is written to, bounds it
+Ojak now sweeps expired entries as the store is written to, bounds it
 (`with_capacity`), and leaves a key that eunha keeps to eunha. What remains is
-what feder should remember — the IDs of activities received, for a day, so that
+what ojak should remember — the IDs of activities received, for a day, so that
 a redelivery is dropped — at about 280 bytes each; eunha bounds the store at
 100,000 entries, about 28 MiB for the whole process. Same spike, 120 seconds
 after the queue drained, against the build before it in the same session:
@@ -788,7 +788,7 @@ after the queue drained, against the build before it in the same session:
 | Actor documents per new actor |      1.0 |            1.0 |
 
 Across the eight runs before the change the live figure was 73–76 MiB. The 13
-MiB above the 10 MiB eunha held before it moved onto feder is those activity
+MiB above the 10 MiB eunha held before it moved onto ojak is those activity
 IDs, and it leaves when they expire or when newer ones displace them.
 
 ### 2026-09-28: Fan-out
@@ -809,11 +809,11 @@ When the last fast server received each post, after it was posted:
 
 Four things stood in the way, and each is fixed:
 
- -  **A batch at a time.** Feder's delivery loop claimed fifty deliveries,
+ -  **A batch at a time.** Ojak's delivery loop claimed fifty deliveries,
     sent them sixteen at a time, and claimed no more until all fifty were
     done, so one server that never answered held forty-nine others for the
     client's thirty-second timeout. Deliveries arrived fifty at a time, thirty
-    seconds apart. Feder now keeps every slot busy, claiming as slots free up.
+    seconds apart. Ojak now keeps every slot busy, claiming as slots free up.
  -  **Too few slots.** Sixteen in flight at once is no longer head-of-line
     blocked, but it is still sixteen: a slot averages over half a second a
     delivery when a tenth of servers take seconds and a hundredth never
@@ -843,7 +843,7 @@ just after the third post, arrived 148 seconds later, behind every delivery of
 all three. Mastodon's deliveries share one queue in the same way. Sends to at
 most eight inboxes — a direct message, a reply, a follow and its answer — now
 wait in a queue of their own, which the delivery loop fills its free slots
-from first (feder's `DelivererConfig::priority`). The same message arrived in
+from first (ojak's `DelivererConfig::priority`). The same message arrived in
 0.3 seconds, and the three posts reached every fast server as quickly as
 before.
 

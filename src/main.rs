@@ -728,9 +728,9 @@ fn print_batch(report: &accounts::BatchReport, dry_run: bool) -> anyhow::Result<
 
 /// A new batch of `kind`, tagged to be followed, given up on after
 /// `give_up_after`.
-fn batch(kind: &str, give_up_after: std::time::Duration) -> (String, feder::deliverer::Batch) {
+fn batch(kind: &str, give_up_after: std::time::Duration) -> (String, ojak::deliverer::Batch) {
     let tag = format!("{kind}:{}", eunha::snowflake::next_id());
-    let batch = feder::deliverer::Batch {
+    let batch = ojak::deliverer::Batch {
         tag: Some(tag.clone()),
         deadline: Some(std::time::SystemTime::now() + give_up_after),
     };

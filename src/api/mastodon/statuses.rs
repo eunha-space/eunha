@@ -2313,7 +2313,7 @@ mod inline_quote_tests {
 
     #[test]
     fn inlines_note_and_merges_context() {
-        // A QuoteRequest as feder-vocab emits it: compound @context declaring the
+        // A QuoteRequest as ojak-vocab emits it: compound @context declaring the
         // FEP-044f `QuoteRequest` term, with `instrument` as a bare URI.
         let mut request = json!({
             "@context": [

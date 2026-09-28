@@ -297,7 +297,7 @@ echo "==> Which inbox Mastodon used"
 # four deliveries sat in the log.
 #
 # eunha logs each activity it accepts with the inbox it came through
-# (`inbox=shared` or `inbox=personal`); feder serves the inbox, so the request
+# (`inbox=shared` or `inbox=personal`); ojak serves the inbox, so the request
 # path is no longer what is logged.
 SHARED_HITS=$(compose logs eunha 2>/dev/null | grep -c "inbox=shared" || true)
 if [ "${SHARED_HITS:-0}" -gt 0 ]; then

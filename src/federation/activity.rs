@@ -1,13 +1,13 @@
 //! ActivityPub activity construction.
 //!
-//! Builders over feder's generated vocabulary. Each takes string URIs (as the
+//! Builders over ojak's generated vocabulary. Each takes string URIs (as the
 //! rest of eunha stores them), builds the typed value, and writes it as a
 //! [`serde_json::Value`] ready for delivery, under the plain ActivityStreams
 //! context Mastodon uses. Mastodon/Misskey-specific JSON-LD (FEP-044f quote
 //! terms) lives in `consent` rather than in the shared vocabulary crate.
 
-use feder_vocab as vocab;
-use feder_vocab::json::ToJson;
+use ojak_vocab as vocab;
+use ojak_vocab::json::ToJson;
 use serde_json::{json, Map, Value};
 use vocab::{AnyActor, AnyObject, Iri};
 

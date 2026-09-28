@@ -380,7 +380,7 @@ pub async fn assertion_key(state: &AppState, account_id: i64) -> Result<Assertio
             let pem = encryptor.decrypt(&sealed).with_context(|| {
                 format!("decrypting the assertion key for account {account_id}")
             })?;
-            let (seed, public_key) = feder_runtime::integrity::parse_ed25519_key(&pem)?;
+            let (seed, public_key) = ojak_runtime::integrity::parse_ed25519_key(&pem)?;
             return Ok(AssertionKey { seed, public_key });
         }
     }
@@ -388,11 +388,11 @@ pub async fn assertion_key(state: &AppState, account_id: i64) -> Result<Assertio
     // Generate and store. `DO NOTHING` on conflict, then read back: two
     // processes starting at once must agree on which key was published, and the
     // first one written is the one peers may already have seen.
-    let pem = feder_runtime::integrity::generate_ed25519_key()?;
+    let pem = ojak_runtime::integrity::generate_ed25519_key()?;
     // Only the public half is needed here; the key that ends up in force is
     // read back below, which may be another process's if it won the race.
-    let (_, public_key) = feder_runtime::integrity::parse_ed25519_key(&pem)?;
-    let multikey = feder_runtime::integrity::encode_ed25519_multikey(&public_key);
+    let (_, public_key) = ojak_runtime::integrity::parse_ed25519_key(&pem)?;
+    let multikey = ojak_runtime::integrity::encode_ed25519_multikey(&public_key);
     let sealed = encryptor.encrypt(&pem)?;
 
     sqlx::query!(
@@ -422,7 +422,7 @@ pub async fn assertion_key(state: &AppState, account_id: i64) -> Result<Assertio
     .ok_or_else(|| anyhow!("assertion key for account {account_id} vanished after writing it"))?;
 
     let pem = encryptor.decrypt(&stored)?;
-    let (seed, public_key) = feder_runtime::integrity::parse_ed25519_key(&pem)?;
+    let (seed, public_key) = ojak_runtime::integrity::parse_ed25519_key(&pem)?;
     Ok(AssertionKey { seed, public_key })
 }
 

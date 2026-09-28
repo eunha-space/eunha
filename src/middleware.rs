@@ -158,7 +158,7 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
         );
     }
 
-    // Why an inbox refused a delivery is in the body feder answers with, and
+    // Why an inbox refused a delivery is in the body ojak answers with, and
     // nowhere else; without it a peer that cannot reach us is only a count.
     if inbox_post && status.is_client_error() {
         let (parts, body) = response.into_parts();

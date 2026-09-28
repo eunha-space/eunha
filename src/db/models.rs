@@ -414,10 +414,10 @@ pub mod vis {
         matches!(v, PUBLIC | UNLISTED)
     }
 
-    /// Derive visibility from an object's `to`/`cc` audience (portable logic in feder-core).
+    /// Derive visibility from an object's `to`/`cc` audience (portable logic in ojak-core).
     pub fn from_audience<S: AsRef<str>, T: AsRef<str>>(to: &[S], cc: &[T]) -> i32 {
-        use feder_core::addressing::Visibility;
-        match feder_core::addressing::visibility_from_audience(to, cc) {
+        use ojak_core::addressing::Visibility;
+        match ojak_core::addressing::visibility_from_audience(to, cc) {
             Visibility::Public => PUBLIC,
             Visibility::Unlisted => UNLISTED,
             Visibility::Private => PRIVATE,
@@ -427,7 +427,7 @@ pub mod vis {
 
     /// Compute the `(to, cc)` audience for an outgoing status of this visibility.
     pub fn audience(v: i32, followers: &str, mentioned: &[String]) -> (Vec<String>, Vec<String>) {
-        use feder_core::addressing::Visibility;
+        use ojak_core::addressing::Visibility;
         let vis = match v {
             PUBLIC => Visibility::Public,
             UNLISTED => Visibility::Unlisted,
@@ -437,7 +437,7 @@ pub mod vis {
             LIMITED => return (mentioned.to_vec(), Vec::new()),
             _ => Visibility::Direct,
         };
-        feder_core::addressing::audience_for(vis, followers, mentioned)
+        ojak_core::addressing::audience_for(vis, followers, mentioned)
     }
 }
 

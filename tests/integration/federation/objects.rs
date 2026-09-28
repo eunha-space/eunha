@@ -425,7 +425,7 @@ async fn test_profile_update_reaches_recently_followed() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let delivered: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM eunha.feder_queue
+        "SELECT count(*) FROM eunha.ojak_queue
          WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1
            AND payload->'activity'->'object'->>'type' = 'Person'",
     )

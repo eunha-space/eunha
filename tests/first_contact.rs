@@ -137,9 +137,9 @@ async fn test_actor_without_shared_inbox_is_accepted() {
 /// A gateway serving one portable actor (FEP-ef61), recording what is
 /// delivered to its inbox.
 async fn spawn_gateway(
-    signer: &feder::portable::Ed25519Signer,
+    signer: &ojak::portable::Ed25519Signer,
 ) -> (String, Arc<std::sync::Mutex<Vec<Value>>>) {
-    use feder::portable::ProofSigner;
+    use ojak::portable::ProofSigner;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gateway = format!("http://{}", listener.local_addr().unwrap());
@@ -195,7 +195,7 @@ async fn spawn_gateway(
 /// canonical id with the gateway as its domain, and reached at the gateway.
 #[tokio::test]
 async fn test_a_portable_actor_follows() {
-    use feder::portable::{Ed25519Signer, ProofSigner};
+    use ojak::portable::{Ed25519Signer, ProofSigner};
 
     eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
         .parse()
@@ -269,7 +269,7 @@ async fn test_a_portable_actor_follows() {
     // The Accept goes to the portable actor's inbox at its gateway: queued
     // for the gateway's URL, or already delivered there.
     let queued = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM eunha.feder_queue WHERE payload->>'inbox' = $1",
+        "SELECT count(*) FROM eunha.ojak_queue WHERE payload->>'inbox' = $1",
     )
     .bind(format!("{gateway}/.well-known/apgateway/{did}/actor/inbox"))
     .fetch_one(&ctx.db)
@@ -279,7 +279,7 @@ async fn test_a_portable_actor_follows() {
     assert!(
         queued == 1 || delivered.iter().any(|a| a["type"] == "Accept"),
         "the Accept is neither queued for the gateway nor delivered: {delivered:?}; queued: {:?}",
-        sqlx::query_scalar::<_, String>("SELECT payload::text FROM eunha.feder_queue")
+        sqlx::query_scalar::<_, String>("SELECT payload::text FROM eunha.ojak_queue")
             .fetch_all(&ctx.db)
             .await
             .unwrap()

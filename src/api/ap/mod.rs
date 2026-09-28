@@ -14,7 +14,7 @@ use axum::{
 use crate::state::AppState;
 
 /// Where a browser that opens an ActivityPub URI is sent. Everything a
-/// server fetches or sends is feder's (`serving`), answered before these
+/// server fetches or sends is ojak's (`serving`), answered before these
 /// routes when ActivityPub is asked for.
 pub fn router() -> Router {
     Router::new()

@@ -1,4 +1,4 @@
-//! What changed when serving moved to feder: content negotiation, cursor
+//! What changed when serving moved to ojak: content negotiation, cursor
 //! pages, collections named by the account's own URI, and discovery.
 
 use reqwest::StatusCode;

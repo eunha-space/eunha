@@ -1,5 +1,5 @@
 //! Outbound dereferencing of remote ActivityPub objects with HTTP Signatures,
-//! through feder's fetcher.
+//! through ojak's fetcher.
 //!
 //! GETs are signed with the instance actor's key so that servers running in
 //! authorized-fetch (secure) mode will serve the object. Servers that don't
@@ -11,9 +11,9 @@ use serde_json::Value;
 
 use crate::state::AppState;
 
-/// The instance actor's signing key, as feder takes it.
-pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<feder::delivery::SenderKey> {
-    Ok(feder::delivery::SenderKey {
+/// The instance actor's signing key, as ojak takes it.
+pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<ojak::delivery::SenderKey> {
+    Ok(ojak::delivery::SenderKey {
         key_id: crate::federation::instance_actor::key_id(&state.instance.domain),
         private_key: crate::federation::instance_actor::signing_key(state).await?,
     })
@@ -31,7 +31,7 @@ pub async fn signed_get(
     state: &AppState,
     url: &str,
     accept: &str,
-) -> anyhow::Result<feder::client::Response> {
+) -> anyhow::Result<ojak::client::Response> {
     let url = parse(url)?;
     let key = instance_key(state).await?;
     Ok(state.fetcher.get(&url, accept, Some(&key)).await?)
@@ -40,15 +40,15 @@ pub async fn signed_get(
 /// Fetch a remote ActivityPub object as JSON, signing the GET with the instance
 /// actor's key.
 ///
-/// The document is trusted only as feder establishes it: served as
+/// The document is trusted only as ojak establishes it: served as
 /// ActivityPub, with an `id` on the origin it was finally served from. One
 /// that names an `id` on another origin is refused, as Mastodon refuses it;
 /// a caller that has to follow such an `id` asks for it by that `id`.
 pub async fn signed_get_json(state: &AppState, url: &str) -> anyhow::Result<Value> {
     let key = instance_key(state).await?;
-    // A portable id names a key, not a host: feder asks the gateways it
+    // A portable id names a key, not a host: ojak asks the gateways it
     // hints at, and keeps a copy only when its proof by the key holds.
-    if let Some(portable) = feder_core::portable::ApUri::parse(url) {
+    if let Some(portable) = ojak_core::portable::ApUri::parse(url) {
         return Ok(state
             .fetcher
             .portable(&portable, &[], Some(&key))

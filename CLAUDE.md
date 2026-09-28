@@ -19,7 +19,7 @@ Rules
  -  Use mise for all tasks. See *mise.toml*.
  -  Use the [shadcn/ui] CLI when adding frontend components. Don't hand-roll
     components.
- -  For all federation work, use [feder], and extend it when necessary.
+ -  For all federation work, use [ojak], and extend it when necessary.
  -  Start tasks with `tenants::spawn` and `tenants::spawn_blocking`, never
     `tokio::spawn` or `spawn_blocking` directly, so the task keeps its
     `tenant{domain=…}` span. *clippy.toml* enforces this.
@@ -34,7 +34,7 @@ Rules
  -  Run `mise run docs:build` after editing *docs/*; it fails on dead links.
 
 [shadcn/ui]: https://ui.shadcn.com
-[feder]: https://github.com/limeburst/feder
+[ojak]: https://github.com/eunha-space/ojak
 
 
 Where things are documented

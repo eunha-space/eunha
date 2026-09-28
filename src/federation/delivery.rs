@@ -1,8 +1,8 @@
 //! ActivityPub activity delivery to remote inboxes.
 //!
 //! Who an activity goes to is eunha's: the recipient sets below are SQL over
-//! Mastodon's tables. Sending it is feder's: [`Deliverer`] queues each
-//! delivery in `eunha.feder_queue` and its loops send them, retrying with
+//! Mastodon's tables. Sending it is ojak's: [`Deliverer`] queues each
+//! delivery in `eunha.ojak_queue` and its loops send them, retrying with
 //! backoff, draft-cavage first and RFC 9421 when an inbox refuses it, through
 //! a client that refuses private and reserved addresses.
 
@@ -37,8 +37,8 @@ fn delivery_permits() -> Arc<tokio::sync::Semaphore> {
 /// How often to prune deliveries given up on.
 const DELIVERY_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
-/// The table feder keeps eunha's queue in (migrations/011_feder_queue.sql).
-pub const QUEUE_TABLE: &str = "eunha.feder_queue";
+/// The table ojak keeps eunha's queue in (migrations/011_feder_queue.sql, renamed in 013_ojak_queue.sql).
+pub const QUEUE_TABLE: &str = "eunha.ojak_queue";
 
 /// The queue deliveries wait in, within [`QUEUE_TABLE`].
 pub const QUEUE: &str = "delivery";
@@ -52,7 +52,7 @@ pub const PRIORITY_QUEUE: &str = "delivery-priority";
 pub const PRIORITY_MAX_INBOXES: usize = 8;
 
 /// An instance's deliverer.
-pub type Deliverer = feder::deliverer::Deliverer<feder_postgres::PostgresQueue, SigningKeys>;
+pub type Deliverer = ojak::deliverer::Deliverer<ojak_postgres::PostgresQueue, SigningKeys>;
 
 /// Build an instance's deliverer, from its `[workers]` settings.
 ///
@@ -63,11 +63,11 @@ pub fn deliverer(
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
     workers: &crate::config::WorkersConfig,
-    client: feder::client::Client,
+    client: ojak::client::Client,
 ) -> anyhow::Result<Deliverer> {
-    let queue = feder_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
+    let queue = ojak_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let config = feder::deliverer::DelivererConfig {
+    let config = ojak::deliverer::DelivererConfig {
         batch: usize::try_from(workers.delivery_batch).unwrap_or(50).max(1),
         concurrency: workers.delivery_concurrency.max(1),
         // eunha limits deliveries per process, not per host.
@@ -75,14 +75,14 @@ pub fn deliverer(
         idle_poll: Duration::from_secs(workers.queue_idle_poll_seconds.max(1)),
         shared_limit: Some(delivery_permits()),
         queue: QUEUE.to_owned(),
-        priority: Some(feder::deliverer::Priority {
+        priority: Some(ojak::deliverer::Priority {
             queue: PRIORITY_QUEUE.to_owned(),
             max_inboxes: PRIORITY_MAX_INBOXES,
         }),
-        ..feder::deliverer::DelivererConfig::default()
+        ..ojak::deliverer::DelivererConfig::default()
     };
     let unavailable_db = db.clone();
-    Ok(feder::deliverer::Deliverer::new(
+    Ok(ojak::deliverer::Deliverer::new(
         queue,
         SigningKeys {
             db,
@@ -119,7 +119,7 @@ pub struct SigningKeys {
     /// took two queries apiece: with many deliveries in flight they held the
     /// instance's whole connection pool, and its own requests timed out.
     parsed: std::sync::Mutex<
-        std::collections::HashMap<String, (std::time::Instant, feder::delivery::SenderKey)>,
+        std::collections::HashMap<String, (std::time::Instant, ojak::delivery::SenderKey)>,
     >,
 }
 
@@ -127,17 +127,17 @@ pub struct SigningKeys {
 /// key replaced in the database is signed with soon after.
 const SIGNING_KEY_TTL: Duration = Duration::from_secs(300);
 
-impl feder::deliverer::SenderKeys for SigningKeys {
+impl ojak::deliverer::SenderKeys for SigningKeys {
     async fn key(
         &self,
         key_id: &str,
-    ) -> Result<Option<feder::delivery::SenderKey>, feder::queue::QueueError> {
+    ) -> Result<Option<ojak::delivery::SenderKey>, ojak::queue::QueueError> {
         if let Some((loaded, key)) = self.parsed.lock().expect("signing keys").get(key_id) {
             if loaded.elapsed() < SIGNING_KEY_TTL {
                 return Ok(Some(key.clone()));
             }
         }
-        let transient = |e: anyhow::Error| feder::queue::QueueError(e.to_string());
+        let transient = |e: anyhow::Error| ojak::queue::QueueError(e.to_string());
         let account_id = match signing_account_id_in(&self.db, key_id).await {
             Ok(id) => id,
             // A database that did not answer is worth another try; an account
@@ -159,9 +159,9 @@ impl feder::deliverer::SenderKeys for SigningKeys {
                 return Ok(None);
             }
         };
-        match feder::delivery::PrivateKey::from_pem(&pem) {
+        match ojak::delivery::PrivateKey::from_pem(&pem) {
             Ok(private_key) => {
-                let key = feder::delivery::SenderKey {
+                let key = ojak::delivery::SenderKey {
                     key_id: key_id.to_owned(),
                     private_key: Arc::new(private_key),
                 };
@@ -190,7 +190,7 @@ pub async fn deliver(
 ) -> anyhow::Result<()> {
     let body = serde_json::to_vec(activity)?;
     tracing::debug!(inbox = inbox_url, "delivering ActivityPub activity");
-    feder_runtime::delivery::deliver(http, &body, inbox_url, key_id, private_key_pem).await
+    ojak_runtime::delivery::deliver(http, &body, inbox_url, key_id, private_key_pem).await
 }
 
 /// Record a domain as unavailable so future fan-outs skip it.
@@ -260,7 +260,7 @@ pub async fn fanout_to_followers_unproven(
     activity: Value,
     account_id: i64,
     key_id: String,
-    batch: Option<&feder::deliverer::Batch>,
+    batch: Option<&ojak::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     let inboxes = follower_inboxes(state, account_id).await?;
     enqueue(state, activity, inboxes, key_id, false, batch).await
@@ -496,7 +496,7 @@ pub async fn deliver_to_inboxes_in_batch(
     activity: Value,
     inboxes: Vec<String>,
     key_id: String,
-    batch: &feder::deliverer::Batch,
+    batch: &ojak::deliverer::Batch,
 ) -> anyhow::Result<u64> {
     enqueue(state, activity, inboxes, key_id, true, Some(batch)).await
 }
@@ -568,7 +568,7 @@ async fn enqueue(
     inboxes: Vec<String>,
     key_id: String,
     prove: bool,
-    batch: Option<&feder::deliverer::Batch>,
+    batch: Option<&ojak::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     // Record the signing account, not its private key: the key is loaded from
     // `accounts` at send time so the secret lives in exactly one place.
@@ -681,7 +681,7 @@ async fn attach_integrity_proof(
         None => return activity,
     };
 
-    match feder_runtime::integrity::sign_object_integrity_proof(
+    match ojak_runtime::integrity::sign_object_integrity_proof(
         &with_context,
         &verification_method,
         &key.seed,

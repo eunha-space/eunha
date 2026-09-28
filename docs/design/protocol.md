@@ -113,7 +113,7 @@ does not do, and will not. Fetching a context at verification time is an SSRF
 surface, an availability dependency on someone else's web server, and a source
 of nondeterminism in a security path.
 
-Feder's inbox normalises every activity by default; eunha asks it not to
+Ojak's inbox normalises every activity by default; eunha asks it not to
 (`read_inbox_as_written`) and reads the activity as its sender wrote it. The
 cost was measured as well as argued: with normalisation, a burst of 1,000
 activities a second spent more than half of eunha's CPU on it (see
@@ -261,21 +261,21 @@ does.
 Where the code goes
 -------------------
 
-**A module in eunha first, a separate crate later, and not in feder.**
+**A module in eunha first, a separate crate later, and not in ojak.**
 
-Feder implements ActivityPub as it is specified: draft-cavage, RFC 9421,
+Ojak implements ActivityPub as it is specified: draft-cavage, RFC 9421,
 FEP-8b32. The line is not *general versus ours* — we would want other servers to
 adopt this — but **specified versus speculative.** This extension has no
 published spec and no second implementation, and its shape will move. Code in
-feder is delivered to feder's users, and they should not take delivery of our
+ojak is delivered to ojak's users, and they should not take delivery of our
 experiments.
 
-That gives a promotion rule: a piece graduates into feder when something that is
+That gives a promotion rule: a piece graduates into ojak when something that is
 not eunha implements it. A second implementation is what turns a design into a
 specification, whatever the document is called.
 
-Feder needs no extension points for this. It is sans-IO — `feder-core` is a pure
-state machine and `feder-runtime` is standalone primitives — and composition
+Ojak needs no extension points for this. It is sans-IO — `ojak-core` is a pure
+state machine and `ojak-runtime` is standalone primitives — and composition
 already happens in eunha, which tries the HTTP Signature and falls back to the
 integrity proof itself (`src/api/ap/inbox.rs`). An extension supplies a third
 primitive and eunha composes three instead of two. No hooks, no inversion of
@@ -283,15 +283,15 @@ control.
 
 A test that answers the boundary question by compiling rather than by argument:
 
-> If a piece requires *modifying* feder, it is general and belongs in feder. If
-> it composes from feder's existing primitives, it is ours.
+> If a piece requires *modifying* ojak, it is general and belongs in ojak. If
+> it composes from ojak's existing primitives, it is ours.
 
-Feature-gating it inside feder is the wrong tool: Cargo features separate
+Feature-gating it inside ojak is the wrong tool: Cargo features separate
 compilation, not ownership, and they are additive across the dependency graph,
 so an unrelated crate enabling one would switch it on for everybody in the
 build.
 
-Split the module by purity, the way feder is split. Verification is stateless
+Split the module by purity, the way ojak is split. Verification is stateless
 and has the subtle, test-worthy logic; storage is Postgres-shaped and boring:
 
 ~~~~
@@ -299,7 +299,7 @@ verify_chain(&[SignedEntry]) -> Result<(), Gap>     module
 append, query, persist, retention                   eunha
 ~~~~
 
-Keep the module's imports to `feder::*` and std — no `AppState`, no sqlx types
+Keep the module's imports to `ojak::*` and std — no `AppState`, no sqlx types
 in signatures — so extraction is a `git mv` and a `Cargo.toml` entry rather than
 a refactor. When it is extracted, name the crate after the protocol rather than
 after eunha: a second implementer should be able to adopt it without adopting

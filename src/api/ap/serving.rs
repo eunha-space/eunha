@@ -1,5 +1,5 @@
 //! What other servers fetch — actors, statuses, their collections, WebFinger,
-//! host-meta and NodeInfo — served by feder.
+//! host-meta and NodeInfo — served by ojak.
 //!
 //! One [`Federation`] serves every instance in the process: the instance a
 //! request is for rides on it as its [`AppState`], put there by the tenant
@@ -13,15 +13,15 @@
 //! ActivityPub goes on to eunha's own routes (`super::router`), which send a
 //! browser to the profile or the status.
 //!
-//! The inboxes are feder's too. What arrives in them is authenticated by
-//! feder, with the keys eunha already holds in `accounts` tried first, and
+//! The inboxes are ojak's too. What arrives in them is authenticated by
+//! ojak, with the keys eunha already holds in `accounts` tried first, and
 //! handed to eunha's own dispatcher (`super::inbox::received`) reduced to
 //! what its sender can vouch for.
 
-use feder::federation::{
+use ojak::federation::{
     ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Usage,
 };
-use feder::template::Values;
+use ojak::template::Values;
 use serde_json::{json, Value};
 use url::Url;
 
@@ -30,8 +30,8 @@ use crate::db::models::Account;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-/// How many entries feder's in-memory store may hold, for the whole process.
-/// Nearly all are the IDs of activities received, which feder remembers for a
+/// How many entries ojak's in-memory store may hold, for the whole process.
+/// Nearly all are the IDs of activities received, which ojak remembers for a
 /// day to drop a redelivery; past this it forgets the ones nearest to expiry
 /// first, and a redelivery it no longer recognises is processed again, which
 /// every activity's effect on the database already tolerates.
@@ -142,18 +142,18 @@ pub fn federation() -> Federation<AppState> {
         // Every tenant fetches with its own fetcher (`fetcher_for`); this
         // one is only what the builder needs to be given. The keys of
         // accounts eunha knows come from `accounts`, where a new actor's is
-        // stored as it is fetched, so feder caches only what eunha does not
+        // stored as it is fetched, so ojak caches only what eunha does not
         // keep. What it does cache — the IDs of activities seen, replies
         // forwarded, keys eunha did not store — is one store for the process,
         // bounded so that a day of every tenant's traffic is not all held in
         // memory at once.
         .signed_fetch(
-            std::sync::Arc::new(feder::fetch::Fetcher::new(
-                feder::client::Client::new(feder::client::ClientConfig::default())
+            std::sync::Arc::new(ojak::fetch::Fetcher::new(
+                ojak::client::Client::new(ojak::client::ClientConfig::default())
                     .expect("an HTTP client"),
-                feder::delivery::Scheme::DraftCavage,
+                ojak::delivery::Scheme::DraftCavage,
             )),
-            feder::kv::MemoryKvStore::with_capacity(KV_CAPACITY),
+            ojak::kv::MemoryKvStore::with_capacity(KV_CAPACITY),
             std::time::Duration::from_secs(60 * 60),
             // Signed as the instance actor, for peers in authorized-fetch mode.
             |ctx: Ctx| async move {
@@ -200,7 +200,7 @@ pub fn federation() -> Federation<AppState> {
         // sender wrote it, so normalising it was work nothing used: under a
         // viral post, more than half the CPU.
         .read_inbox_as_written()
-        .on_any(|ctx: Ctx, received: feder::federation::Received<feder_vocab::generated::AnyObject>| async move {
+        .on_any(|ctx: Ctx, received: ojak::federation::Received<ojak_vocab::generated::AnyObject>| async move {
             // Which inbox a peer chose is otherwise invisible: Mastodon picks
             // the shared one only when two accounts here follow the same actor
             // there, and the federation harness checks that path is exercised.
@@ -214,7 +214,7 @@ pub fn federation() -> Federation<AppState> {
         })
         // A reply to a local post, addressed to its author's followers, is
         // passed on to them (ActivityPub §7.1.2), signed by the author.
-        .forward(|ctx: Ctx, forward: feder::federation::Forward| async move {
+        .forward(|ctx: Ctx, forward: ojak::federation::Forward| async move {
             forward_to_collections(&ctx, forward).await.map_err(|error| error.to_string())
         });
 
@@ -286,8 +286,8 @@ pub fn federation() -> Federation<AppState> {
 /// Forward `forward`'s activity to the followers of the local accounts whose
 /// followers collections it names. Eunha is no portable actor's gateway, so
 /// there is nothing to forward to gateways.
-async fn forward_to_collections(ctx: &Ctx, forward: feder::federation::Forward) -> AppResult<()> {
-    let feder::federation::ForwardTo::Collections(collections) = forward.to else {
+async fn forward_to_collections(ctx: &Ctx, forward: ojak::federation::Forward) -> AppResult<()> {
+    let ojak::federation::ForwardTo::Collections(collections) = forward.to else {
         return Ok(());
     };
     for collection in collections {
@@ -316,8 +316,8 @@ async fn forward_to_collections(ctx: &Ctx, forward: feder::federation::Forward) 
 
 /// The key eunha holds for `key_id`: the public key of the remote account
 /// whose actor the key ID names.
-async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<feder::federation::KnownKey>> {
-    let owner = feder_runtime::verification::key_owner(key_id);
+async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<ojak::federation::KnownKey>> {
+    let owner = ojak_runtime::verification::key_owner(key_id);
     let pem = sqlx::query_scalar!(
         "SELECT public_key FROM accounts WHERE uri = $1 AND domain IS NOT NULL AND public_key != ''",
         owner,
@@ -325,7 +325,7 @@ async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<feder::federatio
     .fetch_optional(&ctx.data().db)
     .await?;
     Ok(pem.and_then(|pem| {
-        Some(feder::federation::KnownKey {
+        Some(ojak::federation::KnownKey {
             pem,
             actor: Url::parse(owner).ok()?,
         })
@@ -340,7 +340,7 @@ fn number(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
-/// A document, or `NotFound` and `Gone` as feder says them.
+/// A document, or `NotFound` and `Gone` as ojak says them.
 fn found(result: AppResult<Value>) -> AppResult<Found<Value>> {
     match result {
         Ok(document) => Ok(Found::Found(document)),

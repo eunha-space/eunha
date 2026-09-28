@@ -59,7 +59,7 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     // The queued activity is what every inbox receives.
     let activity: Value = sqlx::query_scalar(
-        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') ORDER BY id DESC LIMIT 1",
+        "SELECT payload->'activity' FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') ORDER BY id DESC LIMIT 1",
     )
     .fetch_one(&ctx.db)
     .await
@@ -105,10 +105,10 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     // And the proof holds against it.
     let multikey = method["publicKeyMultibase"].as_str().unwrap();
-    let key = feder_runtime::integrity::decode_multikey(multikey).expect("decode published key");
+    let key = ojak_runtime::integrity::decode_multikey(multikey).expect("decode published key");
     let (parsed, _, _) =
-        feder_runtime::integrity::extract_integrity_proof(&activity).expect("extract proof");
-    feder_runtime::integrity::verify_object_integrity_proof(&activity, &parsed, &key)
+        ojak_runtime::integrity::extract_integrity_proof(&activity).expect("extract proof");
+    ojak_runtime::integrity::verify_object_integrity_proof(&activity, &parsed, &key)
         .expect("eunha's own proof must verify against the key it publishes");
 }
 
@@ -181,7 +181,7 @@ async fn test_proofs_are_not_attached_unless_asked_for() {
         .await;
 
     let activity: Value = sqlx::query_scalar(
-        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') ORDER BY id DESC LIMIT 1",
+        "SELECT payload->'activity' FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') ORDER BY id DESC LIMIT 1",
     )
     .fetch_one(&ctx.db)
     .await

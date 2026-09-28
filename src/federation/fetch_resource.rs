@@ -101,7 +101,7 @@ async fn process(
     // body is compared with is where it was finally served from.
     let served = resp.url.as_str();
 
-    if feder::fetch::is_activity_content_type(&content_type) {
+    if ojak::fetch::is_activity_content_type(&content_type) {
         return match read_activitypub(served, &resp.body) {
             ApBody::Resource(json) => Some(FetchedResource {
                 url: served.to_owned(),
@@ -307,21 +307,21 @@ mod tests {
 
     #[test]
     fn content_type_needs_the_activitystreams_profile() {
-        assert!(feder::fetch::is_activity_content_type(
+        assert!(ojak::fetch::is_activity_content_type(
             "application/activity+json"
         ));
-        assert!(feder::fetch::is_activity_content_type(
+        assert!(ojak::fetch::is_activity_content_type(
             "application/activity+json; charset=utf-8"
         ));
-        assert!(feder::fetch::is_activity_content_type(
+        assert!(ojak::fetch::is_activity_content_type(
             "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
         ));
         // JSON-LD that is not ActivityStreams, and plain pages, are not objects.
-        assert!(!feder::fetch::is_activity_content_type(
+        assert!(!ojak::fetch::is_activity_content_type(
             "application/ld+json"
         ));
-        assert!(!feder::fetch::is_activity_content_type("application/json"));
-        assert!(!feder::fetch::is_activity_content_type(
+        assert!(!ojak::fetch::is_activity_content_type("application/json"));
+        assert!(!ojak::fetch::is_activity_content_type(
             "text/html; charset=utf-8"
         ));
     }

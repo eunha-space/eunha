@@ -319,7 +319,7 @@ pub async fn distribute_profile(
     state: &crate::state::AppState,
     domain: &str,
     account: &crate::db::models::Account,
-    batch: Option<&feder::deliverer::Batch>,
+    batch: Option<&ojak::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     if account.domain.is_some()
         || !crate::federation::keypair::has_signing_key(state, account.id)
@@ -406,7 +406,7 @@ pub async fn select(
 pub async fn update_profiles(
     state: &crate::state::AppState,
     selection: &Selection,
-    batch: &feder::deliverer::Batch,
+    batch: &ojak::deliverer::Batch,
     dry_run: bool,
 ) -> anyhow::Result<BatchReport> {
     let (accounts, unknown) = select(&state.db, selection).await?;
@@ -455,7 +455,7 @@ pub async fn move_followers(
     state: &crate::state::AppState,
     selection: &Selection,
     from: &str,
-    batch: &feder::deliverer::Batch,
+    batch: &ojak::deliverer::Batch,
     dry_run: bool,
 ) -> anyhow::Result<BatchReport> {
     anyhow::ensure!(
@@ -575,7 +575,7 @@ pub struct BatchStatus {
 pub async fn batch_status(db: &sqlx::PgPool, tag: &str) -> anyhow::Result<BatchStatus> {
     let rows: Vec<(String, bool, Option<String>)> = sqlx::query_as(
         "SELECT payload->>'inbox', failed_at IS NOT NULL, last_error
-         FROM eunha.feder_queue
+         FROM eunha.ojak_queue
          WHERE queue = ANY($2) AND payload->>'tag' = $1
          ORDER BY id",
     )

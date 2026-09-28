@@ -242,12 +242,12 @@ async fn test_inbound_rfc9421_rejects_a_swapped_body() {
 
     let signed_body = json!({"id": format!("{uri}#u"), "type": "Update", "actor": uri,
                              "object": {"id": uri, "type": "Person", "name": "signed"}});
-    let signed = feder_runtime::rfc9421::sign_request(
+    let signed = ojak_runtime::rfc9421::sign_request(
         "post",
         &format!("https://{}/inbox", ctx.api.host),
         Some(&serde_json::to_vec(&signed_body).unwrap()),
         &format!("{uri}#main-key"),
-        &feder_runtime::rfc9421::SigningKey::RsaPem(&priv_pem),
+        &ojak_runtime::rfc9421::SigningKey::RsaPem(&priv_pem),
     )
     .unwrap();
 

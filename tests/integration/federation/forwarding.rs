@@ -27,7 +27,7 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 
 async fn queued_for(ctx: &TestContext, inbox: &str) -> Vec<Value> {
     sqlx::query_scalar(
-        "SELECT payload->'activity' FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
+        "SELECT payload->'activity' FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
     )
     .bind(inbox)
     .fetch_all(&ctx.db)
@@ -318,7 +318,7 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     );
     assert!(queued_for(&ctx, &format!("{nina}/inbox")).await.is_empty());
 
-    let batch = feder::deliverer::Batch {
+    let batch = ojak::deliverer::Batch {
         tag: Some("move:test".into()),
         deadline: Some(std::time::SystemTime::now() + std::time::Duration::from_secs(3600)),
     };
@@ -327,7 +327,7 @@ async fn test_followers_are_moved_from_a_previous_domain() {
         .unwrap();
 
     let queued: Vec<(Value, String)> = sqlx::query_as(
-        "SELECT payload->'activity', payload->>'sender' FROM eunha.feder_queue
+        "SELECT payload->'activity', payload->>'sender' FROM eunha.ojak_queue
          WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
     )
     .bind(format!("{nina}/inbox"))

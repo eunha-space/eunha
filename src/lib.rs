@@ -46,9 +46,9 @@ pub fn build_app() -> Router {
         .merge(api::eunha::router())
         .merge(api::ap::router())
         .fallback(axum::routing::any(fallback));
-    // What other servers fetch, WebFinger and NodeInfo included, is feder's,
+    // What other servers fetch, WebFinger and NodeInfo included, is ojak's,
     // for the instance the tenant dispatcher put on the request.
-    let compressed = feder_axum::wrap(routes, api::ap::serving::federation(), |parts| {
+    let compressed = ojak_axum::wrap(routes, api::ap::serving::federation(), |parts| {
         parts.extensions.get::<state::AppState>().cloned()
     })
     .layer(CompressionLayer::new());

@@ -319,7 +319,7 @@ sample_loop() {
     snap=$(cat "$WORK/snap")
     row=$(q "SELECT (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NULL),
                     (SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NOT NULL),
-                    (SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL),
+                    (SELECT count(*) FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL),
                     count(*) FILTER (WHERE state = 'active' AND pid <> pg_backend_pid()),
                     count(*) FILTER (WHERE state = 'idle'),
                     count(*) FILTER (WHERE wait_event_type = 'Lock')
@@ -390,7 +390,7 @@ memory_snapshot before
 set_phase spike
 sim_offset=$(curl -s "http://127.0.0.1:$SIM_PORT/__stats?since=999999" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).now_second))')
 sim_ms() { curl -s "http://127.0.0.1:$SIM_PORT/__clock" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).now_ms))'; }
-first_attempts() { q "SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL AND attempts = 0"; }
+first_attempts() { q "SELECT count(*) FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL AND attempts = 0"; }
 if [ "$SCENARIO" = viral ]; then
   curl -sf -X POST "http://127.0.0.1:$SIM_PORT/__spikes" -H 'Content-Type: application/json' -d "{
     \"status_uri\": \"$status_uri\", \"author_uri\": \"$author_uri\",
@@ -442,7 +442,7 @@ while [ $((SECONDS - recovery_start)) -lt "$RECOVERY" ]; do
   if [ "$SCENARIO" = viral ]; then
     pending=$(q "SELECT count(*) FROM eunha.inbox_jobs WHERE failed_at IS NULL")
   else
-    pending=$(q "SELECT count(*) FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL")
+    pending=$(q "SELECT count(*) FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND failed_at IS NULL")
   fi
   if [ "$pending" = 0 ]; then drained=$((SECONDS - recovery_start)); break; fi
   sleep 1
@@ -460,7 +460,7 @@ q "SELECT count(*) FILTER (WHERE failed_at IS NULL AND attempts = 0),
           count(*) FILTER (WHERE failed_at IS NULL AND attempts > 0),
           count(*) FILTER (WHERE failed_at IS NOT NULL),
           coalesce(max(attempts), 0)
-   FROM eunha.feder_queue WHERE queue IN ('delivery', 'delivery-priority')" | tr '|' ' ' > "$RESULTS/delivery-queue.txt"
+   FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority')" | tr '|' ' ' > "$RESULTS/delivery-queue.txt"
 if [ "$pgss" = 1 ]; then
   q "SELECT calls, round(total_exec_time)::bigint AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms,
             regexp_replace(left(query, 160), '\s+', ' ', 'g')

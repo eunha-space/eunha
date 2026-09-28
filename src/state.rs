@@ -20,9 +20,9 @@ pub struct AppState {
     /// objects, actor keys, link previews). See [`crate::federation::safe_fetch`].
     pub fetch: reqwest::Client,
     /// Fetches ActivityPub documents, signed as the instance actor, through
-    /// feder's guarded client: each redirect is checked and signed again,
+    /// ojak's guarded client: each redirect is checked and signed again,
     /// and a document is trusted only from its own origin.
-    pub fetcher: Arc<feder::fetch::Fetcher>,
+    pub fetcher: Arc<ojak::fetch::Fetcher>,
     pub email: EmailSender,
     pub streaming: StreamBus,
     pub storage: Arc<Storage>,
@@ -33,10 +33,10 @@ pub struct AppState {
     /// The instance actor's signing key, parsed on first use. Every signed GET
     /// uses it, and loading, decrypting and parsing an RSA key costs more than
     /// signing with it — a post going viral had that at a tenth of eunha's CPU.
-    pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<feder_runtime::signature::PrivateKey>>>,
+    pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<ojak_runtime::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,
-    /// Outgoing deliveries, queued in `eunha.feder_queue` (federation::delivery).
+    /// Outgoing deliveries, queued in `eunha.ojak_queue` (federation::delivery).
     pub deliverer: Arc<crate::federation::delivery::Deliverer>,
     /// This instance's domain and media locations, which every URL it serves is
     /// built from. Held here rather than process-wide, so that one process can
@@ -107,18 +107,18 @@ impl AppState {
         });
 
         // Deliveries and fetches share one guarded client and its pool.
-        let federation_client = feder::client::Client::new(feder::client::ClientConfig {
+        let federation_client = ojak::client::Client::new(ojak::client::ClientConfig {
             // The process's list, which the first instance to start set: the
-            // same one the SSRF guard above answers to, so that feder's
+            // same one the SSRF guard above answers to, so that ojak's
             // client and eunha's older one agree on what may be reached.
             allow_private: crate::federation::safe_fetch::allowed_private_networks(),
             user_agent: crate::version::USER_AGENT.to_string(),
-            ..feder::client::ClientConfig::default()
+            ..ojak::client::ClientConfig::default()
         })
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let fetcher = Arc::new(feder::fetch::Fetcher::new(
+        let fetcher = Arc::new(ojak::fetch::Fetcher::new(
             federation_client.clone(),
-            feder::delivery::Scheme::DraftCavage,
+            ojak::delivery::Scheme::DraftCavage,
         ));
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
             db.clone(),

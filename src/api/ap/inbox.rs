@@ -172,10 +172,10 @@ pub(super) async fn acquire_create_lock(state: &AppState, uri: &str) -> Option<R
     None
 }
 
-/// An activity feder has received and authenticated: queued for the ingress
+/// An activity ojak has received and authenticated: queued for the ingress
 /// worker, or, in tests, handled at once.
 ///
-/// Feder's inbox (`super::serving`) has already done what this handler used
+/// Ojak's inbox (`super::serving`) has already done what this handler used
 /// to: refused a suspended domain's activities before fetching a key for
 /// them, verified the HTTP Signature or, failing it, an FEP-8b32 proof,
 /// accepted and dropped a Delete it could not verify, and checked that the
@@ -208,7 +208,7 @@ pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
     // and known by its canonical id: it is fetched now, while the hints are
     // there, and every handler after sees the canonical id.
     let mut activity = activity;
-    let actor_uri = if feder_core::portable::ApUri::parse(&actor_uri).is_some() {
+    let actor_uri = if ojak_core::portable::ApUri::parse(&actor_uri).is_some() {
         if let Err(error) = resolve_or_fetch_remote_account(state, &actor_uri).await {
             tracing::warn!(actor_uri, %error, "could not fetch a portable actor");
         }

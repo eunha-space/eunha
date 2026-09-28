@@ -3,15 +3,15 @@
 //! `https://…`.
 //!
 //! A portable id names a key, not a host, so nothing about it says where to
-//! send a request. Feder fetches it from the gateways it hints at and keeps
+//! send a request. Ojak fetches it from the gateways it hints at and keeps
 //! only a copy whose proof by the key holds. Eunha stores it by its
 //! canonical id, gives it the first gateway's host as its domain, which is
 //! also where its WebFinger address lives, and keeps its inbox as the
 //! `https` URL at that gateway, so that delivering to it is delivering to
 //! any other inbox.
 
-use feder_core::origin::Origin;
-use feder_core::portable::ApUri;
+use ojak_core::origin::Origin;
+use ojak_core::portable::ApUri;
 use serde_json::Value;
 
 /// `uri` in the spelling it is stored and compared in: a portable id's
@@ -23,10 +23,10 @@ pub fn canonical(uri: &str) -> String {
     }
 }
 
-/// `uri` as an IRI of feder's vocabulary. A portable id's canonical form
+/// `uri` as an IRI of ojak's vocabulary. A portable id's canonical form
 /// has colons in its authority, which no IRI parser accepts; it is held with
 /// them percent-encoded, which is the same id, and written back canonical.
-pub fn iri(uri: &str) -> anyhow::Result<feder_vocab::Iri> {
+pub fn iri(uri: &str) -> anyhow::Result<ojak_vocab::Iri> {
     if let Ok(iri) = uri.parse() {
         return Ok(iri);
     }
@@ -70,7 +70,7 @@ pub struct Reach {
 pub fn reach(actor: &Value) -> Option<Reach> {
     let id = actor.get("id").and_then(Value::as_str)?;
     ApUri::parse(id)?;
-    let gateways = feder::portable::gateways(actor);
+    let gateways = ojak::portable::gateways(actor);
     let gateway = gateways.first()?;
     let domain = url::Url::parse(gateway).ok()?.host_str()?.to_owned();
     let at_gateway = |key: &str| {
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn a_portable_id_is_an_iri_and_writes_back_canonical() {
-        use feder_vocab::json::ToJson as _;
+        use ojak_vocab::json::ToJson as _;
 
         let id = format!("ap://{DID}/actor");
         assert_eq!(iri(&id).unwrap().to_json(), json!(id));

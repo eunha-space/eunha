@@ -1,4 +1,4 @@
-//! The documents local actors and their statuses are served as; feder serves
+//! The documents local actors and their statuses are served as; ojak serves
 //! them (`super::serving`).
 
 use serde_json::{json, Value};

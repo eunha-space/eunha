@@ -1,3 +1,3 @@
-//! WebFinger actor discovery, provided by feder-runtime.
+//! WebFinger actor discovery, provided by ojak-runtime.
 
-pub use feder_runtime::webfinger::resolve;
+pub use ojak_runtime::webfinger::resolve;
