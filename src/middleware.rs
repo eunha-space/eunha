@@ -138,19 +138,16 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
 /// Never the body, nor the query string: a refused password grant, sign-up or
 /// password reset carries the very credentials that were refused, and a
 /// streaming URL can carry an access token.
-pub async fn log_failures(mut req: Request, next: Next) -> Response {
+pub async fn log_failures(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     // For a refused delivery: the key it claimed to be signed with, which
-    // names the sender when nothing else about the request can be trusted.
+    // names the sender when nothing else about the request can be trusted,
+    // and the headers its signature covered as they arrived here. The request
+    // is passed on untouched: a sender may have signed any header it sent.
     let inbox_post = method == axum::http::Method::POST && path.ends_with("/inbox");
     let key_id = inbox_post.then(|| claimed_key_id(req.headers())).flatten();
-    if inbox_post {
-        // An inbox answers in a few bytes, so compressing them saves nothing,
-        // and a compressed refusal cannot be logged as the reason it gives.
-        req.headers_mut()
-            .remove(axum::http::header::ACCEPT_ENCODING);
-    }
+    let covered = inbox_post.then(|| covered_headers(req.headers()));
 
     let response = next.run(req).await;
     let status = response.status();
@@ -169,17 +166,60 @@ pub async fn log_failures(mut req: Request, next: Next) -> Response {
     if inbox_post && status.is_client_error() {
         let (parts, body) = response.into_parts();
         let bytes = axum::body::to_bytes(body, 4096).await.unwrap_or_default();
+        // Compressed if the sender asked for it; decoded for the log only.
+        let gzip = parts
+            .headers
+            .get(axum::http::header::CONTENT_ENCODING)
+            .is_some_and(|encoding| encoding == "gzip");
+        let reason = if gzip {
+            use std::io::Read as _;
+            let mut text = String::new();
+            let _ = flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut text);
+            text
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
         tracing::warn!(
             path = %path,
             status = %status,
             key_id = key_id.as_deref().unwrap_or(""),
-            reason = %String::from_utf8_lossy(&bytes),
+            reason = %reason,
+            covered = covered.as_deref().unwrap_or(""),
             "inbox refused a delivery",
         );
         return Response::from_parts(parts, axum::body::Body::from(bytes));
     }
 
     response
+}
+
+/// The headers a request's draft HTTP signature covers, each with the value it
+/// arrived with: what a signature that does not verify was made over, as far
+/// as this end can tell. The signature itself is left out.
+fn covered_headers(headers: &axum::http::HeaderMap) -> String {
+    let Some(signature) = headers.get("signature").and_then(|v| v.to_str().ok()) else {
+        return String::new();
+    };
+    let marker = "headers=\"";
+    let Some(start) = signature.find(marker).map(|i| i + marker.len()) else {
+        return String::new();
+    };
+    let Some(len) = signature[start..].find('"') else {
+        return String::new();
+    };
+    signature[start..start + len]
+        .split_whitespace()
+        .map(|name| {
+            let value = headers.get(name).and_then(|v| v.to_str().ok());
+            let value = match value {
+                Some(value) => value,
+                None if name.starts_with('(') => "…",
+                None => "<absent>",
+            };
+            format!("{name}: {value}")
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 /// The `keyId` a request's HTTP signature names, in either scheme.
@@ -246,5 +286,23 @@ mod claimed_key_tests {
         );
 
         assert_eq!(claimed_key_id(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn lists_what_the_signature_covered_as_it_arrived() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "signature",
+            r#"keyId="https://a.example/@bob#main-key",algorithm="rsa-sha256",headers="(request-target) host date accept-encoding",signature="abc""#
+                .parse()
+                .unwrap(),
+        );
+        headers.insert("host", "seoul.earth".parse().unwrap());
+        headers.insert("date", "Mon, 28 Sep 2026 10:00:00 GMT".parse().unwrap());
+        assert_eq!(
+            super::covered_headers(&headers),
+            "(request-target): … | host: seoul.earth | date: Mon, 28 Sep 2026 10:00:00 GMT | accept-encoding: <absent>"
+        );
+        assert_eq!(super::covered_headers(&HeaderMap::new()), "");
     }
 }
