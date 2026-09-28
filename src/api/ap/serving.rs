@@ -30,6 +30,13 @@ use crate::db::models::Account;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+/// How many entries feder's in-memory store may hold, for the whole process.
+/// Nearly all are the IDs of activities received, which feder remembers for a
+/// day to drop a redelivery; past this it forgets the ones nearest to expiry
+/// first, and a redelivery it no longer recognises is processed again, which
+/// every activity's effect on the database already tolerates.
+const KV_CAPACITY: usize = 100_000;
+
 type Ctx = Context<AppState>;
 
 /// The federation every instance in the process is served through.
@@ -133,16 +140,20 @@ pub fn federation() -> Federation<AppState> {
         .inbox("actor_by_id", "/ap/users/{id}/inbox")
         .shared_inbox("/inbox")
         // Every tenant fetches with its own fetcher (`fetcher_for`); this
-        // one is only what the builder needs to be given. Keys fetched are
-        // kept in memory for an hour; the keys of accounts eunha knows come
-        // from `accounts` first.
+        // one is only what the builder needs to be given. The keys of
+        // accounts eunha knows come from `accounts`, where a new actor's is
+        // stored as it is fetched, so feder caches only what eunha does not
+        // keep. What it does cache — the IDs of activities seen, replies
+        // forwarded, keys eunha did not store — is one store for the process,
+        // bounded so that a day of every tenant's traffic is not all held in
+        // memory at once.
         .signed_fetch(
             std::sync::Arc::new(feder::fetch::Fetcher::new(
                 feder::client::Client::new(feder::client::ClientConfig::default())
                     .expect("an HTTP client"),
                 feder::delivery::Scheme::DraftCavage,
             )),
-            feder::kv::MemoryKvStore::new(),
+            feder::kv::MemoryKvStore::with_capacity(KV_CAPACITY),
             std::time::Duration::from_secs(60 * 60),
             // Signed as the instance actor, for peers in authorized-fetch mode.
             |ctx: Ctx| async move {

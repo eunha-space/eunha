@@ -735,9 +735,33 @@ context cannot be processed. The cache stays in feder for whatever does
 normalise.
 
 The about 74 MiB of live memory that a burst of new actors leaves behind is the
-same in all three: feder's in-memory key-value store, which keeps an expired
-entry until its own key is read again, holding every key fetched and every
-forwarded reply. It is not yet addressed.
+same in all three, and is addressed below.
+
+### 2026-09-28: What feder remembers
+
+What was left behind was feder's in-memory key-value store, one for the
+process. It removed an expired entry only when that entry's own key was asked
+for again, which for an actor seen once or an activity processed once is never,
+so it grew for as long as the process ran. And most of it was remote keys held
+twice: each new actor's key was cached for an hour although eunha had already
+stored it with the account, and hands it back from there through `known_key`.
+
+Feder now sweeps expired entries as the store is written to, bounds it
+(`with_capacity`), and leaves a key that eunha keeps to eunha. What remains is
+what feder should remember — the IDs of activities received, for a day, so that
+a redelivery is dropped — at about 280 bytes each; eunha bounds the store at
+100,000 entries, about 28 MiB for the whole process. Same spike, 120 seconds
+after the queue drained, against the build before it in the same session:
+
+|                               |   Before | After (2 runs) |
+| ----------------------------- | -------: | -------------: |
+| Live malloc data              | 73.1 MiB |       23.3 MiB |
+| Inbox p95                     |   7.6 ms |         7.8 ms |
+| Actor documents per new actor |      1.0 |            1.0 |
+
+Across the eight runs before the change the live figure was 73–76 MiB. The 13
+MiB above the 10 MiB eunha held before it moved onto feder is those activity
+IDs, and it leaves when they expire or when newer ones displace them.
 
 
 Not yet measured
