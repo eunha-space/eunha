@@ -190,6 +190,15 @@ pub fn federation() -> Federation<AppState> {
         // viral post, more than half the CPU.
         .read_inbox_as_written()
         .on_any(|ctx: Ctx, received: feder::federation::Received<feder_vocab::generated::AnyObject>| async move {
+            // Which inbox a peer chose is otherwise invisible: Mastodon picks
+            // the shared one only when two accounts here follow the same actor
+            // there, and the federation harness checks that path is exercised.
+            tracing::debug!(
+                inbox = %if received.recipient.is_some() { "personal" } else { "shared" },
+                sender = %received.sender,
+                activity_type = received.vouched.get("type").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "received ActivityPub activity"
+            );
             super::inbox::received(ctx.data(), received.vouched).await
         })
         // A reply to a local post, addressed to its author's followers, is

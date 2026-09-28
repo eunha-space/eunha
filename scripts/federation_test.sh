@@ -295,7 +295,11 @@ echo "==> Which inbox Mastodon used"
 # and SIGPIPEs the process feeding it, so the pipeline reports failure precisely
 # when the thing it looks for is found. This check called itself a failure while
 # four deliveries sat in the log.
-SHARED_HITS=$(compose logs eunha 2>/dev/null | grep -c "inbox=/inbox" || true)
+#
+# eunha logs each activity it accepts with the inbox it came through
+# (`inbox=shared` or `inbox=personal`); feder serves the inbox, so the request
+# path is no longer what is logged.
+SHARED_HITS=$(compose logs eunha 2>/dev/null | grep -c "inbox=shared" || true)
 if [ "${SHARED_HITS:-0}" -gt 0 ]; then
   echo "  [ok  ] $SHARED_HITS deliveries reached eunha's shared inbox"
 else
