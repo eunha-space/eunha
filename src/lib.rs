@@ -17,6 +17,7 @@ pub mod locale;
 pub mod media;
 pub mod middleware;
 pub mod migrate;
+pub mod open_files;
 pub mod preview_card;
 pub mod push;
 pub mod rails_encryption;

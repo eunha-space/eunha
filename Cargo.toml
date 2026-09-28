@@ -99,6 +99,9 @@ feder-postgres = { git = "https://github.com/limeburst/feder.git" }
 # Serving what other servers fetch (src/api/ap/serving.rs).
 feder-axum = { git = "https://github.com/limeburst/feder.git" }
 
+# Raising the process's open-file limit (src/open_files.rs)
+libc = "0.2"
+
 # Config / environment
 config = "0.15"
 dotenvy = "0.15"

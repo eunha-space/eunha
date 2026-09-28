@@ -58,6 +58,12 @@ instance from taking more than its share:
     every instance, first come first served, so one with a large fan-out
     waits its turn instead of opening thousands of connections. Every
     instance in a directory must name the same value.
+ -  **Open files, per process.** Every socket counts against the process's
+    limit on open files: deliveries in flight, connections kept for reuse,
+    database and Redis connections. A service launchd starts has a soft
+    limit of 256 unless its plist sets another, which a fan-out passes, so
+    eunha raises its own soft limit to the hard one at startup — 92,160 on
+    macOS — and warns if that is still under 4,096.
 
 And a process refuses to start with more than it can hold, before any instance
 is started:

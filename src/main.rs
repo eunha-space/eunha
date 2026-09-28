@@ -288,6 +288,19 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    match eunha::open_files::raise() {
+        Ok((before, after)) if after < eunha::open_files::COMFORTABLE => tracing::warn!(
+            before,
+            after,
+            "the open-file limit is low for delivering to many servers at once; raise the hard limit"
+        ),
+        Ok((before, after)) if after > before => {
+            tracing::debug!(before, after, "raised the open-file limit")
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "could not raise the open-file limit"),
+    }
+
     match args.command {
         Some(Command::Migrate { check }) => {
             return migrate_databases(args.tenants.as_deref(), check).await;

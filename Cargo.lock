@@ -1922,6 +1922,7 @@ dependencies = [
  "indexmap",
  "ipnet",
  "itertools 0.14.0",
+ "libc",
  "mime",
  "mime_guess",
  "minijinja",
