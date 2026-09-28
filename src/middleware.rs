@@ -141,6 +141,10 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
 pub async fn log_failures(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
+    // For a refused delivery: the key it claimed to be signed with, which
+    // names the sender when nothing else about the request can be trusted.
+    let inbox_post = method == axum::http::Method::POST && path.ends_with("/inbox");
+    let key_id = inbox_post.then(|| claimed_key_id(req.headers())).flatten();
 
     let response = next.run(req).await;
     let status = response.status();
@@ -154,7 +158,36 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
         );
     }
 
+    // Why an inbox refused a delivery is in the body feder answers with, and
+    // nowhere else; without it a peer that cannot reach us is only a count.
+    if inbox_post && status.is_client_error() {
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, 4096).await.unwrap_or_default();
+        tracing::warn!(
+            path = %path,
+            status = %status,
+            key_id = key_id.as_deref().unwrap_or(""),
+            reason = %String::from_utf8_lossy(&bytes),
+            "inbox refused a delivery",
+        );
+        return Response::from_parts(parts, axum::body::Body::from(bytes));
+    }
+
     response
+}
+
+/// The `keyId` a request's HTTP signature names, in either scheme.
+fn claimed_key_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    let field = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    // RFC 9421 names it in Signature-Input as keyid="…"; the draft in
+    // Signature as keyId="…".
+    let (value, marker) = match field("signature-input") {
+        Some(input) => (input, "keyid=\""),
+        None => (field("signature")?, "keyId=\""),
+    };
+    let start = value.find(marker)? + marker.len();
+    let end = value[start..].find('"')?;
+    Some(value[start..start + end].to_owned())
 }
 
 fn extract_bearer(req: &Request) -> Option<String> {
@@ -172,4 +205,40 @@ fn token_not_expired(created_at: chrono::NaiveDateTime, expires_in: Option<i32>)
             created_at + chrono::Duration::seconds(seconds as i64) > chrono::Utc::now().naive_utc()
         })
         .unwrap_or(true)
+}
+
+#[cfg(test)]
+mod claimed_key_tests {
+    use super::claimed_key_id;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn reads_the_key_either_scheme_names() {
+        let mut draft = HeaderMap::new();
+        draft.insert(
+            "signature",
+            r#"keyId="https://a.example/users/bob#main-key",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="abc""#
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(
+            claimed_key_id(&draft).as_deref(),
+            Some("https://a.example/users/bob#main-key")
+        );
+
+        let mut rfc9421 = HeaderMap::new();
+        rfc9421.insert(
+            "signature-input",
+            r#"sig1=("@method" "@target-uri");created=1;keyid="https://b.example/actor#key";alg="rsa-v1_5-sha256""#
+                .parse()
+                .unwrap(),
+        );
+        rfc9421.insert("signature", "sig1=:abc:".parse().unwrap());
+        assert_eq!(
+            claimed_key_id(&rfc9421).as_deref(),
+            Some("https://b.example/actor#key")
+        );
+
+        assert_eq!(claimed_key_id(&HeaderMap::new()), None);
+    }
 }
