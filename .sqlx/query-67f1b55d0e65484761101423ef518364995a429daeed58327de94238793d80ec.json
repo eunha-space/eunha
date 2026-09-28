@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.description FROM unnest($1::bigint[]) WITH ORDINALITY AS o(id, position)\n                   LEFT JOIN media_attachments m ON m.id = o.id\n                   ORDER BY o.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "description",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "67f1b55d0e65484761101423ef518364995a429daeed58327de94238793d80ec"
+}

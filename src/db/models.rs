@@ -313,8 +313,10 @@ pub struct StatusEdit {
     pub spoiler_text: String,
     pub sensitive: Option<bool>,
     pub created_at: NaiveDateTime,
-    // Added in migration 065
-    pub media_descriptions: Option<Vec<String>>,
+    // Added in migration 065. One per attachment in
+    // `ordered_media_attachment_ids`, as it was described at that version;
+    // Mastodon writes NULL for an attachment that had no description.
+    pub media_descriptions: Option<Vec<Option<String>>>,
     pub ordered_media_attachment_ids: Option<Vec<i64>>,
     pub poll_options: Option<Vec<String>>,
     pub quote_id: Option<i64>,

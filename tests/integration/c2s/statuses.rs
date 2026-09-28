@@ -1351,6 +1351,76 @@ async fn test_status_history_after_edit() {
     );
 }
 
+/// Mastodon records an attachment without a description as NULL inside an
+/// edit's `media_descriptions`, and the history of every such status answered
+/// 500: the array was read as strings. Each version's attachments carry the
+/// descriptions they had then, none where they had none.
+#[tokio::test]
+async fn test_status_history_keeps_each_versions_descriptions() {
+    let ctx = TestContext::new("edit-history-descriptions").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "with a picture", "public")
+        .await;
+    let id: i64 = status["id"].as_str().unwrap().parse().unwrap();
+    let account_id: i64 = ctx.alice_id.parse().unwrap();
+    let media_id = eunha::snowflake::next_id();
+    sqlx::query(
+        "INSERT INTO media_attachments (id, status_id, account_id, remote_url, type, description, created_at, updated_at)
+         VALUES ($1, $2, $3, 'https://files.example/a.png', 0, 'described now', now(), now())",
+    )
+    .bind(media_id)
+    .bind(id)
+    .bind(account_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE statuses SET ordered_media_attachment_ids = $2 WHERE id = $1")
+        .bind(id)
+        .bind(vec![media_id])
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    // Two past versions as Mastodon writes them: undescribed, then described.
+    for (text, description, ago) in [
+        ("first", None::<&str>, 2),
+        ("second", Some("described then"), 1),
+    ] {
+        sqlx::query(
+            "INSERT INTO status_edits (status_id, account_id, text, spoiler_text, ordered_media_attachment_ids, media_descriptions, created_at, updated_at)
+             VALUES ($1, $2, $3, '', $4, $5, now() - make_interval(hours => $6), now())",
+        )
+        .bind(id)
+        .bind(account_id)
+        .bind(text)
+        .bind(vec![media_id])
+        .bind(vec![description])
+        .bind(ago)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+
+    let resp = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}/history"), None)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let history: Vec<Value> = resp.json().await.unwrap();
+    let descriptions: Vec<&Value> = history
+        .iter()
+        .map(|version| &version["media_attachments"][0]["description"])
+        .collect();
+    assert_eq!(
+        descriptions,
+        [
+            &Value::Null,
+            &json!("described then"),
+            &json!("described now")
+        ]
+    );
+}
+
 /// Every version in the history is rendered, not just the current one.
 ///
 /// Upstream's `StatusEditSerializer#content` is `status_content_format(object)`

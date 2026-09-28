@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM status_edits WHERE status_id = $1 ORDER BY created_at ASC",
+  "query": "SELECT id, status_id, account_id, text, spoiler_text, sensitive, created_at,\n                  media_descriptions AS \"media_descriptions: Vec<Option<String>>\",\n                  ordered_media_attachment_ids, poll_options, quote_id, updated_at\n           FROM status_edits WHERE status_id = $1 ORDER BY created_at ASC",
   "describe": {
     "columns": [
       {
@@ -30,23 +30,23 @@
       },
       {
         "ordinal": 5,
+        "name": "sensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 6,
-        "name": "updated_at",
-        "type_info": "Timestamp"
-      },
-      {
         "ordinal": 7,
-        "name": "ordered_media_attachment_ids",
-        "type_info": "Int8Array"
+        "name": "media_descriptions: Vec<Option<String>>",
+        "type_info": "TextArray"
       },
       {
         "ordinal": 8,
-        "name": "media_descriptions",
-        "type_info": "TextArray"
+        "name": "ordered_media_attachment_ids",
+        "type_info": "Int8Array"
       },
       {
         "ordinal": 9,
@@ -55,13 +55,13 @@
       },
       {
         "ordinal": 10,
-        "name": "sensitive",
-        "type_info": "Bool"
+        "name": "quote_id",
+        "type_info": "Int8"
       },
       {
         "ordinal": 11,
-        "name": "quote_id",
-        "type_info": "Int8"
+        "name": "updated_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
@@ -75,14 +75,14 @@
       true,
       false,
       false,
+      true,
       false,
-      false,
       true,
       true,
       true,
       true,
-      true
+      false
     ]
   },
-  "hash": "6281ed36b5463f601a47c2d42f47018bec96451a342b790da485d499ca05a9ac"
+  "hash": "fbd4083d746d998321037aa015d7f1fc6ea9a915d9101ca98b94587dd18e02af"
 }

@@ -136,11 +136,28 @@ pub async fn edit_status(
     let snapshot_at = status.edited_at.unwrap_or(status.created_at);
     let snapshot_media = status.ordered_media_attachment_ids.clone();
     let snapshot_poll = existing_poll.as_ref().map(|p| p.options.clone());
+    // Each attachment's description as it is now, before this edit changes
+    // any: Mastodon's `media_descriptions`, which `/history` shows each past
+    // version with.
+    let snapshot_descriptions: Option<Vec<Option<String>>> = match &snapshot_media {
+        Some(ids) if !ids.is_empty() => Some(
+            sqlx::query_scalar!(
+                r#"SELECT m.description FROM unnest($1::bigint[]) WITH ORDINALITY AS o(id, position)
+                   LEFT JOIN media_attachments m ON m.id = o.id
+                   ORDER BY o.position"#,
+                ids,
+            )
+            .fetch_all(&state.db)
+            .await?,
+        ),
+        _ => None,
+    };
     sqlx::query!(
-        r#"INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive, ordered_media_attachment_ids, poll_options, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())"#,
+        r#"INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive, ordered_media_attachment_ids, media_descriptions, poll_options, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())"#,
         id, auth.account_id, status.text, status.spoiler_text, status.sensitive,
-        snapshot_media.as_deref(), snapshot_poll.as_deref(), snapshot_at,
+        snapshot_media.as_deref(), snapshot_descriptions.as_deref() as Option<&[Option<String>]>,
+        snapshot_poll.as_deref(), snapshot_at,
     )
     .execute(&state.db)
     .await?;
@@ -387,9 +404,15 @@ pub async fn get_status_history(
     .fetch_one(&state.db)
     .await?;
 
+    // Named columns: `media_descriptions` holds NULL for an attachment that
+    // had no description, which a `SELECT *` would read as `Vec<String>`
+    // and refuse, failing the whole history.
     let edits = sqlx::query_as!(
         crate::db::models::StatusEdit,
-        "SELECT * FROM status_edits WHERE status_id = $1 ORDER BY created_at ASC",
+        r#"SELECT id, status_id, account_id, text, spoiler_text, sensitive, created_at,
+                  media_descriptions AS "media_descriptions: Vec<Option<String>>",
+                  ordered_media_attachment_ids, poll_options, quote_id, updated_at
+           FROM status_edits WHERE status_id = $1 ORDER BY created_at ASC"#,
         id,
     )
     .fetch_all(&state.db)
@@ -459,19 +482,31 @@ pub async fn get_status_history(
     let media_map: std::collections::HashMap<i64, &crate::db::models::MediaAttachment> =
         fetched_media.iter().map(|m| (m.id, m)).collect();
 
-    let ordered_media =
-        |ids: Option<&Vec<i64>>| -> Vec<crate::api::mastodon::types::MediaAttachment> {
-            ids.map(|list| {
-                list.iter()
-                    .filter_map(|id| media_map.get(id))
-                    .map(|m| crate::api::mastodon::convert::media_from_db(&state.urls, m))
-                    .filter(|m| {
-                        m.url.is_some() || m.remote_url.as_deref().is_some_and(|u| !u.is_empty())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-        };
+    // A past version's attachments carry the descriptions they had then, as
+    // Mastodon's `PreservedMediaAttachment` does: `descriptions[i]` for the
+    // attachment at position `i`, none where it had none. An edit recorded
+    // without them keeps each attachment's description as it is now.
+    let ordered_media = |ids: Option<&Vec<i64>>,
+                         descriptions: Option<&Vec<Option<String>>>|
+     -> Vec<crate::api::mastodon::types::MediaAttachment> {
+        ids.map(|list| {
+            list.iter()
+                .enumerate()
+                .filter_map(|(position, id)| Some((position, media_map.get(id)?)))
+                .map(|(position, m)| {
+                    let mut media = crate::api::mastodon::convert::media_from_db(&state.urls, m);
+                    if let Some(descriptions) = descriptions {
+                        media.description = descriptions.get(position).cloned().flatten();
+                    }
+                    media
+                })
+                .filter(|m| {
+                    m.url.is_some() || m.remote_url.as_deref().is_some_and(|u| !u.is_empty())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+    };
 
     let mut result: Vec<StatusEdit> = edits.iter().map(|e| {
         let poll = e.poll_options.as_ref().filter(|o| !o.is_empty()).map(|opts| {
@@ -483,7 +518,10 @@ pub async fn get_status_history(
             sensitive: e.sensitive.unwrap_or(false),
             created_at: crate::api::mastodon::convert::mastodon_date(e.created_at),
             account: api_account.clone(),
-            media_attachments: ordered_media(e.ordered_media_attachment_ids.as_ref()),
+            media_attachments: ordered_media(
+                e.ordered_media_attachment_ids.as_ref(),
+                e.media_descriptions.as_ref(),
+            ),
             emojis: vec![],
             poll,
             quote: None,
@@ -517,7 +555,7 @@ pub async fn get_status_history(
             status.edited_at.unwrap_or(status.created_at),
         ),
         account: api_account,
-        media_attachments: ordered_media(status.ordered_media_attachment_ids.as_ref()),
+        media_attachments: ordered_media(status.ordered_media_attachment_ids.as_ref(), None),
         emojis: vec![],
         poll: current_poll,
         quote: None,
