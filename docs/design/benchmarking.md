@@ -511,14 +511,19 @@ Spikes
 
 The benchmarks above hold a steady load. A spike is the other thing an instance
 meets: a sudden, bounded burst that it has to absorb and then recover from.
-`scripts/spike_viral_post.sh` runs the classic one — a local post goes viral,
-and thousands of remote actors the instance has never seen like, boost and
-reply to it within a few minutes.
+`scripts/spike.sh` runs two:
+
+ -  `viral`: a local post goes viral, and thousands of remote actors the
+    instance has never seen like, boost and reply to it within a few minutes.
+    Everything arrives.
+ -  `fanout`: a local account followed from thousands of servers posts, and
+    each server has to be sent each post. Everything leaves (see “Fan-out”).
 
 ~~~~ sh
 cargo build --release --bin eunha --bin eunha-fedisim
 cargo install --locked inferno rustfilt
-scripts/spike_viral_post.sh
+scripts/spike.sh viral
+scripts/spike.sh fanout
 ~~~~
 
 The remote side is `eunha-fedisim`, one process that plays every remote
@@ -585,6 +590,27 @@ fetches a preview for it, so the proxy's refusal count must show exactly that
 host. A canary that is not seen means the count cannot be trusted. Set
 `EUNHA_SPIKE_OFFLINE=0` to run without the sandbox.
 
+### Fan-out
+
+The fan-out scenario seeds `EUNHA_SPIKE_FOLLOWERS` remote followers of the
+posting account over up to `EUNHA_SPIKE_FOLLOWER_SERVERS` servers, a server's
+share falling off as a power (`EUNHA_SPIKE_SKEW`) of its rank: a few servers
+hold most followers and most hold one or two, as on the real network. A post is
+sent once to each server's shared inbox, so what the scenario loads is the
+number of servers, not of followers. The account then posts
+`EUNHA_SPIKE_POSTS` times.
+
+Each simulated server answers deliveries as its class says, fixed by its name
+for the run: by default 85% quickly, 10% in one to four seconds, 3% with a 503,
+1% never (the client gives up after 30 seconds), and 1% with 410 Gone
+(`EUNHA_SPIKE_INBOXES`). Every delivery's HTTP signature is checked against the
+key eunha publishes, as Mastodon checks it, and one that fails is answered 401.
+The summary reports, for each post and each class of server, how many were
+reached and how long after the post the median, the 99th percentile and the
+last of them received it; how many deliveries failed to verify; how many were
+sent again to a server that had already accepted them; and what the queue still
+held at the end.
+
 ### Against a copy of a real instance
 
 Left alone, the script creates a database holding the other benchmarks' ten
@@ -598,7 +624,7 @@ access token:
 EUNHA_SPIKE_DATABASE=seoul_earth_spike EUNHA_SPIKE_DOMAIN=seoul.earth \
   EUNHA_SPIKE_ACCOUNT=someone \
   EUNHA_SPIKE_CONFIG_APPEND=encryption.toml \
-  scripts/spike_viral_post.sh
+  scripts/spike.sh viral
 ~~~~
 
 `encryption.toml` holds only the instance's `[active_record_encryption]`
@@ -676,18 +702,18 @@ stored with an empty shared inbox now, as Mastodon does.
 
 ### Memory after a spike
 
-|                         |  Before | Spike ended | Queue drained | Idle 120 s |
-| ----------------------- | ------: | ----------: | ------------: | ---------: |
-| eunha footprint         |  12 MiB |     325 MiB |       388 MiB |    151 MiB |
-| of which live in malloc | 2.6 MiB |      15 MiB |        15 MiB |     10 MiB |
-| Database on disk        |  15 MiB |     116 MiB |       116 MiB |    116 MiB |
+|                           |  Before | Spike ended | Queue drained | Idle 120 s |
+| ------------------------- | ------: | ----------: | ------------: | ---------: |
+| eunha footprint           |  12 MiB |     325 MiB |       388 MiB |    151 MiB |
+| of which malloc allocated | 2.6 MiB |      15 MiB |        15 MiB |     10 MiB |
+| Database on disk          |  15 MiB |     116 MiB |       116 MiB |    116 MiB |
 
-eunha's live data never exceeded 15 MiB. Nearly all of the rest is *Malloc
-Large (empty)* in vmmap: large blocks already freed, which macOS's allocator
-keeps for reuse and returns on its own schedule — 331 MiB of it when the queue
-drained, 107 MiB two minutes later. The largest allocations are responses, and
-the thread is the largest response: while the harness still asked for it once a
-second during cooldown, each request added about 7 MiB.
+What malloc had handed out never exceeded 15 MiB. Nearly all of the rest is
+*Malloc Large (empty)* in vmmap: large blocks already freed, which macOS's
+allocator keeps for reuse and returns on its own schedule — 331 MiB of it when
+the queue drained, 107 MiB two minutes later. The largest allocations are
+responses, and the thread is the largest response: while the harness still
+asked for it once a second during cooldown, each request added about 7 MiB.
 
 Two traps for anyone reading these numbers. RSS fell to 29 MiB while the
 footprint stayed above 150 MiB, because macOS compresses an idle process's
@@ -734,8 +760,8 @@ already said eunha does not process JSON-LD. Feder's inbox is told not to
 context cannot be processed. The cache stays in feder for whatever does
 normalise.
 
-The about 74 MiB of live memory that a burst of new actors leaves behind is the
-same in all three, and is addressed below.
+The about 74 MiB of allocated memory that a burst of new actors leaves behind
+is the same in all three, and is addressed below.
 
 ### 2026-09-28: What feder remembers
 
@@ -755,7 +781,7 @@ after the queue drained, against the build before it in the same session:
 
 |                               |   Before | After (2 runs) |
 | ----------------------------- | -------: | -------------: |
-| Live malloc data              | 73.1 MiB |       23.3 MiB |
+| Malloc allocated              | 73.1 MiB |       23.3 MiB |
 | Inbox p95                     |   7.6 ms |         7.8 ms |
 | Actor documents per new actor |      1.0 |            1.0 |
 

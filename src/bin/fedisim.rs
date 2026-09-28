@@ -12,6 +12,12 @@
 //!   curl -X POST 127.0.0.1:18990/__spikes -d '{"status_uri": "…", …}'
 //!   curl 127.0.0.1:18990/__stats
 //!
+//! Deliveries eunha sends to a simulated inbox are checked the way a real
+//! server checks them — the HTTP signature against the key eunha publishes —
+//! answered as that server's class says (quickly, slowly, with an error, not
+//! at all, or `410 Gone`; `POST /__inboxes`), and recorded by when each server
+//! first received each activity (`GET /__deliveries`).
+//!
 //! Simulated servers are `s<n>.fedisim.test`, reached only through the proxy,
 //! over plain HTTP. A request for any other host is refused and counted: that
 //! count should stay at zero, and anything in it is traffic that would have
@@ -79,6 +85,36 @@ struct Sim {
     notes: Mutex<HashMap<String, Value>>,
     spike: Mutex<Option<SpikeState>>,
     running: AtomicBool,
+    inboxes: Mutex<Vec<InboxClass>>,
+    /// Public keys eunha publishes, by key ID, fetched once each.
+    eunha_keys: Mutex<HashMap<String, String>>,
+    /// Activity ID → server → milliseconds since start it first arrived, and
+    /// whether that server has accepted it.
+    arrivals: Mutex<HashMap<String, Arrivals>>,
+    /// Servers deliveries are expected at, and so what reach is measured over.
+    expected: Mutex<Vec<String>>,
+}
+
+/// Server → when it first received an activity, in milliseconds since start,
+/// and whether it has accepted it.
+type Arrivals = HashMap<String, (u64, bool)>;
+
+/// How a share of the simulated servers answer deliveries.
+#[derive(Clone, Debug, Deserialize)]
+struct InboxClass {
+    name: String,
+    /// Relative share of servers in this class.
+    weight: u64,
+    /// Answer after a delay drawn evenly from this range.
+    #[serde(default)]
+    latency_ms: (u64, u64),
+    /// What to answer with.
+    #[serde(default = "accepted")]
+    status: u16,
+}
+
+fn accepted() -> u16 {
+    202
 }
 
 #[derive(Default)]
@@ -98,6 +134,9 @@ struct Bucket {
     worst_tick_ms: u64,
     served_other: u64,
     received_post: u64,
+    deliveries: u64,
+    bad_signatures: u64,
+    duplicates: u64,
     blocked: u64,
 }
 
@@ -255,6 +294,10 @@ async fn main() -> anyhow::Result<()> {
         notes: Mutex::default(),
         spike: Mutex::default(),
         running: AtomicBool::new(false),
+        inboxes: Mutex::default(),
+        eunha_keys: Mutex::default(),
+        arrivals: Mutex::default(),
+        expected: Mutex::default(),
     });
 
     let app = axum::Router::new().fallback(dispatch).with_state(sim);
@@ -322,8 +365,7 @@ fn empty_collection(id: &str) -> Value {
 async fn simulated_server(sim: &Sim, host: &str, req: Request) -> Response {
     let path = req.uri().path().to_owned();
     if req.method() == Method::POST {
-        sim.record(|b| b.received_post += 1);
-        return StatusCode::ACCEPTED.into_response();
+        return inbox(sim, host, req).await;
     }
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
     match segments.as_slice() {
@@ -351,6 +393,203 @@ async fn simulated_server(sim: &Sim, host: &str, req: Request) -> Response {
     }
 }
 
+impl Sim {
+    fn millis(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
+    }
+
+    /// The class a server belongs to, fixed by its name: the same server
+    /// answers the same way for the whole run.
+    fn class_of(&self, host: &str) -> Option<InboxClass> {
+        let classes = self.inboxes.lock().unwrap();
+        let total: u64 = classes.iter().map(|c| c.weight).sum();
+        if total == 0 {
+            return None;
+        }
+        let hash = host.bytes().fold(0xcbf29ce484222325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100000001b3)
+        });
+        let mut pick = hash % total;
+        classes
+            .iter()
+            .find(|c| {
+                if pick < c.weight {
+                    true
+                } else {
+                    pick -= c.weight;
+                    false
+                }
+            })
+            .cloned()
+    }
+
+    /// The public key eunha publishes under `key_id`, fetched from eunha as a
+    /// remote server would fetch it, and kept.
+    async fn eunha_key(&self, key_id: &str) -> Option<String> {
+        if let Some(pem) = self.eunha_keys.lock().unwrap().get(key_id) {
+            return Some(pem.clone());
+        }
+        let owner = url::Url::parse(key_id.split('#').next()?).ok()?;
+        let document: Value = self
+            .http
+            .get(format!(
+                "{}{}",
+                self.args.eunha.trim_end_matches('/'),
+                owner.path()
+            ))
+            .header(header::HOST, owner.host_str()?)
+            .header(header::ACCEPT, "application/activity+json")
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        let pem = document["publicKey"]["publicKeyPem"].as_str()?.to_owned();
+        self.eunha_keys
+            .lock()
+            .unwrap()
+            .insert(key_id.to_owned(), pem.clone());
+        Some(pem)
+    }
+}
+
+/// A delivery to a simulated server's inbox: checked, recorded, and answered
+/// as the server's class says.
+async fn inbox(sim: &Sim, host: &str, req: Request) -> Response {
+    sim.record(|b| b.received_post += 1);
+    let Some(class) = sim.class_of(host) else {
+        return StatusCode::ACCEPTED.into_response();
+    };
+    let path = req.uri().path().to_owned();
+    let headers: Vec<(String, String)> = req
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+        })
+        .collect();
+    let Ok(body) = axum::body::to_bytes(req.into_body(), 1 << 20).await else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let (low, high) = class.latency_ms;
+    let delay = if high > low {
+        rand::rng().random_range(low..=high)
+    } else {
+        low
+    };
+    tokio::time::sleep(Duration::from_millis(delay)).await;
+
+    // Checked as Mastodon checks it: against the key the sender publishes.
+    // RFC 9421 is only sent after a draft signature is refused, so a run with
+    // any is a run where eunha's first signature failed.
+    let signature = headers
+        .iter()
+        .find(|(name, _)| name == "signature")
+        .map(|(_, value)| value.clone())
+        .unwrap_or_default();
+    let key_id = feder_runtime::signature::key_id_from_header(&signature).map(str::to_owned);
+    let verified = match key_id {
+        Some(key_id) if !headers.iter().any(|(name, _)| name == "signature-input") => {
+            match sim.eunha_key(&key_id).await {
+                Some(pem) => {
+                    let refs: Vec<(&str, &str)> = headers
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                        .collect();
+                    feder_runtime::signature::verify_request("post", &path, &refs, &body, &pem)
+                        .is_ok()
+                }
+                None => false,
+            }
+        }
+        _ => false,
+    };
+    if !verified {
+        sim.record(|b| b.bad_signatures += 1);
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let id = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|activity| activity["id"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    // A resend counts as a duplicate only if the server had accepted it: one
+    // after an error answer is the retry the answer asked for.
+    let accepting = (200..300).contains(&class.status);
+    let now = sim.millis();
+    let already_accepted = {
+        let mut arrivals = sim.arrivals.lock().unwrap();
+        let entry = arrivals
+            .entry(id)
+            .or_default()
+            .entry(host.to_owned())
+            .or_insert((now, false));
+        let before = entry.1;
+        entry.1 |= accepting;
+        before
+    };
+    sim.record(|b| {
+        b.deliveries += 1;
+        if already_accepted {
+            b.duplicates += 1;
+        }
+    });
+    StatusCode::from_u16(class.status)
+        .unwrap_or(StatusCode::ACCEPTED)
+        .into_response()
+}
+
+/// Who received each activity, and when, by class.
+fn deliveries(sim: &Sim) -> Value {
+    let expected = sim.expected.lock().unwrap().clone();
+    let mut expected_by_class: HashMap<String, u64> = HashMap::new();
+    for host in &expected {
+        if let Some(class) = sim.class_of(host) {
+            *expected_by_class.entry(class.name).or_default() += 1;
+        }
+    }
+    let arrivals = sim.arrivals.lock().unwrap();
+    let activities: Vec<Value> = arrivals
+        .iter()
+        .map(|(id, hosts)| {
+            let mut by_class: HashMap<String, Vec<u64>> = HashMap::new();
+            for (host, (at, _)) in hosts {
+                if let Some(class) = sim.class_of(host) {
+                    by_class.entry(class.name).or_default().push(*at);
+                }
+            }
+            let classes: HashMap<String, Value> = by_class
+                .into_iter()
+                .map(|(name, mut times)| {
+                    times.sort_unstable();
+                    let at =
+                        |p: f64| times[((p / 100.0) * (times.len() - 1) as f64).round() as usize];
+                    (
+                        name,
+                        json!({
+                            "servers": times.len(),
+                            "first_ms": times[0],
+                            "p50_ms": at(50.0),
+                            "p90_ms": at(90.0),
+                            "p99_ms": at(99.0),
+                            "last_ms": times[times.len() - 1],
+                        }),
+                    )
+                })
+                .collect();
+            json!({ "id": id, "servers": hosts.len(), "classes": classes })
+        })
+        .collect();
+    json!({
+        "now_ms": sim.millis(),
+        "expected_servers": expected.len(),
+        "expected_by_class": expected_by_class,
+        "activities": activities,
+    })
+}
+
 async fn control(sim: &Arc<Sim>, req: Request) -> Response {
     let path = req.uri().path().to_owned();
     match (req.method().clone(), path.as_str()) {
@@ -374,6 +613,32 @@ async fn control(sim: &Arc<Sim>, req: Request) -> Response {
             eunha::tenants::spawn(run_spike(sim.clone(), spike));
             StatusCode::ACCEPTED.into_response()
         }
+        (Method::POST, "/__inboxes") => {
+            let body = axum::body::to_bytes(req.into_body(), 1 << 20)
+                .await
+                .unwrap_or_default();
+            match serde_json::from_slice::<Vec<InboxClass>>(&body) {
+                Ok(classes) => {
+                    *sim.inboxes.lock().unwrap() = classes;
+                    StatusCode::NO_CONTENT.into_response()
+                }
+                Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            }
+        }
+        (Method::POST, "/__expect") => {
+            let body = axum::body::to_bytes(req.into_body(), 64 << 20)
+                .await
+                .unwrap_or_default();
+            match serde_json::from_slice::<Vec<String>>(&body) {
+                Ok(hosts) => {
+                    *sim.expected.lock().unwrap() = hosts;
+                    StatusCode::NO_CONTENT.into_response()
+                }
+                Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            }
+        }
+        (Method::GET, "/__deliveries") => Json(deliveries(sim)).into_response(),
+        (Method::GET, "/__clock") => Json(json!({ "now_ms": sim.millis() })).into_response(),
         (Method::GET, "/__stats") => {
             let since: u64 = req
                 .uri()
@@ -428,6 +693,9 @@ fn stats(sim: &Sim, since: u64) -> Value {
                 "served_note": b.served_note,
                 "served_other": b.served_other,
                 "received_post": b.received_post,
+                "deliveries": b.deliveries,
+                "bad_signatures": b.bad_signatures,
+                "duplicates": b.duplicates,
                 "blocked": b.blocked,
                 "late_ticks": b.late_ticks,
                 "worst_tick_ms": b.worst_tick_ms,
@@ -464,6 +732,9 @@ fn stats(sim: &Sim, since: u64) -> Value {
             "served_actor": sum(|b| b.served_actor),
             "served_note": sum(|b| b.served_note),
             "received_post": sum(|b| b.received_post),
+            "deliveries": sum(|b| b.deliveries),
+            "bad_signatures": sum(|b| b.bad_signatures),
+            "duplicates": sum(|b| b.duplicates),
             "blocked": sum(|b| b.blocked),
             "late_ticks": sum(|b| b.late_ticks),
             "worst_tick_ms": timeline.iter().filter(|(s, _)| **s >= since).map(|(_, b)| b.worst_tick_ms).max().unwrap_or(0),
