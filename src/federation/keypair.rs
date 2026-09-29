@@ -388,7 +388,7 @@ pub async fn assertion_key(state: &AppState, account_id: i64) -> Result<Assertio
     // Generate and store. `DO NOTHING` on conflict, then read back: two
     // processes starting at once must agree on which key was published, and the
     // first one written is the one peers may already have seen.
-    let pem = ojak::sig::integrity::generate_ed25519_key()?;
+    let pem = ojak::sig::integrity::generate_ed25519_key(&mut rsa::rand_core::OsRng)?;
     // Only the public half is needed here; the key that ends up in force is
     // read back below, which may be another process's if it won the race.
     let (_, public_key) = ojak::sig::integrity::parse_ed25519_key(&pem)?;

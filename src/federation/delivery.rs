@@ -671,6 +671,7 @@ async fn attach_integrity_proof(
         &with_context,
         &verification_method,
         &key.seed,
+        chrono::Utc::now().timestamp(),
     ) {
         Ok(signed) => signed,
         Err(e) => {

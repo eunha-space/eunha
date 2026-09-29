@@ -915,6 +915,7 @@ async fn send(sim: &Sim, spike: &SpikeRequest, kind: Kind, actor_index: usize, s
         &key_id,
         &key.private_pem,
         &[("content-type", content_type)],
+        chrono::Utc::now().timestamp(),
     ) {
         Ok(s) => s,
         Err(e) => {

@@ -87,6 +87,7 @@ async fn test_inbound_rfc9421_rejects_a_swapped_body() {
         Some(&serde_json::to_vec(&signed_body).unwrap()),
         &format!("{uri}#main-key"),
         &ojak::sig::rfc9421::SigningKey::RsaPem(&priv_pem),
+        chrono::Utc::now().timestamp(),
     )
     .unwrap();
 

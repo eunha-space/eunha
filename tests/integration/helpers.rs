@@ -149,6 +149,7 @@ impl ApiClient {
             Some(&body_bytes),
             key_id,
             &ojak::sig::rfc9421::SigningKey::RsaPem(private_key_pem),
+            chrono::Utc::now().timestamp(),
         )
         .expect("sign request");
         let mut request = self
@@ -182,6 +183,7 @@ impl ApiClient {
             key_id,
             private_key_pem,
             &[],
+            chrono::Utc::now().timestamp(),
         )
         .expect("sign request");
         self.http
