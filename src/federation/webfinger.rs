@@ -1,43 +1,23 @@
-//! WebFinger (RFC 7033) lookup for ActivityPub actor discovery, over eunha's
-//! outbound client.
+//! WebFinger (RFC 7033) lookup for ActivityPub actor discovery, through
+//! ojak's fetcher.
 
 /// Resolve a fediverse handle to an ActivityPub actor URL.
 ///
-/// Performs a WebFinger lookup for `acct:{user}@{domain}` and returns the
-/// `href` of the `self` link whose type contains `activity+json` or `ld+json`.
-pub async fn resolve(client: &reqwest::Client, user: &str, domain: &str) -> anyhow::Result<String> {
-    let url = format!(
-        "https://{}/.well-known/webfinger?resource=acct:{}@{}",
-        domain, user, domain
-    );
-
-    let jrd: serde_json::Value = client
-        .get(&url)
-        .header("Accept", "application/jrd+json, application/json")
-        .send()
-        .await?
-        .json()
-        .await?;
-
-    jrd.get("links")
-        .and_then(|l| l.as_array())
-        .and_then(|arr| {
-            arr.iter().find(|link| {
-                link.get("rel").and_then(|r| r.as_str()) == Some("self")
-                    && link
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .is_some_and(|t| t.contains("activity+json") || t.contains("ld+json"))
-            })
-        })
-        .and_then(|link| link.get("href"))
-        .and_then(|h| h.as_str())
-        .map(str::to_owned)
+/// Asks `domain`'s WebFinger endpoint about `acct:{user}@{domain}`, with the
+/// resource encoded, and returns the actor its first ActivityPub `self` link
+/// names.
+pub async fn resolve(
+    fetcher: &ojak::fetch::Fetcher,
+    user: &str,
+    domain: &str,
+) -> anyhow::Result<String> {
+    let address = ojak::webfinger::Address::parse(&format!("{user}@{domain}"))
+        .ok_or_else(|| anyhow::anyhow!("{user}@{domain} is not a handle"))?;
+    let found = fetcher.webfinger(&address).await?;
+    found
+        .actor(None)
+        .map(|actor| actor.to_string())
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "no ActivityPub self link in WebFinger response for {}@{}",
-                user,
-                domain
-            )
+            anyhow::anyhow!("no ActivityPub self link in WebFinger response for {address}")
         })
 }

@@ -43,7 +43,7 @@ pub async fn rename_if_handle_changed(
         return Ok(());
     }
 
-    match crate::federation::webfinger::resolve(&state.fetch, claimed_username, &domain).await {
+    match crate::federation::webfinger::resolve(&state.fetcher, claimed_username, &domain).await {
         Ok(resolved) if resolved == actor_uri => {}
         Ok(resolved) => {
             tracing::warn!(

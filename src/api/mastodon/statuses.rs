@@ -2177,7 +2177,7 @@ pub async fn resolve_mention_accounts(
         let account = match account {
             Some(acct) => Some(acct),
             None => match domain {
-                Some(d) => match crate::federation::webfinger::resolve(&state.fetch, username, d)
+                Some(d) => match crate::federation::webfinger::resolve(&state.fetcher, username, d)
                     .await
                 {
                     Ok(actor_url) => match crate::api::ap::inbox::resolve_or_fetch_remote_account(

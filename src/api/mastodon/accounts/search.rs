@@ -161,36 +161,8 @@ async fn resolve_remote_exact(
         return Ok(Some(existing));
     }
 
-    let acct_uri = format!("acct:{username}@{domain}");
-    let wf_url = format!("https://{domain}/.well-known/webfinger?resource={acct_uri}");
-    let Ok(resp) = state
-        .fetch
-        .get(&wf_url)
-        .header("Accept", "application/jrd+json, application/json")
-        .send()
-        .await
+    let Ok(uri) = crate::federation::webfinger::resolve(&state.fetcher, &username, &domain).await
     else {
-        return Ok(None);
-    };
-    let Ok(jrd) = resp.json::<serde_json::Value>().await else {
-        return Ok(None);
-    };
-    let actor_uri = jrd
-        .get("links")
-        .and_then(|l| l.as_array())
-        .and_then(|links| {
-            links.iter().find(|l| {
-                l.get("rel").and_then(|r| r.as_str()) == Some("self")
-                    && l.get("type")
-                        .and_then(|t| t.as_str())
-                        .map(|t| t.contains("activity+json") || t.contains("ld+json"))
-                        .unwrap_or(false)
-            })
-        })
-        .and_then(|l| l.get("href"))
-        .and_then(|h| h.as_str())
-        .map(str::to_owned);
-    let Some(uri) = actor_uri else {
         return Ok(None);
     };
     let Ok(account_id) = crate::api::ap::inbox::resolve_or_fetch_remote_account(state, &uri).await

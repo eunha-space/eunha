@@ -7,9 +7,12 @@ answers 400 or 401 — the order Mastodon 4.7 uses. Inbound requests are verifie
 either way: a `Signature-Input` alongside the `Signature` selects RFC 9421,
 where the covered components must include the body's `content-digest` and the
 signature must be fresh, just as the draft path requires a covered `digest` and
-a recent `Date`. Both live in [ojak], which also refuses a request signed for
-a host other than the instance's domain or one of its aliases, and a key the
-signer's actor document does not publish under the key ID that signed.
+a recent `Date` or signed `(created)`; neither may have passed an `expires` its
+signer set. Both live in [ojak], which also refuses a request signed for a host
+other than the instance's domain or one of its aliases, and a key the signer's
+actor document does not publish under the key ID that signed: an RSA
+`publicKey`, or for RFC 9421 an Ed25519 Multikey in its `assertionMethod`. A
+key ID that is the actor's own `id`, as PeerTube signs, names its `#main-key`.
 
 What gets signed matches Mastodon rather than merely satisfying the spec: the
 same covered headers in the same order, `(request-target)` last and carrying
