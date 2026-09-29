@@ -166,19 +166,7 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
     if inbox_post && status.is_client_error() {
         let (parts, body) = response.into_parts();
         let bytes = axum::body::to_bytes(body, 4096).await.unwrap_or_default();
-        // Compressed if the sender asked for it; decoded for the log only.
-        let gzip = parts
-            .headers
-            .get(axum::http::header::CONTENT_ENCODING)
-            .is_some_and(|encoding| encoding == "gzip");
-        let reason = if gzip {
-            use std::io::Read as _;
-            let mut text = String::new();
-            let _ = flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut text);
-            text
-        } else {
-            String::from_utf8_lossy(&bytes).into_owned()
-        };
+        let reason = body_text(&parts, &bytes);
         tracing::warn!(
             path = %path,
             status = %status,
@@ -190,7 +178,40 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
         return Response::from_parts(parts, axum::body::Body::from(bytes));
     }
 
+    // A forwarded activity ojak could not establish is accepted and dropped,
+    // as Mastodon drops it, with why in the body.
+    if inbox_post && status == axum::http::StatusCode::ACCEPTED {
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, 4096).await.unwrap_or_default();
+        if !bytes.is_empty() {
+            tracing::debug!(
+                path = %path,
+                key_id = key_id.as_deref().unwrap_or(""),
+                reason = %body_text(&parts, &bytes),
+                "inbox dropped a delivery",
+            );
+        }
+        return Response::from_parts(parts, axum::body::Body::from(bytes));
+    }
+
     response
+}
+
+/// A response body as text: gzipped if the sender asked for it, and decoded
+/// here for the log only.
+fn body_text(parts: &axum::http::response::Parts, bytes: &[u8]) -> String {
+    let gzip = parts
+        .headers
+        .get(axum::http::header::CONTENT_ENCODING)
+        .is_some_and(|encoding| encoding == "gzip");
+    if gzip {
+        use std::io::Read as _;
+        let mut text = String::new();
+        let _ = flate2::read::GzDecoder::new(bytes).read_to_string(&mut text);
+        text
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
 }
 
 /// The headers a request's draft HTTP signature covers, each with the value it

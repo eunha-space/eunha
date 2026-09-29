@@ -26,11 +26,15 @@ async fn test_unsigned_activity_rejected() {
     );
 }
 
-/// A signature whose keyId host differs from the activity's actor host is
-/// rejected (cross-domain forgery guard), even though the signature itself is
-/// cryptographically valid.
+/// A signature whose keyId host differs from the activity's actor host
+/// authenticates the signer, not the actor: the activity is taken as
+/// forwarded, and since the actor's server does not serve it, it is dropped
+/// and does nothing. The answer is 202, as Mastodon 4.7.1 answers it — it
+/// accepts a delivery whose signature verifies (`InboxesController#create`)
+/// and drops a relayed activity it cannot verify
+/// (`ActivityPub::ProcessActivityService`) — so the sender does not retry.
 #[tokio::test]
-async fn test_signature_actor_host_mismatch_rejected() {
+async fn test_signature_actor_host_mismatch_does_nothing() {
     let ctx = TestContext::new("sig-mismatch").await;
 
     // A real keypair for a key on attacker.invalid …
@@ -66,9 +70,34 @@ async fn test_signature_actor_host_mismatch_rejected() {
         .await;
     assert_eq!(
         resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "actor/key host mismatch must be rejected"
+        StatusCode::ACCEPTED,
+        "a forwarded activity that cannot be established is accepted and dropped"
     );
+    let follows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.target_account_id
+         WHERE a.username = 'alice' AND a.domain IS NULL",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let requests: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM follow_requests f JOIN accounts a ON a.id = f.target_account_id
+         WHERE a.username = 'alice' AND a.domain IS NULL",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        (follows, requests),
+        (0, 0),
+        "the forged Follow must not take effect"
+    );
+    let victim: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM accounts WHERE domain = 'victim.invalid'")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(victim, 0, "nor create the actor it claimed");
 }
 
 /// An unverifiable `Delete` is accepted-and-ignored (202) rather than rejected,
