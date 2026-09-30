@@ -12,7 +12,9 @@
 //! A request to one of these paths that asks for a page rather than
 //! ActivityPub goes on to eunha's own routes (`super::router`), which send a
 //! browser to the profile or the status. A status is served at its page,
-//! `/@{username}/{id}`, too, as Mastodon serves it there.
+//! `/@{username}/{id}`, too, and an account's followers and following at
+//! `/@{username}/followers` and `/@{username}/following`, as Mastodon serves
+//! them there.
 //!
 //! The inboxes are ojak's too. What arrives in them is authenticated by
 //! ojak, with the keys eunha already holds in `accounts` tried first, and
@@ -302,6 +304,15 @@ pub fn federation() -> Federation<AppState> {
     // Note to whoever asks for ActivityPub (`statuses#show`). Anything else
     // there, and any other request, goes on to eunha's pages.
     builder = builder.object_alias(&Scheme::Username.kind("status"), "/@{username}/{status_id}");
+    // So are an account's followers and following, at the pages Mastodon
+    // serves them at too (`follower_accounts#index`, `following_accounts#index`),
+    // still named by their own URIs.
+    for collection in ["followers", "following"] {
+        builder = builder.collection_alias(
+            &Scheme::Username.kind(collection),
+            &format!("/@{{username}}/{collection}"),
+        );
+    }
     builder.build().expect("eunha's federation is well formed")
 }
 
