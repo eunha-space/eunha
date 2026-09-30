@@ -20,12 +20,14 @@ pub fn router() -> Router {
     Router::new()
         .route("/users/{username}", get(profile_by_username))
         .route("/users/{username}/statuses/{id}", get(status_by_username))
+        .route("/users/{username}/followers", get(followers_by_username))
+        .route("/users/{username}/following", get(following_by_username))
         .route("/ap/users/{id}", get(profile_by_id))
         .route("/ap/users/{id}/statuses/{status_id}", get(status_by_id))
 }
 
-// A person who opens an actor or a status in a browser is sent to its page,
-// as Mastodon sends them.
+// A person who opens an actor, a status, or an account's followers or
+// following in a browser is sent to its page, as Mastodon sends them.
 
 async fn profile_by_username(Path(username): Path<String>) -> Redirect {
     Redirect::to(&format!("/@{username}"))
@@ -33,6 +35,14 @@ async fn profile_by_username(Path(username): Path<String>) -> Redirect {
 
 async fn status_by_username(Path((username, id)): Path<(String, String)>) -> Redirect {
     Redirect::to(&format!("/@{username}/{id}"))
+}
+
+async fn followers_by_username(Path(username): Path<String>) -> Redirect {
+    Redirect::to(&format!("/@{username}/followers"))
+}
+
+async fn following_by_username(Path(username): Path<String>) -> Redirect {
+    Redirect::to(&format!("/@{username}/following"))
 }
 
 async fn username_of(state: &AppState, id: &str) -> Option<String> {

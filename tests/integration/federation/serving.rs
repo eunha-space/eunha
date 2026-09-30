@@ -23,8 +23,9 @@ fn path_of(url: &str) -> String {
     }
 }
 
-/// An actor's or a status's URI opened in a browser leads to its page, as
-/// in Mastodon; only a request for ActivityPub gets the document.
+/// An actor's, a status's, or an account's followers' or following's URI
+/// opened in a browser leads to its page, as in Mastodon, which varies the
+/// redirect by Accept; only a request for ActivityPub gets the document.
 #[tokio::test]
 async fn test_a_browser_is_sent_to_the_page() {
     let ctx = TestContext::new("serving-browser").await;
@@ -36,6 +37,14 @@ async fn test_a_browser_is_sent_to_the_page() {
         ("/users/alice".to_owned(), "/@alice".to_owned()),
         (format!("/ap/users/{}", ctx.alice_id), "/@alice".to_owned()),
         ("/users/alice/statuses/1".to_owned(), "/@alice/1".to_owned()),
+        (
+            "/users/alice/followers".to_owned(),
+            "/@alice/followers".to_owned(),
+        ),
+        (
+            "/users/alice/following".to_owned(),
+            "/@alice/following".to_owned(),
+        ),
     ] {
         let resp = client
             .get(ctx.api.url(&path))
@@ -46,6 +55,7 @@ async fn test_a_browser_is_sent_to_the_page() {
             .unwrap();
         assert!(resp.status().is_redirection(), "{path}: {}", resp.status());
         assert_eq!(resp.headers()["location"], page.as_str(), "{path}");
+        assert_eq!(resp.headers()["vary"], "Accept", "{path}");
     }
     let resp = ctx.api.ap_get("/users/alice", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
