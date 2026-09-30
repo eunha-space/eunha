@@ -42,6 +42,10 @@ pub struct AppState {
     /// built from. Held here rather than process-wide, so that one process can
     /// serve several instances.
     pub urls: Arc<crate::api::mastodon::convert::InstanceUrls>,
+    /// The URIs of what ojak serves for this instance — actors, their inboxes
+    /// and collections, statuses — built from the templates they are served
+    /// at, for code that has no request to build them from.
+    pub uris: ojak::federation::Uris,
     /// Raised when this instance is stopped — removed from a running process,
     /// or restarted with a new configuration — so that its background loops
     /// return once they have finished the pass they are in, and its streaming
@@ -127,6 +131,7 @@ impl AppState {
             federation_client,
         )?);
 
+        let uris = crate::api::ap::serving::uris(&config.instance.domain)?;
         let instance = Arc::new(config.instance.clone());
         Ok(Self {
             db,
@@ -146,6 +151,7 @@ impl AppState {
             queues: Arc::default(),
             deliverer,
             urls,
+            uris,
             stop: tokio_util::sync::CancellationToken::new(),
         })
     }

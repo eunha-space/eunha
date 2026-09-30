@@ -8,7 +8,11 @@
 use anyhow::{anyhow, bail, Context, Result};
 use sqlx::PgPool;
 
-use crate::{config::InstanceConfig, rails_encryption::Encryptor};
+use crate::{
+    api::ap::serving::{AccountUris, Own},
+    config::InstanceConfig,
+    rails_encryption::Encryptor,
+};
 
 /// Mastodon's `Account::USERNAME_LENGTH_LIMIT`, which applies to local accounts.
 const USERNAME_LENGTH_LIMIT: usize = 30;
@@ -52,12 +56,17 @@ pub async fn create_local(
     // New local accounts use Mastodon's default `numeric_ap_id` scheme: the
     // ActivityPub actor is served at /ap/users/{id}. Build the canonical URI
     // (and its inbox/outbox) from the new account id.
-    let uri = crate::federation::tag::account_uri(
-        domain,
+    let uris = crate::api::ap::serving::uris(domain)?;
+    let own = AccountUris::new(
+        &uris,
         new_account_id,
         Some(crate::federation::tag::NUMERIC_AP_ID),
         user.username,
     );
+    let uri = own.actor()?.to_string();
+    let inbox_url = own.uri(Own::Inbox)?;
+    let outbox_url = own.uri(Own::Outbox)?;
+    let shared_inbox_url = uris.shared_inbox_uri()?;
 
     let mut tx = db.begin().await?;
     let account_id = sqlx::query_scalar!(
@@ -72,9 +81,9 @@ pub async fn create_local(
         uri,
         private_key,
         public_key,
-        format!("{}/inbox", uri),
-        format!("{}/outbox", uri),
-        format!("https://{}/inbox", domain),
+        inbox_url.as_str(),
+        outbox_url.as_str(),
+        shared_inbox_url.as_str(),
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -340,7 +349,7 @@ pub async fn distribute_profile(
     );
     let activity = crate::federation::activity::update_actor(&update_id, &actor_url, actor)?;
     let inboxes = crate::federation::delivery::account_reach_inboxes(state, account.id).await?;
-    let key_id = format!("{actor_url}#main-key");
+    let key_id = AccountUris::of(&state.uris, account).key_id()?.into();
     match batch {
         Some(batch) => {
             crate::federation::delivery::deliver_to_inboxes_in_batch(
@@ -464,7 +473,8 @@ pub async fn move_followers(
          and every server would refuse the Move; add it and restart first"
     );
     let (accounts, unknown) = select(&state.db, selection).await?;
-    let domain = state.instance.domain.clone();
+    // The same URIs, in the domain the accounts' actors had before.
+    let previous = crate::api::ap::serving::uris(from)?;
     let mut report = BatchReport {
         unknown,
         ..BatchReport::default()
@@ -479,13 +489,10 @@ pub async fn move_followers(
                 .push((account.username.clone(), "no signing key"));
             continue;
         }
-        let old = crate::federation::tag::account_uri(
-            from,
-            account.id,
-            account.id_scheme,
-            &account.username,
-        );
-        let new = crate::federation::tag::account_uri_of(&domain, account);
+        let was = AccountUris::of(&previous, account);
+        let now = AccountUris::of(&state.uris, account);
+        let old = was.actor()?.to_string();
+        let new = now.actor()?.to_string();
         let following = remote_follows(state, account.id).await?;
         let queued = if dry_run {
             crate::federation::delivery::follower_inboxes(state, account.id)
@@ -496,7 +503,7 @@ pub async fn move_followers(
             // The servers of the accounts this one follows still send their
             // posts to the old actor's inbox; following again from the new
             // actor is what brings them here. A Move carries only followers.
-            let key_id = format!("{new}#main-key");
+            let key_id: String = now.key_id()?.into();
             let mut refollowed = 0;
             for (table, id, target, inbox) in &following {
                 let follow_id = format!("{new}#follows/{}", crate::snowflake::next_id());
@@ -525,7 +532,7 @@ pub async fn move_followers(
                 state,
                 activity,
                 account.id,
-                format!("{old}#main-key"),
+                was.key_id()?.into(),
                 Some(batch),
             )
             .await?;

@@ -19,7 +19,7 @@
 //! what its sender can vouch for.
 
 use ojak::federation::{
-    ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Usage,
+    ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Uris, Usage,
     Values,
 };
 use serde_json::{json, Value};
@@ -38,6 +38,23 @@ use crate::state::AppState;
 const KV_CAPACITY: usize = 100_000;
 
 type Ctx = Context<AppState>;
+
+/// The URIs of what [`federation`] serves, in some origin: its templates,
+/// built once for the process.
+static URIS: std::sync::LazyLock<Uris> =
+    std::sync::LazyLock::new(|| federation().uris(Url::parse("https://localhost").expect("a URL")));
+
+/// The URIs of what eunha serves, in the instance at `domain`, built from
+/// the templates its routes are registered with: for code outside a
+/// request, which has no [`Context`] to ask. [`AppState::uris`] holds its
+/// instance's.
+///
+/// # Errors
+///
+/// When `https://{domain}` is no URL.
+pub fn uris(domain: &str) -> Result<Uris, url::ParseError> {
+    Ok(URIS.with_origin(Url::parse(&format!("https://{domain}"))?))
+}
 
 /// The federation every instance in the process is served through.
 ///
@@ -301,12 +318,12 @@ async fn forward_to_collections(ctx: &Ctx, forward: ojak::federation::Forward) -
         let Some(account) = scheme.account(ctx, &collection.identifier).await? else {
             continue;
         };
-        let actor = crate::federation::tag::account_uri_of(domain(ctx), &account);
+        let key_id = AccountUris::of(&ctx.uris(), &account).key_id()?;
         crate::federation::delivery::forward_to_followers(
             ctx.data(),
             forward.activity.clone(),
             account.id,
-            format!("{actor}#main-key"),
+            key_id.into(),
         )
         .await
         .map_err(AppError::Internal)?;
@@ -393,13 +410,176 @@ impl Scheme {
         }
     }
 
-    /// The URI of `suffix` beneath the account's own actor URI, whichever
-    /// scheme it was asked under.
-    async fn own_uri(self, ctx: &Ctx, identifier: &str, suffix: &str) -> AppResult<Option<Url>> {
-        Ok(self.account(ctx, identifier).await?.and_then(|account| {
-            let actor = crate::federation::tag::account_uri_of(domain(ctx), &account);
-            Url::parse(&format!("{actor}{suffix}")).ok()
-        }))
+    /// The scheme a local account uses, as Mastodon's `id_scheme` says, and
+    /// what it is identified by in it.
+    fn of(id: i64, id_scheme: Option<i32>, username: &str) -> (Self, String) {
+        if id_scheme == Some(crate::federation::tag::NUMERIC_AP_ID) {
+            (Self::Id, id.to_string())
+        } else {
+            (Self::Username, username.to_owned())
+        }
+    }
+
+    /// The name of the expression that identifies the account in this
+    /// scheme's templates.
+    fn expression(self) -> &'static str {
+        match self {
+            Self::Username => "username",
+            Self::Id => "id",
+        }
+    }
+
+    /// The URI of `what` of the account `identifier` names under this scheme,
+    /// named by the scheme the account uses, whichever it was asked under.
+    async fn own_uri(self, ctx: &Ctx, identifier: &str, what: Own) -> AppResult<Option<Url>> {
+        match self.account(ctx, identifier).await? {
+            Some(account) => Ok(Some(AccountUris::of(&ctx.uris(), &account).uri(what)?)),
+            None => Ok(None),
+        }
+    }
+}
+
+/// What a local actor has beneath its own URI.
+#[derive(Clone, Copy)]
+pub enum Own {
+    Inbox,
+    Outbox,
+    Followers,
+    Following,
+    Featured,
+    /// Its featured collections (FEP-7952), `/collections`.
+    Collections,
+}
+
+impl Own {
+    /// The kind it is registered as, in the username scheme.
+    fn kind(self) -> &'static str {
+        match self {
+            Self::Inbox => "actor",
+            Self::Outbox => "outbox",
+            Self::Followers => "followers",
+            Self::Following => "following",
+            Self::Featured => "featured",
+            Self::Collections => "account_collections",
+        }
+    }
+
+    /// Its path beneath the actor's.
+    fn suffix(self) -> &'static str {
+        match self {
+            Self::Inbox => "/inbox",
+            Self::Outbox => "/outbox",
+            Self::Followers => "/followers",
+            Self::Following => "/following",
+            Self::Featured => "/collections/featured",
+            Self::Collections => "/collections",
+        }
+    }
+}
+
+/// A local account's URIs, in the scheme it uses, built from the templates
+/// it is served at.
+pub struct AccountUris<'a> {
+    uris: &'a Uris,
+    served: Served,
+}
+
+enum Served {
+    Account(Scheme, String),
+    /// The instance actor, which is served at `/actor` rather than under
+    /// either scheme. Asked for under one, it names its inbox and
+    /// collections beneath `/actor`, as Mastodon's serializer does, where no
+    /// template of eunha's serves them.
+    Instance,
+}
+
+impl<'a> AccountUris<'a> {
+    /// The URIs of the local account `id`, whose `id_scheme` and `username`
+    /// these are, in `uris`'s origin.
+    #[must_use]
+    pub fn new(uris: &'a Uris, id: i64, id_scheme: Option<i32>, username: &str) -> Self {
+        let served = if id == crate::federation::instance_actor::INSTANCE_ACTOR_ID {
+            Served::Instance
+        } else {
+            let (scheme, identifier) = Scheme::of(id, id_scheme, username);
+            Served::Account(scheme, identifier)
+        };
+        Self { uris, served }
+    }
+
+    /// The URIs of a loaded local account.
+    #[must_use]
+    pub fn of(uris: &'a Uris, account: &Account) -> Self {
+        Self::new(uris, account.id, account.id_scheme, &account.username)
+    }
+
+    /// Its actor's URI.
+    ///
+    /// # Errors
+    ///
+    /// When the account's identifier does not fill its template.
+    pub fn actor(&self) -> anyhow::Result<Url> {
+        Ok(match &self.served {
+            Served::Account(scheme, identifier) => {
+                self.uris.actor_uri(&scheme.kind("actor"), identifier)?
+            }
+            Served::Instance => self.uris.actor_uri("instance", "")?,
+        })
+    }
+
+    /// The ID of the key it signs with.
+    ///
+    /// # Errors
+    ///
+    /// As [`AccountUris::actor`].
+    pub fn key_id(&self) -> anyhow::Result<Url> {
+        Ok(match &self.served {
+            Served::Account(scheme, identifier) => {
+                self.uris.key_id(&scheme.kind("actor"), identifier)?
+            }
+            Served::Instance => self.uris.key_id("instance", "")?,
+        })
+    }
+
+    /// The URI of `what` beneath its actor.
+    ///
+    /// # Errors
+    ///
+    /// As [`AccountUris::actor`].
+    pub fn uri(&self, what: Own) -> anyhow::Result<Url> {
+        let Served::Account(scheme, identifier) = &self.served else {
+            return self.beneath_actor(what.suffix());
+        };
+        let kind = scheme.kind(what.kind());
+        Ok(match what {
+            Own::Inbox => self.uris.inbox_uri(&kind, identifier)?,
+            Own::Collections => self
+                .uris
+                .object_uri(&kind, &[(scheme.expression(), identifier)])?,
+            _ => self.uris.collection_uri(&kind, identifier)?,
+        })
+    }
+
+    /// The URI of its status `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`AccountUris::actor`].
+    pub fn status(&self, id: i64) -> anyhow::Result<Url> {
+        let Served::Account(scheme, identifier) = &self.served else {
+            return self.beneath_actor(&format!("/statuses/{id}"));
+        };
+        Ok(self.uris.object_uri(
+            &scheme.kind("status"),
+            &[
+                (scheme.expression(), identifier),
+                ("status_id", &id.to_string()),
+            ],
+        )?)
+    }
+
+    fn beneath_actor(&self, suffix: &str) -> anyhow::Result<Url> {
+        Ok(Url::parse(&format!("{}{suffix}", self.actor()?))?)
     }
 }
 
@@ -520,7 +700,7 @@ fn outbox(scheme: Scheme) -> Collection<AppState> {
     })
     .last_cursor(|_, _| async { Ok::<_, AppError>(Some("min:0".to_owned())) })
     .uri(move |ctx: Ctx, identifier: String| async move {
-        scheme.own_uri(&ctx, &identifier, "/outbox").await
+        scheme.own_uri(&ctx, &identifier, Own::Outbox).await
     })
 }
 
@@ -531,10 +711,10 @@ enum Relation {
 }
 
 impl Relation {
-    fn suffix(self) -> &'static str {
+    fn own(self) -> Own {
         match self {
-            Self::Followers => "/followers",
-            Self::Following => "/following",
+            Self::Followers => Own::Followers,
+            Self::Following => Own::Following,
         }
     }
 }
@@ -633,7 +813,7 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
         }))
     })
     .uri(move |ctx: Ctx, identifier: String| async move {
-        scheme.own_uri(&ctx, &identifier, relation.suffix()).await
+        scheme.own_uri(&ctx, &identifier, relation.own()).await
     })
 }
 
@@ -654,26 +834,23 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
             )
             .fetch_all(&ctx.data().db)
             .await?;
-            let actor = crate::federation::tag::account_uri_of(domain(&ctx), &account);
+            let uris = ctx.uris();
+            let own = AccountUris::of(&uris, &account);
+            let items = rows
+                .into_iter()
+                .map(|r| match r.uri.filter(|u| !u.is_empty()) {
+                    Some(uri) => Ok(Value::String(uri)),
+                    None => Ok(Value::String(own.status(r.id)?.into())),
+                })
+                .collect::<AppResult<_>>()?;
             Ok(Some(Page {
-                items: rows
-                    .into_iter()
-                    .map(|r| {
-                        Value::String(
-                            r.uri
-                                .filter(|u| !u.is_empty())
-                                .unwrap_or_else(|| format!("{actor}/statuses/{}", r.id)),
-                        )
-                    })
-                    .collect(),
+                items,
                 ..Page::default()
             }))
         },
     )
     .uri(move |ctx: Ctx, identifier: String| async move {
-        scheme
-            .own_uri(&ctx, &identifier, "/collections/featured")
-            .await
+        scheme.own_uri(&ctx, &identifier, Own::Featured).await
     })
 }
 
@@ -750,4 +927,53 @@ async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
         "nodeDescription": instance.description,
     });
     Ok(nodeinfo)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::federation::{instance_actor::INSTANCE_ACTOR_ID, tag};
+
+    /// What the templates build is what the actor URI with a suffix was, in
+    /// either scheme and for the instance actor.
+    #[test]
+    fn account_uris_are_the_actor_uri_and_a_suffix() {
+        let uris = uris("seoul.earth").unwrap();
+        for (id, id_scheme, username) in [
+            (42, Some(tag::NUMERIC_AP_ID), "alice"),
+            (42, Some(0), "alice"),
+            (42, None, "alice"),
+            (INSTANCE_ACTOR_ID, Some(tag::NUMERIC_AP_ID), "seoul.earth"),
+        ] {
+            let actor = tag::account_uri("seoul.earth", id, id_scheme, username);
+            let own = AccountUris::new(&uris, id, id_scheme, username);
+            assert_eq!(own.actor().unwrap().as_str(), actor);
+            assert_eq!(own.key_id().unwrap().as_str(), format!("{actor}#main-key"));
+            for what in [
+                Own::Inbox,
+                Own::Outbox,
+                Own::Followers,
+                Own::Following,
+                Own::Featured,
+                Own::Collections,
+            ] {
+                assert_eq!(
+                    own.uri(what).unwrap().as_str(),
+                    format!("{actor}{}", what.suffix())
+                );
+            }
+            assert_eq!(
+                own.status(99).unwrap().as_str(),
+                tag::status_uri("seoul.earth", id, id_scheme, username, 99)
+            );
+        }
+        assert_eq!(
+            uris.shared_inbox_uri().unwrap().as_str(),
+            "https://seoul.earth/inbox"
+        );
+        assert_eq!(
+            uris.key_id("instance", "").unwrap().as_str(),
+            crate::federation::instance_actor::key_id("seoul.earth")
+        );
+    }
 }

@@ -3,6 +3,7 @@
 
 use serde_json::{json, Value};
 
+use super::serving::Own;
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -18,6 +19,7 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
         .await
         .map_err(AppError::Internal)?;
     let actor_url = crate::federation::instance_actor::actor_url(&instance.domain);
+    let uris = &state.uris;
 
     let actor = json!({
         "@context": [
@@ -27,11 +29,11 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
         "id": actor_url,
         "type": "Application",
         "preferredUsername": instance.domain,
-        "inbox": format!("https://{}/inbox", instance.domain),
+        "inbox": uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
         "url": actor_url,
         "manuallyApprovesFollowers": true,
         "publicKey": {
-            "id": format!("{actor_url}#main-key"),
+            "id": uris.key_id("instance", "").map_err(anyhow::Error::from)?,
             "owner": actor_url,
             "publicKeyPem": public_key,
         },
@@ -116,8 +118,8 @@ pub async fn actor_json(
     domain: &str,
     account: &crate::db::models::Account,
 ) -> AppResult<Value> {
-    let base = format!("https://{}", domain);
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
+    let own = super::serving::AccountUris::of(&state.uris, account);
 
     // Account migration metadata: aliases (alsoKnownAs) + movedTo target URI.
     let mut also_known_as: Vec<String> = sqlx::query_scalar!(
@@ -267,12 +269,12 @@ pub async fn actor_json(
         ],
         "id": actor_url,
         "type": actor_type,
-        "following": format!("{}/following", actor_url),
-        "followers": format!("{}/followers", actor_url),
-        "inbox": format!("{}/inbox", actor_url),
-        "outbox": format!("{}/outbox", actor_url),
-        "featured": format!("{}/collections/featured", actor_url),
-        "featuredCollections": format!("{}/collections", actor_url),
+        "following": own.uri(Own::Following)?,
+        "followers": own.uri(Own::Followers)?,
+        "inbox": own.uri(Own::Inbox)?,
+        "outbox": own.uri(Own::Outbox)?,
+        "featured": own.uri(Own::Featured)?,
+        "featuredCollections": own.uri(Own::Collections)?,
         "preferredUsername": account.username,
         "name": account.display_name,
         "summary": summary,
@@ -286,12 +288,12 @@ pub async fn actor_json(
         "icon": if has_avatar { Some(json!({ "type": "Image", "url": avatar_url })) } else { None },
         "image": if has_header { Some(json!({ "type": "Image", "url": header_url })) } else { None },
         "publicKey": {
-            "id": format!("{}#main-key", actor_url),
+            "id": own.key_id()?,
             "owner": actor_url,
             "publicKeyPem": public_key,
         },
         "endpoints": {
-            "sharedInbox": format!("{}/inbox", base),
+            "sharedInbox": state.uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
         },
         // FEP-521a: the Ed25519 key this account signs integrity proofs with,
         // published as a Multikey so a peer can resolve a proof's
