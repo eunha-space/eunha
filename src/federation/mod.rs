@@ -11,6 +11,5 @@ pub mod keypair;
 pub mod moderation;
 pub mod portable;
 pub mod safe_fetch;
-pub mod signature;
 pub mod tag;
 pub mod webfinger;

@@ -127,10 +127,6 @@ impl ApiClient {
         req.send().await.unwrap()
     }
 
-    /// POST an ActivityPub activity with a valid HTTP Signature, as a remote
-    /// server would. `key_id` is the signing actor's key (e.g.
-    /// `https://host/users/alice#main-key`) whose public key the receiving
-    /// instance must already know; `private_key_pem` is its private key.
     /// POST an activity signed with RFC 9421 HTTP Message Signatures, as a
     /// peer that has moved on from the cavage draft would.
     pub async fn post_signed_rfc9421(
@@ -165,6 +161,10 @@ impl ApiClient {
         request.body(body_bytes).send().await.unwrap()
     }
 
+    /// POST an ActivityPub activity with a valid HTTP Signature, as a remote
+    /// server would. `key_id` is the signing actor's key (e.g.
+    /// `https://host/users/alice#main-key`) whose public key the receiving
+    /// instance must already know; `private_key_pem` is its private key.
     pub async fn post_signed(
         &self,
         path: &str,
@@ -172,28 +172,15 @@ impl ApiClient {
         key_id: &str,
         private_key_pem: &str,
     ) -> reqwest::Response {
-        let body_bytes = serde_json::to_vec(body).unwrap();
-        // Sign against the public host (matching the Host header the server
-        // sees), not the loopback base_url.
+        // Sign against the public host, which ojak also puts in the Host
+        // header the server sees, not the loopback base_url.
         let signing_url = format!("https://{}{}", self.host, path);
-        let signed = eunha::federation::signature::sign_request(
-            "post",
-            &signing_url,
-            &body_bytes,
-            key_id,
-            private_key_pem,
-            &[],
-            chrono::Utc::now().timestamp(),
-        )
-        .expect("sign request");
+        let (parts, body) =
+            ojak::testing::signed_post(&signing_url, body, key_id, private_key_pem).into_parts();
         self.http
             .post(self.url(path))
-            .header("host", &self.host)
-            .header("date", signed.date)
-            .header("digest", signed.digest)
-            .header("signature", signed.signature)
-            .header("content-type", "application/activity+json")
-            .body(body_bytes)
+            .headers(parts.headers)
+            .body(body)
             .send()
             .await
             .unwrap()

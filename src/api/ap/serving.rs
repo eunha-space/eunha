@@ -20,8 +20,8 @@
 
 use ojak::federation::{
     ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Usage,
+    Values,
 };
-use ojak::template::Values;
 use serde_json::{json, Value};
 use url::Url;
 
