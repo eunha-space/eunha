@@ -216,3 +216,54 @@ async fn test_discovery_covers_the_instance_actor_and_nodeinfo() {
     assert_eq!(nodeinfo["software"]["name"], "eunha");
     assert_eq!(nodeinfo["version"], "2.1");
 }
+
+/// A status's page, `/@username/id`, is its Note to a request for
+/// ActivityPub, as in Mastodon, named by its own URI; a browser there, and
+/// anything else under `/@username`, still gets the page.
+#[tokio::test]
+async fn test_a_status_is_served_at_its_page() {
+    let ctx = TestContext::new("serving-status-page").await;
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({ "status": "at its page", "visibility": "public" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = status["id"].as_str().unwrap();
+    let page = format!("/@alice/{id}");
+
+    let note: Value = ctx.api.ap_get(&page, None).await.json().await.unwrap();
+    assert_eq!(note["type"], "Note");
+    assert_eq!(note["id"], status["uri"]);
+    assert_eq!(
+        note["id"],
+        format!("https://{}/users/alice/statuses/{id}", ctx.domain)
+    );
+
+    let is_activitypub = |resp: &reqwest::Response| {
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("activity+json"))
+    };
+    let resp = ctx
+        .api
+        .http
+        .get(ctx.api.url(&page))
+        .header("host", &ctx.domain)
+        .header("accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert!(!is_activitypub(&resp), "a browser gets the page");
+    for path in ["/@alice/followers".to_owned(), format!("/@bob/{id}")] {
+        let resp = ctx.api.ap_get(&path, None).await;
+        assert!(!is_activitypub(&resp), "{path}: {}", resp.status());
+        assert_ne!(resp.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
+    }
+}
