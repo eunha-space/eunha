@@ -203,3 +203,30 @@ fn a_delivery_fails_for_good_on_what_mastodon_gives_up_on() {
     assert_eq!(breaker.cool_off, Duration::from_secs(60));
     assert_eq!(breaker.scope, ojak::deliverer::BreakerScope::Inbox);
 }
+
+#[test]
+fn a_delivery_is_retried_on_mastodons_schedule() {
+    use eunha::federation::delivery::{retry_in, RETRY};
+
+    // After the n-th failure Sidekiq's count is n - 1, and the wait is
+    // count**4 + 15, up to half count**4 more, and up to 10 * (count + 1)
+    // more, in whole seconds.
+    for failed in 1..=16u32 {
+        let count = u64::from(failed - 1);
+        let least = count.pow(4) + 15;
+        let most = least + (count.pow(4) / 2).max(1) + 10 * (count + 1);
+        for _ in 0..50 {
+            let wait = retry_in(failed).as_secs();
+            assert!((least..most).contains(&wait), "{failed}: {wait}");
+        }
+    }
+    assert!(RETRY.delay(16).is_some(), "retried sixteen times");
+    assert!(
+        RETRY.delay(17).is_none(),
+        "and given up on at the seventeenth"
+    );
+    let floor: u64 = (1..=16u32)
+        .map(|failed| u64::from(failed - 1).pow(4) + 15)
+        .sum();
+    assert_eq!(floor, 178_552, "two days and a bit before jitter");
+}

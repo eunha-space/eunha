@@ -8,8 +8,9 @@
 //!
 //! What happens to a delivery that fails is Mastodon's
 //! (`ActivityPub::DeliveryWorker`): the same statuses are given up on at
-//! once, the same circuit breaker holds back an inbox that keeps failing, and
-//! [`DeliveryFailureTracker`] marks a server unavailable as Mastodon's does.
+//! once, the same circuit breaker holds back an inbox that keeps failing, a
+//! delivery is retried on the same schedule, and [`DeliveryFailureTracker`]
+//! marks a server unavailable as Mastodon's does.
 
 use serde_json::Value;
 use std::sync::Arc;
@@ -73,6 +74,30 @@ pub const BREAKER: ojak::deliverer::CircuitBreaker = ojak::deliverer::CircuitBre
     scope: ojak::deliverer::BreakerScope::Inbox,
 };
 
+/// Mastodon's retry schedule for deliveries: `retry: 16` in
+/// `ActivityPub::DeliveryWorker`, so seventeen attempts in all, each failure
+/// waited out as its `sidekiq_retry_in` and Sidekiq's own jitter have it. The
+/// last is tried about two and a half days after the first.
+pub const RETRY: ojak::queue::RetryPolicy = ojak::queue::RetryPolicy::custom(retry_in, 17);
+
+/// How long Mastodon waits after the `failed`-th failure of a delivery, one
+/// for the first. Sidekiq counts retries from nought, so `count` is one less:
+/// `count**4 + 15` seconds and up to half `count**4` more, which Mastodon's
+/// `sidekiq_retry_in` adds, truncated to whole seconds, and up to
+/// `10 * (count + 1)` more, which Sidekiq's `delay_for` adds to anything.
+pub fn retry_in(failed: u32) -> Duration {
+    use rand::Rng as _;
+
+    let count = u64::from(failed.saturating_sub(1));
+    let base = count.saturating_pow(4);
+    let mut rng = rand::rng();
+    // `rand(0.5 * count**4)`: below one second when that is nought, as Ruby's
+    // `rand(0.0)` is, and truncated with the rest by `to_i`.
+    let mastodon = rng.random::<f64>() * (0.5 * base as f64).max(1.0);
+    let sidekiq = rng.random_range(0..10 * (count + 1));
+    Duration::from_secs(base + 15 + mastodon as u64 + sidekiq)
+}
+
 /// An instance's deliverer.
 pub type Deliverer = ojak::deliverer::Deliverer<ojak_postgres::PostgresQueue, SigningKeys>;
 
@@ -104,6 +129,10 @@ pub fn deliverer(
         }),
         breaker: Some(BREAKER),
         permanent: unsalvageable,
+        retry: RETRY,
+        // Sidekiq retries on its schedule whatever the server asked, and a
+        // delivery Stoplight held is retried like any other failure.
+        wait_as_asked: false,
         ..ojak::deliverer::DelivererConfig::default()
     };
     let attempts = tracker.clone();

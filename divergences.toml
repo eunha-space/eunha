@@ -224,7 +224,9 @@ eunha = """
 The same breaker, ten failures in a row and a minute's cool-off for each \
 inbox, held back deliveries counting as failed attempts, but kept in the \
 memory of each process's deliverer: with several processes delivering, an \
-inbox may be tried up to ten times in each before it is held back."""
+inbox may be tried up to ten times in each before it is held back. Once the \
+cool-off has passed every delivery to it is let through, where Stoplight's \
+half-open light lets through a few to test it."""
 why = """
 ojak keeps its breakers in memory, beside the per-host limits it already \
 keeps there. A breaker only paces attempts at a server that is not answering; \
