@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2)\n                   OR EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2)\n               AS \"skip!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "skip!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4d5b6bc9f1d9c685318736d0e56ee42173217225f14f348673df0ebe0f1abdc4"
+}

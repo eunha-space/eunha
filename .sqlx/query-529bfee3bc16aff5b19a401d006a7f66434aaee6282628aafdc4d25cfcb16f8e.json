@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT uri FROM account_aliases WHERE account_id = $1 ORDER BY created_at",
+  "query": "DELETE FROM account_aliases WHERE id = $1 AND account_id = $2 RETURNING uri",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "f51bde5398acc5da129fdd7ce19e3ada120b9f229ab86e55f6721090ae02dbe6"
+  "hash": "529bfee3bc16aff5b19a401d006a7f66434aaee6282628aafdc4d25cfcb16f8e"
 }

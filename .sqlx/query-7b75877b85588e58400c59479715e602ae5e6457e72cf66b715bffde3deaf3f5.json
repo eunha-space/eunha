@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO account_aliases (account_id, uri, created_at, updated_at) VALUES ($1, $2, now(), now())\n           ON CONFLICT (account_id, uri) DO UPDATE SET updated_at = now()\n           RETURNING id, account_id, uri, created_at",
+  "query": "SELECT id, account_id, acct, uri, created_at FROM account_aliases\n         WHERE account_id = $1 ORDER BY id DESC",
   "describe": {
     "columns": [
       {
@@ -15,27 +15,32 @@
       },
       {
         "ordinal": 2,
-        "name": "uri",
+        "name": "acct",
         "type_info": "Varchar"
       },
       {
         "ordinal": 3,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Varchar"
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "aeeda5ca29f09b8bc28b3761f25ea7f41f180ec98ad1bf61288dea310a231b5f"
+  "hash": "7b75877b85588e58400c59479715e602ae5e6457e72cf66b715bffde3deaf3f5"
 }

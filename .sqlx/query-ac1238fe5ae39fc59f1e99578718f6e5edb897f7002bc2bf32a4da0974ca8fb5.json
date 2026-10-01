@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE follows f SET target_account_id = $2\n         FROM accounts follower\n         WHERE follower.id = f.account_id AND follower.domain IS NULL\n           AND f.target_account_id = $1 AND f.account_id <> $2\n           AND NOT EXISTS (SELECT 1 FROM follows x WHERE x.account_id = f.account_id AND x.target_account_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac1238fe5ae39fc59f1e99578718f6e5edb897f7002bc2bf32a4da0974ca8fb5"
+}

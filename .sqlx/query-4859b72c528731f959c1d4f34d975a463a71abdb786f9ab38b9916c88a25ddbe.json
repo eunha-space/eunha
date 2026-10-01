@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET moved_to_account_id = $2 WHERE uri = $1 AND domain IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4859b72c528731f959c1d4f34d975a463a71abdb786f9ab38b9916c88a25ddbe"
+}

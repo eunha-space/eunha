@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET also_known_as = array_remove(also_known_as, $2::varchar),\n                             updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e5a76807cbbc79ecdbb31327050992bdd63c53837b54fb9fb1289f284cf7ec4"
+}

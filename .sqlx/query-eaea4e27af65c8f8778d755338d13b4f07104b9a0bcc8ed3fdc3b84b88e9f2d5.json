@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO list_accounts (list_id, account_id, follow_id, follow_request_id)\n         SELECT la.list_id, $3, f.id, CASE WHEN f.id IS NULL THEN fr.id END\n         FROM list_accounts la\n         JOIN lists l ON l.id = la.list_id AND l.account_id = $1\n         LEFT JOIN follows f ON f.account_id = $1 AND f.target_account_id = $3\n         LEFT JOIN follow_requests fr ON fr.account_id = $1 AND fr.target_account_id = $3\n         WHERE la.account_id = $2 AND (f.id IS NOT NULL OR fr.id IS NOT NULL)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eaea4e27af65c8f8778d755338d13b4f07104b9a0bcc8ed3fdc3b84b88e9f2d5"
+}

@@ -54,8 +54,8 @@ Running an instance:
  -  *docs/operating/invites.md*: the everyone role and handing out invites.
  -  *docs/operating/moderation.md*: permissions, account actions and strikes,
     the audit log, and reports.
- -  *docs/operating/moderation.md*: permissions, account actions and strikes,
-    the audit log, and reports.
+ -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,
+    and inbound `Move`s.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

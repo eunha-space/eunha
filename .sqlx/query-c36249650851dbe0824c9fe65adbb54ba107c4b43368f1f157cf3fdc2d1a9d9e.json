@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE follow_requests\n         SET show_reblogs = COALESCE($3, show_reblogs),\n             notify = COALESCE($4, notify),\n             languages = CASE WHEN $5::text[] IS NULL THEN languages ELSE $5 END\n         WHERE account_id = $1 AND target_account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c36249650851dbe0824c9fe65adbb54ba107c4b43368f1f157cf3fdc2d1a9d9e"
+}

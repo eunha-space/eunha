@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n                   SET inbox_url = CASE WHEN $2 != '' THEN $2 ELSE inbox_url END,\n                       shared_inbox_url = COALESCE($3, shared_inbox_url),\n                       public_key = CASE WHEN $4 != '' AND NOT $5 THEN $4 ELSE public_key END,\n                       updated_at = now()\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Varchar",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8a16e6a8625877426984f481e3610104deb8a767c9924da7e1a45387e1df81a1"
+}

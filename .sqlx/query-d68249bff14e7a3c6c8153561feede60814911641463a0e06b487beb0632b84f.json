@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.account_id, u.locale AS \"locale?\"\n           FROM blocks b\n           JOIN accounts a ON a.id = b.account_id AND a.domain IS NULL\n           LEFT JOIN users u ON u.account_id = b.account_id\n           WHERE b.target_account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "locale?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "d68249bff14e7a3c6c8153561feede60814911641463a0e06b487beb0632b84f"
+}

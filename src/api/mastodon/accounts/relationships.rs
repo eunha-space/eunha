@@ -71,16 +71,64 @@ pub async fn follow_account(
         return Err(AppError::Forbidden);
     }
     let params = body.map(|Json(p)| p).unwrap_or_default();
-    let show_reblogs = params.reblogs.unwrap_or(true);
-    let notify = params.notify.unwrap_or(false);
-    let languages: Vec<String> = params.languages.unwrap_or_default();
-
+    let requester = fetch_account(&state, auth.account_id).await?;
     let target = fetch_account(&state, target_id).await?;
+    follow(
+        &state,
+        &requester,
+        &target,
+        FollowOptions {
+            reblogs: params.reblogs,
+            notify: params.notify,
+            languages: params.languages,
+            ..Default::default()
+        },
+    )
+    .await?;
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
 
-    // Mastodon FollowService gating (#following_not_possible? / #following_not_allowed?):
-    // an unavailable target is 404; blocked/blocking, domain-blocked, and moved
-    // targets are not allowed (403).
-    if target.is_unavailable() {
+/// `FollowService`'s options. `None` leaves an existing follow's setting as
+/// it is, and gives a new one Mastodon's default.
+#[derive(Debug, Default, Clone)]
+pub struct FollowOptions {
+    pub reblogs: Option<bool>,
+    pub notify: Option<bool>,
+    pub languages: Option<Vec<String>>,
+    /// Follow at once even when the target approves its followers.
+    pub bypass_locked: bool,
+    /// Follow past `FollowLimitValidator`'s limit.
+    pub bypass_limit: bool,
+}
+
+/// What [`follow`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FollowOutcome {
+    /// Already following: the options were changed.
+    Updated,
+    /// Already requested: the request's options were changed.
+    RequestUpdated,
+    /// A follow request was made, and sent if the target is remote.
+    Requested,
+    /// The account now follows the target.
+    Followed,
+}
+
+/// Mastodon's `FollowService`: `source` follows `target`, or asks to.
+///
+/// An unavailable target is [`AppError::NotFound`] (`following_not_possible?`);
+/// a blocked, blocking, domain-blocked or moved one is
+/// [`AppError::Forbidden`] (`following_not_allowed?`).
+pub async fn follow(
+    state: &AppState,
+    source: &Account,
+    target: &Account,
+    options: FollowOptions,
+) -> AppResult<FollowOutcome> {
+    let target_id = target.id;
+    if target.id == source.id || target.is_unavailable() {
         return Err(AppError::NotFound);
     }
     if target.moved_to_account_id.is_some() {
@@ -91,7 +139,7 @@ pub async fn follow_account(
            WHERE (account_id = $1 AND target_account_id = $2)
               OR (account_id = $2 AND target_account_id = $1)
            LIMIT 1"#,
-        auth.account_id,
+        source.id,
         target_id,
     )
     .fetch_optional(&state.db)
@@ -108,7 +156,7 @@ pub async fn follow_account(
             r#"SELECT 1 FROM account_domain_blocks WHERE account_id = $2 AND domain = $1
                LIMIT 1"#,
             dom,
-            auth.account_id,
+            source.id,
         )
         .fetch_optional(&state.db)
         .await?
@@ -118,57 +166,57 @@ pub async fn follow_account(
         }
     }
 
-    // Check if accepted follow already exists — update settings only
-    let existing = sqlx::query!(
-        "SELECT 1 as exists FROM follows WHERE account_id = $1 AND target_account_id = $2",
-        auth.account_id,
+    // `change_follow_options!`: `Account#follow!` on an existing follow sets
+    // only the options it was given.
+    let updated = sqlx::query!(
+        "UPDATE follows
+         SET show_reblogs = COALESCE($3, show_reblogs),
+             notify = COALESCE($4, notify),
+             languages = CASE WHEN $5::text[] IS NULL THEN languages ELSE $5 END
+         WHERE account_id = $1 AND target_account_id = $2",
+        source.id,
         target_id,
+        options.reblogs,
+        options.notify,
+        options.languages.as_deref(),
     )
-    .fetch_optional(&state.db)
+    .execute(&state.db)
     .await?;
-
-    if existing.is_some() {
-        sqlx::query!(
-            "UPDATE follows SET show_reblogs = $3, notify = $4, languages = $5
-             WHERE account_id = $1 AND target_account_id = $2",
-            auth.account_id,
-            target_id,
-            show_reblogs,
-            notify,
-            &languages,
-        )
-        .execute(&state.db)
-        .await?;
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+    if updated.rows_affected() > 0 {
+        return Ok(FollowOutcome::Updated);
     }
 
-    // Check if a pending follow request already exists
-    let pending = sqlx::query!(
-        "SELECT 1 as exists FROM follow_requests WHERE account_id = $1 AND target_account_id = $2",
-        auth.account_id,
+    // `change_follow_request_options!`.
+    let updated = sqlx::query!(
+        "UPDATE follow_requests
+         SET show_reblogs = COALESCE($3, show_reblogs),
+             notify = COALESCE($4, notify),
+             languages = CASE WHEN $5::text[] IS NULL THEN languages ELSE $5 END
+         WHERE account_id = $1 AND target_account_id = $2",
+        source.id,
         target_id,
+        options.reblogs,
+        options.notify,
+        options.languages.as_deref(),
     )
-    .fetch_optional(&state.db)
+    .execute(&state.db)
     .await?;
-
-    if pending.is_some() {
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+    if updated.rows_affected() > 0 {
+        return Ok(FollowOutcome::RequestUpdated);
     }
 
-    let requester = fetch_account(&state, auth.account_id).await?;
+    let show_reblogs = options.reblogs.unwrap_or(true);
+    let notify = options.notify.unwrap_or(false);
+    let languages: Vec<String> = options.languages.clone().unwrap_or_default();
 
     // Mastodon FollowLimitValidator: cap new follows/requests. Free up to LIMIT,
     // then max(round(followers * RATIO), LIMIT).
-    {
+    if !options.bypass_limit {
         const FOLLOW_LIMIT: i64 = 7_500;
         const FOLLOW_RATIO: f64 = 1.1;
         let stats = sqlx::query!(
             "SELECT following_count, followers_count FROM account_stats WHERE account_id = $1",
-            auth.account_id,
+            source.id,
         )
         .fetch_optional(&state.db)
         .await?;
@@ -186,6 +234,7 @@ pub async fn follow_account(
         }
     }
 
+    let requester = source;
     // Remote account: always use follow_requests and send a Follow activity.
     if target.domain.is_some() {
         let follow_uri = format!(
@@ -198,7 +247,7 @@ pub async fn follow_account(
             r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, now(), now())
                ON CONFLICT (account_id, target_account_id) DO UPDATE SET uri = EXCLUDED.uri"#,
-            auth.account_id,
+            source.id,
             target_id,
             show_reblogs,
             notify,
@@ -208,7 +257,7 @@ pub async fn follow_account(
         .execute(&state.db)
         .await?;
 
-        let has_signing_key = crate::federation::keypair::has_signing_key(&state, requester.id)
+        let has_signing_key = crate::federation::keypair::has_signing_key(state, requester.id)
             .await
             .unwrap_or(false);
         if !has_signing_key {
@@ -216,7 +265,7 @@ pub async fn follow_account(
         }
         if has_signing_key {
             let actor_url =
-                crate::federation::tag::account_uri_of(&state.instance.domain, &requester);
+                crate::federation::tag::account_uri_of(&state.instance.domain, requester);
             let key_id = format!("{}#main-key", actor_url);
             // The target is remote, so it has an actor id to address.
             let target_uri = target.uri.clone().unwrap_or_default();
@@ -229,7 +278,7 @@ pub async fn follow_account(
             };
             let inbox = if inbox.is_empty() {
                 tracing::warn!(target_uri, "inbox URL missing; re-fetching actor profile");
-                match crate::api::ap::inbox::resolve_or_fetch_remote_account(&state, &target_uri).await {
+                match crate::api::ap::inbox::resolve_or_fetch_remote_account(state, &target_uri).await {
                     Err(e) => {
                         tracing::warn!(target_uri, error = %e, "failed to re-fetch actor; dropping Follow");
                         None
@@ -253,7 +302,7 @@ pub async fn follow_account(
             };
             if let Some(inbox) = inbox {
                 if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    &state,
+                    state,
                     follow_activity,
                     vec![inbox],
                     key_id,
@@ -270,63 +319,60 @@ pub async fn follow_account(
             }
         }
 
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+        return Ok(FollowOutcome::Requested);
     }
 
     // Locked target, or a silenced requester, goes through a follow request
-    // (Mastodon FollowService: target.locked? || source.silenced?).
-    if target.locked || requester.silenced_at.is_some() {
+    // (Mastodon FollowService: (target.locked? && !bypass_locked) ||
+    // source.silenced?).
+    if (target.locked && !options.bypass_locked) || requester.silenced_at.is_some() {
         sqlx::query!(
             r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, now(), now())"#,
-            auth.account_id, target_id, show_reblogs, notify, &languages,
+            source.id, target_id, show_reblogs, notify, &languages,
         )
         .execute(&state.db)
         .await?;
         push::create_and_push(
-            &state,
+            state,
             target_id,
-            auth.account_id,
+            source.id,
             "follow_request",
             None,
             format!("{} wants to follow you", requester.display_name),
             requester.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &requester),
+            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, requester),
         )
         .await;
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+        return Ok(FollowOutcome::Requested);
     }
 
     sqlx::query!(
         r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, now(), now())"#,
-        auth.account_id, target_id, show_reblogs, notify, &languages,
+        source.id, target_id, show_reblogs, notify, &languages,
     )
     .execute(&state.db)
     .await?;
 
-    crate::counters::on_follow_created(&state.db, auth.account_id, target_id).await?;
+    crate::counters::on_follow_created(&state.db, source.id, target_id).await?;
 
     push::create_and_push(
-        &state,
+        state,
         target_id,
-        auth.account_id,
+        source.id,
         "follow",
         None,
         format!("{} followed you", requester.display_name),
         requester.acct().clone(),
-        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &requester),
+        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, requester),
     )
     .await;
 
     let mut redis = state.redis.clone();
     let redis_keys = state.redis_keys.clone();
     let db = state.db.clone();
-    let follower_id = auth.account_id;
+    let follower_id = source.id;
     if feed::sync_fanout() {
         feed::backfill_follow(&mut redis, &redis_keys, &db, follower_id, target_id).await;
     } else {
@@ -335,9 +381,7 @@ pub async fn follow_account(
         });
     }
 
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(FollowOutcome::Followed)
 }
 
 // ── POST /api/v1/accounts/:id/unfollow ────────────────────────────────────
@@ -348,24 +392,38 @@ pub async fn unfollow_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
+    unfollow(&state, auth.account_id, target_id, false).await?;
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
 
+/// Mastodon's `UnfollowService`: remove the follow, or cancel the request,
+/// and tell a remote followee. `skip_unmerge` leaves the followee's posts in
+/// the follower's home feed, as a migrated follow does.
+pub async fn unfollow(
+    state: &AppState,
+    follower_id: i64,
+    target_id: i64,
+    skip_unmerge: bool,
+) -> AppResult<()> {
     let deleted = sqlx::query!(
         "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
-        auth.account_id,
+        follower_id,
         target_id,
     )
     .fetch_optional(&state.db)
     .await?;
 
     let follow_uri_opt: Option<String> = if let Some(ref d) = deleted {
-        crate::counters::on_follow_removed(&state.db, auth.account_id, target_id).await?;
+        crate::counters::on_follow_removed(&state.db, follower_id, target_id).await?;
         d.uri.clone()
     } else {
         // Canceling a pending request: keep its uri so the Undo(Follow)
         // references the original Follow activity (matches Mastodon).
         let cancelled = sqlx::query!(
             "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
-            auth.account_id,
+            follower_id,
             target_id,
         )
         .fetch_optional(&state.db)
@@ -376,7 +434,7 @@ pub async fn unfollow_account(
             sqlx::query!(
                 "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
                 target_id,
-                auth.account_id,
+                follower_id,
             )
             .execute(&state.db)
             .await?;
@@ -387,11 +445,10 @@ pub async fn unfollow_account(
     // Strip the ex-followee's posts from the home feed (Mastodon UnfollowService
     // → FeedManager#unmerge_from_home). Only when an accepted follow was removed;
     // a cancelled request never fanned anything out.
-    if deleted.is_some() {
+    if deleted.is_some() && !skip_unmerge {
         let mut redis = state.redis.clone();
         let redis_keys = state.redis_keys.clone();
         let db = state.db.clone();
-        let follower_id = auth.account_id;
         if feed::sync_fanout() {
             feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, follower_id).await;
         } else {
@@ -402,10 +459,10 @@ pub async fn unfollow_account(
     }
 
     // Send Undo(Follow) to remote target
-    let target = fetch_account(&state, target_id).await?;
+    let target = fetch_account(state, target_id).await?;
     if target.domain.is_some() {
-        let requester = fetch_account(&state, auth.account_id).await?;
-        if crate::federation::keypair::has_signing_key(&state, requester.id)
+        let requester = fetch_account(state, follower_id).await?;
+        if crate::federation::keypair::has_signing_key(state, requester.id)
             .await
             .unwrap_or(false)
         {
@@ -432,7 +489,7 @@ pub async fn unfollow_account(
             };
             if !inbox.is_empty() {
                 if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    &state,
+                    state,
                     undo,
                     vec![inbox],
                     key_id,
@@ -445,9 +502,7 @@ pub async fn unfollow_account(
         }
     }
 
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(())
 }
 
 pub async fn get_account_followers(

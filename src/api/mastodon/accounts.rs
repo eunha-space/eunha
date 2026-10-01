@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::status_serialize::*;
 use super::{
@@ -26,18 +26,23 @@ mod search;
 pub use search::search_accounts;
 mod mutes_blocks;
 pub use mutes_blocks::{
-    block_account, get_blocks, get_mutes, mute_account, unblock_account, unmute_account,
+    block, block_account, get_blocks, get_mutes, mute, mute_account, unblock_account,
+    unmute_account,
 };
 mod follow_requests;
-pub use follow_requests::{authorize_follow_request, get_follow_requests, reject_follow_request};
+pub use follow_requests::{
+    authorize, authorize_follow_request, get_follow_requests, reject_follow_request,
+};
 mod suggestions;
 pub use suggestions::{dismiss_suggestion, get_suggestions, get_suggestions_v2};
 mod aliases;
-pub use aliases::{create_alias, delete_alias, list_aliases, move_account};
+pub use aliases::{
+    cancel_redirect, create_alias, create_redirect, delete_alias, list_aliases, move_account,
+};
 mod relationships;
 pub use relationships::{
-    follow_account, get_account_followers, get_account_following, get_relationships,
-    unfollow_account,
+    follow, follow_account, get_account_followers, get_account_following, get_relationships,
+    unfollow, unfollow_account, FollowOptions, FollowOutcome,
 };
 mod credentials;
 pub use credentials::{

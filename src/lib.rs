@@ -19,6 +19,7 @@ pub mod media;
 pub mod middleware;
 pub mod migrate;
 pub mod moderation;
+pub mod moves;
 pub mod open_files;
 pub mod preview_card;
 pub mod push;

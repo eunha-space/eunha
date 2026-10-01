@@ -20,6 +20,7 @@ mod lists;
 mod markers;
 mod media;
 mod moderation;
+mod moves;
 mod mutes;
 mod notifications;
 mod polls;

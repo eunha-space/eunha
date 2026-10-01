@@ -70,13 +70,7 @@ pub async fn authorize_follow_request(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
-    // Move from follow_requests to follows (atomic: delete pending, insert accepted)
-    let deleted = sqlx::query!(
-        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING account_id, uri",
-        requester_id, auth.account_id
-    )
-    .fetch_optional(&state.db)
-    .await?;
+    let follow_uri = authorize(&state, requester_id, auth.account_id).await?;
 
     // Mastodon's FollowRequest has_one :notification, dependent: :destroy —
     // resolving the request removes its follow_request notification so it stops
@@ -92,17 +86,7 @@ pub async fn authorize_follow_request(
     .execute(&state.db)
     .await?;
 
-    if let Some(deleted_row) = deleted {
-        sqlx::query!(
-            r#"INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
-               VALUES ($1, $2, now(), now()) ON CONFLICT DO NOTHING"#,
-            requester_id,
-            auth.account_id
-        )
-        .execute(&state.db)
-        .await?;
-        crate::counters::on_follow_created(&state.db, requester_id, auth.account_id).await?;
-
+    if let Some(follow_uri) = follow_uri {
         let accepter = fetch_account(&state, auth.account_id).await?;
         let requester = fetch_account(&state, requester_id).await?;
         // Mastodon's authorize action enqueues LocalNotificationWorker for
@@ -124,7 +108,7 @@ pub async fn authorize_follow_request(
 
         // A remote requester always has an actor id to address the Accept to.
         let requester_uri = requester.stored_uri().unwrap_or_default().to_string();
-        if let Some(follow_uri) = deleted_row.uri {
+        if let Some(follow_uri) = follow_uri {
             if requester.domain.is_some()
                 && !requester_uri.is_empty()
                 && crate::federation::keypair::has_signing_key(&state, accepter.id)
@@ -167,24 +151,83 @@ pub async fn authorize_follow_request(
                 }
             }
         }
-
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        let followed_id = auth.account_id;
-        if feed::sync_fanout() {
-            feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, followed_id).await;
-        } else {
-            crate::tenants::spawn(async move {
-                feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, followed_id)
-                    .await;
-            });
-        }
     }
 
     build_relationship(&state, auth.account_id, requester_id)
         .await
         .map(Json)
+}
+
+/// Mastodon's `FollowRequest#authorize!`: the request becomes a follow with
+/// the request's options, the requester's list memberships that hung on the
+/// request now hang on the follow, and the target's posts are merged into the
+/// requester's home feed. `None` when there was no request; otherwise the
+/// request's activity id, if it had one.
+pub async fn authorize(
+    state: &AppState,
+    requester_id: i64,
+    target_id: i64,
+) -> AppResult<Option<Option<String>>> {
+    // Move from follow_requests to follows (atomic: delete pending, insert accepted)
+    let Some(request) = sqlx::query!(
+        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2
+         RETURNING id, uri, show_reblogs, notify, languages",
+        requester_id,
+        target_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let follow_id = sqlx::query_scalar!(
+        r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now(), now()) ON CONFLICT DO NOTHING
+           RETURNING id"#,
+        requester_id,
+        target_id,
+        request.show_reblogs,
+        request.notify,
+        request.languages.as_deref(),
+        request.uri,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(follow_id) = follow_id {
+        crate::counters::on_follow_created(&state.db, requester_id, target_id).await?;
+        sqlx::query!(
+            "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
+             WHERE follow_request_id = $1",
+            request.id,
+            follow_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // `MergeWorker` into the home feed, which only a local requester has.
+    let requester_is_local = sqlx::query_scalar!(
+        r#"SELECT domain IS NULL AS "local!" FROM accounts WHERE id = $1"#,
+        requester_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if requester_is_local {
+        let mut redis = state.redis.clone();
+        let redis_keys = state.redis_keys.clone();
+        let db = state.db.clone();
+        if feed::sync_fanout() {
+            feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, target_id).await;
+        } else {
+            crate::tenants::spawn(async move {
+                feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, target_id).await;
+            });
+        }
+    }
+
+    Ok(Some(request.uri))
 }
 
 // ── POST /api/v1/follow_requests/:id/reject ───────────────────────────────

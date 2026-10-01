@@ -122,12 +122,9 @@ pub async fn actor_json(
     let own = super::serving::AccountUris::of(&state.uris, account);
 
     // Account migration metadata: aliases (alsoKnownAs) + movedTo target URI.
-    let mut also_known_as: Vec<String> = sqlx::query_scalar!(
-        "SELECT uri FROM account_aliases WHERE account_id = $1 ORDER BY created_at",
-        account.id,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    // `alsoKnownAs` is the account's `also_known_as`, which creating and
+    // removing an alias keeps (`AccountAlias#add_to_account`).
+    let mut also_known_as: Vec<String> = account.also_known_as.clone().unwrap_or_default();
     // The account's actors under the domains the instance had before, which
     // its followers were following: `eunha accounts move` names them.
     for previous in &state.instance.previous_domains {

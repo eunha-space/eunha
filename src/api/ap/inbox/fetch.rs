@@ -325,6 +325,39 @@ pub async fn resolve_or_fetch_remote_account(state: &AppState, actor_uri: &str) 
     resolve_or_fetch_remote_account_inner(state, actor_uri, None).await
 }
 
+/// Mastodon's `ActivityPub::FetchRemoteAccountService`: the account at
+/// `actor_uri` as its server now describes it, fetched even when known, so
+/// that what is read off it (a Move's `alsoKnownAs`) is current. A URI on
+/// this instance is the local account, without a fetch.
+pub async fn fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResult<i64> {
+    let ours = crate::federation::moderation::domain_of(actor_uri).is_some_and(|host| {
+        host.eq_ignore_ascii_case(&state.instance.domain)
+            || state
+                .instance
+                .aliases
+                .iter()
+                .any(|alias| host.eq_ignore_ascii_case(alias))
+    });
+    if ours {
+        return crate::federation::local_uri::account(state, actor_uri)
+            .await
+            .ok_or(AppError::NotFound);
+    }
+    let actor = crate::federation::fetch::signed_get_json(state, actor_uri)
+        .await
+        .map_err(AppError::Internal)?;
+    // The document has to be the actor asked for: one naming another would
+    // rewrite that other account.
+    let id = actor.get("id").and_then(Value::as_str).unwrap_or_default();
+    if id != actor_uri {
+        return Err(AppError::NotFound);
+    }
+    let account_id =
+        resolve_or_fetch_remote_account_prefetched(state, actor_uri, actor.clone()).await?;
+    super::status::update_remote_actor(state, &actor).await?;
+    Ok(account_id)
+}
+
 /// As [`resolve_or_fetch_remote_account`], for an actor document already in
 /// hand (Mastodon's `prefetched_body`).
 pub async fn resolve_or_fetch_remote_account_prefetched(
@@ -474,6 +507,8 @@ async fn resolve_or_fetch_remote_account_inner(
         .unwrap_or("")
         .to_string();
 
+    let also_known_as = super::also_known_as_of(&actor);
+
     if let Some(id) = sqlx::query_scalar!(
         r#"UPDATE accounts
            SET display_name = $2,
@@ -483,6 +518,7 @@ async fn resolve_or_fetch_remote_account_inner(
                public_key = $6,
                avatar_remote_url = COALESCE($7, avatar_remote_url),
                header_remote_url = CASE WHEN $8 != '' THEN $8 ELSE header_remote_url END,
+               also_known_as = $9,
                updated_at = now()
            WHERE uri = $1 AND uri != ''
            RETURNING id"#,
@@ -494,6 +530,7 @@ async fn resolve_or_fetch_remote_account_inner(
         public_key,
         avatar_remote_url,
         header_remote_url,
+        &also_known_as,
     )
     .fetch_optional(&state.db)
     .await?
@@ -520,8 +557,8 @@ async fn resolve_or_fetch_remote_account_inner(
              (id, username, domain, display_name, note, url, uri,
               inbox_url, outbox_url, shared_inbox_url, public_key,
               avatar_remote_url, header_remote_url, followers_url, following_url,
-              created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now(), now())
+              also_known_as, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now(), now())
            RETURNING id"#,
         new_id,
         username,
@@ -538,6 +575,7 @@ async fn resolve_or_fetch_remote_account_inner(
         header_remote_url,
         followers_url,
         following_url,
+        &also_known_as,
     )
     .fetch_one(&state.db)
     .await?;

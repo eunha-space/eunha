@@ -29,8 +29,34 @@ pub async fn mute_account(
     }
     let params = body.map(|Json(p)| p).unwrap_or_default();
     let hide_notifications = params.notifications.unwrap_or(true);
-    let expires_at: Option<chrono::NaiveDateTime> = params
-        .duration
+    mute(
+        &state,
+        auth.account_id,
+        target_id,
+        hide_notifications,
+        params.duration.unwrap_or(0),
+    )
+    .await?;
+
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
+
+/// Mastodon's `MuteService`: `account_id` mutes `target_id`, its
+/// notifications too when `hide_notifications`, for `duration` seconds or,
+/// at 0, until unmuted.
+pub async fn mute(
+    state: &AppState,
+    account_id: i64,
+    target_id: i64,
+    hide_notifications: bool,
+    duration: i64,
+) -> AppResult<()> {
+    if account_id == target_id {
+        return Ok(());
+    }
+    let expires_at: Option<chrono::NaiveDateTime> = Some(duration)
         .filter(|&d| d > 0)
         .map(|d| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(d));
 
@@ -40,14 +66,11 @@ pub async fn mute_account(
            ON CONFLICT (account_id, target_account_id)
            DO UPDATE SET hide_notifications = EXCLUDED.hide_notifications,
                          expires_at = EXCLUDED.expires_at"#,
-        auth.account_id, target_id, hide_notifications, expires_at,
+        account_id, target_id, hide_notifications, expires_at,
     )
     .execute(&state.db)
     .await?;
-
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(())
 }
 
 // ── POST /api/v1/accounts/:id/unmute ──────────────────────────────────────
@@ -79,16 +102,23 @@ pub async fn block_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:blocks")?;
+    block(&state, auth.account_id, target_id).await?;
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
+
+/// Mastodon's `BlockService`: `account_id` blocks `target_id`, which ends
+/// the follows and requests between them, and tells a remote target.
+pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     // Mastodon BlockService: blocking yourself is a no-op.
-    if auth.account_id == target_id {
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+    if account_id == target_id {
+        return Ok(());
     }
     sqlx::query!(
         r#"INSERT INTO blocks (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())
            ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
-        auth.account_id, target_id
+        account_id, target_id
     )
     .execute(&state.db)
     .await?;
@@ -97,7 +127,7 @@ pub async fn block_account(
     // direction + Follow activity uri so we can federate the termination.
     let deleted = sqlx::query!(
         "DELETE FROM follows WHERE (account_id = $1 AND target_account_id = $2) OR (account_id = $2 AND target_account_id = $1) RETURNING account_id, target_account_id, uri",
-        auth.account_id, target_id
+        account_id, target_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -109,7 +139,7 @@ pub async fn block_account(
     // Also delete any pending follow requests in both directions, keeping uris.
     let deleted_requests = sqlx::query!(
         "DELETE FROM follow_requests WHERE (account_id = $1 AND target_account_id = $2) OR (account_id = $2 AND target_account_id = $1) RETURNING account_id, uri",
-        auth.account_id, target_id
+        account_id, target_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -117,7 +147,7 @@ pub async fn block_account(
     // notifications in both directions between blocker and blocked.
     sqlx::query!(
         "DELETE FROM notifications WHERE type = 'follow_request' AND ((account_id = $1 AND from_account_id = $2) OR (account_id = $2 AND from_account_id = $1))",
-        auth.account_id, target_id,
+        account_id, target_id,
     )
     .execute(&state.db)
     .await?;
@@ -128,7 +158,7 @@ pub async fn block_account(
         let mut redis = state.redis.clone();
         let redis_keys = state.redis_keys.clone();
         let db = state.db.clone();
-        let blocker_id = auth.account_id;
+        let blocker_id = account_id;
         if feed::sync_fanout() {
             feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, blocker_id).await;
         } else {
@@ -153,19 +183,19 @@ pub async fn block_account(
         if target.domain.is_some() && !target_uri.is_empty() {
             if let Some(actor_row) = sqlx::query!(
                 "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
-                auth.account_id,
+                account_id,
             )
             .fetch_optional(&state.db)
             .await?
             {
-                if crate::federation::keypair::has_signing_key(&state, auth.account_id)
+                if crate::federation::keypair::has_signing_key(state, account_id)
                     .await
                     .unwrap_or(false)
                 {
                     let domain = state.instance.domain.clone();
                     let actor_url = crate::federation::tag::account_uri(
                         &domain,
-                        auth.account_id,
+                        account_id,
                         actor_row.id_scheme,
                         &actor_row.username,
                     );
@@ -189,7 +219,7 @@ pub async fn block_account(
                         let Some(uri) = f.uri.clone().filter(|s| !s.is_empty()) else {
                             continue;
                         };
-                        if f.account_id == auth.account_id {
+                        if f.account_id == account_id {
                             // Our follow of the remote target -> Undo(Follow).
                             if let Ok(a) = crate::federation::activity::undo_follow(
                                 &activity_id(),
@@ -244,7 +274,7 @@ pub async fn block_account(
                     if !inbox.is_empty() {
                         for act in activities {
                             if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                                &state,
+                                state,
                                 act,
                                 vec![inbox.clone()],
                                 key_id.clone(),
@@ -260,9 +290,7 @@ pub async fn block_account(
         }
     }
 
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(())
 }
 
 // ── POST /api/v1/accounts/:id/unblock ─────────────────────────────────────

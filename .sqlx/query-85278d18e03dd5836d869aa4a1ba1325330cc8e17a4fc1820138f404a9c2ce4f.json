@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM mutes WHERE account_id = $1 AND target_account_id = $2)\n                   OR EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2)\n               AS \"skip!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "skip!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "85278d18e03dd5836d869aa4a1ba1325330cc8e17a4fc1820138f404a9c2ce4f"
+}

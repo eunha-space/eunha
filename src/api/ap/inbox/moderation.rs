@@ -218,61 +218,104 @@ fn value_or_id(value: &Value) -> Option<String> {
     }
 }
 
+/// `ActivityPub::Activity::Move::PROCESSING_COOLDOWN`: how long one Move
+/// from an account keeps others from it out.
+const MOVE_PROCESSING_COOLDOWN_SECS: u64 = 7 * 24 * 60 * 60;
+
+fn move_in_progress_key(state: &AppState, account_id: i64) -> String {
+    state
+        .redis_keys
+        .key(format!("move_in_progress:{account_id}"))
+}
+
+/// `ActivityPub::Activity::Move`: the sender says it has moved to `target`.
+/// Believed when the Move is about the sender itself and the target, fetched
+/// fresh, is available and names the sender in `alsoKnownAs`; then the
+/// sender redirects there and its local followers, notes, blocks and mutes
+/// follow it (`MoveWorker`). One Move per account per week is processed.
 pub(super) async fn handle_move(state: &AppState, activity: &Value) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-    let target_uri = activity
-        .get("object")
-        .and_then(|o| {
-            if o.is_string() {
-                o.as_str()
-            } else {
-                o.get("id").and_then(|i| i.as_str())
-            }
-        })
-        .unwrap_or("");
+    if actor_uri.is_empty() {
+        return Ok(());
+    }
+    // `return if origin_account.uri != object_uri`.
+    let object_uri = activity.get("object").and_then(value_or_id);
+    if object_uri.as_deref() != Some(actor_uri) {
+        return Ok(());
+    }
+    let origin_id = resolve_or_fetch_remote_account(state, actor_uri).await?;
 
-    if actor_uri.is_empty() || target_uri.is_empty() {
+    // `mark_as_processing!`.
+    let key = move_in_progress_key(state, origin_id);
+    let mut redis = state.redis.clone();
+    let marked: Option<String> = redis::cmd("SET")
+        .arg(&key)
+        .arg("true")
+        .arg("NX")
+        .arg("EX")
+        .arg(MOVE_PROCESSING_COOLDOWN_SECS)
+        .query_async(&mut redis)
+        .await
+        .map_err(|e| crate::error::AppError::Internal(e.into()))?;
+    if marked.is_none() {
+        tracing::debug!(actor_uri, "Move ignored: another is being processed");
         return Ok(());
     }
 
-    // Fetch the new account to verify also_known_as contains the old actor URI
-    let new_account_id = match resolve_or_fetch_remote_account(state, target_uri).await {
-        Ok(id) => id,
-        Err(_) => return Ok(()),
-    };
+    let result = process_move(state, activity, actor_uri, origin_id).await;
+    if !matches!(result, Ok(true)) {
+        // `unmark_as_processing!`, on refusal and on error alike.
+        let _: redis::RedisResult<i64> = redis::cmd("DEL").arg(&key).query_async(&mut redis).await;
+    }
+    result.map(|_| ())
+}
 
-    // Fetch the target actor to verify also_known_as
-    let also_known_as: Vec<String> = sqlx::query_scalar!(
-        "SELECT also_known_as FROM accounts WHERE id = $1",
-        new_account_id,
+/// The part of [`handle_move`] after the lock: true when the Move was
+/// accepted.
+async fn process_move(
+    state: &AppState,
+    activity: &Value,
+    origin_uri: &str,
+    origin_id: i64,
+) -> AppResult<bool> {
+    let Some(target_uri) = activity.get("target").and_then(value_or_id) else {
+        return Ok(false);
+    };
+    // `ActivityPub::FetchRemoteAccountService`, which returns nil when the
+    // target cannot be fetched.
+    let Ok(target_id) = super::fetch_remote_account(state, &target_uri).await else {
+        return Ok(false);
+    };
+    let Some(target) = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        target_id,
     )
     .fetch_optional(&state.db)
     .await?
-    .flatten()
-    .unwrap_or_default();
-
-    if !also_known_as.iter().any(|u| u == actor_uri) {
-        tracing::warn!(
-            actor_uri,
+    else {
+        return Ok(false);
+    };
+    let also_known_as = target.also_known_as.clone().unwrap_or_default();
+    if target.is_unavailable() || !also_known_as.iter().any(|uri| uri == origin_uri) {
+        tracing::info!(
+            origin_uri,
             target_uri,
-            "Move rejected: target alsoKnownAs does not include actor"
+            "Move refused: the target is unavailable or does not name the origin"
         );
-        return Ok(());
+        return Ok(false);
     }
 
-    // Set moved_to_account_id on the old account
+    // "In case for some reason we didn't have a redirect for the profile
+    // already, set it."
     sqlx::query!(
-        "UPDATE accounts SET moved_to_account_id = $1 WHERE uri = $2 AND domain IS NOT NULL",
-        new_account_id,
-        actor_uri,
+        "UPDATE accounts SET moved_to_account_id = $1, updated_at = now() WHERE id = $2",
+        target_id,
+        origin_id,
     )
     .execute(&state.db)
     .await?;
 
-    tracing::debug!(
-        actor_uri,
-        target_uri,
-        "processed Move: updated moved_to_account_id"
-    );
-    Ok(())
+    crate::moves::queue_move_worker(state, origin_id, target_id).await;
+    Ok(true)
 }

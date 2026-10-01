@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO list_accounts (list_id, account_id, follow_id)\n         SELECT la.list_id, $2, tf.id\n         FROM list_accounts la\n         JOIN lists l ON l.id = la.list_id\n         JOIN accounts owner ON owner.id = l.account_id AND owner.domain IS NULL\n         JOIN follows sf ON sf.account_id = l.account_id AND sf.target_account_id = $1\n         JOIN follows tf ON tf.account_id = l.account_id AND tf.target_account_id = $2\n         WHERE la.account_id = $1\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bf88262cd84f1abe241fcec55e9f979d4cd6100b66d9e17a3687af90699acfc"
+}

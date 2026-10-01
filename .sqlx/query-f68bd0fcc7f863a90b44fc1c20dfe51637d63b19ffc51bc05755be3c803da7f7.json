@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_stats (account_id, followers_count, created_at, updated_at)\n         VALUES ($1, GREATEST($2::bigint, 0), now(), now())\n         ON CONFLICT (account_id) DO UPDATE\n           SET followers_count = GREATEST(account_stats.followers_count + $2::bigint, 0), updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f68bd0fcc7f863a90b44fc1c20dfe51637d63b19ffc51bc05755be3c803da7f7"
+}

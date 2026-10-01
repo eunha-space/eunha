@@ -13,8 +13,8 @@ mod status;
 use collection::{handle_add, handle_remove};
 use create::handle_create;
 pub use fetch::{
-    fetch_remote_status, fetch_remote_status_prefetched, resolve_or_fetch_remote_account,
-    resolve_or_fetch_remote_account_prefetched,
+    fetch_remote_account, fetch_remote_status, fetch_remote_status_prefetched,
+    resolve_or_fetch_remote_account, resolve_or_fetch_remote_account_prefetched,
 };
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
@@ -64,6 +64,33 @@ pub(super) fn as_string_vec(v: Option<&Value>) -> Vec<String> {
             .collect(),
         _ => vec![],
     }
+}
+
+/// `JsonLdHelper#value_or_id`: a reference that is either an id or an
+/// embedded object carrying one.
+pub(super) fn value_or_id(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(s) => Some(s),
+        Value::Object(o) => o.get("id").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
+/// `alsoKnownAs` as `ProcessAccountService` keeps it: at most
+/// `Account::ALSO_KNOWN_AS_HARD_LIMIT` ids, embedded objects reduced to theirs.
+pub(super) fn also_known_as_of(actor: &Value) -> Vec<String> {
+    const ALSO_KNOWN_AS_HARD_LIMIT: usize = 256;
+    let items: Vec<&Value> = match actor.get("alsoKnownAs") {
+        Some(Value::Array(items)) => items.iter().collect(),
+        Some(Value::Null) | None => Vec::new(),
+        Some(item) => vec![item],
+    };
+    items
+        .into_iter()
+        .take(ALSO_KNOWN_AS_HARD_LIMIT)
+        .filter_map(value_or_id)
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Returns true when the two URI strings share the same host, or for
@@ -118,7 +145,7 @@ const CREATE_LOCK_TTL_MS: usize = 15 * 60 * 1000;
 
 /// Best-effort Redis lock guard: releases the lock (only if still the owner) on
 /// drop.
-pub(super) struct RedisLock {
+pub(crate) struct RedisLock {
     redis: redis::aio::ConnectionManager,
     key: String,
     token: String,
@@ -192,6 +219,29 @@ pub(super) async fn acquire_create_lock(state: &AppState, uri: &str) -> Option<R
         }
     }
     None
+}
+
+/// Mastodon's `Lockable#with_redis_lock`: take `lock:{name}` for fifteen
+/// minutes, once, without waiting. `None` when someone else holds it, which
+/// upstream raises as `Mastodon::RaceConditionError`.
+pub(crate) async fn try_redis_lock(state: &AppState, name: &str) -> Option<RedisLock> {
+    let key = state.redis_keys.key(format!("lock:{name}"));
+    let token = crate::snowflake::next_id().to_string();
+    let mut redis = state.redis_coordination.clone();
+    let acquired: redis::RedisResult<Option<String>> = redis::cmd("SET")
+        .arg(&key)
+        .arg(&token)
+        .arg("NX")
+        .arg("PX")
+        .arg(CREATE_LOCK_TTL_MS)
+        .query_async(&mut redis)
+        .await;
+    matches!(acquired, Ok(Some(_))).then(|| RedisLock {
+        redis: state.redis_coordination.clone(),
+        key,
+        token,
+        use_pooled_function: state.redis_keys.is_shared(),
+    })
 }
 
 /// An activity ojak has received and authenticated: queued for the ingress

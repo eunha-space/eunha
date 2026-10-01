@@ -618,6 +618,10 @@ pub fn router() -> Router {
         // Account move and aliases
         .route("/api/v1/accounts/move", post(accounts::move_account))
         .route(
+            "/api/v1/accounts/redirect",
+            post(accounts::create_redirect).delete(accounts::cancel_redirect),
+        )
+        .route(
             "/api/v1/profile/avatar",
             delete(accounts::delete_profile_avatar),
         )

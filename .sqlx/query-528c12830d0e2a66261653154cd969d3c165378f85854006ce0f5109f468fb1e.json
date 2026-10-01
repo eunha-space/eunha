@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.account_id, m.hide_notifications, u.locale AS \"locale?\"\n           FROM mutes m\n           JOIN accounts a ON a.id = m.account_id AND a.domain IS NULL\n           LEFT JOIN users u ON u.account_id = m.account_id\n           WHERE m.target_account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "hide_notifications",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "locale?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "528c12830d0e2a66261653154cd969d3c165378f85854006ce0f5109f468fb1e"
+}

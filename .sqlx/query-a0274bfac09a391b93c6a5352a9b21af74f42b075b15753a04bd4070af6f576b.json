@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET also_known_as = COALESCE(also_known_as, '{}') || $2::varchar,\n                             updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0274bfac09a391b93c6a5352a9b21af74f42b075b15753a04bd4070af6f576b"
+}
