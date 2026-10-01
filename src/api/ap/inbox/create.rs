@@ -444,6 +444,8 @@ pub(super) async fn handle_create(
             )
             .execute(&state.db)
             .await;
+            // `FetchLinkCardService`: `Trends.links.register`.
+            crate::trends::register_links(&state, inserted_id).await;
         });
     }
 
@@ -489,6 +491,9 @@ pub(super) async fn handle_create(
             Err(e) => tracing::warn!(tag = name, error = %e, "failed to upsert hashtag"),
         }
     }
+
+    // `ActivityPub::Activity::Create#process_status`: `Trends.tags.register`.
+    crate::trends::register_tags(state, inserted_id).await;
 
     // Mentions — resolve accounts and notify local ones
     let actor_info = sqlx::query!(

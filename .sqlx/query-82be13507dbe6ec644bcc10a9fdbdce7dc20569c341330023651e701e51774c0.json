@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tags SET max_score = $2, max_score_at = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82be13507dbe6ec644bcc10a9fdbdce7dc20569c341330023651e701e51774c0"
+}

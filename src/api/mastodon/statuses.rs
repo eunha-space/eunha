@@ -734,12 +734,14 @@ pub async fn favourite_status(
     let (s, _) = fetch_status_with_account(&state, id).await?;
     check_status_visible(&state, &s, auth.account_id).await?;
 
-    sqlx::query!(
+    let favourited = sqlx::query!(
         "INSERT INTO favourites (account_id, status_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING",
         auth.account_id, id
     )
     .execute(&state.db)
-    .await?;
+    .await?
+    .rows_affected()
+        > 0;
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -751,6 +753,10 @@ pub async fn favourite_status(
     )
     .execute(&state.db)
     .await?;
+    // `FavouriteService`: `Trends.statuses.register`, for a new favourite.
+    if favourited {
+        crate::trends::register_status(&state, id).await;
+    }
 
     let (status, account) = fetch_status_with_account(&state, id).await?;
 
@@ -987,6 +993,9 @@ pub async fn reblog_status(
     {
         tracing::error!(error = %e, "failed to count a boost");
     }
+
+    // `ReblogService`: `Trends.register!`.
+    crate::trends::register(&state, boost.id).await;
 
     // Notify original author
     push::create_and_push(

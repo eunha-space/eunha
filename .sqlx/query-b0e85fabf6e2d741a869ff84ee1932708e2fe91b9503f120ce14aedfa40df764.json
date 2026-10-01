@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.uri, s.url, s.local, a.username, st.score, s.account_id\n               FROM status_trends st\n               JOIN statuses s ON s.id = st.status_id AND s.deleted_at IS NULL\n               JOIN accounts a ON a.id = s.account_id\n               WHERE st.language IS NOT DISTINCT FROM $1 AND NOT st.allowed AND st.score > $2\n                 AND NOT COALESCE(s.trendable, a.trendable, false)\n                 AND s.trendable IS NULL AND a.reviewed_at IS NULL AND a.requested_review_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b0e85fabf6e2d741a869ff84ee1932708e2fe91b9503f120ce14aedfa40df764"
+}

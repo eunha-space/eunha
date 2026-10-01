@@ -1010,7 +1010,7 @@ pub async fn list_admin_tags(
     .fetch_all(&state.db)
     .await?;
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let mut histories = super::tags::fetch_tags_histories(&state.db, &ids).await;
+    let mut histories = super::tags::fetch_tags_histories(&state, &ids).await;
 
     Ok(Json(
         rows.into_iter()
@@ -1047,7 +1047,7 @@ pub async fn get_admin_tag(
     .ok_or(AppError::NotFound)?;
     Ok(Json(AdminTag {
         id: r.id.to_string(),
-        history: super::tags::fetch_tags_histories(&state.db, &[r.id])
+        history: super::tags::fetch_tags_histories(&state, &[r.id])
             .await
             .remove(&r.id)
             .unwrap_or_default(),
@@ -1089,7 +1089,7 @@ pub async fn update_admin_tag(
     .ok_or(AppError::NotFound)?;
     Ok(Json(AdminTag {
         id: r.id.to_string(),
-        history: super::tags::fetch_tags_histories(&state.db, &[r.id])
+        history: super::tags::fetch_tags_histories(&state, &[r.id])
             .await
             .remove(&r.id)
             .unwrap_or_default(),

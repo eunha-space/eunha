@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM status_trends WHERE status_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "edc2491c18e91e7a18227d9fee5cef017d8355e0bdbe72ea0f2cc2a729401c3b"
+}

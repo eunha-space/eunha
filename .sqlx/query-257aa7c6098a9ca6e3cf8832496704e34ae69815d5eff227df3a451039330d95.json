@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.account_id,\n                      (o.visibility = 0 AND s.visibility = 0\n                       AND oa.silenced_at IS NULL AND a.silenced_at IS NULL\n                       AND o.spoiler_text = '' AND NOT o.sensitive) AS \"counts!\",\n                      (SELECT pc.id FROM preview_cards_statuses pcs\n                       JOIN preview_cards pc ON pc.id = pcs.preview_card_id\n                       WHERE pcs.status_id = o.id\n                         -- `PreviewCard#appropriate_for_trends?`\n                         AND pc.type = 0 AND pc.link_type = 1 AND pc.title <> ''\n                         AND pc.description <> '' AND pc.image_file_name IS NOT NULL\n                         AND COALESCE(pc.provider_name, '') <> ''\n                       LIMIT 1) AS card_id\n               FROM statuses s\n               JOIN accounts a ON a.id = s.account_id\n               JOIN statuses o ON o.id = COALESCE(s.reblog_of_id, s.id)\n               JOIN accounts oa ON oa.id = o.account_id\n               WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "counts!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "card_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "257aa7c6098a9ca6e3cf8832496704e34ae69815d5eff227df3a451039330d95"
+}

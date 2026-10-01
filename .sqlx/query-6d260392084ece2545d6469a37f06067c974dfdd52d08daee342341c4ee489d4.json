@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET requested_review_at = now(), updated_at = now() WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d260392084ece2545d6469a37f06067c974dfdd52d08daee342341c4ee489d4"
+}

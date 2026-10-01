@@ -14,76 +14,29 @@ use std::collections::HashMap;
 
 // ── Tag history helpers ────────────────────────────────────────────────────
 
-/// Returns 7 days of daily use/account counts for the given tags, newest day first.
+/// Each tag's `Trends::History`, seven days of uses and distinct users
+/// counted as they happened, newest day first.
 pub(super) async fn fetch_tags_histories(
-    db: &sqlx::PgPool,
+    state: &AppState,
     tag_ids: &[i64],
 ) -> HashMap<i64, Vec<TagHistory>> {
-    if tag_ids.is_empty() {
-        return HashMap::new();
+    let mut histories = HashMap::new();
+    for &id in tag_ids {
+        histories.insert(id, fetch_tag_history(state, id).await);
     }
-    let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(7);
-    let rows = sqlx::query!(
-        r#"SELECT st.tag_id,
-                  date_trunc('day', s.created_at)::date AS day,
-                  COUNT(*)::bigint AS uses,
-                  COUNT(DISTINCT s.account_id)::bigint AS accounts
-           FROM statuses_tags st
-           JOIN statuses s ON s.id = st.status_id
-           WHERE st.tag_id = ANY($1::bigint[])
-             AND s.deleted_at IS NULL
-             AND s.visibility = 0
-             AND s.created_at >= $2
-           GROUP BY st.tag_id, date_trunc('day', s.created_at)::date"#,
-        tag_ids as &[i64],
-        cutoff,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
-
-    // Build tag_id → NaiveDate → (uses, accounts)
-    let mut raw: HashMap<i64, HashMap<chrono::NaiveDate, (i64, i64)>> = HashMap::new();
-    for r in rows {
-        if let Some(day) = r.day {
-            raw.entry(r.tag_id)
-                .or_default()
-                .insert(day, (r.uses.unwrap_or(0), r.accounts.unwrap_or(0)));
-        }
-    }
-
-    let today = chrono::Utc::now().date_naive();
-    tag_ids
-        .iter()
-        .map(|&tid| {
-            let day_map = raw.get(&tid).cloned().unwrap_or_default();
-            let history = (0..7i64)
-                .map(|i| {
-                    let day = today - chrono::Duration::days(i);
-                    let (uses, accounts) = day_map.get(&day).copied().unwrap_or((0, 0));
-                    let ts = day
-                        .and_hms_opt(0, 0, 0)
-                        .unwrap()
-                        .and_utc()
-                        .timestamp()
-                        .to_string();
-                    TagHistory {
-                        day: ts,
-                        uses: uses.to_string(),
-                        accounts: accounts.to_string(),
-                    }
-                })
-                .collect();
-            (tid, history)
-        })
-        .collect()
+    histories
 }
 
-pub(super) async fn fetch_tag_history(db: &sqlx::PgPool, tag_id: i64) -> Vec<TagHistory> {
-    fetch_tags_histories(db, &[tag_id])
+pub(super) async fn fetch_tag_history(state: &AppState, tag_id: i64) -> Vec<TagHistory> {
+    crate::moderation::history::days(state, "tags", tag_id)
         .await
-        .remove(&tag_id)
-        .unwrap_or_default()
+        .into_iter()
+        .map(|d| TagHistory {
+            day: d.day.to_string(),
+            uses: d.uses.to_string(),
+            accounts: d.accounts.to_string(),
+        })
+        .collect()
 }
 
 fn tag_url(domain: &str, name: &str) -> String {
@@ -110,7 +63,7 @@ pub async fn get_tag(
 
     let (following, featuring, history, id_str) = {
         let t = &tag;
-        let history = fetch_tag_history(&state.db, t.id).await;
+        let history = fetch_tag_history(&state, t.id).await;
         let (following, featuring) = if let Some(Extension(ref auth)) = auth {
             let following = sqlx::query_scalar!(
                 r#"SELECT EXISTS(
@@ -200,7 +153,7 @@ pub async fn list_followed_tags(
     let last_follow_id = rows.last().map(|r| r.follow_id.to_string());
 
     let tag_ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let histories = fetch_tags_histories(&state.db, &tag_ids).await;
+    let histories = fetch_tags_histories(&state, &tag_ids).await;
 
     let result: Vec<Tag> = rows
         .into_iter()
@@ -251,7 +204,7 @@ pub async fn follow_tag(
     .execute(&state.db)
     .await?;
 
-    let history = fetch_tag_history(&state.db, tag_id).await;
+    let history = fetch_tag_history(&state, tag_id).await;
 
     let featuring = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2)",
@@ -306,7 +259,7 @@ pub async fn unfollow_tag(
     .execute(&state.db)
     .await?;
 
-    let history = fetch_tag_history(&state.db, tag.id).await;
+    let history = fetch_tag_history(&state, tag.id).await;
 
     let featuring = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2)",

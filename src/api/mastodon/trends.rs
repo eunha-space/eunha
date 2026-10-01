@@ -42,11 +42,20 @@ pub async fn trending_tags(
     if !crate::settings::boolean(&state, "trends").await {
         return Ok((axum::http::HeaderMap::new(), Json(vec![])));
     }
-    let tags: Vec<Tag> = tags_query(&state, &instance.domain, limit, offset, viewer_id, false)
-        .await?
-        .into_iter()
-        .map(|(tag, _)| tag)
-        .collect();
+    let languages = crate::trends::preferred_languages(&state, viewer_id, &req_headers).await;
+    let tags: Vec<Tag> = tags_query(
+        &state,
+        &instance.domain,
+        limit,
+        offset,
+        viewer_id,
+        false,
+        &languages,
+    )
+    .await?
+    .into_iter()
+    .map(|(tag, _)| tag)
+    .collect();
     let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, tags.len());
     Ok((headers, Json(tags)))
 }
@@ -60,8 +69,9 @@ pub struct TagReview {
     pub requires_review: bool,
 }
 
-/// The trending tags, `allowed` ones only unless `staff`, who see those still
-/// awaiting review too (`Trends.tags.query` against `.allowed`).
+/// `Trends.tags.query`: the tags in `tag_trends`, `allowed` ones only unless
+/// `staff`, who see those still awaiting review too; those in `languages`
+/// first, then by score.
 pub(crate) async fn tags_query(
     state: &AppState,
     domain: &str,
@@ -69,36 +79,30 @@ pub(crate) async fn tags_query(
     offset: i64,
     viewer_id: Option<i64>,
     staff: bool,
+    languages: &[String],
 ) -> AppResult<Vec<(Tag, TagReview)>> {
     let trendable_by_default = crate::settings::boolean(state, "trendable_by_default").await;
 
-    // Tags with most status uses in the last 7 days. `Tag#trendable?` is the
-    // column, or `trendable_by_default` when it is unset.
     let rows = sqlx::query!(
-        r#"SELECT t.id, t.name, COUNT(st.status_id) AS uses,
+        r#"SELECT t.id, t.name,
                   COALESCE(t.trendable, $3) AS "trendable!", COALESCE(t.usable, true) AS "usable!",
                   COALESCE(t.listable, true) AS "listable!", (t.reviewed_at IS NULL) AS "requires_review!"
            FROM tags t
-           JOIN statuses_tags st ON st.tag_id = t.id
-           JOIN statuses s ON s.id = st.status_id
-           WHERE s.deleted_at IS NULL
-             AND s.visibility = 0
-             AND s.created_at > now() - interval '7 days'
-             AND COALESCE(t.usable, true)
-             AND ($4 OR COALESCE(t.trendable, $3))
-           GROUP BY t.id, t.name
-           ORDER BY uses DESC, t.name ASC
+           JOIN tag_trends tt ON tt.tag_id = t.id
+           WHERE $4 OR tt.allowed
+           ORDER BY CASE WHEN tt.language = ANY($5) THEN 1 ELSE 0 END DESC, tt.score DESC
            LIMIT $1 OFFSET $2"#,
         limit,
         offset,
         trendable_by_default,
         staff,
+        languages,
     )
     .fetch_all(&state.db)
     .await?;
 
     let tag_ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let histories = super::tags::fetch_tags_histories(&state.db, &tag_ids).await;
+    let histories = super::tags::fetch_tags_histories(state, &tag_ids).await;
 
     let (following_set, featuring_set) =
         if let Some(vid) = viewer_id {
@@ -171,7 +175,8 @@ pub async fn trending_statuses(
     if !crate::settings::boolean(&state, "trends").await {
         return Ok((axum::http::HeaderMap::new(), Json(vec![])));
     }
-    let result: Vec<Status> = statuses_query(&state, limit, offset, viewer_id, false)
+    let languages = crate::trends::preferred_languages(&state, viewer_id, &req_headers).await;
+    let result: Vec<Status> = statuses_query(&state, limit, offset, viewer_id, false, &languages)
         .await?
         .into_iter()
         .map(|(status, _)| status)
@@ -180,33 +185,32 @@ pub async fn trending_statuses(
     Ok((headers, Json(result)))
 }
 
-/// The trending posts, allowed ones only unless `staff`; with each, whether
-/// it still awaits review (`Status#requires_review?`).
+/// `Trends.statuses.query`: the posts in `status_trends`, those in
+/// `languages` first, then by score. Unless `staff`, only allowed ones, each
+/// account's best only, and none the viewer has blocked, muted, or blocked
+/// the domain of (`filtered_for`); with each, whether it still awaits review
+/// (`Status#requires_review?`).
 pub(crate) async fn statuses_query(
     state: &AppState,
     limit: i64,
     offset: i64,
     viewer_id: Option<i64>,
     staff: bool,
+    languages: &[String],
 ) -> AppResult<Vec<(Status, bool)>> {
     let state = state.clone();
-    let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
+    let viewer_id = viewer_id.filter(|_| !staff);
 
     let rows = sqlx::query_as!(
         crate::db::models::Status,
         r#"SELECT s.* FROM statuses s
+           JOIN status_trends st ON st.status_id = s.id
            JOIN accounts a ON a.id = s.account_id
            WHERE s.deleted_at IS NULL
-             AND s.visibility = 0
-             AND s.reblog_of_id IS NULL
-             AND s.created_at > now() - interval '2 days'
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             -- `Trends::Statuses#eligible?`: opted in, not sensitive, not a reply.
-             AND a.discoverable AND a.silenced_at IS NULL AND a.sensitized_at IS NULL
-             AND s.spoiler_text = '' AND NOT s.sensitive
-             AND s.in_reply_to_id IS NULL AND NOT COALESCE(s.reply, false)
-             -- `Status#trendable?`: the post's own, else its account's, else the default.
-             AND ($5 OR COALESCE(s.trendable, a.trendable, $4))
+             -- `StatusTrend.allowed`: allowed, and its account's best.
+             AND ($4 OR (st.allowed AND st.score = (
+                   SELECT MAX(m.score) FROM status_trends m WHERE m.account_id = st.account_id)))
+             -- `not_excluded_by_account`
              AND ($3::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM blocks b
                  WHERE (b.account_id = $3 AND b.target_account_id = s.account_id)
@@ -216,23 +220,19 @@ pub(crate) async fn statuses_query(
                  SELECT 1 FROM mutes mu
                  WHERE mu.account_id = $3 AND mu.target_account_id = s.account_id
                    AND (mu.expires_at IS NULL OR mu.expires_at > now())
-             ) OR EXISTS (
-                 -- Mute exemption: a post that mentions me.
-                 SELECT 1 FROM mentions mn
-                 WHERE mn.status_id = s.id AND mn.account_id = $3 AND NOT mn.silent
-             ) OR EXISTS (
-                 -- Mute exemption: a quote of a post of mine.
-                 SELECT 1 FROM quotes q
-                 WHERE q.status_id = s.id AND q.quoted_account_id = $3
              ))
-           ORDER BY (COALESCE((SELECT favourites_count FROM status_stats WHERE status_id = s.id), 0)
-                   + COALESCE((SELECT reblogs_count FROM status_stats WHERE status_id = s.id), 0) * 2) DESC, s.created_at DESC
+             -- `not_domain_blocked_by_account`
+             AND ($3::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM account_domain_blocks adb
+                 WHERE adb.account_id = $3 AND adb.domain = a.domain
+             ))
+           ORDER BY CASE WHEN st.language = ANY($5) THEN 1 ELSE 0 END DESC, st.score DESC
            LIMIT $1 OFFSET $2"#,
         limit,
         offset,
         viewer_id,
-        trendable_by_default,
         staff,
+        languages,
     )
     .fetch_all(&state.db)
     .await?;
@@ -371,6 +371,7 @@ pub(crate) async fn statuses_query(
 pub async fn trending_links(
     state: AppState,
     Query(params): Query<TrendParams>,
+    auth: Option<Extension<AuthenticatedUser>>,
     req_headers: axum::http::HeaderMap,
     uri: axum::http::Uri,
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<super::types::PreviewCard>>)> {
@@ -379,87 +380,92 @@ pub async fn trending_links(
     if !crate::settings::boolean(&state, "trends").await {
         return Ok((axum::http::HeaderMap::new(), Json(vec![])));
     }
-    let cards: Vec<super::types::PreviewCard> = links_query(&state, limit, offset, false)
-        .await?
-        .into_iter()
-        .map(|(card, _, _)| card)
-        .collect();
+    let viewer_id = auth.map(|Extension(a)| a.account_id);
+    let languages = crate::trends::preferred_languages(&state, viewer_id, &req_headers).await;
+    let cards: Vec<super::types::PreviewCard> =
+        links_query(&state, limit, offset, false, &languages)
+            .await?
+            .into_iter()
+            .map(|(card, _, _)| card)
+            .collect();
     let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, cards.len());
     Ok((headers, Json(cards)))
 }
 
-/// The trending links, allowed ones only unless `staff`; with each, its
-/// preview card id and whether it awaits review.
+/// `Trends.links.query`: the preview cards in `preview_card_trends`,
+/// allowed ones only unless `staff`, those in `languages` first, then by
+/// score; with each, its id and whether it awaits review.
 pub(crate) async fn links_query(
     state: &AppState,
     limit: i64,
     offset: i64,
     staff: bool,
+    languages: &[String],
 ) -> AppResult<Vec<(super::types::PreviewCard, i64, bool)>> {
     let rows = sqlx::query!(
-        r#"WITH cards AS (
-             SELECT pc.*,
-                    (SELECT p.id FROM preview_card_providers p
-                     WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain
-                        OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain
-                     ORDER BY char_length(p.domain) DESC LIMIT 1) AS provider_id
-             FROM preview_cards pc
-           )
-           SELECT pc.id, pc.url, pc.title, pc.description,
+        r#"SELECT pc.id, pc.url, pc.title, pc.description, pc.language,
                   CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as "card_type!",
                   pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,
                   pc.html, pc.width, pc.height, NULL::text as image_url, pc.embed_url, pc.blurhash,
-                  COUNT(s.id) AS uses,
-                  (pc.trendable IS NULL AND (prov.id IS NULL OR prov.reviewed_at IS NULL)) AS "requires_review!"
-           FROM cards pc
-           LEFT JOIN preview_card_providers prov ON prov.id = pc.provider_id
-           JOIN preview_cards_statuses spc ON spc.preview_card_id = pc.id
-           JOIN statuses s ON s.id = spc.status_id
-           WHERE s.deleted_at IS NULL
-             AND s.visibility = 0
-             AND s.created_at > now() - interval '7 days'
-             -- `PreviewCard#trendable?`: its own, else its provider's.
-             AND ($3 OR COALESCE(pc.trendable, prov.trendable, false))
-           GROUP BY pc.id, pc.url, pc.title, pc.description, pc.type,
-                    pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,
-                    pc.html, pc.width, pc.height, pc.embed_url, pc.blurhash,
-                    pc.trendable, prov.id, prov.reviewed_at
-           ORDER BY uses DESC
+                  -- `PreviewCard#requires_review?`
+                  (pc.trendable IS NULL AND NOT EXISTS (
+                     SELECT 1 FROM preview_card_providers p
+                     WHERE (lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain
+                            OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain)
+                       AND p.reviewed_at IS NOT NULL
+                       AND char_length(p.domain) = (
+                         SELECT max(char_length(p2.domain)) FROM preview_card_providers p2
+                         WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p2.domain
+                            OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p2.domain)
+                  )) AS "requires_review!"
+           FROM preview_cards pc
+           JOIN preview_card_trends t ON t.preview_card_id = pc.id
+           WHERE $3 OR t.allowed
+           ORDER BY CASE WHEN t.language = ANY($4) THEN 1 ELSE 0 END DESC, t.score DESC
            LIMIT $1 OFFSET $2"#,
-        limit, offset, staff,
+        limit, offset, staff, languages,
     )
     .fetch_all(&state.db)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            (
-                super::types::PreviewCard {
-                    url: r.url,
-                    title: r.title,
-                    description: r.description,
-                    card_type: r.card_type,
-                    author_name: r.author_name,
-                    author_url: r.author_url,
-                    provider_name: r.provider_name,
-                    provider_url: r.provider_url,
-                    html: r.html,
-                    width: r.width,
-                    height: r.height,
-                    image: r.image_url,
-                    embed_url: r.embed_url,
-                    blurhash: r.blurhash,
-                    language: None,
-                    published_at: None,
-                    authors: vec![],
-                    image_description: String::new(),
-                    missing_attribution: None,
-                    history: Some(vec![]),
-                },
-                r.id,
-                r.requires_review,
-            )
-        })
-        .collect())
+    let mut cards = Vec::with_capacity(rows.len());
+    for r in rows {
+        // `REST::Trends::LinkSerializer#history`.
+        let history = crate::moderation::history::days(state, "links", r.id)
+            .await
+            .into_iter()
+            .map(|d| super::types::TagHistory {
+                day: d.day.to_string(),
+                uses: d.uses.to_string(),
+                accounts: d.accounts.to_string(),
+            })
+            .collect();
+        cards.push((
+            super::types::PreviewCard {
+                url: r.url,
+                title: r.title,
+                description: r.description,
+                card_type: r.card_type,
+                author_name: r.author_name,
+                author_url: r.author_url,
+                provider_name: r.provider_name,
+                provider_url: r.provider_url,
+                html: r.html,
+                width: r.width,
+                height: r.height,
+                image: r.image_url,
+                embed_url: r.embed_url,
+                blurhash: r.blurhash,
+                language: r.language,
+                published_at: None,
+                authors: vec![],
+                image_description: String::new(),
+                missing_attribution: None,
+                history: Some(history),
+            },
+            r.id,
+            r.requires_review,
+        ));
+    }
+    Ok(cards)
 }

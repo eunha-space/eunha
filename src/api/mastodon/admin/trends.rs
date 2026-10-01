@@ -43,12 +43,20 @@ pub async fn admin_trending_tags(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     axum::extract::Query(params): axum::extract::Query<TrendParams>,
+    headers: axum::http::HeaderMap,
 ) -> AppResult<Json<Vec<Value>>> {
     auth.require_scope("admin:read")?;
     let staff = reviewer(&state, &auth).await?;
     if !staff && !crate::settings::boolean(&state, "trends").await {
         return Ok(Json(vec![]));
     }
+    // Staff get the whole `Trends::Query`; anyone else the public one,
+    // in their languages first.
+    let languages = if staff {
+        vec![]
+    } else {
+        crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
+    };
     let limit = params.limit.unwrap_or(10).clamp(1, 20);
     let offset = params.offset.unwrap_or(0).max(0);
     let rows = super::super::trends::tags_query(
@@ -58,6 +66,7 @@ pub async fn admin_trending_tags(
         offset,
         Some(auth.account_id),
         staff,
+        &languages,
     )
     .await?;
     Ok(Json(
@@ -94,7 +103,7 @@ async fn admin_tag(state: &AppState, domain: &str, id: i64) -> AppResult<Value> 
     )
     .fetch_one(&state.db)
     .await?;
-    let history = super::super::tags::fetch_tags_histories(&state.db, &[id])
+    let history = super::super::tags::fetch_tags_histories(state, &[id])
         .await
         .remove(&id)
         .unwrap_or_default();
@@ -157,17 +166,31 @@ pub async fn admin_trending_statuses(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     axum::extract::Query(params): axum::extract::Query<TrendParams>,
+    headers: axum::http::HeaderMap,
 ) -> AppResult<Json<Vec<Value>>> {
     auth.require_scope("admin:read")?;
     let staff = reviewer(&state, &auth).await?;
     if !staff && !crate::settings::boolean(&state, "trends").await {
         return Ok(Json(vec![]));
     }
+    // Staff get the whole `Trends::Query`; anyone else the public one,
+    // in their languages first.
+    let languages = if staff {
+        vec![]
+    } else {
+        crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
+    };
     let limit = params.limit.unwrap_or(20).clamp(1, 40);
     let offset = params.offset.unwrap_or(0).max(0);
-    let rows =
-        super::super::trends::statuses_query(&state, limit, offset, Some(auth.account_id), staff)
-            .await?;
+    let rows = super::super::trends::statuses_query(
+        &state,
+        limit,
+        offset,
+        Some(auth.account_id),
+        staff,
+        &languages,
+    )
+    .await?;
     Ok(Json(
         rows.into_iter()
             .map(|(status, pending)| {
@@ -246,15 +269,23 @@ pub async fn admin_trending_links(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     axum::extract::Query(params): axum::extract::Query<TrendParams>,
+    headers: axum::http::HeaderMap,
 ) -> AppResult<Json<Vec<Value>>> {
     auth.require_scope("admin:read")?;
     let staff = reviewer(&state, &auth).await?;
     if !staff && !crate::settings::boolean(&state, "trends").await {
         return Ok(Json(vec![]));
     }
+    // Staff get the whole `Trends::Query`; anyone else the public one,
+    // in their languages first.
+    let languages = if staff {
+        vec![]
+    } else {
+        crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
+    };
     let limit = params.limit.unwrap_or(10).clamp(1, 40);
     let offset = params.offset.unwrap_or(0).max(0);
-    let rows = super::super::trends::links_query(&state, limit, offset, staff).await?;
+    let rows = super::super::trends::links_query(&state, limit, offset, staff, &languages).await?;
     Ok(Json(
         rows.into_iter()
             .map(|(card, id, pending)| {
@@ -310,7 +341,7 @@ async fn review_link(
         "embed_url": card.embed_url,
         "blurhash": card.blurhash,
         "language": card.language,
-        "history": [],
+        "history": crate::moderation::history::as_json(state, "links", id).await,
         "requires_review": false,
     })))
 }

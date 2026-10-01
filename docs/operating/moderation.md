@@ -212,8 +212,31 @@ whether approved or not, each marked with `requires_review`, at
 endpoints there decide. Link publishers are reviewed at
 `/api/v1/admin/trends/links/publishers`.
 
-Eunha ranks trends by recent use rather than by Mastodon's decaying
-scores, so the order can differ; what is allowed to appear does not.
+Trends are scored as Mastodon scores them. Each use is counted as it
+happens: the distinct people using a hashtag or link each day go into
+its history in Redis, and every hashtag, link and post used today is
+noted. Every five minutes Eunha rescores what trended before and what
+was used today, and keeps the result in `tag_trends`,
+`preview_card_trends` and `status_trends`:
+
+ -  a hashtag or link scores once five people use it in a day and more
+    use it than the day before. The peak score is kept for two days and
+    halves every four hours for a hashtag, every eight for a link;
+ -  a post scores once its boosts and favourites reach five, and the
+    score halves every hour since it was posted;
+ -  each trend's `allowed` is whether it may trend at that moment, so
+    an approval or rejection shows at the next rescoring.
+
+The public sees the allowed trends, those in the viewer's chosen
+languages, or else the request's language, first; one post per account.
+A link trends only from a preview card with a language that Mastodon
+recognizes, an article with a title, a description, an image and a
+publisher name.
+
+Every hour, unless `trendable_by_default` is on or trends are off, Eunha
+looks for trends awaiting review that score above the allowed trend
+ranked third in their language. It marks each one as asked about and
+mails every moderator with `manage_taxonomies` who has trend emails on.
 
 
 Changes from earlier versions
@@ -230,3 +253,8 @@ Report categories and IP block severities eunha stored in its own numbering
 are converted by migration 015. Domain block severities cannot be converted
 automatically; see
 [migrations](./migrations#domain-blocks-written-before-migration-015).
+
+Earlier versions also ranked trends by recent use rather than by score,
+and counted hashtag histories from posts. Histories now come from Redis,
+so after an upgrade they start empty, and trends build up again only
+from the uses that follow.

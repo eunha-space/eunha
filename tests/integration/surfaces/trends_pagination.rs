@@ -50,11 +50,8 @@ async fn test_a_full_page_of_trends_links_to_the_next() {
     crate::helpers::open_trends(&ctx.db).await;
 
     // Three tags, asked for one at a time, so the page comes back full.
-    for tag in ["alpha", "beta", "gamma"] {
-        ctx.api
-            .post_status(&ctx.alice_token, &format!("trending #{tag}"), "public")
-            .await;
-    }
+    crate::helpers::posted_by_crowd(&ctx, "trending #alpha #beta #gamma").await;
+    crate::helpers::refresh_trends(&ctx).await;
 
     // A full page must produce the header; an empty response here would make
     // the rest of this test prove nothing.

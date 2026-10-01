@@ -1062,9 +1062,13 @@ async fn test_trends_need_review() {
         .execute(&ctx.db)
         .await
         .unwrap();
-    ctx.api
+    let post = ctx
+        .api
         .post_status(&ctx.bob_token, "hello #reviewme", "public")
         .await;
+    crate::helpers::posted_by_crowd(&ctx, "me too #reviewme").await;
+    crate::helpers::favourited_by_crowd(&ctx, post["id"].as_str().unwrap()).await;
+    crate::helpers::refresh_trends(&ctx).await;
 
     let public: Vec<Value> = ctx
         .api
@@ -1090,6 +1094,27 @@ async fn test_trends_need_review() {
     assert_eq!(pending[0]["requires_review"], true);
     let tag_id = pending[0]["id"].as_str().unwrap();
 
+    // The hourly review request asks about each once, and marks it asked.
+    let requested = eunha::trends::request_review(&ctx.state).await.unwrap();
+    assert_eq!(
+        requested
+            .tags
+            .iter()
+            .map(|t| t.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["#reviewme"]
+    );
+    assert_eq!(requested.statuses.len(), 1);
+    let asked: bool =
+        sqlx::query_scalar("SELECT requested_review_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(id(&ctx.bob_id))
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(asked, "the author is marked as asked about");
+    let again = eunha::trends::request_review(&ctx.state).await.unwrap();
+    assert!(again.tags.is_empty() && again.statuses.is_empty());
+
     let approved: Value = ctx
         .api
         .post_json(
@@ -1103,6 +1128,8 @@ async fn test_trends_need_review() {
         .unwrap();
     assert_eq!(approved["trendable"], true);
     assert_eq!(approved["requires_review"], false);
+    // `allowed` follows the review at the next refresh.
+    crate::helpers::refresh_trends(&ctx).await;
     let public: Vec<Value> = ctx
         .api
         .get("/api/v1/trends/tags", None)
@@ -1119,6 +1146,7 @@ async fn test_trends_need_review() {
             &json!({}),
         )
         .await;
+    crate::helpers::refresh_trends(&ctx).await;
     let public: Vec<Value> = ctx
         .api
         .get("/api/v1/trends/tags", None)

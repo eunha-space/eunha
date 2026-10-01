@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.name,\n                  COALESCE(t.trendable, $3) AS \"trendable!\", COALESCE(t.usable, true) AS \"usable!\",\n                  COALESCE(t.listable, true) AS \"listable!\", (t.reviewed_at IS NULL) AS \"requires_review!\"\n           FROM tags t\n           JOIN tag_trends tt ON tt.tag_id = t.id\n           WHERE $4 OR tt.allowed\n           ORDER BY CASE WHEN tt.language = ANY($5) THEN 1 ELSE 0 END DESC, tt.score DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "trendable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "usable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "listable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "requires_review!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b4d9eb46a6547436ea6090715e29ab5ee3d932ffa2eeba36605768a4834efd25"
+}

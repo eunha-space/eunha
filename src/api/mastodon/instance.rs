@@ -19,11 +19,14 @@ pub async fn get_translation_languages() -> Json<serde_json::Value> {
 
 // ── GET /api/v1/instance/languages ───────────────────────────────────────
 
+/// `LanguagesHelper::SUPPORTED_LOCALES`, each as `REST::LanguageSerializer`.
 pub async fn get_instance_languages() -> Json<Vec<serde_json::Value>> {
-    Json(vec![
-        serde_json::json!({ "code": "ko", "name": "Korean" }),
-        serde_json::json!({ "code": "en", "name": "English" }),
-    ])
+    Json(
+        crate::languages::SUPPORTED_LOCALES
+            .iter()
+            .map(|(code, name, _)| serde_json::json!({ "code": code, "name": name }))
+            .collect(),
+    )
 }
 
 // ── GET /api/v1/instance/domain_blocks ───────────────────────────────────

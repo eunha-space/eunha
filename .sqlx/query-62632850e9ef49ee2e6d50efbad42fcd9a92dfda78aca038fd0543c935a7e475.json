@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM preview_card_trends WHERE preview_card_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62632850e9ef49ee2e6d50efbad42fcd9a92dfda78aca038fd0543c935a7e475"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_card_providers (domain, requested_review_at, created_at, updated_at)\n                               VALUES ($1, now(), now(), now()) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eced3acccc6e68afa480660eb564f57cbb9926610913ba1cccffa9c21063bd44"
+}

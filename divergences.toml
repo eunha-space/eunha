@@ -296,28 +296,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "trends-ranked-by-recent-use"
-kind = "behaviour"
-summary = "Trends are ranked by recent use, not by decaying scores"
-mastodon = """
-Scores trending tags, posts and links every few minutes against an expected \
-baseline, keeps the scores in `status_trends`, `preview_card_trends` and \
-Redis, and decays them over a cooldown."""
-eunha = """
-Counts recent public use when the trends are asked for: tags and links over \
-seven days, posts by favourites and boosts over two. What may appear is \
-Mastodon's: only reviewed, trendable items (or all, with \
-`trendable_by_default`), only eligible posts, and nothing with `trends` off."""
-why = """
-The review gate is what moderation depends on, and it matches. The scoring is \
-a ranking heuristic that needs a scheduler and per-instance Redis state; \
-porting it is worthwhile but separate, and until then the order can differ \
-while the set of allowed items does not."""
-evidence = "tests/integration/c2s/trends.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "no-limited-federation-mode"
 kind = "omission"
 summary = "Has no limited federation mode"

@@ -30,6 +30,8 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "suspended account cleanup",
             run_suspended_account_cleanup(state.clone()),
         ),
+        until_stopped(&state, "trends refresh", run_trends_refresh(state.clone())),
+        until_stopped(&state, "trends review", run_trends_review(state.clone())),
         until_stopped(
             &state,
             "delivery cleanup",
@@ -509,6 +511,14 @@ async fn publish_one(
     if let Err(e) = store_status_mentions(state, status.id, &resolved).await {
         tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its mentions");
     }
+    // `PostStatusService#postprocess_status!`: `Trends.tags.register`.
+    crate::trends::register_tags(state, status.id).await;
+    // `Status`'s `after_create_commit :trigger_create_webhooks`.
+    crate::moderation::webhooks::trigger(
+        state,
+        "status.created",
+        crate::moderation::webhooks::Object::Status(status.id),
+    );
 
     if let Err(e) = crate::counters::on_status_created(
         &state.db,
@@ -681,6 +691,31 @@ async fn publish_one(
 /// Between passes it sleeps until the oldest request comes due. It needs no
 /// wake-up: a new request falls due `DELAY_TO_DELETION` after it is made, later
 /// than anything already waiting and far later than the ceiling.
+/// `Scheduler::Trends::RefreshScheduler`: rescore trends every five minutes.
+async fn run_trends_refresh(state: AppState) {
+    while !state.stop.is_cancelled() {
+        if let Err(e) = crate::trends::refresh(&state).await {
+            tracing::error!(error = %e, "trends refresh failed");
+        }
+        rest(&state.stop, crate::trends::REFRESH_EVERY).await;
+    }
+}
+
+/// `Scheduler::Trends::ReviewNotificationsScheduler`: ask staff hourly about
+/// trends waiting on a review. The first pass waits its hour, as a newly
+/// started Sidekiq scheduler does.
+async fn run_trends_review(state: AppState) {
+    loop {
+        rest(&state.stop, crate::trends::REVIEW_EVERY).await;
+        if state.stop.is_cancelled() {
+            break;
+        }
+        if let Err(e) = crate::trends::request_review(&state).await {
+            tracing::error!(error = %e, "trends review request failed");
+        }
+    }
+}
+
 async fn run_suspended_account_cleanup(state: AppState) {
     let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
     while !state.stop.is_cancelled() {

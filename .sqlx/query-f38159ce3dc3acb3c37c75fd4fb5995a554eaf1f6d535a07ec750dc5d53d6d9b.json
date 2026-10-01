@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tag_trends (tag_id, score, language, allowed) VALUES ($1, $2, '', $3)\n                   ON CONFLICT (tag_id, language) DO UPDATE SET score = $2, allowed = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f38159ce3dc3acb3c37c75fd4fb5995a554eaf1f6d535a07ec750dc5d53d6d9b"
+}

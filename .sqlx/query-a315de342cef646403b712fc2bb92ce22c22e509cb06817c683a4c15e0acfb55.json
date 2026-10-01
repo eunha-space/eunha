@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.account_id,\n                      (s.reblog_of_id IS NULL AND s.visibility = 0 AND a.silenced_at IS NULL) AS \"counts!\"\n               FROM statuses s JOIN accounts a ON a.id = s.account_id\n               WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "counts!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "a315de342cef646403b712fc2bb92ce22c22e509cb06817c683a4c15e0acfb55"
+}

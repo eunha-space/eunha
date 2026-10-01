@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chosen_languages, locale FROM users WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chosen_languages",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 1,
+        "name": "locale",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "8d97ab959eb37f919b9cc1c0f3d91ac1f407fd427bb3cf2b18f0d8f809ed1302"
+}

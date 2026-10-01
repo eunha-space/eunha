@@ -532,7 +532,9 @@ impl TestContext {
             pooled_client_slots: None,
             redis_url,
             redis_coordination_url: None,
-            redis_key_prefix: String::new(),
+            // Tests share one Redis, and serial ids (tags, preview cards)
+            // repeat across their databases, so each keeps its own keys.
+            redis_key_prefix: test_db_name.clone(),
             redis_process_metrics: true,
             database_pool: Default::default(),
             // Nothing declared: the tests exercise the default, which refuses
@@ -821,4 +823,50 @@ pub async fn open_trends(db: &PgPool) {
         .execute(db)
         .await
         .unwrap();
+}
+
+/// `n` more local accounts, each with a token, for uses by distinct people —
+/// a tag or link trends only once five people use it in a day.
+pub async fn crowd(ctx: &TestContext, n: usize) -> Vec<(i64, String)> {
+    let mut accounts = vec![];
+    for _ in 0..n {
+        let username = format!("crowd{}", eunha::snowflake::next_id());
+        accounts.push(
+            seed_account_and_token(
+                &ctx.db,
+                &ctx.domain,
+                &username,
+                &format!("{username}@example.test"),
+            )
+            .await,
+        );
+    }
+    accounts
+}
+
+/// Rescore trends, as the five-minute `Trends.refresh!` does.
+pub async fn refresh_trends(ctx: &TestContext) {
+    eunha::trends::refresh(&ctx.state).await.unwrap();
+}
+
+/// Five people favourite `status_id`: enough for a post to trend.
+pub async fn favourited_by_crowd(ctx: &TestContext, status_id: &str) {
+    for (_, token) in crowd(ctx, 5).await {
+        let response = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{status_id}/favourite"),
+                Some(&token),
+                &serde_json::json!({}),
+            )
+            .await;
+        assert_eq!(response.status().as_u16(), 200);
+    }
+}
+
+/// Five people post `text`: enough for its tags to trend.
+pub async fn posted_by_crowd(ctx: &TestContext, text: &str) {
+    for (_, token) in crowd(ctx, 5).await {
+        ctx.api.post_status(&token, text, "public").await;
+    }
 }

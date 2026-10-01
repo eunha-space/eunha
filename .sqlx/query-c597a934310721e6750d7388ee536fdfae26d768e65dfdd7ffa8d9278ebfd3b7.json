@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id FROM statuses_tags st JOIN tags t ON t.id = st.tag_id\n               WHERE st.status_id = $1 AND COALESCE(t.usable, true)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c597a934310721e6750d7388ee536fdfae26d768e65dfdd7ffa8d9278ebfd3b7"
+}

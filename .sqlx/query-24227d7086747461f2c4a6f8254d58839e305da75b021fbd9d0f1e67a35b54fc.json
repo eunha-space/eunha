@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH cards AS (\n                 SELECT pc.*, lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) AS domain,\n                        (SELECT p.id FROM preview_card_providers p\n                         WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain\n                            OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain\n                         ORDER BY char_length(p.domain) DESC LIMIT 1) AS provider_id\n                 FROM preview_cards pc\n               )\n               SELECT c.id, c.url, c.title, c.domain, c.provider_id, t.score\n               FROM preview_card_trends t\n               JOIN cards c ON c.id = t.preview_card_id\n               LEFT JOIN preview_card_providers p ON p.id = c.provider_id\n               WHERE t.language IS NOT DISTINCT FROM $1 AND NOT t.allowed AND t.score > $2\n                 AND NOT COALESCE(c.trendable, p.trendable, false)\n                 AND c.trendable IS NULL\n                 AND (p.id IS NULL OR (p.reviewed_at IS NULL AND p.requested_review_at IS NULL))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "domain",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "24227d7086747461f2c4a6f8254d58839e305da75b021fbd9d0f1e67a35b54fc"
+}

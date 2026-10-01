@@ -979,6 +979,9 @@ pub async fn post_status(
         let _: redis::RedisResult<()> = redis.set_ex(redis_key, status.id, 21600).await;
     }
 
+    // `PostStatusService#postprocess_status!`: `Trends.tags.register`.
+    crate::trends::register_tags(&state, status.id).await;
+
     // `after_create_commit :trigger_create_webhooks` for a local status.
     crate::moderation::webhooks::trigger(
         &state,

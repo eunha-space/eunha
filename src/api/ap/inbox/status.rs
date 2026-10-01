@@ -257,6 +257,11 @@ pub(super) async fn handle_announce(
     .execute(&state.db)
     .await;
 
+    // `ActivityPub::Activity::Announce`: `Trends.register!`.
+    if let Some(boost_id) = inserted {
+        crate::trends::register(state, boost_id).await;
+    }
+
     // Notify the local author that a remote account boosted their post
     // (Mastodon notifies via LocalNotificationWorker on an incoming Announce).
     notify_status_author(
@@ -359,13 +364,15 @@ pub(super) async fn handle_like(
         Err(_) => return Ok(()),
     };
 
-    sqlx::query!(
+    let favourited = sqlx::query!(
         "INSERT INTO favourites (account_id, status_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING",
         account_id,
         status_id
     )
     .execute(&state.db)
-    .await?;
+    .await?
+    .rows_affected()
+        > 0;
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -377,6 +384,10 @@ pub(super) async fn handle_like(
     )
     .execute(&state.db)
     .await?;
+    // `ActivityPub::Activity::Like`: `Trends.statuses.register`.
+    if favourited {
+        crate::trends::register_status(state, status_id).await;
+    }
 
     // Notify the local author that a remote account favourited their post
     // (Mastodon notifies the author via LocalNotificationWorker on an incoming

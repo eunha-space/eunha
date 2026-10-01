@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.language, s.created_at,\n                      (GREATEST(COALESCE(ss.reblogs_count, 0), 0)\n                       + GREATEST(COALESCE(ss.favourites_count, 0), 0)) AS \"interactions!\",\n                      COALESCE(s.trendable, a.trendable, $2) AS \"trendable!\"\n               FROM statuses s\n               JOIN accounts a ON a.id = s.account_id\n               LEFT JOIN status_stats ss ON ss.status_id = s.id\n               WHERE s.id = ANY($1) AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "interactions!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "trendable!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "0fd80b2967fea14b4dfaaf87dd164aeb32cf886f2a813e0fa07a4dbd68146c3b"
+}

@@ -375,6 +375,45 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// `AdminMailer#new_trends`.
+    pub async fn send_new_trends(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        requested: &crate::trends::Requested,
+    ) -> anyhow::Result<()> {
+        let subject = format!("New trends up for review on {instance_domain}");
+        let section = |title: &str, items: &[crate::trends::ReviewItem], path: &str| {
+            if items.is_empty() {
+                return String::new();
+            }
+            let list: String = items
+                .iter()
+                .map(|item| {
+                    format!(
+                        "<li>{}<br>{}</li>",
+                        html_escape(&item.label),
+                        html_escape(&item.detail)
+                    )
+                })
+                .collect();
+            let url = format!("https://{instance_domain}{path}");
+            format!("<h2>{title}</h2><ul>{list}</ul><p>View: <a href=\"{url}\">{url}</a></p>")
+        };
+        let body =
+            format!(
+            "<p>The following items need a review before they can be displayed publicly:</p>{}{}{}",
+            section("Trending links", &requested.links, "/admin/trends/links"),
+            section(
+                "Trending hashtags",
+                &requested.tags,
+                "/admin/trends/tags?status=pending_review"
+            ),
+            section("Trending posts", &requested.statuses, "/admin/trends/statuses"),
+        );
+        self.send(to, &subject, &body).await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         let payload = serde_json::json!({
             "from": self.from,

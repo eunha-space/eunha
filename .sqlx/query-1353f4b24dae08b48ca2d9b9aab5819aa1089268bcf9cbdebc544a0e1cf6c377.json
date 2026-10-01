@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE preview_card_providers SET requested_review_at = now(), updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1353f4b24dae08b48ca2d9b9aab5819aa1089268bcf9cbdebc544a0e1cf6c377"
+}

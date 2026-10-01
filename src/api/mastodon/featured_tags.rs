@@ -244,7 +244,7 @@ pub async fn feature_tag_by_name(
     .await?
     .unwrap_or(false);
 
-    let history = super::tags::fetch_tag_history(&state.db, tag_id).await;
+    let history = super::tags::fetch_tag_history(&state, tag_id).await;
 
     Ok(Json(Tag {
         id: tag_id.to_string(),
@@ -300,7 +300,7 @@ pub async fn unfeature_tag_by_name(
     .await?
     .unwrap_or(false);
 
-    let history = super::tags::fetch_tag_history(&state.db, tag.id).await;
+    let history = super::tags::fetch_tag_history(&state, tag.id).await;
 
     Ok(Json(Tag {
         id: tag.id.to_string(),

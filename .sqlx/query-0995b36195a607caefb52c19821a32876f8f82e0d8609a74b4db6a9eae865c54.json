@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.language\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           LEFT JOIN quotes q ON q.status_id = s.id\n           LEFT JOIN statuses qs ON qs.id = q.quoted_status_id AND qs.deleted_at IS NULL\n           LEFT JOIN accounts qa ON qa.id = qs.account_id\n           WHERE s.id = ANY($1) AND s.deleted_at IS NULL\n             AND s.created_at <= now()\n             AND s.visibility = 0 AND a.discoverable IS TRUE AND a.silenced_at IS NULL\n             AND a.sensitized_at IS NULL AND s.spoiler_text = '' AND NOT s.sensitive\n             AND s.in_reply_to_id IS NULL AND NOT COALESCE(s.reply, false)\n             AND (q.id IS NULL OR (\n                   (q.state = 1 OR NOT q.legacy) AND qs.id IS NOT NULL\n                   AND qs.visibility = 0 AND qa.discoverable IS TRUE AND qa.silenced_at IS NULL\n                   AND qa.sensitized_at IS NULL AND qs.spoiler_text = '' AND NOT qs.sensitive))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "language",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "0995b36195a607caefb52c19821a32876f8f82e0d8609a74b4db6a9eae865c54"
+}

@@ -1301,6 +1301,7 @@ pub fn spawn_card_fetch(state: &AppState, status_id: i64, content: String) {
         )
         .execute(&state.db)
         .await;
+        crate::trends::register_links(&state, status_id).await;
     });
 }
 

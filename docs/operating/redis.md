@@ -14,8 +14,9 @@ The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
 adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
 markers, ActivityPub locks and tombstones, posting idempotency, notification
-group state, the days each server failed deliveries on, and the activity
-counts behind email domain blocks' `history` — uses that namespace.
+group state, the days each server failed deliveries on, the activity counts
+behind trends and email domain blocks' `history`, and the sets of what was
+used today that trends are rescored from — uses that namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
@@ -23,7 +24,7 @@ user, the matching key pattern, and only the commands Eunha uses:
 ~~~~
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
 +zrangebyscore +zrevrangebyscore +mget +del +sadd +scard
-+incrby +pfadd +pfcount +expire
++incrby +pfadd +pfcount +expire +smembers
 ~~~~
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used

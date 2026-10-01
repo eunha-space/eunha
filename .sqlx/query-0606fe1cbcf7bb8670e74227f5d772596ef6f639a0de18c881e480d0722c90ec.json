@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pc.id, pc.max_score, pc.max_score_at, pc.language,\n                      -- `PreviewCard#trendable?`: its own say, else its provider's.\n                      COALESCE(pc.trendable, (\n                        SELECT p.trendable FROM preview_card_providers p\n                        WHERE p.domain = lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)'))\n                           OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain\n                        ORDER BY char_length(p.domain) DESC LIMIT 1), false) AS \"trendable!\"\n               FROM preview_cards pc WHERE pc.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "max_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_score_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "trendable!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "0606fe1cbcf7bb8670e74227f5d772596ef6f639a0de18c881e480d0722c90ec"
+}

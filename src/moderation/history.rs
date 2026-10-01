@@ -52,9 +52,15 @@ pub async fn add(state: &AppState, prefix: &str, id: i64, value: &str) {
     }
 }
 
-/// `Trends::History#as_json`: today first, `day`, `accounts` and `uses` as
-/// strings.
-pub async fn as_json(state: &AppState, prefix: &str, id: i64) -> Value {
+/// One day of a history: its start, distinct users, and uses.
+pub struct Day {
+    pub day: i64,
+    pub accounts: i64,
+    pub uses: i64,
+}
+
+/// `Trends::History#each`: the last seven days, today first.
+pub async fn days(state: &AppState, prefix: &str, id: i64) -> Vec<Day> {
     let mut redis = state.redis.clone();
     let mut days = vec![];
     for days_ago in 0..7 {
@@ -72,11 +78,47 @@ pub async fn as_json(state: &AppState, prefix: &str, id: i64) -> Value {
             .query_async(&mut redis)
             .await
             .unwrap_or(0);
-        days.push(json!({
-            "day": day.to_string(),
-            "accounts": accounts.to_string(),
-            "uses": uses.to_string(),
-        }));
+        days.push(Day {
+            day,
+            accounts,
+            uses,
+        });
     }
-    Value::Array(days)
+    days
+}
+
+/// `Trends::History#as_json`: today first, `day`, `accounts` and `uses` as
+/// strings.
+pub async fn as_json(state: &AppState, prefix: &str, id: i64) -> Value {
+    Value::Array(
+        days(state, prefix, id)
+            .await
+            .into_iter()
+            .map(|d| {
+                json!({
+                    "day": d.day.to_string(),
+                    "accounts": d.accounts.to_string(),
+                    "uses": d.uses.to_string(),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// `Trends::History#get(day).accounts`: how many distinct users `days_ago`.
+pub async fn accounts(state: &AppState, prefix: &str, id: i64, days_ago: i64) -> i64 {
+    let mut redis = state.redis.clone();
+    redis::cmd("PFCOUNT")
+        .arg(format!(
+            "{}:accounts",
+            key(state, prefix, id, day_start(days_ago))
+        ))
+        .query_async(&mut redis)
+        .await
+        .unwrap_or(0)
+}
+
+/// The start of today, as `Time#beginning_of_day.to_i` in UTC.
+pub fn today() -> i64 {
+    day_start(0)
 }

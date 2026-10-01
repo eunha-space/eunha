@@ -27,7 +27,6 @@ At the time of writing there are fourteen. They cover:
  -  how command-line accounts are created;
  -  three details of delivery failures;
  -  the admin custom emoji API;
- -  how trends are ranked;
  -  the missing limited federation mode.
 
 Read the file rather than this paragraph: the file is the one that has to stay

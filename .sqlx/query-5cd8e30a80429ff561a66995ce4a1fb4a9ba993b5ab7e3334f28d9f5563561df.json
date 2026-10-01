@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT tag_id FROM tag_trends",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5cd8e30a80429ff561a66995ce4a1fb4a9ba993b5ab7e3334f28d9f5563561df"
+}
