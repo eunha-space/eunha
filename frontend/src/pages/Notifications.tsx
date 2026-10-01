@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { AtSign, Bell, Pencil, Repeat2, Star, UserPlus } from 'lucide-react'
+import {
+  AtSign,
+  Bell,
+  Flag,
+  Gavel,
+  Pencil,
+  Repeat2,
+  Star,
+  UserPlus,
+  UserX,
+} from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
 import { getNotifications, markNotificationsRead } from '../api.ts'
@@ -37,9 +47,65 @@ function describe(type: string): { icon: ReactNode; verb: string } {
       return { icon: <Pencil className="size-4" />, verb: 'edited a post' }
     case 'poll':
       return { icon: <Bell className="size-4" />, verb: 'ran a poll that ended' }
+    case 'admin.sign_up':
+      return { icon: <UserPlus className="size-4" />, verb: 'signed up' }
+    case 'admin.report':
+      return { icon: <Flag className="size-4" />, verb: 'filed a report' }
     default:
       return { icon: <Bell className="size-4" />, verb: type }
   }
+}
+
+// Mastodon's `notification.moderation_warning.action_*`.
+const WARNING_TEXT: Record<mastodon.v1.AccountWarningAction, string> = {
+  none: 'You have received a moderation warning.',
+  disable: 'Your account has been disabled.',
+  mark_statuses_as_sensitive: 'Some of your posts have been marked as sensitive.',
+  delete_statuses: 'Some of your posts have been removed.',
+  sensitive: 'Your posts will be marked as sensitive from now on.',
+  silence: 'Your account has been limited.',
+  suspend: 'Your account has been suspended.',
+}
+
+// Mastodon's `notification.relationships_severance_event.*`.
+function severanceText(event: mastodon.v1.RelationshipSeveranceEvent): string {
+  const lost = `${event.followersCount} of your followers and ${event.followingCount} accounts you follow`
+  switch (event.type) {
+    case 'account_suspension':
+      return `A moderator has suspended ${event.targetName}, so you can no longer receive updates from them or interact with them.`
+    case 'domain_block':
+      return `A moderator has blocked ${event.targetName}, including ${lost}.`
+    case 'user_domain_block':
+      return `You have blocked ${event.targetName}, removing ${lost}.`
+    default:
+      return `Relationships with ${event.targetName} were severed.`
+  }
+}
+
+/**
+ * The notifications that are about the server rather than a person: a warning
+ * or action from its moderators, and follows lost to a block or suspension.
+ * Neither has someone to name at its head, so they read as a sentence.
+ */
+function SystemNotice({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
+  return (
+    <Card className="rounded-none border-0 py-3 shadow-none">
+      <CardContent className="space-y-1 px-3 sm:px-4">
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          {icon}
+          <span>{title}</span>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  )
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  spam: 'Spam',
+  legal: 'Legal',
+  violation: 'Rule violation',
+  other: 'Other',
 }
 
 function NotificationItem({
@@ -55,6 +121,25 @@ function NotificationItem({
   // Opens the reply composer inline instead of navigating to the thread.
   onReply: (status: mastodon.v1.Status) => void
 }) {
+  if (n.type === 'moderation_warning') {
+    const w = n.moderationWarning
+    return (
+      <SystemNotice icon={<Gavel className="size-4" />} title={WARNING_TEXT[w.action] ?? w.action}>
+        {w.text && <p className="text-muted-foreground text-sm whitespace-pre-wrap">{w.text}</p>}
+      </SystemNotice>
+    )
+  }
+  if (n.type === 'severed_relationships') {
+    return (
+      <SystemNotice
+        icon={<UserX className="size-4" />}
+        title={`Relationships with ${n.event.targetName} severed`}
+      >
+        <p className="text-muted-foreground text-sm">{severanceText(n.event)}</p>
+      </SystemNotice>
+    )
+  }
+
   const { icon, verb } = describe(n.type)
   const name = n.account.displayName || n.account.username
   const header = (
@@ -87,6 +172,29 @@ function NotificationItem({
     <Card className="rounded-none border-0 py-3 shadow-none">
       <CardContent className="space-y-2 px-3 sm:px-4">
         {header}
+        {n.type === 'admin.sign_up' && (
+          <Link to={`/admin/accounts/${n.account.id}`} className="text-sm">
+            Review @{n.account.acct}
+          </Link>
+        )}
+        {n.type === 'admin.report' && (
+          <Link
+            to={`/admin/reports/${n.report.id}`}
+            className="hover:bg-muted/40 block space-y-0.5 rounded-lg border p-2 text-sm no-underline"
+          >
+            <span className="block">
+              Report on <span className="font-medium">@{n.report.targetAccount.acct}</span>
+              {' · '}
+              {CATEGORY_LABELS[n.report.category] ?? n.report.category}
+              {n.report.statusIds?.length
+                ? ` · ${n.report.statusIds.length} post${n.report.statusIds.length === 1 ? '' : 's'}`
+                : ''}
+            </span>
+            {n.report.comment && (
+              <span className="text-muted-foreground line-clamp-2 block">{n.report.comment}</span>
+            )}
+          </Link>
+        )}
         {n.type === 'follow_request' && (
           <FollowRequestActions
             account={n.account}
