@@ -184,10 +184,10 @@ the webhook is enabled and subscribed to the event:
 The request is a POST of `{"event", "created_at", "object"}`. The object is
 the admin account, the admin report, or the status entity. Each request is
 signed with the webhook's secret in `X-Hub-Signature: sha256=…`, and a
-`template` with `{{object.id}}`-style placeholders replaces the body. A
-failed delivery is retried on Sidekiq's schedule, sixteen times, but only
-while the process keeps running. Eunha has no editor for webhooks, so they
-are added in the database.
+`template` with <code v-pre>{{object.id}}</code>-style placeholders replaces
+the body. A failed delivery is retried on Sidekiq's schedule, sixteen times,
+but only while the process keeps running. Eunha has no editor for webhooks, so
+they are added in the database.
 
 
 Trends
