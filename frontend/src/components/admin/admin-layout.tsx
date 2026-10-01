@@ -109,7 +109,9 @@ export function AdminLayout({
       {sections.length > 0 && (
         <nav
           aria-label="Moderation sections"
-          className="mb-3 flex gap-1 overflow-x-auto border-b"
+          // Wraps rather than scrolls: eight sections don't fit beside the
+          // rail, and a sideways-scrolling row hides the ones past the edge.
+          className="mb-3 flex flex-wrap gap-x-1 border-b"
         >
           {sections.map((s) => (
             <NavLink

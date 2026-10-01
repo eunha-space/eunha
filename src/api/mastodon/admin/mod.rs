@@ -939,6 +939,8 @@ pub struct AdminTag {
     pub id: String,
     pub name: String,
     pub url: String,
+    /// `REST::TagSerializer#history`, which the admin serializer extends.
+    pub history: Vec<super::types::TagHistory>,
     pub trendable: bool,
     pub usable: bool,
     pub requires_review: bool,
@@ -1007,11 +1009,14 @@ pub async fn list_admin_tags(
     )
     .fetch_all(&state.db)
     .await?;
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    let mut histories = super::tags::fetch_tags_histories(&state.db, &ids).await;
 
     Ok(Json(
         rows.into_iter()
             .map(|r| AdminTag {
                 id: r.id.to_string(),
+                history: histories.remove(&r.id).unwrap_or_default(),
                 name: r.name.clone(),
                 url: admin_tag_url(domain, &r.name),
                 // `Tag#trendable`: the column, else `trendable_by_default`.
@@ -1042,6 +1047,10 @@ pub async fn get_admin_tag(
     .ok_or(AppError::NotFound)?;
     Ok(Json(AdminTag {
         id: r.id.to_string(),
+        history: super::tags::fetch_tags_histories(&state.db, &[r.id])
+            .await
+            .remove(&r.id)
+            .unwrap_or_default(),
         name: r.name.clone(),
         url: admin_tag_url(domain, &r.name),
         trendable: r.trendable.unwrap_or(trendable_by_default),
@@ -1080,6 +1089,10 @@ pub async fn update_admin_tag(
     .ok_or(AppError::NotFound)?;
     Ok(Json(AdminTag {
         id: r.id.to_string(),
+        history: super::tags::fetch_tags_histories(&state.db, &[r.id])
+            .await
+            .remove(&r.id)
+            .unwrap_or_default(),
         name: r.name.clone(),
         url: admin_tag_url(domain, &r.name),
         trendable: r.trendable.unwrap_or(trendable_by_default),
