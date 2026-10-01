@@ -2,6 +2,7 @@ pub mod activity;
 pub mod addressing;
 pub mod consent;
 pub mod delivery;
+pub mod delivery_failures;
 pub mod fetch;
 pub mod fetch_resource;
 pub mod follow;

@@ -13,15 +13,16 @@ redis_key_prefix = "tenant-example"
 The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
 adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
-markers, ActivityPub locks and tombstones, posting idempotency, and notification
-group state — uses that namespace.
+markers, ActivityPub locks and tombstones, posting idempotency, notification
+group state, and the days each server failed deliveries on — uses that
+namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
 
 ~~~~
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
-+zrangebyscore +zrevrangebyscore +mget +del
++zrangebyscore +zrevrangebyscore +mget +del +sadd +scard
 ~~~~
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used
@@ -42,8 +43,10 @@ Redis.
 Feeds and their population markers use `redis_url`; they are bounded cache
 state. Set `redis_coordination_url` to route locks, ActivityPub deletion
 tombstones, posting idempotency and notification grouping to a separate
-non-evicting Redis pool. If it is absent, both classes use `redis_url` as they
-did before this option existed. Both endpoints use the same `redis_key_prefix`
-and tenant credentials may differ by embedding them in their respective URLs.
-Process-wide memory is omitted from tenant-facing admin responses whenever a
-prefix or separate coordination endpoint is configured.
+non-evicting Redis pool, along with the days each server failed deliveries
+on, `exhausted_deliveries:<host>` as Mastodon names them, which mark a server
+unavailable once there are seven. If it is absent, both classes use `redis_url`
+as they did before this option existed. Both endpoints use the same
+`redis_key_prefix` and tenant credentials may differ by embedding them in their
+respective URLs. Process-wide memory is omitted from tenant-facing admin
+responses whenever a prefix or separate coordination endpoint is configured.

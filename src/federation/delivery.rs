@@ -5,11 +5,17 @@
 //! delivery in `eunha.ojak_queue` and its loops send them, retrying with
 //! backoff, draft-cavage first and RFC 9421 when an inbox refuses it, through
 //! a client that refuses private and reserved addresses.
+//!
+//! What happens to a delivery that fails is Mastodon's
+//! (`ActivityPub::DeliveryWorker`): the same statuses are given up on at
+//! once, the same circuit breaker holds back an inbox that keeps failing, and
+//! [`DeliveryFailureTracker`] marks a server unavailable as Mastodon's does.
 
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::federation::delivery_failures::DeliveryFailureTracker;
 use crate::state::AppState;
 
 /// Deliveries in flight across the whole process, whichever instance they
@@ -51,6 +57,22 @@ pub const PRIORITY_QUEUE: &str = "delivery-priority";
 /// How many inboxes a send may have and still go ahead of a fan-out.
 pub const PRIORITY_MAX_INBOXES: usize = 8;
 
+/// Whether an inbox answering `status` is answering what will not change, as
+/// Mastodon's `response_error_unsalvageable?` has it: 501, and any 4xx but
+/// 401, 408 and 429. Mastodon gives up on a 401 too when the sender is
+/// deleted or suspended; eunha retries it like any other.
+pub fn unsalvageable(status: u16) -> bool {
+    status == 501 || ((400..500).contains(&status) && !matches!(status, 401 | 408 | 429))
+}
+
+/// Mastodon's circuit breaker for deliveries (`STOPLIGHT_FAILURE_THRESHOLD`
+/// and `STOPLIGHT_COOL_OFF_TIME`), kept for each inbox as Mastodon keeps it.
+pub const BREAKER: ojak::deliverer::CircuitBreaker = ojak::deliverer::CircuitBreaker {
+    threshold: 10,
+    cool_off: Duration::from_secs(60),
+    scope: ojak::deliverer::BreakerScope::Inbox,
+};
+
 /// An instance's deliverer.
 pub type Deliverer = ojak::deliverer::Deliverer<ojak_postgres::PostgresQueue, SigningKeys>;
 
@@ -64,6 +86,7 @@ pub fn deliverer(
     encryptor: Option<crate::rails_encryption::Encryptor>,
     workers: &crate::config::WorkersConfig,
     client: ojak::client::Client,
+    tracker: DeliveryFailureTracker,
 ) -> anyhow::Result<Deliverer> {
     let queue = ojak_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -79,9 +102,11 @@ pub fn deliverer(
             queue: PRIORITY_QUEUE.to_owned(),
             max_inboxes: PRIORITY_MAX_INBOXES,
         }),
+        breaker: Some(BREAKER),
+        permanent: unsalvageable,
         ..ojak::deliverer::DelivererConfig::default()
     };
-    let unavailable_db = db.clone();
+    let attempts = tracker.clone();
     Ok(ojak::deliverer::Deliverer::new(
         queue,
         SigningKeys {
@@ -99,14 +124,12 @@ pub fn deliverer(
             error = %crate::error::sanitize_error_text(&failure.error),
             "gave up on a delivery"
         );
-        // 410 Gone is a definitive signal the inbox no longer exists, so stop
-        // delivering to its domain.
-        if failure.status == Some(410) {
-            if let Some(domain) = failure.inbox.host_str().map(str::to_owned) {
-                let db = unavailable_db.clone();
-                crate::tenants::spawn(async move { mark_domain_unavailable(&db, &domain).await });
-            }
-        }
+    })
+    .on_attempt(move |attempt| attempts.record(attempt))
+    .skip_if(move |inbox, activity| {
+        activity.get("type").and_then(Value::as_str) != Some("Follow")
+            && crate::federation::delivery_failures::host(inbox)
+                .is_some_and(|host| tracker.is_unavailable(&host))
     }))
 }
 
@@ -177,19 +200,6 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
             }
         }
     }
-}
-
-/// Record a domain as unavailable so future fan-outs skip it.
-async fn mark_domain_unavailable(db: &sqlx::PgPool, domain: &str) {
-    let _ = sqlx::query!(
-        r#"INSERT INTO unavailable_domains (domain, created_at, updated_at)
-           VALUES ($1, now(), now())
-           ON CONFLICT (domain) DO UPDATE SET updated_at = now()"#,
-        domain,
-    )
-    .execute(db)
-    .await;
-    tracing::info!(domain, "marked domain unavailable after 410 Gone");
 }
 
 /// Fetch the set of domains currently marked unavailable.

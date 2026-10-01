@@ -211,3 +211,62 @@ command, a separate process, cannot reach."""
 evidence = "tests/integration/surfaces/accounts_commands.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "delivery-circuit-breaker-per-process"
+kind = "behaviour"
+summary = "The circuit breaker on deliveries counts each process's failures apart"
+mastodon = """
+`ActivityPub::DeliveryWorker` runs each delivery through a Stoplight for its \
+inbox, threshold 10 and cool-off 60 seconds, whose failures are kept in Redis \
+and counted across every Sidekiq process."""
+eunha = """
+The same breaker, ten failures in a row and a minute's cool-off for each \
+inbox, held back deliveries counting as failed attempts, but kept in the \
+memory of each process's deliverer: with several processes delivering, an \
+inbox may be tried up to ten times in each before it is held back."""
+why = """
+ojak keeps its breakers in memory, beside the per-host limits it already \
+keeps there. A breaker only paces attempts at a server that is not answering; \
+which deliveries arrive, and when one is given up on, do not depend on it."""
+evidence = "tests/integration/federation/delivery_failures.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "delivery-401-retried-for-gone-senders"
+kind = "behaviour"
+summary = "A 401 to a deleted or suspended sender's delivery is retried"
+mastodon = """
+`response_error_unsalvageable?` gives up on a delivery at once on 501 and any \
+4xx but 401, 408 and 429; on 401 too when the sending account is permanently \
+unavailable (`unsalvageable_authorization_failure?`)."""
+eunha = """
+Gives up at once on the same statuses, but retries a 401 whoever the sender \
+is, until the retry policy gives up on it."""
+why = """
+ojak decides whether a status is final from the status alone. A 401 to a \
+deleted account's delivery is the other server refusing a key it can no \
+longer fetch, and its retries end where any other's do."""
+evidence = "tests/integration/federation/delivery_failures.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "delivery-failures-reset-by-vouched-actor"
+kind = "behaviour"
+summary = "A delivery to our inbox clears the failures of its actor's host"
+mastodon = """
+`InboxesController` resets the delivery failure tracker for the host of the \
+inbox of the actor that signed the request."""
+eunha = """
+Resets it for the host of the actor the activity is vouched for, once ojak has \
+accepted it: the signer's own, unless another server forwarded it."""
+why = """
+ojak hands the listener the actor it vouches for rather than the signer of the \
+request, and an actor's inbox is on its own host in every implementation eunha \
+federates with. A forwarded activity clears the failures of the server that \
+wrote it rather than the one that passed it on, which is up all the same."""
+evidence = "tests/integration/federation/delivery_failures.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

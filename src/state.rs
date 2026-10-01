@@ -38,6 +38,9 @@ pub struct AppState {
     pub queues: Arc<crate::background::QueueWakes>,
     /// Outgoing deliveries, queued in `eunha.ojak_queue` (federation::delivery).
     pub deliverer: Arc<crate::federation::delivery::Deliverer>,
+    /// Which servers have stopped answering deliveries, as Mastodon tracks it
+    /// (federation::delivery_failures).
+    pub delivery_failures: crate::federation::delivery_failures::DeliveryFailureTracker,
     /// This instance's domain and media locations, which every URL it serves is
     /// built from. Held here rather than process-wide, so that one process can
     /// serve several instances.
@@ -124,11 +127,17 @@ impl AppState {
             federation_client.clone(),
             ojak::sig::Scheme::DraftCavage,
         ));
+        let delivery_failures = crate::federation::delivery_failures::DeliveryFailureTracker::new(
+            db.clone(),
+            redis_coordination.clone(),
+            redis_keys.clone(),
+        );
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
             db.clone(),
             encryptor.clone(),
             &config.workers.sanitized(),
             federation_client,
+            delivery_failures.clone(),
         )?);
 
         let uris = crate::api::ap::serving::uris(&config.instance.domain)?;
@@ -150,6 +159,7 @@ impl AppState {
             instance_actor_key: Arc::default(),
             queues: Arc::default(),
             deliverer,
+            delivery_failures,
             urls,
             uris,
             stop: tokio_util::sync::CancellationToken::new(),

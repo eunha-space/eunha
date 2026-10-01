@@ -733,6 +733,7 @@ fn batch(kind: &str, give_up_after: std::time::Duration) -> (String, ojak::deliv
     let batch = ojak::deliverer::Batch {
         tag: Some(tag.clone()),
         deadline: Some(std::time::SystemTime::now() + give_up_after),
+        ..ojak::deliverer::Batch::default()
     };
     (tag, batch)
 }

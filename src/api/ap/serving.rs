@@ -230,6 +230,16 @@ pub fn federation() -> Federation<AppState> {
                 activity_type = received.vouched.get("type").and_then(serde_json::Value::as_str).unwrap_or(""),
                 "received ActivityPub activity"
             );
+            // A server that delivers to us is up: Mastodon clears its failures
+            // (`DeliveryFailureTracker.reset!` in `InboxesController`), and
+            // its mark if it had one, by the host of the actor that signed.
+            // Here it is the host of the actor the activity is vouched for,
+            // which is that one unless another server passed it on.
+            if let Some(host) = crate::federation::delivery_failures::host(&received.sender) {
+                if let Err(error) = ctx.data().delivery_failures.track_success(&host).await {
+                    tracing::warn!(host, %error, "could not clear a server's delivery failures");
+                }
+            }
             super::inbox::received(ctx.data(), received.vouched).await
         })
         // A reply to a local post, addressed to its author's followers, is

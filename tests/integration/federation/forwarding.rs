@@ -321,6 +321,7 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     let batch = ojak::deliverer::Batch {
         tag: Some("move:test".into()),
         deadline: Some(std::time::SystemTime::now() + std::time::Duration::from_secs(3600)),
+        ..ojak::deliverer::Batch::default()
     };
     eunha::accounts::move_followers(&ctx.state, &selection, &old_domain, &batch, false)
         .await

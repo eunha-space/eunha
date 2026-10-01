@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO unavailable_domains (domain, created_at, updated_at)\n                   VALUES ($1, now(), now())\n                   ON CONFLICT (domain) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08b533ca353482ced6f1c45f88396844c5f24c4133a69c53143d40663b33a987"
+}
