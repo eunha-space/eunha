@@ -470,24 +470,12 @@ pub fn router() -> Router {
             post(admin::enable_account),
         )
         .route(
-            "/api/v1/admin/accounts/{id}/silence",
-            post(admin::silence_account),
-        )
-        .route(
             "/api/v1/admin/accounts/{id}/unsilence",
             post(admin::unsilence_account),
         )
         .route(
-            "/api/v1/admin/accounts/{id}/suspend",
-            post(admin::suspend_account),
-        )
-        .route(
             "/api/v1/admin/accounts/{id}/unsuspend",
             post(admin::unsuspend_account),
-        )
-        .route(
-            "/api/v1/admin/accounts/{id}/sensitive",
-            post(admin::sensitive_account),
         )
         .route(
             "/api/v1/admin/accounts/{id}/unsensitive",
@@ -498,7 +486,10 @@ pub fn router() -> Router {
             post(admin::account_action),
         )
         .route("/api/v1/admin/reports", get(admin::list_admin_reports))
-        .route("/api/v1/admin/reports/{id}", get(admin::get_admin_report))
+        .route(
+            "/api/v1/admin/reports/{id}",
+            get(admin::get_admin_report).patch(admin::update_admin_report),
+        )
         .route(
             "/api/v1/admin/reports/{id}/resolve",
             post(admin::resolve_report),
@@ -515,8 +506,6 @@ pub fn router() -> Router {
             "/api/v1/admin/reports/{id}/unassign",
             post(admin::unassign_report),
         )
-        .route("/api/v1/admin/roles", get(admin::list_admin_roles))
-        .route("/api/v1/admin/roles/{id}", get(admin::get_admin_role))
         .route("/api/v1/admin/dimensions", post(admin::get_dimensions))
         .route("/api/v1/admin/measures", post(admin::get_measures))
         .route("/api/v1/admin/retention", post(admin::get_retention))

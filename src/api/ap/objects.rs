@@ -303,5 +303,27 @@ pub async fn actor_json(
         "movedTo": moved_to,
     });
 
+    let mut actor = actor;
+    // `ActivityPub::ActorSerializer` on an unavailable account: the profile is
+    // blanked, and a suspended one says so.
+    if account.is_unavailable() {
+        actor["name"] = json!(account.username);
+        actor["summary"] = json!("");
+        actor["attachment"] = json!([]);
+        actor["tag"] = json!([]);
+        actor["manuallyApprovesFollowers"] = json!(false);
+        actor["discoverable"] = json!(false);
+        actor["indexable"] = json!(false);
+        actor["icon"] = Value::Null;
+        actor["image"] = Value::Null;
+        actor["movedTo"] = Value::Null;
+        actor["alsoKnownAs"] = json!([]);
+    }
+    if account.suspended_at.is_some() {
+        actor["suspended"] = json!(true);
+        if let Some(context) = actor["@context"].as_array_mut().and_then(|c| c.last_mut()) {
+            context["suspended"] = json!("toot:suspended");
+        }
+    }
     Ok(actor)
 }

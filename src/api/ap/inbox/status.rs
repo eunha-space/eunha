@@ -530,6 +530,48 @@ pub(super) async fn handle_update(
                 .and_then(|v| v.as_str())
                 .map(str::to_owned);
 
+            // `set_suspension!`: follow the actor's `suspended` flag, and while
+            // the account is suspended take only its protocol attributes
+            // (`set_immediate_attributes! unless @account.suspended?`).
+            if let Some(existing) = sqlx::query_as!(
+                crate::db::models::Account,
+                "SELECT * FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+                actor_uri,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            {
+                let flagged = object
+                    .get("suspended")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let suspended =
+                    crate::moderation::remote::set_suspension(state, &existing, flagged)
+                        .await
+                        .map_err(crate::error::AppError::Internal)?;
+                if suspended {
+                    // `set_fetchable_key! unless suspended locally`.
+                    let local_suspension = existing.suspension_origin
+                        != Some(crate::delete_account::suspension_origin::REMOTE);
+                    sqlx::query!(
+                        r#"UPDATE accounts
+                           SET inbox_url = CASE WHEN $2 != '' THEN $2 ELSE inbox_url END,
+                               shared_inbox_url = COALESCE($3, shared_inbox_url),
+                               public_key = CASE WHEN $4 != '' AND NOT $5 THEN $4 ELSE public_key END,
+                               updated_at = now()
+                           WHERE id = $1"#,
+                        existing.id,
+                        inbox_url,
+                        shared_inbox_url,
+                        public_key,
+                        local_suspension,
+                    )
+                    .execute(&state.db)
+                    .await?;
+                    return Ok(());
+                }
+            }
+
             // Don't clear inbox_url or public_key if the update omits them (sparse update guard)
             sqlx::query!(
                 r#"UPDATE accounts

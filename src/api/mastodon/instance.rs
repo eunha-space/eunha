@@ -80,8 +80,11 @@ fn obfuscate_domain(domain: &str) -> String {
 
 // ── GET /api/v1/instance/rules ────────────────────────────────────────────
 
-pub async fn get_instance_rules() -> Json<Vec<Rule>> {
-    Json(vec![])
+/// `Rule.ordered`.
+pub async fn get_instance_rules(state: AppState) -> AppResult<Json<Vec<Rule>>> {
+    Ok(Json(
+        crate::moderation::rules::serialize(&state, None).await?,
+    ))
 }
 
 // ── GET /api/v1/instance/privacy_policy ──────────────────────────────────
@@ -170,7 +173,7 @@ pub async fn get_instance_v1(
             },
         }),
         contact_account,
-        rules: vec![],
+        rules: crate::moderation::rules::serialize(&state, None).await?,
     }))
 }
 
@@ -426,7 +429,7 @@ pub async fn get_instance_v2(
             email: instance.contact_email.clone().unwrap_or_default(),
             account: contact_account,
         },
-        rules: vec![],
+        rules: crate::moderation::rules::serialize(&state, None).await?,
         api_versions: serde_json::json!({ "mastodon": 9 }),
         wrapstodon: None,
     }))

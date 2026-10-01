@@ -127,7 +127,7 @@ async fn invite_bypasses_approval(state: &AppState, invite_id: i64) -> bool {
 /// signed up through an invite flagged `autofollow` follows the inviter's
 /// account. A locked inviter receives a follow request instead, matching
 /// FollowService's handling of locked targets.
-async fn autofollow_inviter(state: &AppState, follower_account_id: i64, invite_id: i64) {
+pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i64, invite_id: i64) {
     let inviter = sqlx::query!(
         r#"SELECT i.autofollow, a.id AS "target_id!", a.locked
            FROM invites i
@@ -437,26 +437,22 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         }
     };
 
-    // Notify admins about every new signup (approval-required instances get it immediately;
-    // open instances get it too so admins have visibility into new accounts).
-    {
-        let state2 = state.clone();
-        crate::tenants::spawn(async move {
-            crate::push::notify_admins(&state2, account_id, "admin.sign_up", None).await;
-        });
-    }
-
     if let Some(id) = pending.invite_id {
         let _ = sqlx::query!("UPDATE invites SET uses = uses + 1 WHERE id = $1", id)
             .execute(&state.db)
             .await;
-        // Mastodon runs BootstrapTimelineService after registration; autofollow the
-        // inviter when the invite is flagged for it. Spawned so signup latency and
-        // success don't depend on the follow side effects.
+    }
+
+    // `User#after_confirmation_tasks`: an approved user is prepared (the
+    // inviter followed, staff told with `admin.sign_up`); one awaiting
+    // approval is mailed to the staff who can approve it.
+    if needs_approval {
         let state2 = state.clone();
         crate::tenants::spawn(async move {
-            autofollow_inviter(&state2, account_id, id).await;
+            crate::accounts::notify_staff_about_pending_account(&state2, account_id).await;
         });
+    } else {
+        crate::accounts::prepare_new_user(&state, account_id).await;
     }
 
     if let Some(app_id) = pending.app_id {

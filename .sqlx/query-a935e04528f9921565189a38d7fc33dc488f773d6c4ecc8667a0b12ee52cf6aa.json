@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS \"forwarded!\",\n                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS \"category!\",\n                  r.action_taken_at, r.created_at, r.status_ids, r.rule_ids,\n                  r.target_account_id,\n                  ARRAY(SELECT cr.collection_id FROM collection_reports cr\n                        WHERE cr.report_id = r.id ORDER BY cr.collection_id) AS \"collection_ids!\"\n           FROM reports r\n           WHERE r.id = ANY($1::bigint[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "forwarded!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "category!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "action_taken_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 7,
+        "name": "rule_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 8,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "collection_ids!",
+        "type_info": "Int8Array"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      true,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "a935e04528f9921565189a38d7fc33dc488f773d6c4ecc8667a0b12ee52cf6aa"
+}

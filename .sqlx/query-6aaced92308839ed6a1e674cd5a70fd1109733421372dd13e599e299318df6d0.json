@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                 SELECT 1 FROM statuses s JOIN accounts a ON a.id = s.in_reply_to_account_id\n                 WHERE s.id = ANY($1) AND a.domain IS NULL\n               ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6aaced92308839ed6a1e674cd5a70fd1109733421372dd13e599e299318df6d0"
+}

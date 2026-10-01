@@ -618,15 +618,8 @@ pub async fn delete_post(
         return Redirect::to("/account/delete?err=1").into_response();
     }
 
-    if let Err(e) = crate::delete_account::suspend(
-        &state,
-        account.account_id,
-        crate::delete_account::suspension_origin::LOCAL,
-        false,
-    )
-    .await
-    {
-        tracing::error!(account_id = account.account_id, error = %e, "failed to suspend account for deletion");
+    if let Err(e) = crate::delete_account::mark_deleted(&state, account.account_id).await {
+        tracing::error!(account_id = account.account_id, error = %e, "failed to mark account deleted");
         if htmx {
             return Html(format!(
                 "<div class=\"error\">{}</div>",

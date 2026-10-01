@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, target_account_id, assigned_account_id,\n                  action_taken_by_account_id, action_taken_at, category, comment, forwarded,\n                  status_ids, rule_ids, created_at, updated_at\n           FROM reports WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "assigned_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "action_taken_by_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "action_taken_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "category",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "forwarded",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "status_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 10,
+        "name": "rule_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "65a11979398800581c462619055518a4ad5545e7a95800a11423f4ef4c7b2c1d"
+}

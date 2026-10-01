@@ -22,6 +22,7 @@ pub fn domain_of(uri: &str) -> Option<String> {
 pub struct DomainBlock {
     pub severity: i32,
     pub reject_media: bool,
+    pub reject_reports: bool,
 }
 
 impl DomainBlock {
@@ -36,7 +37,7 @@ impl DomainBlock {
 pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
     let domain = domain.to_lowercase();
     let row = sqlx::query!(
-        r#"SELECT severity, reject_media
+        r#"SELECT severity, reject_media, reject_reports
            FROM domain_blocks
            WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)
            ORDER BY char_length(domain) DESC
@@ -50,6 +51,7 @@ pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
     Some(DomainBlock {
         severity: row.severity.unwrap_or(domain_severity::SILENCE),
         reject_media: row.reject_media,
+        reject_reports: row.reject_reports,
     })
 }
 

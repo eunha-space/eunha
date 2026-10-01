@@ -50,6 +50,7 @@ async fn test_moderator_permission_scoping() {
     .execute(&ctx.db)
     .await
     .unwrap();
+    crate::helpers::grant_admin_scopes(&ctx.db, alice_uuid).await;
 
     // Allowed: reports (manage_reports) and account list (manage_users).
     assert_eq!(
@@ -173,7 +174,7 @@ async fn test_admin_get_account() {
     assert!(acc["account"].is_object(), "nested account object missing");
 }
 
-/// POST /api/v1/admin/accounts/:id/silence and unsilence toggle silenced state.
+/// A silence action and unsilence toggle silenced state.
 #[tokio::test]
 async fn test_admin_silence_and_unsilence() {
     let ctx = TestContext::new("admin-silence").await;
@@ -182,13 +183,22 @@ async fn test_admin_silence_and_unsilence() {
     let silence_resp = ctx
         .api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/silence", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "silence"}),
         )
         .await;
     assert_eq!(silence_resp.status(), StatusCode::OK);
-    let silenced: Value = silence_resp.json().await.unwrap();
+    let silenced: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/admin/accounts/{}", ctx.bob_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(
         silenced["silenced"].as_bool(),
         Some(true),
@@ -212,7 +222,7 @@ async fn test_admin_silence_and_unsilence() {
     );
 }
 
-/// POST /api/v1/admin/accounts/:id/suspend and unsuspend toggle suspended state.
+/// A suspend action and unsuspend toggle suspended state.
 #[tokio::test]
 async fn test_admin_suspend_and_unsuspend() {
     let ctx = TestContext::new("admin-suspend").await;
@@ -221,13 +231,22 @@ async fn test_admin_suspend_and_unsuspend() {
     let suspend_resp = ctx
         .api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
     assert_eq!(suspend_resp.status(), StatusCode::OK);
-    let suspended: Value = suspend_resp.json().await.unwrap();
+    let suspended: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/admin/accounts/{}", ctx.bob_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(suspended["suspended"].as_bool(), Some(true));
 
     let unsuspend_resp = ctx
@@ -254,9 +273,9 @@ async fn test_admin_suspend_records_deletion_request() {
 
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
 
@@ -344,9 +363,9 @@ async fn test_admin_delete_account_purges_suspended_account() {
         .await;
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
 
@@ -401,21 +420,6 @@ async fn test_admin_list_reports_empty() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let _: Vec<Value> = resp.json().await.unwrap();
-}
-
-/// GET /api/v1/admin/roles returns the standard roles list.
-#[tokio::test]
-async fn test_admin_list_roles() {
-    let ctx = TestContext::new("admin-roles").await;
-    make_admin(&ctx).await;
-
-    let resp = ctx
-        .api
-        .get("/api/v1/admin/roles", Some(&ctx.alice_token))
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let roles: Vec<Value> = resp.json().await.unwrap();
-    assert!(!roles.is_empty(), "expected at least one role");
 }
 
 /// Admin can resolve and reopen a report.
@@ -624,11 +628,17 @@ async fn test_admin_domain_blocks_crud() {
     );
 }
 
-/// POST /api/v1/admin/accounts/:id/approve returns 200 with the account.
+/// POST /api/v1/admin/accounts/:id/approve approves a pending account, and
+/// `UserPolicy#approve?` refuses one already approved.
 #[tokio::test]
 async fn test_admin_approve_account() {
     let ctx = TestContext::new("admin-approve").await;
     make_admin(&ctx).await;
+    sqlx::query("UPDATE users SET approved = false WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     let resp = ctx
         .api
@@ -642,22 +652,53 @@ async fn test_admin_approve_account() {
     let acc: Value = resp.json().await.unwrap();
     assert_eq!(acc["id"].as_str(), Some(ctx.bob_id.as_str()));
     assert_eq!(acc["approved"].as_bool(), Some(true));
+
+    let again = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/accounts/{}/approve", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(again.status(), StatusCode::FORBIDDEN);
 }
 
-/// POST /api/v1/admin/accounts/:id/enable clears a suspended account.
+/// A disable action freezes the login (`users.disabled`) without suspending
+/// the account, and POST /api/v1/admin/accounts/:id/enable undoes it.
 #[tokio::test]
 async fn test_admin_enable_account() {
     let ctx = TestContext::new("admin-enable").await;
     make_admin(&ctx).await;
 
-    // Suspend bob first, then enable.
-    ctx.api
+    let disable = ctx
+        .api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &json!({}),
+            &json!({"type": "disable"}),
         )
         .await;
+    assert_eq!(disable.status(), StatusCode::OK);
+    let disabled: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/admin/accounts/{}", ctx.bob_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(disabled["disabled"].as_bool(), Some(true));
+    assert_eq!(disabled["suspended"].as_bool(), Some(false));
+    let requests: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM account_deletion_requests WHERE account_id = $1")
+            .bind(ctx.bob_id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(requests, 0, "disabling is not suspending");
 
     let enable_resp = ctx
         .api
@@ -669,23 +710,7 @@ async fn test_admin_enable_account() {
         .await;
     assert_eq!(enable_resp.status(), StatusCode::OK);
     let acc: Value = enable_resp.json().await.unwrap();
-    assert_eq!(acc["suspended"].as_bool(), Some(false));
-}
-
-/// GET /api/v1/admin/roles/:id returns the role by ID.
-#[tokio::test]
-async fn test_admin_get_role_by_id() {
-    let ctx = TestContext::new("admin-role-id").await;
-    make_admin(&ctx).await;
-
-    let resp = ctx
-        .api
-        .get("/api/v1/admin/roles/1", Some(&ctx.alice_token))
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let role: Value = resp.json().await.unwrap();
-    assert_eq!(role["id"].as_str(), Some("1"), "expected role id 1 (Admin)");
-    assert_eq!(role["name"].as_str(), Some("Admin"));
+    assert_eq!(acc["disabled"].as_bool(), Some(false));
 }
 
 /// POST /api/v1/admin/measures returns an array of measure objects.
@@ -925,17 +950,17 @@ async fn test_admin_list_custom_emojis() {
     let _: Vec<Value> = resp.json().await.unwrap();
 }
 
-/// GET /api/v1/admin/accounts?status=suspended returns only suspended accounts.
+/// GET /api/v1/admin/accounts?suspended=true returns only suspended accounts.
 #[tokio::test]
 async fn test_admin_list_accounts_filter_by_status() {
     let ctx = TestContext::new("admin-status-filter").await;
     make_admin(&ctx).await;
 
-    // Before suspension, status=suspended should not include bob.
+    // Before suspension, suspended=true should not include bob.
     let before: Vec<Value> = ctx
         .api
         .get(
-            "/api/v1/admin/accounts?status=suspended",
+            "/api/v1/admin/accounts?suspended=true",
             Some(&ctx.alice_token),
         )
         .await
@@ -946,23 +971,23 @@ async fn test_admin_list_accounts_filter_by_status() {
         before
             .iter()
             .all(|a| a["suspended"].as_bool() != Some(false)),
-        "status=suspended should only return suspended accounts",
+        "suspended=true should only return suspended accounts",
     );
 
     // Suspend bob.
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &json!({}),
+            &json!({"type": "suspend"}),
         )
         .await;
 
-    // Now bob should appear in status=suspended results.
+    // Now bob should appear in suspended=true results.
     let after: Vec<Value> = ctx
         .api
         .get(
-            "/api/v1/admin/accounts?status=suspended",
+            "/api/v1/admin/accounts?suspended=true",
             Some(&ctx.alice_token),
         )
         .await
@@ -973,16 +998,13 @@ async fn test_admin_list_accounts_filter_by_status() {
         after
             .iter()
             .any(|a| a["id"].as_str() == Some(ctx.bob_id.as_str())),
-        "bob should appear in status=suspended after suspension",
+        "bob should appear in suspended=true after suspension",
     );
 
-    // status=active should NOT include bob now.
+    // active=true should NOT include bob now.
     let active: Vec<Value> = ctx
         .api
-        .get(
-            "/api/v1/admin/accounts?status=active",
-            Some(&ctx.alice_token),
-        )
+        .get("/api/v1/admin/accounts?active=true", Some(&ctx.alice_token))
         .await
         .json()
         .await
@@ -991,7 +1013,7 @@ async fn test_admin_list_accounts_filter_by_status() {
         active
             .iter()
             .all(|a| a["id"].as_str() != Some(ctx.bob_id.as_str())),
-        "suspended bob should not appear in status=active",
+        "suspended bob should not appear in active=true",
     );
 }
 
@@ -1058,9 +1080,9 @@ async fn test_suspension_hides_statuses_and_unsuspend_restores() {
 
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
 
@@ -1128,9 +1150,9 @@ async fn test_suspension_blocks_tokens_reversibly() {
 
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
 
@@ -1191,9 +1213,9 @@ async fn test_suspended_account_cleanup_after_delay() {
         .await;
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &serde_json::json!({}),
+            &serde_json::json!({"type": "suspend"}),
         )
         .await;
 
@@ -1254,7 +1276,7 @@ async fn test_admin_reject_approved_account_is_forbidden() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-/// admin/accounts?status=active returns approved, non-suspended accounts.
+/// admin/accounts?active=true returns approved, non-suspended accounts.
 #[tokio::test]
 async fn test_admin_list_accounts_active_includes_approved_users() {
     let ctx = TestContext::new("admin-active-filter").await;
@@ -1262,33 +1284,30 @@ async fn test_admin_list_accounts_active_includes_approved_users() {
 
     let active: Vec<Value> = ctx
         .api
-        .get(
-            "/api/v1/admin/accounts?status=active",
-            Some(&ctx.alice_token),
-        )
+        .get("/api/v1/admin/accounts?active=true", Some(&ctx.alice_token))
         .await
         .json()
         .await
         .unwrap();
 
-    // Alice is an approved, non-suspended user: she should appear in status=active.
+    // Alice is an approved, non-suspended user: she should appear in active=true.
     assert!(
         active
             .iter()
             .any(|a| a["id"].as_str() == Some(ctx.alice_id.as_str())),
-        "alice (approved, not suspended) should appear in status=active",
+        "alice (approved, not suspended) should appear in active=true",
     );
     // Suspended or silenced accounts must not appear.
     for a in &active {
         assert_eq!(
             a["suspended"].as_bool(),
             Some(false),
-            "suspended account appeared in status=active: {a}",
+            "suspended account appeared in active=true: {a}",
         );
     }
 }
 
-/// admin/accounts?status=pending returns only unapproved accounts.
+/// admin/accounts?pending=true returns only unapproved accounts.
 #[tokio::test]
 async fn test_admin_list_accounts_pending_filter() {
     let ctx = TestContext::new("admin-pending-filter").await;
@@ -1310,7 +1329,7 @@ async fn test_admin_list_accounts_pending_filter() {
     let pending: Vec<Value> = ctx
         .api
         .get(
-            "/api/v1/admin/accounts?status=pending",
+            "/api/v1/admin/accounts?pending=true",
             Some(&ctx.alice_token),
         )
         .await
@@ -1323,14 +1342,14 @@ async fn test_admin_list_accounts_pending_filter() {
         pending
             .iter()
             .any(|a| a["id"].as_str() == Some(ctx.bob_id.as_str())),
-        "bob (approved_at=NULL) should appear in status=pending: {pending:?}",
+        "bob (approved_at=NULL) should appear in pending=true: {pending:?}",
     );
     // Alice (approved) should NOT appear in pending.
     assert!(
         !pending
             .iter()
             .any(|a| a["id"].as_str() == Some(ctx.alice_id.as_str())),
-        "alice (approved) should not appear in status=pending",
+        "alice (approved) should not appear in pending=true",
     );
     let _ = alice_uuid; // suppress unused warning
 }

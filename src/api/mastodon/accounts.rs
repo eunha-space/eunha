@@ -1760,6 +1760,14 @@ pub async fn batch_account_stats(
 }
 
 /// Convert a slice of DB accounts to API accounts with profile emojis and roles populated.
+/// [`batch_accounts_to_api`] for one account.
+pub async fn account_to_api(state: &AppState, account: &Account) -> super::types::Account {
+    batch_accounts_to_api(state, std::slice::from_ref(account))
+        .await
+        .pop()
+        .unwrap_or_else(|| super::convert::account_from_db(&state.urls, account))
+}
+
 pub async fn batch_accounts_to_api(
     state: &AppState,
     accounts: &[Account],
@@ -1908,14 +1916,8 @@ pub async fn delete_account(
         crate::crypto::verify_password(&field("password"), &user.encrypted_password).await?;
     }
 
-    crate::delete_account::suspend(
-        &state,
-        auth.account_id,
-        crate::delete_account::suspension_origin::LOCAL,
-        // `block_email: false` — the address is being released, not banned.
-        false,
-    )
-    .await?;
+    // `Account#mark_deleted!`.
+    crate::delete_account::mark_deleted(&state, auth.account_id).await?;
 
     // Mastodon hands the purge to `AccountDeletionWorker`; eunha runs it on a
     // task for the same reason (an account can own a lot of content), except

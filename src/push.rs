@@ -638,162 +638,142 @@ pub async fn create_and_push(
     });
 }
 
-/// Send an admin.sign_up or admin.report notification to all admins/moderators
-/// on the instance. Bypasses block and policy filters — admin notifications
-/// are always delivered.
-pub async fn notify_admins(
+/// `LocalNotificationWorker` and `NotifyService` for the notification types
+/// that are about the recipient's own standing or staff work rather than
+/// someone's post — `admin.report`, `admin.sign_up`, `moderation_warning` —
+/// none of which is filterable, so none passes through the block, mute and
+/// policy checks [`create_and_push`] makes.
+///
+/// `activity_type`/`activity_id` are the polymorphic activity; `from_account_id`
+/// is what `Notification#set_from_account` derives from it. A recipient
+/// without a user, or one already notified of this activity, gets nothing.
+pub async fn notify_local(
     state: &AppState,
-    from_account_id: i64,
+    recipient_id: i64,
     notification_type: &'static str,
-    report_id: Option<i64>,
+    activity_type: &'static str,
+    activity_id: i64,
+    from_account_id: i64,
 ) {
-    let admins: Vec<i64> = match sqlx::query_scalar!(
-        r#"SELECT a.id AS "id!: i64" FROM accounts a
-           JOIN users u ON u.account_id = a.id
-           LEFT JOIN user_roles ur ON ur.id = u.role_id
-           WHERE a.domain IS NULL AND COALESCE(ur.position, 0) >= 100"#,
-    )
-    .fetch_all(&state.db)
-    .await
-    {
-        Ok(ids) => ids,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to fetch admins for notification");
-            return;
-        }
-    };
-
-    for admin_id in admins {
-        if admin_id == from_account_id {
-            continue;
-        }
-
-        let row = if let Some(rid) = report_id {
-            sqlx::query_scalar!(
-                r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_id, activity_type, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, 'Report', now(), now())
-                   RETURNING id"#,
-                admin_id, from_account_id, notification_type, rid,
-            )
-            .fetch_one(&state.db)
-            .await
-        } else {
-            // admin.sign_up: the activity is the newly-registered Account, which
-            // is the `from_account_id` here.
-            sqlx::query_scalar!(
-                r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_id, activity_type, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, 'Account', now(), now())
-                   RETURNING id"#,
-                admin_id, from_account_id, notification_type, from_account_id,
-            )
-            .fetch_one(&state.db)
-            .await
-        };
-
-        let notification_id = match row {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to create admin notification");
-                continue;
-            }
-        };
-
-        if let Some(payload) = build_admin_notification_payload(
-            state,
-            notification_id,
-            notification_type,
-            from_account_id,
-            report_id,
+    let result: anyhow::Result<()> = async {
+        // `return if recipient.user.nil?`
+        let has_user = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE account_id = $1) AS "e!""#,
+            recipient_id,
         )
-        .await
+        .fetch_one(&state.db)
+        .await?;
+        if !has_user {
+            return Ok(());
+        }
+        let exists = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 FROM notifications
+                 WHERE account_id = $1 AND activity_type = $2 AND activity_id = $3 AND "type" = $4
+               ) AS "e!""#,
+            recipient_id,
+            activity_type,
+            activity_id,
+            notification_type,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if exists {
+            return Ok(());
+        }
+        let notification_id = sqlx::query_scalar!(
+            r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_type, activity_id, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, now(), now())
+               RETURNING id"#,
+            recipient_id,
+            from_account_id,
+            notification_type,
+            activity_type,
+            activity_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+
+        if let Some(payload) =
+            crate::api::mastodon::notifications::render_notification(state, notification_id).await
         {
             state
                 .streaming
                 .publish(crate::streaming::Event::Notification {
-                    for_account_id: admin_id,
+                    for_account_id: recipient_id,
                     payload: std::sync::Arc::new(payload),
                 });
         }
+
+        let (title, body) = match notification_type {
+            "admin.report" => ("New report".to_string(), String::new()),
+            "admin.sign_up" => ("New sign-up".to_string(), String::new()),
+            _ => ("Moderation warning".to_string(), String::new()),
+        };
+        let icon = sqlx::query_as!(
+            crate::db::models::Account,
+            "SELECT * FROM accounts WHERE id = $1",
+            from_account_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .map(|a| crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &a))
+        .unwrap_or_default();
+        let state = state.clone();
+        crate::tenants::spawn(async move {
+            deliver(
+                state,
+                recipient_id,
+                from_account_id,
+                notification_id,
+                notification_type,
+                &icon,
+                &title,
+                &body,
+            )
+            .await;
+        });
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(%error, notification_type, "could not create a notification");
     }
 }
 
-async fn build_admin_notification_payload(
-    state: &AppState,
-    notification_id: i64,
-    notification_type: &str,
-    from_account_id: i64,
-    report_id: Option<i64>,
-) -> Option<String> {
-    use crate::api::mastodon::accounts::fetch_account_emojis;
-    use crate::api::mastodon::convert::account_from_db;
-
-    let created_at = sqlx::query_scalar!(
-        "SELECT created_at FROM notifications WHERE id = $1",
-        notification_id,
+/// The local accounts whose role carries any of `flags`: `User.those_who_can`,
+/// which is the users of `UserRole.that_can`, the everyone role's included.
+pub async fn accounts_who_can(state: &AppState, flags: &[i64]) -> anyhow::Result<Vec<i64>> {
+    use crate::moderation::role::{flag, EVERYONE_ROLE_ID};
+    let any: i64 = flags.iter().fold(0, |acc, f| acc | f);
+    let everyone: i64 = sqlx::query_scalar!(
+        "SELECT permissions FROM user_roles WHERE id = $1",
+        EVERYONE_ROLE_ID,
     )
     .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()?;
-
-    let from_account = sqlx::query_as!(
-        crate::db::models::Account,
-        "SELECT * FROM accounts WHERE id = $1",
-        from_account_id,
+    .await?
+    .unwrap_or(flag::DEFAULT);
+    // `computed_permissions` per role, then any one of the flags.
+    Ok(sqlx::query_scalar!(
+        r#"SELECT u.account_id FROM users u
+           JOIN accounts a ON a.id = u.account_id
+           LEFT JOIN user_roles ur ON ur.id = COALESCE(u.role_id, $1)
+           WHERE a.domain IS NULL
+             AND (
+               CASE
+                 WHEN COALESCE(ur.id, $1) = $1 THEN COALESCE(ur.permissions, $2)
+                 WHEN ur.permissions & 1 = 1 THEN $4
+                 ELSE ur.permissions | $2
+               END
+             ) & $3 <> 0
+           ORDER BY u.account_id"#,
+        EVERYONE_ROLE_ID,
+        everyone,
+        any,
+        flag::ALL,
     )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()?;
-
-    let report_json = if let Some(rid) = report_id {
-        sqlx::query!(
-            r#"SELECT r.id, r.comment, r.forwarded, r.action_taken_at, r.created_at,
-                      r.status_ids, a.id AS ta_id, a.username AS ta_username,
-                      CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!"
-               FROM reports r
-               JOIN accounts a ON a.id = r.target_account_id
-               WHERE r.id = $1"#,
-            rid,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.id.to_string(),
-                "action_taken": r.action_taken_at.is_some(),
-                "action_taken_at": r.action_taken_at.map(|t| t.and_utc().to_rfc3339()),
-                "category": r.category,
-                "comment": r.comment,
-                "forwarded": r.forwarded,
-                "created_at": r.created_at.and_utc().to_rfc3339(),
-                "status_ids": r.status_ids.iter().map(|i| i.to_string()).collect::<Vec<_>>(),
-                "rule_ids": [],
-                "target_account": {
-                    "id": r.ta_id.to_string(),
-                    "username": r.ta_username,
-                },
-            })
-        })
-    } else {
-        None
-    };
-
-    let mut from_api = account_from_db(&state.urls, &from_account);
-    from_api.emojis = fetch_account_emojis(state, &from_account).await;
-    let payload = serde_json::json!({
-        "id": notification_id.to_string(),
-        "type": notification_type,
-        "created_at": created_at.and_utc().to_rfc3339(),
-        "group_key": format!("ungrouped-{}", notification_id),
-        "account": serde_json::to_value(from_api).ok(),
-        "report": report_json,
-        "filtered": null,
-    });
-
-    serde_json::to_string(&payload).ok()
+    .fetch_all(&state.db)
+    .await?)
 }
 
 /// Returns true if the notification should be routed to notification_requests

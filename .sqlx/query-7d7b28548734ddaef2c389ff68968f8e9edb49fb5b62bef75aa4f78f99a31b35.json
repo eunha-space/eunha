@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.id, w.action, w.text, w.status_ids, w.created_at, w.target_account_id,\n                  ap.text AS \"appeal_text?\", ap.approved_at AS \"appeal_approved_at?\",\n                  ap.rejected_at AS \"appeal_rejected_at?\", (ap.id IS NOT NULL) AS \"has_appeal!\"\n           FROM account_warnings w\n           LEFT JOIN appeals ap ON ap.account_warning_id = w.id\n           WHERE w.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status_ids",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "appeal_text?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "appeal_approved_at?",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "appeal_rejected_at?",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "has_appeal!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "7d7b28548734ddaef2c389ff68968f8e9edb49fb5b62bef75aa4f78f99a31b35"
+}

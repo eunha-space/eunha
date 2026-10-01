@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET suspended_at = now(), suspension_origin = $2, updated_at = now()\n           WHERE id = $1 RETURNING (domain IS NULL) AS \"local!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "43755b69baba05541a91dc2fe23331413ac2d69cbb2129e87a59d0adc3ef82d9"
+}

@@ -41,8 +41,10 @@ async fn fetch_reports_map(
     let rows = sqlx::query!(
         r#"SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS "forwarded!",
                   CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!",
-                  r.action_taken_at, r.created_at, r.status_ids,
-                  r.target_account_id
+                  r.action_taken_at, r.created_at, r.status_ids, r.rule_ids,
+                  r.target_account_id,
+                  ARRAY(SELECT cr.collection_id FROM collection_reports cr
+                        WHERE cr.report_id = r.id ORDER BY cr.collection_id) AS "collection_ids!"
            FROM reports r
            WHERE r.id = ANY($1::bigint[])"#,
         report_ids,
@@ -97,13 +99,55 @@ async fn fetch_reports_map(
                 forwarded: r.forwarded,
                 created_at: super::convert::mastodon_date(r.created_at),
                 status_ids: r.status_ids.iter().map(|i| i.to_string()).collect(),
-                rule_ids: vec![],
-                collection_ids: vec![],
+                rule_ids: r
+                    .rule_ids
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect(),
+                collection_ids: r.collection_ids.iter().map(|i| i.to_string()).collect(),
                 target_account: ta_api,
             },
         );
     }
     Ok(map)
+}
+
+/// `REST::ReportSerializer` of one report.
+pub async fn report_entity(
+    state: &AppState,
+    report_id: i64,
+) -> AppResult<Option<super::types::Report>> {
+    Ok(fetch_reports_map(state, &[report_id])
+        .await?
+        .remove(&report_id))
+}
+
+/// The `moderation_warning` a notification carries: `REST::AccountWarningSerializer`
+/// of its `AccountWarning` activity.
+async fn moderation_warning_of(state: &AppState, n: &DbNotification) -> Option<serde_json::Value> {
+    if n.r#type.as_deref() != Some("moderation_warning")
+        || n.activity_type.as_deref() != Some("AccountWarning")
+    {
+        return None;
+    }
+    crate::moderation::warning::serialize(state, n.activity_id?).await
+}
+
+/// One notification as `GET /api/v1/notifications/:id` renders it, as the
+/// streaming API sends it.
+pub async fn render_notification(state: &AppState, notification_id: i64) -> Option<String> {
+    let n = sqlx::query_as!(
+        DbNotification,
+        "SELECT * FROM notifications WHERE id = $1",
+        notification_id,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()?;
+    let notification = build_notification(state, &n).await.ok()?;
+    serde_json::to_string(&notification).ok()
 }
 
 /// Resolve status_id for a batch of notifications from their activity columns.
@@ -466,7 +510,7 @@ pub async fn get_notifications(
             report,
             filtered: if n.filtered { Some(true) } else { None },
             event: None,
-            moderation_warning: None,
+            moderation_warning: moderation_warning_of(&state, n).await,
             fallback: None,
             collection: None,
         });
@@ -1001,7 +1045,7 @@ pub async fn get_notifications_v2(
             status_id,
             report,
             event: None,
-            moderation_warning: None,
+            moderation_warning: moderation_warning_of(&state, n).await,
             annual_report: None,
             collection: None,
             fallback: None,
@@ -1079,7 +1123,7 @@ pub async fn get_notification_group(
         status_id: status_id_for_group.get(&rep.id).map(|s| s.to_string()),
         report,
         event: None,
-        moderation_warning: None,
+        moderation_warning: moderation_warning_of(&state, rep).await,
         annual_report: None,
         collection: None,
         fallback: None,
@@ -1921,71 +1965,15 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         None
     };
 
-    let report = if n.r#type.as_deref() == Some("admin.report")
-        && n.activity_type.as_deref() == Some("Report")
-    {
-        if let Some(rid) = n.activity_id {
-            sqlx::query!(
-                r#"SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS "forwarded!",
-                          CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!",
-                          r.action_taken_at, r.created_at, r.status_ids,
-                          r.target_account_id
-                   FROM reports r WHERE r.id = $1"#,
-                rid,
-            )
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten().map(|r| (r.id, r.comment, r.forwarded, r.category, r.action_taken_at, r.created_at, r.status_ids, r.target_account_id))
-        } else {
-            None
+    let report = match (
+        n.r#type.as_deref(),
+        n.activity_type.as_deref(),
+        n.activity_id,
+    ) {
+        (Some("admin.report"), Some("Report"), Some(rid)) => {
+            fetch_reports_map(state, &[rid]).await?.remove(&rid)
         }
-    } else {
-        None
-    };
-
-    let report = if let Some((
-        rid,
-        comment,
-        forwarded,
-        category,
-        action_taken_at,
-        created_at_r,
-        status_ids,
-        ta_id,
-    )) = report
-    {
-        let ta = sqlx::query_as!(Account, "SELECT * FROM accounts WHERE id = $1", ta_id)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten();
-        if let Some(ta) = ta {
-            let mut ta_api = account_from_db(&state.urls, &ta);
-            ta_api.emojis = fetch_account_emojis(state, &ta).await;
-            ta_api.roles = {
-                let m = batch_account_roles(state, std::slice::from_ref(&ta)).await;
-                m.get(&ta.id).cloned().unwrap_or_default()
-            };
-            apply_account_stats(state, &mut ta_api, ta.id).await;
-            Some(super::types::Report {
-                id: rid.to_string(),
-                action_taken: action_taken_at.is_some(),
-                action_taken_at: action_taken_at.map(super::convert::mastodon_date),
-                category,
-                comment,
-                forwarded,
-                created_at: super::convert::mastodon_date(created_at_r),
-                status_ids: status_ids.iter().map(|i| i.to_string()).collect(),
-                rule_ids: vec![],
-                collection_ids: vec![],
-                target_account: ta_api,
-            })
-        } else {
-            None
-        }
-    } else {
-        None
+        _ => None,
     };
 
     let mut notif_account = account_from_db(&state.urls, &from_account);
@@ -2005,7 +1993,7 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         report,
         filtered: None,
         event: None,
-        moderation_warning: None,
+        moderation_warning: moderation_warning_of(state, n).await,
         fallback: None,
         collection: None,
     })

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT text FROM rules WHERE id = ANY($1) ORDER BY priority, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "text",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9862875102a4d0f62dd0a7defd668c4ca76ef919355ac22a1bdc67bcdc8dd6d6"
+}

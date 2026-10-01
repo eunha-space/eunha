@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET approved = true, updated_at = now()\n           WHERE account_id = $1 AND NOT approved\n           RETURNING (confirmed_at IS NOT NULL) AS \"confirmed!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8d043bec91ae28d0f64465010c2445064f81121b25003591e636a49b54a2e1e0"
+}

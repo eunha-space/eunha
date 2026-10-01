@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::{as_string_vec, delete_arrived_first, resolve_or_fetch_remote_account};
+use super::{delete_arrived_first, resolve_or_fetch_remote_account};
 
 pub(super) async fn handle_block(state: &AppState, activity: &Value) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
@@ -70,58 +70,152 @@ pub(super) async fn handle_block(state: &AppState, activity: &Value) -> AppResul
     Ok(())
 }
 
+/// `ActivityPub::Activity::Flag`'s `COMMENT_SIZE_LIMIT`.
+const FLAG_COMMENT_SIZE_LIMIT: usize = 5000;
+
+/// `ActivityPub::Activity::Flag#perform`: a remote server reporting accounts
+/// here, or remote accounts that replied to accounts here.
 pub(super) async fn handle_flag(state: &AppState, activity: &Value) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-    let comment = activity
-        .get("content")
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .to_string();
-    let activity_uri = activity
-        .get("id")
-        .and_then(|i| i.as_str())
-        .map(str::to_owned);
-
-    // object can be a mixed array of account URIs and status URIs, or a single string
-    let objects = as_string_vec(activity.get("object"));
-
-    // Resolve the reporter (remote account)
     let reporter_id = match resolve_or_fetch_remote_account(state, actor_uri).await {
         Ok(id) => id,
         Err(_) => return Ok(()),
     };
-
-    // Find local accounts among the objects
-    let local_account_ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT id FROM accounts WHERE uri = ANY($1) AND domain IS NULL",
-        &objects as &[String],
+    let Some(reporter) = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        reporter_id
     )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    let Some(&target_account_id) = local_account_ids.first() else {
+    .fetch_optional(&state.db)
+    .await?
+    else {
         return Ok(());
     };
 
-    // Find local statuses among the objects
-    let status_ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE uri = ANY($1) AND deleted_at IS NULL",
-        &objects as &[String],
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
+    // `skip_reports?`
+    if let Some(domain) = reporter.domain.as_deref() {
+        if crate::federation::moderation::lookup(state, domain)
+            .await
+            .is_some_and(|block| block.reject_reports)
+        {
+            return Ok(());
+        }
+    }
 
-    let report_id = crate::snowflake::next_id();
-    sqlx::query!(
-        r#"INSERT INTO reports (id, account_id, target_account_id, status_ids, comment, uri, forwarded, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,false,now(),now())
-           ON CONFLICT DO NOTHING"#,
-        report_id, reporter_id, target_account_id, &status_ids as &[i64], comment, activity_uri,
-    ).execute(&state.db).await?;
+    // `object_uris`: a string, an object with an id, or an array of either.
+    let object_uris: Vec<String> = match activity.get("object") {
+        Some(Value::Array(items)) => items.iter().filter_map(value_or_id).collect(),
+        Some(item) => value_or_id(item).into_iter().collect(),
+        None => vec![],
+    };
+
+    let mut target_accounts: Vec<i64> = vec![];
+    let mut statuses: Vec<i64> = vec![];
+    let mut collections: Vec<i64> = vec![];
+    for uri in &object_uris {
+        if let Some(id) = crate::federation::local_uri::account(state, uri).await {
+            target_accounts.push(id);
+        }
+        if let Some(id) = crate::federation::local_uri::status(state, uri).await {
+            statuses.push(id);
+        }
+        if let Some(id) = crate::federation::local_uri::collection(state, uri).await {
+            collections.push(id);
+        }
+    }
+
+    // `report_uri`: the Flag's id, unless it is on another host than its actor.
+    let report_uri = activity
+        .get("id")
+        .and_then(|i| i.as_str())
+        .filter(|id| {
+            crate::federation::moderation::domain_of(id)
+                == reporter
+                    .stored_uri()
+                    .and_then(crate::federation::moderation::domain_of)
+        })
+        .map(str::to_owned);
+    // `report_comment`
+    let comment: String = activity
+        .get("content")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .chars()
+        .take(FLAG_COMMENT_SIZE_LIMIT)
+        .collect();
+
+    for target_id in target_accounts {
+        let Some(target) = sqlx::query_as!(
+            crate::db::models::Account,
+            "SELECT * FROM accounts WHERE id = $1",
+            target_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        else {
+            continue;
+        };
+        // `target_statuses_by_account[target_account.id]`
+        let target_statuses: Vec<i64> = sqlx::query_scalar!(
+            "SELECT id FROM statuses WHERE id = ANY($1) AND account_id = $2 ORDER BY id",
+            &statuses,
+            target.id,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        let target_collections: Vec<i64> = sqlx::query_scalar!(
+            "SELECT id FROM collections WHERE id = ANY($1) AND account_id = $2 ORDER BY id",
+            &collections,
+            target.id,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        // `replied_to_accounts`: local accounts the reported posts reply to.
+        let replied_to_local = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 FROM statuses s JOIN accounts a ON a.id = s.in_reply_to_account_id
+                 WHERE s.id = ANY($1) AND a.domain IS NULL
+               ) AS "e!""#,
+            &target_statuses,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        // A suspended or deleted target is skipped, and so is a remote one that
+        // did not reply to anyone here.
+        if target.suspended_at.is_some()
+            || target.is_deleted()
+            || (!target.is_local() && !replied_to_local)
+        {
+            continue;
+        }
+        if let Err(error) = crate::moderation::report_service::call(
+            state,
+            &reporter,
+            &target,
+            crate::moderation::report_service::Options {
+                status_ids: target_statuses,
+                collection_ids: target_collections,
+                comment: comment.clone(),
+                uri: report_uri.clone(),
+                ..Default::default()
+            },
+        )
+        .await
+        {
+            tracing::debug!(?error, "could not record a remote report");
+        }
+    }
 
     Ok(())
+}
+
+/// `value_or_id`.
+fn value_or_id(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Object(o) => o.get("id").and_then(Value::as_str).map(str::to_owned),
+        _ => None,
+    }
 }
 
 pub(super) async fn handle_move(state: &AppState, activity: &Value) -> AppResult<()> {

@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.email, (u.confirmed_at IS NOT NULL) AS \"confirmed!\", u.approved,\n                  u.disabled, u.locale, u.created_by_application_id,\n                  (SELECT r.text FROM user_invite_requests r WHERE r.user_id = u.id\n                   ORDER BY r.id LIMIT 1) AS \"invite_request?\",\n                  inviter.account_id AS \"invited_by_account_id?\"\n           FROM users u\n           LEFT JOIN invites i ON i.id = u.invite_id\n           LEFT JOIN users inviter ON inviter.id = i.user_id\n           WHERE u.account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "approved",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by_application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "invite_request?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "invited_by_account_id?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "7baf9725d4244daf4dfb9478e090fcd554c8a97d6858e7d883b30e35f9791e86"
+}

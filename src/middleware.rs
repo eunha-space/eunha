@@ -50,8 +50,9 @@ impl AuthenticatedUser {
         if self.scopes.iter().any(|s| s == required) {
             return true;
         }
-        // Parent scope covers child: "read" → "read:*", "write" → "write:*"
-        if let Some(parent) = required.split(':').next() {
+        // Parent scope covers child: "read" → "read:*", "write" → "write:*",
+        // and "admin:read" → "admin:read:*" (there is no bare "admin").
+        if let Some((parent, _)) = required.rsplit_once(':') {
             if self.scopes.iter().any(|s| s == parent) {
                 return true;
             }

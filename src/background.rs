@@ -720,10 +720,14 @@ const MAX_DELETIONS_PER_PASS: i64 = 10;
 
 pub async fn process_deletion_requests(state: &AppState) -> anyhow::Result<()> {
     let cutoff = chrono::Utc::now().naive_utc() - crate::delete_account::DELAY_TO_DELETION;
+    // `Admin::AccountDeletionWorker` does nothing for an account no longer
+    // unavailable: one unsuspended without its request being removed is left.
     let due: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT account_id FROM account_deletion_requests
-           WHERE created_at < $1
-           ORDER BY id ASC
+        r#"SELECT r.account_id FROM account_deletion_requests r
+           JOIN accounts a ON a.id = r.account_id
+           WHERE r.created_at < $1
+             AND (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)
+           ORDER BY r.id ASC
            LIMIT $2"#,
         cutoff,
         MAX_DELETIONS_PER_PASS,

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT severity, reject_media, reject_reports\n           FROM domain_blocks\n           WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)\n           ORDER BY char_length(domain) DESC\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "reject_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "reject_reports",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f0570ab6dbd720c63fc81f1833270d85682a9020633cbbee38d2351ba3ac64a6"
+}

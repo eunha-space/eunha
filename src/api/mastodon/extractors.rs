@@ -97,3 +97,166 @@ where
         }
     }
 }
+
+/// Rails' `params`: the query string and the body (JSON, form-encoded or
+/// multipart), merged with the body winning, then read as `T`. Repeated keys
+/// and `key[]` both collect into an array under `key`. Values from a query
+/// string or a form arrive as strings; [`FlexId`], [`FlexBool`] and
+/// [`FlexIds`] read either form.
+pub struct Params<T>(pub T);
+
+fn merge_pairs(
+    into: &mut serde_json::Map<String, serde_json::Value>,
+    pairs: Vec<(String, String)>,
+) {
+    use serde_json::Value;
+    let mut arrays: std::collections::HashMap<String, Vec<Value>> = Default::default();
+    for (key, value) in pairs {
+        if let Some(base) = key.strip_suffix("[]") {
+            arrays
+                .entry(base.to_owned())
+                .or_default()
+                .push(Value::String(value));
+        } else {
+            into.insert(key, Value::String(value));
+        }
+    }
+    for (key, values) in arrays {
+        into.insert(key, Value::Array(values));
+    }
+}
+
+impl<T, S> FromRequest<S> for Params<T>
+where
+    T: serde::de::DeserializeOwned + Send + 'static,
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        use serde_json::Value;
+        let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e).into_response();
+        let mut merged = serde_json::Map::new();
+        let query = req.uri().query().unwrap_or("").to_owned();
+        merge_pairs(
+            &mut merged,
+            url::form_urlencoded::parse(query.as_bytes())
+                .into_owned()
+                .collect(),
+        );
+
+        let content_type = req
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if content_type.contains("application/json") {
+            let bytes = axum::body::Bytes::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            if !bytes.is_empty() {
+                match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(Value::Object(body)) => merged.extend(body),
+                    Ok(_) => {}
+                    Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string()).into_response()),
+                }
+            }
+        } else if content_type.contains("multipart/form-data") {
+            let mut multipart = Multipart::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            let mut pairs = vec![];
+            while let Some(field) = multipart
+                .next_field()
+                .await
+                .map_err(|e| unprocessable(e.to_string()))?
+            {
+                let name = field.name().unwrap_or("").to_string();
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| unprocessable(e.to_string()))?;
+                pairs.push((name, value));
+            }
+            merge_pairs(&mut merged, pairs);
+        } else {
+            let bytes = axum::body::Bytes::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            merge_pairs(
+                &mut merged,
+                url::form_urlencoded::parse(&bytes).into_owned().collect(),
+            );
+        }
+        serde_json::from_value::<T>(Value::Object(merged))
+            .map(Params)
+            .map_err(|e| unprocessable(e.to_string()))
+    }
+}
+
+/// An id given as a number or a string, as Rails takes either.
+#[derive(Debug, Clone, Copy)]
+pub struct FlexId(pub i64);
+
+impl<'de> serde::Deserialize<'de> for FlexId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match serde_json::Value::deserialize(d)? {
+            serde_json::Value::Number(n) => n
+                .as_i64()
+                .map(FlexId)
+                .ok_or_else(|| serde::de::Error::custom("invalid id")),
+            serde_json::Value::String(s) => s
+                .trim()
+                .parse()
+                .map(FlexId)
+                .map_err(|_| serde::de::Error::custom("invalid id")),
+            _ => Err(serde::de::Error::custom("invalid id")),
+        }
+    }
+}
+
+/// Ids given as an array of numbers or strings; ones that do not parse are
+/// dropped, as Rails' `find` would not match them either.
+#[derive(Debug, Clone, Default)]
+pub struct FlexIds(pub Vec<i64>);
+
+impl<'de> serde::Deserialize<'de> for FlexIds {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let values = match serde_json::Value::deserialize(d)? {
+            serde_json::Value::Array(values) => values,
+            serde_json::Value::Null => vec![],
+            other => vec![other],
+        };
+        Ok(FlexIds(
+            values
+                .into_iter()
+                .filter_map(|v| match v {
+                    serde_json::Value::Number(n) => n.as_i64(),
+                    serde_json::Value::String(s) => s.trim().parse().ok(),
+                    _ => None,
+                })
+                .collect(),
+        ))
+    }
+}
+
+/// `ActiveModel::Type::Boolean#cast`: everything but the false values
+/// (`false`, `0`, `"0"`, `"f"`, `"false"`, `"off"`, and their capitalisations)
+/// is true; an empty string is nil.
+#[derive(Debug, Clone, Copy)]
+pub struct FlexBool(pub bool);
+
+impl<'de> serde::Deserialize<'de> for FlexBool {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(FlexBool(match serde_json::Value::deserialize(d)? {
+            serde_json::Value::Bool(b) => b,
+            serde_json::Value::Number(n) => n.as_f64() != Some(0.0),
+            serde_json::Value::String(s) => {
+                !matches!(s.to_lowercase().as_str(), "false" | "0" | "f" | "off" | "")
+            }
+            serde_json::Value::Null => false,
+            _ => true,
+        }))
+    }
+}

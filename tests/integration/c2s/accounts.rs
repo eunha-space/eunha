@@ -888,9 +888,9 @@ async fn test_lookup_account_suspended_returns_suspended() {
     // Suspend bob via admin endpoint.
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &json!({}),
+            &json!({"type": "suspend"}),
         )
         .await;
 
@@ -3147,13 +3147,14 @@ async fn test_delete_account_reserves_username_and_destroys_user() {
     assert!(user_exists.is_none(), "user record should be destroyed");
 
     let account: (bool, String, String) = sqlx::query_as(
-        "SELECT suspended_at IS NOT NULL, display_name, note FROM accounts WHERE id = $1",
+        "SELECT requested_deletion_at IS NOT NULL, display_name, note FROM accounts WHERE id = $1",
     )
     .bind(alice_account_id)
     .fetch_one(&ctx.db)
     .await
     .expect("account record should be reserved");
-    assert!(account.0, "account should stay suspended");
+    // `Account#mark_deleted!`, since 4.7.0, rather than a suspension.
+    assert!(account.0, "account should stay marked deleted");
     assert_eq!(account.1, "", "display name should be scrubbed");
     assert_eq!(account.2, "", "note should be scrubbed");
 
@@ -3589,9 +3590,9 @@ async fn test_get_suspended_account_returns_suspended() {
     // Suspend bob via admin endpoint
     ctx.api
         .post_json(
-            &format!("/api/v1/admin/accounts/{}/suspend", ctx.bob_id),
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
             Some(&ctx.alice_token),
-            &json!({}),
+            &json!({"type": "suspend"}),
         )
         .await;
 

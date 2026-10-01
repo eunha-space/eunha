@@ -25,6 +25,7 @@ export default defineConfig({
           { text: "Shared Redis", link: "/operating/redis" },
           { text: "Several instances in one process", link: "/operating/instances" },
           { text: "Invites", link: "/operating/invites" },
+          { text: "Moderation", link: "/operating/moderation" },
           { text: "Update notices", link: "/operating/update-notices" },
         ],
       },

@@ -226,6 +226,155 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// Mastodon's `UserMailer#warning`: a strike, told to the account it is
+    /// against. `action` is the `AccountWarning#action` key, `text` the
+    /// moderator's (already escaped) explanation, `reason` the report category
+    /// and the rules it cited.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_warning(
+        &self,
+        to: &str,
+        acct: &str,
+        instance_domain: &str,
+        action: &str,
+        text: &str,
+        reason: Option<(&str, &[String])>,
+        cited_statuses: &[String],
+    ) -> anyhow::Result<()> {
+        let subject = match action {
+            "delete_statuses" => format!("Your posts on {acct} have been removed"),
+            "disable" => format!("Your account {acct} has been frozen"),
+            "mark_statuses_as_sensitive" => {
+                format!("Your posts on {acct} have been marked as sensitive")
+            }
+            "sensitive" => format!("Your posts on {acct} will be marked as sensitive from now on"),
+            "silence" => format!("Your account {acct} has been limited"),
+            "suspend" => format!("Your account {acct} has been suspended"),
+            _ => format!("Warning for {acct}"),
+        };
+        let explanation = match action {
+            "delete_statuses" => format!(
+                "Some of your posts have been found to violate one or more community \
+                 guidelines and have been subsequently removed by the moderators of \
+                 {instance_domain}."
+            ),
+            "disable" => "You can no longer use your account, but your profile and other \
+                          data remains intact. You can request a backup of your data, change \
+                          account settings or delete your account."
+                .to_string(),
+            "mark_statuses_as_sensitive" => format!(
+                "Some of your posts have been marked as sensitive by the moderators of \
+                 {instance_domain}. This means that people will need to tap the media in \
+                 the posts before a preview is displayed. You can mark media as sensitive \
+                 yourself when posting in the future."
+            ),
+            "sensitive" => "From now on, all your uploaded media files will be marked as \
+                            sensitive and hidden behind a click-through warning."
+                .to_string(),
+            "silence" => "You can still use your account but only people who are already \
+                          following you will see your posts on this server, and you may be \
+                          excluded from various discovery features. However, others may \
+                          still manually follow you."
+                .to_string(),
+            "suspend" => "You can no longer use your account, and your profile and other \
+                          data are no longer accessible. You can still login to request a \
+                          backup of your data until the data is fully removed in about 30 \
+                          days, but we will retain some basic data to prevent you from \
+                          evading the suspension."
+                .to_string(),
+            _ => String::new(),
+        };
+        let mut body = String::new();
+        if !explanation.is_empty() {
+            body.push_str(&format!("<p>{explanation}</p>"));
+        }
+        if !text.is_empty() {
+            body.push_str(&format!("<p>{text}</p>"));
+        }
+        if let Some((category, rules)) = reason {
+            let label = match category {
+                "spam" => "Spam",
+                "violation" => "Content violates the following community guidelines",
+                _ => category,
+            };
+            body.push_str(&format!("<p><strong>Reason:</strong> {label}</p>"));
+            if !rules.is_empty() {
+                body.push_str("<ul>");
+                for rule in rules {
+                    body.push_str(&format!("<li>{}</li>", html_escape(rule)));
+                }
+                body.push_str("</ul>");
+            }
+        }
+        if !cited_statuses.is_empty() {
+            body.push_str("<p><strong>Posts cited:</strong></p><ul>");
+            for url in cited_statuses {
+                let url = html_escape(url);
+                body.push_str(&format!("<li><a href=\"{url}\">{url}</a></li>"));
+            }
+            body.push_str("</ul>");
+        }
+        body.push_str(&format!(
+            "<p>If you believe this is an error, you can submit an appeal to the staff \
+             of {instance_domain}.</p>"
+        ));
+        self.send(to, &subject, &body).await
+    }
+
+    /// Mastodon's `AdminMailer#new_report`.
+    pub async fn send_new_report(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        report_id: i64,
+        reporter: Option<&str>,
+        reporter_domain: Option<&str>,
+        target: &str,
+    ) -> anyhow::Result<()> {
+        let subject = format!("New report for {instance_domain} (#{report_id})");
+        let line = match (reporter, reporter_domain) {
+            (Some(reporter), _) => format!(
+                "{} has reported {}",
+                html_escape(reporter),
+                html_escape(target)
+            ),
+            (None, Some(domain)) => {
+                format!(
+                    "Someone from {} has reported {}",
+                    html_escape(domain),
+                    html_escape(target)
+                )
+            }
+            (None, None) => format!("Someone has reported {}", html_escape(target)),
+        };
+        let url = format!("https://{instance_domain}/admin/reports/{report_id}");
+        let body = format!("<p>{line}</p><p><a href=\"{url}\">{url}</a></p>");
+        self.send(to, &subject, &body).await
+    }
+
+    /// Mastodon's `AdminMailer#new_pending_account`.
+    pub async fn send_new_pending_account(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        account_id: i64,
+        username: &str,
+        invite_request: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let subject = format!("New account up for review on {instance_domain} ({username})");
+        let url = format!("https://{instance_domain}/admin/accounts/{account_id}");
+        let reason = invite_request
+            .filter(|r| !r.is_empty())
+            .map(|r| format!("<blockquote>{}</blockquote>", html_escape(r)))
+            .unwrap_or_default();
+        let body = format!(
+            "<p>The details of the new account are below. You can approve or reject this \
+             application.</p><p><strong>{}</strong></p>{reason}<p><a href=\"{url}\">{url}</a></p>",
+            html_escape(username)
+        );
+        self.send(to, &subject, &body).await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         let payload = serde_json::json!({
             "from": self.from,
@@ -246,4 +395,12 @@ impl EmailSender {
         }
         Ok(())
     }
+}
+
+/// Escape text for an HTML email body.
+pub fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

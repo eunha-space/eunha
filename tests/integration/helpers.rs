@@ -725,8 +725,9 @@ pub fn sideways_jpeg() -> Vec<u8> {
     bytes
 }
 
-/// Grant a user admin privileges by assigning a role with position >= 100
-/// (eunha treats role position >= 100 as administrator).
+/// Grant a user admin privileges: a role carrying the `administrator` flag,
+/// and its tokens the `admin:read` and `admin:write` scopes the admin API
+/// asks for.
 pub async fn make_admin(db: &PgPool, account_id: i64) {
     let role_id = sqlx::query_scalar!(
         r#"INSERT INTO user_roles (id, name, position, permissions, highlighted, created_at, updated_at)
@@ -742,6 +743,19 @@ pub async fn make_admin(db: &PgPool, account_id: i64) {
         "UPDATE users SET role_id = $1 WHERE account_id = $2",
         role_id,
         account_id,
+    )
+    .execute(db)
+    .await
+    .unwrap();
+    grant_admin_scopes(db, account_id).await;
+}
+
+/// Add `admin:read admin:write` to every token of `account_id`.
+pub async fn grant_admin_scopes(db: &PgPool, account_id: i64) {
+    let user_id = user_id_for(db, account_id).await;
+    sqlx::query!(
+        "UPDATE oauth_access_tokens SET scopes = scopes || ' admin:read admin:write' WHERE resource_owner_id = $1",
+        user_id,
     )
     .execute(db)
     .await

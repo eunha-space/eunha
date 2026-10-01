@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id::text AS \"id!\" FROM account_warnings w\n           CROSS JOIN LATERAL unnest(COALESCE(w.status_ids, '{}')) AS sid\n           JOIN statuses s ON s.id = sid::bigint\n           WHERE w.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6ecc9d0c505984159cefb920fea9f9ecb67ea3fe35f8a692464b1b8cb47a5087"
+}

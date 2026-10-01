@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1 AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "706013ba1474b19022a1f2060bdbba4b9153438415b77c6a705123aa1a808ca9"
+}

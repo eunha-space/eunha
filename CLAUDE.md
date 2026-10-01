@@ -52,6 +52,10 @@ Running an instance:
     tenants directory, admission limits, `SIGHUP` reload, host aliases, and
     shared media buckets.
  -  *docs/operating/invites.md*: the everyone role and handing out invites.
+ -  *docs/operating/moderation.md*: permissions, account actions and strikes,
+    the audit log, and reports.
+ -  *docs/operating/moderation.md*: permissions, account actions and strikes,
+    the audit log, and reports.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

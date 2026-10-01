@@ -605,6 +605,129 @@ pub async fn batch_status(db: &sqlx::PgPool, tag: &str) -> anyhow::Result<BatchS
     Ok(status)
 }
 
+/// A boolean from `users.settings`, the flat JSON object Mastodon's
+/// `UserSettings` keeps (`"notification_emails.report": false`), or `default`.
+pub fn user_setting_bool(settings: Option<&str>, key: &str, default: bool) -> bool {
+    settings
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get(key).and_then(serde_json::Value::as_bool))
+        .unwrap_or(default)
+}
+
+/// `User#approve!`: approve a pending user, and once it is also confirmed, do
+/// what a new user's arrival sets off.
+pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<()> {
+    let approved = sqlx::query_scalar!(
+        r#"UPDATE users SET approved = true, updated_at = now()
+           WHERE account_id = $1 AND NOT approved
+           RETURNING (confirmed_at IS NOT NULL) AS "confirmed!""#,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if approved == Some(true) {
+        prepare_new_user(state, account_id).await;
+    }
+    Ok(())
+}
+
+/// `User#prepare_new_user!`, the part eunha has: `BootstrapTimelineWorker`,
+/// which follows the inviter when the invite says to and tells staff.
+pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
+    let invite_id = sqlx::query_scalar!(
+        "SELECT invite_id FROM users WHERE account_id = $1",
+        account_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    let state = state.clone();
+    crate::tenants::spawn(async move {
+        // `autofollow_inviter!`
+        if let Some(invite_id) = invite_id {
+            crate::api::mastodon::signup::autofollow_inviter(&state, account_id, invite_id).await;
+        }
+        // `notify_staff!`
+        match crate::push::accounts_who_can(&state, &[crate::moderation::role::flag::MANAGE_USERS])
+            .await
+        {
+            Ok(staff) => {
+                for staff_id in staff {
+                    crate::push::notify_local(
+                        &state,
+                        staff_id,
+                        "admin.sign_up",
+                        "Account",
+                        account_id,
+                        account_id,
+                    )
+                    .await;
+                }
+            }
+            Err(error) => tracing::warn!(%error, "could not list staff for a sign-up"),
+        }
+    });
+}
+
+/// `User#notify_staff_about_pending_account!`: mail those who may manage users
+/// that a sign-up waits for them.
+pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, account_id: i64) {
+    let result: Result<()> = async {
+        let account = sqlx::query!(
+            r#"SELECT a.username,
+                      (SELECT r.text FROM user_invite_requests r WHERE r.user_id = u.id
+                       ORDER BY r.id LIMIT 1) AS "invite_request?"
+               FROM accounts a JOIN users u ON u.account_id = a.id
+               WHERE a.id = $1"#,
+            account_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        let staff =
+            crate::push::accounts_who_can(state, &[crate::moderation::role::flag::MANAGE_USERS])
+                .await?;
+        for staff_id in staff {
+            let Some(recipient) = sqlx::query!(
+                "SELECT email, settings FROM users WHERE account_id = $1",
+                staff_id
+            )
+            .fetch_optional(&state.db)
+            .await?
+            else {
+                continue;
+            };
+            // `allows_pending_account_emails?`
+            if !user_setting_bool(
+                recipient.settings.as_deref(),
+                "notification_emails.pending_account",
+                true,
+            ) {
+                continue;
+            }
+            if let Err(error) = state
+                .email
+                .send_new_pending_account(
+                    &recipient.email,
+                    &state.instance.domain,
+                    account_id,
+                    &account.username,
+                    account.invite_request.as_deref(),
+                )
+                .await
+            {
+                tracing::warn!(%error, "could not mail staff about a pending account");
+            }
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(%error, "could not notify staff about a pending account");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::valid_email;

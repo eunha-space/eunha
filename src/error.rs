@@ -24,6 +24,9 @@ pub enum AppError {
     ForbiddenScope,
     #[error("unprocessable entity: {0}")]
     Unprocessable(String),
+    /// `Mastodon::InvalidParameterError` and `ActionController::ParameterMissing`.
+    #[error("bad request: {0}")]
+    BadRequest(String),
     #[error("conflict")]
     Conflict,
     #[error("gone")]
@@ -51,6 +54,7 @@ impl IntoResponse for AppError {
                 "This action is outside the authorized scopes".to_string(),
             ),
             AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict => (StatusCode::CONFLICT, "Duplicate record".to_string()),
             AppError::Gone(msg) => (StatusCode::GONE, msg.clone()),
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),

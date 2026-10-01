@@ -74,13 +74,14 @@ async fn test_account_delete_page_and_challenge() {
         Some("/account/login?deleted=1"),
         "a deleted account is signed out",
     );
-    let suspended: bool =
-        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1")
+    // `Account#mark_deleted!`, as 4.7.0 records a deletion asked for.
+    let deleted: bool =
+        sqlx::query_scalar("SELECT requested_deletion_at IS NOT NULL FROM accounts WHERE id = $1")
             .bind(alice_account_id)
             .fetch_one(&ctx.db)
             .await
             .unwrap();
-    assert!(suspended, "account should be suspended for deletion");
+    assert!(deleted, "account should be marked deleted");
 }
 
 /// The server-rendered auth pages link the shared SPA-matching stylesheet.

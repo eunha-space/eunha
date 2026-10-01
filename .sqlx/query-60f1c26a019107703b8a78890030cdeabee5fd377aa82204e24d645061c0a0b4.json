@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET requested_deletion_at = now(), updated_at = now()\n           WHERE id = $1 RETURNING (domain IS NULL) AS \"local!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "60f1c26a019107703b8a78890030cdeabee5fd377aa82204e24d645061c0a0b4"
+}

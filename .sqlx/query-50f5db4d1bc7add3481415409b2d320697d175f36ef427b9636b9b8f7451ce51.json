@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s\n               WHERE s.account_id = $1 AND s.id = ANY($3)\n                 AND (\n                   $1 = $2\n                   OR (\n                     NOT EXISTS (SELECT 1 FROM blocks b WHERE b.account_id = $1 AND b.target_account_id = $2)\n                     AND (\n                       s.visibility IN (0, 1)\n                       OR (s.visibility = 2 AND EXISTS (\n                             SELECT 1 FROM follows f WHERE f.account_id = $2 AND f.target_account_id = $1))\n                       OR EXISTS (SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2)\n                     )\n                   )\n                 )\n               ORDER BY s.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "50f5db4d1bc7add3481415409b2d320697d175f36ef427b9636b9b8f7451ce51"
+}

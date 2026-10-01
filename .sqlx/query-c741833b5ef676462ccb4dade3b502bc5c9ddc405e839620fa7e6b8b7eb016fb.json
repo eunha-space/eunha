@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.username,\n                      (SELECT r.text FROM user_invite_requests r WHERE r.user_id = u.id\n                       ORDER BY r.id LIMIT 1) AS \"invite_request?\"\n               FROM accounts a JOIN users u ON u.account_id = a.id\n               WHERE a.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "invite_request?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "c741833b5ef676462ccb4dade3b502bc5c9ddc405e839620fa7e6b8b7eb016fb"
+}

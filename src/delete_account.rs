@@ -88,11 +88,11 @@ impl Options {
 
 // ── Account#suspend! / #unsuspend! ────────────────────────────────────────
 
-/// Port of `Account#suspend!` plus the `SuspendAccountService` that Mastodon
-/// runs straight after it. Records a deletion request (which is what makes the
-/// suspension reversible, and what the 30-day scheduler later acts on), marks
-/// the account suspended, optionally blocks the user's email from being reused,
-/// and clears its content out of the caches.
+/// Port of `Account#suspend!`. Records a deletion request (which is what makes
+/// the suspension reversible, and what the 30-day scheduler later acts on),
+/// marks the account suspended, and optionally blocks the user's email from
+/// being reused. What follows a moderator's suspension, `SuspendAccountService`,
+/// is [`crate::moderation::suspension::suspend`].
 ///
 /// Nothing is deleted here: a suspended account's statuses stay in the database
 /// and are hidden by the read paths (`StatusPolicy#show?`, and the
@@ -106,23 +106,16 @@ pub async fn suspend(
     block_email: bool,
 ) -> Result<()> {
     let mut tx = state.db.begin().await?;
-    // `create_deletion_request!`. There is no unique index on account_id, so
-    // guard against a second request for an already-suspended account.
-    sqlx::query!(
-        r#"INSERT INTO account_deletion_requests (account_id, created_at, updated_at)
-           SELECT $1, now(), now()
-           WHERE NOT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1)"#,
-        account_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        "UPDATE accounts SET suspended_at = now(), suspension_origin = $2, updated_at = now() WHERE id = $1",
+    create_deletion_request(&mut tx, account_id).await?;
+    let local = sqlx::query_scalar!(
+        r#"UPDATE accounts SET suspended_at = now(), suspension_origin = $2, updated_at = now()
+           WHERE id = $1 RETURNING (domain IS NULL) AS "local!""#,
         account_id,
         origin,
     )
-    .execute(&mut *tx)
-    .await?;
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(false);
     if block_email {
         // `Account#create_canonical_email_block!` — local accounts only, and a
         // duplicate is not an error.
@@ -140,19 +133,60 @@ pub async fn suspend(
     tx.commit().await?;
 
     // Terminate the account's streaming connections (Mastodon publishes a
-    // `kill` event on `timeline:system:{id}`).
-    state
-        .streaming
-        .publish(crate::streaming::Event::Kill { account_id });
-
-    suspend_side_effects(state, account_id).await?;
+    // `kill` event on `timeline:system:{id}` for a local account).
+    if local {
+        state
+            .streaming
+            .publish(crate::streaming::Event::Kill { account_id });
+    }
     Ok(())
 }
 
-/// Port of `SuspendAccountService`, which Mastodon runs on a worker right after
-/// `suspend!`. The account's content is *not* deleted — it is hidden for as long
-/// as the suspension lasts (see `StatusPolicy#show?`) — so the work here is
-/// clearing it out of the caches that would otherwise keep serving it.
+/// Port of `Account#mark_deleted!`, which since 4.7.0 is how an account asks to
+/// be deleted: a deletion request, `requested_deletion_at`, and its streaming
+/// connections closed.
+pub async fn mark_deleted(state: &AppState, account_id: i64) -> Result<()> {
+    let mut tx = state.db.begin().await?;
+    create_deletion_request(&mut tx, account_id).await?;
+    let local = sqlx::query_scalar!(
+        r#"UPDATE accounts SET requested_deletion_at = now(), updated_at = now()
+           WHERE id = $1 RETURNING (domain IS NULL) AS "local!""#,
+        account_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(false);
+    tx.commit().await?;
+    if local {
+        state
+            .streaming
+            .publish(crate::streaming::Event::Kill { account_id });
+    }
+    Ok(())
+}
+
+/// `create_deletion_request!`. There is no unique index on account_id, so
+/// guard against a second request for an account that already has one.
+async fn create_deletion_request(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account_id: i64,
+) -> Result<()> {
+    sqlx::query!(
+        r#"INSERT INTO account_deletion_requests (account_id, created_at, updated_at)
+           SELECT $1, now(), now()
+           WHERE NOT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1)"#,
+        account_id,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// The cache work of `SuspendAccountService` (`unmerge_from_home_timelines!`,
+/// `unmerge_from_list_timelines!`, `remove_from_trends!`). The account's content
+/// is *not* deleted — it is hidden for as long as the suspension lasts (see
+/// `StatusPolicy#show?`) — so the work here is clearing it out of the caches
+/// that would otherwise keep serving it.
 pub async fn suspend_side_effects(state: &AppState, account_id: i64) -> Result<()> {
     // `unmerge_from_home_timelines!`
     let followers: Vec<i64> = sqlx::query_scalar!(
@@ -339,18 +373,18 @@ async fn delete_actor_inboxes(state: &AppState) -> Result<Vec<String>> {
     Ok(rows)
 }
 
-/// `reject_follows!` + `undo_follows!` — a deleted remote account keeps working
-/// on its own server, so force the follow relationships apart in both
-/// directions rather than leaving it able to receive our posts.
-async fn sever_remote_follows(state: &AppState, account: &Account) -> Result<()> {
+/// `RejectFollowSerializer` for each follow a remote account has of local
+/// accounts, signed by the account followed and sent to the follower's inbox.
+/// Returns the ids of the local accounts it was following.
+pub(crate) async fn reject_follows_by(state: &AppState, account: &Account) -> Result<Vec<i64>> {
     let Some(remote_uri) = account.stored_uri().map(str::to_owned) else {
-        return Ok(());
+        return Ok(vec![]);
     };
     if account.inbox_url.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
     let domain = &state.instance.domain;
-
+    let mut targets = vec![];
     // Follows *by* the remote account: Reject them, signed by the local target.
     let outgoing = sqlx::query!(
         r#"SELECT f.id, f.uri, a.id AS target_id, a.username, a.id_scheme
@@ -361,6 +395,7 @@ async fn sever_remote_follows(state: &AppState, account: &Account) -> Result<()>
     .fetch_all(&state.db)
     .await?;
     for follow in outgoing {
+        targets.push(follow.target_id);
         let target_url = crate::federation::tag::account_uri(
             domain,
             follow.target_id,
@@ -386,6 +421,22 @@ async fn sever_remote_follows(state: &AppState, account: &Account) -> Result<()>
         )
         .await?;
     }
+
+    Ok(targets)
+}
+
+/// `reject_follows!` + `undo_follows!` — a deleted remote account keeps working
+/// on its own server, so force the follow relationships apart in both
+/// directions rather than leaving it able to receive our posts.
+async fn sever_remote_follows(state: &AppState, account: &Account) -> Result<()> {
+    let Some(remote_uri) = account.stored_uri().map(str::to_owned) else {
+        return Ok(());
+    };
+    if account.inbox_url.is_empty() {
+        return Ok(());
+    }
+    reject_follows_by(state, account).await?;
+    let domain = &state.instance.domain;
 
     // Follows *of* the remote account: Undo them, signed by the local follower.
     let incoming = sqlx::query!(

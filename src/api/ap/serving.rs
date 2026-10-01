@@ -258,6 +258,19 @@ pub fn federation() -> Federation<AppState> {
                         let Some(account) = scheme.account(&ctx, &identifier).await? else {
                             return Ok::<_, AppError>(Found::NotFound);
                         };
+                        // `permanently_unavailable?`: unavailable with nothing
+                        // left to undo is gone.
+                        if account.is_unavailable() {
+                            let reversible = sqlx::query_scalar!(
+                                r#"SELECT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1) AS "e!""#,
+                                account.id,
+                            )
+                            .fetch_one(&ctx.data().db)
+                            .await?;
+                            if !reversible {
+                                return Ok(Found::Gone(None));
+                            }
+                        }
                         found(super::objects::actor_json(ctx.data(), domain(&ctx), &account).await)
                     },
                 )

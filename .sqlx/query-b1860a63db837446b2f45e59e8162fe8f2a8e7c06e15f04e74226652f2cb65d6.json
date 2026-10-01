@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_access_tokens SET scopes = scopes || ' admin:read admin:write' WHERE resource_owner_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1860a63db837446b2f45e59e8162fe8f2a8e7c06e15f04e74226652f2cb65d6"
+}

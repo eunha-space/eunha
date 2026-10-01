@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.account_id, ra.username AS reporter_username, ra.domain AS reporter_domain,\n                      ta.username AS target_username, ta.domain AS target_domain\n               FROM reports r\n               JOIN accounts ra ON ra.id = r.account_id\n               JOIN accounts ta ON ta.id = r.target_account_id\n               WHERE r.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reporter_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "reporter_domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "target_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "65b3e2e751ce0b31420a046a264f8635696b817349c3afe1616628138c8bfd59"
+}

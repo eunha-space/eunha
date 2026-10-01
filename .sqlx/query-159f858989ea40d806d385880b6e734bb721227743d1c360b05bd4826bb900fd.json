@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, target_account_id, assigned_account_id,\n                  action_taken_by_account_id, action_taken_at, category, comment, forwarded,\n                  status_ids, rule_ids, created_at, updated_at\n           FROM reports\n           WHERE ($1 = 'all' OR ($1 = 'resolved') = (action_taken_at IS NOT NULL))\n             AND ($2::bigint IS NULL OR account_id = $2)\n             AND ($3::bigint IS NULL OR target_account_id = $3)\n             AND ($4::bigint IS NULL OR id < $4)\n             AND ($5::bigint IS NULL OR id > $5)\n             AND ($6::bigint IS NULL OR id > $6)\n           ORDER BY CASE WHEN $6::bigint IS NULL THEN -id ELSE id END\n           LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "assigned_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "action_taken_by_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "action_taken_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "category",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "forwarded",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "status_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 10,
+        "name": "rule_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "159f858989ea40d806d385880b6e734bb721227743d1c360b05bd4826bb900fd"
+}

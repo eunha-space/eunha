@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.text, r.hint,\n                  COALESCE(\n                    (SELECT jsonb_object_agg(t.language, jsonb_build_object('text', t.text, 'hint', t.hint))\n                     FROM rule_translations t WHERE t.rule_id = r.id),\n                    '{}'::jsonb\n                  ) AS \"translations!\"\n           FROM rules r\n           WHERE ($1::bigint[] IS NULL AND r.deleted_at IS NULL) OR r.id = ANY($1)\n           ORDER BY r.priority, r.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "hint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "translations!",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "0ac130bbe43d5bfee7c95c77cf9aa48d3f386e528386279c540b963dd008df69"
+}

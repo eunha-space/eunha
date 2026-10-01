@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.uri FROM collection_reports cr JOIN collections c ON c.id = cr.collection_id WHERE cr.report_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ff62db5f6263627742e677af13dd173db5802e84db6418cc768fd28a1009ddc3"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.account_id FROM account_deletion_requests r\n           JOIN accounts a ON a.id = r.account_id\n           WHERE r.created_at < $1\n             AND (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)\n           ORDER BY r.id ASC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eae8af1455f78a24d1bcb1a188f978217598470b2238d245c1470bc4f03da437"
+}

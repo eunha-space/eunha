@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.account_id FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           LEFT JOIN user_roles ur ON ur.id = COALESCE(u.role_id, $1)\n           WHERE a.domain IS NULL\n             AND (\n               CASE\n                 WHEN COALESCE(ur.id, $1) = $1 THEN COALESCE(ur.permissions, $2)\n                 WHEN ur.permissions & 1 = 1 THEN $4\n                 ELSE ur.permissions | $2\n               END\n             ) & $3 <> 0\n           ORDER BY u.account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d0b1b96395294c8e2e6376a725faddb6cdf78bb3d3314badecc4597677621ca"
+}

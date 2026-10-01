@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM notifications WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "activity_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "activity_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "from_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "filtered",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "group_key",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "47b3211344c71c951ab4bb8e71bacd47fc54001e7d3a60796039454404011fa1"
+}

@@ -9,6 +9,7 @@ pub mod follow;
 pub mod handle;
 pub mod instance_actor;
 pub mod keypair;
+pub mod local_uri;
 pub mod moderation;
 pub mod portable;
 pub mod safe_fetch;
