@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications WHERE account_id = $1 AND type = 'follow_request'\n                         AND from_account_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49bd48e38ed3fa378919c031f3504af969846122999a1a20948ad5cce9e06622"
+}

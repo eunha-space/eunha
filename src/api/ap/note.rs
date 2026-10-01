@@ -87,7 +87,9 @@ pub async fn build_note(
     status_id: i64,
 ) -> AppResult<Option<NoteBundle>> {
     let s = sqlx::query!(
-        r#"SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility, s.sensitive,
+        r#"SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility,
+                  -- `object.account.sensitized? || object.sensitive`
+                  (s.sensitive OR a.sensitized_at IS NOT NULL) AS "sensitive!",
                   s.created_at, s.edited_at, s.uri, s.url, s.in_reply_to_id, s.language,
                   s.quote_approval_policy,
                   a.username, a.uri AS account_uri, a.id_scheme,

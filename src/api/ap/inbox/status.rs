@@ -626,9 +626,21 @@ pub(super) async fn handle_update(
                 .and_then(|s| s.as_str())
                 .unwrap_or("")
                 .to_string();
+            // `@account.sensitized? || @status_parser.sensitive`.
             let sensitive = object
                 .get("sensitive")
                 .and_then(|s| s.as_bool())
+                .unwrap_or(false)
+                || sqlx::query_scalar!(
+                    r#"SELECT (sensitized_at IS NOT NULL) AS "s!" FROM accounts
+                       WHERE uri = $1 AND domain IS NOT NULL"#,
+                    activity
+                        .get("actor")
+                        .and_then(|a| a.as_str())
+                        .unwrap_or_default(),
+                )
+                .fetch_optional(&state.db)
+                .await?
                 .unwrap_or(false);
             let language = object
                 .get("contentMap")

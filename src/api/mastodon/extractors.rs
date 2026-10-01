@@ -260,3 +260,132 @@ impl<'de> serde::Deserialize<'de> for FlexBool {
         }))
     }
 }
+
+/// One parameter of a request body: text, or an uploaded file.
+#[derive(Debug, Clone)]
+pub enum Part {
+    Text(String),
+    File { content_type: String, data: Vec<u8> },
+}
+
+impl Part {
+    /// The text of a text part; a file reads as empty.
+    pub fn text(&self) -> String {
+        match self {
+            Part::Text(t) => t.clone(),
+            Part::File { .. } => String::new(),
+        }
+    }
+
+    /// The content type and bytes of a file part; text is no file.
+    pub fn file(&self) -> (String, Vec<u8>) {
+        match self {
+            Part::File { content_type, data } => (content_type.clone(), data.clone()),
+            Part::Text(_) => ("application/octet-stream".into(), vec![]),
+        }
+    }
+}
+
+/// A request body's parameters under Rails' bracketed names
+/// (`source[privacy]`, `fields_attributes[0][name]`, `attribution_domains[]`),
+/// from multipart, form-encoded or JSON, as Rails reads all three into the
+/// same `params`.
+pub struct Parts(pub Vec<(String, Part)>);
+
+fn flatten_json(prefix: &str, value: &serde_json::Value, out: &mut Vec<(String, Part)>) {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => {
+            for (k, v) in map {
+                let name = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}[{k}]")
+                };
+                flatten_json(&name, v, out);
+            }
+        }
+        Value::Array(items) => {
+            // Arrays of objects are indexed (`fields_attributes[0][name]`);
+            // arrays of scalars repeat `name[]`.
+            for (i, v) in items.iter().enumerate() {
+                if v.is_object() {
+                    flatten_json(&format!("{prefix}[{i}]"), v, out);
+                } else {
+                    flatten_json(&format!("{prefix}[]"), v, out);
+                }
+            }
+        }
+        Value::Null => out.push((prefix.to_owned(), Part::Text(String::new()))),
+        Value::String(s) => out.push((prefix.to_owned(), Part::Text(s.clone()))),
+        other => out.push((prefix.to_owned(), Part::Text(other.to_string()))),
+    }
+}
+
+impl<S> FromRequest<S> for Parts
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e).into_response();
+        let content_type = req
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let mut parts = vec![];
+        if content_type.contains("multipart/form-data") {
+            let mut multipart = Multipart::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            while let Some(field) = multipart
+                .next_field()
+                .await
+                .map_err(|e| unprocessable(e.to_string()))?
+            {
+                let name = field.name().unwrap_or("").to_string();
+                let is_file = field.file_name().is_some();
+                let ct = field.content_type().map(str::to_owned);
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| unprocessable(e.to_string()))?;
+                if is_file {
+                    parts.push((
+                        name,
+                        Part::File {
+                            content_type: ct.unwrap_or_else(|| "application/octet-stream".into()),
+                            data: data.to_vec(),
+                        },
+                    ));
+                } else {
+                    parts.push((
+                        name,
+                        Part::Text(String::from_utf8_lossy(&data).into_owned()),
+                    ));
+                }
+            }
+        } else {
+            let bytes = axum::body::Bytes::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            if content_type.contains("application/json") {
+                if !bytes.is_empty() {
+                    let value: serde_json::Value = serde_json::from_slice(&bytes)
+                        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+                    flatten_json("", &value, &mut parts);
+                }
+            } else {
+                parts.extend(
+                    url::form_urlencoded::parse(&bytes)
+                        .into_owned()
+                        .map(|(k, v)| (k, Part::Text(v))),
+                );
+            }
+        }
+        Ok(Parts(parts))
+    }
+}

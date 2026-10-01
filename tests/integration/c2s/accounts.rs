@@ -4347,3 +4347,30 @@ async fn test_directory_order_new() {
     // precise seeding, but we verify the param is accepted and returns valid JSON).
     let _ = accounts;
 }
+
+/// PATCH /api/v1/accounts/update_credentials takes a JSON body, as Rails
+/// reads JSON into the same params as a form: nested `source`, and
+/// `fields_attributes` as an array.
+#[tokio::test]
+async fn test_update_credentials_accepts_json() {
+    let ctx = TestContext::new("update-creds-json").await;
+    let resp = ctx
+        .api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({
+                "display_name": "Alice J",
+                "locked": true,
+                "source": {"privacy": "unlisted"},
+                "fields_attributes": [{"name": "Site", "value": "example.com"}],
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["display_name"], "Alice J");
+    assert_eq!(body["locked"], true);
+    assert_eq!(body["source"]["privacy"], "unlisted");
+    assert_eq!(body["fields"][0]["name"], "Site");
+}

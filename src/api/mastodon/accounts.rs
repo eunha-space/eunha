@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Multipart, Path, Query, RawQuery},
+    extract::{Extension, Path, Query, RawQuery},
     http::{HeaderMap, Uri},
     response::IntoResponse,
     Json,

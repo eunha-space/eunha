@@ -130,9 +130,17 @@ async fn fetch_remote_status_depth(
         .and_then(|s| s.as_str())
         .unwrap_or("")
         .to_string();
+    // `@account.sensitized? || @status_parser.sensitive`.
     let sensitive = object
         .get("sensitive")
         .and_then(|s| s.as_bool())
+        .unwrap_or(false)
+        || sqlx::query_scalar!(
+            r#"SELECT (sensitized_at IS NOT NULL) AS "s!" FROM accounts WHERE id = $1"#,
+            account_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
         .unwrap_or(false);
     let url = object
         .get("url")

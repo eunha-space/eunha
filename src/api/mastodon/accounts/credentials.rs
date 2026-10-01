@@ -85,7 +85,7 @@ async fn process_profile_image(
 async fn do_update_credentials(
     state: &AppState,
     auth: &AuthenticatedUser,
-    mut multipart: Multipart,
+    parts: Vec<(String, super::super::extractors::Part)>,
 ) -> AppResult<Account> {
     let mut display_name: Option<String> = None;
     let mut note: Option<String> = None;
@@ -108,18 +108,10 @@ async fn do_update_credentials(
     let mut fields_submitted = false;
     let mut attribution_domains: Option<Vec<String>> = None;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::Unprocessable(e.to_string()))?
-    {
-        let name = field.name().unwrap_or("").to_string();
+    for (name, part) in parts {
         // Parse attribution_domains[] array fields
         if name == "attribution_domains[]" {
-            let v = field
-                .text()
-                .await
-                .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+            let v = part.text();
             attribution_domains.get_or_insert_with(Vec::new).push(v);
             continue;
         }
@@ -127,10 +119,7 @@ async fn do_update_credentials(
         if let Some(rest) = name.strip_prefix("fields_attributes[") {
             if let Some((idx_str, key)) = rest.split_once(']') {
                 if let Ok(idx) = idx_str.parse::<u32>() {
-                    let text = field
-                        .text()
-                        .await
-                        .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                    let text = part.text();
                     fields_submitted = true;
                     let entry = fields_map.entry(idx).or_default();
                     match key {
@@ -144,97 +133,53 @@ async fn do_update_credentials(
         }
         match name.as_str() {
             "display_name" => {
-                display_name = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| AppError::Unprocessable(e.to_string()))?,
-                );
+                display_name = Some(part.text());
             }
             "note" => {
-                note = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| AppError::Unprocessable(e.to_string()))?,
-                );
+                note = Some(part.text());
             }
             "locked" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 locked = Some(v == "true" || v == "1");
             }
             "bot" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 bot = Some(v == "true" || v == "1");
             }
             "discoverable" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 discoverable = Some(v == "true" || v == "1");
             }
             "source[privacy]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 if matches!(v.as_str(), "public" | "unlisted" | "private" | "direct") {
                     source_privacy = Some(v);
                 }
             }
             "source[sensitive]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 source_sensitive = Some(v == "true" || v == "1");
             }
             "source[language]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 source_language = Some(if v.is_empty() { None } else { Some(v) });
             }
             "hide_collections" | "source[hide_collections]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 source_hide_collections = Some(v == "true" || v == "1");
             }
             "source[quote_policy]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 if matches!(v.as_str(), "public" | "followers" | "nobody") {
                     source_quote_policy = Some(v);
                 }
             }
             "indexable" | "source[indexable]" => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let v = part.text();
                 indexable = Some(v == "true" || v == "1");
             }
             "avatar" => {
-                let ct = field
-                    .content_type()
-                    .unwrap_or("application/octet-stream")
-                    .to_string();
-                let data = field
-                    .bytes()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let (ct, data) = part.file();
                 if !data.is_empty() {
                     let (data, ct) = process_profile_image(data.to_vec(), ct, AVATAR_FIT).await?;
                     let key = crate::media::account_avatar_key(auth.account_id, &ct);
@@ -244,14 +189,7 @@ async fn do_update_credentials(
                 }
             }
             "header" => {
-                let ct = field
-                    .content_type()
-                    .unwrap_or("application/octet-stream")
-                    .to_string();
-                let data = field
-                    .bytes()
-                    .await
-                    .map_err(|e| AppError::Unprocessable(e.to_string()))?;
+                let (ct, data) = part.file();
                 if !data.is_empty() {
                     let (data, ct) = process_profile_image(data.to_vec(), ct, HEADER_FIT).await?;
                     let key = crate::media::account_header_key(auth.account_id, &ct);
@@ -360,8 +298,12 @@ async fn do_update_credentials(
         // Auto-approve pending follow requests when account becomes unlocked
         if !l {
             // Promote all pending follow requests to accepted follows
+            // `authorize_all_follow_requests`: all but those from limited
+            // accounts, which stay requests.
             let pending = sqlx::query!(
-                "DELETE FROM follow_requests WHERE target_account_id = $1 RETURNING account_id",
+                r#"DELETE FROM follow_requests fr USING accounts a
+                   WHERE fr.target_account_id = $1 AND a.id = fr.account_id AND a.silenced_at IS NULL
+                   RETURNING fr.account_id"#,
                 auth.account_id,
             )
             .fetch_all(&state.db)
@@ -369,9 +311,12 @@ async fn do_update_credentials(
             if !pending.is_empty() {
                 // Mirror Mastodon's FollowRequest dependent: :destroy — auto-approving
                 // the pending requests removes their follow_request notifications too.
+                let approved: Vec<i64> = pending.iter().map(|r| r.account_id).collect();
                 sqlx::query!(
-                    "DELETE FROM notifications WHERE account_id = $1 AND type = 'follow_request'",
+                    r#"DELETE FROM notifications WHERE account_id = $1 AND type = 'follow_request'
+                         AND from_account_id = ANY($2)"#,
                     auth.account_id,
+                    &approved,
                 )
                 .execute(&state.db)
                 .await?;
@@ -544,10 +489,10 @@ pub async fn update_credentials(
     Extension(crate::middleware::ResolvedInstance(instance)): Extension<
         crate::middleware::ResolvedInstance,
     >,
-    multipart: Multipart,
+    super::super::extractors::Parts(parts): super::super::extractors::Parts,
 ) -> AppResult<Json<ApiAccount>> {
     auth.require_scope("write:accounts")?;
-    let account = do_update_credentials(&state, &auth, multipart).await?;
+    let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::spawn(&state, auth.account_id);
     build_credential_account_response(&state, &auth, account).await
@@ -561,10 +506,10 @@ pub async fn patch_profile(
     Extension(crate::middleware::ResolvedInstance(instance)): Extension<
         crate::middleware::ResolvedInstance,
     >,
-    multipart: Multipart,
+    super::super::extractors::Parts(parts): super::super::extractors::Parts,
 ) -> AppResult<Json<crate::api::mastodon::types::Profile>> {
     auth.require_scope("write:accounts")?;
-    let account = do_update_credentials(&state, &auth, multipart).await?;
+    let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::spawn(&state, auth.account_id);
 

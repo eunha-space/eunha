@@ -1316,3 +1316,70 @@ async fn test_notification_policies() {
     .unwrap();
     assert_eq!(from_carol, 0);
 }
+
+/// A sensitized account's posts federate as sensitive.
+#[tokio::test]
+async fn test_sensitized_account_federates_sensitive() {
+    let ctx = TestContext::new("mod-sensitized-note").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "a picture, say", "public")
+        .await;
+    sqlx::query("UPDATE accounts SET sensitized_at = now() WHERE id = $1")
+        .bind(id(&ctx.bob_id))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let bundle = eunha::api::ap::note::build_note(
+        &ctx.state,
+        &ctx.domain,
+        id(status["id"].as_str().unwrap()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(bundle.note["sensitive"], true);
+}
+
+/// Unlocking an account approves its pending follow requests, except those
+/// from limited accounts (`authorize_all_follow_requests`).
+#[tokio::test]
+async fn test_unlock_skips_limited_requesters() {
+    let ctx = TestContext::new("mod-unlock").await;
+    let (carol_id, _) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    sqlx::query("UPDATE accounts SET locked = true WHERE id = $1")
+        .bind(id(&ctx.alice_id))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET silenced_at = now() WHERE id = $1")
+        .bind(carol_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO follow_requests (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $3, now(), now()), ($2, $3, now(), now())",
+    )
+    .bind(id(&ctx.bob_id))
+    .bind(carol_id)
+    .bind(id(&ctx.alice_id))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    ctx.api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"locked": false}),
+        )
+        .await;
+    let left: Vec<i64> =
+        sqlx::query_scalar("SELECT account_id FROM follow_requests WHERE target_account_id = $1")
+            .bind(id(&ctx.alice_id))
+            .fetch_all(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(left, vec![carol_id]);
+}

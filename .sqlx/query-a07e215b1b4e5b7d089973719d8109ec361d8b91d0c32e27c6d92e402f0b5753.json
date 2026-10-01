@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (sensitized_at IS NOT NULL) AS \"s!\" FROM accounts\n                       WHERE uri = $1 AND domain IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "s!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a07e215b1b4e5b7d089973719d8109ec361d8b91d0c32e27c6d92e402f0b5753"
+}
