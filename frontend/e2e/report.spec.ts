@@ -73,7 +73,7 @@ test('reporting a remote account offers to forward, and sends what was chosen', 
   await page.getByRole('button', { name: /More actions/ }).click()
   await page.getByRole('menuitem', { name: 'Report account' }).click()
 
-  await expect(page.getByText('Also send this to remote.example')).toBeVisible()
+  await expect(page.getByText('Forward to remote.example')).toBeVisible()
   await page.getByRole('switch').click()
   await page.getByRole('button', { name: 'Report', exact: true }).click()
 
@@ -93,11 +93,78 @@ test('reporting a local account does not offer forwarding', async ({ page }) => 
   await page.getByRole('button', { name: /More actions/ }).click()
   await page.getByRole('menuitem', { name: 'Report account' }).click()
 
-  await expect(page.getByText(/Also send this to/)).toHaveCount(0)
+  await expect(page.getByText(/Forward to/)).toHaveCount(0)
   await page.getByRole('button', { name: 'Report', exact: true }).click()
 
   await expect(page.getByText(/Reported @bob/)).toBeVisible()
   // Absent rather than false: there is nowhere to forward a local report to.
   expect(body).toMatchObject({ account_id: '3' })
   expect(body).not.toHaveProperty('forward')
+})
+
+// With rules, "breaks a server rule" asks which ones and will not send until
+// one is picked; the account's recent posts can be attached.
+test('a rule violation names its rules and the posts picked', async ({ page }) => {
+  await stubProfile(page, local)
+  await page.route('**/api/v1/instance/rules', (r) =>
+    r.fulfill({
+      json: [
+        { id: '1', text: 'No spam', hint: '' },
+        { id: '2', text: 'Be kind', hint: '' },
+      ],
+    }),
+  )
+  await page.unroute(`**/api/v1/accounts/${local.id}/statuses**`)
+  await page.route(`**/api/v1/accounts/${local.id}/statuses**`, (r) =>
+    r.fulfill({
+      json: [
+        {
+          id: '50',
+          created_at: '2026-09-01T00:00:00.000Z',
+          content: '<p>Buy my stuff</p>',
+          spoiler_text: '',
+          visibility: 'public',
+          sensitive: false,
+          account: local,
+          media_attachments: [],
+          mentions: [],
+          tags: [],
+          emojis: [],
+          reblog: null,
+          in_reply_to_id: null,
+          in_reply_to_account_id: null,
+          uri: 'https://example.com/50',
+          url: null,
+          replies_count: 0,
+          reblogs_count: 0,
+          favourites_count: 0,
+        },
+      ],
+    }),
+  )
+  let body: Record<string, unknown> | null = null
+  await page.route('**/api/v1/reports', async (route) => {
+    body = route.request().postDataJSON()
+    await route.fulfill({ json: { id: '1' } })
+  })
+
+  await page.goto('/@bob')
+  await page.getByRole('button', { name: /More actions/ }).click()
+  await page.getByRole('menuitem', { name: 'Report account' }).click()
+  await page.getByRole('combobox', { name: 'Reason' }).click()
+  await page.getByRole('option', { name: 'Breaks a server rule' }).click()
+
+  const report = page.getByRole('button', { name: 'Report', exact: true })
+  await expect(report).toBeDisabled()
+  await page.getByRole('checkbox', { name: 'Be kind' }).click()
+  await page.getByRole('checkbox', { name: /Buy my stuff/ }).click()
+  await report.click()
+
+  await expect(page.getByText(/Reported @bob/)).toBeVisible()
+  expect(body).toMatchObject({
+    account_id: '3',
+    category: 'violation',
+    rule_ids: ['2'],
+    status_ids: ['50'],
+  })
 })

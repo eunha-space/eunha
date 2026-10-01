@@ -214,14 +214,10 @@ export async function getAccountStatuses(
   return restClient(token).v1.accounts.$select(id).statuses.list({ limit: 40, maxId })
 }
 
-// An account's pinned posts. eunha also serves `/api/v1/accounts/:id/pins`, but
-// `?pinned=true` is the form Mastodon documents and masto types, and the one
-// every other client already asks for. It returns all of them at once — pins
-// cap at five — so there is nothing to paginate.
-// Report an account, optionally naming posts of theirs for context. eunha's
-// `rule_ids` is accepted but there is nothing to put in it: every path that
-// serves instance rules returns an empty list, so there are no rules to break
-// and the category is the whole of what a reporter chooses.
+// Report an account, optionally naming posts of theirs and the rules they
+// break. `rule_ids` only means something with the `violation` category, and
+// `forward_to_domains` only for a remote account: the servers, beyond the
+// account's own, whose posts the report names and that should hear of it too.
 export function fileReport(
   token: string,
   params: {
@@ -229,12 +225,33 @@ export function fileReport(
     statusIds?: string[]
     comment?: string
     forward?: boolean
-    category?: 'spam' | 'violation' | 'other'
+    forwardToDomains?: string[]
+    category?: mastodon.v1.ReportCategory
+    ruleIds?: string[]
   },
 ): Promise<mastodon.v1.Report> {
   return restClient(token).v1.reports.create(params)
 }
 
+export interface InstanceRule {
+  id: string
+  text: string
+  hint?: string
+}
+
+// The server's rules. Public, and empty on a server that has written none —
+// which is how the report flow knows to leave the rule step out.
+export async function getInstanceRules(): Promise<InstanceRule[]> {
+  const res = await fetch(`${window.location.origin}/api/v1/instance/rules`)
+  if (!res.ok) return []
+  const body: unknown = await res.json()
+  return Array.isArray(body) ? (body as InstanceRule[]) : []
+}
+
+// An account's pinned posts. eunha also serves `/api/v1/accounts/:id/pins`, but
+// `?pinned=true` is the form Mastodon documents and masto types, and the one
+// every other client already asks for. It returns all of them at once — pins
+// cap at five — so there is nothing to paginate.
 export async function getPinnedStatuses(
   id: string,
   token?: string,

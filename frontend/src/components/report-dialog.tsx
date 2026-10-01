@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import type { mastodon } from '../masto.ts'
-import { fileReport } from '../api.ts'
+import { fileReport, getAccountStatuses, getInstanceRules, type InstanceRule } from '../api.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { Checkbox } from '@/components/ui/checkbox.tsx'
 import {
   Dialog,
   DialogClose,
@@ -26,19 +27,32 @@ import {
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 
-type Category = 'spam' | 'violation' | 'other'
+type Category = mastodon.v1.ReportCategory
 
-// The three the server stores. Upstream offers a rules-based option too, which
-// forces the category to `violation` — eunha serves no rules, so there is
-// nothing to pick and the plain category is the whole choice.
+// Mastodon's report categories, worded as its report flow words them.
+// `violation` is offered only when the server has rules to break, as upstream
+// does: without them there is nothing to name.
 const CATEGORIES: Record<Category, string> = {
   spam: 'Spam or scam',
+  legal: 'Illegal content',
   violation: 'Breaks a server rule',
   other: 'Something else',
 }
 
 // Mastodon's Report::COMMENT_SIZE_LIMIT, which the server enforces too.
 const COMMENT_LIMIT = 1000
+
+// How many of the account's recent posts to offer as evidence.
+const RECENT_POSTS = 20
+
+function plainText(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return doc.body.textContent ?? ''
+}
+
+function domainOf(acct: string): string | null {
+  return acct.includes('@') ? acct.split('@')[1] : null
+}
 
 export function ReportDialog({
   account,
@@ -48,42 +62,86 @@ export function ReportDialog({
   token,
 }: {
   account: mastodon.v1.Account
-  // The post that prompted the report, if it started from one. It is sent for
-  // context; a report is always against the account.
+  // The post that prompted the report, if it started from one. It starts out
+  // picked; a report is always against the account.
   status?: mastodon.v1.Status
   open: boolean
   onOpenChange: (open: boolean) => void
   token: string
 }) {
   const [category, setCategory] = useState<Category>('other')
+  const [rules, setRules] = useState<InstanceRule[]>([])
+  const [ruleIds, setRuleIds] = useState<string[]>([])
+  const [recent, setRecent] = useState<mastodon.v1.Status[]>([])
+  const [statusIds, setStatusIds] = useState<string[]>([])
   const [comment, setComment] = useState('')
-  const [forward, setForward] = useState(false)
+  const [forwardTo, setForwardTo] = useState<string[]>([])
   const [sending, setSending] = useState(false)
 
   // A fresh dialog each time it opens — a half-written report from the last
   // account is not a draft worth keeping.
   useEffect(() => {
-    if (open) {
-      setCategory('other')
-      setComment('')
-      setForward(false)
-    }
-  }, [open])
+    if (!open) return
+    setCategory('other')
+    setRuleIds([])
+    setStatusIds(status ? [status.id] : [])
+    setComment('')
+    setForwardTo([])
+    getInstanceRules().then(setRules).catch(() => setRules([]))
+    getAccountStatuses(account.id, token)
+      .then((list) => {
+        const own = list.filter((s) => !s.reblog).slice(0, RECENT_POSTS)
+        // The post the report started from stays on the list even when it is
+        // older than the recent ones.
+        setRecent(status && !own.some((s) => s.id === status.id) ? [status, ...own] : own)
+      })
+      .catch(() => setRecent(status ? [status] : []))
+    // Keyed on the post's id: a parent re-rendering with a fresh copy of the
+    // same post should not wipe what has been filled in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, account.id, status?.id, token])
 
-  // `acct` carries a domain only for remote accounts, and forwarding is only
-  // meaningful for those: there is no other server to tell.
-  const domain = account.acct.includes('@') ? account.acct.split('@')[1] : null
+  // `acct` carries a domain only for remote accounts. Forwarding is offered to
+  // that server, and to the servers of anyone the picked posts reply to — the
+  // `forward_to_domains` Mastodon's report flow offers.
+  const domain = domainOf(account.acct)
+  const domains = domain
+    ? [
+        domain,
+        ...new Set(
+          recent
+            .filter((s) => statusIds.includes(s.id) && s.inReplyToAccountId)
+            .map((s) => s.mentions.find((m) => m.id === s.inReplyToAccountId)?.acct)
+            .map((acct) => (acct ? domainOf(acct) : null))
+            .filter((d): d is string => !!d && d !== domain),
+        ),
+      ]
+    : []
+
+  const categories: Record<string, string> =
+    rules.length > 0
+      ? CATEGORIES
+      : { spam: CATEGORIES.spam, legal: CATEGORIES.legal, other: CATEGORIES.other }
+
+  const toggle = (list: string[], id: string, on: boolean) =>
+    on ? [...list, id] : list.filter((x) => x !== id)
+
+  const needsRule = category === 'violation' && ruleIds.length === 0
 
   const submit = async () => {
-    if (sending) return
+    if (sending || needsRule) return
     setSending(true)
+    const forwarding = forwardTo.filter((d) => domains.includes(d))
     try {
       await fileReport(token, {
         accountId: account.id,
-        statusIds: status ? [status.id] : undefined,
+        statusIds: statusIds.length > 0 ? statusIds : undefined,
         comment: comment.trim() || undefined,
-        forward: domain ? forward : undefined,
+        forward: domain ? forwarding.length > 0 : undefined,
+        forwardToDomains:
+          forwarding.filter((d) => d !== domain).length > 0 ? forwarding : undefined,
         category,
+        ruleIds: category === 'violation' ? ruleIds : undefined,
       })
       toast.success(`Reported @${account.acct}. Moderators will take a look.`)
       onOpenChange(false)
@@ -99,21 +157,19 @@ export function ReportDialog({
   // the other kind and stays an AlertDialog.
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Report @{account.acct}?</DialogTitle>
           <DialogDescription>
-            {status
-              ? 'This post is sent with the report so moderators can see what prompted it.'
-              : 'Moderators on this server will see the report.'}
+            Moderators on this server will see the report and the posts you pick.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="space-y-1">
             <Label>Reason</Label>
             <Select
-              items={CATEGORIES}
+              items={categories}
               value={category}
               onValueChange={(v) => setCategory((v as Category) ?? 'other')}
             >
@@ -122,15 +178,65 @@ export function ReportDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {(Object.keys(CATEGORIES) as Category[]).map((key) => (
+                  {Object.entries(categories).map(([key, label]) => (
                     <SelectItem key={key} value={key}>
-                      {CATEGORIES[key]}
+                      {label}
                     </SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
           </div>
+
+          {category === 'violation' && (
+            <fieldset className="space-y-1.5">
+              <legend className="mb-1 text-sm font-medium">Which rules?</legend>
+              {rules.map((rule) => (
+                <Label key={rule.id} className="items-start text-sm leading-snug font-normal">
+                  <Checkbox
+                    checked={ruleIds.includes(rule.id)}
+                    onCheckedChange={(on) => setRuleIds((ids) => toggle(ids, rule.id, on))}
+                  />
+                  <span>
+                    {rule.text}
+                    {rule.hint && (
+                      <span className="text-muted-foreground block text-xs">{rule.hint}</span>
+                    )}
+                  </span>
+                </Label>
+              ))}
+            </fieldset>
+          )}
+
+          {recent.length > 0 && (
+            <fieldset className="space-y-1.5">
+              <legend className="mb-1 text-sm font-medium">Posts to include (optional)</legend>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border p-2">
+                {recent.map((s) => (
+                  <Label
+                    key={s.id}
+                    className="hover:bg-muted/50 items-start rounded p-1 text-sm leading-snug font-normal"
+                  >
+                    <Checkbox
+                      checked={statusIds.includes(s.id)}
+                      onCheckedChange={(on) => setStatusIds((ids) => toggle(ids, s.id, on))}
+                    />
+                    <span className="min-w-0">
+                      <span className="line-clamp-2 break-words">
+                        {s.spoilerText ? `CW: ${s.spoilerText}` : plainText(s.content) ||
+                          (s.mediaAttachments.length > 0
+                            ? `${s.mediaAttachments.length} attachment(s)`
+                            : '(empty)')}
+                      </span>
+                      <span className="text-muted-foreground block text-xs">
+                        {new Date(s.createdAt).toLocaleString()}
+                      </span>
+                    </span>
+                  </Label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <div className="space-y-1">
             <Label htmlFor="report-comment">Anything else? (optional)</Label>
@@ -148,21 +254,31 @@ export function ReportDialog({
             </p>
           </div>
 
-          {domain && (
-            <Label className="text-sm font-normal">
-              <Switch size="sm" checked={forward} onCheckedChange={setForward} />
-              Also send this to {domain}
-            </Label>
+          {domains.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-xs">
+                The account is from another server. Send an anonymized copy of the
+                report there as well?
+              </p>
+              {domains.map((d) => (
+                <Label key={d} className="text-sm font-normal">
+                  <Switch
+                    size="sm"
+                    checked={forwardTo.includes(d)}
+                    onCheckedChange={(on) => setForwardTo((list) => toggle(list, d, on))}
+                  />
+                  Forward to {d}
+                </Label>
+              ))}
+            </div>
           )}
         </div>
 
         <DialogFooter>
-          <DialogClose
-            render={<Button variant="outline" disabled={sending} />}
-          >
+          <DialogClose render={<Button variant="outline" disabled={sending} />}>
             Cancel
           </DialogClose>
-          <Button variant="destructive" disabled={sending} onClick={submit}>
+          <Button variant="destructive" disabled={sending || needsRule} onClick={submit}>
             {sending ? 'Reporting…' : 'Report'}
           </Button>
         </DialogFooter>
