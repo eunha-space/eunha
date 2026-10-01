@@ -16,8 +16,19 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are seven, covering integrity proofs on outgoing
-activities, the invite tree and the two ways eunha's invite API goes beyond
-Mastodon's, what the update check asks about, when the local-keypair migration
-is recorded, and what a mute silences. Read the file rather than this paragraph:
-the file is the one that has to stay true.
+At the time of writing there are fourteen. They cover:
+
+ -  integrity proofs on outgoing activities;
+ -  the invite tree, and the two ways eunha's invite API goes beyond
+    Mastodon's;
+ -  what the update check asks about;
+ -  when the local-keypair migration is recorded;
+ -  what a mute silences;
+ -  how command-line accounts are created;
+ -  three details of delivery failures;
+ -  the admin custom emoji API;
+ -  how trends are ranked;
+ -  the missing limited federation mode.
+
+Read the file rather than this paragraph: the file is the one that has to stay
+true.
