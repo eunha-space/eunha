@@ -14,6 +14,12 @@ export interface MeAccount {
   // renders on first paint instead of appearing a request later.
   displayName: string
   avatar: string
+  // The role's computed permissions, Mastodon's `UserRole::FLAGS` bitmask, for
+  // deciding which moderation pages to offer. The server decides what each
+  // admin request may do; this only keeps the rail from offering what it would
+  // refuse. Absent from an account cached before it was stored, until the next
+  // `loadMe` fills it in.
+  permissions?: number
 }
 
 let cachedId: string | null = localStorage.getItem(ID_KEY)
@@ -36,6 +42,7 @@ function readCachedAccount(): MeAccount | null {
           // next `loadMe` fills them in.
           displayName: parsed.displayName ?? parsed.acct,
           avatar: parsed.avatar ?? '',
+          permissions: parsed.permissions,
         }
       : null
   } catch {
@@ -76,6 +83,10 @@ export async function loadMe(token: string): Promise<MeAccount | null> {
       defaultVisibility: me.source.privacy ?? 'public',
       displayName: me.displayName || me.username,
       avatar: me.avatar,
+      // masto.js does not model `role` on the credential account.
+      permissions: Number(
+        (me as unknown as { role?: { permissions?: string } }).role?.permissions ?? 0,
+      ),
     }
     localStorage.setItem(ID_KEY, me.id)
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(cachedAccount))

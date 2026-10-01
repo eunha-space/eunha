@@ -2,13 +2,20 @@
 // masto.js against eunha's existing endpoints. No backend changes required.
 import { oauthClient, restClient } from './masto.ts'
 
-const SCOPES = 'read write follow push'
+// `admin:read` and `admin:write` are what the moderation pages call the admin
+// API with. Every account asks for them, as Mastodon's own web client does: the
+// scope only says what the token may be used for, and the server still checks
+// the account's role before it answers an admin request.
+const SCOPES = 'read write follow push admin:read admin:write'
 const CLIENT_KEY = 'eunha:client'
 const TOKEN_KEY = 'eunha:token'
 
 interface ClientCreds {
   client_id: string
   client_secret: string
+  // What the app was registered for. An authorization may not ask for more
+  // than that, so an app registered before the scopes grew is registered again.
+  scopes?: string
 }
 
 const redirectUri = () => `${window.location.origin}/auth/callback`
@@ -33,7 +40,7 @@ function storedClient(): ClientCreds | null {
 // Register a first-party OAuth app for this instance once, then reuse it.
 async function ensureClient(): Promise<ClientCreds> {
   const existing = storedClient()
-  if (existing) return existing
+  if (existing && existing.scopes === SCOPES) return existing
 
   const app = await restClient().v1.apps.create({
     clientName: 'eunha web',
@@ -47,6 +54,7 @@ async function ensureClient(): Promise<ClientCreds> {
   const creds: ClientCreds = {
     client_id: app.clientId,
     client_secret: app.clientSecret,
+    scopes: SCOPES,
   }
   localStorage.setItem(CLIENT_KEY, JSON.stringify(creds))
   return creds
