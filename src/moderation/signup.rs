@@ -36,11 +36,13 @@ pub fn email_domain(email: &str) -> Option<String> {
 
 /// `EmailDomainBlock::Matcher#match?`: any of `domains`, or a parent of one,
 /// is blocked with `allow_with_approval` as given; a domain that cannot be
-/// read counts as blocked.
+/// read counts as blocked. Each matching block counts the attempt from
+/// `attempt_ip` in its history.
 pub async fn email_domain_blocked(
     state: &AppState,
     domains: &[String],
     allow_with_approval: bool,
+    attempt_ip: Option<IpAddr>,
 ) -> bool {
     let mut variants = vec![];
     for domain in domains {
@@ -55,16 +57,20 @@ pub async fn email_domain_blocked(
     }
     variants.sort();
     variants.dedup();
-    sqlx::query_scalar!(
-        r#"SELECT EXISTS (
-             SELECT 1 FROM email_domain_blocks WHERE domain = ANY($1) AND allow_with_approval = $2
-           ) AS "e!""#,
+    let blocks: Vec<i64> = sqlx::query_scalar!(
+        "SELECT id FROM email_domain_blocks WHERE domain = ANY($1) AND allow_with_approval = $2",
         &variants,
         allow_with_approval,
     )
-    .fetch_one(&state.db)
+    .fetch_all(&state.db)
     .await
-    .unwrap_or(false)
+    .unwrap_or_default();
+    if let Some(ip) = attempt_ip {
+        for id in &blocks {
+            super::history::add(state, "email_domain_blocks", *id, &ip.to_string()).await;
+        }
+    }
+    !blocks.is_empty()
 }
 
 /// `CanonicalEmail.canonicalize_email`: lowercased, the local part without
@@ -236,7 +242,7 @@ pub async fn check(
         }
         let mut domains = vec![domain.clone()];
         domains.extend(mx.records.iter().cloned());
-        if email_domain_blocked(state, &domains, false).await {
+        if email_domain_blocked(state, &domains, false, sign_up_ip).await {
             return Err(Refusal::EmailBlocked);
         }
         mx_records = mx.records;
@@ -244,7 +250,7 @@ pub async fn check(
 
     // `UserEmailValidator`
     if !valid_invitation {
-        if email_domain_blocked(state, std::slice::from_ref(&domain), false).await {
+        if email_domain_blocked(state, std::slice::from_ref(&domain), false, sign_up_ip).await {
             return Err(Refusal::EmailBlocked);
         }
         if canonical_email_blocked(state, email).await {
@@ -256,9 +262,31 @@ pub async fn check(
     let mut approval_domains = mx_records;
     approval_domains.push(domain);
     let requires_approval = crate::remote_ip::sign_up_requires_approval(state, sign_up_ip).await
-        || email_domain_blocked(state, &approval_domains, true).await
+        || email_domain_blocked(state, &approval_domains, true, sign_up_ip).await
         || username_blocked(state, username, true).await;
     Ok(Checked { requires_approval })
+}
+
+/// `User#requires_approval?` alone, asked again when a confirmed sign-up
+/// becomes an account (the attempt was counted when it was made).
+pub async fn requires_approval(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    sign_up_ip: Option<IpAddr>,
+) -> bool {
+    let Some(domain) = email_domain(email) else {
+        return true;
+    };
+    let mut domains = if SKIP_MX_CHECK.load(Ordering::Relaxed) {
+        vec![]
+    } else {
+        resolve_mx(&domain).await.records
+    };
+    domains.push(domain);
+    crate::remote_ip::sign_up_requires_approval(state, sign_up_ip).await
+        || email_domain_blocked(state, &domains, true, None).await
+        || username_blocked(state, username, true).await
 }
 
 #[cfg(test)]

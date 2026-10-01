@@ -12,12 +12,30 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 mod accounts;
+mod blocks;
 mod federation;
 mod reports;
 
 pub use accounts::*;
+pub use blocks::*;
 pub use federation::*;
 pub use reports::*;
+
+/// `limit` and the id bounds of `to_a_paginated_by_id`.
+#[derive(Debug, Deserialize)]
+pub struct PageParams {
+    pub limit: Option<super::extractors::FlexId>,
+    pub max_id: Option<super::extractors::FlexId>,
+    pub since_id: Option<super::extractors::FlexId>,
+    pub min_id: Option<super::extractors::FlexId>,
+}
+
+impl PageParams {
+    /// `limit_param(default, max)`.
+    pub(super) fn limit(&self, default: i64, max: i64) -> i64 {
+        self.limit.map_or(default, |l| l.0.abs().min(max))
+    }
+}
 
 // ── Admin auth guard ──────────────────────────────────────────────────────
 
@@ -912,269 +930,6 @@ pub async fn update_admin_custom_emoji(
     }))
 }
 
-/// `validates :severity, presence: true` plus the validated enum.
-fn parse_ip_severity(s: Option<&str>) -> AppResult<i32> {
-    match s.filter(|s| !s.is_empty()) {
-        None => Err(AppError::Unprocessable(
-            "Validation failed: Severity can't be blank".into(),
-        )),
-        Some(s) => crate::db::models::ip_severity::parse(s).ok_or_else(|| {
-            AppError::Unprocessable(
-                "Validation failed: Severity is not included in the list".into(),
-            )
-        }),
-    }
-}
-
-// ── Admin IP blocks ───────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize)]
-pub struct AdminIpBlock {
-    pub id: String,
-    pub ip: String,
-    pub severity: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateIpBlockForm {
-    pub ip: String,
-    pub severity: Option<String>,
-    pub comment: Option<String>,
-    pub expires_in: Option<i64>,
-}
-
-pub async fn list_ip_blocks(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AdminIpBlock>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let rows = sqlx::query!(
-        r#"SELECT id, host(ip) as "ip!", comment, expires_at, created_at,
-                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!"
-           FROM ip_blocks ORDER BY created_at DESC"#
-    )
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| AdminIpBlock {
-                id: r.id.to_string(),
-                ip: r.ip,
-                severity: r.severity,
-                comment: Some(r.comment),
-                expires_at: r.expires_at.map(super::convert::mastodon_date),
-                created_at: super::convert::mastodon_date(r.created_at),
-            })
-            .collect(),
-    ))
-}
-
-pub async fn get_ip_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<Json<AdminIpBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let r = sqlx::query!(
-        r#"SELECT id, host(ip) as "ip!", comment, expires_at, created_at,
-                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!"
-           FROM ip_blocks WHERE id = $1"#,
-        id
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(AdminIpBlock {
-        id: r.id.to_string(),
-        ip: r.ip,
-        severity: r.severity,
-        comment: Some(r.comment),
-        expires_at: r.expires_at.map(super::convert::mastodon_date),
-        created_at: super::convert::mastodon_date(r.created_at),
-    }))
-}
-
-pub async fn create_ip_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateIpBlockForm>,
-) -> AppResult<Json<AdminIpBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let severity = parse_ip_severity(form.severity.as_deref())?;
-    let expires_at = form
-        .expires_in
-        .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
-    let r = sqlx::query!(
-        r#"INSERT INTO ip_blocks (ip, severity, comment, expires_at, created_at, updated_at)
-           VALUES ($1::text::inet, $2, $3, $4, now(), now())
-           ON CONFLICT (ip) DO UPDATE SET severity = $2, comment = $3, expires_at = $4, updated_at = now()
-           RETURNING id, host(ip) as "ip!", comment, expires_at, created_at,
-                     CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!""#,
-        form.ip, severity, form.comment.unwrap_or_default(), expires_at,
-    )
-    .fetch_one(&state.db)
-    .await?;
-    Ok(Json(AdminIpBlock {
-        id: r.id.to_string(),
-        ip: r.ip,
-        severity: r.severity,
-        comment: Some(r.comment),
-        expires_at: r.expires_at.map(super::convert::mastodon_date),
-        created_at: super::convert::mastodon_date(r.created_at),
-    }))
-}
-
-pub async fn update_ip_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-    Json(form): Json<CreateIpBlockForm>,
-) -> AppResult<Json<AdminIpBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let severity = parse_ip_severity(form.severity.as_deref())?;
-    let expires_at = form
-        .expires_in
-        .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
-    let r = sqlx::query!(
-        r#"UPDATE ip_blocks SET severity = $2, comment = $3, expires_at = $4, updated_at = now()
-           WHERE id = $1
-           RETURNING id, host(ip) as "ip!", comment, expires_at, created_at,
-                     CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!""#,
-        id, severity, form.comment.unwrap_or_default(), expires_at,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(AdminIpBlock {
-        id: r.id.to_string(),
-        ip: r.ip,
-        severity: r.severity,
-        comment: Some(r.comment),
-        expires_at: r.expires_at.map(super::convert::mastodon_date),
-        created_at: super::convert::mastodon_date(r.created_at),
-    }))
-}
-
-pub async fn delete_ip_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    sqlx::query!("DELETE FROM ip_blocks WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    Ok(StatusCode::OK)
-}
-
-// ── Admin Email Domain blocks ─────────────────────────────────────────────
-
-#[derive(Debug, Serialize)]
-pub struct AdminEmailDomainBlock {
-    pub id: String,
-    pub domain: String,
-    pub created_at: String,
-    pub history: Vec<AdminEmailDomainBlockHistory>,
-    pub allow_with_approval: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminEmailDomainBlockHistory {
-    pub day: String,
-    pub accounts: String,
-    pub uses: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateEmailDomainBlockForm {
-    pub domain: String,
-}
-
-pub async fn list_email_domain_blocks(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AdminEmailDomainBlock>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let rows = sqlx::query!(
-        "SELECT id, domain, created_at, allow_with_approval FROM email_domain_blocks ORDER BY domain"
-    )
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| AdminEmailDomainBlock {
-                id: r.id.to_string(),
-                domain: r.domain,
-                created_at: super::convert::mastodon_date(r.created_at),
-                history: vec![],
-                allow_with_approval: r.allow_with_approval,
-            })
-            .collect(),
-    ))
-}
-
-pub async fn get_email_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<Json<AdminEmailDomainBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let r = sqlx::query!(
-        "SELECT id, domain, created_at, allow_with_approval FROM email_domain_blocks WHERE id = $1",
-        id
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(AdminEmailDomainBlock {
-        id: r.id.to_string(),
-        domain: r.domain,
-        created_at: super::convert::mastodon_date(r.created_at),
-        history: vec![],
-        allow_with_approval: r.allow_with_approval,
-    }))
-}
-
-pub async fn create_email_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateEmailDomainBlockForm>,
-) -> AppResult<Json<AdminEmailDomainBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let r = sqlx::query!(
-        r#"INSERT INTO email_domain_blocks (domain, created_at, updated_at) VALUES ($1, now(), now())
-           ON CONFLICT (domain) DO UPDATE SET updated_at = now()
-           RETURNING id, domain, created_at, allow_with_approval"#,
-        form.domain,
-    )
-    .fetch_one(&state.db)
-    .await?;
-    Ok(Json(AdminEmailDomainBlock {
-        id: r.id.to_string(),
-        domain: r.domain,
-        created_at: super::convert::mastodon_date(r.created_at),
-        history: vec![],
-        allow_with_approval: r.allow_with_approval,
-    }))
-}
-
-pub async fn delete_email_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    sqlx::query!("DELETE FROM email_domain_blocks WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    Ok(StatusCode::OK)
-}
-
 // ── GET /api/v1/admin/trends/* ────────────────────────────────────────────
 
 pub async fn admin_trending_tags(
@@ -1293,136 +1048,6 @@ pub async fn admin_reject_trending_link(
 ) -> AppResult<Json<serde_json::Value>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     Ok(Json(serde_json::json!({})))
-}
-
-// ── Admin Canonical Email Blocks ──────────────────────────────────────────
-
-#[derive(Debug, Serialize)]
-pub struct CanonicalEmailBlock {
-    pub id: String,
-    pub canonical_email_hash: String,
-    pub created_at: String,
-}
-
-pub async fn list_canonical_email_blocks(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<CanonicalEmailBlock>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let rows = sqlx::query!(
-        "SELECT id, canonical_email_hash, created_at FROM canonical_email_blocks ORDER BY id DESC LIMIT 100",
-    )
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| CanonicalEmailBlock {
-                id: r.id.to_string(),
-                canonical_email_hash: r.canonical_email_hash,
-                created_at: super::convert::mastodon_date(r.created_at),
-            })
-            .collect(),
-    ))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateCanonicalEmailBlockForm {
-    pub email: Option<String>,
-    pub canonical_email_hash: Option<String>,
-}
-
-pub async fn create_canonical_email_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateCanonicalEmailBlockForm>,
-) -> AppResult<Json<CanonicalEmailBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let hash = if let Some(h) = form.canonical_email_hash {
-        h
-    } else if let Some(email) = form.email {
-        let normalized = email.trim().to_lowercase();
-        sha256_hex(&normalized)
-    } else {
-        return Err(AppError::Unprocessable(
-            "email or canonical_email_hash required".into(),
-        ));
-    };
-    let row = sqlx::query!(
-        "INSERT INTO canonical_email_blocks (canonical_email_hash, created_at, updated_at) VALUES ($1, now(), now()) ON CONFLICT (canonical_email_hash) DO UPDATE SET canonical_email_hash = EXCLUDED.canonical_email_hash RETURNING id, canonical_email_hash, created_at",
-        hash,
-    )
-    .fetch_one(&state.db)
-    .await?;
-    Ok(Json(CanonicalEmailBlock {
-        id: row.id.to_string(),
-        canonical_email_hash: row.canonical_email_hash,
-        created_at: super::convert::mastodon_date(row.created_at),
-    }))
-}
-
-pub async fn get_canonical_email_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<Json<CanonicalEmailBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let row = sqlx::query!(
-        "SELECT id, canonical_email_hash, created_at FROM canonical_email_blocks WHERE id = $1",
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(CanonicalEmailBlock {
-        id: row.id.to_string(),
-        canonical_email_hash: row.canonical_email_hash,
-        created_at: super::convert::mastodon_date(row.created_at),
-    }))
-}
-
-pub async fn delete_canonical_email_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    sqlx::query!("DELETE FROM canonical_email_blocks WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn test_canonical_email_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateCanonicalEmailBlockForm>,
-) -> AppResult<Json<Vec<CanonicalEmailBlock>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_BLOCKS).await?;
-    let hash = if let Some(h) = form.canonical_email_hash {
-        h
-    } else if let Some(email) = form.email {
-        let normalized = email.trim().to_lowercase();
-        sha256_hex(&normalized)
-    } else {
-        return Err(AppError::Unprocessable(
-            "email or canonical_email_hash required".into(),
-        ));
-    };
-    let rows = sqlx::query!(
-        "SELECT id, canonical_email_hash, created_at FROM canonical_email_blocks WHERE canonical_email_hash = $1",
-        hash,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| CanonicalEmailBlock {
-                id: r.id.to_string(),
-                canonical_email_hash: r.canonical_email_hash,
-                created_at: super::convert::mastodon_date(r.created_at),
-            })
-            .collect(),
-    ))
 }
 
 // ── Admin Tags ────────────────────────────────────────────────────────────

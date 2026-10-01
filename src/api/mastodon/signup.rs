@@ -425,18 +425,13 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         pending.sign_up_ip.as_deref().and_then(|ip| ip.parse().ok());
     // `User#set_approved`: an IP, email domain or username block asking for
     // approval wins; otherwise open registrations or a bypassing invite.
-    let requires_approval = match crate::moderation::signup::check(
+    let requires_approval = crate::moderation::signup::requires_approval(
         &state,
         &pending.username,
         &pending.email,
         sign_up_ip,
-        pending.invite_id.is_some(),
     )
-    .await
-    {
-        Ok(checked) => checked.requires_approval,
-        Err(_) => true,
-    };
+    .await;
     let needs_approval = requires_approval
         || (state.instance.approval_required
             && !match pending.invite_id {

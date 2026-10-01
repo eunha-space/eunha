@@ -812,7 +812,8 @@ async fn test_admin_ip_blocks_crud() {
     assert_eq!(create_resp.status(), StatusCode::OK);
     let block: Value = create_resp.json().await.unwrap();
     let block_id = block["id"].as_str().expect("id missing");
-    assert_eq!(block["ip"].as_str(), Some("192.0.2.1"));
+    // `IpBlock#to_cidr`.
+    assert_eq!(block["ip"].as_str(), Some("192.0.2.1/32"));
     assert_eq!(block["severity"].as_str(), Some("sign_up_block"));
 
     // List.

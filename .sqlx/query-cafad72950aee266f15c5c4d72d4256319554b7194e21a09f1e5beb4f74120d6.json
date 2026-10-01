@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO canonical_email_blocks (canonical_email_hash, created_at, updated_at) VALUES ($1, now(), now()) ON CONFLICT (canonical_email_hash) DO UPDATE SET canonical_email_hash = EXCLUDED.canonical_email_hash RETURNING id, canonical_email_hash, created_at",
+  "query": "SELECT id, domain, allow_with_approval, created_at FROM email_domain_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,25 +10,31 @@
       },
       {
         "ordinal": 1,
-        "name": "canonical_email_hash",
+        "name": "domain",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
+        "name": "allow_with_approval",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
         "name": "created_at",
         "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Varchar"
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "ae57c657fdb1e6a8aa7fede05f64a0492e3d88c2b179de45f9c720e0426d56d0"
+  "hash": "cafad72950aee266f15c5c4d72d4256319554b7194e21a09f1e5beb4f74120d6"
 }

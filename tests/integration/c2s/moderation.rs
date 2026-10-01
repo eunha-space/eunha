@@ -971,3 +971,83 @@ async fn test_no_access_ip_block() {
     );
     assert_eq!(get("203.0.113.67").await.unwrap().status(), StatusCode::OK);
 }
+
+/// Block endpoints validate as Mastodon's models do: a duplicate is a 422,
+/// email domain blocks keep `allow_with_approval`, canonical blocks are
+/// made from an email, and each change is logged.
+#[tokio::test]
+async fn test_block_endpoints_validate_and_log() {
+    let ctx = TestContext::new("mod-blocks").await;
+    make_admin(&ctx).await;
+    let token = Some(ctx.alice_token.as_str());
+
+    let first = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/ip_blocks",
+            token,
+            &json!({"ip": "192.0.2.0/24", "severity": "no_access"}),
+        )
+        .await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let again = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/ip_blocks",
+            token,
+            &json!({"ip": "192.0.2.0/24", "severity": "sign_up_block"}),
+        )
+        .await;
+    assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let email: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/email_domain_blocks",
+            token,
+            &json!({"domain": "Maybe.Test", "allow_with_approval": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(email["domain"], "maybe.test");
+    assert_eq!(email["allow_with_approval"], true);
+    assert_eq!(email["history"].as_array().map(Vec::len), Some(7));
+
+    let canonical: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/canonical_email_blocks",
+            token,
+            &json!({"email": "Some.One+tag@Example.com"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let matched: Vec<Value> = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/canonical_email_blocks/test",
+            token,
+            &json!({"email": "someone@example.com"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0]["id"], canonical["id"]);
+
+    let logged: Vec<String> = sqlx::query_scalar(
+        "SELECT target_type FROM admin_action_logs WHERE action = 'create' ORDER BY id",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        logged,
+        vec!["IpBlock", "EmailDomainBlock", "CanonicalEmailBlock"]
+    );
+}

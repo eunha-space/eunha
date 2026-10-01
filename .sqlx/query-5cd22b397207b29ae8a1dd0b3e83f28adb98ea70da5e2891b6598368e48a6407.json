@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ip_blocks SET\n             ip = COALESCE($2::text::inet, ip),\n             severity = COALESCE($3, severity),\n             comment = COALESCE($4, comment),\n             expires_at = CASE WHEN $6 THEN $5 ELSE expires_at END,\n             updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Text",
+        "Timestamp",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cd22b397207b29ae8a1dd0b3e83f28adb98ea70da5e2891b6598368e48a6407"
+}

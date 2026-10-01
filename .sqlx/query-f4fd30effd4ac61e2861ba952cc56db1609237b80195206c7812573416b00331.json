@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, host(ip) || '/' || masklen(ip) AS \"cidr!\", severity, comment, created_at, expires_at\n           FROM ip_blocks\n           WHERE ($1::bigint IS NULL OR id < $1) AND ($2::bigint IS NULL OR id > $2)\n             AND ($3::bigint IS NULL OR id > $3)\n           ORDER BY CASE WHEN $3::bigint IS NULL THEN -id ELSE id END LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "cidr!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f4fd30effd4ac61e2861ba952cc56db1609237b80195206c7812573416b00331"
+}

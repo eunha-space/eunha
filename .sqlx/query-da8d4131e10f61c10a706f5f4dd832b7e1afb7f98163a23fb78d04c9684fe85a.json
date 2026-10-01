@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, canonical_email_hash, created_at FROM canonical_email_blocks WHERE canonical_email_hash = $1",
+  "query": "SELECT id, canonical_email_hash FROM canonical_email_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -12,23 +12,17 @@
         "ordinal": 1,
         "name": "canonical_email_hash",
         "type_info": "Varchar"
-      },
-      {
-        "ordinal": 2,
-        "name": "created_at",
-        "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false,
-      false,
       false
     ]
   },
-  "hash": "af8f87fcdb1a1d677ef9f92cd6cdb9428d92653e3254d2d3dfe94720c9e26c6a"
+  "hash": "da8d4131e10f61c10a706f5f4dd832b7e1afb7f98163a23fb78d04c9684fe85a"
 }

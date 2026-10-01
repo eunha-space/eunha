@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO email_domain_blocks (domain, allow_with_approval, created_at, updated_at)\n           VALUES ($1, $2, now(), now()) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "16a7b7a06cd3236a74857ae5abfbda0d76ff013f13494abdfb43e834cbfad1d0"
+}

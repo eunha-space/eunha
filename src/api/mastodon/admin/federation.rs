@@ -8,8 +8,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::super::extractors::{FlexBool, FlexId, Params};
-use super::{perm, require_permission, sha256_hex};
+use super::super::extractors::{FlexBool, Params};
+use super::{perm, require_permission, sha256_hex, PageParams};
 use crate::{
     db::models::domain_severity,
     error::{AppError, AppResult},
@@ -99,20 +99,6 @@ fn normalize_domain(domain: &str) -> Option<String> {
         .and_then(|u| u.host_str().map(str::to_owned))
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PageParams {
-    pub limit: Option<FlexId>,
-    pub max_id: Option<FlexId>,
-    pub since_id: Option<FlexId>,
-    pub min_id: Option<FlexId>,
-}
-
-impl PageParams {
-    fn limit(&self) -> i64 {
-        self.limit.map_or(LIMIT, |l| l.0.abs().min(MAX_LIMIT))
-    }
-}
-
 fn with_links<'a, T: Serialize>(
     req_headers: &HeaderMap,
     uri: &Uri,
@@ -152,7 +138,7 @@ pub async fn list_domain_blocks(
         page.max_id.map(|i| i.0),
         page.since_id.map(|i| i.0),
         min_id,
-        page.limit(),
+        page.limit(LIMIT, MAX_LIMIT),
     )
     .fetch_all(&state.db)
     .await?;
@@ -429,7 +415,7 @@ pub async fn list_domain_allows(
         page.max_id.map(|i| i.0),
         page.since_id.map(|i| i.0),
         min_id,
-        page.limit(),
+        page.limit(LIMIT, MAX_LIMIT),
     )
     .fetch_all(&state.db)
     .await?;

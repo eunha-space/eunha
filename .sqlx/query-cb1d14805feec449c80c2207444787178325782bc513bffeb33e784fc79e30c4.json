@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, host(ip) as \"ip!\", comment, expires_at, created_at,\n                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS \"severity!\"\n           FROM ip_blocks WHERE id = $1",
+  "query": "SELECT id, host(ip) || '/' || masklen(ip) AS \"cidr!\", severity, comment, created_at, expires_at\n           FROM ip_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,18 +10,18 @@
       },
       {
         "ordinal": 1,
-        "name": "ip!",
+        "name": "cidr!",
         "type_info": "Text"
       },
       {
         "ordinal": 2,
-        "name": "comment",
-        "type_info": "Text"
+        "name": "severity",
+        "type_info": "Int4"
       },
       {
         "ordinal": 3,
-        "name": "expires_at",
-        "type_info": "Timestamp"
+        "name": "comment",
+        "type_info": "Text"
       },
       {
         "ordinal": 4,
@@ -30,8 +30,8 @@
       },
       {
         "ordinal": 5,
-        "name": "severity!",
-        "type_info": "Text"
+        "name": "expires_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
@@ -43,10 +43,10 @@
       false,
       null,
       false,
-      true,
       false,
-      null
+      false,
+      true
     ]
   },
-  "hash": "f08867ebc87e8f86be39253cec50a0866adcd0b496a2c1f8181226b803eb932e"
+  "hash": "cb1d14805feec449c80c2207444787178325782bc513bffeb33e784fc79e30c4"
 }
