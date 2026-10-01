@@ -7449,3 +7449,42 @@ async fn test_default_quote_policy_followers_applied_to_new_status() {
         "followers policy: automatic must contain 'followers'"
     );
 }
+
+/// A boost's `quote_approval` is the boosted post's, for the viewer
+/// (`object.proper.quote_policy_for_account`): boosting your own post leaves
+/// it `automatic` for you, not `denied` as a boost row on its own would be.
+#[tokio::test]
+async fn test_reblog_answers_quote_approval_for_the_original() {
+    let ctx = TestContext::new("reblog-quote-approval").await;
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "boost me", "public")
+        .await;
+    let id = post["id"].as_str().unwrap();
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{id}/reblog"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(boost["quote_approval"]["current_user"], "automatic");
+    assert_eq!(boost["quote_approval"], boost["reblog"]["quote_approval"]);
+
+    // Bob, who does not follow Alice, sees the boost as he sees the post.
+    let seen: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{}", boost["id"].as_str().unwrap()),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(seen["quote_approval"], seen["reblog"]["quote_approval"]);
+}

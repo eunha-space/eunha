@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id as status_id, account_id FROM statuses WHERE id = ANY($1::bigint[])",
+  "query": "SELECT s.id AS status_id, COALESCE(o.account_id, s.account_id) AS \"account_id!\"\n           FROM statuses s LEFT JOIN statuses o ON o.id = s.reblog_of_id\n           WHERE s.id = ANY($1::bigint[])",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "account_id",
+        "name": "account_id!",
         "type_info": "Int8"
       }
     ],
@@ -21,8 +21,8 @@
     },
     "nullable": [
       false,
-      false
+      null
     ]
   },
-  "hash": "59d13d0347f7181d5acf6ff69d88fb6bec581c0f5b7a0c332c831a0c247f0660"
+  "hash": "aa9190540a55f9082c1542138c49fcfa33d5ff23a0e9a1bf5066f04d23e56ebf"
 }

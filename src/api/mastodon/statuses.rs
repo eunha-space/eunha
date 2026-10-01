@@ -1984,8 +1984,13 @@ pub(super) async fn batch_viewer_contexts(
     .into_iter()
     .collect();
 
+    // The follow flags feed `quote_policy_for_account`, which a boost answers
+    // for the post it boosts (`object.proper`), so a boost maps to that
+    // post's author.
     let status_author_rows = sqlx::query!(
-        "SELECT id as status_id, account_id FROM statuses WHERE id = ANY($1::bigint[])",
+        r#"SELECT s.id AS status_id, COALESCE(o.account_id, s.account_id) AS "account_id!"
+           FROM statuses s LEFT JOIN statuses o ON o.id = s.reblog_of_id
+           WHERE s.id = ANY($1::bigint[])"#,
         status_ids,
     )
     .fetch_all(&state.db)

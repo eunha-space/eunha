@@ -682,6 +682,12 @@ pub fn status_from_db_with_app(
 
     // Mastodon: the author always sees their own raw `sensitive` flag; sensitization
     // from account-level flags is only applied to other viewers.
+    // `object.proper.quote_policy_for_account`: a boost answers for the post
+    // it boosts.
+    let quote_approval = match &reblog_status {
+        Some(original) => original.quote_approval.clone(),
+        None => build_quote_approval(s, viewer_context.as_ref()),
+    };
     let is_author = viewer_context.as_ref().map(|c| c.account_id) == Some(account.id);
     let sensitive = if is_author {
         s.sensitive
@@ -791,7 +797,7 @@ pub fn status_from_db_with_app(
         card: None,
         poll: None,
         quote: None,
-        quote_approval: build_quote_approval(s, viewer_context.as_ref()),
+        quote_approval,
         tagged_collections: vec![],
         favourited,
         reblogged,
