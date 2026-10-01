@@ -16,6 +16,7 @@ import {
   PenLine,
   Search,
   Settings,
+  Shield,
   Sun,
   User,
   UserPlus,
@@ -51,6 +52,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar.tsx'
 import { cn } from '@/lib/utils.ts'
+import { firstAdminSection } from '@/lib/admin-sections.ts'
 
 // Roomier rows and a full-width pill for the current one, matching the weight
 // 5.0 gives the rail now that it carries fewer things.
@@ -83,7 +85,11 @@ function Badge({ count }: { count: number }) {
   )
 }
 
-function useNavItems(token: string | null, unread: number): NavItem[] {
+function useNavItems(
+  token: string | null,
+  unread: number,
+  account: MeAccount | null,
+): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds; eunha has none, and copying the shape around an absent
   // feature leaves a rail that is mostly empty. What eunha has instead is
@@ -99,6 +105,20 @@ function useNavItems(token: string | null, unread: number): NavItem[] {
       { to: '/about', icon: Info, label: 'About' },
     ]
   }
+  // Moderation appears for a role that can open at least one of its pages —
+  // Mastodon's web client shows its Moderation and Administration links on
+  // the same kind of check. The row owns every `/admin` path.
+  const moderation: NavItem[] =
+    account?.permissions && firstAdminSection(account.permissions)
+      ? [
+          {
+            to: '/admin',
+            icon: Shield,
+            label: 'Moderation',
+            matchAlso: (p) => p.startsWith('/admin/'),
+          },
+        ]
+      : []
   return [
     { to: '/', end: true, icon: Home, label: 'Home' },
     { to: '/local', icon: Users, label: 'Local' },
@@ -108,6 +128,7 @@ function useNavItems(token: string | null, unread: number): NavItem[] {
     { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
     { to: '/messages', icon: MessageCircle, label: 'Messages' },
     { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
+    ...moderation,
   ]
 }
 
@@ -280,7 +301,7 @@ function DesktopRail({
 }) {
   const { openCompose } = useComposeModal()
   const unread = useUnreadNotifications(token)
-  const navItems = useNavItems(token, unread)
+  const navItems = useNavItems(token, unread, account)
   const { pathname } = useLocation()
 
   return (
@@ -358,7 +379,7 @@ function MobileDrawer({
   const { setOpenMobile } = useSidebar()
   const location = useLocation()
   const unread = useUnreadNotifications(token)
-  const navItems = useNavItems(token, unread)
+  const navItems = useNavItems(token, unread, account)
   const close = () => setOpenMobile(false)
   const isActive = (to: string, end?: boolean) =>
     end

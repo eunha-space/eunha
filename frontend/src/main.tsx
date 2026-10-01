@@ -22,6 +22,20 @@ import InviteTree from './pages/InviteTree.tsx'
 import Invites from './pages/Invites.tsx'
 import Signup from './pages/Signup.tsx'
 import Settings from './pages/Settings.tsx'
+import AdminIndex from './pages/admin/AdminIndex.tsx'
+import AdminDashboard from './pages/admin/Dashboard.tsx'
+import AdminReports from './pages/admin/Reports.tsx'
+import AdminReportDetail from './pages/admin/ReportDetail.tsx'
+import AdminAccounts from './pages/admin/Accounts.tsx'
+import AdminAccountDetail from './pages/admin/AccountDetail.tsx'
+import AdminDomainBlocks from './pages/admin/DomainBlocks.tsx'
+import AdminDomainAllows from './pages/admin/DomainAllows.tsx'
+import AdminIpBlocks from './pages/admin/IpBlocks.tsx'
+import AdminEmailDomainBlocks from './pages/admin/EmailDomainBlocks.tsx'
+import AdminCanonicalEmailBlocks from './pages/admin/CanonicalEmailBlocks.tsx'
+import AdminTrends from './pages/admin/Trends.tsx'
+import AdminTags from './pages/admin/Tags.tsx'
+import AdminCustomEmojis from './pages/admin/CustomEmojis.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -59,6 +73,27 @@ const router = createBrowserRouter([
   { path: '/blocked', element: <BlockedAccounts /> },
   { path: '/muted', element: <BlockedAccounts /> },
   { path: '/tags/:name', element: <TagTimeline /> },
+  // Moderation, at Mastodon's own admin paths so the links its notifications
+  // and emails carry — `/admin/reports/:id`, `/admin/accounts/:id` — land on
+  // the matching page. Every segment is static or comes after one, so none of
+  // these compete with the profile and thread routes below.
+  { path: '/admin', element: <AdminIndex /> },
+  { path: '/admin/dashboard', element: <AdminDashboard /> },
+  { path: '/admin/reports', element: <AdminReports /> },
+  { path: '/admin/reports/:id', element: <AdminReportDetail /> },
+  { path: '/admin/accounts', element: <AdminAccounts /> },
+  { path: '/admin/accounts/:id', element: <AdminAccountDetail /> },
+  { path: '/admin/domain_blocks', element: <AdminDomainBlocks /> },
+  { path: '/admin/domain_allows', element: <AdminDomainAllows /> },
+  { path: '/admin/ip_blocks', element: <AdminIpBlocks /> },
+  { path: '/admin/email_domain_blocks', element: <AdminEmailDomainBlocks /> },
+  { path: '/admin/canonical_email_blocks', element: <AdminCanonicalEmailBlocks /> },
+  { path: '/admin/trends/links', element: <AdminTrends /> },
+  { path: '/admin/trends/links/preview_card_providers', element: <AdminTrends /> },
+  { path: '/admin/trends/statuses', element: <AdminTrends /> },
+  { path: '/admin/trends/tags', element: <AdminTrends /> },
+  { path: '/admin/tags', element: <AdminTags /> },
+  { path: '/admin/custom_emojis', element: <AdminCustomEmojis /> },
   { path: '/:acct', element: <Profile /> },
   // Static second segments outrank the dynamic `:id` thread route, so these
   // win over `/:acct/:id` (status ids are numeric and never collide).
