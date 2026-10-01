@@ -805,7 +805,15 @@ async fn list_timeline_from_db(
                             SELECT 1 FROM list_accounts la2
                             WHERE la2.list_id = $1 AND la2.account_id = s.in_reply_to_account_id))"
         }
-        _ => "",
+        // `FeedManager#filter_from_list?` with `show_followed?`.
+        _ => {
+            "AND (s.in_reply_to_id IS NULL
+                        OR s.in_reply_to_account_id = s.account_id
+                        OR s.in_reply_to_account_id = $5
+                        OR EXISTS (
+                            SELECT 1 FROM follows f
+                            WHERE f.account_id = $5 AND f.target_account_id = s.in_reply_to_account_id))"
+        }
     };
 
     // Suspended authors, blocked/muted authors (direct and reblogged), and

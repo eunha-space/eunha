@@ -510,14 +510,14 @@ pub async fn list_feed_populate(
                WHERE la.list_id = $1
                  AND s.deleted_at IS NULL
                  AND s.visibility != 3
-                 AND (s.in_reply_to_id IS NULL OR EXISTS (
-                     SELECT 1 FROM statuses s2
-                     WHERE s2.id = s.in_reply_to_id
-                       AND (s2.account_id = $2 OR EXISTS (
-                           SELECT 1 FROM follows f
-                           WHERE f.account_id = $2 AND f.target_account_id = s2.account_id
-                       ))
-                 ))
+                 -- `FeedManager#filter_from_list?` with `show_followed?`.
+                 AND (s.in_reply_to_id IS NULL
+                      OR s.in_reply_to_account_id = s.account_id
+                      OR s.in_reply_to_account_id = $2
+                      OR EXISTS (
+                          SELECT 1 FROM follows f
+                          WHERE f.account_id = $2 AND f.target_account_id = s.in_reply_to_account_id
+                      ))
                ORDER BY s.id DESC LIMIT $3"#,
             list_id,
             owner_id,
@@ -727,14 +727,14 @@ pub async fn backfill_list_member(
         _ => sqlx::query_scalar!(
             r#"SELECT s.id FROM statuses s
                WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility != 3
-                 AND (s.in_reply_to_id IS NULL OR EXISTS (
-                     SELECT 1 FROM statuses s2
-                     WHERE s2.id = s.in_reply_to_id
-                       AND (s2.account_id = $2 OR EXISTS (
-                           SELECT 1 FROM follows f
-                           WHERE f.account_id = $2 AND f.target_account_id = s2.account_id
-                       ))
-                 ))
+                 -- `FeedManager#filter_from_list?` with `show_followed?`.
+                 AND (s.in_reply_to_id IS NULL
+                      OR s.in_reply_to_account_id = s.account_id
+                      OR s.in_reply_to_account_id = $2
+                      OR EXISTS (
+                          SELECT 1 FROM follows f
+                          WHERE f.account_id = $2 AND f.target_account_id = s.in_reply_to_account_id
+                      ))
                ORDER BY s.id DESC LIMIT 20"#,
             member_id,
             owner_id,
