@@ -14,6 +14,7 @@ pub mod severance;
 pub mod signup;
 pub mod suspension;
 pub mod warning;
+pub mod webhooks;
 
 /// `Report::COMMENT_SIZE_LIMIT`, for local reports.
 pub const COMMENT_SIZE_LIMIT: usize = 1_000;

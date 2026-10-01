@@ -671,6 +671,13 @@ pub async fn unsensitive_account(
         &s.account_target(),
     )
     .await?;
+    if s.account.is_local() {
+        crate::moderation::webhooks::trigger(
+            &state,
+            "account.updated",
+            crate::moderation::webhooks::Object::Account(id),
+        );
+    }
     render(&state, id).await
 }
 
@@ -691,6 +698,13 @@ pub async fn unsilence_account(
     .execute(&state.db)
     .await?;
     action_log::log(&state.db, auth.account_id, "unsilence", &s.account_target()).await?;
+    if s.account.is_local() {
+        crate::moderation::webhooks::trigger(
+            &state,
+            "account.updated",
+            crate::moderation::webhooks::Object::Account(id),
+        );
+    }
     render(&state, id).await
 }
 
@@ -719,6 +733,13 @@ pub async fn unsuspend_account(
         });
     }
     action_log::log(&state.db, auth.account_id, "unsuspend", &s.account_target()).await?;
+    if s.account.is_local() {
+        crate::moderation::webhooks::trigger(
+            &state,
+            "account.updated",
+            crate::moderation::webhooks::Object::Account(id),
+        );
+    }
     render(&state, id).await
 }
 

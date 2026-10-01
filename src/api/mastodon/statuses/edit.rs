@@ -363,6 +363,12 @@ pub async fn edit_status(
     if let Err(e) = federate_status_update(&state, id, &account, &updated_status).await {
         tracing::warn!(status_id = id, error = %e, "failed to enqueue ActivityPub status update");
     }
+    // `after_update_commit :trigger_update_webhooks`.
+    crate::moderation::webhooks::trigger(
+        &state,
+        "status.updated",
+        crate::moderation::webhooks::Object::Status(id),
+    );
 
     Ok(Json(api_status))
 }

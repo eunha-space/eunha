@@ -223,6 +223,7 @@ pub async fn save(
         .fetch_all(&mut *tx)
         .await?
     };
+    let resolved = reports.clone();
     for report_id in reports {
         authorize(acting.can(&[flag::MANAGE_REPORTS]))?;
         action_log::log(&mut *tx, actor_id, "resolve", &Target::report(report_id)).await?;
@@ -237,6 +238,22 @@ pub async fn save(
     }
 
     tx.commit().await?;
+
+    // `trigger_update_webhooks` for what the action changed.
+    for report_id in resolved {
+        super::webhooks::trigger(
+            state,
+            "report.updated",
+            super::webhooks::Object::Report(report_id),
+        );
+    }
+    if target.is_local() && kind != "none" && kind != "disable" {
+        super::webhooks::trigger(
+            state,
+            "account.updated",
+            super::webhooks::Object::Account(target.id),
+        );
+    }
 
     // After the transaction, as Mastodon's `suspend!` and `disable!` run inside
     // it but publish to Redis as they go.

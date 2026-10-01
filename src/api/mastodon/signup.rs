@@ -472,6 +472,12 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
             .execute(&state.db)
             .await;
     }
+    // `User#trigger_webhooks`: `after_create_commit`.
+    crate::moderation::webhooks::trigger(
+        &state,
+        "account.created",
+        crate::moderation::webhooks::Object::Account(account_id),
+    );
 
     // `User#after_confirmation_tasks`: an approved user is prepared (the
     // inviter followed, staff told with `admin.sign_up`); one awaiting

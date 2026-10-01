@@ -148,6 +148,15 @@ async fn render(state: &AppState, id: i64) -> AppResult<Json<AdminReport>> {
     Ok(Json(build(state, row).await?))
 }
 
+/// `REST::Admin::ReportSerializer` of one report, if it exists.
+pub async fn admin_report_entity(state: &AppState, id: i64) -> AppResult<Option<AdminReport>> {
+    match find(state, id).await {
+        Ok(row) => Ok(Some(build(state, row).await?)),
+        Err(AppError::NotFound) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 fn require_scope(auth: &AuthenticatedUser, write: bool) -> AppResult<()> {
     auth.require_scope(if write {
         "admin:write:reports"
@@ -300,6 +309,11 @@ pub async fn update_admin_report(
     .execute(&state.db)
     .await?;
     action_log::log(&state.db, auth.account_id, "update", &Target::report(id)).await?;
+    crate::moderation::webhooks::trigger(
+        &state,
+        "report.updated",
+        crate::moderation::webhooks::Object::Report(id),
+    );
     render(&state, id).await
 }
 
@@ -319,6 +333,11 @@ async fn act(
         .execute(&state.db)
         .await?;
     action_log::log(&state.db, auth.account_id, action, &Target::report(id)).await?;
+    crate::moderation::webhooks::trigger(
+        state,
+        "report.updated",
+        crate::moderation::webhooks::Object::Report(id),
+    );
     render(state, id).await
 }
 

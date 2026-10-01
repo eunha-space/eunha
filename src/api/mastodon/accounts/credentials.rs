@@ -495,6 +495,11 @@ pub async fn update_credentials(
     let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::spawn(&state, auth.account_id);
+    crate::moderation::webhooks::trigger(
+        &state,
+        "account.updated",
+        crate::moderation::webhooks::Object::Account(auth.account_id),
+    );
     build_credential_account_response(&state, &auth, account).await
 }
 

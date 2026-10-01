@@ -165,6 +165,31 @@ them, and so do both versions of `/api/v1/instance`. Eunha has no endpoint
 for editing them, so they are edited in the database.
 
 
+Webhooks
+--------
+
+Rows in Mastodon's `webhooks` table are called as Mastodon calls them, when
+the webhook is enabled and subscribed to the event:
+
+| Event              | When                                               |
+| ------------------ | -------------------------------------------------- |
+| `account.created`  | a sign-up becomes an account                       |
+| `account.approved` | an account is approved                             |
+| `account.updated`  | a profile is edited, or a moderator acts on it     |
+| `report.created`   | a report is filed, locally or by another server    |
+| `report.updated`   | a report is resolved, reopened, assigned or edited |
+| `status.created`   | a local post is published                          |
+| `status.updated`   | a local post is edited                             |
+
+The request is a POST of `{"event", "created_at", "object"}`. The object is
+the admin account, the admin report, or the status entity. Each request is
+signed with the webhook's secret in `X-Hub-Signature: sha256=…`, and a
+`template` with `{{object.id}}`-style placeholders replaces the body. A
+failed delivery is retried on Sidekiq's schedule, sixteen times, but only
+while the process keeps running. Eunha has no editor for webhooks, so they
+are added in the database.
+
+
 Trends
 ------
 

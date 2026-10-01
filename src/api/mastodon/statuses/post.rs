@@ -979,6 +979,12 @@ pub async fn post_status(
         let _: redis::RedisResult<()> = redis.set_ex(redis_key, status.id, 21600).await;
     }
 
+    // `after_create_commit :trigger_create_webhooks` for a local status.
+    crate::moderation::webhooks::trigger(
+        &state,
+        "status.created",
+        crate::moderation::webhooks::Object::Status(status.id),
+    );
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 

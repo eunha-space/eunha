@@ -1383,3 +1383,62 @@ async fn test_unlock_skips_limited_requesters() {
             .unwrap();
     assert_eq!(left, vec![carol_id]);
 }
+
+/// An enabled webhook subscribed to `report.created` receives the event,
+/// signed with its secret (`X-Hub-Signature: sha256=…`).
+#[tokio::test]
+async fn test_webhook_receives_report_created() {
+    use std::sync::{Arc, Mutex};
+    let ctx = TestContext::new("mod-webhook").await;
+    let received: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+    let sink = received.clone();
+    let app = axum::Router::new().route(
+        "/hook",
+        axum::routing::post(move |headers: axum::http::HeaderMap, body: String| {
+            let sink = sink.clone();
+            async move {
+                let signature = headers
+                    .get("x-hub-signature")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or_default()
+                    .to_owned();
+                sink.lock().unwrap().push((signature, body));
+                "ok"
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    sqlx::query(
+        "INSERT INTO webhooks (url, events, secret, enabled, created_at, updated_at)
+         VALUES ($1, '{report.created}', 'a-long-enough-secret', true, now(), now())",
+    )
+    .bind(format!("http://{addr}/hook"))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let report = file_report(&ctx, &ctx.alice_token, json!({"account_id": ctx.bob_id})).await;
+    let mut delivery = None;
+    for _ in 0..50 {
+        if let Some(d) = received.lock().unwrap().first().cloned() {
+            delivery = Some(d);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let (signature, body) = delivery.expect("the webhook should be called");
+    let event: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(event["event"], "report.created");
+    assert_eq!(event["object"]["id"], report["id"]);
+
+    use hmac::{Hmac, Mac};
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(b"a-long-enough-secret").unwrap();
+    mac.update(body.as_bytes());
+    assert_eq!(
+        signature,
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    );
+}

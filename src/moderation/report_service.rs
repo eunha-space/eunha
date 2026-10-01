@@ -138,6 +138,12 @@ pub async fn call(
     tx.commit().await?;
 
     notify_staff(state, report_id, target.id).await;
+    // `after_create_commit :trigger_create_webhooks`
+    super::webhooks::trigger(
+        state,
+        "report.created",
+        super::webhooks::Object::Report(report_id),
+    );
 
     if forward {
         if let Err(error) = forward_report(
