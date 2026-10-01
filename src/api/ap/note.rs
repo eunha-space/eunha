@@ -286,8 +286,9 @@ pub async fn build_note(
     // FEP-8967: the status's preview card travels as a `Link` attachment, so
     // receivers do not have to scrape the content for a URL and guess. Mastodon
     // 4.7.0 reads the first one it finds.
+    // `href` is `original_url.presence || url`: the link as the post gave it.
     if let Some(card_url) = sqlx::query_scalar!(
-        r#"SELECT c.url
+        r#"SELECT COALESCE(NULLIF(btrim(cs.url), ''), c.url) AS "url!"
            FROM preview_cards c
            JOIN preview_cards_statuses cs ON cs.preview_card_id = c.id
            WHERE cs.status_id = $1

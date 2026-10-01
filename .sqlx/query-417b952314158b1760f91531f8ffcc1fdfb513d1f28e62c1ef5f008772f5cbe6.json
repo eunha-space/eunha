@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_cards_statuses (status_id, preview_card_id, url) VALUES ($1, $2, $3)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "417b952314158b1760f91531f8ffcc1fdfb513d1f28e62c1ef5f008772f5cbe6"
+}

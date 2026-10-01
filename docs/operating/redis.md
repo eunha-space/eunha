@@ -13,7 +13,8 @@ redis_key_prefix = "tenant-example"
 The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
 adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
-markers, ActivityPub locks and tombstones, posting idempotency, notification
+markers, ActivityPub and preview card locks, tombstones, the oEmbed endpoints
+remembered for each domain, posting idempotency, notification
 group state, the days each server failed deliveries on, the activity counts
 behind trends and email domain blocks' `history`, and the sets of what was
 used today that trends are rescored from — uses that namespace.
@@ -42,13 +43,14 @@ one performance and failure boundary and needs monitoring, bounded feed
 retention, admission controls, and a path for moving heavy tenants to dedicated
 Redis.
 
-Feeds and their population markers use `redis_url`; they are bounded cache
-state. Set `redis_coordination_url` to route locks, ActivityPub deletion
-tombstones, posting idempotency and notification grouping to a separate
-non-evicting Redis pool, along with the days each server failed deliveries
-on, `exhausted_deliveries:<host>` as Mastodon names them, which mark a server
-unavailable once there are seven. If it is absent, both classes use `redis_url`
-as they did before this option existed. Both endpoints use the same
-`redis_key_prefix` and tenant credentials may differ by embedding them in their
-respective URLs. Process-wide memory is omitted from tenant-facing admin
-responses whenever a prefix or separate coordination endpoint is configured.
+Feeds, their population markers and the remembered oEmbed endpoints use
+`redis_url`; they are bounded cache state. Set `redis_coordination_url` to
+route locks, ActivityPub deletion tombstones, posting idempotency and
+notification grouping to a separate non-evicting Redis pool, along with the
+days each server failed deliveries on, `exhausted_deliveries:<host>` as
+Mastodon names them, which mark a server unavailable once there are seven. If
+it is absent, both classes use `redis_url` as they did before this option
+existed. Both endpoints use the same `redis_key_prefix` and tenant credentials
+may differ by embedding them in their respective URLs. Process-wide memory is
+omitted from tenant-facing admin responses whenever a prefix or separate
+coordination endpoint is configured.

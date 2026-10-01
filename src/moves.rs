@@ -214,14 +214,17 @@ pub async fn create_migration(
     )
     .await?;
 
-    let _lock =
-        crate::api::ap::inbox::try_redis_lock(state, &format!("account_migration:{account_id}"))
-            .await
-            .ok_or_else(|| {
-                AppError::ServiceUnavailable(
-                    "There was a temporary problem serving your request, please try again".into(),
-                )
-            })?;
+    let _lock = crate::redis_lock::try_acquire(
+        state,
+        &format!("lock:account_migration:{account_id}"),
+        crate::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await
+    .ok_or_else(|| {
+        AppError::ServiceUnavailable(
+            "There was a temporary problem serving your request, please try again".into(),
+        )
+    })?;
 
     let acct = normalize_acct(&form.acct);
     // `before_validation :set_target_account`.

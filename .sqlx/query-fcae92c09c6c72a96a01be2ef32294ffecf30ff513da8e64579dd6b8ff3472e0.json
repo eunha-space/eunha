@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status_id, preview_card_id, url FROM preview_cards_statuses\n           WHERE status_id = ANY($1) ORDER BY status_id, preview_card_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "preview_card_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fcae92c09c6c72a96a01be2ef32294ffecf30ff513da8e64579dd6b8ff3472e0"
+}

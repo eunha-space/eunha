@@ -353,7 +353,7 @@ pub async fn search(
             .collect();
         let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
         let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-        let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+        let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
         let ctxs = if let Some(vid) = viewer_id {
             super::statuses::batch_viewer_contexts(&state, vid, &all_ids).await?
         } else {

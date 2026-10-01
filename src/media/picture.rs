@@ -102,6 +102,16 @@ impl Picture {
         self.image.height()
     }
 
+    /// The upright pixels.
+    pub fn image(&self) -> &DynamicImage {
+        &self.image
+    }
+
+    /// The format the bytes were in.
+    pub fn format(&self) -> ImageFormat {
+        self.format
+    }
+
     /// The upload as it should be stored in place of what was sent: upright,
     /// fitted, in its own format and without its metadata.
     ///

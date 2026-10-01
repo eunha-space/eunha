@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT type AS card_type, title, author_name, author_url, provider_name,\n                  provider_url, html, width, height, image_file_name, link_type\n           FROM preview_cards WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "card_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "author_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "author_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "provider_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "html",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "width",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "height",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "image_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "link_type",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "13d96be972040bf01065dcb39f6e0de54e52fb12a99ac7b56eb02314c6dbce41"
+}

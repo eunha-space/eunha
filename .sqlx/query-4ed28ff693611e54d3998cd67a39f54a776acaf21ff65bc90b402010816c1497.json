@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_cards\n                         (id, url, title, description, image_file_name, image_content_type,\n                          image_file_size, image_updated_at, image_storage_schema_version, type,\n                          html, author_name, author_url, provider_name, provider_url, width,\n                          height, embed_url, blurhash, language, link_type, published_at,\n                          image_description, author_account_id, unverified_author_account_id,\n                          created_at, updated_at)\n                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,\n                               $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, now(), now())\n                       ON CONFLICT (url) DO NOTHING\n                       RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Timestamp",
+        "Int4",
+        "Int4",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Timestamp",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ed28ff693611e54d3998cd67a39f54a776acaf21ff65bc90b402010816c1497"
+}

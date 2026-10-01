@@ -328,9 +328,6 @@ pub async fn post_status(
         }
     }
 
-    let mention_map = build_mention_map(&resolved, &instance.domain);
-    let content = render_content(&text, &instance.domain, &mention_map);
-
     let status_id = crate::snowflake::next_id();
     let uri = crate::federation::tag::status_uri(
         &instance.domain,
@@ -711,7 +708,8 @@ pub async fn post_status(
     )
     .await?;
 
-    spawn_card_fetch(&state, status.id, content.clone());
+    // `LinkCrawlWorker.perform_async(@status.id)`.
+    crate::preview_card::crawl(&state, status.id);
 
     if matches!(visibility.as_str(), "public" | "unlisted" | "private") {
         if let Ok(payload) = serde_json::to_string(&api_status) {

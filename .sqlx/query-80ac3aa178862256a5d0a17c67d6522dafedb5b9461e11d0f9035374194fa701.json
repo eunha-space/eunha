@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT trendable FROM preview_card_providers\n           WHERE domain = ANY($1) ORDER BY char_length(domain) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "trendable",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "80ac3aa178862256a5d0a17c67d6522dafedb5b9461e11d0f9035374194fa701"
+}

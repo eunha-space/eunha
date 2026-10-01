@@ -468,10 +468,9 @@ async fn publish_one(
     };
     let is_reply = in_reply_to_id.is_some();
 
-    use crate::api::mastodon::formatting::render_content;
     use crate::api::mastodon::statuses::{
-        build_mention_map, extract_hashtags, extract_mention_handles, resolve_mention_accounts,
-        store_status_mentions, store_statuses_tags,
+        extract_hashtags, extract_mention_handles, resolve_mention_accounts, store_status_mentions,
+        store_statuses_tags,
     };
 
     let domain = &state.instance.domain;
@@ -479,8 +478,6 @@ async fn publish_one(
     let hashtags = extract_hashtags(&text);
     let mention_handles = extract_mention_handles(&text);
     let resolved = resolve_mention_accounts(state, &mention_handles, domain).await;
-    let mention_map = build_mention_map(&resolved, domain);
-    let content = render_content(&text, domain, &mention_map);
 
     let status_id = crate::snowflake::next_id();
     let uri = format!(
@@ -590,12 +587,11 @@ async fn publish_one(
     }
 
     // Publish to streaming and fan-out to feeds
-    use crate::api::mastodon::status_serialize::{
-        build_status, fetch_status_media, spawn_card_fetch,
-    };
+    use crate::api::mastodon::status_serialize::{build_status, fetch_status_media};
     let mut status_with_uri = status.clone();
     status_with_uri.uri = Some(uri);
-    spawn_card_fetch(state, status_with_uri.id, content);
+    // `LinkCrawlWorker.perform_async(@status.id)`.
+    crate::preview_card::crawl(state, status_with_uri.id);
     if let Ok(media) = fetch_status_media(state, status_with_uri.id).await {
         if let Ok(api_status) =
             build_status(state, &status_with_uri, &account, media, None, None).await

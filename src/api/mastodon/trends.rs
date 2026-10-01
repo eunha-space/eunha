@@ -266,7 +266,7 @@ pub(crate) async fn statuses_query(
         .collect();
     let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
     let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-    let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+    let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
     let ctxs = if let Some(vid) = viewer_id {
         super::statuses::batch_viewer_contexts(&state, vid, &all_ids).await?
     } else {
@@ -383,7 +383,7 @@ pub async fn trending_links(
     let viewer_id = auth.map(|Extension(a)| a.account_id);
     let languages = crate::trends::preferred_languages(&state, viewer_id, &req_headers).await;
     let cards: Vec<super::types::PreviewCard> =
-        links_query(&state, limit, offset, false, &languages)
+        links_query(&state, limit, offset, false, &languages, viewer_id)
             .await?
             .into_iter()
             .map(|(card, _, _)| card)
@@ -401,12 +401,10 @@ pub(crate) async fn links_query(
     offset: i64,
     staff: bool,
     languages: &[String],
+    viewer_id: Option<i64>,
 ) -> AppResult<Vec<(super::types::PreviewCard, i64, bool)>> {
     let rows = sqlx::query!(
-        r#"SELECT pc.id, pc.url, pc.title, pc.description, pc.language,
-                  CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as "card_type!",
-                  pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,
-                  pc.html, pc.width, pc.height, NULL::text as image_url, pc.embed_url, pc.blurhash,
+        r#"SELECT pc.id,
                   -- `PreviewCard#requires_review?`
                   (pc.trendable IS NULL AND NOT EXISTS (
                      SELECT 1 FROM preview_card_providers p
@@ -428,44 +426,26 @@ pub(crate) async fn links_query(
     .fetch_all(&state.db)
     .await?;
 
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    let mut by_id = super::preview_cards::by_ids(state, &ids, viewer_id).await?;
     let mut cards = Vec::with_capacity(rows.len());
     for r in rows {
+        let Some(mut card) = by_id.remove(&r.id) else {
+            continue;
+        };
         // `REST::Trends::LinkSerializer#history`.
-        let history = crate::moderation::history::days(state, "links", r.id)
-            .await
-            .into_iter()
-            .map(|d| super::types::TagHistory {
-                day: d.day.to_string(),
-                uses: d.uses.to_string(),
-                accounts: d.accounts.to_string(),
-            })
-            .collect();
-        cards.push((
-            super::types::PreviewCard {
-                url: r.url,
-                title: r.title,
-                description: r.description,
-                card_type: r.card_type,
-                author_name: r.author_name,
-                author_url: r.author_url,
-                provider_name: r.provider_name,
-                provider_url: r.provider_url,
-                html: r.html,
-                width: r.width,
-                height: r.height,
-                image: r.image_url,
-                embed_url: r.embed_url,
-                blurhash: r.blurhash,
-                language: r.language,
-                published_at: None,
-                authors: vec![],
-                image_description: String::new(),
-                missing_attribution: None,
-                history: Some(history),
-            },
-            r.id,
-            r.requires_review,
-        ));
+        card.history = Some(
+            crate::moderation::history::days(state, "links", r.id)
+                .await
+                .into_iter()
+                .map(|d| super::types::TagHistory {
+                    day: d.day.to_string(),
+                    uses: d.uses.to_string(),
+                    accounts: d.accounts.to_string(),
+                })
+                .collect(),
+        );
+        cards.push((card, r.id, r.requires_review));
     }
     Ok(cards)
 }

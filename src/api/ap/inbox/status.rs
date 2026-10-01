@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::attachment::{ap_attachment_file_meta, classify_attachment_type};
+use super::attachment::{ap_attachment_file_meta, classify_attachment_type, preview_card_link};
 use super::{
     acquire_create_lock, as_string_vec, delete_arrived_first, delete_later, fetch_remote_status,
     mirror_item_into, refresh_collection_item_count, resolve_or_fetch_remote_account, same_host,
@@ -560,6 +560,12 @@ pub(super) async fn handle_update(
                 Some(id) => Some(super::remote_quote_policy(state, id, object).await),
                 None => None,
             };
+            let previous_text: Option<String> = sqlx::query_scalar!(
+                "SELECT text FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+                note_uri
+            )
+            .fetch_optional(&state.db)
+            .await?;
             let updated = sqlx::query!(
                 r#"UPDATE statuses
                    SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,
@@ -644,6 +650,17 @@ pub(super) async fn handle_update(
                 )
                 .execute(&state.db)
                 .await;
+            }
+
+            // `reset_preview_card!`, when the text changed: the card is
+            // fetched again, from the `Link` attachment if there is one.
+            if previous_text.as_deref() != Some(text.as_str()) {
+                crate::preview_card::reset(state, row.id).await;
+                crate::preview_card::crawl_later(
+                    state,
+                    row.id,
+                    preview_card_link(&attachments).map(str::to_owned),
+                );
             }
 
             // Replace hashtags

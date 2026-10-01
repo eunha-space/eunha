@@ -165,8 +165,6 @@ pub async fn edit_status(
     let hashtags = extract_hashtags(&new_text);
     let mention_handles = extract_mention_handles(&new_text);
     let resolved = resolve_mention_accounts(&state, &mention_handles, &instance_domain).await;
-    let mention_map = build_mention_map(&resolved, &instance_domain);
-    let new_content = render_content(&new_text, &instance_domain, &mention_map);
 
     sqlx::query!(
         "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, edited_at = now() WHERE id = $5",
@@ -177,7 +175,12 @@ pub async fn edit_status(
 
     store_statuses_tags(&state, id, auth.account_id, &hashtags).await?;
     store_status_mentions(&state, id, &resolved).await?;
-    spawn_card_fetch(&state, id, new_content);
+    // `UpdateStatusService#reset_preview_card!`: a changed text gets its card
+    // afresh.
+    if new_text != status.text {
+        crate::preview_card::reset(&state, id).await;
+        crate::preview_card::crawl(&state, id);
+    }
 
     // Update media: change descriptions and/or reorder/replace attached media.
     if let Some(ref attrs) = form.media_attributes {

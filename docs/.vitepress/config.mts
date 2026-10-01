@@ -27,6 +27,7 @@ export default defineConfig({
           { text: "Invites", link: "/operating/invites" },
           { text: "Moderation", link: "/operating/moderation" },
           { text: "Account moves", link: "/operating/account-moves" },
+          { text: "Preview cards", link: "/operating/preview-cards" },
           { text: "Update notices", link: "/operating/update-notices" },
         ],
       },

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM preview_cards_statuses WHERE status_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24e6478e4dc010b6bfa710ebe9717f7219cc276e82880a72329fcf961f8d6319"
+}

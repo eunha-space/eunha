@@ -56,6 +56,8 @@ Running an instance:
     the audit log, and reports.
  -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,
     and inbound `Move`s.
+ -  *docs/operating/preview-cards.md*: link preview cards, how they are
+    fetched, their images and authors.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

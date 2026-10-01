@@ -162,7 +162,7 @@ pub async fn get_conversations(
             .collect();
         let emojis_map = batch_status_emojis(&state, &all_for_emoji).await?;
         let polls_map = batch_status_polls(&state, &enrich_ids, Some(auth.account_id)).await?;
-        let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+        let cards_map = batch_status_cards(&state, &enrich_ids, Some(auth.account_id)).await?;
         let ctxs = batch_viewer_contexts(&state, auth.account_id, &status_ids).await?;
 
         let status_account_ids: Vec<i64> = last_statuses

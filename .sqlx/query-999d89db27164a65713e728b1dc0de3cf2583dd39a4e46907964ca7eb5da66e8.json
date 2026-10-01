@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT spc.status_id, pc.url, pc.title, pc.description,\n                  CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as \"card_type!\",\n                  NULL::text as image_url, pc.author_name, pc.author_url,\n                  pc.provider_name, pc.provider_url, pc.html, pc.width, pc.height,\n                  pc.embed_url, pc.blurhash\n           FROM preview_cards_statuses spc\n           JOIN preview_cards pc ON pc.id = spc.preview_card_id\n           WHERE spc.status_id = ANY($1::bigint[])",
+  "query": "SELECT id, url, title, description, language,\n                  CASE type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END AS \"card_type!\",\n                  author_name, author_url, provider_name, provider_url, html, width, height,\n                  image_file_name, image_storage_schema_version, image_description, embed_url,\n                  blurhash, published_at, author_account_id, unverified_author_account_id\n           FROM preview_cards WHERE id = ANY($1)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "status_id",
+        "name": "id",
         "type_info": "Int8"
       },
       {
@@ -25,12 +25,12 @@
       },
       {
         "ordinal": 4,
-        "name": "card_type!",
-        "type_info": "Text"
+        "name": "language",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 5,
-        "name": "image_url",
+        "name": "card_type!",
         "type_info": "Text"
       },
       {
@@ -70,13 +70,43 @@
       },
       {
         "ordinal": 13,
-        "name": "embed_url",
+        "name": "image_file_name",
         "type_info": "Varchar"
       },
       {
         "ordinal": 14,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "image_description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "embed_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
         "name": "blurhash",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "published_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 19,
+        "name": "author_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 20,
+        "name": "unverified_author_account_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -89,8 +119,8 @@
       false,
       false,
       false,
+      true,
       null,
-      null,
       false,
       false,
       false,
@@ -98,9 +128,15 @@
       false,
       false,
       false,
+      true,
+      true,
       false,
+      false,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "0cf95371d4182fb7c0ed803f8197f1ba43863b858880ba003d0d2268e09f6663"
+  "hash": "999d89db27164a65713e728b1dc0de3cf2583dd39a4e46907964ca7eb5da66e8"
 }

@@ -285,7 +285,15 @@ pub async fn admin_trending_links(
     };
     let limit = params.limit.unwrap_or(10).clamp(1, 40);
     let offset = params.offset.unwrap_or(0).max(0);
-    let rows = super::super::trends::links_query(&state, limit, offset, staff, &languages).await?;
+    let rows = super::super::trends::links_query(
+        &state,
+        limit,
+        offset,
+        staff,
+        &languages,
+        Some(auth.account_id),
+    )
+    .await?;
     Ok(Json(
         rows.into_iter()
             .map(|(card, id, pending)| {
@@ -312,38 +320,34 @@ async fn review_link(
     auth.require_scope("admin:write")?;
     // `authorize :preview_card, :review?`
     super::require_permission(state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    let card = sqlx::query!(
-        r#"UPDATE preview_cards SET trendable = $2, updated_at = now() WHERE id = $1
-           RETURNING url, title, description, author_name, author_url, provider_name,
-                     provider_url, html, width, height, embed_url, blurhash, language,
-                     CASE type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END AS "card_type!""#,
+    sqlx::query_scalar!(
+        "UPDATE preview_cards SET trendable = $2, updated_at = now() WHERE id = $1 RETURNING id",
         id,
         trendable
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
+    let mut card = super::super::preview_cards::by_ids(state, &[id], Some(auth.account_id))
+        .await?
+        .remove(&id)
+        .ok_or(AppError::NotFound)?;
+    card.history = Some(
+        crate::moderation::history::days(state, "links", id)
+            .await
+            .into_iter()
+            .map(|d| super::super::types::TagHistory {
+                day: d.day.to_string(),
+                uses: d.uses.to_string(),
+                accounts: d.accounts.to_string(),
+            })
+            .collect(),
+    );
     // Once a card has its own say, it no longer waits on its provider.
-    Ok(Json(json!({
-        "id": id.to_string(),
-        "url": card.url,
-        "title": card.title,
-        "description": card.description,
-        "type": card.card_type,
-        "author_name": card.author_name,
-        "author_url": card.author_url,
-        "provider_name": card.provider_name,
-        "provider_url": card.provider_url,
-        "html": card.html,
-        "width": card.width,
-        "height": card.height,
-        "image": null,
-        "embed_url": card.embed_url,
-        "blurhash": card.blurhash,
-        "language": card.language,
-        "history": crate::moderation::history::as_json(state, "links", id).await,
-        "requires_review": false,
-    })))
+    Ok(Json(merge(
+        card,
+        json!({ "id": id.to_string(), "requires_review": false }),
+    )))
 }
 
 pub async fn admin_approve_trending_link(

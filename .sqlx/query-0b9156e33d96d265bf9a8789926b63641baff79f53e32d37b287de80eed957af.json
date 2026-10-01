@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.text,\n                  (COALESCE(s.local, false) OR s.uri IS NULL) AS \"local!\",\n                  EXISTS (SELECT 1 FROM preview_cards_statuses p WHERE p.status_id = s.id) AS \"has_card!\",\n                  EXISTS (SELECT 1 FROM media_attachments m\n                          WHERE m.status_id = s.id\n                            AND (s.ordered_media_attachment_ids IS NULL\n                                 OR m.id = ANY(s.ordered_media_attachment_ids))) AS \"with_media!\",\n                  EXISTS (SELECT 1 FROM quotes q WHERE q.status_id = s.id) AS \"with_quote!\"\n           FROM statuses s\n           WHERE s.id = $1 AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "has_card!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "with_media!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "with_quote!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0b9156e33d96d265bf9a8789926b63641baff79f53e32d37b287de80eed957af"
+}

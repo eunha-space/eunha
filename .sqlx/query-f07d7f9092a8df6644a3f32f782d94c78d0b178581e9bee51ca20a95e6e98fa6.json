@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pc.id,\n                  -- `PreviewCard#requires_review?`\n                  (pc.trendable IS NULL AND NOT EXISTS (\n                     SELECT 1 FROM preview_card_providers p\n                     WHERE (lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain\n                            OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain)\n                       AND p.reviewed_at IS NOT NULL\n                       AND char_length(p.domain) = (\n                         SELECT max(char_length(p2.domain)) FROM preview_card_providers p2\n                         WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p2.domain\n                            OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p2.domain)\n                  )) AS \"requires_review!\"\n           FROM preview_cards pc\n           JOIN preview_card_trends t ON t.preview_card_id = pc.id\n           WHERE $3 OR t.allowed\n           ORDER BY CASE WHEN t.language = ANY($4) THEN 1 ELSE 0 END DESC, t.score DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "requires_review!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "f07d7f9092a8df6644a3f32f782d94c78d0b178581e9bee51ca20a95e6e98fa6"
+}

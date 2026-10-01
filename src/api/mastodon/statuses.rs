@@ -11,11 +11,11 @@ use super::scheduled_statuses::ScheduledStatusResponse;
 use super::{
     accounts::{batch_account_emojis, batch_account_roles, batch_accounts_to_api},
     convert::{account_from_db, status_from_db},
-    formatting::{render_content, HASHTAG_RE, MENTION_RE},
+    formatting::{HASHTAG_RE, MENTION_RE},
     status_serialize::{
         batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
         batch_status_mentions, batch_status_polls, batch_statuses_tags, build_status,
-        fetch_reblog_data, fetch_status_media, hydrate_status_stats, spawn_card_fetch,
+        fetch_reblog_data, fetch_status_media, hydrate_status_stats,
     },
     types::{PaginationParams, Status, StatusContext, StatusEdit, StatusSource},
 };
@@ -326,7 +326,7 @@ pub async fn get_statuses_batch(
         .collect();
     let emojis_map = batch_status_emojis(&state, &all_for_emoji).await?;
     let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-    let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+    let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
     let viewer_ctxs = if let Some(vid) = viewer_id {
         batch_viewer_contexts(&state, vid, &all_ids).await?
     } else {
@@ -1688,7 +1688,7 @@ pub async fn get_status_card(
         }
     }
 
-    let card = super::status_serialize::fetch_status_card(&state, id).await;
+    let card = super::status_serialize::fetch_status_card(&state, id, viewer_id).await;
     Ok(Json(match card {
         Some(c) => serde_json::to_value(c).unwrap_or(serde_json::Value::Null),
         None => serde_json::Value::Null,
@@ -2216,33 +2216,6 @@ pub async fn resolve_mention_accounts(
         }
     }
     result
-}
-
-pub fn build_mention_map(
-    resolved: &[(String, Account)],
-    local_domain: &str,
-) -> HashMap<String, (String, String)> {
-    let mut map = HashMap::new();
-    for (username_lower, account) in resolved {
-        let url = account.url.clone().unwrap_or_default();
-        let display = account.acct();
-        map.insert(username_lower.clone(), (url.clone(), display.clone()));
-        if let Some(ref d) = account.domain {
-            map.insert(
-                format!("{}@{}", username_lower, d.to_lowercase()),
-                (url, display),
-            );
-        } else if !local_domain.is_empty() {
-            // Local accounts are stored with domain NULL, but users may still
-            // write the fully-qualified `@alice@this.instance` form; map that key
-            // too so it renders as a link instead of plain text.
-            map.insert(
-                format!("{}@{}", username_lower, local_domain.to_lowercase()),
-                (url, display),
-            );
-        }
-    }
-    map
 }
 
 pub async fn store_statuses_tags(

@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, url, title, description, image_file_name, image_content_type,\n                      image_file_size, image_updated_at, image_storage_schema_version,\n                      type AS card_type, html, author_name, author_url, provider_name,\n                      provider_url, width, height, embed_url, blurhash, language, link_type,\n                      published_at, image_description, author_account_id,\n                      unverified_author_account_id, updated_at\n               FROM preview_cards WHERE url = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "image_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "image_content_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "image_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "image_updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "card_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "html",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "author_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "author_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "provider_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "provider_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "width",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "height",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "embed_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "blurhash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 20,
+        "name": "link_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 21,
+        "name": "published_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 22,
+        "name": "image_description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "author_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 24,
+        "name": "unverified_author_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 25,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "987f737b79713fbc4d33bde146ca42d695e6b136b62682b5473cc3991292eb06"
+}

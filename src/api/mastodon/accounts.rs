@@ -346,7 +346,7 @@ pub async fn get_account_statuses(
             .collect();
         let pin_emojis_map = batch_status_emojis(&state, &all_pin_statuses).await?;
         let pin_polls_map = batch_status_polls(&state, &pin_enrich_ids, viewer_id).await?;
-        let pin_cards_map = batch_status_cards(&state, &pin_enrich_ids).await?;
+        let pin_cards_map = batch_status_cards(&state, &pin_enrich_ids, viewer_id).await?;
         let pin_all_accounts_for_emoji: Vec<crate::db::models::Account> = {
             let mut seen = std::collections::HashSet::new();
             std::iter::once(&account)
@@ -595,7 +595,7 @@ pub async fn get_account_statuses(
         .collect();
     let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
     let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-    let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+    let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
 
     let all_accounts_for_emoji: Vec<crate::db::models::Account> = {
         let mut seen = std::collections::HashSet::new();
@@ -775,7 +775,7 @@ pub async fn get_account_pins(
         .collect();
     let pin_emojis_map = batch_status_emojis(&state, &all_pin_statuses).await?;
     let pin_polls_map = batch_status_polls(&state, &pin_enrich_ids, viewer_id).await?;
-    let pin_cards_map = batch_status_cards(&state, &pin_enrich_ids).await?;
+    let pin_cards_map = batch_status_cards(&state, &pin_enrich_ids, viewer_id).await?;
     let pin_all_accounts_for_emoji: Vec<crate::db::models::Account> = {
         let mut seen = std::collections::HashSet::new();
         std::iter::once(&account)

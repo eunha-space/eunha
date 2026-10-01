@@ -355,7 +355,7 @@ pub async fn get_notifications(
             .collect();
         let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
         let polls_map = batch_status_polls(&state, &enrich_ids, Some(auth.account_id)).await?;
-        let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+        let cards_map = batch_status_cards(&state, &enrich_ids, Some(auth.account_id)).await?;
         let viewer_ctxs =
             super::statuses::batch_viewer_contexts(&state, auth.account_id, &all_ids).await?;
         let notif_filter_map =
@@ -844,7 +844,7 @@ pub async fn get_notifications_v2(
             .collect();
         let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
         let polls_map = batch_status_polls(&state, &enrich_ids, Some(auth.account_id)).await?;
-        let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+        let cards_map = batch_status_cards(&state, &enrich_ids, Some(auth.account_id)).await?;
         let viewer_ctxs =
             super::statuses::batch_viewer_contexts(&state, auth.account_id, &all_ids).await?;
         let notif_filter_map =
@@ -1517,7 +1517,8 @@ pub async fn get_notification_requests(
         let ls_emojis_map = batch_status_emojis(&state, &ls_all_for_emoji).await?;
         let ls_polls_map =
             batch_status_polls(&state, &ls_enrich_ids, Some(auth.account_id)).await?;
-        let ls_cards_map = batch_status_cards(&state, &ls_enrich_ids).await?;
+        let ls_cards_map =
+            batch_status_cards(&state, &ls_enrich_ids, Some(auth.account_id)).await?;
 
         let ls_account_ids: Vec<i64> = ls_statuses
             .iter()

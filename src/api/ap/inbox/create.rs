@@ -425,29 +425,14 @@ pub(super) async fn handle_create(
         .await;
     }
 
-    // FEP-8967: a `Link` attachment names the status's preview card outright,
-    // which is the only way a remote status gets one here — eunha builds cards
-    // for local posts by scanning their content, but does not scrape remote
-    // ones. Mastodon 4.7.0 likewise takes the first `Link` it finds.
-    if let Some(card_url) = preview_card_link(&attachments).map(str::to_owned) {
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            let Some(card_id) =
-                crate::preview_card::fetch_and_store(&state.db, &state.fetch, &card_url).await
-            else {
-                return;
-            };
-            let _ = sqlx::query!(
-                "INSERT INTO preview_cards_statuses (status_id, preview_card_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                inserted_id,
-                card_id,
-            )
-            .execute(&state.db)
-            .await;
-            // `FetchLinkCardService`: `Trends.links.register`.
-            crate::trends::register_links(&state, inserted_id).await;
-        });
-    }
+    // `LinkCrawlWorker.perform_in(rand(DISTRIBUTE_DELAY), @status.id,
+    // @links.first)`: the card named by the first FEP-8967 `Link`
+    // attachment, or else the first link in the content.
+    crate::preview_card::crawl_later(
+        state,
+        inserted_id,
+        preview_card_link(&attachments).map(str::to_owned),
+    );
 
     // Hashtags
     let hashtag_names: Vec<String> = {

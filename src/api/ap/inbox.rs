@@ -139,109 +139,30 @@ pub(super) async fn delete_arrived_first(state: &AppState, actor: &str, uri: &st
     exists == 1
 }
 
-/// Autorelease TTL for the `create:{uri}` serialization lock, matching
-/// Mastodon's default `with_redis_lock` timeout.
-const CREATE_LOCK_TTL_MS: usize = 15 * 60 * 1000;
-
-/// Best-effort Redis lock guard: releases the lock (only if still the owner) on
-/// drop.
-pub(crate) struct RedisLock {
-    redis: redis::aio::ConnectionManager,
-    key: String,
-    token: String,
-    use_pooled_function: bool,
-}
-
-impl Drop for RedisLock {
-    fn drop(&mut self) {
-        let mut redis = self.redis.clone();
-        let key = std::mem::take(&mut self.key);
-        let token = std::mem::take(&mut self.token);
-        let use_pooled_function = self.use_pooled_function;
-        crate::tenants::spawn(async move {
-            // A pooled Redis installs this named function so tenant users need
-            // no permission to submit arbitrary Lua. Dedicated deployments
-            // retain the EVAL fallback and require no provisioning change.
-            if use_pooled_function {
-                let released: redis::RedisResult<i64> = redis::cmd("FCALL")
-                    .arg("eunha_compare_delete")
-                    .arg(1)
-                    .arg(&key)
-                    .arg(&token)
-                    .query_async(&mut redis)
-                    .await;
-                if released.is_ok() {
-                    return;
-                }
-            }
-            let _: redis::RedisResult<i64> = redis::cmd("EVAL")
-                .arg("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end")
-                .arg(1)
-                .arg(&key)
-                .arg(&token)
-                .query_async(&mut redis)
-                .await;
-        });
-    }
-}
-
 /// Acquire the `create:{uri}` lock that serializes a status Create against a
 /// concurrent Delete's `delete_later`, so the tombstone can't be set between the
 /// Create's `delete_arrived_first?` check and its insert (Mastodon's
 /// `with_redis_lock("create:#{object_uri}")`). Best-effort: retries briefly,
 /// then proceeds without the lock rather than blocking an inbox request.
-pub(super) async fn acquire_create_lock(state: &AppState, uri: &str) -> Option<RedisLock> {
+pub(super) async fn acquire_create_lock(
+    state: &AppState,
+    uri: &str,
+) -> Option<crate::redis_lock::RedisLock> {
     if uri.is_empty() {
         return None;
     }
-    let key = state.redis_keys.key(format!("create:{uri}"));
-    let token = crate::snowflake::next_id().to_string();
-    let mut redis = state.redis_coordination.clone();
+    let name = format!("create:{uri}");
     for attempt in 0..40 {
-        let acquired: redis::RedisResult<Option<String>> = redis::cmd("SET")
-            .arg(&key)
-            .arg(&token)
-            .arg("NX")
-            .arg("PX")
-            .arg(CREATE_LOCK_TTL_MS)
-            .query_async(&mut redis)
-            .await;
-        if matches!(acquired, Ok(Some(_))) {
-            return Some(RedisLock {
-                redis: state.redis_coordination.clone(),
-                key,
-                token,
-                use_pooled_function: state.redis_keys.is_shared(),
-            });
+        if let Some(lock) =
+            crate::redis_lock::try_acquire(state, &name, crate::redis_lock::DEFAULT_TTL_MS).await
+        {
+            return Some(lock);
         }
         if attempt < 39 {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
     None
-}
-
-/// Mastodon's `Lockable#with_redis_lock`: take `lock:{name}` for fifteen
-/// minutes, once, without waiting. `None` when someone else holds it, which
-/// upstream raises as `Mastodon::RaceConditionError`.
-pub(crate) async fn try_redis_lock(state: &AppState, name: &str) -> Option<RedisLock> {
-    let key = state.redis_keys.key(format!("lock:{name}"));
-    let token = crate::snowflake::next_id().to_string();
-    let mut redis = state.redis_coordination.clone();
-    let acquired: redis::RedisResult<Option<String>> = redis::cmd("SET")
-        .arg(&key)
-        .arg(&token)
-        .arg("NX")
-        .arg("PX")
-        .arg(CREATE_LOCK_TTL_MS)
-        .query_async(&mut redis)
-        .await;
-    matches!(acquired, Ok(Some(_))).then(|| RedisLock {
-        redis: state.redis_coordination.clone(),
-        key,
-        token,
-        use_pooled_function: state.redis_keys.is_shared(),
-    })
 }
 
 /// An activity ojak has received and authenticated: queued for the ingress

@@ -22,6 +22,7 @@ pub mod notifications;
 pub mod oauth;
 pub mod oembed;
 pub mod polls;
+pub mod preview_cards;
 pub mod push;
 pub mod reports;
 pub mod resolve_url;

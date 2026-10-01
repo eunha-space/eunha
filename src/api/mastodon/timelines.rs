@@ -1348,7 +1348,7 @@ async fn build_status_list(
         .collect();
     let emojis_map = batch_status_emojis(state, &all_statuses_for_emoji).await?;
     let polls_map = batch_status_polls(state, &enrich_ids, viewer_id).await?;
-    let cards_map = batch_status_cards(state, &enrich_ids).await?;
+    let cards_map = batch_status_cards(state, &enrich_ids, viewer_id).await?;
 
     // Collect all unique accounts (main + reblog) for emoji and role batch-fetch
     let all_accounts_for_emoji: Vec<Account> = {

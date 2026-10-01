@@ -373,3 +373,43 @@ why = "Operators need service-level attribution while several tenants share one 
 evidence = "src/telemetry.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "preview-card-charset-sniffing"
+kind = "behaviour"
+summary = "Reads a linked page's character set by declaration before guessing"
+mastodon = """
+Asks ICU's detector (CharlockHolmes) for the page's encoding and uses it when \
+it is more than 60% sure and the bytes decode, falling back to the \
+`Content-Type` charset."""
+eunha = """
+Takes a byte-order mark, then UTF-8 when the bytes are UTF-8, then the \
+`Content-Type` charset, then a `<meta charset>` in the first kilobyte, and \
+only then Mozilla's detector (chardetng)."""
+why = """
+ICU is a C++ dependency eunha does not otherwise need. The pages that decide \
+the question declare their encoding, and a declaration that decodes the bytes \
+cleanly is a better answer than a guess; the guess is still made for pages \
+that declare nothing or declare wrongly."""
+evidence = "src/preview_card/extract.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "preview-card-url-top-level-domains"
+kind = "behaviour"
+summary = "Accepts any alphabetic top-level domain when picking a local post's link"
+mastodon = """
+Finds the link in a local post's text with twitter-text's URL expression, \
+which accepts a domain only under a top-level domain on its built-in list."""
+eunha = """
+Uses the same expression, with Mastodon's amendments, but accepts any \
+top-level domain made of letters (or a punycode one)."""
+why = """
+The list is a snapshot that ages with every delegation; a link under a \
+domain newer than the list is still a link. Counting characters already \
+treats such URLs loosely, so the two disagree only for text that merely looks \
+like a URL under a top-level domain that does not exist."""
+evidence = "src/preview_card/mod.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

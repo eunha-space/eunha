@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(NULLIF(btrim(cs.url), ''), c.url) AS \"url!\"\n           FROM preview_cards c\n           JOIN preview_cards_statuses cs ON cs.preview_card_id = c.id\n           WHERE cs.status_id = $1\n           ORDER BY c.id\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b2fc55c6e88d9ccbe97f4ece32239dff7eafe7a1e2812ed8c7fa4dab5e0910bb"
+}

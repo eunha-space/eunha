@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT author_account_id, unverified_author_account_id FROM preview_cards WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "author_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "unverified_author_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "9749b78972e82be70472ff6c9a7d7ac74237f7cca83a7b29944fdd648b1b61ad"
+}

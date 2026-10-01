@@ -322,7 +322,7 @@ async fn build_response(
             .collect();
         let emojis_map = batch_status_emojis(state, &all_for_emoji).await?;
         let polls_map = batch_status_polls(state, &enrich_ids, Some(viewer_id)).await?;
-        let cards_map = batch_status_cards(state, &enrich_ids).await?;
+        let cards_map = batch_status_cards(state, &enrich_ids, Some(viewer_id)).await?;
         let ctxs = super::statuses::batch_viewer_contexts(state, viewer_id, &all_ids).await?;
 
         let all_accounts_for_emoji: Vec<DbAccount> = {

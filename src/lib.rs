@@ -25,6 +25,7 @@ pub mod preview_card;
 pub mod push;
 pub mod rails_encryption;
 pub mod redis_keys;
+pub mod redis_lock;
 pub mod remote_ip;
 pub mod schema_check;
 pub mod settings;

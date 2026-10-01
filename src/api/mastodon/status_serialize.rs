@@ -218,7 +218,7 @@ pub async fn batch_quote_data(
             let mentions = batch_status_mentions(state, &qs_ids).await?;
             let emojis = batch_status_emojis(state, &quoted_statuses).await?;
             let polls = batch_status_polls(state, &qs_ids, viewer_id).await?;
-            let cards = batch_status_cards(state, &qs_ids).await?;
+            let cards = batch_status_cards(state, &qs_ids, viewer_id).await?;
             let ctxs = if let Some(vid) = viewer_id {
                 super::statuses::batch_viewer_contexts(state, vid, &qs_ids).await?
             } else {
@@ -909,58 +909,13 @@ pub async fn batch_status_polls(
 }
 
 /// Batch-fetch preview cards for a list of status IDs. Returns map from status_id → PreviewCard.
+/// `viewer_id` is the signed-in account, for `missing_attribution`.
 pub async fn batch_status_cards(
     state: &AppState,
     status_ids: &[i64],
+    viewer_id: Option<i64>,
 ) -> AppResult<std::collections::HashMap<i64, super::types::PreviewCard>> {
-    use std::collections::HashMap;
-
-    if status_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let rows = sqlx::query!(
-        r#"SELECT spc.status_id, pc.url, pc.title, pc.description,
-                  CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as "card_type!",
-                  NULL::text as image_url, pc.author_name, pc.author_url,
-                  pc.provider_name, pc.provider_url, pc.html, pc.width, pc.height,
-                  pc.embed_url, pc.blurhash
-           FROM preview_cards_statuses spc
-           JOIN preview_cards pc ON pc.id = spc.preview_card_id
-           WHERE spc.status_id = ANY($1::bigint[])"#,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut result = HashMap::new();
-    for r in rows {
-        result
-            .entry(r.status_id)
-            .or_insert_with(|| super::types::PreviewCard {
-                url: r.url,
-                title: r.title,
-                description: r.description,
-                language: None,
-                card_type: r.card_type,
-                author_name: r.author_name,
-                author_url: r.author_url,
-                provider_name: r.provider_name,
-                provider_url: r.provider_url,
-                html: r.html,
-                width: r.width,
-                height: r.height,
-                image: r.image_url,
-                image_description: String::new(),
-                embed_url: r.embed_url,
-                blurhash: r.blurhash,
-                published_at: None,
-                authors: vec![],
-                missing_attribution: None,
-                history: None,
-            });
-    }
-    Ok(result)
+    super::preview_cards::for_statuses(state, status_ids, viewer_id).await
 }
 
 /// Builds a `Status` API object with tags and mentions populated from the DB.
@@ -1047,7 +1002,7 @@ pub async fn build_status_with_app(
     api.mentions = mentions;
     api.emojis = status_emojis;
     api.poll = fetch_status_poll(state, id, viewer_account_id).await?;
-    api.card = fetch_status_card(state, id).await;
+    api.card = fetch_status_card(state, id, viewer_account_id).await;
     // Populate quoted status if present (check quotes table)
     {
         let quote_statuses = vec![s.clone()];
@@ -1079,7 +1034,7 @@ pub async fn build_status_with_app(
         rb.mentions = reblog_mentions;
         rb.emojis = reblog_emojis;
         rb.poll = fetch_status_poll(state, rid, None).await?;
-        rb.card = fetch_status_card(state, rid).await;
+        rb.card = fetch_status_card(state, rid, viewer_account_id).await;
     }
     hydrate_status_stats(state, std::iter::once(&mut api)).await;
     Ok(api)
@@ -1237,72 +1192,12 @@ pub async fn hydrate_status_stats<'a>(
 pub(super) async fn fetch_status_card(
     state: &AppState,
     status_id: i64,
+    viewer_id: Option<i64>,
 ) -> Option<super::types::PreviewCard> {
-    let r = sqlx::query!(
-        r#"SELECT pc.url, pc.title, pc.description,
-                  CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as "card_type!",
-                  NULL::text as image_url, pc.author_name, pc.author_url,
-                  pc.provider_name, pc.provider_url, pc.html, pc.width, pc.height,
-                  pc.embed_url, pc.blurhash
-           FROM preview_cards pc
-           JOIN preview_cards_statuses spc ON spc.preview_card_id = pc.id
-           WHERE spc.status_id = $1
-           LIMIT 1"#,
-        status_id,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()?;
-
-    Some(super::types::PreviewCard {
-        url: r.url,
-        title: r.title,
-        description: r.description,
-        language: None,
-        card_type: r.card_type,
-        author_name: r.author_name,
-        author_url: r.author_url,
-        provider_name: r.provider_name,
-        provider_url: r.provider_url,
-        html: r.html,
-        width: r.width,
-        height: r.height,
-        embed_url: r.embed_url,
-        image: r.image_url,
-        image_description: String::new(),
-        blurhash: r.blurhash,
-        published_at: None,
-        authors: vec![],
-        missing_attribution: None,
-        history: None,
-    })
-}
-
-/// Spawn a background task to fetch a preview card for a newly-created status.
-/// Only fetches the first external URL found in the HTML content.
-pub fn spawn_card_fetch(state: &AppState, status_id: i64, content: String) {
-    let urls = crate::preview_card::extract_urls_from_content(&content);
-    let url = match urls.into_iter().next() {
-        Some(u) => u,
-        None => return,
-    };
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        let Some(card_id) =
-            crate::preview_card::fetch_and_store(&state.db, &state.fetch, &url).await
-        else {
-            return;
-        };
-        let _ = sqlx::query!(
-            "INSERT INTO preview_cards_statuses (status_id, preview_card_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            status_id,
-            card_id,
-        )
-        .execute(&state.db)
-        .await;
-        crate::trends::register_links(&state, status_id).await;
-    });
+    super::preview_cards::for_statuses(state, &[status_id], viewer_id)
+        .await
+        .ok()?
+        .remove(&status_id)
 }
 
 /// Which application posted each of these statuses.

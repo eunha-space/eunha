@@ -243,7 +243,7 @@ pub async fn get_status_context(
                 .collect();
             let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
             let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-            let cards_map = batch_status_cards(&state, &enrich_ids).await?;
+            let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
             let viewer_ctxs = if let Some(vid) = viewer_id {
                 batch_viewer_contexts(&state, vid, &all_ids).await?
             } else {
