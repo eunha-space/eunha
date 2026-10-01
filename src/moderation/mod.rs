@@ -5,6 +5,7 @@ pub mod account_action;
 pub mod action_log;
 pub mod domain_block;
 pub mod history;
+pub mod notification_policy;
 pub mod remote;
 pub mod report_service;
 pub mod role;

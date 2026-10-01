@@ -1230,3 +1230,89 @@ async fn test_quote_policy_bitmap() {
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
     assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::OK);
 }
+
+/// Notification policies as `NotifyService` applies them: a limited sender is
+/// filtered by default, `drop` writes nothing, a filtered mention opens a
+/// request, and accepting it brings the notification back and lets the sender
+/// through from then on.
+#[tokio::test]
+async fn test_notification_policies() {
+    let ctx = TestContext::new("mod-notif-policy").await;
+    let notifications = |include_filtered: bool| {
+        let url = if include_filtered {
+            "/api/v1/notifications?include_filtered=true"
+        } else {
+            "/api/v1/notifications"
+        };
+        let api = &ctx.api;
+        let token = ctx.alice_token.clone();
+        async move {
+            api.get(url, Some(&token))
+                .await
+                .json::<Vec<Value>>()
+                .await
+                .unwrap()
+        }
+    };
+
+    // Default: a limited sender's mention is filtered.
+    sqlx::query("UPDATE accounts SET silenced_at = now() WHERE id = $1")
+        .bind(id(&ctx.bob_id))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice psst", "public")
+        .await;
+    assert!(notifications(false).await.is_empty());
+    let filtered = notifications(true).await;
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0]["filtered"], true);
+    let requests: Vec<Value> = ctx
+        .api
+        .get("/api/v1/notifications/requests", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["notifications_count"], "1");
+
+    // Accepting brings it back and lets bob through from then on.
+    let req = requests[0]["id"].as_str().unwrap();
+    ctx.api
+        .post_json(
+            &format!("/api/v1/notifications/requests/{req}/accept"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(notifications(false).await.len(), 1);
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice again", "public")
+        .await;
+    assert_eq!(notifications(false).await.len(), 2);
+
+    // `drop` writes nothing at all.
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    ctx.api
+        .patch_json(
+            "/api/v2/notifications/policy",
+            Some(&ctx.alice_token),
+            &json!({"for_not_following": "drop"}),
+        )
+        .await;
+    ctx.api
+        .post_status(&carol_token, "@alice hi", "public")
+        .await;
+    let from_carol: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notifications WHERE account_id = $1 AND from_account_id = $2",
+    )
+    .bind(id(&ctx.alice_id))
+    .bind(carol_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(from_carol, 0);
+}

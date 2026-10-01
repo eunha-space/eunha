@@ -855,6 +855,7 @@ pub struct NotificationPolicy {
     pub for_new_accounts: String,
     pub for_private_mentions: String,
     pub for_limited_accounts: String,
+    pub for_bots: String,
     pub summary: NotificationPolicySummary,
 }
 

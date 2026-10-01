@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE ancestors(id, in_reply_to_id, mention_id, path, depth) AS (\n               SELECT s.id, s.in_reply_to_id, m.id, ARRAY[s.id], 0\n               FROM statuses s\n               LEFT JOIN mentions m ON m.silent = FALSE AND m.account_id = $3 AND m.status_id = s.id\n               WHERE s.id = $1\n             UNION ALL\n               SELECT s.id, s.in_reply_to_id, m.id, ancestors.path || s.id, ancestors.depth + 1\n               FROM ancestors\n               JOIN statuses s ON s.id = ancestors.in_reply_to_id\n               LEFT JOIN mentions m ON m.silent = FALSE AND m.account_id = $3 AND m.status_id = s.id AND s.account_id = $2\n               WHERE ancestors.mention_id IS NULL AND NOT s.id = ANY(path) AND ancestors.depth < 100\n           )\n           SELECT COUNT(*) AS \"n!\"\n           FROM ancestors\n           JOIN statuses s ON s.id = ancestors.id\n           WHERE ancestors.mention_id IS NOT NULL AND s.account_id = $2 AND s.visibility = 3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "694f431d48bb6ea5eda3981e21cb826bf42384cbd6a2c09a54058107ab81a028"
+}

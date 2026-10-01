@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_requests\n               (account_id, from_account_id, last_status_id, notifications_count, created_at, updated_at)\n           VALUES ($1, $2, $3,\n                   (SELECT count(*) FROM (SELECT 1 FROM notifications\n                    WHERE account_id = $1 AND from_account_id = $2 AND filtered\n                      AND \"type\" IN ('mention', 'quote') LIMIT 100) n),\n                   now(), now())\n           ON CONFLICT (account_id, from_account_id) DO UPDATE\n             SET notifications_count = EXCLUDED.notifications_count,\n                 last_status_id = COALESCE($3, notification_requests.last_status_id),\n                 updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d441659c546253bb3184b1c90d86decc708d2026ef208f6440dd05d114ce31ec"
+}

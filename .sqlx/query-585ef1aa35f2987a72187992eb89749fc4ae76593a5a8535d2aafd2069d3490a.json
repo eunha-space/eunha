@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"requests!\", COALESCE(sum(notifications_count), 0)::bigint AS \"notifications!\"\n           FROM (SELECT r.notifications_count FROM notification_requests r\n                 JOIN accounts a ON a.id = r.from_account_id\n                 WHERE r.account_id = $1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 LIMIT 100) r",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "requests!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "notifications!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "585ef1aa35f2987a72187992eb89749fc4ae76593a5a8535d2aafd2069d3490a"
+}

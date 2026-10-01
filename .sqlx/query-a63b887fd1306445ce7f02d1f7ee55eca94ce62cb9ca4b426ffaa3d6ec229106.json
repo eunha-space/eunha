@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             NOT EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS \"not_following!\",\n             NOT EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1\n                           AND created_at <= now() - make_interval(days => $3)) AS \"not_follower!\",\n             (a.created_at > now() - make_interval(days => $4)) AS \"new_account!\",\n             (a.silenced_at IS NOT NULL) AS \"silenced!\",\n             (COALESCE(a.actor_type, '') IN ('Application', 'Service')) AS \"bot!\",\n             EXISTS (SELECT 1 FROM notification_permissions\n                     WHERE account_id = $1 AND from_account_id = $2) AS \"permitted!\"\n           FROM accounts a WHERE a.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "not_following!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "not_follower!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "new_account!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "silenced!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "bot!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "permitted!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a63b887fd1306445ce7f02d1f7ee55eca94ce62cb9ca4b426ffaa3d6ec229106"
+}

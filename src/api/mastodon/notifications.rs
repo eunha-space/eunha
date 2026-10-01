@@ -1262,272 +1262,202 @@ pub async fn get_notifications_unread_count(
 
 // ── GET /api/v2/notifications/policy ─────────────────────────────────────
 
-fn bool_to_policy(b: bool) -> String {
-    if b {
-        "filter".to_string()
-    } else {
-        "accept".to_string()
+/// A `NotificationPolicy` row, or the column defaults (limited accounts and
+/// private mentions filtered), in `[not_following, not_followers,
+/// new_accounts, private_mentions, limited_accounts, bots]` order.
+async fn load_policy(state: &AppState, account_id: i64) -> AppResult<[i32; 6]> {
+    Ok(sqlx::query!(
+        r#"SELECT for_not_following, for_not_followers, for_new_accounts,
+                  for_private_mentions, for_limited_accounts, for_bots
+           FROM notification_policies WHERE account_id = $1"#,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .map_or([0, 0, 0, 1, 1, 0], |p| {
+        [
+            p.for_not_following,
+            p.for_not_followers,
+            p.for_new_accounts,
+            p.for_private_mentions,
+            p.for_limited_accounts,
+            p.for_bots,
+        ]
+    }))
+}
+
+/// `NotificationPolicy#summarize!`: of the first 100 requests from accounts not
+/// suspended, how many there are and how many notifications they hold.
+async fn policy_summary(state: &AppState, account_id: i64) -> AppResult<NotificationPolicySummary> {
+    let row = sqlx::query!(
+        r#"SELECT count(*) AS "requests!", COALESCE(sum(notifications_count), 0)::bigint AS "notifications!"
+           FROM (SELECT r.notifications_count FROM notification_requests r
+                 JOIN accounts a ON a.id = r.from_account_id
+                 WHERE r.account_id = $1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+                 LIMIT 100) r"#,
+        account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(NotificationPolicySummary {
+        pending_requests_count: row.requests,
+        pending_notifications_count: row.notifications,
+    })
+}
+
+/// `{ accept: 0, filter: 1, drop: 2 }`.
+fn policy_name(v: i32) -> String {
+    match v {
+        1 => "filter",
+        2 => "drop",
+        _ => "accept",
+    }
+    .to_string()
+}
+
+fn parse_policy(s: &str) -> AppResult<i32> {
+    match s {
+        "accept" => Ok(0),
+        "filter" => Ok(1),
+        "drop" => Ok(2),
+        other => Err(AppError::Unprocessable(format!(
+            "'{other}' is not a valid policy"
+        ))),
     }
 }
 
-fn policy_to_bool(s: &str) -> bool {
-    matches!(s, "filter" | "drop")
+async fn store_policy(state: &AppState, account_id: i64, p: [i32; 6]) -> AppResult<()> {
+    sqlx::query!(
+        r#"INSERT INTO notification_policies
+             (account_id, for_not_following, for_not_followers, for_new_accounts,
+              for_private_mentions, for_limited_accounts, for_bots, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
+           ON CONFLICT (account_id) DO UPDATE SET
+             for_not_following = $2, for_not_followers = $3, for_new_accounts = $4,
+             for_private_mentions = $5, for_limited_accounts = $6, for_bots = $7,
+             updated_at = now()"#,
+        account_id,
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        p[4],
+        p[5],
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
 }
 
+// ── /api/v2/notifications/policy ──────────────────────────────────────────
+
+/// `REST::NotificationPolicySerializer`.
 pub async fn get_notification_policy(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<NotificationPolicy>> {
     auth.require_scope("read:notifications")?;
-    // Fetch from notification_policies table (Mastodon schema)
-    let policy = sqlx::query!(
-        r#"SELECT for_not_following, for_not_followers, for_new_accounts,
-                  for_private_mentions, for_limited_accounts
-           FROM notification_policies WHERE account_id = $1"#,
-        auth.account_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Mastodon's NotificationPolicy defaults for_private_mentions to :filter.
-    let (
-        nf_not_following,
-        nf_not_followers,
-        nf_new_accounts,
-        nf_private_mentions,
-        nf_limited_accounts,
-    ) = policy
-        .map(|p| {
-            (
-                p.for_not_following != 0,
-                p.for_not_followers != 0,
-                p.for_new_accounts != 0,
-                p.for_private_mentions != 0,
-                p.for_limited_accounts != 0,
-            )
-        })
-        .unwrap_or((false, false, false, true, false));
-
-    let any_filter = nf_not_following
-        || nf_not_followers
-        || nf_new_accounts
-        || nf_private_mentions
-        || nf_limited_accounts;
-
-    let (pending_requests, pending_notifs) = if any_filter {
-        let pending_requests: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM notification_requests WHERE account_id = $1",
-            auth.account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(0);
-        let pending_notifs: i64 = sqlx::query_scalar!(
-            "SELECT COALESCE(SUM(notifications_count), 0)::bigint FROM notification_requests WHERE account_id = $1",
-            auth.account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(0);
-        (pending_requests, pending_notifs)
-    } else {
-        (0_i64, 0_i64)
-    };
-
+    let p = load_policy(&state, auth.account_id).await?;
     Ok(Json(NotificationPolicy {
-        for_not_following: bool_to_policy(nf_not_following),
-        for_not_followers: bool_to_policy(nf_not_followers),
-        for_new_accounts: bool_to_policy(nf_new_accounts),
-        for_private_mentions: bool_to_policy(nf_private_mentions),
-        for_limited_accounts: bool_to_policy(nf_limited_accounts),
-        summary: NotificationPolicySummary {
-            pending_requests_count: pending_requests,
-            pending_notifications_count: pending_notifs,
-        },
+        for_not_following: policy_name(p[0]),
+        for_not_followers: policy_name(p[1]),
+        for_new_accounts: policy_name(p[2]),
+        for_private_mentions: policy_name(p[3]),
+        for_limited_accounts: policy_name(p[4]),
+        for_bots: policy_name(p[5]),
+        summary: policy_summary(&state, auth.account_id).await?,
     }))
 }
 
-// ── PATCH /api/v2/notifications/policy ───────────────────────────────────
-
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateNotificationPolicyForm {
     pub for_not_following: Option<String>,
     pub for_not_followers: Option<String>,
     pub for_new_accounts: Option<String>,
     pub for_private_mentions: Option<String>,
     pub for_limited_accounts: Option<String>,
+    pub for_bots: Option<String>,
 }
 
 pub async fn update_notification_policy(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<UpdateNotificationPolicyForm>,
+    super::extractors::Params(form): super::extractors::Params<UpdateNotificationPolicyForm>,
 ) -> AppResult<Json<NotificationPolicy>> {
     auth.require_scope("write:notifications")?;
-    let filter_not_following =
-        form.for_not_following
-            .as_deref()
-            .map(|s| if policy_to_bool(s) { 1i32 } else { 0i32 });
-    let filter_not_followers =
-        form.for_not_followers
-            .as_deref()
-            .map(|s| if policy_to_bool(s) { 1i32 } else { 0i32 });
-    let filter_new_accounts =
-        form.for_new_accounts
-            .as_deref()
-            .map(|s| if policy_to_bool(s) { 1i32 } else { 0i32 });
-    let filter_private_mentions =
-        form.for_private_mentions
-            .as_deref()
-            .map(|s| if policy_to_bool(s) { 1i32 } else { 0i32 });
-    let filter_limited_accounts =
-        form.for_limited_accounts
-            .as_deref()
-            .map(|s| if policy_to_bool(s) { 1i32 } else { 0i32 });
-    sqlx::query!(
-        r#"INSERT INTO notification_policies (account_id, for_not_following, for_not_followers, for_new_accounts, for_private_mentions, for_limited_accounts, created_at, updated_at)
-           VALUES ($1, COALESCE($2, 0), COALESCE($3, 0), COALESCE($4, 0), COALESCE($5, 1), COALESCE($6, 1), now(), now())
-           ON CONFLICT (account_id) DO UPDATE SET
-               for_not_following    = COALESCE($2, notification_policies.for_not_following),
-               for_not_followers    = COALESCE($3, notification_policies.for_not_followers),
-               for_new_accounts     = COALESCE($4, notification_policies.for_new_accounts),
-               for_private_mentions = COALESCE($5, notification_policies.for_private_mentions),
-               for_limited_accounts = COALESCE($6, notification_policies.for_limited_accounts),
-               updated_at = now()"#,
-        auth.account_id,
-        filter_not_following,
-        filter_not_followers,
-        filter_new_accounts,
-        filter_private_mentions,
-        filter_limited_accounts,
-    )
-    .execute(&state.db)
-    .await?;
-
+    let mut p = load_policy(&state, auth.account_id).await?;
+    for (slot, value) in [
+        (0, &form.for_not_following),
+        (1, &form.for_not_followers),
+        (2, &form.for_new_accounts),
+        (3, &form.for_private_mentions),
+        (4, &form.for_limited_accounts),
+        (5, &form.for_bots),
+    ] {
+        if let Some(v) = value {
+            p[slot] = parse_policy(v)?;
+        }
+    }
+    store_policy(&state, auth.account_id, p).await?;
     get_notification_policy(state, Extension(auth)).await
 }
 
-// ── GET /api/v1/notifications/policy ─────────────────────────────────────────
+// ── /api/v1/notifications/policy ──────────────────────────────────────────
 
+/// `REST::V1::NotificationPolicySerializer`: anything but accept is a filter.
 pub async fn get_notification_policy_v1(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<NotificationPolicyV1>> {
     auth.require_scope("read:notifications")?;
-    let policy = sqlx::query!(
-        r#"SELECT for_not_following, for_not_followers, for_new_accounts,
-                  for_private_mentions, for_bots
-           FROM notification_policies WHERE account_id = $1"#,
-        auth.account_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Mastodon's NotificationPolicy defaults for_private_mentions to :filter.
-    let (
-        filter_not_following,
-        filter_not_followers,
-        filter_new_accounts,
-        filter_private_mentions,
-        filter_bots,
-    ) = policy.map_or((false, false, false, true, false), |p| {
-        (
-            p.for_not_following != 0,
-            p.for_not_followers != 0,
-            p.for_new_accounts != 0,
-            p.for_private_mentions != 0,
-            p.for_bots != 0,
-        )
-    });
-
-    let any_filter = filter_not_following
-        || filter_not_followers
-        || filter_new_accounts
-        || filter_private_mentions
-        || filter_bots;
-
-    let (pending_requests, pending_notifs) = if any_filter {
-        let pending_requests: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM notification_requests WHERE account_id = $1",
-            auth.account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(0);
-        let pending_notifs: i64 = sqlx::query_scalar!(
-            "SELECT COALESCE(SUM(notifications_count), 0)::bigint FROM notification_requests WHERE account_id = $1",
-            auth.account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(0);
-        (pending_requests, pending_notifs)
-    } else {
-        (0_i64, 0_i64)
-    };
-
+    let p = load_policy(&state, auth.account_id).await?;
     Ok(Json(NotificationPolicyV1 {
-        filter_not_following,
-        filter_not_followers,
-        filter_new_accounts,
-        filter_private_mentions,
-        filter_bots,
-        summary: NotificationPolicySummary {
-            pending_requests_count: pending_requests,
-            pending_notifications_count: pending_notifs,
-        },
+        filter_not_following: p[0] != 0,
+        filter_not_followers: p[1] != 0,
+        filter_new_accounts: p[2] != 0,
+        filter_private_mentions: p[3] != 0,
+        filter_bots: p[5] != 0,
+        summary: policy_summary(&state, auth.account_id).await?,
     }))
 }
 
-// ── PATCH /api/v1/notifications/policy ───────────────────────────────────────
-
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateNotificationPolicyV1Form {
-    pub filter_not_following: Option<bool>,
-    pub filter_not_followers: Option<bool>,
-    pub filter_new_accounts: Option<bool>,
-    pub filter_private_mentions: Option<bool>,
+    pub filter_not_following: Option<super::extractors::FlexBool>,
+    pub filter_not_followers: Option<super::extractors::FlexBool>,
+    pub filter_new_accounts: Option<super::extractors::FlexBool>,
+    pub filter_private_mentions: Option<super::extractors::FlexBool>,
+    pub filter_bots: Option<super::extractors::FlexBool>,
 }
 
+/// The V1 compatibility setters: true filters, false accepts.
 pub async fn update_notification_policy_v1(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<UpdateNotificationPolicyV1Form>,
+    super::extractors::Params(form): super::extractors::Params<UpdateNotificationPolicyV1Form>,
 ) -> AppResult<Json<NotificationPolicyV1>> {
     auth.require_scope("write:notifications")?;
-    let not_following = form
-        .filter_not_following
-        .map(|v| if v { 1_i32 } else { 0_i32 });
-    let not_followers = form
-        .filter_not_followers
-        .map(|v| if v { 1_i32 } else { 0_i32 });
-    let new_accounts = form
-        .filter_new_accounts
-        .map(|v| if v { 1_i32 } else { 0_i32 });
-    let private_mentions = form
-        .filter_private_mentions
-        .map(|v| if v { 1_i32 } else { 0_i32 });
-    sqlx::query!(
-        r#"INSERT INTO notification_policies
-               (account_id, for_not_following, for_not_followers, for_new_accounts, for_private_mentions, created_at, updated_at)
-           VALUES ($1, COALESCE($2, 0), COALESCE($3, 0), COALESCE($4, 0), COALESCE($5, 1), now(), now())
-           ON CONFLICT (account_id) DO UPDATE SET
-               for_not_following    = COALESCE($2, notification_policies.for_not_following),
-               for_not_followers    = COALESCE($3, notification_policies.for_not_followers),
-               for_new_accounts     = COALESCE($4, notification_policies.for_new_accounts),
-               for_private_mentions = COALESCE($5, notification_policies.for_private_mentions),
-               updated_at = now()"#,
-        auth.account_id,
-        not_following,
-        not_followers,
-        new_accounts,
-        private_mentions,
-    )
-    .execute(&state.db)
-    .await?;
-
+    let mut p = load_policy(&state, auth.account_id).await?;
+    for (slot, value) in [
+        (0, form.filter_not_following),
+        (1, form.filter_not_followers),
+        (2, form.filter_new_accounts),
+        (3, form.filter_private_mentions),
+        (5, form.filter_bots),
+    ] {
+        if let Some(v) = value {
+            p[slot] = i32::from(v.0);
+        }
+    }
+    store_policy(&state, auth.account_id, p).await?;
     get_notification_policy_v1(state, Extension(auth)).await
 }
+
+// ── PATCH /api/v2/notifications/policy ───────────────────────────────────
+
+// ── GET /api/v1/notifications/policy ─────────────────────────────────────────
+
+// ── PATCH /api/v1/notifications/policy ───────────────────────────────────────
 
 // ── GET /api/v1/notifications/requests ───────────────────────────────────
 
@@ -1746,22 +1676,83 @@ pub async fn get_notification_requests(
 
 // ── POST /api/v1/notifications/requests/:id/accept ───────────────────────
 
+/// `AcceptNotificationRequestService`: let the sender through from now on,
+/// bring back what was filtered from it, and drop the request.
+pub(crate) async fn accept_request(
+    state: &AppState,
+    account_id: i64,
+    from_account_id: i64,
+) -> AppResult<()> {
+    sqlx::query!(
+        r#"INSERT INTO notification_permissions (account_id, from_account_id, created_at, updated_at)
+           VALUES ($1, $2, now(), now())
+           ON CONFLICT DO NOTHING"#,
+        account_id,
+        from_account_id,
+    )
+    .execute(&state.db)
+    .await?;
+    // `UnfilterNotificationsWorker`.
+    sqlx::query!(
+        "UPDATE notifications SET filtered = false WHERE account_id = $1 AND from_account_id = $2 AND filtered",
+        account_id,
+        from_account_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM notification_requests WHERE account_id = $1 AND from_account_id = $2",
+        account_id,
+        from_account_id,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// `DismissNotificationRequestService`: drop the request and the
+/// notifications it held (`FilteredNotificationCleanupWorker`).
+pub(crate) async fn dismiss_request(
+    state: &AppState,
+    account_id: i64,
+    from_account_id: i64,
+) -> AppResult<()> {
+    sqlx::query!(
+        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND filtered",
+        account_id,
+        from_account_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM notification_requests WHERE account_id = $1 AND from_account_id = $2",
+        account_id,
+        from_account_id,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+async fn request_sender(state: &AppState, account_id: i64, id: i64) -> AppResult<i64> {
+    sqlx::query_scalar!(
+        "SELECT from_account_id FROM notification_requests WHERE id = $1 AND account_id = $2",
+        id,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)
+}
+
 pub async fn accept_notification_request(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    let deleted = sqlx::query!(
-        "DELETE FROM notification_requests WHERE id = $1 AND account_id = $2",
-        id,
-        auth.account_id,
-    )
-    .execute(&state.db)
-    .await?;
-    if deleted.rows_affected() == 0 {
-        return Err(AppError::NotFound);
-    }
+    let from = request_sender(&state, auth.account_id, id).await?;
+    accept_request(&state, auth.account_id, from).await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -1773,45 +1764,55 @@ pub async fn dismiss_notification_request(
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    sqlx::query!(
-        "DELETE FROM notification_requests WHERE id = $1 AND account_id = $2",
-        id,
-        auth.account_id,
-    )
-    .execute(&state.db)
-    .await?;
+    let from = request_sender(&state, auth.account_id, id).await?;
+    dismiss_request(&state, auth.account_id, from).await?;
     Ok(Json(serde_json::json!({})))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkRequestsForm {
+    #[serde(default)]
+    pub id: super::extractors::FlexIds,
+}
+
+/// `set_requests`: the caller's requests among the `id[]` given.
+async fn bulk_senders(state: &AppState, account_id: i64, ids: &[i64]) -> AppResult<Vec<i64>> {
+    Ok(sqlx::query_scalar!(
+        "SELECT from_account_id FROM notification_requests WHERE account_id = $1 AND id = ANY($2)",
+        account_id,
+        ids,
+    )
+    .fetch_all(&state.db)
+    .await?)
 }
 
 // ── POST /api/v1/notifications/requests/accept_all ───────────────────────
 
+/// `accept_bulk`.
 pub async fn accept_all_notification_requests(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
+    super::extractors::Params(form): super::extractors::Params<BulkRequestsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    sqlx::query!(
-        "DELETE FROM notification_requests WHERE account_id = $1",
-        auth.account_id,
-    )
-    .execute(&state.db)
-    .await?;
+    for from in bulk_senders(&state, auth.account_id, &form.id.0).await? {
+        accept_request(&state, auth.account_id, from).await?;
+    }
     Ok(Json(serde_json::json!({})))
 }
 
 // ── POST /api/v1/notifications/requests/dismiss_all ──────────────────────
 
+/// `dismiss_bulk`.
 pub async fn dismiss_all_notification_requests(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
+    super::extractors::Params(form): super::extractors::Params<BulkRequestsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    sqlx::query!(
-        "DELETE FROM notification_requests WHERE account_id = $1",
-        auth.account_id,
-    )
-    .execute(&state.db)
-    .await?;
+    for from in bulk_senders(&state, auth.account_id, &form.id.0).await? {
+        dismiss_request(&state, auth.account_id, from).await?;
+    }
     Ok(Json(serde_json::json!({})))
 }
 

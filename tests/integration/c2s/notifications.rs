@@ -513,7 +513,8 @@ async fn test_notification_filter_by_account_id() {
 
 // ── notification policy ───────────────────────────────────────────────────────
 
-/// GET /api/v2/notifications/policy returns the policy with all filters false by default.
+/// GET /api/v2/notifications/policy returns the column defaults: private mentions
+/// and limited accounts filtered, everything else accepted.
 #[tokio::test]
 async fn test_notification_policy_defaults() {
     let ctx = TestContext::new("notif-policy-defaults").await;
@@ -529,7 +530,8 @@ async fn test_notification_policy_defaults() {
     assert_eq!(policy["for_not_followers"].as_str(), Some("accept"));
     assert_eq!(policy["for_new_accounts"].as_str(), Some("accept"));
     assert_eq!(policy["for_private_mentions"].as_str(), Some("filter"));
-    assert_eq!(policy["for_limited_accounts"].as_str(), Some("accept"));
+    assert_eq!(policy["for_limited_accounts"].as_str(), Some("filter"));
+    assert_eq!(policy["for_bots"].as_str(), Some("accept"));
     assert!(policy["summary"].is_object(), "summary field missing");
 }
 
@@ -653,7 +655,11 @@ async fn test_notification_request_dismiss_and_accept() {
         .unwrap();
 
     // Bob follows alice → should create a notification request (not a notification).
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Only filtered mentions and quotes open a request
+    // (`update_notification_request!`).
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
 
     let requests: Vec<Value> = ctx
         .api
@@ -726,7 +732,11 @@ async fn test_notification_request_accept_removes_from_list() {
         .await
         .unwrap();
 
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Only filtered mentions and quotes open a request
+    // (`update_notification_request!`).
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
 
     let requests: Vec<Value> = ctx
         .api
@@ -780,7 +790,11 @@ async fn test_notification_requests_dismiss_bulk() {
         .await
         .unwrap();
 
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Only filtered mentions and quotes open a request
+    // (`update_notification_request!`).
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
 
     // Verify a request exists.
     let requests: Vec<Value> = ctx
@@ -801,7 +815,8 @@ async fn test_notification_requests_dismiss_bulk() {
         .post_json(
             "/api/v1/notifications/requests/dismiss",
             Some(&ctx.alice_token),
-            &json!({}),
+            // `set_requests`: the requests named by `id[]`.
+            &json!({"id": requests.iter().map(|r| r["id"].clone()).collect::<Vec<_>>()}),
         )
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -835,7 +850,11 @@ async fn test_notification_requests_accept_bulk() {
         .await
         .unwrap();
 
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Only filtered mentions and quotes open a request
+    // (`update_notification_request!`).
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
 
     let requests: Vec<Value> = ctx
         .api
@@ -855,7 +874,8 @@ async fn test_notification_requests_accept_bulk() {
         .post_json(
             "/api/v1/notifications/requests/accept",
             Some(&ctx.alice_token),
-            &json!({}),
+            // `set_requests`: the requests named by `id[]`.
+            &json!({"id": requests.iter().map(|r| r["id"].clone()).collect::<Vec<_>>()}),
         )
         .await;
     assert_eq!(accept_resp.status(), StatusCode::OK);
@@ -1635,7 +1655,11 @@ async fn test_notification_request_has_updated_at() {
         .await
         .unwrap();
 
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Only filtered mentions and quotes open a request
+    // (`update_notification_request!`).
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
 
     let requests: Vec<Value> = ctx
         .api
