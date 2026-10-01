@@ -750,7 +750,7 @@ async fn build_admin_notification_payload(
         sqlx::query!(
             r#"SELECT r.id, r.comment, r.forwarded, r.action_taken_at, r.created_at,
                       r.status_ids, a.id AS ta_id, a.username AS ta_username,
-                      CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!"
+                      CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!"
                FROM reports r
                JOIN accounts a ON a.id = r.target_account_id
                WHERE r.id = $1"#,

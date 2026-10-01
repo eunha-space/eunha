@@ -40,7 +40,7 @@ async fn fetch_reports_map(
     }
     let rows = sqlx::query!(
         r#"SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS "forwarded!",
-                  CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!",
+                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!",
                   r.action_taken_at, r.created_at, r.status_ids,
                   r.target_account_id
            FROM reports r
@@ -1927,7 +1927,7 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         if let Some(rid) = n.activity_id {
             sqlx::query!(
                 r#"SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS "forwarded!",
-                          CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!",
+                          CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!",
                           r.action_taken_at, r.created_at, r.status_ids,
                           r.target_account_id
                    FROM reports r WHERE r.id = $1"#,

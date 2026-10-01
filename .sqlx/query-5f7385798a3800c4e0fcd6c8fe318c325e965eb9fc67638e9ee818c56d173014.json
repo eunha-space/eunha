@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT domain FROM domain_blocks WHERE domain <> '' AND severity >= $1",
+  "query": "SELECT domain FROM domain_blocks WHERE domain <> '' AND severity = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "3b3a4a2c8ed5004187de285762c81993de0d443a3726a1a3ab942b12dc325c84"
+  "hash": "5f7385798a3800c4e0fcd6c8fe318c325e965eb9fc67638e9ee818c56d173014"
 }

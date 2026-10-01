@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks ORDER BY domain",
+  "query": "UPDATE domain_blocks SET\n               severity       = COALESCE($2, severity),\n               reject_media   = COALESCE($3, reject_media),\n               reject_reports = COALESCE($4, reject_reports),\n               private_comment = $5,\n               public_comment  = $6,\n               obfuscate      = COALESCE($7, obfuscate),\n               updated_at     = now()\n           WHERE id = $1\n           RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                     CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS \"severity!\"",
   "describe": {
     "columns": [
       {
@@ -50,7 +50,15 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool"
+      ]
     },
     "nullable": [
       false,
@@ -64,5 +72,5 @@
       null
     ]
   },
-  "hash": "6e8c4a056d35354e596b1d8c2aa7cbc241b47c1cbc02f6a8b48b0fdda81fae03"
+  "hash": "df78d2d04957fbdecb917a612061322829bfec98ffca92563d247687bf1d3f22"
 }

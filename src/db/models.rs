@@ -586,76 +586,77 @@ pub mod filter_action {
     }
 }
 
-/// Integer-to-text helpers for domain_blocks/ip_blocks severity.
+/// `DomainBlock#severity`: `{ silence: 0, suspend: 1, noop: 2 }`.
 pub mod domain_severity {
-    pub const NOOP: i32 = 0;
-    pub const SILENCE: i32 = 1;
-    pub const SUSPEND: i32 = 2;
+    pub const SILENCE: i32 = 0;
+    pub const SUSPEND: i32 = 1;
+    pub const NOOP: i32 = 2;
 
-    pub fn from_str(s: &str) -> i32 {
+    pub fn parse(s: &str) -> Option<i32> {
         match s {
-            "noop" => NOOP,
-            "silence" => SILENCE,
-            "suspend" => SUSPEND,
-            _ => NOOP,
+            "silence" => Some(SILENCE),
+            "suspend" => Some(SUSPEND),
+            "noop" => Some(NOOP),
+            _ => None,
         }
     }
 
-    pub fn to_str(v: i32) -> &'static str {
-        match v {
-            NOOP => "noop",
-            SILENCE => "silence",
+    /// The column defaults to `silence` and is nullable; NULL reads as the default.
+    pub fn to_str(v: Option<i32>) -> &'static str {
+        match v.unwrap_or(SILENCE) {
             SUSPEND => "suspend",
-            _ => "noop",
+            NOOP => "noop",
+            _ => "silence",
         }
     }
 }
 
-/// Integer-to-text helpers for ip_blocks.severity (noop=0 sign_up_requires_approval=1 sign_up_block=2 block=3).
+/// `IpBlock#severity`: `{ sign_up_requires_approval: 5000, sign_up_block: 5500, no_access: 9999 }`.
 pub mod ip_severity {
-    pub const NOOP: i32 = 0;
-    pub const SIGN_UP_REQUIRES_APPROVAL: i32 = 1;
-    pub const SIGN_UP_BLOCK: i32 = 2;
-    pub const BLOCK: i32 = 3;
+    pub const SIGN_UP_REQUIRES_APPROVAL: i32 = 5000;
+    pub const SIGN_UP_BLOCK: i32 = 5500;
+    pub const NO_ACCESS: i32 = 9999;
 
-    pub fn from_str(s: &str) -> i32 {
+    pub fn parse(s: &str) -> Option<i32> {
         match s {
-            "noop" => NOOP,
-            "sign_up_requires_approval" => SIGN_UP_REQUIRES_APPROVAL,
-            "sign_up_block" => SIGN_UP_BLOCK,
-            "block" => BLOCK,
-            _ => NOOP,
+            "sign_up_requires_approval" => Some(SIGN_UP_REQUIRES_APPROVAL),
+            "sign_up_block" => Some(SIGN_UP_BLOCK),
+            "no_access" => Some(NO_ACCESS),
+            _ => None,
         }
     }
 
     pub fn to_str(v: i32) -> &'static str {
         match v {
-            NOOP => "noop",
             SIGN_UP_REQUIRES_APPROVAL => "sign_up_requires_approval",
             SIGN_UP_BLOCK => "sign_up_block",
-            BLOCK => "block",
-            _ => "noop",
+            NO_ACCESS => "no_access",
+            _ => "",
         }
     }
 }
 
-/// Integer-to-text helpers for reports.category (other=0 spam=1 violation=2).
+/// `Report#category`: `{ other: 0, spam: 1_000, legal: 1_500, violation: 2_000 }`.
 pub mod report_category {
     pub const OTHER: i32 = 0;
-    pub const SPAM: i32 = 1;
-    pub const VIOLATION: i32 = 2;
+    pub const SPAM: i32 = 1_000;
+    pub const LEGAL: i32 = 1_500;
+    pub const VIOLATION: i32 = 2_000;
 
-    pub fn from_str(s: &str) -> i32 {
+    pub fn parse(s: &str) -> Option<i32> {
         match s {
-            "spam" => SPAM,
-            "violation" => VIOLATION,
-            _ => OTHER,
+            "other" => Some(OTHER),
+            "spam" => Some(SPAM),
+            "legal" => Some(LEGAL),
+            "violation" => Some(VIOLATION),
+            _ => None,
         }
     }
 
     pub fn to_str(v: i32) -> &'static str {
         match v {
             SPAM => "spam",
+            LEGAL => "legal",
             VIOLATION => "violation",
             _ => "other",
         }

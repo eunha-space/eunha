@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.comment, r.forwarded, r.action_taken_at, r.created_at,\n                      r.status_ids, a.id AS ta_id, a.username AS ta_username,\n                      CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS \"category!\"\n               FROM reports r\n               JOIN accounts a ON a.id = r.target_account_id\n               WHERE r.id = $1",
+  "query": "SELECT r.id, r.comment, r.forwarded, r.action_taken_at, r.created_at,\n                      r.status_ids, a.id AS ta_id, a.username AS ta_username,\n                      CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS \"category!\"\n               FROM reports r\n               JOIN accounts a ON a.id = r.target_account_id\n               WHERE r.id = $1",
   "describe": {
     "columns": [
       {
@@ -66,5 +66,5 @@
       null
     ]
   },
-  "hash": "3122a50faf62c9ce88516f4ffb138be7e37bc1d9df8a00ebcfbf751c38a860f0"
+  "hash": "fde19ab14566ca5c9db98456170d9c11cfd550edc366070b5b40f15783386840"
 }

@@ -27,3 +27,26 @@ not the one eunha builds. A migration whose work depends on the instance rather
 than the schema — so far only the move of local signing keys into `keypairs` —
 is applied from code at startup and records itself then; `mastodon:plan` lists
 those separately from ones still to write.
+
+
+Domain blocks written before migration 015
+------------------------------------------
+
+Until migration 015, eunha stored `domain_blocks.severity` as noop 0, silence
+1, suspend 2. Mastodon stores silence 0, suspend 1, noop 2, and eunha now
+does too. Migration 015 converted the other enums eunha had numbered its own
+way (report categories, IP block severities), but it cannot convert domain
+blocks: both numberings use the same three integers, so a row does not say
+which of them wrote it.
+
+A block that eunha's admin API created before migration 015 now reads as
+follows: a suspend reads as noop, a silence reads as suspend, and a noop
+reads as silence. List every block and correct each one by hand:
+
+~~~~ sql
+SELECT id, domain, severity, created_at FROM domain_blocks ORDER BY id;
+UPDATE domain_blocks SET severity = 1 WHERE id = …; -- suspend
+~~~~
+
+Blocks created by Mastodon, or imported from a Mastodon database, were never
+affected.

@@ -581,6 +581,14 @@ async fn test_admin_domain_blocks_crud() {
     assert_eq!(block["domain"].as_str(), Some("spam.example.com"));
     assert_eq!(block["severity"].as_str(), Some("silence"));
     assert_eq!(block["reject_media"].as_bool(), Some(true));
+    // `DomainBlock#severity`: `{ silence: 0, suspend: 1, noop: 2 }`.
+    let stored: Option<i32> =
+        sqlx::query_scalar("SELECT severity FROM domain_blocks WHERE id = $1")
+            .bind(block_id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, Some(0));
 
     let list: Vec<Value> = ctx
         .api
@@ -886,12 +894,12 @@ async fn test_admin_update_ip_block() {
         .patch_json(
             &format!("/api/v1/admin/ip_blocks/{block_id}"),
             Some(&ctx.alice_token),
-            &json!({"ip": "192.0.2.99", "severity": "noop", "comment": "updated"}),
+            &json!({"ip": "192.0.2.99", "severity": "no_access", "comment": "updated"}),
         )
         .await;
     assert_eq!(update_resp.status(), StatusCode::OK);
     let updated: Value = update_resp.json().await.unwrap();
-    assert_eq!(updated["severity"].as_str(), Some("noop"));
+    assert_eq!(updated["severity"].as_str(), Some("no_access"));
     assert_eq!(updated["comment"].as_str(), Some("updated"));
 
     // Clean up.
@@ -1607,4 +1615,31 @@ async fn test_admin_v2_accounts_filter_display_name() {
     let accounts: Vec<Value> = resp.json().await.unwrap();
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0]["username"].as_str(), Some("alice"));
+}
+
+/// Federation reads `domain_blocks.severity` with Mastodon's integers: a
+/// suspend (1) drops the domain, a noop (2) and a silence (0) do not, and the
+/// most specific block wins, as `DomainBlock.rule_for` picks it.
+#[tokio::test]
+async fn test_domain_block_severity_integers() {
+    let ctx = TestContext::new("admin-dblock-ints").await;
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at)
+         VALUES ('suspended.test', 1, now(), now()), ('noop.test', 2, now(), now()),
+                ('silenced.test', 0, now(), now()), ('ok.suspended.test', 2, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let suspended =
+        |uri: &'static str| eunha::federation::moderation::actor_is_suspended(&ctx.state, uri);
+    assert!(suspended("https://suspended.test/users/a").await);
+    assert!(suspended("https://sub.suspended.test/users/a").await);
+    assert!(!suspended("https://ok.suspended.test/users/a").await);
+    assert!(!suspended("https://noop.test/users/a").await);
+    assert!(!suspended("https://silenced.test/users/a").await);
+
+    let all = eunha::federation::moderation::suspended_domains(&ctx.state).await;
+    assert_eq!(all, vec!["suspended.test".to_string()]);
 }

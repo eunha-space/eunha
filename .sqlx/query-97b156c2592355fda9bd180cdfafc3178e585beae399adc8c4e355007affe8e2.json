@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS \"forwarded!\",\n                          CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS \"category!\",\n                          r.action_taken_at, r.created_at, r.status_ids,\n                          r.target_account_id\n                   FROM reports r WHERE r.id = $1",
+  "query": "SELECT r.id, r.comment, COALESCE(r.forwarded, false) AS \"forwarded!\",\n                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS \"category!\",\n                  r.action_taken_at, r.created_at, r.status_ids,\n                  r.target_account_id\n           FROM reports r\n           WHERE r.id = ANY($1::bigint[])",
   "describe": {
     "columns": [
       {
@@ -46,7 +46,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -60,5 +60,5 @@
       false
     ]
   },
-  "hash": "36d7ef6b49a6a5aeb996e6bba231fc71dbc27cde2b5d811d0f47781caf9bc5d5"
+  "hash": "97b156c2592355fda9bd180cdfafc3178e585beae399adc8c4e355007affe8e2"
 }

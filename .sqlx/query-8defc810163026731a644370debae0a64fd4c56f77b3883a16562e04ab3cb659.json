@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO domain_blocks (domain, severity, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())\n           ON CONFLICT (domain) DO UPDATE SET severity = $2, reject_media = $3, reject_reports = $4,\n             private_comment = $5, public_comment = $6, obfuscate = $7, updated_at = now()\n           RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS \"severity!\"",
+  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -51,13 +51,7 @@
     ],
     "parameters": {
       "Left": [
-        "Varchar",
-        "Int4",
-        "Bool",
-        "Bool",
-        "Text",
-        "Text",
-        "Bool"
+        "Int8"
       ]
     },
     "nullable": [
@@ -72,5 +66,5 @@
       null
     ]
   },
-  "hash": "d3d41567125f7d60e183f6d16968462d4f6fae355b4a85c159c0cc28204706c0"
+  "hash": "8defc810163026731a644370debae0a64fd4c56f77b3883a16562e04ab3cb659"
 }

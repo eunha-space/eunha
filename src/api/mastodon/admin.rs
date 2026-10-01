@@ -720,7 +720,7 @@ pub async fn list_admin_reports(
         r#"SELECT r.id, r.account_id, r.target_account_id,
                   r.comment, r.forwarded, r.action_taken_at,
                   r.created_at, r.updated_at,
-                  CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!"
+                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!"
            FROM reports r
            WHERE ($1 = (r.action_taken_at IS NOT NULL))
              AND ($3::bigint IS NULL OR r.id < $3)
@@ -769,7 +769,7 @@ pub async fn get_admin_report(
         r#"SELECT r.id, r.account_id, r.target_account_id,
                   r.comment, r.forwarded, r.action_taken_at,
                   r.created_at, r.updated_at,
-                  CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!"
+                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!"
            FROM reports r
            WHERE r.id = $1"#,
         id,
@@ -810,7 +810,7 @@ pub async fn resolve_report(
         r#"SELECT r.id, r.account_id, r.target_account_id,
                   r.comment, r.forwarded, r.action_taken_at,
                   r.created_at, r.updated_at,
-                  CASE r.category WHEN 0 THEN 'other' WHEN 1 THEN 'spam' WHEN 2 THEN 'violation' ELSE 'other' END AS "category!"
+                  CASE r.category WHEN 1000 THEN 'spam' WHEN 1500 THEN 'legal' WHEN 2000 THEN 'violation' ELSE 'other' END AS "category!"
            FROM reports r
            WHERE r.id = $1"#,
         id,
@@ -1775,7 +1775,7 @@ pub async fn list_domain_blocks(
     require_admin(&state, auth.account_id).await?;
     let rows = sqlx::query!(
         r#"SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS "severity!"
+                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!"
            FROM domain_blocks ORDER BY domain"#,
     )
     .fetch_all(&state.db)
@@ -1800,6 +1800,27 @@ pub async fn list_domain_blocks(
 
 // ── POST /api/v1/admin/domain_blocks ─────────────────────────────────────
 
+/// `enum :severity, ..., validate: true`: an unknown value fails validation.
+fn parse_domain_severity(s: &str) -> AppResult<i32> {
+    crate::db::models::domain_severity::parse(s).ok_or_else(|| {
+        AppError::Unprocessable("Validation failed: Severity is not included in the list".into())
+    })
+}
+
+/// `validates :severity, presence: true` plus the validated enum.
+fn parse_ip_severity(s: Option<&str>) -> AppResult<i32> {
+    match s.filter(|s| !s.is_empty()) {
+        None => Err(AppError::Unprocessable(
+            "Validation failed: Severity can't be blank".into(),
+        )),
+        Some(s) => crate::db::models::ip_severity::parse(s).ok_or_else(|| {
+            AppError::Unprocessable(
+                "Validation failed: Severity is not included in the list".into(),
+            )
+        }),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateDomainBlockForm {
     pub domain: String,
@@ -1817,15 +1838,14 @@ pub async fn create_domain_block(
     Json(form): Json<CreateDomainBlockForm>,
 ) -> AppResult<Json<AdminDomainBlock>> {
     require_admin(&state, auth.account_id).await?;
-    let severity =
-        crate::db::models::domain_severity::from_str(form.severity.as_deref().unwrap_or("silence"));
+    let severity = parse_domain_severity(form.severity.as_deref().unwrap_or("silence"))?;
     let row = sqlx::query!(
         r#"INSERT INTO domain_blocks (domain, severity, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
            ON CONFLICT (domain) DO UPDATE SET severity = $2, reject_media = $3, reject_reports = $4,
              private_comment = $5, public_comment = $6, obfuscate = $7, updated_at = now()
            RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS "severity!""#,
+                     CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!""#,
         form.domain, severity,
         form.reject_media.unwrap_or(false),
         form.reject_reports.unwrap_or(false),
@@ -1859,7 +1879,7 @@ pub async fn get_admin_domain_block(
     require_admin(&state, auth.account_id).await?;
     let r = sqlx::query!(
         r#"SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS "severity!"
+                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!"
            FROM domain_blocks WHERE id = $1"#,
         id,
     )
@@ -1892,7 +1912,8 @@ pub async fn update_admin_domain_block(
     let severity_int: Option<i32> = form
         .severity
         .as_deref()
-        .map(crate::db::models::domain_severity::from_str);
+        .map(parse_domain_severity)
+        .transpose()?;
     let r = sqlx::query!(
         r#"UPDATE domain_blocks SET
                severity       = COALESCE($2, severity),
@@ -1904,7 +1925,7 @@ pub async fn update_admin_domain_block(
                updated_at     = now()
            WHERE id = $1
            RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS "severity!""#,
+                     CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!""#,
         id,
         severity_int,
         form.reject_media,
@@ -2036,7 +2057,7 @@ pub async fn list_ip_blocks(
     require_admin(&state, auth.account_id).await?;
     let rows = sqlx::query!(
         r#"SELECT id, host(ip) as "ip!", comment, expires_at, created_at,
-                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS "severity!"
+                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!"
            FROM ip_blocks ORDER BY created_at DESC"#
     )
     .fetch_all(&state.db)
@@ -2063,7 +2084,7 @@ pub async fn get_ip_block(
     require_admin(&state, auth.account_id).await?;
     let r = sqlx::query!(
         r#"SELECT id, host(ip) as "ip!", comment, expires_at, created_at,
-                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS "severity!"
+                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!"
            FROM ip_blocks WHERE id = $1"#,
         id
     )
@@ -2086,9 +2107,7 @@ pub async fn create_ip_block(
     Json(form): Json<CreateIpBlockForm>,
 ) -> AppResult<Json<AdminIpBlock>> {
     require_admin(&state, auth.account_id).await?;
-    let severity = crate::db::models::ip_severity::from_str(
-        form.severity.as_deref().unwrap_or("sign_up_block"),
-    );
+    let severity = parse_ip_severity(form.severity.as_deref())?;
     let expires_at = form
         .expires_in
         .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
@@ -2097,7 +2116,7 @@ pub async fn create_ip_block(
            VALUES ($1::text::inet, $2, $3, $4, now(), now())
            ON CONFLICT (ip) DO UPDATE SET severity = $2, comment = $3, expires_at = $4, updated_at = now()
            RETURNING id, host(ip) as "ip!", comment, expires_at, created_at,
-                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS "severity!""#,
+                     CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!""#,
         form.ip, severity, form.comment.unwrap_or_default(), expires_at,
     )
     .fetch_one(&state.db)
@@ -2119,9 +2138,7 @@ pub async fn update_ip_block(
     Json(form): Json<CreateIpBlockForm>,
 ) -> AppResult<Json<AdminIpBlock>> {
     require_admin(&state, auth.account_id).await?;
-    let severity = crate::db::models::ip_severity::from_str(
-        form.severity.as_deref().unwrap_or("sign_up_block"),
-    );
+    let severity = parse_ip_severity(form.severity.as_deref())?;
     let expires_at = form
         .expires_in
         .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
@@ -2129,7 +2146,7 @@ pub async fn update_ip_block(
         r#"UPDATE ip_blocks SET severity = $2, comment = $3, expires_at = $4, updated_at = now()
            WHERE id = $1
            RETURNING id, host(ip) as "ip!", comment, expires_at, created_at,
-                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS "severity!""#,
+                     CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS "severity!""#,
         id, severity, form.comment.unwrap_or_default(), expires_at,
     )
     .fetch_optional(&state.db)

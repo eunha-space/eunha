@@ -97,7 +97,8 @@ pub async fn file_report(
     } else {
         form.category.unwrap_or_else(|| "other".into())
     };
-    let category_int = crate::db::models::report_category::from_str(&category);
+    let category_int = crate::db::models::report_category::parse(&category)
+        .ok_or_else(|| AppError::Unprocessable(format!("'{category}' is not a valid category")))?;
 
     let report = sqlx::query!(
         r#"INSERT INTO reports (account_id, target_account_id, status_ids, comment, forwarded, category, rule_ids, created_at, updated_at)

@@ -27,19 +27,19 @@ pub struct DomainBlock {
 impl DomainBlock {
     /// True when the block defederates the domain (drop all traffic).
     pub fn is_suspend(&self) -> bool {
-        self.severity >= domain_severity::SUSPEND
+        self.severity == domain_severity::SUSPEND
     }
 }
 
-/// Look up the strongest admin domain block covering `domain` (the domain itself
-/// or any parent domain). Returns `None` when the domain is not blocked.
+/// `DomainBlock.rule_for`: the most specific admin domain block covering
+/// `domain` (the domain itself or any parent domain), or `None`.
 pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
     let domain = domain.to_lowercase();
     let row = sqlx::query!(
         r#"SELECT severity, reject_media
            FROM domain_blocks
            WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)
-           ORDER BY severity DESC, reject_media DESC
+           ORDER BY char_length(domain) DESC
            LIMIT 1"#,
         domain,
     )
@@ -48,7 +48,7 @@ pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
     .ok()
     .flatten()?;
     Some(DomainBlock {
-        severity: row.severity.unwrap_or(domain_severity::NOOP),
+        severity: row.severity.unwrap_or(domain_severity::SILENCE),
         reject_media: row.reject_media,
     })
 }
@@ -75,7 +75,7 @@ pub async fn actor_media_rejected(state: &AppState, actor_uri: &str) -> bool {
 /// filtering. Matched against inbox hosts with [`host_matches`].
 pub async fn suspended_domains(state: &AppState) -> Vec<String> {
     sqlx::query_scalar!(
-        "SELECT domain FROM domain_blocks WHERE domain <> '' AND severity >= $1",
+        "SELECT domain FROM domain_blocks WHERE domain <> '' AND severity = $1",
         domain_severity::SUSPEND,
     )
     .fetch_all(&state.db)

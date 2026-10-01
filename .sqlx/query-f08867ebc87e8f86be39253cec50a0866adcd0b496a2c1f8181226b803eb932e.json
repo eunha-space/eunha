@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO ip_blocks (ip, severity, comment, expires_at, created_at, updated_at)\n           VALUES ($1::text::inet, $2, $3, $4, now(), now())\n           ON CONFLICT (ip) DO UPDATE SET severity = $2, comment = $3, expires_at = $4, updated_at = now()\n           RETURNING id, host(ip) as \"ip!\", comment, expires_at, created_at,\n                     CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS \"severity!\"",
+  "query": "SELECT id, host(ip) as \"ip!\", comment, expires_at, created_at,\n                  CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS \"severity!\"\n           FROM ip_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -36,10 +36,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int4",
-        "Text",
-        "Timestamp"
+        "Int8"
       ]
     },
     "nullable": [
@@ -51,5 +48,5 @@
       null
     ]
   },
-  "hash": "c20309477138a055fcebaaf1a499137962430dcf8f198418978a849a78b298c9"
+  "hash": "f08867ebc87e8f86be39253cec50a0866adcd0b496a2c1f8181226b803eb932e"
 }

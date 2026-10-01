@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'silence' WHEN 2 THEN 'suspend' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks WHERE id = $1",
+  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks ORDER BY domain",
   "describe": {
     "columns": [
       {
@@ -50,9 +50,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Int8"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -66,5 +64,5 @@
       null
     ]
   },
-  "hash": "9d42985dd5123509cb919d8d1821b768b41b5a419b32ab73f778eebb1708ed46"
+  "hash": "8f3dd32fad924fc148deb1fabc20259b4798be6e44cf01899418fda51d223e43"
 }

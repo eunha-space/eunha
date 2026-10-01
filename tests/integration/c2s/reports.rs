@@ -37,6 +37,42 @@ async fn test_file_report() {
         report["target_account"]["id"].as_str(),
         Some(ctx.bob_id.as_str()),
     );
+
+    // Stored as Mastodon's `Report#category` integer, spam: 1_000.
+    let category: i32 = sqlx::query_scalar("SELECT category FROM reports WHERE id = $1")
+        .bind(report["id"].as_str().unwrap().parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(category, 1_000);
+}
+
+/// A `legal` report is accepted, and an unknown category is not.
+#[tokio::test]
+async fn test_file_report_categories() {
+    let ctx = TestContext::new("report-categories").await;
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/reports",
+            Some(&ctx.alice_token),
+            &json!({ "account_id": ctx.bob_id, "category": "legal" }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let report: Value = resp.json().await.unwrap();
+    assert_eq!(report["category"].as_str(), Some("legal"));
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/reports",
+            Some(&ctx.alice_token),
+            &json!({ "account_id": ctx.bob_id, "category": "nonsense" }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// A report comment over 1000 characters is rejected (Mastodon

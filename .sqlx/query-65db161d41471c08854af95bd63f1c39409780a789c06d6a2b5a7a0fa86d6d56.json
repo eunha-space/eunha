@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, host(ip) as \"ip!\", comment, expires_at, created_at,\n                  CASE severity WHEN 0 THEN 'noop' WHEN 1 THEN 'sign_up_requires_approval' WHEN 2 THEN 'sign_up_block' WHEN 3 THEN 'block' ELSE 'noop' END AS \"severity!\"\n           FROM ip_blocks WHERE id = $1",
+  "query": "UPDATE ip_blocks SET severity = $2, comment = $3, expires_at = $4, updated_at = now()\n           WHERE id = $1\n           RETURNING id, host(ip) as \"ip!\", comment, expires_at, created_at,\n                     CASE severity WHEN 5000 THEN 'sign_up_requires_approval' WHEN 5500 THEN 'sign_up_block' WHEN 9999 THEN 'no_access' ELSE '' END AS \"severity!\"",
   "describe": {
     "columns": [
       {
@@ -36,7 +36,10 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Int4",
+        "Text",
+        "Timestamp"
       ]
     },
     "nullable": [
@@ -48,5 +51,5 @@
       null
     ]
   },
-  "hash": "2fbdf211aa50c8f8b401ca2aad9e540d8f86763aaf4eb406d31d1e50dcc26fc0"
+  "hash": "65db161d41471c08854af95bd63f1c39409780a789c06d6a2b5a7a0fa86d6d56"
 }
