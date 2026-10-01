@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.* FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           WHERE s.deleted_at IS NULL\n             AND s.visibility = 0\n             AND s.reblog_of_id IS NULL\n             AND s.created_at > now() - interval '2 days'\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND ($3::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM blocks b\n                 WHERE (b.account_id = $3 AND b.target_account_id = s.account_id)\n                    OR (b.account_id = s.account_id AND b.target_account_id = $3)\n             ))\n             AND ($3::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM mutes mu\n                 WHERE mu.account_id = $3 AND mu.target_account_id = s.account_id\n                   AND (mu.expires_at IS NULL OR mu.expires_at > now())\n             ) OR EXISTS (\n                 -- Mute exemption: a post that mentions me.\n                 SELECT 1 FROM mentions mn\n                 WHERE mn.status_id = s.id AND mn.account_id = $3 AND NOT mn.silent\n             ) OR EXISTS (\n                 -- Mute exemption: a quote of a post of mine.\n                 SELECT 1 FROM quotes q\n                 WHERE q.status_id = s.id AND q.quoted_account_id = $3\n             ))\n           ORDER BY (COALESCE((SELECT favourites_count FROM status_stats WHERE status_id = s.id), 0)\n                   + COALESCE((SELECT reblogs_count FROM status_stats WHERE status_id = s.id), 0) * 2) DESC, s.created_at DESC\n           LIMIT $1 OFFSET $2",
+  "query": "SELECT * FROM statuses WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -131,8 +131,6 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8",
         "Int8"
       ]
     },
@@ -164,5 +162,5 @@
       false
     ]
   },
-  "hash": "eb597db94ec73b51e01021ba1c5c572028a28a9ab29309575ada187fcc06f6ab"
+  "hash": "723187efd44b38ca11206fe8e0a953b9ceb38e04b87d24a728889ddf7d6084d0"
 }

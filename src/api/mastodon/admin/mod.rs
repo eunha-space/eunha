@@ -15,11 +15,13 @@ mod accounts;
 mod blocks;
 mod federation;
 mod reports;
+mod trends;
 
 pub use accounts::*;
 pub use blocks::*;
 pub use federation::*;
 pub use reports::*;
+pub use trends::*;
 
 /// `limit` and the id bounds of `to_a_paginated_by_id`.
 #[derive(Debug, Deserialize)]
@@ -930,126 +932,6 @@ pub async fn update_admin_custom_emoji(
     }))
 }
 
-// ── GET /api/v1/admin/trends/* ────────────────────────────────────────────
-
-pub async fn admin_trending_tags(
-    state: AppState,
-    instance: axum::extract::Extension<crate::middleware::ResolvedInstance>,
-    query: axum::extract::Query<super::trends::TrendParams>,
-    auth: axum::extract::Extension<AuthenticatedUser>,
-) -> AppResult<axum::Json<Vec<super::types::Tag>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    // Mastodon's admin trends controllers do not paginate, so the Link header
-    // the public endpoint builds is dropped rather than passed on.
-    let (_headers, json) = super::trends::trending_tags(
-        state,
-        instance,
-        query,
-        None,
-        axum::http::HeaderMap::new(),
-        axum::http::Uri::default(),
-    )
-    .await?;
-    Ok(json)
-}
-
-pub async fn admin_trending_statuses(
-    state: AppState,
-    query: axum::extract::Query<super::trends::TrendParams>,
-    auth: axum::extract::Extension<AuthenticatedUser>,
-) -> AppResult<axum::Json<Vec<super::types::Status>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    let (_headers, json) = super::trends::trending_statuses(
-        state,
-        query,
-        Some(axum::extract::Extension(
-            crate::middleware::AuthenticatedUser {
-                account_id: auth.account_id,
-                user_id: auth.user_id,
-                token_id: auth.token_id,
-                scopes: auth.scopes.clone(),
-                application_id: auth.application_id,
-            },
-        )),
-        axum::http::HeaderMap::new(),
-        axum::http::Uri::default(),
-    )
-    .await?;
-    Ok(json)
-}
-
-pub async fn admin_trending_links(
-    state: AppState,
-    query: axum::extract::Query<super::trends::TrendParams>,
-    auth: axum::extract::Extension<AuthenticatedUser>,
-) -> AppResult<axum::Json<Vec<super::types::PreviewCard>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    let (_headers, json) = super::trends::trending_links(
-        state,
-        query,
-        axum::http::HeaderMap::new(),
-        axum::http::Uri::default(),
-    )
-    .await?;
-    Ok(json)
-}
-
-// ── Admin Trends Approve / Reject (stubs — eunha computes trends dynamically) ──
-
-pub async fn admin_approve_trending_tag(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn admin_reject_trending_tag(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn admin_approve_trending_status(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn admin_reject_trending_status(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn admin_approve_trending_link(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
-pub async fn admin_reject_trending_link(
-    Extension(auth): Extension<AuthenticatedUser>,
-    state: AppState,
-    Path(_id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
-    Ok(Json(serde_json::json!({})))
-}
-
 // ── Admin Tags ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -1088,6 +970,7 @@ pub async fn list_admin_tags(
     Query(params): Query<AdminTagsParams>,
 ) -> AppResult<Json<Vec<AdminTag>>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
+    let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
     let domain = &instance.domain;
     let limit = params.pagination.limit_clamped(100, 100);
     let max_id = params
@@ -1131,7 +1014,8 @@ pub async fn list_admin_tags(
                 id: r.id.to_string(),
                 name: r.name.clone(),
                 url: admin_tag_url(domain, &r.name),
-                trendable: r.trendable.unwrap_or(false),
+                // `Tag#trendable`: the column, else `trendable_by_default`.
+                trendable: r.trendable.unwrap_or(trendable_by_default),
                 usable: r.usable.unwrap_or(true),
                 listable: r.listable.unwrap_or(true),
                 requires_review: r.reviewed_at.is_none(),
@@ -1147,6 +1031,7 @@ pub async fn get_admin_tag(
     Path(id): Path<i64>,
 ) -> AppResult<Json<AdminTag>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
+    let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
     let domain = &instance.domain;
     let r = sqlx::query!(
         "SELECT id, name, trendable, usable, listable, reviewed_at FROM tags WHERE id = $1",
@@ -1159,7 +1044,7 @@ pub async fn get_admin_tag(
         id: r.id.to_string(),
         name: r.name.clone(),
         url: admin_tag_url(domain, &r.name),
-        trendable: r.trendable.unwrap_or(false),
+        trendable: r.trendable.unwrap_or(trendable_by_default),
         usable: r.usable.unwrap_or(true),
         listable: r.listable.unwrap_or(true),
         requires_review: r.reviewed_at.is_none(),
@@ -1174,6 +1059,7 @@ pub async fn update_admin_tag(
     Json(form): Json<UpdateAdminTagForm>,
 ) -> AppResult<Json<AdminTag>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
+    let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
     let domain = &instance.domain;
     let r = sqlx::query!(
         r#"UPDATE tags SET
@@ -1196,7 +1082,7 @@ pub async fn update_admin_tag(
         id: r.id.to_string(),
         name: r.name.clone(),
         url: admin_tag_url(domain, &r.name),
-        trendable: r.trendable.unwrap_or(false),
+        trendable: r.trendable.unwrap_or(trendable_by_default),
         usable: r.usable.unwrap_or(true),
         listable: r.listable.unwrap_or(true),
         requires_review: r.reviewed_at.is_none(),

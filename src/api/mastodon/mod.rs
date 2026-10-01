@@ -555,6 +555,18 @@ pub fn router() -> Router {
         )
         .route("/api/v1/admin/trends/tags", get(admin::admin_trending_tags))
         .route(
+            "/api/v1/admin/trends/links/publishers",
+            get(admin::admin_list_publishers),
+        )
+        .route(
+            "/api/v1/admin/trends/links/publishers/{id}/approve",
+            post(admin::admin_approve_publisher),
+        )
+        .route(
+            "/api/v1/admin/trends/links/publishers/{id}/reject",
+            post(admin::admin_reject_publisher),
+        )
+        .route(
             "/api/v1/admin/trends/statuses",
             get(admin::admin_trending_statuses),
         )

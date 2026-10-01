@@ -37,23 +37,62 @@ pub async fn trending_tags(
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<Tag>>)> {
     let limit = params.limit.unwrap_or(10).clamp(1, 20);
     let offset = params.offset.unwrap_or(0).max(0);
-    let domain = &instance.domain;
     let viewer_id = auth.map(|Extension(a)| a.account_id);
+    // `enabled?`: the `trends` setting.
+    if !crate::settings::boolean(&state, "trends").await {
+        return Ok((axum::http::HeaderMap::new(), Json(vec![])));
+    }
+    let tags: Vec<Tag> = tags_query(&state, &instance.domain, limit, offset, viewer_id, false)
+        .await?
+        .into_iter()
+        .map(|(tag, _)| tag)
+        .collect();
+    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, tags.len());
+    Ok((headers, Json(tags)))
+}
 
-    // Tags with most status uses in the last 7 days
+/// What a moderator reviewing a trending tag sees besides the tag:
+/// `REST::Admin::TagSerializer`'s extra fields.
+pub struct TagReview {
+    pub trendable: bool,
+    pub usable: bool,
+    pub listable: bool,
+    pub requires_review: bool,
+}
+
+/// The trending tags, `allowed` ones only unless `staff`, who see those still
+/// awaiting review too (`Trends.tags.query` against `.allowed`).
+pub(crate) async fn tags_query(
+    state: &AppState,
+    domain: &str,
+    limit: i64,
+    offset: i64,
+    viewer_id: Option<i64>,
+    staff: bool,
+) -> AppResult<Vec<(Tag, TagReview)>> {
+    let trendable_by_default = crate::settings::boolean(state, "trendable_by_default").await;
+
+    // Tags with most status uses in the last 7 days. `Tag#trendable?` is the
+    // column, or `trendable_by_default` when it is unset.
     let rows = sqlx::query!(
-        r#"SELECT t.id, t.name, COUNT(st.status_id) AS uses
+        r#"SELECT t.id, t.name, COUNT(st.status_id) AS uses,
+                  COALESCE(t.trendable, $3) AS "trendable!", COALESCE(t.usable, true) AS "usable!",
+                  COALESCE(t.listable, true) AS "listable!", (t.reviewed_at IS NULL) AS "requires_review!"
            FROM tags t
            JOIN statuses_tags st ON st.tag_id = t.id
            JOIN statuses s ON s.id = st.status_id
            WHERE s.deleted_at IS NULL
              AND s.visibility = 0
              AND s.created_at > now() - interval '7 days'
+             AND COALESCE(t.usable, true)
+             AND ($4 OR COALESCE(t.trendable, $3))
            GROUP BY t.id, t.name
            ORDER BY uses DESC, t.name ASC
            LIMIT $1 OFFSET $2"#,
         limit,
         offset,
+        trendable_by_default,
+        staff,
     )
     .fetch_all(&state.db)
     .await?;
@@ -88,13 +127,19 @@ pub async fn trending_tags(
             (None, None)
         };
 
-    let tags: Vec<Tag> = rows
+    Ok(rows
         .into_iter()
         .map(|r| {
             let name_lower = r.name.to_lowercase();
             let following = following_set.as_ref().map(|s| s.contains(&r.id));
             let featuring = featuring_set.as_ref().map(|s| s.contains(&r.id));
-            Tag {
+            let review = TagReview {
+                trendable: r.trendable,
+                usable: r.usable,
+                listable: r.listable,
+                requires_review: r.requires_review,
+            };
+            let tag = Tag {
                 id: r.id.to_string(),
                 history: histories.get(&r.id).cloned().unwrap_or_default(),
                 name: r.name,
@@ -105,12 +150,10 @@ pub async fn trending_tags(
                 ),
                 following,
                 featuring,
-            }
+            };
+            (tag, review)
         })
-        .collect();
-
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, tags.len());
-    Ok((headers, Json(tags)))
+        .collect())
 }
 
 // ── GET /api/v1/trends/statuses ───────────────────────────────────────────
@@ -125,6 +168,29 @@ pub async fn trending_statuses(
     let limit = params.limit.unwrap_or(20).clamp(1, 40);
     let offset = params.offset.unwrap_or(0).max(0);
     let viewer_id = auth.map(|Extension(a)| a.account_id);
+    if !crate::settings::boolean(&state, "trends").await {
+        return Ok((axum::http::HeaderMap::new(), Json(vec![])));
+    }
+    let result: Vec<Status> = statuses_query(&state, limit, offset, viewer_id, false)
+        .await?
+        .into_iter()
+        .map(|(status, _)| status)
+        .collect();
+    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, result.len());
+    Ok((headers, Json(result)))
+}
+
+/// The trending posts, allowed ones only unless `staff`; with each, whether
+/// it still awaits review (`Status#requires_review?`).
+pub(crate) async fn statuses_query(
+    state: &AppState,
+    limit: i64,
+    offset: i64,
+    viewer_id: Option<i64>,
+    staff: bool,
+) -> AppResult<Vec<(Status, bool)>> {
+    let state = state.clone();
+    let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
 
     let rows = sqlx::query_as!(
         crate::db::models::Status,
@@ -135,6 +201,12 @@ pub async fn trending_statuses(
              AND s.reblog_of_id IS NULL
              AND s.created_at > now() - interval '2 days'
              AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+             -- `Trends::Statuses#eligible?`: opted in, not sensitive, not a reply.
+             AND a.discoverable AND a.silenced_at IS NULL AND a.sensitized_at IS NULL
+             AND s.spoiler_text = '' AND NOT s.sensitive
+             AND s.in_reply_to_id IS NULL AND NOT COALESCE(s.reply, false)
+             -- `Status#trendable?`: the post's own, else its account's, else the default.
+             AND ($5 OR COALESCE(s.trendable, a.trendable, $4))
              AND ($3::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM blocks b
                  WHERE (b.account_id = $3 AND b.target_account_id = s.account_id)
@@ -159,13 +231,25 @@ pub async fn trending_statuses(
         limit,
         offset,
         viewer_id,
+        trendable_by_default,
+        staff,
     )
     .fetch_all(&state.db)
     .await?;
 
     if rows.is_empty() {
-        return Ok((axum::http::HeaderMap::new(), Json(vec![])));
+        return Ok(vec![]);
     }
+    // `requires_review?`: unset on the post, and its account never reviewed.
+    let pending: std::collections::HashSet<i64> = sqlx::query_scalar!(
+        r#"SELECT s.id FROM statuses s JOIN accounts a ON a.id = s.account_id
+           WHERE s.id = ANY($1) AND s.trendable IS NULL AND a.reviewed_at IS NULL"#,
+        &rows.iter().map(|s| s.id).collect::<Vec<_>>(),
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .collect();
 
     let all_ids: Vec<i64> = rows.iter().map(|s| s.id).collect();
     let media_map = batch_status_media(&state, &all_ids).await?;
@@ -270,8 +354,16 @@ pub async fn trending_statuses(
     }
     hydrate_status_stats(&state, result.iter_mut()).await;
 
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, result.len());
-    Ok((headers, Json(result)))
+    Ok(result
+        .into_iter()
+        .map(|status| {
+            let pending = status
+                .id
+                .parse::<i64>()
+                .is_ok_and(|id| pending.contains(&id));
+            (status, pending)
+        })
+        .collect())
 }
 
 // ── GET /api/v1/trends/links ──────────────────────────────────────────────
@@ -284,55 +376,90 @@ pub async fn trending_links(
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<super::types::PreviewCard>>)> {
     let limit = params.limit.unwrap_or(10).clamp(1, 40);
     let offset = params.offset.unwrap_or(0).max(0);
+    if !crate::settings::boolean(&state, "trends").await {
+        return Ok((axum::http::HeaderMap::new(), Json(vec![])));
+    }
+    let cards: Vec<super::types::PreviewCard> = links_query(&state, limit, offset, false)
+        .await?
+        .into_iter()
+        .map(|(card, _, _)| card)
+        .collect();
+    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, cards.len());
+    Ok((headers, Json(cards)))
+}
 
+/// The trending links, allowed ones only unless `staff`; with each, its
+/// preview card id and whether it awaits review.
+pub(crate) async fn links_query(
+    state: &AppState,
+    limit: i64,
+    offset: i64,
+    staff: bool,
+) -> AppResult<Vec<(super::types::PreviewCard, i64, bool)>> {
     let rows = sqlx::query!(
-        r#"SELECT pc.url, pc.title, pc.description,
+        r#"WITH cards AS (
+             SELECT pc.*,
+                    (SELECT p.id FROM preview_card_providers p
+                     WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain
+                        OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain
+                     ORDER BY char_length(p.domain) DESC LIMIT 1) AS provider_id
+             FROM preview_cards pc
+           )
+           SELECT pc.id, pc.url, pc.title, pc.description,
                   CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as "card_type!",
                   pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,
                   pc.html, pc.width, pc.height, NULL::text as image_url, pc.embed_url, pc.blurhash,
-                  COUNT(s.id) AS uses
-           FROM preview_cards pc
+                  COUNT(s.id) AS uses,
+                  (pc.trendable IS NULL AND (prov.id IS NULL OR prov.reviewed_at IS NULL)) AS "requires_review!"
+           FROM cards pc
+           LEFT JOIN preview_card_providers prov ON prov.id = pc.provider_id
            JOIN preview_cards_statuses spc ON spc.preview_card_id = pc.id
            JOIN statuses s ON s.id = spc.status_id
            WHERE s.deleted_at IS NULL
              AND s.visibility = 0
              AND s.created_at > now() - interval '7 days'
-           GROUP BY pc.url, pc.title, pc.description, pc.type,
+             -- `PreviewCard#trendable?`: its own, else its provider's.
+             AND ($3 OR COALESCE(pc.trendable, prov.trendable, false))
+           GROUP BY pc.id, pc.url, pc.title, pc.description, pc.type,
                     pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,
-                    pc.html, pc.width, pc.height, pc.embed_url, pc.blurhash
+                    pc.html, pc.width, pc.height, pc.embed_url, pc.blurhash,
+                    pc.trendable, prov.id, prov.reviewed_at
            ORDER BY uses DESC
            LIMIT $1 OFFSET $2"#,
-        limit, offset,
+        limit, offset, staff,
     )
     .fetch_all(&state.db)
     .await?;
 
-    let cards: Vec<super::types::PreviewCard> = rows
+    Ok(rows
         .into_iter()
-        .map(|r| super::types::PreviewCard {
-            url: r.url,
-            title: r.title,
-            description: r.description,
-            card_type: r.card_type,
-            author_name: r.author_name,
-            author_url: r.author_url,
-            provider_name: r.provider_name,
-            provider_url: r.provider_url,
-            html: r.html,
-            width: r.width,
-            height: r.height,
-            image: r.image_url,
-            embed_url: r.embed_url,
-            blurhash: r.blurhash,
-            language: None,
-            published_at: None,
-            authors: vec![],
-            image_description: String::new(),
-            missing_attribution: None,
-            history: Some(vec![]),
+        .map(|r| {
+            (
+                super::types::PreviewCard {
+                    url: r.url,
+                    title: r.title,
+                    description: r.description,
+                    card_type: r.card_type,
+                    author_name: r.author_name,
+                    author_url: r.author_url,
+                    provider_name: r.provider_name,
+                    provider_url: r.provider_url,
+                    html: r.html,
+                    width: r.width,
+                    height: r.height,
+                    image: r.image_url,
+                    embed_url: r.embed_url,
+                    blurhash: r.blurhash,
+                    language: None,
+                    published_at: None,
+                    authors: vec![],
+                    image_description: String::new(),
+                    missing_attribution: None,
+                    history: Some(vec![]),
+                },
+                r.id,
+                r.requires_review,
+            )
         })
-        .collect();
-
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, cards.len());
-    Ok((headers, Json(cards)))
+        .collect())
 }

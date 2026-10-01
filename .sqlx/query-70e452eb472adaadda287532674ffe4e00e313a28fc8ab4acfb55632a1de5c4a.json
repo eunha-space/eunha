@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, domain, trendable, reviewed_at, requested_review_at FROM preview_card_providers\n           WHERE ($1::bigint IS NULL OR id < $1) AND ($2::bigint IS NULL OR id > $2)\n             AND ($3::bigint IS NULL OR id > $3)\n           ORDER BY CASE WHEN $3::bigint IS NULL THEN -id ELSE id END LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "reviewed_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "requested_review_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "70e452eb472adaadda287532674ffe4e00e313a28fc8ab4acfb55632a1de5c4a"
+}

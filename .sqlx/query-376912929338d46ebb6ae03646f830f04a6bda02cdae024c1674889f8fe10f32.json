@@ -1,0 +1,120 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH cards AS (\n             SELECT pc.*,\n                    (SELECT p.id FROM preview_card_providers p\n                     WHERE lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) = p.domain\n                        OR lower(substring(pc.url from '^[a-zA-Z]+://([^/:?#]+)')) LIKE '%.' || p.domain\n                     ORDER BY char_length(p.domain) DESC LIMIT 1) AS provider_id\n             FROM preview_cards pc\n           )\n           SELECT pc.id, pc.url, pc.title, pc.description,\n                  CASE pc.type WHEN 1 THEN 'photo' WHEN 2 THEN 'video' WHEN 3 THEN 'rich' ELSE 'link' END as \"card_type!\",\n                  pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,\n                  pc.html, pc.width, pc.height, NULL::text as image_url, pc.embed_url, pc.blurhash,\n                  COUNT(s.id) AS uses,\n                  (pc.trendable IS NULL AND (prov.id IS NULL OR prov.reviewed_at IS NULL)) AS \"requires_review!\"\n           FROM cards pc\n           LEFT JOIN preview_card_providers prov ON prov.id = pc.provider_id\n           JOIN preview_cards_statuses spc ON spc.preview_card_id = pc.id\n           JOIN statuses s ON s.id = spc.status_id\n           WHERE s.deleted_at IS NULL\n             AND s.visibility = 0\n             AND s.created_at > now() - interval '7 days'\n             -- `PreviewCard#trendable?`: its own, else its provider's.\n             AND ($3 OR COALESCE(pc.trendable, prov.trendable, false))\n           GROUP BY pc.id, pc.url, pc.title, pc.description, pc.type,\n                    pc.author_name, pc.author_url, pc.provider_name, pc.provider_url,\n                    pc.html, pc.width, pc.height, pc.embed_url, pc.blurhash,\n                    pc.trendable, prov.id, prov.reviewed_at\n           ORDER BY uses DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "card_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "author_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "author_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "provider_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "provider_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "html",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "width",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "height",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "embed_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "blurhash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "uses",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 16,
+        "name": "requires_review!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "376912929338d46ebb6ae03646f830f04a6bda02cdae024c1674889f8fe10f32"
+}

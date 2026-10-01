@@ -165,6 +165,32 @@ them, and so do both versions of `/api/v1/instance`. Eunha has no endpoint
 for editing them, so they are edited in the database.
 
 
+Trends
+------
+
+Trends show only what may trend, as Mastodon's `allowed` trends do:
+
+ -  a hashtag that is approved, and usable;
+ -  a post that is approved itself, or whose account is approved;
+ -  a link that is approved itself, or whose publisher is approved.
+
+Nothing is approved until a moderator says so, unless the
+`trendable_by_default` site setting is on. Posts trend only from
+discoverable accounts that are neither limited nor marked sensitive. A
+post that is a reply, marked sensitive, or behind a content warning does
+not trend either. With the `trends` setting off, the public trends are
+empty.
+
+Moderators with `manage_taxonomies` see everything that would trend,
+whether approved or not, each marked with `requires_review`, at
+`/api/v1/admin/trends/{tags,statuses,links}`. The `approve` and `reject`
+endpoints there decide. Link publishers are reviewed at
+`/api/v1/admin/trends/links/publishers`.
+
+Eunha ranks trends by recent use rather than by Mastodon's decaying
+scores, so the order can differ; what is allowed to appear does not.
+
+
 Changes from earlier versions
 -----------------------------
 

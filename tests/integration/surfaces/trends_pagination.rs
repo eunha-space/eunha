@@ -47,6 +47,7 @@ async fn trends_link(ctx: &TestContext, query: &str) -> Option<String> {
 #[tokio::test]
 async fn test_a_full_page_of_trends_links_to_the_next() {
     let ctx = TestContext::new("trends-page-next").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     // Three tags, asked for one at a time, so the page comes back full.
     for tag in ["alpha", "beta", "gamma"] {
@@ -93,6 +94,7 @@ async fn test_a_full_page_of_trends_links_to_the_next() {
 #[tokio::test]
 async fn test_a_short_page_of_trends_does_not_link_onward() {
     let ctx = TestContext::new("trends-page-last").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     let header = trends_link(&ctx, "limit=40&offset=0").await;
     if let Some(header) = header {

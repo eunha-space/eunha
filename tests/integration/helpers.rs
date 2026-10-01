@@ -798,3 +798,27 @@ pub async fn seed_token_with_scopes(db: &PgPool, account_id: i64, scopes: &str) 
 
     token
 }
+
+/// Set one of Mastodon's site settings (`Setting[var] = value`), YAML-encoded
+/// the way `Setting#value=` stores it.
+pub async fn set_setting(db: &PgPool, var: &str, yaml: &str) {
+    sqlx::query(
+        "INSERT INTO settings (var, value, created_at, updated_at) VALUES ($1, $2, now(), now())
+         ON CONFLICT (var) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+    )
+    .bind(var)
+    .bind(format!("--- {yaml}\n"))
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// What trends need to show anything without review: `trendable_by_default`,
+/// and the test accounts discoverable.
+pub async fn open_trends(db: &PgPool) {
+    set_setting(db, "trendable_by_default", "true").await;
+    sqlx::query("UPDATE accounts SET discoverable = true WHERE domain IS NULL")
+        .execute(db)
+        .await
+        .unwrap();
+}

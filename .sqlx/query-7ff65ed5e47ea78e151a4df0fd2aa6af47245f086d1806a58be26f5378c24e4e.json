@@ -1,0 +1,170 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.* FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           WHERE s.deleted_at IS NULL\n             AND s.visibility = 0\n             AND s.reblog_of_id IS NULL\n             AND s.created_at > now() - interval '2 days'\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             -- `Trends::Statuses#eligible?`: opted in, not sensitive, not a reply.\n             AND a.discoverable AND a.silenced_at IS NULL AND a.sensitized_at IS NULL\n             AND s.spoiler_text = '' AND NOT s.sensitive\n             AND s.in_reply_to_id IS NULL AND NOT COALESCE(s.reply, false)\n             -- `Status#trendable?`: the post's own, else its account's, else the default.\n             AND ($5 OR COALESCE(s.trendable, a.trendable, $4))\n             AND ($3::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM blocks b\n                 WHERE (b.account_id = $3 AND b.target_account_id = s.account_id)\n                    OR (b.account_id = s.account_id AND b.target_account_id = $3)\n             ))\n             AND ($3::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM mutes mu\n                 WHERE mu.account_id = $3 AND mu.target_account_id = s.account_id\n                   AND (mu.expires_at IS NULL OR mu.expires_at > now())\n             ) OR EXISTS (\n                 -- Mute exemption: a post that mentions me.\n                 SELECT 1 FROM mentions mn\n                 WHERE mn.status_id = s.id AND mn.account_id = $3 AND NOT mn.silent\n             ) OR EXISTS (\n                 -- Mute exemption: a quote of a post of mine.\n                 SELECT 1 FROM quotes q\n                 WHERE q.status_id = s.id AND q.quoted_account_id = $3\n             ))\n           ORDER BY (COALESCE((SELECT favourites_count FROM status_stats WHERE status_id = s.id), 0)\n                   + COALESCE((SELECT reblogs_count FROM status_stats WHERE status_id = s.id), 0) * 2) DESC, s.created_at DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "sensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "reply",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 16,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 17,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "poll_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 19,
+        "name": "deleted_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 20,
+        "name": "edited_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 21,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "ordered_media_attachment_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 23,
+        "name": "fetched_replies_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 24,
+        "name": "quote_approval_policy",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "7ff65ed5e47ea78e151a4df0fd2aa6af47245f086d1806a58be26f5378c24e4e"
+}

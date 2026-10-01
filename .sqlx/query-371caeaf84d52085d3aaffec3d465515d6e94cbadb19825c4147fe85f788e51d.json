@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE preview_card_providers SET trendable = $2, reviewed_at = now(), updated_at = now()\n           WHERE id = $1\n           RETURNING id, domain, trendable, reviewed_at, requested_review_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "reviewed_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "requested_review_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "371caeaf84d52085d3aaffec3d465515d6e94cbadb19825c4147fe85f788e51d"
+}

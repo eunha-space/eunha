@@ -7,6 +7,7 @@ use crate::helpers::TestContext;
 #[tokio::test]
 async fn test_trending_statuses_excludes_blocked_accounts() {
     let ctx = TestContext::new("trends-block").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     // Bob posts a public status that would trend.
     let status = ctx
@@ -53,6 +54,7 @@ async fn test_trending_statuses_excludes_blocked_accounts() {
 #[tokio::test]
 async fn test_trending_statuses_excludes_muted_accounts() {
     let ctx = TestContext::new("trends-mute").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     let status = ctx
         .api
@@ -100,6 +102,7 @@ async fn test_trending_statuses_excludes_muted_accounts() {
 #[tokio::test]
 async fn test_trending_tags_returns_array() {
     let ctx = TestContext::new("trends-tags-arr").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     let resp = ctx.api.get("/api/v1/trends/tags", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -111,6 +114,7 @@ async fn test_trending_tags_returns_array() {
 #[tokio::test]
 async fn test_trending_tags_alias() {
     let ctx = TestContext::new("trends-alias").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     let resp = ctx.api.get("/api/v1/trends", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -122,6 +126,7 @@ async fn test_trending_tags_alias() {
 #[tokio::test]
 async fn test_trending_tags_includes_recent_public_tag() {
     let ctx = TestContext::new("trends-tags-pub").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     ctx.api
         .post_status(&ctx.alice_token, "Hello #trendingtagtest", "public")
@@ -160,6 +165,7 @@ async fn test_trending_tags_includes_recent_public_tag() {
 #[tokio::test]
 async fn test_trending_tags_excludes_private_posts() {
     let ctx = TestContext::new("trends-tags-priv").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     ctx.api
         .post_status(&ctx.alice_token, "Hello #privatetrend", "private")
@@ -188,6 +194,7 @@ async fn test_trending_tags_excludes_private_posts() {
 #[tokio::test]
 async fn test_trending_links_returns_array() {
     let ctx = TestContext::new("trends-links-arr").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     let resp = ctx.api.get("/api/v1/trends/links", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -199,6 +206,7 @@ async fn test_trending_links_returns_array() {
 #[tokio::test]
 async fn test_trending_tags_limit_param() {
     let ctx = TestContext::new("trends-tags-limit").await;
+    crate::helpers::open_trends(&ctx.db).await;
 
     // Post statuses with unique tags to ensure some trending entries exist.
     for i in 0..5 {

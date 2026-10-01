@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = ANY($1) AND s.trendable IS NULL AND a.reviewed_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1d1a6e959d0a10edcf605845552986d8d6b09d03e4f11fdb41dfbeb930b094fa"
+}

@@ -1051,3 +1051,139 @@ async fn test_block_endpoints_validate_and_log() {
         vec!["IpBlock", "EmailDomainBlock", "CanonicalEmailBlock"]
     );
 }
+
+/// Nothing trends until it is approved (`trendable_by_default` is off), a
+/// reviewer sees what waits for review, and approving lets it through.
+#[tokio::test]
+async fn test_trends_need_review() {
+    let ctx = TestContext::new("mod-trends").await;
+    make_admin(&ctx).await;
+    sqlx::query("UPDATE accounts SET discoverable = true WHERE domain IS NULL")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    ctx.api
+        .post_status(&ctx.bob_token, "hello #reviewme", "public")
+        .await;
+
+    let public: Vec<Value> = ctx
+        .api
+        .get("/api/v1/trends/tags", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        public.is_empty(),
+        "an unreviewed tag does not trend: {public:?}"
+    );
+
+    let pending: Vec<Value> = ctx
+        .api
+        .get("/api/v1/admin/trends/tags", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0]["name"], "reviewme");
+    assert_eq!(pending[0]["requires_review"], true);
+    let tag_id = pending[0]["id"].as_str().unwrap();
+
+    let approved: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/trends/tags/{tag_id}/approve"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(approved["trendable"], true);
+    assert_eq!(approved["requires_review"], false);
+    let public: Vec<Value> = ctx
+        .api
+        .get("/api/v1/trends/tags", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(public.len(), 1);
+
+    ctx.api
+        .post_json(
+            &format!("/api/v1/admin/trends/tags/{tag_id}/reject"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let public: Vec<Value> = ctx
+        .api
+        .get("/api/v1/trends/tags", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(public.is_empty(), "a rejected tag stops trending");
+
+    // `trends` off: nothing for the public, the review queue for staff.
+    crate::helpers::set_setting(&ctx.db, "trends", "false").await;
+    crate::helpers::set_setting(&ctx.db, "trendable_by_default", "true").await;
+    let public: Vec<Value> = ctx
+        .api
+        .get("/api/v1/trends/statuses", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(public.is_empty());
+    let staff: Vec<Value> = ctx
+        .api
+        .get("/api/v1/admin/trends/statuses", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(staff.len(), 1);
+    assert_eq!(staff[0]["requires_review"], true);
+}
+
+/// Link publishers are reviewed through their own endpoints.
+#[tokio::test]
+async fn test_review_link_publishers() {
+    let ctx = TestContext::new("mod-publishers").await;
+    make_admin(&ctx).await;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO preview_card_providers (domain, created_at, updated_at) VALUES ('news.test', now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let list: Vec<Value> = ctx
+        .api
+        .get(
+            "/api/v1/admin/trends/links/publishers",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list[0]["domain"], "news.test");
+    assert_eq!(list[0]["requires_review"], true);
+    let approved: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/trends/links/publishers/{id}/approve"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(approved["trendable"], true);
+    assert_eq!(approved["requires_review"], false);
+}
