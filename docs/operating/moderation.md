@@ -108,6 +108,40 @@ already known. Once their severity is right (see
 saving each one again with a `PATCH` applies it.
 
 
+Sign-ups and addresses
+----------------------
+
+A sign-up passes the same checks it would on Mastodon:
+
+ -  An IP block with `sign_up_block` refuses the sign-up with a 403.
+ -  An email domain block covers the domain and its parents. The domain's
+    mail exchangers count too, and a domain that resolves to nothing is
+    refused, as Mastodon's MX check refuses it.
+ -  A canonical email block refuses an address that differs only in case,
+    dots in the local part, or a `+tag`.
+ -  A username block refuses a username that matches it, either exactly or
+    by containing it, depending on the block. Before comparing, both are
+    lowercased and digits are read as the letters they stand in for, so
+    `4dm1n` matches `admin`.
+
+Blocks of these kinds marked as needing approval (`sign_up_requires_approval`
+IP blocks, `allow_with_approval` email domain and username blocks) let the
+sign-up through into the approval queue instead. A sign-up through a valid
+invite skips the email provider checks. The reason given for joining
+becomes the account's invite request, which the admin API shows.
+
+Eunha records the address each account signed up from (`users.sign_up_ip`)
+and each password sign-in to the web (`login_activities`), which the admin
+API reports and filters by. A `no_access` IP block answers every request
+from its range with a 403.
+
+The address is the client's as Rails reads it: the nearest address in
+`X-Forwarded-For` that is not a trusted proxy. Loopback and private
+addresses are trusted. A proxy anywhere else, such as a CDN, is trusted
+once its ranges are listed in the `TRUSTED_PROXY_IP` environment variable,
+comma-separated, as on Mastodon.
+
+
 Reports
 -------
 

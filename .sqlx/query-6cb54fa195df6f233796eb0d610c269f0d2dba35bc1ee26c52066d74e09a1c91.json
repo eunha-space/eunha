@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.pending_signups\n             (username, email, email_normalized, password_hash,\n              invite_id, reason, locale, app_id, confirmation_token, sign_up_ip)\n           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8,$9::text::inet)\n           ON CONFLICT (email_normalized) DO UPDATE SET\n             username           = EXCLUDED.username,\n             password_hash      = EXCLUDED.password_hash,\n             invite_id          = EXCLUDED.invite_id,\n             reason             = EXCLUDED.reason,\n             locale             = EXCLUDED.locale,\n             app_id             = EXCLUDED.app_id,\n             confirmation_token = EXCLUDED.confirmation_token,\n             sign_up_ip         = EXCLUDED.sign_up_ip,\n             expires_at         = now() + interval '24 hours'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6cb54fa195df6f233796eb0d610c269f0d2dba35bc1ee26c52066d74e09a1c91"
+}

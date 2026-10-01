@@ -813,3 +813,161 @@ async fn test_new_account_from_blocked_domain_starts_limited() {
             .unwrap();
     assert!(silenced);
 }
+
+/// Sign up from `ip`, returning the response, and confirm the sign-up when it
+/// was taken.
+async fn sign_up(ctx: &TestContext, username: &str, email: &str, ip: &str) -> StatusCode {
+    let resp = ctx
+        .api
+        .http
+        .post(ctx.api.url("/api/v1/accounts"))
+        .header("host", &ctx.api.host)
+        .header("x-forwarded-for", ip)
+        .json(&json!({
+            "username": username,
+            "email": email,
+            "password": "a-long-enough-password",
+            "agreement": true,
+            "reason": "hello",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    if status == StatusCode::OK {
+        let token: String = sqlx::query_scalar(
+            "SELECT confirmation_token FROM eunha.pending_signups WHERE username = $1",
+        )
+        .bind(username)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        ctx.api
+            .get(&format!("/auth/confirm?token={token}"), None)
+            .await;
+    }
+    status
+}
+
+/// IP blocks, email domain blocks, canonical email blocks and username blocks
+/// all apply at sign-up: refusing it, or sending it to the approval queue.
+#[tokio::test]
+async fn test_sign_up_blocks() {
+    let ctx = TestContext::new("mod-signup-blocks").await;
+    sqlx::query(
+        "INSERT INTO ip_blocks (ip, severity, comment, created_at, updated_at)
+         VALUES ('203.0.113.0/24', 5500, '', now(), now()), ('198.51.100.7', 5000, '', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO email_domain_blocks (domain, allow_with_approval, created_at, updated_at)
+         VALUES ('spam.test', false, now(), now()), ('maybe.test', true, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO username_blocks (username, normalized_username, exact, allow_with_approval, created_at, updated_at)
+         VALUES ('admin', 'admin', false, false, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    use sha2::{Digest, Sha256};
+    let hash = hex::encode(Sha256::digest(b"banned@ok.test"));
+    sqlx::query(
+        "INSERT INTO canonical_email_blocks (canonical_email_hash, created_at, updated_at) VALUES ($1, now(), now())",
+    )
+    .bind(hash)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let ok = "192.0.2.10";
+    assert_eq!(
+        sign_up(&ctx, "ipblocked", "a@ok.test", "203.0.113.9").await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        sign_up(&ctx, "dom", "a@mail.spam.test", ok).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        sign_up(&ctx, "canon", "Ban.ned+x@ok.test", ok).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        sign_up(&ctx, "the_4dm1n", "b@ok.test", ok).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // Allowed in, but to the approval queue.
+    assert_eq!(
+        sign_up(&ctx, "fromip", "c@ok.test", "198.51.100.7").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        sign_up(&ctx, "fromdom", "d@maybe.test", ok).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        sign_up(&ctx, "plain", "e@ok.test", ok).await,
+        StatusCode::OK
+    );
+    let approved: Vec<(String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT a.username, u.approved, host(u.sign_up_ip) FROM users u JOIN accounts a ON a.id = u.account_id
+         WHERE a.username IN ('fromip', 'fromdom', 'plain') ORDER BY a.username",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        approved,
+        vec![
+            ("fromdom".to_string(), false, Some(ok.to_string())),
+            (
+                "fromip".to_string(),
+                false,
+                Some("198.51.100.7".to_string())
+            ),
+            ("plain".to_string(), true, Some(ok.to_string())),
+        ]
+    );
+    // The reason given becomes the invite request.
+    let reason: String = sqlx::query_scalar(
+        "SELECT r.text FROM user_invite_requests r JOIN users u ON u.id = r.user_id
+         JOIN accounts a ON a.id = u.account_id WHERE a.username = 'fromip'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(reason, "hello");
+}
+
+/// A `no_access` IP block answers everything from the address with 403.
+#[tokio::test]
+async fn test_no_access_ip_block() {
+    let ctx = TestContext::new("mod-no-access").await;
+    sqlx::query(
+        "INSERT INTO ip_blocks (ip, severity, comment, created_at, updated_at)
+         VALUES ('203.0.113.66', 9999, '', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let get = |ip: &'static str| {
+        ctx.api
+            .http
+            .get(ctx.api.url("/api/v1/instance"))
+            .header("host", &ctx.api.host)
+            .header("x-forwarded-for", ip)
+            .send()
+    };
+    assert_eq!(
+        get("203.0.113.66").await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(get("203.0.113.67").await.unwrap().status(), StatusCode::OK);
+}

@@ -697,8 +697,15 @@ pub struct AuthorizeForm {
 pub async fn authorize_submit(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
+    headers: axum::http::HeaderMap,
     Form(form): Form<AuthorizeForm>,
 ) -> Response {
+    let ip = client_ip.and_then(|Extension(c)| c.0);
+    let user_agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let locale = crate::locale::Locale::detect(form.lang.as_deref(), None);
     let app_name = sqlx::query_scalar!(
         "SELECT name FROM oauth_applications WHERE uid = $1",
@@ -709,7 +716,7 @@ pub async fn authorize_submit(
     .ok()
     .flatten()
     .unwrap_or_else(|| form.client_id.clone());
-    let result = do_authorize(&state, &form).await;
+    let result = do_authorize(&state, &form, ip, user_agent.as_deref()).await;
     match result {
         Ok(redirect_url) => Redirect::to(&redirect_url).into_response(),
         Err(_) => {
@@ -745,7 +752,12 @@ pub async fn authorize_submit(
     }
 }
 
-async fn do_authorize(state: &AppState, form: &AuthorizeForm) -> Result<String, String> {
+async fn do_authorize(
+    state: &AppState,
+    form: &AuthorizeForm,
+    ip: Option<std::net::IpAddr>,
+    user_agent: Option<&str>,
+) -> Result<String, String> {
     let app = sqlx::query_as!(
         OauthApplication,
         "SELECT * FROM oauth_applications WHERE uid = $1",
@@ -770,9 +782,15 @@ async fn do_authorize(state: &AppState, form: &AuthorizeForm) -> Result<String, 
     .map_err(|_| "Database error".to_string())?
     .ok_or_else(|| "Invalid email or password".to_string())?;
 
-    crate::crypto::verify_password(&form.password, &user.encrypted_password)
+    if crate::crypto::verify_password(&form.password, &user.encrypted_password)
         .await
-        .map_err(|_| "Invalid email or password".to_string())?;
+        .is_err()
+    {
+        crate::accounts::record_login(&state.db, user.id, ip, user_agent, false, Some("invalid"))
+            .await;
+        return Err("Invalid email or password".to_string());
+    }
+    crate::accounts::record_login(&state.db, user.id, ip, user_agent, true, None).await;
 
     let scopes = form
         .scope

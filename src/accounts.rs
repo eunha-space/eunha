@@ -27,6 +27,11 @@ pub struct NewLocalUser<'a> {
     pub invite_id: Option<i64>,
     pub locale: Option<&'a str>,
     pub app_id: Option<i64>,
+    /// `users.sign_up_ip`.
+    pub sign_up_ip: Option<std::net::IpAddr>,
+    /// `invite_request`: the reason given for joining, as a
+    /// `user_invite_requests` row.
+    pub invite_request: Option<&'a str>,
 }
 
 /// The rows a new local account was written as.
@@ -105,10 +110,10 @@ pub async fn create_local(
         r#"INSERT INTO users
              (account_id, email, encrypted_password, role_id,
               confirmed_at, invite_id, approved,
-              locale, created_by_application_id, created_at, updated_at)
+              locale, created_by_application_id, sign_up_ip, created_at, updated_at)
            VALUES ($1,$2,$3,$4,
                    now(), $5, $6,
-                   $7, $8, now(), now())
+                   $7, $8, $9::text::inet, now(), now())
            RETURNING id"#,
         account_id,
         user.email,
@@ -118,9 +123,21 @@ pub async fn create_local(
         user.approved,
         user.locale,
         user.app_id,
+        user.sign_up_ip.map(|ip| ip.to_string()),
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(text) = user.invite_request.filter(|t| !t.is_empty()) {
+        sqlx::query!(
+            r#"INSERT INTO user_invite_requests (user_id, text, created_at, updated_at)
+               VALUES ($1, $2, now(), now())"#,
+            user_id,
+            text,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
     Ok(LocalUser {
@@ -229,6 +246,8 @@ pub async fn create_from_command(
             invite_id: None,
             locale: None,
             app_id: None,
+            sign_up_ip: None,
+            invite_request: None,
         },
     )
     .await?;
@@ -725,6 +744,33 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
     .await;
     if let Err(error) = result {
         tracing::warn!(%error, "could not notify staff about a pending account");
+    }
+}
+
+/// `user.login_activities.create(...)`, as `Auth::SessionsController`
+/// records each password sign-in to the web, successful or not.
+pub async fn record_login(
+    db: &PgPool,
+    user_id: i64,
+    ip: Option<std::net::IpAddr>,
+    user_agent: Option<&str>,
+    success: bool,
+    failure_reason: Option<&str>,
+) {
+    let result = sqlx::query!(
+        r#"INSERT INTO login_activities
+             (user_id, authentication_method, provider, success, failure_reason, ip, user_agent, created_at)
+           VALUES ($1, 'password', NULL, $2, $3, $4::text::inet, $5, now())"#,
+        user_id,
+        success,
+        failure_reason,
+        ip.map(|ip| ip.to_string()),
+        user_agent.unwrap_or_default(),
+    )
+    .execute(db)
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(%error, "could not record a sign-in");
     }
 }
 

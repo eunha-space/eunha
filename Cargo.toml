@@ -144,6 +144,9 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 # Unicode emoji validation (announcement reactions)
 emojis = "0.9"
 
+# Email MX checks at sign-up (Mastodon's `EmailMxValidator`)
+hickory-resolver = { version = "0.25", features = ["tokio"] }
+
 [dev-dependencies]
 axum-test = "17"
 # Used to build signatures by hand in tests, independently of the signer under

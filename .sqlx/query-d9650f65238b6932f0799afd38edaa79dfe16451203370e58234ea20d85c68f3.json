@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM ip_blocks\n             WHERE severity = $2 AND $1::inet <<= ip\n               AND (expires_at IS NULL OR expires_at > now())\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Inet",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d9650f65238b6932f0799afd38edaa79dfe16451203370e58234ea20d85c68f3"
+}

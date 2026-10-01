@@ -234,9 +234,11 @@ pub struct ApiCreateAccountForm {
 pub async fn api_create_account(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
     req_headers: HeaderMap,
     super::extractors::FormOrJson(form): super::extractors::FormOrJson<ApiCreateAccountForm>,
 ) -> AppResult<Json<super::types::Token>> {
+    let sign_up_ip = client_ip.and_then(|Extension(c)| c.0);
     let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
     let invite_id: Option<i64> = if !invite_code.is_empty() {
         Some(
@@ -251,6 +253,11 @@ pub async fn api_create_account(
     } else {
         None
     };
+    // `allowed_registration?`: an address under a sign-up block may not
+    // register at all.
+    if crate::remote_ip::sign_up_blocked(&state, sign_up_ip).await {
+        return Err(AppError::Forbidden);
+    }
 
     let username = form.username.trim().to_lowercase();
     let email = form.email.trim().to_string();
@@ -306,6 +313,12 @@ pub async fn api_create_account(
         return Err(AppError::Unprocessable("Username is already taken".into()));
     }
 
+    // The moderation validations: reserved usernames, blocked email
+    // providers and addresses, and unreachable email domains.
+    crate::moderation::signup::check(&state, &username, &email, sign_up_ip, invite_id.is_some())
+        .await
+        .map_err(|refusal| AppError::Unprocessable(refusal.message().into()))?;
+
     let password_hash = crypto::hash_password(password)
         .await
         .map_err(|_| AppError::Internal(anyhow::anyhow!("password hashing failed")))?;
@@ -321,8 +334,8 @@ pub async fn api_create_account(
     sqlx::query!(
         r#"INSERT INTO eunha.pending_signups
              (username, email, email_normalized, password_hash,
-              invite_id, reason, locale, app_id, confirmation_token)
-           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8)
+              invite_id, reason, locale, app_id, confirmation_token, sign_up_ip)
+           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8,$9::text::inet)
            ON CONFLICT (email_normalized) DO UPDATE SET
              username           = EXCLUDED.username,
              password_hash      = EXCLUDED.password_hash,
@@ -331,6 +344,7 @@ pub async fn api_create_account(
              locale             = EXCLUDED.locale,
              app_id             = EXCLUDED.app_id,
              confirmation_token = EXCLUDED.confirmation_token,
+             sign_up_ip         = EXCLUDED.sign_up_ip,
              expires_at         = now() + interval '24 hours'"#,
         username,
         email,
@@ -340,6 +354,7 @@ pub async fn api_create_account(
         locale_str,
         app_id,
         confirmation_token,
+        sign_up_ip.map(|ip| ip.to_string()),
     )
     .execute(&state.db)
     .await
@@ -384,7 +399,8 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         r#"DELETE FROM eunha.pending_signups
            WHERE confirmation_token = $1 AND expires_at > now()
            RETURNING username, email, email_normalized,
-                     password_hash, invite_id, reason, locale, app_id"#,
+                     password_hash, invite_id, reason, locale, app_id,
+                     host(sign_up_ip) AS sign_up_ip"#,
         q.token,
     )
     .fetch_optional(&state.db)
@@ -405,11 +421,28 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
     // was used. eunha's everyone role carries `Flags::DEFAULT`, which is
     // `invite_users` alone, so an ordinary member's invite gets its holder
     // reviewed like anyone else until the instance says otherwise.
-    let needs_approval = state.instance.approval_required
-        && !match pending.invite_id {
-            Some(id) => invite_bypasses_approval(&state, id).await,
-            None => false,
-        };
+    let sign_up_ip: Option<std::net::IpAddr> =
+        pending.sign_up_ip.as_deref().and_then(|ip| ip.parse().ok());
+    // `User#set_approved`: an IP, email domain or username block asking for
+    // approval wins; otherwise open registrations or a bypassing invite.
+    let requires_approval = match crate::moderation::signup::check(
+        &state,
+        &pending.username,
+        &pending.email,
+        sign_up_ip,
+        pending.invite_id.is_some(),
+    )
+    .await
+    {
+        Ok(checked) => checked.requires_approval,
+        Err(_) => true,
+    };
+    let needs_approval = requires_approval
+        || (state.instance.approval_required
+            && !match pending.invite_id {
+                Some(id) => invite_bypasses_approval(&state, id).await,
+                None => false,
+            });
     let crate::accounts::LocalUser {
         account_id,
         user_id,
@@ -426,6 +459,8 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
             invite_id: pending.invite_id,
             locale: Some(pending.locale.as_str()),
             app_id: pending.app_id,
+            sign_up_ip,
+            invite_request: pending.reason.as_deref(),
         },
     )
     .await

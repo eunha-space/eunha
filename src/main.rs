@@ -492,7 +492,12 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&bind_address).await?;
     tracing::info!(tenants = serving, "listening on {bind_address}");
-    axum::serve(listener, app).await?;
+    // The peer address, for `remote_ip` to start from.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

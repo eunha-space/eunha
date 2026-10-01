@@ -23,6 +23,7 @@ pub mod preview_card;
 pub mod push;
 pub mod rails_encryption;
 pub mod redis_keys;
+pub mod remote_ip;
 pub mod schema_check;
 pub mod settings;
 pub mod snowflake;
@@ -62,6 +63,8 @@ pub fn build_app() -> Router {
         .layer(axum_middleware::from_fn(middleware::log_failures))
         .layer(axum_middleware::from_fn(middleware::authenticate))
         .layer(axum_middleware::from_fn(middleware::resolve_instance))
+        .layer(axum_middleware::from_fn(remote_ip::deny_blocked))
+        .layer(axum_middleware::from_fn(remote_ip::layer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }

@@ -9,6 +9,7 @@ pub mod report_service;
 pub mod role;
 pub mod rules;
 pub mod severance;
+pub mod signup;
 pub mod suspension;
 pub mod warning;
 

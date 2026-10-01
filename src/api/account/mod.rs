@@ -182,6 +182,7 @@ pub async fn login_post(
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
+    client_ip: Option<axum::extract::Extension<crate::remote_ip::ClientIp>>,
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
@@ -226,12 +227,19 @@ pub async fn login_post(
         _ => return render_error(locale.t("invalid_credentials")),
     };
 
+    let ip = client_ip.and_then(|axum::extract::Extension(c)| c.0);
+    let user_agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
     if verify_password(&form.password, &row.encrypted_password)
         .await
         .is_err()
     {
+        crate::accounts::record_login(&state.db, row.id, ip, user_agent, false, Some("invalid"))
+            .await;
         return render_error(locale.t("invalid_credentials"));
     }
+    crate::accounts::record_login(&state.db, row.id, ip, user_agent, true, None).await;
 
     // Reuse an existing non-revoked OAuth token, or mint a new one.
     let token = match sqlx::query_scalar!(

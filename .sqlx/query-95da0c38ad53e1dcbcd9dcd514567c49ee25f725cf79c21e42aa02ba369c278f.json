@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO login_activities\n             (user_id, authentication_method, provider, success, failure_reason, ip, user_agent, created_at)\n           VALUES ($1, 'password', NULL, $2, $3, $4::text::inet, $5, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "95da0c38ad53e1dcbcd9dcd514567c49ee25f725cf79c21e42aa02ba369c278f"
+}

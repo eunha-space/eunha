@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT host(ip) AS \"addr!\", masklen(ip) AS \"prefix!\" FROM ip_blocks\n                   WHERE severity = $1 AND (expires_at IS NULL OR expires_at > now())",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "addr!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "prefix!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "108e5467320e779e084ccea011a6f43300f850c77d881ff05d87ab0ee6b7b463"
+}

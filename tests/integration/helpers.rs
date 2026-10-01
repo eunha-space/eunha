@@ -447,6 +447,7 @@ impl TestContext {
     async fn build(label: &str, sign_integrity_proofs: bool, approval_required: bool) -> Self {
         // Make fanout/populate/backfill run inline so tests don't race with background tasks.
         eunha::feed::enable_sync_fanout();
+        eunha::moderation::signup::skip_mx_check();
         // Likewise for inbound activities: handle them in the request rather
         // than on the ingress queue, so a POST to /inbox has taken effect by
         // the time it returns.
