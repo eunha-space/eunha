@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n                   SET display_name = $2,\n                       note = $3,\n                       inbox_url = CASE WHEN $4 != '' THEN $4 ELSE inbox_url END,\n                       shared_inbox_url = COALESCE($5, shared_inbox_url),\n                       public_key = CASE WHEN $6 != '' THEN $6 ELSE public_key END,\n                       locked = $7,\n                       avatar_remote_url = COALESCE($8, avatar_remote_url),\n                       header_remote_url = COALESCE($9, header_remote_url),\n                       followers_url = COALESCE($10, followers_url),\n                       following_url = COALESCE($11, following_url),\n                       updated_at = now()\n                   WHERE uri = $1 AND domain IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text",
+        "Text",
+        "Varchar",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0df402ae7b1fdd9cb63b87cebd7551b61067b7c04a1437891b6c2eed2881e52a"
+}

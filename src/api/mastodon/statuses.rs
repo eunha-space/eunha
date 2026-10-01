@@ -1689,75 +1689,66 @@ pub async fn get_status_card(
 // ── PATCH /api/v1/statuses/:id/interaction_policy ─────────────────────────
 
 #[derive(Debug, serde::Deserialize, Default)]
-pub struct InteractionPolicyCanQuote {
-    pub always: Option<Vec<String>>,
-    pub with_approval: Option<Vec<String>>,
-}
-
-#[derive(Debug, serde::Deserialize, Default)]
 pub struct InteractionPolicyForm {
-    pub can_quote: Option<InteractionPolicyCanQuote>,
+    pub quote_approval_policy: Option<String>,
 }
 
+/// `Api::V1::Statuses::InteractionPoliciesController#update`.
 pub async fn update_interaction_policy(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<InteractionPolicyForm>>,
+    super::extractors::Params(form): super::extractors::Params<InteractionPolicyForm>,
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
-    // Verify the status exists and belongs to the authenticated user
-    let status_meta = sqlx::query!(
-        "SELECT account_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    if status_meta.account_id != auth.account_id {
+    let (status, account) = fetch_status_with_account(&state, id).await?;
+    // `authorize @status, :update?`
+    if status.account_id != auth.account_id {
         return Err(AppError::Forbidden);
     }
-
-    // Translate the can_quote interaction policy into our quote_approval_policy.
-    if let Some(Json(form)) = body {
-        if let Some(can_quote) = form.can_quote {
-            use crate::db::models::quote_policy;
-            let always = can_quote.always.unwrap_or_default();
-            let with_approval = can_quote.with_approval.unwrap_or_default();
-            let policy = if !always.is_empty() {
-                // Someone may quote automatically — map by the broadest audience.
-                if always.iter().any(|p| p.ends_with("#Public")) {
-                    quote_policy::PUBLIC
-                } else if always.iter().any(|p| p.ends_with("/followers")) {
-                    quote_policy::FOLLOWERS
-                } else {
-                    quote_policy::PUBLIC
-                }
-            } else if !with_approval.is_empty() {
-                quote_policy::MANUAL
-            } else {
-                quote_policy::NOBODY
-            };
-            sqlx::query!(
-                "UPDATE statuses SET quote_approval_policy = $1 WHERE id = $2",
-                policy,
-                id,
-            )
-            .execute(&state.db)
-            .await?;
+    // `quote_approval_policy`, else the user's default.
+    let requested = match form.quote_approval_policy.filter(|p| !p.is_empty()) {
+        Some(p) => p,
+        None => {
+            crate::api::mastodon::accounts::user_defaults(&state, auth.account_id)
+                .await
+                .quote_policy
+        }
+    };
+    let mut policy = crate::db::models::quote_policy::from_api(&requested).ok_or_else(|| {
+        AppError::Unprocessable("Validation failed: Quote approval policy is invalid".into())
+    })?;
+    // `downgrade_quote_policy`: a local post no one else may see allows no
+    // quotes.
+    if !matches!(
+        status.visibility,
+        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+    ) {
+        policy = 0;
+    }
+    let changed = policy != status.quote_approval_policy;
+    if changed {
+        sqlx::query!(
+            "UPDATE statuses SET quote_approval_policy = $1, updated_at = now() WHERE id = $2",
+            policy,
+            id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    let status = sqlx::query_as!(DbStatus, "SELECT * FROM statuses WHERE id = $1", id)
+        .fetch_one(&state.db)
+        .await?;
+    if changed {
+        // `broadcast_updates!`
+        if let Err(error) = federate_status_update(&state, id, &account, &status).await {
+            tracing::warn!(
+                status_id = id,
+                ?error,
+                "could not federate a quote policy change"
+            );
         }
     }
-
-    // Re-fetch
-    let status = sqlx::query_as!(
-        DbStatus,
-        "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
     Ok(Json(
         serialize_status(&state, &status, Some(auth.account_id)).await?,
     ))

@@ -266,6 +266,27 @@ pub async fn post_status(
                 "not allowed to interact with this post".into(),
             ));
         }
+        // `authorize(@quoted_status, :quote?)`: its policy must not deny us.
+        let relation = sqlx::query!(
+            r#"SELECT
+                 EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "follows_author!",
+                 EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS "followed_by_author!",
+                 (SELECT quote_approval_policy FROM statuses WHERE id = $3) AS "policy!""#,
+            account.id,
+            quoted.account_id,
+            quoted.id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if crate::db::models::quote_policy::for_account(
+            relation.policy,
+            account.id == quoted.account_id,
+            relation.follows_author,
+            relation.followed_by_author,
+        ) == crate::db::models::quote_policy::ForAccount::Denied
+        {
+            return Err(AppError::Forbidden);
+        }
         quoted_author_id = Some(quoted.account_id);
         Some(quoted.id)
     } else {
@@ -382,11 +403,29 @@ pub async fn post_status(
 
     let is_reply = in_reply_to_id.is_some();
     let visibility_int = crate::db::models::vis::from_str(&visibility);
-    let quote_policy_int = crate::db::models::quote_policy::from_str(
-        form.quote_approval_policy
-            .as_deref()
-            .unwrap_or(&defaults.quote_policy),
-    );
+    // `Api::InteractionPoliciesConcern#quote_approval_policy`, then
+    // `downgrade_quote_policy` for a post only some may see.
+    let requested_policy = form
+        .quote_approval_policy
+        .as_deref()
+        .filter(|p| !p.is_empty())
+        .unwrap_or(&defaults.quote_policy);
+    let quote_policy_int = match crate::db::models::quote_policy::from_api(requested_policy) {
+        Some(_)
+            if !matches!(
+                visibility_int,
+                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+            ) =>
+        {
+            0
+        }
+        Some(policy) => policy,
+        None => {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Quote approval policy is invalid".into(),
+            ))
+        }
+    };
     let status = sqlx::query_as!(
         DbStatus,
         r#"INSERT INTO statuses
@@ -442,24 +481,10 @@ pub async fn post_status(
             quote_request_activity_uri = Some(au.clone());
             (crate::db::models::quote_state::PENDING, Some(au))
         } else {
-            use crate::db::models::quote_policy;
-            let policy = quoted
-                .as_ref()
-                .map(|q| q.quote_approval_policy)
-                .unwrap_or(quote_policy::PUBLIC);
-            // The author's own quotes are always accepted; a manual-approval
-            // policy holds others' quotes pending until the author approves.
-            let st = if quoted_account_id == account.id {
-                crate::db::models::quote_state::ACCEPTED
-            } else if policy == quote_policy::MANUAL || policy == quote_policy::NOBODY {
-                crate::db::models::quote_state::PENDING
-            } else {
-                match quoted.as_ref().map(|q| q.visibility) {
-                    Some(0) | Some(1) => crate::db::models::quote_state::ACCEPTED, // public, unlisted
-                    _ => crate::db::models::quote_state::PENDING,
-                }
-            };
-            (st, None)
+            // `quote.accept! if @quoted_status.local? && StatusPolicy#quote?`:
+            // the policy was checked before the post was made, so a local
+            // quote is accepted.
+            (crate::db::models::quote_state::ACCEPTED, None)
         };
 
         let quote_row_id = crate::snowflake::next_id();

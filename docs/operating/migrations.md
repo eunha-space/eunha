@@ -50,3 +50,18 @@ UPDATE domain_blocks SET severity = 1 WHERE id = …; -- suspend
 
 Blocks created by Mastodon, or imported from a Mastodon database, were never
 affected.
+
+
+Quote policies written before migration 017
+-------------------------------------------
+
+Until migration 017, eunha stored a post's `quote_approval_policy` as its own
+enum: public 0, followers 1, nobody 2, manual 3. Mastodon stores, and eunha
+now stores, a bitmap. The automatic policy sits in the high 16 bits and the
+manual one in the low 16: public is `131072`, followers `262144`, and nobody
+`0`. Migration 017 converts eunha's followers, nobody and manual values.
+
+Eunha's public, 0, is also Mastodon's nobody, so migration 017 cannot tell
+the two apart. Local posts eunha wrote with “anyone may quote” before the
+migration now let no one quote them. Their authors can open them up again
+through the interaction policy endpoint.

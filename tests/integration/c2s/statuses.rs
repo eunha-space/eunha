@@ -6420,8 +6420,10 @@ async fn test_direct_quote_requires_mentioning_quoted_author() {
 }
 
 /// Quoting a followers-only status forces the quote down to followers-only,
-/// even when the client asks for public. Mirrors Mastodon's
-/// PostStatusService#preprocess_attributes.
+/// even when the client asks for public (PostStatusService#preprocess_attributes).
+/// Only the author may quote it: a local post no one else may see has its quote
+/// policy downgraded to none (`downgrade_quote_policy`), so anyone else is
+/// refused by `StatusPolicy#quote?`.
 #[tokio::test]
 async fn test_quote_of_private_forces_private_visibility() {
     let ctx = TestContext::new("quote-private-downgrade").await;
@@ -6434,8 +6436,8 @@ async fn test_quote_of_private_forces_private_visibility() {
 
     let resp = ctx.api.post_json(
         "/api/v1/statuses",
-        Some(&ctx.bob_token),
-        &json!({"status": "quoting privately", "quoted_status_id": original_id, "visibility": "public"}),
+        Some(&ctx.alice_token),
+        &json!({"status": "quoting myself", "quoted_status_id": original_id, "visibility": "public"}),
     ).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
@@ -6444,6 +6446,13 @@ async fn test_quote_of_private_forces_private_visibility() {
         Some("private"),
         "a public quote of a followers-only post must be downgraded to private"
     );
+
+    let resp = ctx.api.post_json(
+        "/api/v1/statuses",
+        Some(&ctx.bob_token),
+        &json!({"status": "quoting alice", "quoted_status_id": original_id, "visibility": "private"}),
+    ).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
 /// Quoting increments quotes_count on the original status.
@@ -6660,7 +6669,8 @@ async fn test_status_has_quote_approval_field() {
     assert_eq!(qa["current_user"].as_str(), Some("automatic"));
 }
 
-/// PUT /api/v1/statuses/:id/interaction_policy persists and returns updated policy.
+/// PUT /api/v1/statuses/:id/interaction_policy sets `quote_approval_policy`
+/// (`public`, `followers` or `nobody`) and returns the updated status.
 #[tokio::test]
 async fn test_update_interaction_policy() {
     let ctx = TestContext::new("interaction-policy").await;
@@ -6669,39 +6679,51 @@ async fn test_update_interaction_policy() {
         .post_status(&ctx.alice_token, "policy test post", "public")
         .await;
     let status_id = status["id"].as_str().unwrap();
+    assert_eq!(status["quote_approval"]["automatic"], json!(["public"]));
 
-    // Default: public post should auto-approve everyone
-    let qa = &status["quote_approval"];
-    assert_eq!(qa["current_user"].as_str(), Some("automatic"));
-
-    // Restrict quoting to manual approval only
     let updated: Value = ctx
         .api
         .put_json(
             &format!("/api/v1/statuses/{status_id}/interaction_policy"),
             Some(&ctx.alice_token),
-            &json!({
-                "can_quote": {
-                    "always": [],
-                    "with_approval": ["https://www.w3.org/ns/activitystreams#Public"]
-                }
-            }),
+            &json!({"quote_approval_policy": "followers"}),
         )
         .await
         .json()
         .await
         .unwrap();
+    assert_eq!(updated["quote_approval"]["automatic"], json!(["followers"]));
+    assert_eq!(updated["quote_approval"]["manual"], json!([]));
+    // The author may always quote.
+    assert_eq!(
+        updated["quote_approval"]["current_user"].as_str(),
+        Some("automatic")
+    );
 
-    let uqa = &updated["quote_approval"];
-    assert!(
-        uqa["automatic"].as_array().unwrap().is_empty(),
-        "automatic should be empty after policy update"
+    let seen_by_bob: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{status_id}"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        seen_by_bob["quote_approval"]["current_user"].as_str(),
+        Some("denied")
     );
-    assert!(
-        !uqa["manual"].as_array().unwrap().is_empty(),
-        "manual should be non-empty"
-    );
-    assert_eq!(uqa["current_user"].as_str(), Some("manual"));
+
+    let bad = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{status_id}/interaction_policy"),
+            Some(&ctx.alice_token),
+            &json!({"quote_approval_policy": "everyone"}),
+        )
+        .await;
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// PUT /api/v1/statuses/:id/interaction_policy returns 403 when acting on another user's status.
@@ -6873,98 +6895,95 @@ async fn test_quote_quoter_blocked_quotee_returns_422() {
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-/// Pending quote appears in the quoting status response with state "pending".
+/// A quote still waiting for its author's consent (as one of a remote post
+/// waits) shows its state, and does not embed the quoted post.
 #[tokio::test]
 async fn test_pending_quote_is_null_in_response() {
-    let ctx = TestContext::new("quote-pending-null").await;
-
-    // Alice posts with manual-only quote policy
+    let ctx = TestContext::new("quote-pending").await;
     let original: Value = ctx
         .api
         .post_json(
             "/api/v1/statuses",
             Some(&ctx.alice_token),
-            &json!({"status": "manual approval only", "visibility": "public"}),
+            &json!({"status": "quote me", "visibility": "public"}),
         )
         .await
         .json()
         .await
         .unwrap();
     let original_id = original["id"].as_str().unwrap();
-
-    ctx.api
-        .put_json(
-            &format!("/api/v1/statuses/{original_id}/interaction_policy"),
-            Some(&ctx.alice_token),
-            &json!({
-                "can_quote": {
-                    "always": [],
-                    "with_approval": ["https://www.w3.org/ns/activitystreams#Public"]
-                }
-            }),
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "quoting", "quoted_status_id": original_id, "visibility": "public"}),
         )
-        .await;
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    sqlx::query("UPDATE quotes SET state = 0 WHERE status_id = $1")
+        .bind(quote_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
-    // Bob quotes it — state should be "pending"
-    let quote: Value = ctx.api.post_json(
-        "/api/v1/statuses",
-        Some(&ctx.bob_token),
-        &json!({"status": "quoting pending post", "quoted_status_id": original_id, "visibility": "public"}),
-    ).await.json().await.unwrap();
-
+    let quote: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{quote_id}"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
     assert!(
         !quote["quote"].is_null(),
         "pending quote must appear in the response"
     );
-    assert_eq!(
-        quote["quote"]["state"].as_str(),
-        Some("pending"),
-        "pending quote must have state 'pending'"
-    );
+    assert_eq!(quote["quote"]["state"].as_str(), Some("pending"));
     assert!(
         quote["quote"]["quoted_status"].is_null(),
         "pending quote must not embed quoted_status"
     );
 }
 
-/// GET /api/v1/statuses/:id/quotes does not return pending or rejected quotes.
+/// GET /api/v1/statuses/:id/quotes does not return pending quotes.
 #[tokio::test]
 async fn test_get_quotes_only_returns_accepted() {
     let ctx = TestContext::new("quote-list-accepted-only").await;
-
-    // Alice posts with manual-only policy so quotes start as pending
     let original: Value = ctx
         .api
         .post_json(
             "/api/v1/statuses",
             Some(&ctx.alice_token),
-            &json!({"status": "manual approval only", "visibility": "public"}),
+            &json!({"status": "quote me", "visibility": "public"}),
         )
         .await
         .json()
         .await
         .unwrap();
     let original_id = original["id"].as_str().unwrap();
-
-    ctx.api
-        .put_json(
-            &format!("/api/v1/statuses/{original_id}/interaction_policy"),
-            Some(&ctx.alice_token),
-            &json!({
-                "can_quote": {
-                    "always": [],
-                    "with_approval": ["https://www.w3.org/ns/activitystreams#Public"]
-                }
-            }),
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "quoting", "quoted_status_id": original_id, "visibility": "public"}),
         )
-        .await;
-
-    // Bob quotes (pending state)
-    ctx.api.post_json(
-        "/api/v1/statuses",
-        Some(&ctx.bob_token),
-        &json!({"status": "pending quote", "quoted_status_id": original_id, "visibility": "public"}),
-    ).await;
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    sqlx::query("UPDATE quotes SET state = 0 WHERE status_id = $1")
+        .bind(quote_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     let quotes: Value = ctx
         .api
@@ -6976,9 +6995,8 @@ async fn test_get_quotes_only_returns_accepted() {
         .json()
         .await
         .unwrap();
-    let arr = quotes.as_array().unwrap();
     assert_eq!(
-        arr.len(),
+        quotes.as_array().unwrap().len(),
         0,
         "pending quotes must not appear in GET /quotes"
     );
@@ -6988,43 +7006,35 @@ async fn test_get_quotes_only_returns_accepted() {
 #[tokio::test]
 async fn test_get_quotes_excludes_rejected() {
     let ctx = TestContext::new("quote-list-rejected").await;
-
     let original: Value = ctx
         .api
         .post_json(
             "/api/v1/statuses",
             Some(&ctx.alice_token),
-            &json!({"status": "manual-only post", "visibility": "public"}),
+            &json!({"status": "quote me", "visibility": "public"}),
         )
         .await
         .json()
         .await
         .unwrap();
     let original_id = original["id"].as_str().unwrap();
-
-    // Set manual-only policy
-    ctx.api.put_json(
-        &format!("/api/v1/statuses/{original_id}/interaction_policy"),
-        Some(&ctx.alice_token),
-        &json!({"can_quote": {"always": [], "with_approval": ["https://www.w3.org/ns/activitystreams#Public"]}}),
-    ).await;
-
-    // Bob posts a quote (pending)
-    let quote: Value = ctx.api.post_json(
-        "/api/v1/statuses",
-        Some(&ctx.bob_token),
-        &json!({"status": "pending quote", "quoted_status_id": original_id, "visibility": "public"}),
-    ).await.json().await.unwrap();
-    let quote_id = quote["id"].as_str().unwrap();
-
-    // Alice rejects it
-    ctx.api
+    let quote: Value = ctx
+        .api
         .post_json(
-            &format!("/api/v1/statuses/{quote_id}/quotes/{quote_id}/revoke"),
-            Some(&ctx.alice_token),
-            &json!({}),
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "quoting", "quoted_status_id": original_id, "visibility": "public"}),
         )
-        .await;
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    sqlx::query("UPDATE quotes SET state = 2 WHERE status_id = $1")
+        .bind(quote_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     let quotes: Value = ctx
         .api
@@ -7108,9 +7118,10 @@ async fn test_post_status_quote_approval_policy() {
         0,
         "nobody policy must have empty automatic array"
     );
+    // `quote_policy_for_account`: the author may always quote their own post.
     assert_eq!(
         nobody_post["quote_approval"]["current_user"].as_str(),
-        Some("denied"),
+        Some("automatic"),
     );
 
     // followers → automatic: ["followers"]
@@ -7400,10 +7411,11 @@ async fn test_update_credentials_quote_policy() {
         0,
         "nobody policy: automatic must be empty"
     );
+    // The author may always quote their own post; nobody else may.
     assert_eq!(
         post["quote_approval"]["current_user"].as_str(),
-        Some("denied"),
-        "nobody policy: current_user must be denied"
+        Some("automatic"),
+        "the author may always quote"
     );
 }
 

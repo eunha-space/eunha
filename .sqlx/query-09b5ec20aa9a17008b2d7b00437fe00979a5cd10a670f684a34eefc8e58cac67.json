@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO statuses\n             (id, account_id, text, spoiler_text, visibility, sensitive,\n              uri, url, in_reply_to_id, in_reply_to_account_id, reply,\n              language, local, created_at, updated_at, quote_approval_policy)\n           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13, now(), $14)\n           ON CONFLICT (uri) WHERE uri IS NOT NULL AND uri != '' DO NOTHING\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Varchar",
+        "Timestamp",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "09b5ec20aa9a17008b2d7b00437fe00979a5cd10a670f684a34eefc8e58cac67"
+}

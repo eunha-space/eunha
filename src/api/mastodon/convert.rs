@@ -596,29 +596,29 @@ fn build_quote_approval(
 ) -> types::QuoteApproval {
     use crate::db::models::quote_policy;
     let policy = s.quote_approval_policy;
-    let automatic: Vec<String> = quote_policy::automatic_labels(policy)
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    let manual: Vec<String> = quote_policy::manual_labels(policy)
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-
-    let current_user = match viewer {
-        None => "unknown".to_string(),
-        Some(ctx) => match policy {
-            quote_policy::PUBLIC => "automatic".to_string(),
-            quote_policy::FOLLOWERS if ctx.follows_author => "automatic".to_string(),
-            quote_policy::MANUAL => "manual".to_string(),
-            _ => "denied".to_string(),
-        },
+    let keys = |sub: i32| -> Vec<String> {
+        quote_policy::as_keys(sub)
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     };
-
+    // `quote_policy_for_account`: no one to ask, a direct post or a reblog is
+    // `denied`.
+    let current_user = match viewer {
+        Some(ctx) if s.visibility != crate::db::models::vis::DIRECT && s.reblog_of_id.is_none() => {
+            quote_policy::for_account(
+                policy,
+                ctx.account_id == s.account_id,
+                ctx.follows_author,
+                ctx.author_follows,
+            )
+        }
+        _ => quote_policy::ForAccount::Denied,
+    };
     types::QuoteApproval {
-        automatic,
-        manual,
-        current_user,
+        automatic: keys(quote_policy::automatic(policy)),
+        manual: keys(quote_policy::manual(policy)),
+        current_user: current_user.as_str().to_string(),
     }
 }
 

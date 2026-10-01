@@ -400,7 +400,12 @@ pub async fn build_note(
 
     // Quote interaction policy advertisement.
     note["interactionPolicy"] = json!({
-        "canQuote": quote_interaction_policy(s.quote_approval_policy, s.visibility, &followers_url),
+        "canQuote": quote_interaction_policy(
+            s.quote_approval_policy,
+            &followers_url,
+            &format!("{actor_url}/following"),
+            &actor_url,
+        ),
     });
 
     Ok(Some(NoteBundle {
@@ -413,21 +418,31 @@ pub async fn build_note(
     }))
 }
 
-/// Map our `quote_approval_policy` to a FEP-044f `canQuote` policy.
-fn quote_interaction_policy(policy: i32, visibility: i32, followers_url: &str) -> Value {
+/// `ActivityPub::NoteSerializer#interaction_policy`: outgoing posts carry the
+/// automatic sub-policy only, and name the author alone when it allows no one.
+fn quote_interaction_policy(
+    policy: i32,
+    followers_url: &str,
+    following_url: &str,
+    actor_url: &str,
+) -> Value {
     use crate::db::models::quote_policy;
     const PUBLIC_URI: &str = "https://www.w3.org/ns/activitystreams#Public";
-    let public_post = matches!(visibility, vis::PUBLIC | vis::UNLISTED);
-    let (automatic, manual): (Vec<String>, Vec<String>) = match policy {
-        quote_policy::PUBLIC if public_post => (vec![PUBLIC_URI.to_string()], vec![]),
-        quote_policy::FOLLOWERS => (vec![followers_url.to_string()], vec![]),
-        quote_policy::MANUAL if public_post => (vec![], vec![PUBLIC_URI.to_string()]),
-        _ => (vec![], vec![]),
-    };
-    json!({
-        "automaticApproval": automatic,
-        "manualApproval": manual,
-    })
+    let automatic = quote_policy::automatic(policy);
+    let mut approved: Vec<String> = vec![];
+    if automatic & quote_policy::PUBLIC != 0 {
+        approved.push(PUBLIC_URI.to_string());
+    }
+    if automatic & quote_policy::FOLLOWERS != 0 {
+        approved.push(followers_url.to_string());
+    }
+    if automatic & quote_policy::FOLLOWING != 0 {
+        approved.push(following_url.to_string());
+    }
+    if approved.is_empty() {
+        approved.push(actor_url.to_string());
+    }
+    json!({ "automaticApproval": approved })
 }
 
 /// Build an AP `attachment` entry for one media attachment, or `None` if it has

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET quote_approval_policy = $1 WHERE id = $2",
+  "query": "UPDATE statuses SET quote_approval_policy = $1, updated_at = now() WHERE id = $2",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "7c69f43807d575cbf7090af66a4c4ba7060d5312ad6d4a71b9536aeb85d7adf2"
+  "hash": "49c90eb73222a2909ca515b76c20b0264c7c3782a693540b8f9d7b2a61b75166"
 }

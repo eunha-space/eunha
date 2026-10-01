@@ -1187,3 +1187,46 @@ async fn test_review_link_publishers() {
     assert_eq!(approved["trendable"], true);
     assert_eq!(approved["requires_review"], false);
 }
+
+/// `quote_approval_policy` is stored as Mastodon's bitmap, a followers-only
+/// policy lets followers quote and no one else, and a remote post's
+/// `canQuote` is read into the same bitmap.
+#[tokio::test]
+async fn test_quote_policy_bitmap() {
+    let ctx = TestContext::new("mod-quote-bitmap").await;
+    let post: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "followers may quote", "visibility": "public", "quote_approval_policy": "followers"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let stored: i32 =
+        sqlx::query_scalar("SELECT quote_approval_policy FROM statuses WHERE id = $1")
+            .bind(id(post["id"].as_str().unwrap()))
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, 4 << 16);
+
+    let quote = |token: String| {
+        let id = post["id"].clone();
+        let api = &ctx.api;
+        async move {
+            api.post_json(
+                "/api/v1/statuses",
+                Some(&token),
+                &json!({"status": "q", "quoted_status_id": id, "visibility": "public"}),
+            )
+            .await
+            .status()
+        }
+    };
+    assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::FORBIDDEN);
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::OK);
+}

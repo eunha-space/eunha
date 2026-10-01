@@ -583,6 +583,8 @@ pub(super) async fn handle_update(
                        locked = $7,
                        avatar_remote_url = COALESCE($8, avatar_remote_url),
                        header_remote_url = COALESCE($9, header_remote_url),
+                       followers_url = COALESCE($10, followers_url),
+                       following_url = COALESCE($11, following_url),
                        updated_at = now()
                    WHERE uri = $1 AND domain IS NOT NULL"#,
                 actor_uri,
@@ -594,6 +596,8 @@ pub(super) async fn handle_update(
                 locked,
                 avatar_remote_url,
                 header_remote_url,
+                object.get("followers").and_then(|v| v.as_str()),
+                object.get("following").and_then(|v| v.as_str()),
             )
             .execute(&state.db)
             .await?;
@@ -638,10 +642,25 @@ pub(super) async fn handle_update(
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
 
+            // `ProcessStatusUpdateService`: the post's quote policy as it now is.
+            let actor_account: Option<i64> = sqlx::query_scalar!(
+                "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+                activity
+                    .get("actor")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or_default(),
+            )
+            .fetch_optional(&state.db)
+            .await?;
+            let quote_policy = match actor_account {
+                Some(id) => Some(super::remote_quote_policy(state, id, object).await),
+                None => None,
+            };
             let updated = sqlx::query!(
                 r#"UPDATE statuses
                    SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,
-                       edited_at = COALESCE($6, edited_at), updated_at = now()
+                       edited_at = COALESCE($6, edited_at), updated_at = now(),
+                       quote_approval_policy = COALESCE($8, quote_approval_policy)
                    WHERE uri = $1 AND deleted_at IS NULL
                      -- Only the sender's own status: any server could
                      -- otherwise rewrite any status it named.
@@ -659,6 +678,7 @@ pub(super) async fn handle_update(
                     .get("actor")
                     .and_then(|a| a.as_str())
                     .unwrap_or_default(),
+                quote_policy,
             )
             .fetch_optional(&state.db)
             .await?;

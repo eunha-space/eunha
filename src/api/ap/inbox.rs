@@ -21,6 +21,28 @@ use moderation::{handle_block, handle_flag, handle_move};
 use quote::{handle_feature_request, handle_quote_request};
 use status::{handle_announce, handle_delete, handle_like, handle_update};
 
+/// `StatusParser#quote_policy` for a remote post by `account_id`, read
+/// against the author's collections.
+pub(super) async fn remote_quote_policy(state: &AppState, account_id: i64, object: &Value) -> i32 {
+    let row = sqlx::query!(
+        "SELECT followers_url, following_url, uri FROM accounts WHERE id = $1",
+        account_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    match row {
+        Some(r) => crate::db::models::quote_policy::parse(
+            object,
+            &r.followers_url,
+            &r.following_url,
+            r.uri.as_deref().unwrap_or_default(),
+        ),
+        None => 0,
+    }
+}
+
 /// Returns true if a tag's `type` field equals `type_name`, handling both
 /// string (`"Mention"`) and array (`["Mention", "Link"]`) forms.
 pub(super) fn tag_type_is(tag: &Value, type_name: &str) -> bool {

@@ -188,8 +188,8 @@ async fn fetch_remote_status_depth(
         r#"INSERT INTO statuses
              (id, account_id, text, spoiler_text, visibility, sensitive,
               uri, url, in_reply_to_id, in_reply_to_account_id, reply,
-              language, local, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13, now())
+              language, local, created_at, updated_at, quote_approval_policy)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13, now(), $14)
            ON CONFLICT (uri) WHERE uri IS NOT NULL AND uri != '' DO NOTHING
            RETURNING id"#,
         status_id,
@@ -206,6 +206,7 @@ async fn fetch_remote_status_depth(
         in_reply_to_uri.is_some(),
         language,
         created_at,
+        super::remote_quote_policy(state, account_id, object).await,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -492,13 +493,27 @@ async fn resolve_or_fetch_remote_account_inner(
         return Ok(id);
     }
 
+    // `followers_url` and `following_url`, which a post's quote policy is read
+    // against.
+    let followers_url = actor
+        .get("followers")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let following_url = actor
+        .get("following")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     let new_id = crate::snowflake::next_id();
     let id = sqlx::query_scalar!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri,
               inbox_url, outbox_url, shared_inbox_url, public_key,
-              avatar_remote_url, header_remote_url, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now(), now())
+              avatar_remote_url, header_remote_url, followers_url, following_url,
+              created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now(), now())
            RETURNING id"#,
         new_id,
         username,
@@ -513,6 +528,8 @@ async fn resolve_or_fetch_remote_account_inner(
         public_key,
         avatar_remote_url,
         header_remote_url,
+        followers_url,
+        following_url,
     )
     .fetch_one(&state.db)
     .await?;

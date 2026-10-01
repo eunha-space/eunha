@@ -245,8 +245,8 @@ pub(super) async fn handle_create(
         r#"INSERT INTO statuses
              (id, account_id, text, spoiler_text, visibility, sensitive,
               uri, url, in_reply_to_id, in_reply_to_account_id, reply,
-              language, local, created_at, edited_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13,$14, now())
+              language, local, created_at, edited_at, updated_at, quote_approval_policy)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13,$14, now(), $15)
            ON CONFLICT (uri) WHERE uri IS NOT NULL AND uri != '' DO NOTHING
            RETURNING id"#,
         status_id,
@@ -266,6 +266,7 @@ pub(super) async fn handle_create(
         language,
         created_at,
         edited_at,
+        super::remote_quote_policy(state, account_id, object).await,
     )
     .fetch_optional(&state.db)
     .await?;

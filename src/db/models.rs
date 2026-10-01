@@ -481,39 +481,204 @@ pub mod quote_state {
     }
 }
 
-/// Integer encoding of statuses.quote_approval_policy (who may quote automatically).
+/// `statuses.quote_approval_policy`: Mastodon's `InteractionPolicy` bitmap,
+/// the automatic sub-policy in the high 16 bits and the manual one in the low
+/// 16, each a set of `POLICY_FLAGS`.
 pub mod quote_policy {
-    pub const PUBLIC: i32 = 0;
-    pub const FOLLOWERS: i32 = 1;
-    pub const NOBODY: i32 = 2;
-    /// Anyone may quote, but only with the author's manual approval.
-    pub const MANUAL: i32 = 3;
+    pub const UNSUPPORTED_POLICY: i32 = 1 << 0;
+    pub const PUBLIC: i32 = 1 << 1;
+    pub const FOLLOWERS: i32 = 1 << 2;
+    pub const FOLLOWING: i32 = 1 << 3;
+    pub const DISABLED: i32 = 1 << 4;
 
-    pub fn from_str(s: &str) -> i32 {
+    /// `POLICY_FLAGS`, in order.
+    const KEYS: &[(i32, &str)] = &[
+        (UNSUPPORTED_POLICY, "unsupported_policy"),
+        (PUBLIC, "public"),
+        (FOLLOWERS, "followers"),
+        (FOLLOWING, "following"),
+        (DISABLED, "disabled"),
+    ];
+
+    /// `Api::InteractionPoliciesConcern#quote_approval_policy`: the API's
+    /// `public`, `followers` and `nobody`, each an automatic policy.
+    pub fn from_api(s: &str) -> Option<i32> {
         match s {
-            "followers" => FOLLOWERS,
-            "nobody" => NOBODY,
-            "manual" => MANUAL,
-            _ => PUBLIC,
+            "public" => Some(PUBLIC << 16),
+            "followers" => Some(FOLLOWERS << 16),
+            "nobody" => Some(0),
+            _ => None,
         }
     }
 
-    /// Labels for the `quote_approval.automatic` API field (who may quote
-    /// without asking).
-    pub fn automatic_labels(v: i32) -> Vec<&'static str> {
-        match v {
-            FOLLOWERS => vec!["followers"],
-            NOBODY | MANUAL => vec![],
-            _ => vec!["public"],
+    pub fn automatic(bitmap: i32) -> i32 {
+        bitmap >> 16
+    }
+
+    pub fn manual(bitmap: i32) -> i32 {
+        bitmap & 0xFFFF
+    }
+
+    /// `SubPolicy#as_keys`.
+    pub fn as_keys(sub_policy: i32) -> Vec<&'static str> {
+        KEYS.iter()
+            .filter(|(flag, _)| sub_policy & flag != 0)
+            .map(|(_, key)| *key)
+            .collect()
+    }
+
+    /// `quote_policy_for_account`'s answer.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ForAccount {
+        Automatic,
+        Manual,
+        Unknown,
+        Denied,
+    }
+
+    impl ForAccount {
+        pub fn as_str(self) -> &'static str {
+            match self {
+                ForAccount::Automatic => "automatic",
+                ForAccount::Manual => "manual",
+                ForAccount::Unknown => "unknown",
+                ForAccount::Denied => "denied",
+            }
         }
     }
 
-    /// Labels for the `quote_approval.manual` API field (who may quote only
-    /// with the author's approval).
-    pub fn manual_labels(v: i32) -> Vec<&'static str> {
-        match v {
-            MANUAL => vec!["public"],
-            _ => vec![],
+    /// `Status#quote_policy_for_account`, given whether the other account
+    /// follows the author and the author follows it.
+    pub fn for_account(
+        bitmap: i32,
+        is_author: bool,
+        follows_author: bool,
+        followed_by_author: bool,
+    ) -> ForAccount {
+        if is_author {
+            return ForAccount::Automatic;
+        }
+        let allows = |sub: i32| {
+            sub & PUBLIC != 0
+                || (sub & FOLLOWERS != 0 && follows_author)
+                || (sub & FOLLOWING != 0 && followed_by_author)
+        };
+        let (auto, manual) = (automatic(bitmap), manual(bitmap));
+        if allows(auto) {
+            ForAccount::Automatic
+        } else if allows(manual) {
+            ForAccount::Manual
+        } else if (auto | manual) & UNSUPPORTED_POLICY != 0 {
+            ForAccount::Unknown
+        } else {
+            ForAccount::Denied
+        }
+    }
+
+    /// `ActivityPub::Parser::StatusParser#quote_policy`: a post's
+    /// `interactionPolicy.canQuote`, read against its author's collections.
+    pub fn parse(object: &serde_json::Value, followers: &str, following: &str, actor: &str) -> i32 {
+        let Some(policy) = object
+            .get("interactionPolicy")
+            .and_then(|p| p.get("canQuote"))
+            .filter(|p| p.is_object())
+        else {
+            return 0;
+        };
+        let sub = |value: Option<&serde_json::Value>| -> i32 {
+            let mut actors: Vec<String> = match value {
+                Some(serde_json::Value::String(s)) => vec![s.clone()],
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|v| match v {
+                        serde_json::Value::String(s) => Some(s.clone()),
+                        serde_json::Value::Object(o) => {
+                            o.get("id").and_then(|i| i.as_str()).map(str::to_owned)
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                _ => vec![],
+            };
+            actors.sort();
+            actors.dedup();
+            let mut take = |candidates: &[&str]| {
+                let before = actors.len();
+                actors.retain(|a| !candidates.contains(&a.as_str()) || a.is_empty());
+                actors.len() != before
+            };
+            let mut flags = 0;
+            if take(&[
+                "as:Public",
+                "Public",
+                "https://www.w3.org/ns/activitystreams#Public",
+            ]) {
+                flags |= PUBLIC;
+            }
+            if !followers.is_empty() && take(&[followers]) {
+                flags |= FOLLOWERS;
+            }
+            if !following.is_empty() && take(&[following]) {
+                flags |= FOLLOWING;
+            }
+            take(&[actor]);
+            if !actors.is_empty() {
+                flags |= UNSUPPORTED_POLICY;
+            }
+            flags
+        };
+        (sub(policy.get("automaticApproval")) << 16) | sub(policy.get("manualApproval"))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn parses_can_quote() {
+            let object = serde_json::json!({"interactionPolicy": {"canQuote": {
+                "automaticApproval": ["https://x.test/users/a/followers"],
+                "manualApproval": "https://www.w3.org/ns/activitystreams#Public",
+            }}});
+            assert_eq!(
+                parse(
+                    &object,
+                    "https://x.test/users/a/followers",
+                    "",
+                    "https://x.test/users/a"
+                ),
+                (FOLLOWERS << 16) | PUBLIC
+            );
+            let only_author = serde_json::json!({"interactionPolicy": {"canQuote": {
+                "automaticApproval": ["https://x.test/users/a"]}}});
+            assert_eq!(parse(&only_author, "", "", "https://x.test/users/a"), 0);
+        }
+
+        #[test]
+        fn api_values_are_automatic_policies() {
+            assert_eq!(from_api("public"), Some(131_072));
+            assert_eq!(from_api("followers"), Some(262_144));
+            assert_eq!(from_api("nobody"), Some(0));
+            assert_eq!(as_keys(automatic(131_072)), vec!["public"]);
+        }
+
+        #[test]
+        fn for_account_follows_the_sub_policies() {
+            let followers = FOLLOWERS << 16;
+            assert_eq!(
+                for_account(followers, false, true, false),
+                ForAccount::Automatic
+            );
+            assert_eq!(
+                for_account(followers, false, false, false),
+                ForAccount::Denied
+            );
+            assert_eq!(for_account(PUBLIC, false, false, false), ForAccount::Manual);
+            assert_eq!(
+                for_account(UNSUPPORTED_POLICY << 16, false, false, false),
+                ForAccount::Unknown
+            );
+            assert_eq!(for_account(0, true, false, false), ForAccount::Automatic);
         }
     }
 }

@@ -27,7 +27,7 @@ pub(super) async fn handle_quote_request(
 
     // The quoted status must be one of ours.
     let Some(status) = sqlx::query!(
-        r#"SELECT s.id, s.account_id, s.quote_approval_policy,
+        r#"SELECT s.id, s.account_id, s.quote_approval_policy, s.visibility, s.reblog_of_id,
                   a.username, a.id_scheme
            FROM statuses s JOIN accounts a ON a.id = s.account_id
            WHERE s.uri = $1 AND s.deleted_at IS NULL AND a.domain IS NULL"#,
@@ -77,9 +77,36 @@ pub(super) async fn handle_quote_request(
     // was resolved from rather than signing an empty address.
     let quoter_uri = quoter.uri.unwrap_or_else(|| actor_uri.to_string());
 
-    // quote_approval_policy 0 = public (auto-accept); anything else requires the
-    // owner's manual approval, which we do not auto-grant -> reject.
-    if status.quote_approval_policy != 0 {
+    // `StatusPolicy#quote?`: the quoter may see the post, neither blocks the
+    // other, and the post's policy does not deny it.
+    let relation = sqlx::query!(
+        r#"SELECT
+             EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "follows_author!",
+             EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS "followed_by_author!",
+             EXISTS (SELECT 1 FROM blocks
+                     WHERE (account_id = $1 AND target_account_id = $2)
+                        OR (account_id = $2 AND target_account_id = $1)) AS "blocked!""#,
+        quoter_id,
+        status.account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    use crate::db::models::{quote_policy, vis};
+    let visible = match status.visibility {
+        vis::PUBLIC | vis::UNLISTED => true,
+        vis::PRIVATE => relation.follows_author,
+        _ => false,
+    };
+    let allowed = visible
+        && status.reblog_of_id.is_none()
+        && !relation.blocked
+        && quote_policy::for_account(
+            status.quote_approval_policy,
+            quoter_id == status.account_id,
+            relation.follows_author,
+            relation.followed_by_author,
+        ) != quote_policy::ForAccount::Denied;
+    if !allowed {
         let reject_id = format!(
             "{actor_url}#rejects/quote_requests/{}",
             crate::snowflake::next_id()
