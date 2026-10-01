@@ -981,7 +981,12 @@ impl Tenants {
                 let _permit = match &tenant.in_flight {
                     Some(limit) => match limit.clone().try_acquire_owned() {
                         Ok(permit) => Some(permit),
-                        Err(_) => return busy(),
+                        Err(_) => {
+                            if let Some(state) = tenant.extensions.get::<AppState>() {
+                                crate::telemetry::capacity_rejection(&state.instance.domain);
+                            }
+                            return busy();
+                        }
                     },
                     None => None,
                 };

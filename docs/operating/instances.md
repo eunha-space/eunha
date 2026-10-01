@@ -127,3 +127,62 @@ the shared runtime's initial Host dispatch.
 domain = "garden.eunha.space"
 aliases = ["garden.eunha.site"]
 ~~~~
+
+
+Private Prometheus metrics
+--------------------------
+
+Metrics are disabled by default. Enable one additional listener per process:
+
+~~~~ sh
+# The public tenant listener and private telemetry listener are separate.
+eunha --tenants /srv/eunha/tenants \
+  --bind-address 127.0.0.1:61000 \
+  --metrics-bind-address 127.0.0.1:62000
+~~~~
+
+`--metrics-bind-address` accepts numeric loopback addresses only, including
+`[::1]:62000`. A non-loopback address or a port already in use fails startup.
+The listener serves only `GET /metrics`; it has no tenant dispatch, federation
+or public API routes. Scrape using a loopback URL and Host header; a non-local
+Host is rejected to protect against browser DNS rebinding. Do not forward the
+listener through a public reverse proxy or tunnel. Collect on the same machine,
+or use an SSH tunnel when collecting remotely.
+
+Each blue/green process needs its own scrape target. Eunha-space's runtime
+router enables the private listener on the slot's HTTP port plus 1,000:
+`127.0.0.1:61000` uses `127.0.0.1:62000`, and `127.0.0.1:61001` uses
+`127.0.0.1:62001`. Reserve those ports for metrics; an HTTP port above 64,535
+cannot use this mapping. Scrape the process directly, never the stable proxy,
+which alternates between processes during deployment.
+
+The initial metrics are:
+
+ -  `eunha_http_requests_total`, with configured canonical `tenant`, matched
+    `route`, bounded `method`, and `status_class` labels.
+ -  `eunha_http_response_duration_seconds`, a histogram of time until response
+    headers, including authentication. It does not measure body transmission
+    or the lifetime of a streaming connection.
+ -  `eunha_http_in_flight`, requests waiting for response headers per tenant.
+    Dropping or cancelling a request releases its count.
+ -  `eunha_http_aborted_requests_total`, requests dropped before a response.
+ -  `eunha_http_capacity_rejections_total`, requests shed at tenant admission.
+ -  `eunha_database_pool_connections` and
+    `eunha_database_pool_idle_connections`, open and idle application pool
+    connections per tenant. When a pooled database URL is configured, these
+    measure client connections to the pooler rather than PostgreSQL backends.
+ -  `eunha_serving_tenants`, the number of tenants currently running.
+
+An alias uses its configured canonical tenant label. Arbitrary Host headers,
+raw paths, query strings, credentials and account identifiers are never metric
+labels. Unknown routes use `unmatched` and non-standard HTTP methods use
+`OTHER`. Pool and in-flight gauges are refreshed every five seconds. Metric
+series idle for fifteen minutes expire, including those of removed tenants;
+a series emitted again starts a new counter. Process restarts also reset
+counters, so calculate rates with reset-aware Prometheus functions. Histogram
+maintenance runs every five seconds, even without a collector scraping.
+
+These metrics describe service work, not per-tenant CPU or memory. Those remain
+shared-process resources. Background-job and media-transfer instrumentation
+are not included yet. No Mastodon-compatible responses or database schemas
+are changed by enabling the listener.

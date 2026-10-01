@@ -31,6 +31,7 @@ pub mod snowflake;
 pub mod software_updates;
 pub mod state;
 pub mod streaming;
+pub mod telemetry;
 pub mod templates;
 pub mod tenants;
 pub mod trends;
@@ -64,6 +65,7 @@ pub fn build_app() -> Router {
         .merge(api::mastodon::streaming_router())
         .layer(axum_middleware::from_fn(middleware::log_failures))
         .layer(axum_middleware::from_fn(middleware::authenticate))
+        .layer(axum_middleware::from_fn(telemetry::observe))
         .layer(axum_middleware::from_fn(middleware::resolve_instance))
         .layer(axum_middleware::from_fn(remote_ip::deny_blocked))
         .layer(axum_middleware::from_fn(remote_ip::layer))

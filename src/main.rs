@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use eunha::{accounts, config, import, migrate, software_updates, tenants, version};
-use std::{path::PathBuf, sync::Arc};
+use eunha::{accounts, config, import, migrate, software_updates, telemetry, tenants, version};
+use std::{future::IntoFuture as _, path::PathBuf, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -18,6 +18,10 @@ struct Args {
     /// Intended for blue/green slots behind a stable local router.
     #[arg(long, value_name = "ADDRESS", global = true)]
     bind_address: Option<String>,
+
+    /// Optional loopback-only Prometheus listener, separate from tenant HTTP routing.
+    #[arg(long, value_name = "ADDRESS", global = true)]
+    metrics_bind_address: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -488,16 +492,22 @@ async fn main() -> anyhow::Result<()> {
     }
     // One check for the process, however many instances it serves.
     tenants::spawn(software_updates::run_for_process(tenants.clone()));
+    let metrics_server =
+        telemetry::start(args.metrics_bind_address.as_deref(), tenants.clone()).await?;
     let app = tenants.router();
 
     let listener = tokio::net::TcpListener::bind(&bind_address).await?;
     tracing::info!(tenants = serving, "listening on {bind_address}");
     // The peer address, for `remote_ip` to start from.
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .await?;
+    tokio::select! {
+        result = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).into_future() => { result?; }
+        result = async {
+            match metrics_server {
+                Some((listener, router)) => axum::serve(listener, router).await,
+                None => std::future::pending().await,
+            }
+        } => { result?; anyhow::bail!("private metrics listener stopped"); }
+    }
 
     Ok(())
 }

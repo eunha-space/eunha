@@ -8,6 +8,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    /// Requests awaiting response headers; sampled only by the private metrics listener.
+    pub metrics_in_flight: Arc<std::sync::atomic::AtomicU64>,
     pub redis: redis::aio::ConnectionManager,
     /// Non-evicting coordination state. This is the same manager as `redis`
     /// unless an operator configures a separate endpoint.
@@ -144,6 +146,7 @@ impl AppState {
         let instance = Arc::new(config.instance.clone());
         Ok(Self {
             db,
+            metrics_in_flight: Arc::default(),
             redis,
             redis_coordination,
             redis_keys,
