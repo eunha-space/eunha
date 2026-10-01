@@ -307,9 +307,6 @@ pub async fn search(
                WHERE s.deleted_at IS NULL
                  AND (s.visibility IN (0, 1) OR s.account_id = $4)
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                 AND (a.domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-                 ))
                  AND ($3::bigint IS NULL OR s.account_id = $3)
                  AND ($4::bigint IS NULL OR NOT EXISTS (
                      SELECT 1 FROM blocks b

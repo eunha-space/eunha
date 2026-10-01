@@ -101,11 +101,11 @@ pub async fn follow_account(
         return Err(AppError::Forbidden);
     }
     if let Some(ref dom) = target.domain {
-        // Instance-level domain block, or the requester's own account-level block.
+        // `@source_account.domain_blocking?(@target_account.domain)`. An
+        // instance block suspends the domain's accounts, and an unavailable
+        // account cannot be followed anyway.
         let domain_blocked = sqlx::query_scalar!(
-            r#"SELECT 1 FROM domain_blocks WHERE domain = $1
-               UNION ALL
-               SELECT 1 FROM account_domain_blocks WHERE account_id = $2 AND domain = $1
+            r#"SELECT 1 FROM account_domain_blocks WHERE account_id = $2 AND domain = $1
                LIMIT 1"#,
             dom,
             auth.account_id,

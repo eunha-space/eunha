@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ae.id, e.type AS kind, e.purged, e.target_name, ae.followers_count,\n                  ae.following_count, ae.created_at\n           FROM account_relationship_severance_events ae\n           JOIN relationship_severance_events e ON e.id = ae.relationship_severance_event_id\n           WHERE ae.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "purged",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "target_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "followers_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "following_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "74497ecbb9a7beab9aa0f66e777a606eb67c559a931bccfd712b8341b4c5fd6a"
+}

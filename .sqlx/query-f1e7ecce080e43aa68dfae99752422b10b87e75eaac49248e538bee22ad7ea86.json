@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM follows f USING accounts a\n           WHERE f.target_account_id = a.id AND f.account_id = $1 AND a.domain = $2\n           RETURNING f.id, f.uri, a.id AS target_id, a.uri AS target_uri, a.inbox_url, a.shared_inbox_url",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "target_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "inbox_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "shared_inbox_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f1e7ecce080e43aa68dfae99752422b10b87e75eaac49248e538bee22ad7ea86"
+}

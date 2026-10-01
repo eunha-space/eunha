@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT created_at FROM domain_blocks\n           WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)\n           ORDER BY char_length(domain) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "571534d87815affabcba94016e4785b473122717f12daef2627449db91666217"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.* FROM accounts a\n               WHERE a.discoverable = true\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND a.silenced_at IS NULL\n                 AND (NOT $1::bool OR a.domain IS NULL)\n                 AND (a.domain IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain\n                 ))\n               ORDER BY (\n                   SELECT MAX(s.created_at) FROM statuses s\n                   WHERE s.account_id = a.id AND s.deleted_at IS NULL\n               ) DESC NULLS LAST\n               LIMIT $2 OFFSET $3",
+  "query": "SELECT a.* FROM accounts a\n               WHERE a.discoverable = true\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND a.silenced_at IS NULL\n                 AND (NOT $1::bool OR a.domain IS NULL)\n               ORDER BY (\n                   SELECT MAX(s.created_at) FROM statuses s\n                   WHERE s.account_id = a.id AND s.deleted_at IS NULL\n               ) DESC NULLS LAST\n               LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -356,5 +356,5 @@
       true
     ]
   },
-  "hash": "23438cd4cfad14c70da843cf53acaaec8207b2a86724fc9480871e5d73fe9b0e"
+  "hash": "7d8dc1f6f1210dddaae0525d9678ce0431c4ed4eefdfacf68e840b4a992feefe"
 }

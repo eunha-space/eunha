@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain AS \"domain!\" FROM (\n             SELECT domain FROM accounts WHERE domain IS NOT NULL\n             UNION SELECT domain FROM domain_allows\n           ) known\n           WHERE domain NOT IN (SELECT domain FROM domain_blocks)\n           ORDER BY domain",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "eccbb964541c0cb9487b3744a28fe1d6f960e99dbd504ebc24321d1825a6c461"
+}

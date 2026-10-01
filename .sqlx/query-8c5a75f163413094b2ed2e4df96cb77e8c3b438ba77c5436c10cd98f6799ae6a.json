@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO domain_allows (domain, created_at, updated_at) VALUES ($1, now(), now())\n           ON CONFLICT (domain) DO UPDATE SET updated_at = now()\n           RETURNING id, domain, created_at",
+  "query": "SELECT id, domain, severity, reject_media, created_at FROM domain_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -15,20 +15,32 @@
       },
       {
         "ordinal": 2,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "reject_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Varchar"
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
+      true,
+      false,
       false
     ]
   },
-  "hash": "6cc0aa8669e0e503826fa60178b05d4161531572d4dfbf7dfce822a212f1c990"
+  "hash": "8c5a75f163413094b2ed2e4df96cb77e8c3b438ba77c5436c10cd98f6799ae6a"
 }

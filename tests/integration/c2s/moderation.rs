@@ -576,3 +576,240 @@ async fn test_remote_suspension_follows_the_actor() {
             .unwrap();
     assert!(!suspended);
 }
+
+async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
+    let id = eunha::snowflake::next_id();
+    let uri = format!("https://{domain}/users/{username}");
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, created_at, updated_at)
+           VALUES ($1, $2, $3, $2, 'bio', $4, $4, $4 || '/inbox', now(), now())"#,
+    )
+    .bind(id)
+    .bind(username)
+    .bind(domain)
+    .bind(&uri)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    id
+}
+
+/// A suspend domain block suspends and purges the accounts already known from
+/// the domain and its subdomains, records the follows it cut, and tells the
+/// local accounts that lost them; removing it lifts the suspension.
+#[tokio::test]
+async fn test_domain_block_suspends_existing_accounts() {
+    let ctx = TestContext::new("mod-dblock-suspend").await;
+    make_admin(&ctx).await;
+    let remote = seed_remote(&ctx, "zed", "evil.test").await;
+    let sub = seed_remote(&ctx, "yan", "a.evil.test").await;
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())",
+    )
+    .bind(id(&ctx.bob_id))
+    .bind(remote)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let block: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/domain_blocks",
+            Some(&ctx.alice_token),
+            &json!({"domain": "Evil.test", "severity": "suspend"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(block["domain"], "evil.test", "the domain is normalized");
+
+    for account in [remote, sub] {
+        let (suspended, note): (bool, String) =
+            sqlx::query_as("SELECT suspended_at IS NOT NULL, note FROM accounts WHERE id = $1")
+                .bind(account)
+                .fetch_one(&ctx.db)
+                .await
+                .unwrap();
+        assert!(suspended);
+        assert_eq!(note, "", "a suspended domain's accounts are purged");
+    }
+    let follows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM follows WHERE target_account_id = $1")
+            .bind(remote)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(follows, 0);
+
+    let notifications: Vec<Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let severed = notifications
+        .iter()
+        .find(|n| n["type"] == "severed_relationships")
+        .expect("bob should hear of the follow it lost");
+    assert_eq!(severed["event"]["type"], "domain_block");
+    assert_eq!(severed["event"]["target_name"], "evil.test");
+    assert_eq!(severed["event"]["following_count"], 1);
+
+    // A second block on the same domain is refused, naming the existing one.
+    let again = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/domain_blocks",
+            Some(&ctx.alice_token),
+            &json!({"domain": "evil.test", "severity": "silence"}),
+        )
+        .await;
+    assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Value = again.json().await.unwrap();
+    assert_eq!(body["existing_domain_block"]["id"], block["id"]);
+
+    let resp = ctx
+        .api
+        .delete(
+            &format!(
+                "/api/v1/admin/domain_blocks/{}",
+                block["id"].as_str().unwrap()
+            ),
+            &ctx.alice_token,
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(remote)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(!suspended, "unblocking lifts the suspension it made");
+
+    let logs: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM admin_action_logs WHERE target_type = 'DomainBlock' ORDER BY id",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(logs, vec!["create".to_string(), "destroy".to_string()]);
+}
+
+/// A silence block limits the domain's accounts, and changing it to noop lifts
+/// the limit it made.
+#[tokio::test]
+async fn test_domain_block_silence_and_retroactive_update() {
+    let ctx = TestContext::new("mod-dblock-silence").await;
+    make_admin(&ctx).await;
+    let remote = seed_remote(&ctx, "zed", "loud.test").await;
+    let block: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/domain_blocks",
+            Some(&ctx.alice_token),
+            &json!({"domain": "loud.test", "severity": "silence"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let silenced: bool =
+        sqlx::query_scalar("SELECT silenced_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(remote)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(silenced);
+
+    ctx.api
+        .patch_json(
+            &format!(
+                "/api/v1/admin/domain_blocks/{}",
+                block["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({"severity": "noop"}),
+        )
+        .await;
+    let silenced: bool =
+        sqlx::query_scalar("SELECT silenced_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(remote)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(!silenced);
+}
+
+/// `/api/v1/instance/domain_blocks` is off unless `show_domain_blocks` says
+/// otherwise, and lists only silence and suspend blocks.
+#[tokio::test]
+async fn test_instance_domain_blocks_follow_settings() {
+    let ctx = TestContext::new("mod-instance-dblocks").await;
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, public_comment, created_at, updated_at)
+         VALUES ('a.test', 1, 'spam', now(), now()), ('b.test', 2, 'fine', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let resp = ctx.api.get("/api/v1/instance/domain_blocks", None).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    sqlx::query(
+        "INSERT INTO settings (var, value, created_at, updated_at)
+         VALUES ('show_domain_blocks', '--- all' || chr(10), now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let blocks: Vec<Value> = ctx
+        .api
+        .get("/api/v1/instance/domain_blocks", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0]["domain"], "a.test");
+    assert_eq!(blocks[0]["severity"], "suspend");
+    assert!(
+        blocks[0]["comment"].is_null(),
+        "the rationale is off by default"
+    );
+}
+
+/// An account first seen from a silenced domain starts out limited.
+#[tokio::test]
+async fn test_new_account_from_blocked_domain_starts_limited() {
+    let ctx = TestContext::new("mod-dblock-new").await;
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at) VALUES ('quiet.test', 0, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let actor = json!({
+        "id": "https://quiet.test/users/newbie",
+        "type": "Person",
+        "preferredUsername": "newbie",
+        "inbox": "https://quiet.test/users/newbie/inbox",
+    });
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account_prefetched(
+        &ctx.state,
+        "https://quiet.test/users/newbie",
+        actor,
+    )
+    .await
+    .unwrap();
+    let silenced: bool =
+        sqlx::query_scalar("SELECT silenced_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(silenced);
+}

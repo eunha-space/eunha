@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO relationship_severance_events (type, target_name, purged, created_at, updated_at)\n           VALUES ($1, $2, false, now(), now()) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d9f2dd947ae06f7e8e7570e6e5825784987c4cb48669c09cc1eebb8601ac8cea"
+}

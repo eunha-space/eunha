@@ -78,9 +78,6 @@ pub async fn public_timeline(
                  AND (NOT $4::bool OR a.domain IS NOT NULL)
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.silenced_at IS NULL
-                 AND (a.domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-                 ))
                  AND ($6::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (
                      SELECT 1 FROM account_domain_blocks udb WHERE udb.account_id = $6 AND udb.domain = a.domain
                  ))
@@ -132,9 +129,6 @@ pub async fn public_timeline(
                  AND (NOT $5::bool OR a.domain IS NOT NULL)
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.silenced_at IS NULL
-                 AND (a.domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-                 ))
                  AND ($7::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (
                      SELECT 1 FROM account_domain_blocks udb WHERE udb.account_id = $7 AND udb.domain = a.domain
                  ))
@@ -256,9 +250,6 @@ async fn hydrate_home_statuses(
            WHERE s.id = ANY($2::bigint[])
            AND s.deleted_at IS NULL
            AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-           AND (a.domain IS NULL OR NOT EXISTS (
-               SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-           ))
            AND (NOT EXISTS (
                SELECT 1 FROM mutes m
                WHERE m.account_id = $1 AND m.target_account_id = s.account_id
@@ -382,9 +373,6 @@ async fn home_timeline_from_db(
                WHERE s.id IN (SELECT id FROM candidate_ids)
                AND s.deleted_at IS NULL
                AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-               AND (a.domain IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-               ))
                AND (NOT EXISTS (
                    SELECT 1 FROM mutes m
                    WHERE m.account_id = $1 AND m.target_account_id = s.account_id
@@ -516,9 +504,6 @@ async fn home_timeline_from_db(
                WHERE s.id IN (SELECT id FROM candidate_ids)
                AND s.deleted_at IS NULL
                AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-               AND (a.domain IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-               ))
                AND (NOT EXISTS (
                    SELECT 1 FROM mutes m
                    WHERE m.account_id = $1 AND m.target_account_id = s.account_id
@@ -1008,9 +993,6 @@ pub async fn tag_timeline(
                  AND s.deleted_at IS NULL
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.silenced_at IS NULL
-                 AND (a.domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-                 ))
                  AND (NOT $7::bool OR a.domain IS NULL)
                  AND (NOT $8::bool OR EXISTS (
                      SELECT 1 FROM media_attachments WHERE status_id = s.id

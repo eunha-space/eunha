@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, domain, created_at FROM domain_allows ORDER BY domain",
+  "query": "SELECT id, domain, created_at FROM domain_allows WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -28,5 +30,5 @@
       false
     ]
   },
-  "hash": "aaf63c9be18c47f8da843a05ab9c9eacf20c3b397bd2a65705ae23ffbc40209f"
+  "hash": "39c4fb00b02986faac52f207ea2f5b8fc564499c00e7aa2a11dff775d449cada"
 }

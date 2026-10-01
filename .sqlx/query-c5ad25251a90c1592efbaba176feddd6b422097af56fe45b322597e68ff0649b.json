@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, domain, created_at FROM domain_allows\n           WHERE ($1::bigint IS NULL OR id < $1)\n             AND ($2::bigint IS NULL OR id > $2)\n             AND ($3::bigint IS NULL OR id > $3)\n           ORDER BY CASE WHEN $3::bigint IS NULL THEN -id ELSE id END\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c5ad25251a90c1592efbaba176feddd6b422097af56fe45b322597e68ff0649b"
+}

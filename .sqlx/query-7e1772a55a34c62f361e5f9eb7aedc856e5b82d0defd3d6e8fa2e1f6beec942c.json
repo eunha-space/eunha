@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notification_permissions\n           WHERE account_id = $1 AND from_account_id IN (SELECT id FROM accounts WHERE domain = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e1772a55a34c62f361e5f9eb7aedc856e5b82d0defd3d6e8fa2e1f6beec942c"
+}

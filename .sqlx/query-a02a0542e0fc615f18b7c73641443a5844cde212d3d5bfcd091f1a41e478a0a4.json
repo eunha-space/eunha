@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks ORDER BY domain",
+  "query": "SELECT id, domain, severity, reject_media, reject_reports, private_comment,\n                  public_comment, obfuscate, created_at\n           FROM domain_blocks\n           WHERE ($1::bigint IS NULL OR id < $1)\n             AND ($2::bigint IS NULL OR id > $2)\n             AND ($3::bigint IS NULL OR id > $3)\n           ORDER BY CASE WHEN $3::bigint IS NULL THEN -id ELSE id END\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -15,54 +15,59 @@
       },
       {
         "ordinal": 2,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
         "name": "reject_media",
         "type_info": "Bool"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "reject_reports",
         "type_info": "Bool"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "private_comment",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "public_comment",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "obfuscate",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamp"
-      },
-      {
-        "ordinal": 8,
-        "name": "severity!",
-        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
     },
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       true,
       true,
       false,
-      false,
-      null
+      false
     ]
   },
-  "hash": "8f3dd32fad924fc148deb1fabc20259b4798be6e44cf01899418fda51d223e43"
+  "hash": "a02a0542e0fc615f18b7c73641443a5844cde212d3d5bfcd091f1a41e478a0a4"
 }

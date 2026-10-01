@@ -70,6 +70,44 @@ own. They are gone: Mastodon has no such routes, and clients use the action
 endpoint.
 
 
+Domain blocks
+-------------
+
+An admin domain block covers the domain and its subdomains. When it is
+created or changed, it applies to the accounts already known from them, as
+Mastodon's `BlockDomainService` does:
+
+ -  *silence* limits each account, as an account action would;
+ -  *suspend* suspends each account and purges its data. It records the
+    follows this cuts, and tells each local account that lost any with a
+    `severed_relationships` notification;
+ -  *noop* changes nothing about the accounts, but can still carry
+    `reject_media` and `reject_reports`.
+
+An account first seen from a blocked domain starts out limited or suspended.
+Changing a block's severity lifts what the old severity did, and removing the
+block lifts all of it. A suspend block also stops traffic both ways.
+`reject_media` forgets the domain's cached media and custom emoji, and
+`reject_reports` drops reports from the domain.
+
+Creating a block for a domain that already has one, or one that is weaker
+than a block on a parent domain, fails with a 422. The response carries the
+existing block.
+
+`/api/v1/instance/domain_blocks` follows the `show_domain_blocks` and
+`show_domain_blocks_rationale` site settings, which live in Mastodon's
+`settings` table. Both default to `disabled`, so the list is a 404 until an
+administrator sets them. Setting them to `users` shows the list to signed-in
+users, and `all` shows it to everyone. Eunha has no settings editor, so
+these are set in the database, for example
+`INSERT INTO settings (var, value, created_at, updated_at) VALUES ('show_domain_blocks', E'--- all\n', now(), now())`.
+
+Blocks created before this behaviour existed were never applied to accounts
+already known. Once their severity is right (see
+[migrations](./migrations#domain-blocks-written-before-migration-015)),
+saving each one again with a `PATCH` applies it.
+
+
 Reports
 -------
 

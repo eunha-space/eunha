@@ -1433,9 +1433,6 @@ pub async fn get_directory(
                  AND suspended_at IS NULL AND requested_deletion_at IS NULL
                  AND silenced_at IS NULL
                  AND (NOT $1::bool OR domain IS NULL)
-                 AND (domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = domain
-                 ))
                ORDER BY created_at DESC
                LIMIT $2 OFFSET $3"#,
             local_only,
@@ -1452,9 +1449,6 @@ pub async fn get_directory(
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.silenced_at IS NULL
                  AND (NOT $1::bool OR a.domain IS NULL)
-                 AND (a.domain IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain
-                 ))
                ORDER BY (
                    SELECT MAX(s.created_at) FROM statuses s
                    WHERE s.account_id = a.id AND s.deleted_at IS NULL

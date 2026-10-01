@@ -517,5 +517,11 @@ async fn resolve_or_fetch_remote_account_inner(
     .fetch_one(&state.db)
     .await?;
 
+    // `create_account`: a blocked domain's account starts out suspended or
+    // limited, from the time of the block.
+    crate::moderation::domain_block::apply_to_new_account(state, id, &domain)
+        .await
+        .map_err(AppError::Internal)?;
+
     Ok(id)
 }

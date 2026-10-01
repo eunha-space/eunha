@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT local_account_id FROM severed_relationships\n           WHERE relationship_severance_event_id = $1 ORDER BY local_account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0ac2ae43b3a4a1178213d359bce4247afc9b59e04624f4fd32ce93b59b2ac1ed"
+}

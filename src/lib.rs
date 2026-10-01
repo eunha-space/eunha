@@ -24,6 +24,7 @@ pub mod push;
 pub mod rails_encryption;
 pub mod redis_keys;
 pub mod schema_check;
+pub mod settings;
 pub mod snowflake;
 pub mod software_updates;
 pub mod state;

@@ -78,39 +78,7 @@ pub async fn block_domain(
     .execute(&state.db)
     .await?;
 
-    // Remove follows to and from accounts on the blocked domain
-    let removed = sqlx::query!(
-        r#"DELETE FROM follows
-           WHERE (account_id = $1 AND target_account_id IN (
-               SELECT id FROM accounts WHERE domain = $2
-           ))
-           OR (target_account_id = $1 AND account_id IN (
-               SELECT id FROM accounts WHERE domain = $2
-           ))
-           RETURNING account_id, target_account_id"#,
-        auth.account_id,
-        domain,
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    for row in &removed {
-        let _ =
-            crate::counters::on_follow_removed(&state.db, row.account_id, row.target_account_id)
-                .await;
-    }
-
-    // Drop pending follow requests in either direction with that domain
-    // (Mastodon reject_pending_follow_requests!).
-    let _ = sqlx::query!(
-        r#"DELETE FROM follow_requests
-           WHERE (account_id = $1 AND target_account_id IN (SELECT id FROM accounts WHERE domain = $2))
-              OR (target_account_id = $1 AND account_id IN (SELECT id FROM accounts WHERE domain = $2))"#,
-        auth.account_id, domain,
-    )
-    .execute(&state.db)
-    .await;
+    after_block_domain(&state, auth.account_id, &domain).await?;
 
     // Clear the blocker's notifications originating from that domain
     // (Mastodon clear_notifications!).
@@ -154,6 +122,144 @@ pub async fn block_domain(
     }
 
     Ok(Json(serde_json::json!({})))
+}
+
+/// `AfterBlockDomainFromAccountService`'s follow work: the blocker's follows
+/// of the domain are undone, its followers there and their pending requests
+/// rejected, each told so, and the severed follows recorded and notified.
+async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> AppResult<()> {
+    use crate::federation::{activity, delivery, tag};
+
+    let me = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        account_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let my_url = tag::account_uri_of(&state.instance.domain, &me);
+    let key_id = tag::key_id_of(&state.instance.domain, &me);
+
+    let severs = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM follows f JOIN accounts a ON a.id = f.target_account_id
+             WHERE f.account_id = $1 AND a.domain = $2
+             UNION ALL
+             SELECT 1 FROM follows f JOIN accounts a ON a.id = f.account_id
+             WHERE f.target_account_id = $1 AND a.domain = $2
+           ) AS "e!""#,
+        account_id,
+        domain,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let event = if severs {
+        let event = crate::moderation::severance::create(
+            &state.db,
+            crate::moderation::severance::kind::USER_DOMAIN_BLOCK,
+            domain,
+        )
+        .await?;
+        crate::moderation::severance::record_follows_with_domain(
+            &state.db, event, account_id, domain,
+        )
+        .await?;
+        Some(event)
+    } else {
+        None
+    };
+
+    // `remove_follows!`: `UnfollowService` for each.
+    let following = sqlx::query!(
+        r#"DELETE FROM follows f USING accounts a
+           WHERE f.target_account_id = a.id AND f.account_id = $1 AND a.domain = $2
+           RETURNING f.id, f.uri, a.id AS target_id, a.uri AS target_uri, a.inbox_url, a.shared_inbox_url"#,
+        account_id,
+        domain,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for follow in following {
+        crate::counters::on_follow_removed(&state.db, account_id, follow.target_id).await?;
+        let follow_uri = follow
+            .uri
+            .unwrap_or_else(|| format!("{my_url}#follows/{}", follow.id));
+        let inbox = if follow.shared_inbox_url.is_empty() {
+            follow.inbox_url
+        } else {
+            follow.shared_inbox_url
+        };
+        if let (Some(target_uri), false) = (follow.target_uri, inbox.is_empty()) {
+            let undo = activity::undo_follow(
+                &format!("{my_url}#follows/{}/undo", follow.id),
+                &my_url,
+                &follow_uri,
+                &my_url,
+                &target_uri,
+            )?;
+            delivery::deliver_to_inboxes(state, undo, vec![inbox], key_id.clone()).await?;
+        }
+    }
+
+    // `reject_existing_followers!` and `reject_pending_follow_requests!`.
+    let followers = sqlx::query!(
+        r#"DELETE FROM follows f USING accounts a
+           WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2
+           RETURNING f.id, f.uri, a.id AS follower_id, a.uri AS follower_uri, a.inbox_url"#,
+        account_id,
+        domain,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let requests = sqlx::query!(
+        r#"DELETE FROM follow_requests f USING accounts a
+           WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2
+           RETURNING f.id, f.uri, a.uri AS follower_uri, a.inbox_url"#,
+        account_id,
+        domain,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut rejects = vec![];
+    for f in followers {
+        crate::counters::on_follow_removed(&state.db, f.follower_id, account_id).await?;
+        rejects.push((f.id, f.uri, f.follower_uri, f.inbox_url));
+    }
+    for r in requests {
+        rejects.push((r.id, r.uri, r.follower_uri, r.inbox_url));
+    }
+    for (id, uri, follower_uri, inbox) in rejects {
+        let (Some(follower_uri), false) = (follower_uri, inbox.is_empty()) else {
+            continue;
+        };
+        let follow_uri = uri.unwrap_or_else(|| format!("{follower_uri}#follows/{id}"));
+        let reject = activity::reject_follow(
+            &format!("{my_url}#rejects/follows/{id}"),
+            &my_url,
+            &follow_uri,
+            &follower_uri,
+            &my_url,
+        )?;
+        delivery::deliver_to_inboxes(state, reject, vec![inbox], key_id.clone()).await?;
+    }
+
+    // `clear_notification_permissions!`
+    sqlx::query!(
+        r#"DELETE FROM notification_permissions
+           WHERE account_id = $1 AND from_account_id IN (SELECT id FROM accounts WHERE domain = $2)"#,
+        account_id,
+        domain,
+    )
+    .execute(&state.db)
+    .await?;
+
+    // `notify_of_severed_relationships!`
+    if let Some(event) = event {
+        crate::moderation::severance::notify_affected(state, event)
+            .await
+            .map_err(crate::error::AppError::Internal)?;
+    }
+    Ok(())
 }
 
 // ── GET /api/v1/domain_blocks/preview ────────────────────────────────────

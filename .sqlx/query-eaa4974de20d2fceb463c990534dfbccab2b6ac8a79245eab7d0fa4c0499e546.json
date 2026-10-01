@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET\n             silenced_at = NULL,\n             suspended_at = COALESCE($2, suspended_at),\n             suspension_origin = CASE WHEN $2::timestamp IS NULL THEN suspension_origin ELSE 0 END,\n             requested_deletion_at = CASE WHEN $2::timestamp IS NULL\n                                          THEN COALESCE(requested_deletion_at, now())\n                                          ELSE requested_deletion_at END,\n             locked = false,\n             memorial = false,\n             discoverable = false,\n             trendable = false,\n             display_name = '',\n             note = '',\n             fields = '[]'::jsonb,\n             moved_to_account_id = NULL,\n             reviewed_at = NULL,\n             requested_review_at = NULL,\n             also_known_as = '{}',\n             avatar_file_name = NULL,\n             avatar_content_type = NULL,\n             avatar_file_size = NULL,\n             avatar_updated_at = NULL,\n             avatar_remote_url = NULL,\n             avatar_description = '',\n             header_file_name = NULL,\n             header_content_type = NULL,\n             header_file_size = NULL,\n             header_updated_at = NULL,\n             header_remote_url = '',\n             header_description = '',\n             updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eaa4974de20d2fceb463c990534dfbccab2b6ac8a79245eab7d0fa4c0499e546"
+}

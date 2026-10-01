@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT domain, severity, public_comment, obfuscate FROM domain_blocks ORDER BY id",
+  "query": "SELECT domain, severity, public_comment, obfuscate FROM domain_blocks\n           WHERE COALESCE(severity, 0) IN (0, 1)\n           ORDER BY COALESCE(severity, 0), domain",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "a794b79506787889fdf5b88b38a27684e451ebc81cc6f722aed407251d636452"
+  "hash": "dc909d39f731a6c557d450e210ef6d92c2312c38ac6832f6ecf89feb698fb640"
 }

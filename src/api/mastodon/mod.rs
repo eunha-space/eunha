@@ -533,7 +533,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/admin/domain_allows/{id}",
-            delete(admin::delete_domain_allow),
+            get(admin::get_domain_allow).delete(admin::delete_domain_allow),
         )
         .route(
             "/api/v1/admin/ip_blocks",

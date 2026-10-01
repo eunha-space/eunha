@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO severed_relationships\n             (relationship_severance_event_id, local_account_id, remote_account_id, direction,\n              show_reblogs, notify, languages, created_at, updated_at)\n           SELECT $1::bigint, f.account_id, f.target_account_id, $4::int, f.show_reblogs, f.notify, f.languages, now(), now()\n           FROM follows f JOIN accounts a ON a.id = f.target_account_id\n           WHERE f.account_id = $2 AND a.domain = $3\n           UNION ALL\n           SELECT $1::bigint, f.target_account_id, f.account_id, $5::int, f.show_reblogs, f.notify, f.languages, now(), now()\n           FROM follows f JOIN accounts a ON a.id = f.account_id\n           WHERE f.target_account_id = $2 AND a.domain = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "701b088924c9de2b092c1c74b894cdcb222abac7de4bfabfaee3d638c962c7f2"
+}

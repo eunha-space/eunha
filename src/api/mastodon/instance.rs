@@ -1,5 +1,9 @@
 use super::types::*;
-use crate::{error::AppResult, middleware::ResolvedInstance, state::AppState};
+use crate::{
+    error::{AppError, AppResult},
+    middleware::{AuthenticatedUser, ResolvedInstance},
+    state::AppState,
+};
 use axum::{
     extract::{Extension, Path, Query},
     Json,
@@ -24,34 +28,74 @@ pub async fn get_instance_languages() -> Json<Vec<serde_json::Value>> {
 
 // ── GET /api/v1/instance/domain_blocks ───────────────────────────────────
 
+/// `User#functional_or_moved?`: confirmed, approved, not disabled, and its
+/// account neither unavailable nor a memorial.
+async fn functional_or_moved(state: &AppState, auth: Option<&AuthenticatedUser>) -> bool {
+    let Some(auth) = auth else {
+        return false;
+    };
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM users u JOIN accounts a ON a.id = u.account_id
+             WHERE u.account_id = $1 AND u.confirmed_at IS NOT NULL AND u.approved
+               AND NOT u.disabled AND a.suspended_at IS NULL
+               AND a.requested_deletion_at IS NULL AND NOT a.memorial
+           ) AS "e!""#,
+        auth.account_id,
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false)
+}
+
+/// `Api::V1::Instances::DomainBlocksController`: the domains limited or
+/// suspended here, to everyone or to signed-in users as the
+/// `show_domain_blocks` setting says (a 404 when it is `disabled`), with their
+/// public comment as `show_domain_blocks_rationale` says.
 pub async fn get_instance_domain_blocks(
     state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<Vec<serde_json::Value>>> {
+    let auth = auth.map(|Extension(a)| a);
+    let visible_to = |setting: String, functional: bool| match setting.as_str() {
+        "all" => true,
+        "users" => functional,
+        _ => false,
+    };
+    let functional = functional_or_moved(&state, auth.as_ref()).await;
+    if !visible_to(
+        crate::settings::string(&state, "show_domain_blocks").await,
+        functional,
+    ) {
+        return Err(AppError::NotFound);
+    }
+    let with_comment = visible_to(
+        crate::settings::string(&state, "show_domain_blocks_rationale").await,
+        functional,
+    );
+
+    // `with_user_facing_limitations.by_severity`: silence and suspend, in that
+    // order, then by domain.
     let rows = sqlx::query!(
-        "SELECT domain, severity, public_comment, obfuscate FROM domain_blocks ORDER BY id"
+        r#"SELECT domain, severity, public_comment, obfuscate FROM domain_blocks
+           WHERE COALESCE(severity, 0) IN (0, 1)
+           ORDER BY COALESCE(severity, 0), domain"#
     )
     .fetch_all(&state.db)
     .await?;
 
-    let blocks: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|r| {
-            let digest = domain_digest(&r.domain);
-            let domain = if r.obfuscate {
-                obfuscate_domain(&r.domain)
-            } else {
-                r.domain
-            };
-            serde_json::json!({
-                "domain": domain,
-                "digest": digest,
-                "severity": r.severity,
-                "comment": r.public_comment.unwrap_or_default(),
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "domain": if r.obfuscate { public_domain(&r.domain) } else { r.domain.clone() },
+                    "digest": domain_digest(&r.domain),
+                    "severity": crate::db::models::domain_severity::to_str(r.severity),
+                    "comment": if with_comment { r.public_comment } else { None },
+                })
             })
-        })
-        .collect();
-
-    Ok(Json(blocks))
+            .collect(),
+    ))
 }
 
 fn domain_digest(domain: &str) -> String {
@@ -61,20 +105,31 @@ fn domain_digest(domain: &str) -> String {
     hex::encode(h.finalize())
 }
 
-fn obfuscate_domain(domain: &str) -> String {
-    let parts: Vec<&str> = domain.splitn(2, '.').collect();
-    if parts.len() == 2 {
-        let label = parts[0];
-        let rest = parts[1];
-        if label.len() <= 2 {
-            format!("*.{rest}")
-        } else {
-            let keep = label.len() / 3;
-            let stars = "*".repeat(label.len() - keep);
-            format!("{}{stars}.{rest}", &label[..keep])
-        }
-    } else {
-        domain.to_string()
+/// `DomainBlock#public_domain`: the middle of an obfuscated domain starred
+/// out, its dots kept.
+fn public_domain(domain: &str) -> String {
+    let chars: Vec<char> = domain.chars().collect();
+    let length = chars.len();
+    let visible_ratio = length / 4;
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            if i > visible_ratio && i < length - visible_ratio && c != '.' {
+                '*'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod public_domain_tests {
+    #[test]
+    fn stars_the_middle_like_mastodon() {
+        // `'example.com'`: length 11, visible ratio 2.
+        assert_eq!(super::public_domain("example.com"), "exa****.*om");
     }
 }
 
@@ -179,13 +234,25 @@ pub async fn get_instance_v1(
 
 // ── GET /api/v1/instance/peers ────────────────────────────────────────────
 
+/// `Api::V1::Instances::PeersController`: `Instance.searchable`, the known
+/// domains (the `instances` view, computed here rather than read from the
+/// materialized copy) less the blocked ones; a 404 when `peers_api_enabled`
+/// is off.
 pub async fn get_peers(state: AppState) -> AppResult<Json<Vec<String>>> {
+    if !crate::settings::boolean(&state, "peers_api_enabled").await {
+        return Err(AppError::NotFound);
+    }
     let rows = sqlx::query_scalar!(
-        "SELECT DISTINCT domain FROM accounts WHERE domain IS NOT NULL ORDER BY domain",
+        r#"SELECT domain AS "domain!" FROM (
+             SELECT domain FROM accounts WHERE domain IS NOT NULL
+             UNION SELECT domain FROM domain_allows
+           ) known
+           WHERE domain NOT IN (SELECT domain FROM domain_blocks)
+           ORDER BY domain"#,
     )
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().flatten().collect()))
+    Ok(Json(rows))
 }
 
 // ── GET /api/v1/peers/search ──────────────────────────────────────────────

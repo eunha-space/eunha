@@ -52,6 +52,12 @@ pub struct Options {
     pub skip_side_effects: bool,
     /// Skip sending ActivityPub payloads. Implied by `skip_side_effects`.
     pub skip_activitypub: bool,
+    /// `:suspended_at`: keep the account record suspended from this time,
+    /// rather than marking it deleted. Only with `reserve_username`.
+    pub suspended_at: Option<chrono::NaiveDateTime>,
+    /// `:relationship_severance_event`: record the follows the deletion
+    /// severs under this `relationship_severance_events` row.
+    pub relationship_severance_event: Option<i64>,
 }
 
 impl Default for Options {
@@ -61,6 +67,8 @@ impl Default for Options {
             reserve_email: true,
             skip_side_effects: false,
             skip_activitypub: false,
+            suspended_at: None,
+            relationship_severance_event: None,
         }
     }
 }
@@ -289,6 +297,9 @@ pub async fn call(state: &AppState, account_id: i64, options: Options) -> Result
         "deleting account",
     );
 
+    if let Some(event_id) = options.relationship_severance_event {
+        crate::moderation::severance::record_follows_of(&state.db, event_id, account.id).await?;
+    }
     distribute_activities(state, &account, &options).await;
     purge_content(state, &account, &options).await?;
     fulfill_deletion_request(state, account_id).await?;
@@ -609,7 +620,11 @@ async fn purge_profile(state: &AppState, account: &Account, options: &Options) -
     sqlx::query!(
         r#"UPDATE accounts SET
              silenced_at = NULL,
-             requested_deletion_at = COALESCE(requested_deletion_at, now()),
+             suspended_at = COALESCE($2, suspended_at),
+             suspension_origin = CASE WHEN $2::timestamp IS NULL THEN suspension_origin ELSE 0 END,
+             requested_deletion_at = CASE WHEN $2::timestamp IS NULL
+                                          THEN COALESCE(requested_deletion_at, now())
+                                          ELSE requested_deletion_at END,
              locked = false,
              memorial = false,
              discoverable = false,
@@ -636,6 +651,7 @@ async fn purge_profile(state: &AppState, account: &Account, options: &Options) -
              updated_at = now()
            WHERE id = $1"#,
         account.id,
+        options.suspended_at,
     )
     .execute(&state.db)
     .await?;

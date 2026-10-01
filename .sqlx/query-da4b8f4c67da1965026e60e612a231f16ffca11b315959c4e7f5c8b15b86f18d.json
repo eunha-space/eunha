@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.* FROM statuses s\n               JOIN accounts a ON a.id = s.account_id\n               WHERE s.deleted_at IS NULL\n                 AND (s.visibility IN (0, 1) OR s.account_id = $4)\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND (a.domain IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM domain_blocks db WHERE db.domain = a.domain\n                 ))\n                 AND ($3::bigint IS NULL OR s.account_id = $3)\n                 AND ($4::bigint IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM blocks b\n                     WHERE (b.account_id = $4 AND b.target_account_id = s.account_id)\n                        OR (b.account_id = s.account_id AND b.target_account_id = $4)\n                 ))\n                 AND ($4::bigint IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM mutes mu\n                     WHERE mu.account_id = $4 AND mu.target_account_id = s.account_id\n                       AND (mu.expires_at IS NULL OR mu.expires_at > now())\n                 ) OR EXISTS (\n                     -- Mute exemption: a post that mentions me.\n                     SELECT 1 FROM mentions mn\n                     WHERE mn.status_id = s.id AND mn.account_id = $4 AND NOT mn.silent\n                 ) OR EXISTS (\n                     -- Mute exemption: a quote of a post of mine.\n                     SELECT 1 FROM quotes q\n                     WHERE q.status_id = s.id AND q.quoted_account_id = $4\n                 ))\n                 AND to_tsvector('simple', coalesce(s.text, ''))\n                     @@ websearch_to_tsquery('simple', $1)\n               ORDER BY s.id DESC LIMIT $2 OFFSET $5",
+  "query": "SELECT s.*\n               FROM statuses s\n               JOIN accounts a ON a.id = s.account_id\n               WHERE s.visibility = 0\n                 AND s.deleted_at IS NULL\n                 AND s.reblog_of_id IS NULL\n                 AND (NOT s.reply OR s.in_reply_to_account_id = s.account_id)\n                 AND (NOT $1::bool OR a.domain IS NULL)\n                 AND (NOT $5::bool OR a.domain IS NOT NULL)\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND a.silenced_at IS NULL\n                 AND ($7::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM account_domain_blocks udb WHERE udb.account_id = $7 AND udb.domain = a.domain\n                 ))\n                 AND ($2::bigint IS NULL OR s.id < $2)\n                 AND ($4::bigint IS NULL OR s.id > $4)\n                 AND (NOT $6::bool OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))\n                 AND (s.text != ''\n                      OR s.poll_id IS NOT NULL\n                      OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))\n                 AND ($7::bigint IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM blocks b\n                     WHERE (b.account_id = $7 AND b.target_account_id = s.account_id)\n                        OR (b.account_id = s.account_id AND b.target_account_id = $7)\n                 ))\n                 AND ($7::bigint IS NULL OR NOT EXISTS (\n                     SELECT 1 FROM mutes mu\n                     WHERE mu.account_id = $7 AND mu.target_account_id = s.account_id\n                       AND (mu.expires_at IS NULL OR mu.expires_at > now())\n                 ) OR EXISTS (\n                     -- Mute exemption: a post that mentions me.\n                     SELECT 1 FROM mentions mn\n                     WHERE mn.status_id = s.id AND mn.account_id = $7 AND NOT mn.silent\n                 ) OR EXISTS (\n                     -- Mute exemption: a quote of a post of mine.\n                     SELECT 1 FROM quotes q\n                     WHERE q.status_id = s.id AND q.quoted_account_id = $7\n                 ))\n               ORDER BY s.id DESC\n               LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -131,10 +131,12 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
+        "Bool",
         "Int8",
         "Int8",
         "Int8",
+        "Bool",
+        "Bool",
         "Int8"
       ]
     },
@@ -166,5 +168,5 @@
       false
     ]
   },
-  "hash": "c0cdd9e375dac4d6129359949aa08927327d11cb00b11dde02badf3615e09b00"
+  "hash": "da4b8f4c67da1965026e60e612a231f16ffca11b315959c4e7f5c8b15b86f18d"
 }

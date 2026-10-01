@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, domain, severity, reject_media, reject_reports, private_comment,\n                      public_comment, obfuscate, created_at\n               FROM domain_blocks\n               WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)\n               ORDER BY char_length(domain) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "reject_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "reject_reports",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "private_comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "public_comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "obfuscate",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "10dec34c54ada4d6f16c546d9b9ffd510bfe1ee65a4dbb32f921ebb4b073d040"
+}

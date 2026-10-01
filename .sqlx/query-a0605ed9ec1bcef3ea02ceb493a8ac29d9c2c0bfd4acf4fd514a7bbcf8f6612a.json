@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_relationship_severance_events\n                 (account_id, relationship_severance_event_id, followers_count, following_count,\n                  created_at, updated_at)\n               SELECT $1, $2,\n                      count(*) FILTER (WHERE direction = $3),\n                      count(*) FILTER (WHERE direction = $4),\n                      now(), now()\n               FROM severed_relationships\n               WHERE relationship_severance_event_id = $2 AND local_account_id = $1\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0605ed9ec1bcef3ea02ceb493a8ac29d9c2c0bfd4acf4fd514a7bbcf8f6612a"
+}

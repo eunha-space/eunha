@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM follows f JOIN accounts a ON a.id = f.target_account_id\n             WHERE f.account_id = $1 AND a.domain = $2\n             UNION ALL\n             SELECT 1 FROM follows f JOIN accounts a ON a.id = f.account_id\n             WHERE f.target_account_id = $1 AND a.domain = $2\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "30022facbc1adbbe5e318ee435665475298ab46e1f14b33c2cef790d0ba69bf2"
+}

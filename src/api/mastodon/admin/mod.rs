@@ -12,9 +12,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 mod accounts;
+mod federation;
 mod reports;
 
 pub use accounts::*;
+pub use federation::*;
 pub use reports::*;
 
 // ── Admin auth guard ──────────────────────────────────────────────────────
@@ -910,70 +912,6 @@ pub async fn update_admin_custom_emoji(
     }))
 }
 
-// ── Admin DomainBlock / DomainAllow types ─────────────────────────────────
-
-#[derive(Debug, Serialize)]
-pub struct AdminDomainBlock {
-    pub id: String,
-    pub domain: String,
-    pub digest: String,
-    pub created_at: String,
-    pub severity: String,
-    pub reject_media: bool,
-    pub reject_reports: bool,
-    pub private_comment: Option<String>,
-    pub public_comment: Option<String>,
-    pub obfuscate: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminDomainAllow {
-    pub id: String,
-    pub domain: String,
-    pub created_at: String,
-}
-
-// ── GET /api/v1/admin/domain_blocks ──────────────────────────────────────
-
-pub async fn list_domain_blocks(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AdminDomainBlock>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let rows = sqlx::query!(
-        r#"SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!"
-           FROM domain_blocks ORDER BY domain"#,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| AdminDomainBlock {
-                id: r.id.to_string(),
-                digest: sha256_hex(&r.domain),
-                domain: r.domain,
-                created_at: super::convert::mastodon_date(r.created_at),
-                severity: r.severity,
-                reject_media: r.reject_media,
-                reject_reports: r.reject_reports,
-                private_comment: r.private_comment,
-                public_comment: r.public_comment,
-                obfuscate: r.obfuscate,
-            })
-            .collect(),
-    ))
-}
-
-// ── POST /api/v1/admin/domain_blocks ─────────────────────────────────────
-
-/// `enum :severity, ..., validate: true`: an unknown value fails validation.
-fn parse_domain_severity(s: &str) -> AppResult<i32> {
-    crate::db::models::domain_severity::parse(s).ok_or_else(|| {
-        AppError::Unprocessable("Validation failed: Severity is not included in the list".into())
-    })
-}
-
 /// `validates :severity, presence: true` plus the validated enum.
 fn parse_ip_severity(s: Option<&str>) -> AppResult<i32> {
     match s.filter(|s| !s.is_empty()) {
@@ -986,213 +924,6 @@ fn parse_ip_severity(s: Option<&str>) -> AppResult<i32> {
             )
         }),
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateDomainBlockForm {
-    pub domain: String,
-    pub severity: Option<String>,
-    pub reject_media: Option<bool>,
-    pub reject_reports: Option<bool>,
-    pub private_comment: Option<String>,
-    pub public_comment: Option<String>,
-    pub obfuscate: Option<bool>,
-}
-
-pub async fn create_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateDomainBlockForm>,
-) -> AppResult<Json<AdminDomainBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let severity = parse_domain_severity(form.severity.as_deref().unwrap_or("silence"))?;
-    let row = sqlx::query!(
-        r#"INSERT INTO domain_blocks (domain, severity, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
-           ON CONFLICT (domain) DO UPDATE SET severity = $2, reject_media = $3, reject_reports = $4,
-             private_comment = $5, public_comment = $6, obfuscate = $7, updated_at = now()
-           RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                     CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!""#,
-        form.domain, severity,
-        form.reject_media.unwrap_or(false),
-        form.reject_reports.unwrap_or(false),
-        form.private_comment,
-        form.public_comment,
-        form.obfuscate.unwrap_or(false),
-    )
-    .fetch_one(&state.db)
-    .await?;
-    Ok(Json(AdminDomainBlock {
-        id: row.id.to_string(),
-        digest: sha256_hex(&row.domain),
-        domain: row.domain,
-        created_at: super::convert::mastodon_date(row.created_at),
-        severity: row.severity,
-        reject_media: row.reject_media,
-        reject_reports: row.reject_reports,
-        private_comment: row.private_comment,
-        public_comment: row.public_comment,
-        obfuscate: row.obfuscate,
-    }))
-}
-
-// ── GET /api/v1/admin/domain_blocks/:id ──────────────────────────────────
-
-pub async fn get_admin_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<Json<AdminDomainBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let r = sqlx::query!(
-        r#"SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!"
-           FROM domain_blocks WHERE id = $1"#,
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(AdminDomainBlock {
-        id: r.id.to_string(),
-        digest: sha256_hex(&r.domain),
-        domain: r.domain,
-        created_at: super::convert::mastodon_date(r.created_at),
-        severity: r.severity,
-        reject_media: r.reject_media,
-        reject_reports: r.reject_reports,
-        private_comment: r.private_comment,
-        public_comment: r.public_comment,
-        obfuscate: r.obfuscate,
-    }))
-}
-
-// ── PATCH /api/v1/admin/domain_blocks/:id ────────────────────────────────
-
-pub async fn update_admin_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-    Json(form): Json<CreateDomainBlockForm>,
-) -> AppResult<Json<AdminDomainBlock>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let severity_int: Option<i32> = form
-        .severity
-        .as_deref()
-        .map(parse_domain_severity)
-        .transpose()?;
-    let r = sqlx::query!(
-        r#"UPDATE domain_blocks SET
-               severity       = COALESCE($2, severity),
-               reject_media   = COALESCE($3, reject_media),
-               reject_reports = COALESCE($4, reject_reports),
-               private_comment = $5,
-               public_comment  = $6,
-               obfuscate      = COALESCE($7, obfuscate),
-               updated_at     = now()
-           WHERE id = $1
-           RETURNING id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,
-                     CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS "severity!""#,
-        id,
-        severity_int,
-        form.reject_media,
-        form.reject_reports,
-        form.private_comment,
-        form.public_comment,
-        form.obfuscate,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(AdminDomainBlock {
-        id: r.id.to_string(),
-        digest: sha256_hex(&r.domain),
-        domain: r.domain,
-        created_at: super::convert::mastodon_date(r.created_at),
-        severity: r.severity,
-        reject_media: r.reject_media,
-        reject_reports: r.reject_reports,
-        private_comment: r.private_comment,
-        public_comment: r.public_comment,
-        obfuscate: r.obfuscate,
-    }))
-}
-
-// ── DELETE /api/v1/admin/domain_blocks/:id ───────────────────────────────
-
-pub async fn delete_domain_block(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    sqlx::query!("DELETE FROM domain_blocks WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    Ok(StatusCode::OK)
-}
-
-// ── GET /api/v1/admin/domain_allows ──────────────────────────────────────
-
-pub async fn list_domain_allows(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AdminDomainAllow>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let rows = sqlx::query!("SELECT id, domain, created_at FROM domain_allows ORDER BY domain",)
-        .fetch_all(&state.db)
-        .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| AdminDomainAllow {
-                id: r.id.to_string(),
-                domain: r.domain,
-                created_at: super::convert::mastodon_date(r.created_at),
-            })
-            .collect(),
-    ))
-}
-
-// ── POST /api/v1/admin/domain_allows ─────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct CreateDomainAllowForm {
-    pub domain: String,
-}
-
-pub async fn create_domain_allow(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateDomainAllowForm>,
-) -> AppResult<Json<AdminDomainAllow>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let row = sqlx::query!(
-        r#"INSERT INTO domain_allows (domain, created_at, updated_at) VALUES ($1, now(), now())
-           ON CONFLICT (domain) DO UPDATE SET updated_at = now()
-           RETURNING id, domain, created_at"#,
-        form.domain,
-    )
-    .fetch_one(&state.db)
-    .await?;
-    Ok(Json(AdminDomainAllow {
-        id: row.id.to_string(),
-        domain: row.domain,
-        created_at: super::convert::mastodon_date(row.created_at),
-    }))
-}
-
-// ── DELETE /api/v1/admin/domain_allows/:id ───────────────────────────────
-
-pub async fn delete_domain_allow(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    sqlx::query!("DELETE FROM domain_allows WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    Ok(StatusCode::OK)
 }
 
 // ── Admin IP blocks ───────────────────────────────────────────────────────
@@ -1847,7 +1578,7 @@ pub async fn update_admin_tag(
     }))
 }
 
-fn sha256_hex(s: &str) -> String {
+pub(super) fn sha256_hex(s: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(s.as_bytes());

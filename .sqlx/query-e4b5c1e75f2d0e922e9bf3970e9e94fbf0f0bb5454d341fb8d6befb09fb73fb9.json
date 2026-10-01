@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, domain, reject_media, reject_reports, private_comment, public_comment, obfuscate, created_at,\n                  CASE severity WHEN 1 THEN 'suspend' WHEN 2 THEN 'noop' ELSE 'silence' END AS \"severity!\"\n           FROM domain_blocks WHERE id = $1",
+  "query": "SELECT id, domain, severity, reject_media, reject_reports, private_comment,\n                  public_comment, obfuscate, created_at\n           FROM domain_blocks WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -15,38 +15,38 @@
       },
       {
         "ordinal": 2,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
         "name": "reject_media",
         "type_info": "Bool"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "reject_reports",
         "type_info": "Bool"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "private_comment",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "public_comment",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "obfuscate",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamp"
-      },
-      {
-        "ordinal": 8,
-        "name": "severity!",
-        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -57,14 +57,14 @@
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       true,
       true,
       false,
-      false,
-      null
+      false
     ]
   },
-  "hash": "8defc810163026731a644370debae0a64fd4c56f77b3883a16562e04ab3cb659"
+  "hash": "e4b5c1e75f2d0e922e9bf3970e9e94fbf0f0bb5454d341fb8d6befb09fb73fb9"
 }

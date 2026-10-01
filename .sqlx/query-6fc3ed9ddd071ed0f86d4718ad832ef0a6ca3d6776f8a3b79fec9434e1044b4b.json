@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE domain_blocks SET\n               severity        = COALESCE($2, severity),\n               reject_media    = COALESCE($3, reject_media),\n               reject_reports  = COALESCE($4, reject_reports),\n               private_comment = CASE WHEN $8 THEN $5 ELSE private_comment END,\n               public_comment  = CASE WHEN $9 THEN $6 ELSE public_comment END,\n               obfuscate       = COALESCE($7, obfuscate),\n               updated_at      = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fc3ed9ddd071ed0f86d4718ad832ef0a6ca3d6776f8a3b79fec9434e1044b4b"
+}

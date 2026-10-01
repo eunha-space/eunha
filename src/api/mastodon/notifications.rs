@@ -134,6 +134,15 @@ async fn moderation_warning_of(state: &AppState, n: &DbNotification) -> Option<s
     crate::moderation::warning::serialize(state, n.activity_id?).await
 }
 
+/// The `event` a `severed_relationships` notification carries:
+/// `REST::AccountRelationshipSeveranceEventSerializer`.
+async fn severance_event_of(state: &AppState, n: &DbNotification) -> Option<serde_json::Value> {
+    if n.activity_type.as_deref() != Some("AccountRelationshipSeveranceEvent") {
+        return None;
+    }
+    crate::moderation::severance::serialize(state, n.activity_id?).await
+}
+
 /// One notification as `GET /api/v1/notifications/:id` renders it, as the
 /// streaming API sends it.
 pub async fn render_notification(state: &AppState, notification_id: i64) -> Option<String> {
@@ -509,7 +518,7 @@ pub async fn get_notifications(
             status,
             report,
             filtered: if n.filtered { Some(true) } else { None },
-            event: None,
+            event: severance_event_of(&state, n).await,
             moderation_warning: moderation_warning_of(&state, n).await,
             fallback: None,
             collection: None,
@@ -1044,7 +1053,7 @@ pub async fn get_notifications_v2(
             sample_account_ids: a.sample_account_ids.clone(),
             status_id,
             report,
-            event: None,
+            event: severance_event_of(&state, n).await,
             moderation_warning: moderation_warning_of(&state, n).await,
             annual_report: None,
             collection: None,
@@ -1122,7 +1131,7 @@ pub async fn get_notification_group(
         sample_account_ids,
         status_id: status_id_for_group.get(&rep.id).map(|s| s.to_string()),
         report,
-        event: None,
+        event: severance_event_of(&state, rep).await,
         moderation_warning: moderation_warning_of(&state, rep).await,
         annual_report: None,
         collection: None,
@@ -1992,7 +2001,7 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         status,
         report,
         filtered: None,
-        event: None,
+        event: severance_event_of(state, n).await,
         moderation_warning: moderation_warning_of(state, n).await,
         fallback: None,
         collection: None,
