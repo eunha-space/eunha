@@ -5234,9 +5234,10 @@ async fn test_reblog_increments_booster_statuses_count() {
     );
 }
 
-/// A "hide" filter with context=thread removes matching statuses from /context descendants.
+/// A "hide" filter with context=thread marks matching /context descendants for
+/// the client to hide.
 #[tokio::test]
-async fn test_context_thread_filter_hides_matching_descendant() {
+async fn test_context_thread_filter_marks_matching_descendant() {
     let ctx = TestContext::new("ctx-thread-filter").await;
 
     // Alice creates a "thread" hide filter for "spamword".
@@ -5300,21 +5301,20 @@ async fn test_context_thread_filter_hides_matching_descendant() {
         .await
         .unwrap();
 
-    let desc_ids: Vec<&str> = context["descendants"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|s| s["id"].as_str())
-        .collect();
-
+    let descendants = context["descendants"].as_array().unwrap();
     assert!(
-        desc_ids.contains(&clean_id),
+        descendants
+            .iter()
+            .any(|s| s["id"].as_str() == Some(clean_id)),
         "clean reply should still appear in thread context",
     );
-    assert!(
-        !desc_ids.contains(&spam_id),
-        "spam reply should be hidden by thread filter",
-    );
+    // The client hides it; the server marks it.
+    let spam = descendants
+        .iter()
+        .find(|s| s["id"].as_str() == Some(spam_id))
+        .expect("a filtered reply is still returned");
+    assert_eq!(spam["filtered"][0]["filter"]["filter_action"], "hide");
+    assert_eq!(spam["filtered"][0]["filter"]["context"], json!(["thread"]));
 }
 
 /// Thread context hides statuses from blocked accounts.

@@ -170,7 +170,7 @@ pub async fn public_timeline(
         .await?
     };
 
-    let result = build_status_list_with_context(&state, statuses, viewer_id, "public").await?;
+    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
 }
@@ -225,8 +225,7 @@ pub async fn home_timeline(
         home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?
     };
 
-    let result =
-        build_status_list_with_context(&state, statuses, Some(auth.account_id), "home").await?;
+    let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
 }
@@ -689,8 +688,7 @@ pub async fn list_timeline(
         .await?
     };
 
-    let result =
-        build_status_list_with_context(&state, statuses, Some(auth.account_id), "home").await?;
+    let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
 }
@@ -1084,7 +1082,7 @@ pub async fn tag_timeline(
             .fetch_all(&state.db)
             .await?
     };
-    let result = build_status_list_with_context(&state, statuses, viewer_id, "public").await?;
+    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
 }
@@ -1092,180 +1090,194 @@ pub async fn tag_timeline(
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Apply active custom filters for the viewer against a list of statuses.
-/// Returns a map from status_id → (should_hide, filtered_results_json).
-/// - should_hide = true means the status should be excluded from results (filter_action = "hide")
-/// - filtered_results_json is the value for the `filtered` field on the status
-pub(super) async fn compute_filter_results(
-    state: &AppState,
+/// `CustomFilter.apply_cached_filters` over `StatusRelationshipsPresenter`'s
+/// statuses: for each post, the viewer's unexpired filters that match its
+/// `proper` (keywords against `searchable_text`, or the post or what it
+/// boosts named by the filter), as `FilterResult`s, keyed by the post's id and,
+/// for a boost, by the boosted post's id too.
+///
+/// Every filter applies whatever its context, and none removes anything: the
+/// client reads `filter.context` and `filter_action` and decides, as
+/// Mastodon leaves it to.
+pub(crate) async fn compute_filter_results(
+    db: &sqlx::PgPool,
     viewer_id: i64,
     statuses: &[DbStatus],
-    context: &str,
-) -> std::collections::HashMap<i64, (bool, serde_json::Value)> {
+) -> std::collections::HashMap<i64, serde_json::Value> {
     let mut result = std::collections::HashMap::new();
-
-    // Load active filters for viewer applicable to this context
-    let filters = match sqlx::query!(
-        r#"SELECT cf.id, cf.phrase as title,
-                  cf.context,
-                  cf.expires_at,
-                  CASE cf.action WHEN 0 THEN 'warn' WHEN 1 THEN 'hide' ELSE 'warn' END AS "filter_action!"
+    let Ok(filters) = sqlx::query!(
+        r#"SELECT cf.id, cf.phrase AS title, cf.context, cf.expires_at,
+                  CASE cf.action WHEN 1 THEN 'hide' WHEN 2 THEN 'blur' ELSE 'warn' END AS "filter_action!"
            FROM custom_filters cf
-           WHERE cf.account_id = $1
-             AND (cf.expires_at IS NULL OR cf.expires_at > now())
-             AND $2::text = ANY(cf.context)"#,
-        viewer_id, context,
+           WHERE cf.account_id = $1 AND (cf.expires_at IS NULL OR cf.expires_at > now())"#,
+        viewer_id,
     )
-    .fetch_all(&state.db)
-    .await {
-        Ok(f) => f,
-        Err(_) => return result,
+    .fetch_all(db)
+    .await
+    else {
+        return result;
     };
-
     if filters.is_empty() {
         return result;
     }
-
-    // Load all keywords for these filters
     let filter_ids: Vec<i64> = filters.iter().map(|f| f.id).collect();
-    let keywords = match sqlx::query!(
-        "SELECT custom_filter_id, keyword, whole_word FROM custom_filter_keywords WHERE custom_filter_id = ANY($1::bigint[])",
-        &filter_ids,
-    )
-    .fetch_all(&state.db)
-    .await {
-        Ok(k) => k,
-        Err(_) => return result,
-    };
 
-    // Group keywords by filter id
-    let mut kw_map: std::collections::HashMap<i64, Vec<(String, bool)>> =
-        std::collections::HashMap::new();
-    for kw in keywords {
-        kw_map
-            .entry(kw.custom_filter_id)
-            .or_default()
-            .push((kw.keyword, kw.whole_word));
-    }
-
-    // Load status-id based filter entries
-    let status_id_list: Vec<i64> = statuses.iter().map(|s| s.id).collect();
-    let filter_status_entries = match sqlx::query!(
-        "SELECT custom_filter_id, status_id FROM custom_filter_statuses WHERE custom_filter_id = ANY($1::bigint[]) AND status_id = ANY($2::bigint[])",
-        &filter_ids,
-        &status_id_list,
-    )
-    .fetch_all(&state.db)
-    .await {
-        Ok(fs) => fs,
-        Err(_) => return result,
-    };
-
-    let mut fs_map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
-    for fs in filter_status_entries {
-        fs_map
-            .entry(fs.custom_filter_id)
-            .or_default()
-            .push(fs.status_id);
-    }
-
-    for s in statuses {
-        let text = format!("{} {}", s.text, s.spoiler_text);
-        let text_lower = text.to_lowercase();
-        let mut filter_results = Vec::new();
-        let mut should_hide = false;
-
-        for f in &filters {
-            let matched_keywords: Vec<String> = if let Some(kws) = kw_map.get(&f.id) {
-                let mut matched = Vec::new();
-                for (kw, whole_word) in kws {
-                    let kw_lower = kw.to_lowercase();
-                    let kw_match = if *whole_word {
-                        let pattern = format!(
-                            r"(?i)(^|[^a-zA-Z0-9_]){}($|[^a-zA-Z0-9_])",
-                            regex::escape(&kw_lower)
-                        );
-                        regex::Regex::new(&pattern)
-                            .map(|re| re.is_match(&text_lower))
-                            .unwrap_or(false)
+    // `CustomFilterKeyword#to_regex`, unioned per filter.
+    let mut regexes: std::collections::HashMap<i64, regex::Regex> = Default::default();
+    {
+        let keywords = sqlx::query!(
+            "SELECT custom_filter_id, keyword, whole_word FROM custom_filter_keywords WHERE custom_filter_id = ANY($1)",
+            &filter_ids,
+        )
+        .fetch_all(db)
+        .await
+        .unwrap_or_default();
+        let mut parts: std::collections::HashMap<i64, Vec<String>> = Default::default();
+        for kw in keywords {
+            let escaped = regex::escape(&kw.keyword);
+            let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+            let expr = if kw.whole_word {
+                format!(
+                    "{}{}{}",
+                    if word(kw.keyword.chars().next()) {
+                        r"\b"
                     } else {
-                        text_lower.contains(&kw_lower)
-                    };
-                    if kw_match {
-                        matched.push(kw.clone());
-                    }
-                }
-                matched
-            } else {
-                Vec::new()
-            };
-
-            let status_matched = fs_map.get(&f.id).is_some_and(|sids| sids.contains(&s.id));
-
-            if !matched_keywords.is_empty() || status_matched {
-                if f.filter_action == "hide" {
-                    should_hide = true;
-                }
-                let expires_at = f
-                    .expires_at
-                    .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string());
-                filter_results.push(serde_json::json!({
-                    "filter": {
-                        "id": f.id.to_string(),
-                        "title": f.title,
-                        "context": f.context,
-                        "expires_at": expires_at,
-                        "filter_action": f.filter_action,
+                        ""
                     },
-                    "keyword_matches": if matched_keywords.is_empty() { serde_json::Value::Null } else { serde_json::json!(matched_keywords) },
-                    "status_matches": if status_matched { serde_json::json!([s.id.to_string()]) } else { serde_json::Value::Null },
-                }));
+                    escaped,
+                    if word(kw.keyword.chars().last()) {
+                        r"\b"
+                    } else {
+                        ""
+                    },
+                )
+            } else {
+                escaped
+            };
+            parts.entry(kw.custom_filter_id).or_default().push(expr);
+        }
+        for (id, exprs) in parts {
+            if let Ok(re) = regex::Regex::new(&format!("(?i){}", exprs.join("|"))) {
+                regexes.insert(id, re);
             }
         }
-
-        if !filter_results.is_empty() || should_hide {
-            result.insert(
-                s.id,
-                (should_hide, serde_json::Value::Array(filter_results)),
-            );
-        }
     }
 
+    let proper_ids: Vec<i64> = statuses
+        .iter()
+        .map(|s| s.reblog_of_id.unwrap_or(s.id))
+        .collect();
+    let mut all_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
+    all_ids.extend(&proper_ids);
+    let filtered_statuses: Vec<(i64, i64)> = sqlx::query!(
+        "SELECT custom_filter_id, status_id FROM custom_filter_statuses WHERE custom_filter_id = ANY($1) AND status_id = ANY($2)",
+        &filter_ids,
+        &all_ids,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|r| (r.custom_filter_id, r.status_id))
+    .collect();
+
+    // `Status#searchable_text`: content warning, plain text, poll options and
+    // media descriptions of the proper post.
+    let texts: std::collections::HashMap<i64, String> = sqlx::query!(
+        r#"SELECT s.id, s.spoiler_text, s.text, (s.local OR a.domain IS NULL) AS "local!",
+                  COALESCE((SELECT string_agg(o, E'\n\n') FROM unnest(p.options) o), '') AS "poll!",
+                  COALESCE((SELECT string_agg(m.description, E'\n\n') FROM media_attachments m
+                            WHERE m.status_id = s.id AND m.description IS NOT NULL), '') AS "media!"
+           FROM statuses s
+           JOIN accounts a ON a.id = s.account_id
+           LEFT JOIN polls p ON p.id = s.poll_id
+           WHERE s.id = ANY($1)"#,
+        &proper_ids,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|r| {
+        let plain = if r.local {
+            r.text.clone()
+        } else {
+            crate::api::mastodon::formatting::html_to_plain_text(&r.text)
+        };
+        let text = [r.spoiler_text, plain, r.poll, r.media]
+            .into_iter()
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        (r.id, text)
+    })
+    .collect();
+
+    for s in statuses {
+        let proper = s.reblog_of_id.unwrap_or(s.id);
+        let text = texts.get(&proper).map(String::as_str).unwrap_or("");
+        let mut matches = vec![];
+        for f in &filters {
+            let keyword_matches = regexes
+                .get(&f.id)
+                .and_then(|re| re.find(text))
+                .map(|m| vec![m.as_str().to_owned()]);
+            let status_matches: Vec<String> = [Some(s.id), s.reblog_of_id]
+                .into_iter()
+                .flatten()
+                .filter(|id| filtered_statuses.contains(&(f.id, *id)))
+                .map(|id| id.to_string())
+                .collect();
+            if keyword_matches.is_none() && status_matches.is_empty() {
+                continue;
+            }
+            matches.push(serde_json::json!({
+                "filter": {
+                    "id": f.id.to_string(),
+                    "title": f.title,
+                    "context": f.context,
+                    "expires_at": f.expires_at.map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+                    "filter_action": f.filter_action,
+                },
+                "keyword_matches": keyword_matches,
+                "status_matches": if status_matches.is_empty() { serde_json::Value::Null } else { serde_json::json!(status_matches) },
+            }));
+        }
+        if !matches.is_empty() {
+            let value = serde_json::Value::Array(matches);
+            if let Some(boosted) = s.reblog_of_id {
+                result.insert(boosted, value.clone());
+            }
+            result.insert(s.id, value);
+        }
+    }
     result
 }
 
-pub async fn build_status_list_with_context(
+/// The statuses as the API renders them for `viewer_id`, each with the
+/// viewer's matching filters in `filtered`.
+pub async fn build_status_list_with_filters(
     state: &AppState,
     statuses: Vec<DbStatus>,
     viewer_id: Option<i64>,
-    filter_context: &str,
 ) -> AppResult<Vec<Status>> {
     let filter_results = if let Some(vid) = viewer_id {
-        compute_filter_results(state, vid, &statuses, filter_context).await
+        compute_filter_results(&state.db, vid, &statuses).await
     } else {
         std::collections::HashMap::new()
     };
 
-    // Exclude statuses matching hide filters
-    let statuses: Vec<DbStatus> = statuses
-        .into_iter()
-        .filter(|s| {
-            let effective_id = s.reblog_of_id.unwrap_or(s.id);
-            !filter_results
-                .get(&effective_id)
-                .is_some_and(|(hide, _)| *hide)
-        })
-        .collect();
-
     let mut result = build_status_list(state, statuses, viewer_id).await?;
 
-    // Populate filtered field for warn matches
     for s in &mut result {
         let id: i64 = s.id.parse().unwrap_or(0);
-        if let Some((_, ref filter_json)) = filter_results.get(&id) {
-            if let Some(arr) = filter_json.as_array() {
-                if !arr.is_empty() {
-                    s.filtered = Some(arr.clone());
-                }
+        if let Some(serde_json::Value::Array(arr)) = filter_results.get(&id) {
+            s.filtered = Some(arr.clone());
+        }
+        if let Some(ref mut rb) = s.reblog {
+            let rid: i64 = rb.id.parse().unwrap_or(0);
+            if let Some(serde_json::Value::Array(arr)) = filter_results.get(&rid) {
+                rb.filtered = Some(arr.clone());
             }
         }
     }
@@ -1487,6 +1499,6 @@ pub async fn link_timeline(
     .fetch_all(&state.db)
     .await?;
 
-    let result = build_status_list_with_context(&state, statuses, viewer_id, "public").await?;
+    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     Ok(with_pagination_link(&headers, &uri, result))
 }

@@ -1576,9 +1576,10 @@ async fn test_home_timeline_followed_tag_muted_account_excluded() {
     );
 }
 
-/// A "hide" filter removes matching statuses from the home timeline.
+/// A "hide" filter marks matching statuses in the home timeline; hiding them
+/// is the client's to do, as on Mastodon.
 #[tokio::test]
-async fn test_home_timeline_hide_filter_excludes_matching_status() {
+async fn test_home_timeline_marks_hide_filter_matches() {
     let ctx = TestContext::new("filter-hide-home").await;
 
     // Create a hide filter for the word "badword"
@@ -1627,15 +1628,19 @@ async fn test_home_timeline_hide_filter_excludes_matching_status() {
         .await
         .unwrap();
 
-    let ids: Vec<&str> = home.iter().filter_map(|s| s["id"].as_str()).collect();
-    assert!(
-        !ids.contains(&bad_id),
-        "status with filtered word should be excluded from home timeline",
-    );
-    assert!(
-        ids.contains(&clean_id),
-        "clean status should still appear in home timeline",
-    );
+    // Mastodon leaves hiding to the client: the post comes back with the hide
+    // filter in `filtered`.
+    let bad = home
+        .iter()
+        .find(|s| s["id"].as_str() == Some(bad_id))
+        .expect("a filtered post is still returned");
+    assert_eq!(bad["filtered"][0]["filter"]["filter_action"], "hide");
+    assert_eq!(bad["filtered"][0]["keyword_matches"], json!(["badword"]));
+    let clean = home
+        .iter()
+        .find(|s| s["id"].as_str() == Some(clean_id))
+        .expect("clean status should still appear in home timeline");
+    assert!(clean["filtered"].as_array().is_none_or(Vec::is_empty));
 }
 
 /// A direct (DM) status from a followed account should NOT appear in the home

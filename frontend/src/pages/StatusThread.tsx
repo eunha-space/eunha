@@ -37,6 +37,7 @@ export default function StatusThread() {
       key={s.id}
       status={s.reblog ?? s}
       token={token ?? ''}
+      filterContext="thread"
       boostedBy={s.reblog ? s.account : undefined}
       detailed={detailed}
       onReply={(replyTo) =>

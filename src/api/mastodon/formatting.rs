@@ -268,9 +268,34 @@ pub fn mention_map_from_api(
     map
 }
 
+/// `PlainTextFormatter`, as `FormattingHelper.extract_status_plain_text` uses it
+/// for a remote post: line breaks and paragraph breaks kept, tags dropped,
+/// entities decoded.
+pub fn html_to_plain_text(html: &str) -> String {
+    static BR: once_cell::sync::Lazy<regex::Regex> =
+        once_cell::sync::Lazy::new(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("valid regex"));
+    static PARAGRAPH: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r"(?i)</p>\s*<p[^>]*>").expect("valid regex")
+    });
+    let html = BR.replace_all(html, "\n");
+    let html = PARAGRAPH.replace_all(&html, "\n\n");
+    scraper::Html::parse_fragment(&html)
+        .root_element()
+        .text()
+        .collect::<String>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::countable_length;
+
+    #[test]
+    fn html_to_plain_text_keeps_breaks() {
+        assert_eq!(
+            super::html_to_plain_text("<p>a &amp; b<br>c</p><p>d</p>"),
+            "a & b\nc\n\nd"
+        );
+    }
 
     #[test]
     fn plain_text_counts_graphemes() {

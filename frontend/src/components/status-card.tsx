@@ -142,10 +142,17 @@ export function StatusCard({
   detailed,
   onReply,
   onPinChange,
+  filterContext,
 }: {
   status: mastodon.v1.Status
   token: string
   boostedBy?: mastodon.v1.Account
+  // Where the card is shown, as a custom filter's `context` names it. The
+  // server marks a post with every filter it matches (`filtered`) and leaves
+  // acting on them to the client: those for this context hide the post,
+  // fold it behind a warning, or blur its media. Without a context, none
+  // apply.
+  filterContext?: mastodon.v2.FilterContext
   // The focused post of a thread. Mastodon shows who boosted and favourited a
   // post only on this detailed view, not on every card in a timeline.
   detailed?: boolean
@@ -163,6 +170,7 @@ export function StatusCard({
   const [editSpoiler, setEditSpoiler] = useState('')
   const [saving, setSaving] = useState(false)
   const [reporting, setReporting] = useState(false)
+  const [showFiltered, setShowFiltered] = useState(false)
   const navigate = useNavigate()
   const { openCompose } = useComposeModal()
 
@@ -270,6 +278,26 @@ export function StatusCard({
     status.visibility === 'private' || status.visibility === 'direct'
 
   if (deleted) return null
+
+  const filterMatches = filterContext
+    ? (status.filtered ?? []).filter((r) => r.filter.context.includes(filterContext))
+    : []
+  // The focused post of a thread is shown whatever hides it elsewhere.
+  if (!detailed && filterMatches.some((r) => r.filter.filterAction === 'hide')) return null
+  const warnedBy = filterMatches.filter((r) => r.filter.filterAction === 'warn')
+  if (warnedBy.length && !showFiltered) {
+    return (
+      <Card>
+        <CardContent className="text-muted-foreground flex items-center justify-between gap-3 py-3 text-sm">
+          <span>Filtered: {warnedBy.map((r) => r.filter.title).join(', ')}</span>
+          <Button variant="outline" size="sm" onClick={() => setShowFiltered(true)}>
+            Show anyway
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+  const blurred = filterMatches.some((r) => r.filter.filterAction === 'blur')
 
   return (
     <Card className="gap-0 rounded-none border-0 bg-transparent py-0 shadow-none ring-0">
@@ -422,7 +450,7 @@ export function StatusCard({
                 {status.mediaAttachments.length > 0 && (
                   <MediaAttachments
                     attachments={status.mediaAttachments}
-                    sensitive={status.sensitive}
+                    sensitive={status.sensitive || blurred}
                   />
                 )}
                 {status.poll && <Poll poll={status.poll} token={token} />}

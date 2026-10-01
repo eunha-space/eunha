@@ -202,6 +202,7 @@ export default function Explore() {
                   key={s.id}
                   status={s.reblog ?? s}
                   token={token ?? ''}
+                  filterContext="public"
                   boostedBy={s.reblog ? s.account : undefined}
                 />
               ))}

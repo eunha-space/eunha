@@ -189,34 +189,25 @@ pub async fn get_status_context(
     };
 
     let (anc_filters, desc_filters) = if let Some(vid) = viewer_id {
-        let af = crate::api::mastodon::timelines::compute_filter_results(
-            &state, vid, &anc_owned, "thread",
-        )
-        .await;
-        let df = crate::api::mastodon::timelines::compute_filter_results(
-            &state,
-            vid,
-            &desc_owned,
-            "thread",
-        )
-        .await;
+        let af =
+            crate::api::mastodon::timelines::compute_filter_results(&state.db, vid, &anc_owned)
+                .await;
+        let df =
+            crate::api::mastodon::timelines::compute_filter_results(&state.db, vid, &desc_owned)
+                .await;
         (af, df)
     } else {
         (Default::default(), Default::default())
     };
 
     // Build ancestors and descendants using batch fetches instead of N+1 queries.
-    let build_batch = |statuses: Vec<DbStatus>,
-                       filters: HashMap<i64, (bool, serde_json::Value)>| {
+    let build_batch = |statuses: Vec<DbStatus>, filters: HashMap<i64, serde_json::Value>| {
         let state = state.clone();
         async move {
             if statuses.is_empty() {
                 return Ok::<Vec<Status>, crate::error::AppError>(vec![]);
             }
-            let visible: Vec<DbStatus> = statuses
-                .into_iter()
-                .filter(|s| !filters.get(&s.id).is_some_and(|(hide, _)| *hide))
-                .collect();
+            let visible = statuses;
             if visible.is_empty() {
                 return Ok(vec![]);
             }
@@ -318,7 +309,7 @@ pub async fn get_status_context(
                     rb.poll = polls_map.get(&rid).cloned();
                     rb.card = cards_map.get(&rid).cloned();
                 }
-                if let Some((_, ref fj)) = filters.get(&s.id) {
+                if let Some(fj) = filters.get(&s.id) {
                     if let Some(arr) = fj.as_array() {
                         if !arr.is_empty() {
                             api.filtered = Some(arr.clone());

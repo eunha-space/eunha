@@ -1109,6 +1109,7 @@ export default function Profile() {
                       key={s.id}
                       status={s}
                       token={token ?? ''}
+                      filterContext="account"
                       onPinChange={loadPinned}
                     />
                   ))}
@@ -1126,6 +1127,7 @@ export default function Profile() {
                     status={s.reblog ?? s}
                     token={token ?? ''}
                     boostedBy={s.reblog ? s.account : undefined}
+                    filterContext="account"
                     onPinChange={loadPinned}
                   />
                 ))}

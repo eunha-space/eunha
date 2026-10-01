@@ -58,8 +58,8 @@ pub async fn get_status_quotes(
     .fetch_all(&state.db)
     .await?;
 
-    use crate::api::mastodon::timelines::build_status_list_with_context;
-    let result = build_status_list_with_context(&state, quotes, viewer_id, "public").await?;
+    use crate::api::mastodon::timelines::build_status_list_with_filters;
+    let result = build_status_list_with_filters(&state, quotes, viewer_id).await?;
 
     let link = result.first().zip(result.last()).map(|(newest, oldest)| {
         let extra = crate::api::mastodon::non_pagination_query(raw_query.as_deref());

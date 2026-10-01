@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT cf.id, cf.phrase as title,\n                  cf.context,\n                  cf.expires_at,\n                  CASE cf.action WHEN 0 THEN 'warn' WHEN 1 THEN 'hide' ELSE 'warn' END AS \"filter_action!\"\n           FROM custom_filters cf\n           WHERE cf.account_id = $1\n             AND (cf.expires_at IS NULL OR cf.expires_at > now())\n             AND $2::text = ANY(cf.context)",
+  "query": "SELECT cf.id, cf.phrase AS title, cf.context, cf.expires_at,\n                  CASE cf.action WHEN 1 THEN 'hide' WHEN 2 THEN 'blur' ELSE 'warn' END AS \"filter_action!\"\n           FROM custom_filters cf\n           WHERE cf.account_id = $1 AND (cf.expires_at IS NULL OR cf.expires_at > now())",
   "describe": {
     "columns": [
       {
@@ -31,8 +31,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -43,5 +42,5 @@
       null
     ]
   },
-  "hash": "001781c72b4e7e04dbaa58434a16722184b5c63a5e4f5df6443dc295009dfcf8"
+  "hash": "182a027ab3be337424b8a282965da8dcfa31e4efec0c5e8d05915da44d2c22e2"
 }

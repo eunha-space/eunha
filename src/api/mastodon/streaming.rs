@@ -231,6 +231,60 @@ async fn route_event(
     following: &HashSet<i64>,
     db: &sqlx::PgPool,
 ) -> Option<String> {
+    let wire = route_event_unfiltered(event, stream, account_id, following, db).await?;
+    // The streaming server's custom filters: a signed-in viewer's `update`
+    // and `status.update` carry `filtered`, the filters that match.
+    match (event, account_id) {
+        (Event::NewStatus { status_id, .. } | Event::StatusUpdate { status_id, .. }, Some(aid)) => {
+            Some(
+                with_filter_results(&wire, aid, *status_id, db)
+                    .await
+                    .unwrap_or(wire),
+            )
+        }
+        _ => Some(wire),
+    }
+}
+
+/// `wire` with the viewer's `FilterResult`s set as the payload's `filtered`.
+async fn with_filter_results(
+    wire: &str,
+    viewer_id: i64,
+    status_id: i64,
+    db: &sqlx::PgPool,
+) -> Option<String> {
+    let status = sqlx::query_as!(
+        crate::db::models::Status,
+        "SELECT * FROM statuses WHERE id = $1",
+        status_id
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()?;
+    let results = super::timelines::compute_filter_results(db, viewer_id, &[status]).await;
+    let filtered = results
+        .get(&status_id)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    let mut outer: serde_json::Value = serde_json::from_str(wire).ok()?;
+    let mut payload: serde_json::Value =
+        serde_json::from_str(outer.get("payload")?.as_str()?).ok()?;
+    payload.as_object_mut()?.insert("filtered".into(), filtered);
+    outer.as_object_mut()?.insert(
+        "payload".into(),
+        serde_json::Value::String(payload.to_string()),
+    );
+    serde_json::to_string(&outer).ok()
+}
+
+async fn route_event_unfiltered(
+    event: &Event,
+    stream: &str,
+    account_id: Option<i64>,
+    following: &HashSet<i64>,
+    db: &sqlx::PgPool,
+) -> Option<String> {
     match stream {
         "user" => to_wire_user(event, account_id, following, db).await,
         "user:notification" => to_wire_user_notification(event, account_id),
@@ -351,7 +405,6 @@ async fn inject_viewer_context(
         obj.insert("muted".into(), serde_json::json!(false));
         obj.insert("bookmarked".into(), serde_json::json!(bookmarked));
         obj.insert("pinned".into(), serde_json::json!(false));
-        obj.insert("filtered".into(), serde_json::json!([]));
     }
     serde_json::to_string(&value).ok()
 }

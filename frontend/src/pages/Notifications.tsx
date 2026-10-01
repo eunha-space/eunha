@@ -163,6 +163,7 @@ function NotificationItem({
           status={n.status.reblog ?? n.status}
           token={token}
           boostedBy={n.status.reblog ? n.status.account : undefined}
+          filterContext="notifications"
           onReply={onReply}
         />
       </div>

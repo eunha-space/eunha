@@ -77,6 +77,7 @@ export function StatusFeed({
               key={s.id}
               status={s.reblog ?? s}
               token={token ?? ''}
+              filterContext={kind === 'home' ? 'home' : 'public'}
               boostedBy={s.reblog ? s.account : undefined}
               onReply={onReply ? (status) => onReply(status, feed.prepend) : undefined}
             />

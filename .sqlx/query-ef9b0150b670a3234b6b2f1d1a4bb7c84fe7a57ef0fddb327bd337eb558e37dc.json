@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT custom_filter_id, status_id FROM custom_filter_statuses WHERE custom_filter_id = ANY($1::bigint[]) AND status_id = ANY($2::bigint[])",
+  "query": "SELECT custom_filter_id, status_id FROM custom_filter_statuses WHERE custom_filter_id = ANY($1) AND status_id = ANY($2)",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "4adaa46324302f2f8ecf0a7d737c380fa94659d27c3369face8efa7773b14f61"
+  "hash": "ef9b0150b670a3234b6b2f1d1a4bb7c84fe7a57ef0fddb327bd337eb558e37dc"
 }

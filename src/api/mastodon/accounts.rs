@@ -559,14 +559,10 @@ pub async fn get_account_statuses(
     };
 
     let filter_map = if let Some(vid) = viewer_id {
-        super::timelines::compute_filter_results(&state, vid, &statuses, "account").await
+        super::timelines::compute_filter_results(&state.db, vid, &statuses).await
     } else {
         std::collections::HashMap::new()
     };
-    let statuses: Vec<crate::db::models::Status> = statuses
-        .into_iter()
-        .filter(|s| !filter_map.get(&s.id).is_some_and(|(hide, _)| *hide))
-        .collect();
 
     let effective_ids: Vec<i64> = statuses
         .iter()
@@ -654,7 +650,7 @@ pub async fn get_account_statuses(
             rb.poll = polls_map.get(&rid).cloned();
             rb.card = cards_map.get(&rid).cloned();
         }
-        if let Some((_, ref filter_json)) = filter_map.get(&s.id) {
+        if let Some(filter_json) = filter_map.get(&s.id) {
             if let Some(arr) = filter_json.as_array() {
                 if !arr.is_empty() {
                     api.filtered = Some(arr.clone());
@@ -744,14 +740,10 @@ pub async fn get_account_pins(
     .await?;
 
     let pin_filter_map = if let Some(vid) = viewer_id {
-        super::timelines::compute_filter_results(&state, vid, &pinned_statuses, "account").await
+        super::timelines::compute_filter_results(&state.db, vid, &pinned_statuses).await
     } else {
         std::collections::HashMap::new()
     };
-    let pinned_statuses: Vec<crate::db::models::Status> = pinned_statuses
-        .into_iter()
-        .filter(|s| !pin_filter_map.get(&s.id).is_some_and(|(hide, _)| *hide))
-        .collect();
 
     let pin_status_ids: Vec<i64> = pinned_statuses.iter().map(|s| s.id).collect();
     let pin_ids: Vec<i64> = pinned_statuses
@@ -843,7 +835,7 @@ pub async fn get_account_pins(
             rb.poll = pin_polls_map.get(&rid).cloned();
             rb.card = pin_cards_map.get(&rid).cloned();
         }
-        if let Some((_, ref filter_json)) = pin_filter_map.get(&s.id) {
+        if let Some(filter_json) = pin_filter_map.get(&s.id) {
             if let Some(arr) = filter_json.as_array() {
                 if !arr.is_empty() {
                     api_status.filtered = Some(arr.clone());
