@@ -33,8 +33,11 @@ async fn create(ctx: &TestContext, options: CreateOptions) -> anyhow::Result<Str
     .await
 }
 
-/// A password grant's access token, or `None` if the credentials are refused.
+/// An access token got through the authorization code flow, signing in with
+/// `email` and `password` on the authorization page, or `None` if the
+/// credentials are refused.
 async fn sign_in(ctx: &TestContext, email: &str, password: &str) -> Option<String> {
+    let redirect_uri = "https://client.example/cb";
     let app: Value = ctx
         .api
         .post_json(
@@ -42,7 +45,7 @@ async fn sign_in(ctx: &TestContext, email: &str, password: &str) -> Option<Strin
             None,
             &json!({
                 "client_name": "Owner sign-in",
-                "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+                "redirect_uris": redirect_uri,
                 "scopes": "read"
             }),
         )
@@ -50,18 +53,39 @@ async fn sign_in(ctx: &TestContext, email: &str, password: &str) -> Option<Strin
         .json()
         .await
         .unwrap();
+    let client_id = app["client_id"].as_str().unwrap();
+    let authorized = ctx
+        .api
+        .post_form(
+            "/oauth/authorize",
+            None,
+            &[
+                ("client_id", client_id),
+                ("redirect_uri", redirect_uri),
+                ("scope", "read"),
+                ("email", email),
+                ("password", password),
+            ],
+        )
+        .await;
+    let location = authorized.headers().get("location")?.to_str().ok()?;
+    let code = url::Url::parse(location)
+        .ok()?
+        .query_pairs()
+        .find(|(name, _)| name == "code")?
+        .1
+        .into_owned();
     let response = ctx
         .api
         .post_json(
             "/oauth/token",
             None,
             &json!({
-                "grant_type": "password",
-                "client_id": app["client_id"],
+                "grant_type": "authorization_code",
+                "client_id": client_id,
                 "client_secret": app["client_secret"],
-                "username": email,
-                "password": password,
-                "scope": "read",
+                "code": code,
+                "redirect_uri": redirect_uri,
             }),
         )
         .await;

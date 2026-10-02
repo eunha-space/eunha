@@ -135,15 +135,32 @@ pub struct TokenRequest {
     pub redirect_uri: Option<String>,
     pub code: Option<String>,
     pub scope: Option<String>,
-    pub username: Option<String>,
-    pub password: Option<String>,
 }
 
 pub async fn issue_token(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     FormOrJson(form): FormOrJson<TokenRequest>,
-) -> AppResult<Json<Token>> {
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse as _;
+
+    // `grant_flows %w(authorization_code client_credentials)`: Doorkeeper
+    // turns any other grant type away before it looks at the client, with
+    // `unsupported_grant_type`. The password grant is among them, and
+    // `resource_owner_from_credentials` would refuse it anyway.
+    if !matches!(
+        form.grant_type.as_str(),
+        "authorization_code" | "client_credentials"
+    ) {
+        return Ok((
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "unsupported_grant_type",
+                "error_description": "The authorization grant type is not supported by the authorization server.",
+            })),
+        )
+            .into_response());
+    }
     tracing::info!(
         grant_type = %form.grant_type,
         client_id = %form.client_id,
@@ -235,67 +252,7 @@ pub async fn issue_token(
             )
         }
 
-        "password" => {
-            let username = form
-                .username
-                .as_deref()
-                .ok_or(AppError::Unprocessable("missing username".into()))?;
-            let password = form
-                .password
-                .as_deref()
-                .ok_or(AppError::Unprocessable("missing password".into()))?;
-            let user = sqlx::query!(
-                r#"SELECT u.id, u.encrypted_password, u.account_id
-                   FROM users u
-                   JOIN accounts a ON a.id = u.account_id
-                   WHERE lower(u.email) = lower($1)
-                     AND u.confirmed_at IS NOT NULL
-                     AND u.disabled = false"#,
-                username,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
-
-            crate::crypto::verify_password(password, &user.encrypted_password).await?;
-
-            // The grant has nowhere to carry a second factor, so an account
-            // that has one, or whose role requires one, cannot use it: the
-            // password alone must not be enough.
-            let two_factor = crate::two_factor::load(&state.db, user.id)
-                .await?
-                .ok_or(AppError::Unauthorized)?;
-            if two_factor.enabled() || two_factor.missing() {
-                return Err(AppError::UnauthorizedMsg(
-                    "This account signs in with two-factor authentication, which the password \
-                     grant cannot carry. Use the authorization code flow."
-                        .into(),
-                ));
-            }
-
-            sqlx::query!(
-                r#"UPDATE users SET
-                     last_sign_in_at    = current_sign_in_at,
-                     current_sign_in_at = now(),
-                     sign_in_count      = sign_in_count + 1
-                   WHERE id = $1"#,
-                user.id,
-            )
-            .execute(&state.db)
-            .await?;
-
-            (
-                Some(user.id),
-                normalize_scopes(
-                    form.scope
-                        .as_deref()
-                        .or(app.scopes.as_deref())
-                        .unwrap_or("read"),
-                ),
-            )
-        }
-
-        _ => return Err(AppError::Unprocessable("unsupported grant_type".into())),
+        _ => unreachable!("only the grant flows Mastodon enables get this far"),
     };
 
     let token_str = generate_token(64);
@@ -317,7 +274,8 @@ pub async fn issue_token(
         token_type: "Bearer".to_string(),
         scope: scopes,
         created_at: created_at.timestamp(),
-    }))
+    })
+    .into_response())
 }
 
 // ── POST /oauth/revoke ─────────────────────────────────────────────────────

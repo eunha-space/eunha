@@ -64,8 +64,9 @@ carries (`sign_in_attempt:*`), for an hour. As upstream does:
  -  a sign-in without TOTP from an address unlike any the user signed in from
     before mails them that it happened (`SuspiciousSignInDetector`).
 
-The OAuth password grant, which Mastodon does not offer and eunha does, refuses
-an account with a second factor, since the grant cannot carry one.
+As in Mastodon, `/oauth/token` takes only the `authorization_code` and
+`client_credentials` grants; any other, the password grant among them, answers
+400 `unsupported_grant_type`, so a password alone never gets a token.
 
 ### A role that requires it
 

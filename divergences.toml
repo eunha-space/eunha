@@ -825,25 +825,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "password-grant"
-kind = "addition"
-summary = "Accepts the OAuth password grant, except for accounts with two-factor authentication"
-mastodon = """
-Turns the resource owner password credentials grant off \
-(`resource_owner_from_credentials` returns nil; `grant_flows` lists only \
-`authorization_code` and `client_credentials`)."""
-eunha = """
-Issues a token for a confirmed, enabled user's email and password. An account \
-that has two-factor authentication, or whose role requires it, is refused \
-with 401: the grant has nowhere to carry a second factor."""
-why = """
-Scripts and test clients sign in this way. Refusing it to accounts with a \
-second factor keeps the password alone from being enough to reach them."""
-evidence = "tests/integration/surfaces/two_factor.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "webauthn-attestation-formats"
 kind = "behaviour"
 summary = "Checks the `none` and self-signed `packed` attestation formats, and accepts others unchecked"

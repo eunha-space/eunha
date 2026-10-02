@@ -316,122 +316,10 @@ async fn test_client_credentials_grant() {
     assert_eq!(body["token_type"].as_str(), Some("Bearer"));
 }
 
-/// password grant with correct credentials issues a usable token.
+/// A grant with the wrong client_secret returns 401.
 #[tokio::test]
-async fn test_password_grant_issues_token() {
-    let ctx = TestContext::new("oauth-pw").await;
-    let (client_id, client_secret) = register_test_app(&ctx).await;
-
-    let resp = ctx
-        .api
-        .post_json(
-            "/oauth/token",
-            None,
-            &json!({
-                "grant_type": "password",
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "username": "alice@test.invalid",
-                "password": "testpassword123",
-                "scope": "read write",
-            }),
-        )
-        .await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "password grant should succeed"
-    );
-    let body: Value = resp.json().await.unwrap();
-    let token = body["access_token"].as_str().expect("access_token missing");
-
-    // The token should be usable for authenticated requests.
-    let me = ctx
-        .api
-        .get("/api/v1/accounts/verify_credentials", Some(token))
-        .await;
-    assert_eq!(
-        me.status(),
-        StatusCode::OK,
-        "token from password grant should authenticate"
-    );
-    let account: Value = me.json().await.unwrap();
-    assert_eq!(account["username"].as_str(), Some("alice"));
-}
-
-/// password grant with wrong password returns 401.
-#[tokio::test]
-async fn test_password_grant_wrong_password_returns_401() {
-    let ctx = TestContext::new("oauth-pw-bad").await;
-    let (client_id, client_secret) = register_test_app(&ctx).await;
-
-    let resp = ctx
-        .api
-        .post_json(
-            "/oauth/token",
-            None,
-            &json!({
-                "grant_type": "password",
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "username": "alice@test.invalid",
-                "password": "wrongpassword",
-            }),
-        )
-        .await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "wrong password should return 401"
-    );
-}
-
-/// A disabled user (e.g. after account deletion) cannot obtain a fresh token via
-/// the password grant, even with correct credentials.
-#[tokio::test]
-async fn test_password_grant_rejected_for_disabled_user() {
-    let ctx = TestContext::new("oauth-pw-disabled").await;
-    let (client_id, client_secret) = register_test_app(&ctx).await;
-
-    // Deleting the account disables the user (keep_user_record? branch).
-    let del = ctx
-        .api
-        .http
-        .delete(ctx.api.url("/api/v1/accounts"))
-        .header("host", &ctx.api.host)
-        .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(del.status(), StatusCode::OK);
-
-    // Correct credentials must still be rejected because the user is disabled.
-    let resp = ctx
-        .api
-        .post_json(
-            "/oauth/token",
-            None,
-            &json!({
-                "grant_type": "password",
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "username": "alice@test.invalid",
-                "password": "testpassword123",
-            }),
-        )
-        .await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "disabled user must not receive a token"
-    );
-}
-
-/// password grant with wrong client_secret returns 401.
-#[tokio::test]
-async fn test_password_grant_wrong_client_secret_returns_401() {
-    let ctx = TestContext::new("oauth-pw-badsecret").await;
+async fn test_wrong_client_secret_returns_401() {
+    let ctx = TestContext::new("oauth-badsecret").await;
     let (client_id, _) = register_test_app(&ctx).await;
 
     let resp = ctx
@@ -440,11 +328,9 @@ async fn test_password_grant_wrong_client_secret_returns_401() {
             "/oauth/token",
             None,
             &json!({
-                "grant_type": "password",
+                "grant_type": "client_credentials",
                 "client_id": client_id,
                 "client_secret": "not-the-real-secret",
-                "username": "alice@test.invalid",
-                "password": "testpassword123",
             }),
         )
         .await;
@@ -607,29 +493,39 @@ async fn test_authorization_code_expired_returns_401() {
     );
 }
 
-/// Unsupported grant_type returns 422.
+/// `grant_flows %w(authorization_code client_credentials)`: any other grant
+/// type, the password grant among them, is Doorkeeper's
+/// `unsupported_grant_type`, before the client is looked at.
 #[tokio::test]
-async fn test_unsupported_grant_type_returns_422() {
+async fn test_unsupported_grant_types_are_refused_as_doorkeeper_refuses_them() {
     let ctx = TestContext::new("oauth-bad-grant").await;
     let (client_id, client_secret) = register_test_app(&ctx).await;
 
-    let resp = ctx
-        .api
-        .post_json(
-            "/oauth/token",
-            None,
-            &json!({
-                "grant_type": "magic_token",
-                "client_id": client_id,
-                "client_secret": client_secret,
-            }),
-        )
-        .await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "unsupported grant_type should return 422"
-    );
+    for grant_type in ["password", "magic_token", "refresh_token"] {
+        let resp = ctx
+            .api
+            .post_json(
+                "/oauth/token",
+                None,
+                &json!({
+                    "grant_type": grant_type,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "username": "alice@test.invalid",
+                    "password": "testpassword123",
+                }),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{grant_type}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "error": "unsupported_grant_type",
+                "error_description": "The authorization grant type is not supported by the authorization server.",
+            })
+        );
+    }
 }
 
 /// Doorkeeper's redirect URI checks: authorization only for a URI the app

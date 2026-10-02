@@ -394,7 +394,7 @@ async fn test_sign_in_asks_for_the_second_factor() {
         .await;
     assert_eq!(reused.status(), StatusCode::OK);
 
-    // The password grant cannot carry a second factor, so it is refused.
+    // There is no password grant to go around the second factor with.
     let app: Value = ctx
         .api
         .post_json(
@@ -420,7 +420,7 @@ async fn test_sign_in_asks_for_the_second_factor() {
             ],
         )
         .await;
-    assert_eq!(grant.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(grant.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
