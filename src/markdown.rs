@@ -17,12 +17,35 @@ use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag, TagEnd};
 
 /// `markdown.render(text)`.
 pub fn render(text: &str) -> String {
+    render_with(text, true, false)
+}
+
+/// `Redcarpet::Markdown.new(Redcarpet::Render::HTML)`, with none of the
+/// options: HTML in the text is passed through and images render, as
+/// `REST::ExtendedDescriptionSerializer` renders the extended description.
+pub fn render_html(text: &str) -> String {
+    render_with(text, false, true)
+}
+
+/// `Redcarpet::Render::HTML, no_images: true`, as `REST::InstanceSerializer`
+/// renders the closed registrations message: HTML passes through, images do
+/// not render.
+pub fn render_without_images(text: &str) -> String {
+    render_with(text, false, false)
+}
+
+fn render_with(text: &str, escape_html: bool, images: bool) -> String {
     let mut events = Vec::new();
     // An image's closing text, waiting for its `End`.
     let mut closers: Vec<String> = Vec::new();
     for event in Parser::new_ext(text, Options::empty()) {
         match event {
-            Event::Html(raw) | Event::InlineHtml(raw) => events.push(Event::Text(raw)),
+            Event::Html(raw) | Event::InlineHtml(raw) if escape_html => {
+                events.push(Event::Text(raw))
+            }
+            event @ (Event::Start(Tag::Image { .. }) | Event::End(TagEnd::Image)) if images => {
+                events.push(event)
+            }
             Event::Start(Tag::Image {
                 dest_url, title, ..
             }) => {

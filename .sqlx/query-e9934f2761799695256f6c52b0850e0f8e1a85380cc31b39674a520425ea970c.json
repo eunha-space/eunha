@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.* FROM accounts a\n           JOIN users u ON u.account_id = a.id\n           LEFT JOIN user_roles ur ON ur.id = u.role_id\n           WHERE a.domain IS NULL\n           ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC\n           LIMIT 1",
+  "query": "SELECT a.* FROM accounts a\n               JOIN users u ON u.account_id = a.id\n               LEFT JOIN user_roles ur ON ur.id = u.role_id\n               WHERE a.domain IS NULL\n               ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -352,5 +352,5 @@
       true
     ]
   },
-  "hash": "a0eaed1637fad831e3baf1e1ae7e4b23bb30536b9201d869f1979a431c700af4"
+  "hash": "e9934f2761799695256f6c52b0850e0f8e1a85380cc31b39674a520425ea970c"
 }

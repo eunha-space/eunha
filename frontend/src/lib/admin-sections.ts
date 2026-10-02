@@ -28,6 +28,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { to: '/admin/disputes/appeals', label: 'Appeals', permission: 'manage_appeals' },
   { to: '/admin/warning_presets', label: 'Warning presets', permission: 'manage_settings' },
   { to: '/admin/action_logs', label: 'Audit log', permission: 'view_audit_log' },
+  // Server administration.
+  { to: '/admin/settings/branding', label: 'Server settings', permission: 'manage_settings' },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

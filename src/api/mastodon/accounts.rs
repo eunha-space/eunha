@@ -203,7 +203,9 @@ pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json
     // A suspended one is not: Mastodon serves the blanked tombstone with
     // `suspended: true`, and after deletion there is no user row left to check.
     if account.domain.is_none() && !account.is_unavailable() {
-        let approval_required = state.instance.approval_required;
+        let approval_required = crate::settings::registrations_mode(&state)
+            .await
+            .approval_required();
         let ok = sqlx::query_scalar!(
             r#"SELECT u.confirmed_at IS NOT NULL
                  AND (u.approved OR NOT $2) AS "ok!"
@@ -1422,6 +1424,10 @@ pub async fn get_directory(
     state: AppState,
     Query(q): Query<DirectoryQuery>,
 ) -> AppResult<Json<Vec<ApiAccount>>> {
+    // `Api::V1::DirectoriesController#require_enabled!`.
+    if !crate::settings::boolean(&state, "profile_directory").await {
+        return Err(AppError::NotFound);
+    }
     let limit = q.limit.unwrap_or(40).clamp(1, 80);
     let offset = q.offset.unwrap_or(0).max(0);
     let local_only = q.local.unwrap_or(true);

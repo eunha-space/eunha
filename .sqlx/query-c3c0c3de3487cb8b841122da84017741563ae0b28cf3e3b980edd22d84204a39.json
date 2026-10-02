@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO site_uploads\n             (var, file_file_name, file_content_type, file_file_size, file_updated_at,\n              blurhash, meta, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, now(), $5, $6, now(), now())\n           ON CONFLICT (var) DO UPDATE SET\n             file_file_name = EXCLUDED.file_file_name,\n             file_content_type = EXCLUDED.file_content_type,\n             file_file_size = EXCLUDED.file_file_size,\n             file_updated_at = EXCLUDED.file_updated_at,\n             blurhash = EXCLUDED.blurhash,\n             meta = EXCLUDED.meta,\n             updated_at = EXCLUDED.updated_at\n           RETURNING id, var, file_file_name, file_content_type, file_file_size, blurhash,\n                     meta, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "var",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "file_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "file_content_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "blurhash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "meta",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Varchar",
+        "Json"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c3c0c3de3487cb8b841122da84017741563ae0b28cf3e3b980edd22d84204a39"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE preview_cards SET\n                 image_file_name = NULL, image_content_type = NULL, image_file_size = NULL,\n                 image_updated_at = NULL\n               WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ca450500539c8fb7143512032699890f5551730655e5354a603a82e4ebff574"
+}

@@ -113,14 +113,8 @@ that is blank too, the policy Mastodon ships
 The configured text gets that date as well, since the configuration records
 none (the `privacy-policy-config-fallback` divergence).
 
-Eunha has no admin page for site settings yet. To set the policy, write the
-setting as Mastodon stores it, YAML-encoded:
-
-~~~~ sql
-INSERT INTO settings (var, value, created_at, updated_at)
-VALUES ('site_terms', E'--- |-\n  Your policy, in Markdown.\n', now(), now())
-ON CONFLICT (var) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
-~~~~
+The policy is written on the about page of the
+[server settings](./administration#server-settings), as in Mastodon.
 
 
 Percent signs

@@ -155,12 +155,41 @@ pub async fn get_privacy_policy(state: AppState) -> AppResult<Json<crate::privac
 
 // ── GET /api/v1/instance/extended_description ────────────────────────────
 
+/// `ExtendedDescription.current`: the `site_extended_description` setting,
+/// rendered as Markdown and dated when it was saved. Until one is saved, the
+/// configured `description`, as it was served before the setting was read.
 pub async fn get_extended_description(
+    state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
 ) -> AppResult<Json<ExtendedDescription>> {
-    Ok(Json(ExtendedDescription {
-        updated_at: super::convert::mastodon_date(chrono::Utc::now()),
-        content: instance.description.clone(),
+    let custom = sqlx::query!(
+        "SELECT value, updated_at FROM settings WHERE var = 'site_extended_description'"
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(row) = custom else {
+        return Ok(Json(ExtendedDescription {
+            updated_at: Some(super::convert::mastodon_date(chrono::Utc::now())),
+            content: instance.description.clone(),
+        }));
+    };
+    let text = row
+        .value
+        .as_deref()
+        .and_then(|raw| serde_yaml::from_str::<serde_yaml::Value>(raw).ok())
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    // `custom&.value.present?`, else an empty description with no date.
+    Ok(Json(if text.trim().is_empty() {
+        ExtendedDescription {
+            updated_at: None,
+            content: String::new(),
+        }
+    } else {
+        ExtendedDescription {
+            updated_at: row.updated_at.map(super::convert::mastodon_date),
+            content: crate::markdown::render_html(&text),
+        }
     }))
 }
 
@@ -172,15 +201,18 @@ pub async fn get_instance_v1(
 ) -> AppResult<Json<InstanceV1>> {
     let streaming_url = format!("wss://{}/api/v1/streaming", instance.domain);
     let (user_count, status_count, domain_count) = fetch_stats(&state).await;
-    let contact_account = fetch_contact_account(&state).await;
+    let settings = crate::settings::Snapshot::load(&state).await;
+    let contact_account = fetch_contact_account(&state, &settings).await;
+    let registrations = settings.registrations_mode(&instance);
 
     let base_url = format!("https://{}", instance.domain);
+    let thumbnail = crate::site_uploads::find(&state, "thumbnail").await?;
     Ok(Json(InstanceV1 {
         uri: instance.domain.clone(),
-        title: instance.title.clone(),
-        short_description: instance.short_description.clone(),
-        description: instance.description.clone(),
-        email: instance.contact_email.clone().unwrap_or_default(),
+        title: settings.site_title(&instance),
+        short_description: settings.site_short_description(&instance),
+        description: settings.site_description(&instance),
+        email: settings.site_contact_email(&instance),
         version: crate::version::compatible_string(),
         urls: InstanceV1Urls {
             streaming_api: streaming_url,
@@ -190,13 +222,13 @@ pub async fn get_instance_v1(
             status_count,
             domain_count,
         },
-        thumbnail: instance
-            .icon_url
-            .clone()
+        thumbnail: thumbnail
+            .and_then(|t| t.url(&state, "@1x"))
+            .or_else(|| instance.icon_url.clone())
             .unwrap_or_else(|| format!("{base_url}/instance-thumbnail.png")),
         languages: vec!["ko".to_string(), "en".to_string()],
-        registrations: instance.registrations_open,
-        approval_required: instance.approval_required,
+        registrations: registrations.enabled(),
+        approval_required: registrations.approval_required(),
         invites_enabled: false,
         configuration: serde_json::json!({
             "accounts": { "max_featured_tags": 10 },
@@ -324,7 +356,11 @@ pub async fn get_instance_v2(
     let streaming_url = format!("wss://{}/api/v1/streaming", instance.domain);
     let base_url = format!("https://{}", instance.domain);
     let (_, _, _) = fetch_stats(&state).await;
-    let contact_account = fetch_contact_account(&state).await;
+    let settings = crate::settings::Snapshot::load(&state).await;
+    let contact_account = fetch_contact_account(&state, &settings).await;
+    let registrations = settings.registrations_mode(&instance);
+    let thumbnail = crate::site_uploads::find(&state, "thumbnail").await?;
+    let app_icon = crate::site_uploads::find(&state, "app_icon").await?;
     let active_month = sqlx::query_scalar!(
         r#"SELECT COUNT(DISTINCT s.account_id)
            FROM statuses s
@@ -340,37 +376,62 @@ pub async fn get_instance_v2(
 
     Ok(Json(InstanceV2 {
         domain: instance.domain.clone(),
-        title: instance.title.clone(),
+        title: settings.site_title(&instance),
         version: crate::version::compatible_string(),
         source_url: "https://github.com/limeburst/eunha".to_string(),
-        description: instance.description.clone(),
+        description: settings.site_short_description(&instance),
         usage: InstanceUsage {
             users: InstanceUsageUsers { active_month },
         },
-        thumbnail: InstanceThumbnail {
-            url: instance
-                .icon_url
-                .clone()
-                .unwrap_or_else(|| format!("{base_url}/instance-thumbnail.png")),
-            blurhash: None,
-            versions: None,
-            description: None,
+        thumbnail: match &thumbnail {
+            Some(upload) => InstanceThumbnail {
+                url: upload.url(&state, "@1x").unwrap_or_default(),
+                blurhash: upload.blurhash.clone(),
+                versions: Some(serde_json::json!({
+                    "@1x": upload.url(&state, "@1x"),
+                    "@2x": upload.url(&state, "@2x"),
+                })),
+                description: Some(settings.string("thumbnail_description")),
+            },
+            None => InstanceThumbnail {
+                url: instance
+                    .icon_url
+                    .clone()
+                    .unwrap_or_else(|| format!("{base_url}/instance-thumbnail.png")),
+                blurhash: None,
+                versions: None,
+                description: None,
+            },
         },
-        icon: instance
-            .icon_url
-            .as_ref()
-            .map(|url| {
-                vec![
-                    serde_json::json!({ "src": url, "size": "192x192" }),
-                    serde_json::json!({ "src": url, "size": "512x512" }),
-                ]
-            })
-            .unwrap_or_default(),
+        // `SiteUpload::ANDROID_ICON_SIZES` of the uploaded app icon, or else
+        // the configured icon.
+        icon: match &app_icon {
+            Some(upload) => crate::site_uploads::ANDROID_ICON_SIZES
+                .iter()
+                .map(|size| {
+                    serde_json::json!({
+                        "src": upload.url(&state, &size.to_string()),
+                        "size": format!("{size}x{size}"),
+                    })
+                })
+                .collect(),
+            None => instance
+                .icon_url
+                .as_ref()
+                .map(|url| {
+                    vec![
+                        serde_json::json!({ "src": url, "size": "192x192" }),
+                        serde_json::json!({ "src": url, "size": "512x512" }),
+                    ]
+                })
+                .unwrap_or_default(),
+        },
         languages: vec!["ko".to_string(), "en".to_string()],
         configuration: InstanceConfiguration {
             urls: InstanceUrls {
                 streaming: streaming_url,
-                status: None,
+                // `InstancePresenter#status_page_url`.
+                status: Some(settings.string("status_page_url")).filter(|u| !u.is_empty()),
                 about: Some(format!("{base_url}/about")),
                 // `privacy_policy_url`: there is always a policy, if only
                 // the one Mastodon ships.
@@ -470,18 +531,23 @@ pub async fn get_instance_v2(
             limited_federation: state.instance.limited_federation_mode,
         },
         registrations: InstanceRegistrations {
-            enabled: instance.registrations_open,
-            approval_required: instance.approval_required,
-            // `Setting.registrations_mode == 'approved' && Setting.require_invite_text`.
-            reason_required: instance.registrations_open
-                && instance.approval_required
-                && crate::settings::boolean(&state, "require_invite_text").await,
+            enabled: registrations.enabled(),
+            approval_required: registrations.approval_required(),
+            reason_required: registrations.approval_required()
+                && settings.boolean("require_invite_text"),
             min_age: crate::settings::min_age(&state.db).await,
-            message: None,
+            // `registrations_message`, only while registrations are closed.
+            message: if registrations.enabled() {
+                None
+            } else {
+                Some(settings.string("closed_registrations_message"))
+                    .filter(|m| !m.trim().is_empty())
+                    .map(|m| crate::markdown::render_without_images(&m))
+            },
             url: None,
         },
         contact: InstanceContact {
-            email: instance.contact_email.clone().unwrap_or_default(),
+            email: settings.site_contact_email(&instance),
             account: contact_account,
         },
         rules: crate::moderation::rules::serialize(&state, None).await?,
@@ -578,20 +644,44 @@ async fn fetch_stats(state: &AppState) -> (i64, i64, i64) {
     (user_count, status_count, domain_count)
 }
 
-async fn fetch_contact_account(state: &AppState) -> Option<super::types::Account> {
-    let account = sqlx::query_as!(
-        crate::db::models::Account,
-        r#"SELECT a.* FROM accounts a
-           JOIN users u ON u.account_id = a.id
-           LEFT JOIN user_roles ur ON ur.id = u.role_id
-           WHERE a.domain IS NULL
-           ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC
-           LIMIT 1"#,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()?;
+/// `InstancePresenter::ContactPresenter#account`: the local account
+/// `site_contact_username` names. Until one is saved, the local account with
+/// the highest role, as eunha picked before it read the setting.
+async fn fetch_contact_account(
+    state: &AppState,
+    settings: &crate::settings::Snapshot,
+) -> Option<super::types::Account> {
+    let account = if settings.stored("site_contact_username") {
+        let configured = settings.string("site_contact_username");
+        let username = configured.trim().trim_start_matches('@');
+        let username = username.split('@').next().unwrap_or("");
+        if username.is_empty() {
+            return None;
+        }
+        sqlx::query_as!(
+            crate::db::models::Account,
+            "SELECT * FROM accounts WHERE domain IS NULL AND lower(username) = lower($1)",
+            username,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()?
+    } else {
+        sqlx::query_as!(
+            crate::db::models::Account,
+            r#"SELECT a.* FROM accounts a
+               JOIN users u ON u.account_id = a.id
+               LEFT JOIN user_roles ur ON ur.id = u.role_id
+               WHERE a.domain IS NULL
+               ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC
+               LIMIT 1"#,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()?
+    };
     let mut api = super::convert::account_from_db(&state.urls, &account);
     api.emojis = super::accounts::fetch_account_emojis(state, &account).await;
     api.roles = {

@@ -29,6 +29,9 @@ pub async fn signup_get(
     let invite = q.invite.as_deref().unwrap_or("").trim().to_string();
     let accept_lang = headers.get("accept-language").and_then(|v| v.to_str().ok());
     let locale = crate::locale::Locale::detect(q.lang.as_deref(), accept_lang);
+    let instance = crate::settings::Snapshot::load(&state)
+        .await
+        .amend(&instance);
 
     let invite_id = if invite.is_empty() {
         None
@@ -400,6 +403,8 @@ pub async fn api_create_account(
     super::extractors::FormOrJson(form): super::extractors::FormOrJson<ApiCreateAccountForm>,
 ) -> Result<Json<super::types::Token>, SignupError> {
     let sign_up_ip = client_ip.and_then(|Extension(c)| c.0);
+    let settings = crate::settings::Snapshot::load(&state).await;
+    let instance = settings.amend(&instance);
     let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
     let invite_id: Option<i64> = if !invite_code.is_empty() {
         Some(
@@ -419,7 +424,6 @@ pub async fn api_create_account(
     if crate::remote_ip::sign_up_blocked(&state, sign_up_ip).await {
         return Err(AppError::Forbidden.into());
     }
-
     let username = form.username.trim().to_lowercase();
     let email = form.email.trim().to_string();
     let password = &form.password;
@@ -624,7 +628,7 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
     )
     .await;
     let needs_approval = requires_approval
-        || (state.instance.approval_required
+        || (!crate::settings::registrations_mode(&state).await.open()
             && !match pending.invite_id {
                 Some(id) => invite_bypasses_approval(&state, id).await,
                 None => false,

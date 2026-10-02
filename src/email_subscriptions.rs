@@ -770,7 +770,7 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
         mailed.push(mailed_status(state, status, &account).await);
     }
     let excerpt = truncate(&statuses[0].text, 17);
-    let sign_up_url = if state.instance.registrations_open {
+    let sign_up_url = if crate::settings::registrations_mode(state).await.enabled() {
         format!("https://{}/auth/signup", state.instance.domain)
     } else {
         "https://joinmastodon.org/".to_string()

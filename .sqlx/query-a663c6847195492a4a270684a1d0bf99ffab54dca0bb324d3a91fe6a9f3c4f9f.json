@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_conversations WHERE status_ids = '{}'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a663c6847195492a4a270684a1d0bf99ffab54dca0bb324d3a91fe6a9f3c4f9f"
+}

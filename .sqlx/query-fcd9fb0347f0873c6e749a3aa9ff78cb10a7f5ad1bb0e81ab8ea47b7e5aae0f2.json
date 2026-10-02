@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, image_file_name AS \"image_file_name!\", image_storage_schema_version\n               FROM preview_cards\n               WHERE image_file_name IS NOT NULL AND image_file_name <> ''\n                 AND updated_at < now() - make_interval(days => $1)\n               ORDER BY id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "image_file_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fcd9fb0347f0873c6e749a3aa9ff78cb10a7f5ad1bb0e81ab8ea47b7e5aae0f2"
+}

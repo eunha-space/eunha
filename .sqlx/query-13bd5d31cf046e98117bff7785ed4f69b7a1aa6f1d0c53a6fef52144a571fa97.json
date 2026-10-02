@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_conversations ac\n               SET status_ids = kept.ids,\n                   last_status_id = kept.ids[array_length(kept.ids, 1)]\n               FROM (\n                 SELECT c.id, COALESCE(array_agg(x ORDER BY ord)\n                          FILTER (WHERE NOT x = ANY($1)), '{}') AS ids\n                 FROM account_conversations c,\n                      unnest(c.status_ids) WITH ORDINALITY AS u(x, ord)\n                 WHERE c.status_ids && $1\n                 GROUP BY c.id\n               ) kept\n               WHERE ac.id = kept.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13bd5d31cf046e98117bff7785ed4f69b7a1aa6f1d0c53a6fef52144a571fa97"
+}

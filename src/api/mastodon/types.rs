@@ -928,7 +928,7 @@ pub struct AppCredentials {
 
 #[derive(Debug, Serialize)]
 pub struct ExtendedDescription {
-    pub updated_at: String,
+    pub updated_at: Option<String>,
     pub content: String,
 }
 

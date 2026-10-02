@@ -54,6 +54,8 @@ Running an instance:
  -  *docs/operating/invites.md*: the everyone role and handing out invites.
  -  *docs/operating/moderation.md*: permissions, account actions and strikes,
     the audit log, and reports.
+ -  *docs/operating/administration.md*: the server settings and what they
+    drive, content retention, and the rest of the server administration.
  -  *docs/operating/email-subscriptions.md*: email subscriptions, their
     switches, distribution, and the admin API.
  -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,

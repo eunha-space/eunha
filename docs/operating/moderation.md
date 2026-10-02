@@ -149,9 +149,8 @@ existing block.
 `show_domain_blocks_rationale` site settings, which live in Mastodon's
 `settings` table. Both default to `disabled`, so the list is a 404 until an
 administrator sets them. Setting them to `users` shows the list to signed-in
-users, and `all` shows it to everyone. Eunha has no settings editor, so
-these are set in the database, for example
-`INSERT INTO settings (var, value, created_at, updated_at) VALUES ('show_domain_blocks', E'--- all\n', now(), now())`.
+users, and `all` shows it to everyone. Both are on the about page of the
+[server settings](./administration#server-settings).
 
 Blocks created before this behaviour existed were never applied to accounts
 already known. Once their severity is right (see

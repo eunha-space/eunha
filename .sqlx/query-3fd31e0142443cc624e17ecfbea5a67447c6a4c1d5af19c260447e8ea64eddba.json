@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, file_file_name FROM media_attachments\n               WHERE remote_url <> '' AND file_file_name IS NOT NULL\n                 AND created_at < now() - make_interval(days => $1)\n                 AND updated_at < now() - make_interval(days => $1)\n               ORDER BY id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_file_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "3fd31e0142443cc624e17ecfbea5a67447c6a4c1d5af19c260447e8ea64eddba"
+}

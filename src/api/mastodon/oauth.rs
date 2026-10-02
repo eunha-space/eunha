@@ -731,6 +731,8 @@ pub async fn authorize_form(
 
     let accept_lang = headers.get("accept-language").and_then(|v| v.to_str().ok());
     let locale = crate::locale::Locale::detect(params.lang.as_deref(), accept_lang);
+    // Whether to offer signing up is the registrations setting's.
+    let instance = crate::settings::Snapshot::load(&state).await.amend(&instance);
     let scope = params.scope.as_deref().unwrap_or("read");
     // The requested scope must be within the app's registered scopes.
     if !scope_is_subset(scope, app.scopes.as_deref().unwrap_or("read")) {
@@ -834,6 +836,7 @@ pub async fn authorize_submit(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let locale = crate::locale::Locale::detect(form.lang.as_deref(), None);
+    let instance = crate::settings::Snapshot::load(&state).await.amend(&instance);
     let app_name = sqlx::query_scalar!(
         "SELECT name FROM oauth_applications WHERE uid = $1",
         form.client_id,

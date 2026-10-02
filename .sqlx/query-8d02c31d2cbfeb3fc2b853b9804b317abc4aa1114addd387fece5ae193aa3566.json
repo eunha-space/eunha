@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET\n                 file_file_name = NULL, file_content_type = NULL, file_file_size = NULL,\n                 file_updated_at = NULL, thumbnail_file_name = NULL,\n                 thumbnail_content_type = NULL, thumbnail_file_size = NULL,\n                 thumbnail_updated_at = NULL\n               WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d02c31d2cbfeb3fc2b853b9804b317abc4aa1114addd387fece5ae193aa3566"
+}

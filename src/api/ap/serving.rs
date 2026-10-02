@@ -1059,7 +1059,8 @@ async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
         repository: None,
         homepage: None,
     });
-    nodeinfo.open_registrations = instance.registrations_open;
+    let settings = crate::settings::Snapshot::load(state).await;
+    nodeinfo.open_registrations = settings.registrations_mode(instance).enabled();
     nodeinfo.usage = Usage {
         users_total: count(user_count),
         users_active_month: count(active_month),
@@ -1068,8 +1069,8 @@ async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
         local_comments: None,
     };
     nodeinfo.metadata = json!({
-        "nodeName": instance.title,
-        "nodeDescription": instance.description,
+        "nodeName": settings.site_title(instance),
+        "nodeDescription": settings.site_short_description(instance),
     });
     Ok(nodeinfo)
 }

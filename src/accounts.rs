@@ -248,7 +248,9 @@ pub async fn create_from_command(
             password_hash: &password_hash,
             role_id,
             approved: options.approve
-                || (instance.registrations_open && !instance.approval_required),
+                || crate::settings::registrations_mode_in(db, instance)
+                    .await
+                    .open(),
             invite_id: None,
             locale: None,
             app_id: None,

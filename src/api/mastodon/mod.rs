@@ -826,6 +826,15 @@ pub fn router() -> Router {
             "/api/v1/admin/accounts/{id}/reset",
             post(admin::reset_user_password),
         )
+        // Server administration Mastodon has only as server-rendered admin pages
+        .route(
+            "/api/v1/admin/settings",
+            get(admin::get_admin_settings).patch(admin::update_admin_settings),
+        )
+        .route(
+            "/api/v1/admin/site_uploads/{id}",
+            delete(admin::delete_site_upload),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s JOIN accounts a ON a.id = s.account_id\n               WHERE a.domain IS NOT NULL AND s.deleted_at IS NULL AND s.id < $1\n               ORDER BY s.id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eb7d59714e9ec9eeb4d03d160a4e66d1d2dcc7b775cd30e547700e37ab08bdaf"
+}

@@ -78,7 +78,7 @@ export class AdminApiError extends ApiError {
   }
 }
 
-function query(params?: Record<string, unknown>): string {
+export function query(params?: Record<string, unknown>): string {
   if (!params) return ''
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -90,7 +90,7 @@ function query(params?: Record<string, unknown>): string {
   return s ? `?${s}` : ''
 }
 
-async function request(
+export async function request(
   token: string,
   method: string,
   path: string,
@@ -124,7 +124,7 @@ async function request(
   return res
 }
 
-async function json<T>(
+export async function json<T>(
   token: string,
   method: string,
   path: string,
@@ -135,7 +135,7 @@ async function json<T>(
 }
 
 /** For the calls Mastodon answers with an empty object (`render_empty`). */
-async function empty(token: string, method: string, path: string, body?: unknown) {
+export async function empty(token: string, method: string, path: string, body?: unknown) {
   await request(token, method, path, body)
 }
 
