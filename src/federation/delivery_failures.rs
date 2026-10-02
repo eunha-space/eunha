@@ -126,6 +126,126 @@ impl DeliveryFailureTracker {
         Ok(())
     }
 
+    /// Clear `host`'s failures and its mark, asking the table whatever this
+    /// process remembers (`track_success!` as `restart_delivery` calls it).
+    pub async fn restart(&self, host: &str) -> anyhow::Result<()> {
+        self.clear_failures(host).await?;
+        sqlx::query!("DELETE FROM unavailable_domains WHERE domain = $1", host)
+            .execute(&self.db)
+            .await?;
+        self.forget();
+        Ok(())
+    }
+
+    /// Forget `host`'s failures, leaving any mark
+    /// (`DeliveryFailureTracker#clear_failures!`).
+    pub async fn clear_failures(&self, host: &str) -> anyhow::Result<()> {
+        let mut redis = self.redis.clone();
+        let _: i64 = redis::cmd("DEL")
+            .arg(self.key(host))
+            .query_async(&mut redis)
+            .await?;
+        Ok(())
+    }
+
+    /// The days deliveries to `host` failed on, oldest first
+    /// (`#exhausted_deliveries_days`).
+    pub async fn exhausted_deliveries_days(
+        &self,
+        host: &str,
+    ) -> anyhow::Result<Vec<chrono::NaiveDate>> {
+        let mut redis = self.redis.clone();
+        let days: Vec<String> = redis::cmd("SMEMBERS")
+            .arg(self.key(host))
+            .query_async(&mut redis)
+            .await?;
+        let mut days: Vec<chrono::NaiveDate> = days
+            .iter()
+            .filter_map(|d| chrono::NaiveDate::parse_from_str(d, "%Y%m%d").ok())
+            .collect();
+        days.sort();
+        days.dedup();
+        Ok(days)
+    }
+
+    /// How many days each of `domains` has failures on, those with any and
+    /// not marked unavailable (`.warning_domains_map(domains)`); with `None`,
+    /// every domain with failures (`.warning_domains_map`), found by scanning
+    /// this instance's keys.
+    pub async fn warning_domains_map(
+        &self,
+        domains: Option<&[String]>,
+    ) -> anyhow::Result<std::collections::HashMap<String, usize>> {
+        let mut redis = self.redis.clone();
+        let candidates: Vec<String> = match domains {
+            Some(domains) => domains.to_vec(),
+            None => {
+                let prefix = self.key("");
+                let mut found = vec![];
+                let mut cursor: u64 = 0;
+                loop {
+                    let (next, keys): (u64, Vec<String>) = redis::cmd("SCAN")
+                        .arg(cursor)
+                        .arg("MATCH")
+                        .arg(format!("{prefix}*"))
+                        .arg("COUNT")
+                        .arg(1000)
+                        .query_async(&mut redis)
+                        .await?;
+                    found.extend(
+                        keys.iter()
+                            .filter_map(|k| k.strip_prefix(&prefix).map(str::to_owned)),
+                    );
+                    if next == 0 {
+                        break;
+                    }
+                    cursor = next;
+                }
+                found
+            }
+        };
+        let unavailable: HashSet<String> = sqlx::query_scalar!(
+            "SELECT domain FROM unavailable_domains WHERE domain = ANY($1)",
+            &candidates,
+        )
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .collect();
+        let mut map = std::collections::HashMap::new();
+        for domain in candidates {
+            if unavailable.contains(&domain) {
+                continue;
+            }
+            let days: usize = redis::cmd("SCARD")
+                .arg(self.key(&domain))
+                .query_async(&mut redis)
+                .await?;
+            if days > 0 {
+                map.insert(domain, days);
+            }
+        }
+        Ok(map)
+    }
+
+    /// `UnavailableDomain.create!(domain:)`: stop delivering to `host` now,
+    /// returning the mark's id, or `None` when it was already marked.
+    pub async fn stop(&self, host: &str) -> anyhow::Result<Option<i64>> {
+        let id = sqlx::query_scalar!(
+            r#"INSERT INTO unavailable_domains (domain, created_at, updated_at)
+               VALUES ($1, now(), now())
+               ON CONFLICT (domain) DO NOTHING
+               RETURNING id"#,
+            host,
+        )
+        .fetch_optional(&self.db)
+        .await?;
+        if id.is_some() {
+            self.forget();
+        }
+        Ok(id)
+    }
+
     /// Whether deliveries to `host` are no longer sent. From memory, read
     /// again in the background once it is a minute old.
     pub fn is_unavailable(&self, host: &str) -> bool {

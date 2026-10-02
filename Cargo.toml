@@ -138,6 +138,7 @@ ammonia = "4"
 clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 blurhash = "0.2"
+csv = "1"
 img-parts = "0.4.0"
 scraper = "0.23"
 

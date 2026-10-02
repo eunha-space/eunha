@@ -892,6 +892,47 @@ pub fn router() -> Router {
             "/api/v1/admin/announcements/{id}/distribution",
             post(admin::distribute_admin_announcement),
         )
+        .route("/api/v1/admin/instances", get(admin::list_admin_instances))
+        .route(
+            "/api/v1/admin/instances/{domain}",
+            get(admin::get_admin_instance).delete(admin::purge_admin_instance),
+        )
+        .route(
+            "/api/v1/admin/instances/{domain}/clear_delivery_errors",
+            post(admin::clear_instance_delivery_errors),
+        )
+        .route(
+            "/api/v1/admin/instances/{domain}/restart_delivery",
+            post(admin::restart_instance_delivery),
+        )
+        .route(
+            "/api/v1/admin/instances/{domain}/stop_delivery",
+            post(admin::stop_instance_delivery),
+        )
+        .route(
+            "/api/v1/admin/instances/{domain}/moderation_notes",
+            post(admin::create_instance_moderation_note),
+        )
+        .route(
+            "/api/v1/admin/instances/{domain}/moderation_notes/{id}",
+            delete(admin::delete_instance_moderation_note),
+        )
+        .route(
+            "/api/v1/admin/export_domain_blocks/export",
+            get(admin::export_domain_blocks),
+        )
+        .route(
+            "/api/v1/admin/export_domain_blocks/import",
+            post(admin::import_domain_blocks),
+        )
+        .route(
+            "/api/v1/admin/export_domain_allows/export",
+            get(admin::export_domain_allows),
+        )
+        .route(
+            "/api/v1/admin/export_domain_allows/import",
+            post(admin::import_domain_allows),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

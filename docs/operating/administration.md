@@ -186,3 +186,64 @@ announcement, as Mastodon's announcement notifications do: the preview counts
 the confirmed users who are not suspended, the test mails the moderator alone,
 and the distribution mails everyone once. They need `manage_settings` as well,
 and are refused once the announcement has been mailed.
+
+
+Federation
+----------
+
+`/api/v1/admin/instances` lists the servers this one knows, as Mastodon's
+`instances` view has them: every domain with accounts here, a domain block or a
+domain allow, with the most accounts first and forty a page (`?page=`). It
+takes Mastodon's filters, `limited` (blocked domains, newest block first),
+`by_domain` and `availability` (`failing` or `unavailable`); in limited
+federation mode it lists only the allowed domains. Each server comes with its
+block, its allow, whether it is unavailable, and how many days deliveries to
+it have failed. All of this needs `manage_federation`.
+
+`/api/v1/admin/instances/:domain` is one server's page: the same, plus the
+fourteen days of delivery failures Mastodon's availability strip shows, and
+its moderation notes. On it:
+
+ -  `…/clear_delivery_errors` forgets the failures;
+ -  `…/stop_delivery` marks the domain unavailable now, and is logged;
+ -  `…/restart_delivery` lifts that mark and the failures, and logs the mark's
+    removal;
+ -  `DELETE` purges the domain, as `PurgeDomainService` does: every account
+    from it is deleted, its custom emoji with them, and the severed
+    relationships recorded against it are marked purged. It is logged as
+    destroying the instance. The web client offers it for a domain that is
+    unavailable or suspended.
+ -  `…/moderation_notes` adds a note of at most 2,000 characters, and
+    `…/moderation_notes/:id` deletes one, for its author or a role that
+    manages federation and outranks the author's. Notes are not logged.
+
+The counters on the page are Mastodon's instance measures,
+`instance_accounts`, `instance_statuses`, `instance_media_attachments`,
+`instance_follows`, `instance_followers` and `instance_reports`, which
+`POST /api/v1/admin/measures` now serves with a `domain` parameter for each,
+as Mastodon's admin API does; `POST /api/v1/admin/dimensions` serves
+`instance_accounts` and `instance_languages` the same way. Their totals are of
+all time.
+
+Finding the failing domains scans this instance's delivery failure keys in
+Redis, which is why `SCAN` is among the commands a tenant's Redis user needs
+(see [shared Redis](./redis)).
+
+### Exporting and importing blocks
+
+`/api/v1/admin/export_domain_blocks/export` downloads the domain blocks with
+any limitation as Mastodon's CSV, with the columns `#domain`, `#severity`,
+`#reject_media`, `#reject_reports`, `#public_comment` and `#obfuscate`, and
+`/api/v1/admin/export_domain_allows/export` the allowed domains under
+`#domain`. A file Mastodon exported imports here, and the other way round.
+
+`…/export_domain_blocks/import` takes such a file, as the multipart field
+`data`, and answers with the blocks it would create, without creating any, as
+Mastodon's import shows a form to confirm: a domain already covered by a block
+is left out, a row Mastodon would refuse is reported, and each block's private
+comment says which file it came from and when. The domains among them that
+local accounts follow, or are followed from, are listed apart. The moderator
+then creates the ones they keep with `POST /api/v1/admin/domain_blocks`.
+`…/export_domain_allows/import` allows every domain in its file at once,
+logging each. A file without a `#domain` header is read as one domain a line.
+Both need `manage_federation`, and refuse a file of more than 20,000 rows.

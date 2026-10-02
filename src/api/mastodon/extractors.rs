@@ -265,7 +265,12 @@ impl<'de> serde::Deserialize<'de> for FlexBool {
 #[derive(Debug, Clone)]
 pub enum Part {
     Text(String),
-    File { content_type: String, data: Vec<u8> },
+    File {
+        content_type: String,
+        data: Vec<u8>,
+        /// The name the file was uploaded under, `original_filename`.
+        file_name: Option<String>,
+    },
 }
 
 impl Part {
@@ -280,7 +285,9 @@ impl Part {
     /// The content type and bytes of a file part; text is no file.
     pub fn file(&self) -> (String, Vec<u8>) {
         match self {
-            Part::File { content_type, data } => (content_type.clone(), data.clone()),
+            Part::File {
+                content_type, data, ..
+            } => (content_type.clone(), data.clone()),
             Part::Text(_) => ("application/octet-stream".into(), vec![]),
         }
     }
@@ -347,7 +354,8 @@ where
                 .map_err(|e| unprocessable(e.to_string()))?
             {
                 let name = field.name().unwrap_or("").to_string();
-                let is_file = field.file_name().is_some();
+                let file_name = field.file_name().map(str::to_owned);
+                let is_file = file_name.is_some();
                 let ct = field.content_type().map(str::to_owned);
                 let data = field
                     .bytes()
@@ -359,6 +367,7 @@ where
                         Part::File {
                             content_type: ct.unwrap_or_else(|| "application/octet-stream".into()),
                             data: data.to_vec(),
+                            file_name,
                         },
                     ));
                 } else {

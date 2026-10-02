@@ -29,6 +29,7 @@ mod users;
 mod warning_presets;
 // The server administration Mastodon has only as server-rendered admin pages.
 mod announcements;
+mod instances;
 mod roles;
 mod rules;
 mod settings;
@@ -51,6 +52,7 @@ pub use users::*;
 pub use warning_presets::*;
 // The server administration Mastodon has only as server-rendered admin pages.
 pub use announcements::*;
+pub use instances::*;
 pub use roles::*;
 pub use rules::*;
 pub use settings::*;
@@ -123,6 +125,9 @@ pub struct MeasuresRequest {
     pub keys: Vec<String>,
     pub start_at: Option<String>,
     pub end_at: Option<String>,
+    /// Each key's own parameters, such as `instance_accounts[domain]`.
+    #[serde(flatten)]
+    pub params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 pub async fn get_measures(
@@ -372,6 +377,9 @@ pub async fn get_measures(
                     })).collect::<Vec<_>>(),
                 })
             }
+            other if instances::MEASURES.contains(&other) => {
+                instances::measure(&state, other, &body.params, start, end).await?
+            }
             _ => serde_json::json!({
                 "key": key, "unit": null, "total": "0",
                 "human_value": "0", "previous_total": "0", "data": [],
@@ -440,6 +448,9 @@ pub struct DimensionsRequest {
     pub start_at: Option<String>,
     pub end_at: Option<String>,
     pub limit: Option<i64>,
+    /// Each key's own parameters, such as `instance_accounts[domain]`.
+    #[serde(flatten)]
+    pub params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 pub async fn get_dimensions(
@@ -626,6 +637,9 @@ pub async fn get_dimensions(
                         },
                     ],
                 })
+            }
+            other if instances::DIMENSIONS.contains(&other) => {
+                instances::dimension(&state, other, &body.params, limit).await?
             }
             _ => serde_json::json!({"key": key, "data": []}),
         };

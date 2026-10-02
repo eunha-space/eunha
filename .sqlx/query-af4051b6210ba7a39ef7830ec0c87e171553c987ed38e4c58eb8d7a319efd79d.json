@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO instance_moderation_notes (account_id, content, domain, created_at, updated_at)\n           VALUES ($1, $2, $3, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af4051b6210ba7a39ef7830ec0c87e171553c987ed38e4c58eb8d7a319efd79d"
+}

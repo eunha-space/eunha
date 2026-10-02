@@ -3,6 +3,7 @@
 //! and what the settings drive, here; the rest in the modules below.
 
 mod announcements;
+mod instances;
 mod roles;
 mod rules;
 

@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain, severity, reject_media, reject_reports, public_comment, obfuscate\n           FROM domain_blocks\n           WHERE COALESCE(severity, 0) IN (0, 1) OR reject_media OR reject_reports\n           ORDER BY id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "severity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "reject_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "reject_reports",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "public_comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "obfuscate",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7c1e8b3d1b44e9f888f2bda111c9f1e5c7713ee6839dbcfa1072c74bf86c503e"
+}

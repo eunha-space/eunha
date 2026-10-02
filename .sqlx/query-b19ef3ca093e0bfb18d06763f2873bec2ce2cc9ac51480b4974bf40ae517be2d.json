@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relationship_severance_events SET purged = true, updated_at = now()\n           WHERE type IN (0, 1) AND target_name = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b19ef3ca093e0bfb18d06763f2873bec2ce2cc9ac51480b4974bf40ae517be2d"
+}

@@ -3,7 +3,7 @@
 // relays, invites, webhooks, follow recommendations, software updates and the
 // dashboard), as eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
-import { json, type Permission } from './admin-api.ts'
+import { json, query, request, type Account, type Measure, type Permission } from './admin-api.ts'
 
 // ── Server settings ─────────────────────────────────────────────────────────
 
@@ -263,6 +263,153 @@ export function previewAnnouncement(token: string, id: string) {
 
 export function testAnnouncement(token: string, id: string) {
   return json<Record<string, never>>(token, 'POST', `/api/v1/admin/announcements/${id}/test`)
+}
+
+// ── Instances ───────────────────────────────────────────────────────────────
+
+export interface AdminInstance {
+  domain: string
+  accounts_count: number
+  domain_block: {
+    id: string
+    severity: 'silence' | 'suspend' | 'noop'
+    reject_media: boolean
+    reject_reports: boolean
+    private_comment: string | null
+    public_comment: string | null
+    obfuscate: boolean
+  } | null
+  domain_allow: { id: string; created_at: string } | null
+  unavailable: boolean
+  unavailable_since: string | null
+  failure_days: number | null
+}
+
+export interface InstanceNote {
+  id: string
+  content: string
+  account: Account | null
+  created_at: string
+}
+
+export interface AdminInstanceDetail extends AdminInstance {
+  persisted: boolean
+  purgeable: boolean
+  availability: { date: string; failing: boolean }[]
+  exhausted_deliveries_days: string[]
+  moderation_notes: InstanceNote[]
+}
+
+export interface InstanceFilters {
+  limited?: boolean
+  by_domain?: string
+  availability?: 'failing' | 'unavailable'
+  page?: number
+}
+
+export function listInstances(token: string, filters: InstanceFilters) {
+  return json<AdminInstance[]>(
+    token,
+    'GET',
+    `/api/v1/admin/instances${query({ ...filters, limited: filters.limited ? '1' : undefined })}`,
+  )
+}
+
+export function getInstance(token: string, domain: string) {
+  return json<AdminInstanceDetail>(
+    token,
+    'GET',
+    `/api/v1/admin/instances/${encodeURIComponent(domain)}`,
+  )
+}
+
+export function instanceDeliveryAction(
+  token: string,
+  domain: string,
+  action: 'clear_delivery_errors' | 'restart_delivery' | 'stop_delivery',
+) {
+  return json<AdminInstanceDetail>(
+    token,
+    'POST',
+    `/api/v1/admin/instances/${encodeURIComponent(domain)}/${action}`,
+  )
+}
+
+export function purgeInstance(token: string, domain: string) {
+  return json<Record<string, never>>(
+    token,
+    'DELETE',
+    `/api/v1/admin/instances/${encodeURIComponent(domain)}`,
+  )
+}
+
+export function createInstanceNote(token: string, domain: string, content: string) {
+  return json<AdminInstanceDetail>(
+    token,
+    'POST',
+    `/api/v1/admin/instances/${encodeURIComponent(domain)}/moderation_notes`,
+    { content },
+  )
+}
+
+export function deleteInstanceNote(token: string, domain: string, id: string) {
+  return json<Record<string, never>>(
+    token,
+    'DELETE',
+    `/api/v1/admin/instances/${encodeURIComponent(domain)}/moderation_notes/${id}`,
+  )
+}
+
+/** The instance measures of Mastodon's admin API, for one domain. */
+export function getInstanceMeasures(
+  token: string,
+  domain: string,
+  keys: string[],
+  startAt: string,
+  endAt: string,
+) {
+  const params: Record<string, unknown> = { keys, start_at: startAt, end_at: endAt }
+  for (const key of keys) params[key] = { domain }
+  return json<Measure[]>(token, 'POST', '/api/v1/admin/measures', params)
+}
+
+/** Download a CSV export as a file. */
+export async function downloadExport(token: string, kind: 'domain_blocks' | 'domain_allows') {
+  const res = await request(token, 'GET', `/api/v1/admin/export_${kind}/export`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${kind}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export interface ImportedDomainBlock {
+  domain: string
+  severity: 'silence' | 'suspend' | 'noop'
+  reject_media: boolean
+  reject_reports: boolean
+  private_comment: string
+  public_comment: string | null
+  obfuscate: boolean
+}
+
+export function importDomainBlocks(token: string, file: File) {
+  const body = new FormData()
+  body.append('data', file)
+  return json<{ domain_blocks: ImportedDomainBlock[]; warning_domains: string[]; errors: string[] }>(
+    token,
+    'POST',
+    '/api/v1/admin/export_domain_blocks/import',
+    body,
+  )
+}
+
+export function importDomainAllows(token: string, file: File) {
+  const body = new FormData()
+  body.append('data', file)
+  return json<string[]>(token, 'POST', '/api/v1/admin/export_domain_allows/import', body)
 }
 
 export function distributeAnnouncement(token: string, id: string) {

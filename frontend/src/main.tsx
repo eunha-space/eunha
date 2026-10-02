@@ -61,6 +61,8 @@ import AdminSettings from './pages/admin/Settings.tsx'
 import AdminRules from './pages/admin/Rules.tsx'
 import AdminRoles from './pages/admin/Roles.tsx'
 import AdminAnnouncements from './pages/admin/Announcements.tsx'
+import AdminInstances from './pages/admin/Instances.tsx'
+import AdminInstanceDetail from './pages/admin/InstanceDetail.tsx'
 import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -153,6 +155,8 @@ const router = createBrowserRouter([
   { path: '/admin/rules', element: <AdminRules /> },
   { path: '/admin/roles', element: <AdminRoles /> },
   { path: '/admin/announcements', element: <AdminAnnouncements /> },
+  { path: '/admin/instances', element: <AdminInstances /> },
+  { path: '/admin/instances/:domain', element: <AdminInstanceDetail /> },
   // Strikes and appeals, at Mastodon's paths, which its moderation warning
   // notifications and emails link to.
   { path: '/disputes/strikes', element: <Strikes /> },

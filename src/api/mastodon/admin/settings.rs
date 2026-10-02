@@ -326,7 +326,10 @@ pub async fn update_admin_settings(
     let mut uploads: Vec<(&str, String, Vec<u8>)> = vec![];
     for var in site_uploads::VARS {
         let Some(part) = given.get(var) else { continue };
-        let Part::File { content_type, data } = part else {
+        let Part::File {
+            content_type, data, ..
+        } = part
+        else {
             // A blank field leaves the upload as it is.
             continue;
         };

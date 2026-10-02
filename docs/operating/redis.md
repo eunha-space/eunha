@@ -28,7 +28,12 @@ user, the matching key pattern, and only the commands Eunha uses:
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
 +zrangebyscore +zrevrangebyscore +mget +del +sadd +scard
 +incrby +pfadd +pfcount +expire +smembers +srem +hset +hget +hincrby
++scan
 ~~~~
+
+`SCAN` is only ever given a `MATCH` pattern under the instance's own prefix: the
+federation admin page uses it to find the servers deliveries are failing to, as
+Mastodon lists its `exhausted_deliveries` keys.
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used
 for lock release. Tenant users receive `FCALL`, but not `EVAL`, `EVALSHA`,
