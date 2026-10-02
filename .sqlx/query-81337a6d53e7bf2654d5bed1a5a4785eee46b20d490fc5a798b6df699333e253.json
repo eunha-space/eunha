@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT email, encrypted_password, host(sign_up_ip) AS sign_up_ip,\n                  (confirmed_at IS NOT NULL) AS \"confirmed!\"\n           FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "encrypted_password",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "sign_up_ip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "81337a6d53e7bf2654d5bed1a5a4785eee46b20d490fc5a798b6df699333e253"
+}

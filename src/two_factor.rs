@@ -427,6 +427,8 @@ pub enum OwnedNotice {
     WebauthnCredentialAdded(String),
     WebauthnCredentialDeleted(String),
     PasswordChange,
+    /// The address being changed to.
+    EmailChanged(String),
 }
 
 impl OwnedNotice {
@@ -440,6 +442,7 @@ impl OwnedNotice {
             Self::WebauthnCredentialAdded(n) => N::WebauthnCredentialAdded(n),
             Self::WebauthnCredentialDeleted(n) => N::WebauthnCredentialDeleted(n),
             Self::PasswordChange => N::PasswordChange,
+            Self::EmailChanged(e) => N::EmailChanged(e),
         }
     }
 }

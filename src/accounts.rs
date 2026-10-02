@@ -476,7 +476,9 @@ pub async fn reset_password_by_token(
 }
 
 /// `send_confirmation_instructions`: a fresh confirmation token, mailed to the
-/// address awaiting confirmation (`unconfirmed_email` when there is one).
+/// address awaiting confirmation (`unconfirmed_email` when there is one, in
+/// the `reconfirmation_instructions` template, as `pending_reconfirmation?`
+/// picks it).
 pub async fn send_confirmation_instructions(
     state: &crate::state::AppState,
     user_id: i64,
@@ -486,7 +488,8 @@ pub async fn send_confirmation_instructions(
         r#"UPDATE users u SET confirmation_token = $2, confirmation_sent_at = now()
            FROM accounts a
            WHERE u.id = $1 AND a.id = u.account_id
-           RETURNING COALESCE(u.unconfirmed_email, u.email) AS "to!", u.locale, a.username"#,
+           RETURNING COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS "to!", u.locale,
+                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!""#,
         user_id,
         token,
     )
@@ -501,14 +504,42 @@ pub async fn send_confirmation_instructions(
     );
     let email = state.email.clone();
     let locale = user.locale.unwrap_or_else(|| "en".into());
+    let domain = state.instance.domain.clone();
     crate::tenants::spawn(async move {
-        if let Err(error) = email
-            .send_confirmation(&user.to, &user.username, "", &url, &locale)
-            .await
-        {
+        let sent = if user.reconfirming {
+            email
+                .send_reconfirmation_instructions(&user.to, &domain, &url)
+                .await
+        } else {
+            email
+                .send_confirmation(&user.to, &user.username, "", &url, &locale)
+                .await
+        };
+        if let Err(error) = sent {
             tracing::error!(%error, "failed to send confirmation email");
         }
     });
+    Ok(())
+}
+
+/// Devise's reconfirmable, short of the mail: a new address waits in
+/// `unconfirmed_email`, the old confirmation token dropped, until the link
+/// [`send_confirmation_instructions`] mails it is followed. What both the
+/// admin's change of address and the member's own write.
+pub async fn set_unconfirmed_email<'e, E: sqlx::PgExecutor<'e>>(
+    executor: E,
+    user_id: i64,
+    new_email: &str,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        r#"UPDATE users SET unconfirmed_email = $2, confirmation_token = NULL,
+                  updated_at = now()
+           WHERE id = $1"#,
+        user_id,
+        new_email
+    )
+    .execute(executor)
+    .await?;
     Ok(())
 }
 

@@ -169,6 +169,34 @@ A forgotten password is Devise's recoverable module, as Mastodon's
     not signed in afterwards (`sign_in_after_reset_password = false`).
 
 
+Changing the email address
+--------------------------
+
+Mastodon changes a member's address on its account settings form, Devise's
+`update_with_password` with `reconfirmable`; eunha serves the same at
+`PUT /api/eunha/v1/email` (`email`, `current_password`, a `write:accounts`
+token), and `GET` says what the address is and which one is waiting:
+
+ -  the current password is required, and a suspended account cannot change
+    it;
+ -  the address is stripped and lowercased, then checked as `User` checks a
+    changed email: present, well formed, at most 320 characters, not another
+    user's, and — `EmailMxValidator` — a domain that takes mail and that no
+    email domain block covers, nor its mail hosts. A user not yet confirmed
+    is also held to `UserEmailValidator`: the domain blocks and the canonical
+    email blocks. Refusals answer `422` as `Validation failed: …` with
+    per-attribute codes, as the sign-up does;
+ -  a different address waits in `users.unconfirmed_email`, with a new
+    confirmation token, until the link mailed to it
+    (`reconfirmation_instructions`, valid two days) is followed; the address
+    being left is told (`email_changed`). Mail goes to the old address until
+    then.
+
+The admin's change of address (`POST /api/v1/admin/accounts/:id/change_email`)
+writes `unconfirmed_email` the same way and mails the same reconfirmation
+link, without the notice to the old address, as upstream's does.
+
+
 Deleting the account
 --------------------
 

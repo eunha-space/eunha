@@ -14,6 +14,7 @@ import { beginLogin, getToken, logout } from '../auth.ts'
 import { isAdvancedLayout, setAdvancedLayout } from '../lib/panes.ts'
 import { clearMe, getMeAccount } from '../me.ts'
 import { TopBar } from '@/components/top-bar.tsx'
+import { EmailSettings } from '@/components/email-settings.tsx'
 import { MailPreferences } from '@/components/mail-preferences.tsx'
 import { PrivacySettings } from '@/components/privacy-settings.tsx'
 import { SessionsSettings } from '@/components/sessions-settings.tsx'
@@ -219,6 +220,8 @@ export default function Settings() {
               <KeyRound /> Change password
             </Button>
           </section>
+
+          <EmailSettings token={token} />
 
           <TwoFactorSettings token={token} />
 

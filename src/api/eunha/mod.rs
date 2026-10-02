@@ -2,6 +2,7 @@
 //! from `api::mastodon` so the Mastodon-compatible surface stays clean.
 use axum::{routing::get, Router};
 
+pub mod account_email;
 pub mod email_subscriptions;
 pub mod health;
 pub mod invite_grants;
@@ -26,4 +27,5 @@ pub fn router() -> Router {
         .merge(two_factor::routes())
         .merge(sessions::routes())
         .merge(preferences::routes())
+        .merge(account_email::routes())
 }

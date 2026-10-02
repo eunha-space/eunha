@@ -121,6 +121,30 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// `UserMailer#confirmation_instructions` for a pending reconfirmation:
+    /// the `reconfirmation_instructions` template, to the new address.
+    pub async fn send_reconfirmation_instructions(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        confirm_url: &str,
+    ) -> anyhow::Result<()> {
+        let url = html_escape(confirm_url);
+        let body = format!(
+            "<h1>Verify email address</h1>\
+             <p>Confirm the new address to change your email.</p>\
+             <p><a href=\"{url}\">Verify email address</a></p>\
+             <p>If this change wasn't initiated by you, please ignore this email. The email \
+             address for the Mastodon account won't change until you access the link above.</p>"
+        );
+        self.send(
+            to,
+            &format!("Mastodon: Confirm email for {instance_domain}"),
+            &body,
+        )
+        .await
+    }
+
     /// Devise's `reset_password_instructions`, in Mastodon's words.
     pub async fn send_password_reset(
         &self,
@@ -868,6 +892,18 @@ impl EmailSender {
                     "The following security key has been deleted from your account",
                     Some(format!("<strong>{}</strong>", html_escape(nickname))),
                 ),
+                SecurityNotice::EmailChanged(new_email) => (
+                    "Mastodon: Email changed".into(),
+                    "New email address",
+                    "The email address for your account is being changed to:",
+                    Some(format!(
+                        "<strong>{}</strong></p><p>If you did not change your email, it is \
+                         likely that someone has gained access to your account. Please change \
+                         your password immediately or contact the server admin if you're locked \
+                         out of your account.",
+                        html_escape(new_email)
+                    )),
+                ),
                 SecurityNotice::PasswordChange => (
                     "Mastodon: Password changed".into(),
                     "Password changed",
@@ -1138,6 +1174,8 @@ pub enum SecurityNotice<'a> {
     /// The deleted key's nickname.
     WebauthnCredentialDeleted(&'a str),
     PasswordChange,
+    /// `email_changed`, to the address being left, with the new one.
+    EmailChanged(&'a str),
 }
 
 #[cfg(test)]

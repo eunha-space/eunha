@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (suspended_at IS NOT NULL OR requested_deletion_at IS NOT NULL) AS \"u!\"\n           FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "u!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e0d42bbb856671ffaedda071e713b670c6b5ecb0743b9c17f20319459e3f9ba6"
+}

@@ -4,6 +4,7 @@ mod accounts_commands;
 mod auth_pages;
 mod counter_semantics;
 mod divergences;
+mod email_change;
 mod entity_parity;
 mod error_contract;
 mod health;

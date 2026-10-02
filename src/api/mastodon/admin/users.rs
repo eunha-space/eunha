@@ -224,15 +224,7 @@ pub async fn change_user_email(
         })?;
     if new_email != s.user.email {
         let mut tx = state.db.begin().await?;
-        sqlx::query!(
-            r#"UPDATE users SET unconfirmed_email = $2, confirmation_token = NULL,
-                      updated_at = now()
-               WHERE id = $1"#,
-            s.user.id,
-            new_email
-        )
-        .execute(&mut *tx)
-        .await?;
+        crate::accounts::set_unconfirmed_email(&mut *tx, s.user.id, &new_email).await?;
         action_log::log(&mut *tx, auth.account_id, "change_email", &s.target).await?;
         tx.commit().await?;
         crate::accounts::send_confirmation_instructions(&state, s.user.id).await?;

@@ -243,3 +243,19 @@ export const updatePreferences = (
     notification_emails?: Record<string, boolean | string>
   },
 ) => call<Preferences>('/api/eunha/v1/preferences', token, 'PATCH', changes)
+
+// ── The account's email address (Devise reconfirmable) ──────────────────────
+
+export interface AccountEmail {
+  email: string
+  unconfirmed_email: string | null
+}
+
+export const getAccountEmail = (token: string) =>
+  call<AccountEmail>('/api/eunha/v1/email', token)
+
+export const changeAccountEmail = (token: string, email: string, currentPassword: string) =>
+  call<AccountEmail>('/api/eunha/v1/email', token, 'PUT', {
+    email,
+    current_password: currentPassword,
+  })

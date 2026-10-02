@@ -1005,6 +1005,12 @@ async fn test_user_access_management() {
     .await
     .unwrap();
     let token = token.expect("a confirmation token is sent");
+    // `pending_reconfirmation?` picks the reconfirmation template.
+    let mail = ctx
+        .mail_to("Bob.New@test.invalid", "Mastodon: Confirm email for")
+        .await
+        .expect("the reconfirmation mail");
+    assert!(mail.html.contains(&format!("/auth/confirm?token={token}")));
     ctx.api
         .get(&format!("/auth/confirm?token={token}"), None)
         .await;

@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are forty-five. They cover:
+At the time of writing there are forty-six. They cover:
 
  -  integrity proofs on outgoing activities;
  -  the invite tree, and the two ways eunha's invite API goes beyond
@@ -49,8 +49,8 @@ At the time of writing there are forty-five. They cover:
     checked;
  -  the sessions, authorized apps and sign-in history API, and how a password
     reset token is stored;
- -  deleting one's own account over the API, and the preferences Mastodon
-    sets only through web forms;
+ -  deleting one's own account and changing its email address over the
+    API, and the preferences Mastodon sets only through web forms;
  -  how notification emails are unsubscribed from, and where the wait before
     sending one runs.
 
