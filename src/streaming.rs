@@ -38,6 +38,12 @@ pub enum Event {
     Kill {
         account_id: i64,
     },
+    /// Terminate the streaming connections made with these access tokens, as
+    /// Mastodon publishes `{event: :kill}` on `timeline:access_token:{id}`
+    /// when a token is revoked.
+    KillTokens {
+        token_ids: Vec<i64>,
+    },
 }
 
 #[derive(Clone)]

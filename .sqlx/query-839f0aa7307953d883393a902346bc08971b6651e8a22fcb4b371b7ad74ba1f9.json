@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT t.id, u.account_id AS \"account_id?\", t.application_id, t.scopes,\n                      t.expires_in, t.created_at, t.revoked_at, u.id as \"user_id?\",\n                      u.disabled as \"disabled?\", a.suspended_at AS \"suspended_at?\",\n                      a.requested_deletion_at AS \"requested_deletion_at?\",\n                      (u.confirmed_at IS NOT NULL) AS \"confirmed?\", u.approved AS \"approved?\",\n                      (a.memorial OR a.moved_to_account_id IS NOT NULL\n                       OR (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login\n                           AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w WHERE w.user_id = u.id))\n                      ) AS \"restricted?\"\n               FROM oauth_access_tokens t\n               LEFT JOIN users u ON u.id = t.resource_owner_id\n               LEFT JOIN accounts a ON a.id = u.account_id\n               LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)\n               WHERE t.token = $1",
+  "query": "SELECT t.id, u.account_id AS \"account_id?\", t.application_id, t.scopes,\n                      t.expires_in, t.created_at, t.revoked_at, t.last_used_at, u.id as \"user_id?\",\n                      u.disabled as \"disabled?\", a.suspended_at AS \"suspended_at?\",\n                      a.requested_deletion_at AS \"requested_deletion_at?\",\n                      (u.confirmed_at IS NOT NULL) AS \"confirmed?\", u.approved AS \"approved?\",\n                      (a.memorial OR a.moved_to_account_id IS NOT NULL\n                       OR (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login\n                           AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w WHERE w.user_id = u.id))\n                      ) AS \"restricted?\"\n               FROM oauth_access_tokens t\n               LEFT JOIN users u ON u.id = t.resource_owner_id\n               LEFT JOIN accounts a ON a.id = u.account_id\n               LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)\n               WHERE t.token = $1",
   "describe": {
     "columns": [
       {
@@ -40,36 +40,41 @@
       },
       {
         "ordinal": 7,
+        "name": "last_used_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
         "name": "user_id?",
         "type_info": "Int8"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "disabled?",
         "type_info": "Bool"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "suspended_at?",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "requested_deletion_at?",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "confirmed?",
         "type_info": "Bool"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "approved?",
         "type_info": "Bool"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "restricted?",
         "type_info": "Bool"
       }
@@ -87,6 +92,7 @@
       true,
       false,
       true,
+      true,
       false,
       false,
       true,
@@ -96,5 +102,5 @@
       null
     ]
   },
-  "hash": "356f104a2fdbd82ee4bccf9593891e1f06f6b475de8e98fef9d0187a1aad970c"
+  "hash": "839f0aa7307953d883393a902346bc08971b6651e8a22fcb4b371b7ad74ba1f9"
 }

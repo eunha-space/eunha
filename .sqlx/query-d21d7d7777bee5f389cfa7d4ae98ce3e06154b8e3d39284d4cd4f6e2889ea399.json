@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.name, a.website, a.scopes, a.superapp, a.created_at,\n                  (SELECT max(t.last_used_at) FROM oauth_access_tokens t\n                   WHERE t.application_id = a.id AND t.resource_owner_id = $1) AS last_used_at\n           FROM oauth_applications a\n           WHERE a.id IN (SELECT application_id FROM oauth_access_tokens\n                          WHERE resource_owner_id = $1 AND revoked_at IS NULL\n                            AND application_id IS NOT NULL)\n           ORDER BY a.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "website",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "scopes",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "superapp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_used_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "d21d7d7777bee5f389cfa7d4ae98ce3e06154b8e3d39284d4cd4f6e2889ea399"
+}

@@ -31,7 +31,9 @@ pub async fn handler(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     // The streaming server refuses a disabled user's token, as Mastodon's does.
-    let account_id: Option<i64> = auth.filter(|a| !a.0.user_disabled).map(|a| a.0.account_id);
+    let authenticated = auth.filter(|a| !a.0.user_disabled);
+    let account_id: Option<i64> = authenticated.as_ref().map(|a| a.0.account_id);
+    let token_id: Option<i64> = authenticated.as_ref().map(|a| a.0.token_id);
 
     // The masto library passes the access token as the WebSocket subprotocol rather
     // than as a query param. Browsers require the server to echo back the requested
@@ -59,25 +61,28 @@ pub async fn handler(
     let span = tracing::Span::current();
     ws.on_upgrade(move |socket| {
         async move {
-            let account_id = if account_id.is_some() {
-                account_id
+            let (account_id, token_id) = if account_id.is_some() {
+                (account_id, token_id)
             } else if let Some(tok) = token {
-                resolve_token(&state, &tok).await
+                match resolve_token(&state, &tok).await {
+                    Some((account, token)) => (Some(account), Some(token)),
+                    None => (None, None),
+                }
             } else {
-                None
+                (None, None)
             };
 
             tracing::info!(?initial_stream, ?account_id, "streaming: connection open");
-            run(socket, initial_stream, account_id, state).await;
+            run(socket, initial_stream, account_id, token_id, state).await;
             tracing::info!("streaming: connection closed");
         }
         .instrument(span)
     })
 }
 
-async fn resolve_token(state: &AppState, token: &str) -> Option<i64> {
-    sqlx::query_scalar!(
-        r#"SELECT u.account_id
+async fn resolve_token(state: &AppState, token: &str) -> Option<(i64, i64)> {
+    sqlx::query!(
+        r#"SELECT u.account_id, t.id AS token_id
            FROM oauth_access_tokens t
            JOIN users u ON u.id = t.resource_owner_id
            JOIN accounts a ON a.id = u.account_id
@@ -90,6 +95,7 @@ async fn resolve_token(state: &AppState, token: &str) -> Option<i64> {
     .await
     .ok()
     .flatten()
+    .map(|row| (row.account_id, row.token_id))
 }
 
 /// Returns true for streams that require authentication.
@@ -101,6 +107,7 @@ async fn run(
     mut socket: WebSocket,
     initial_stream: Option<String>,
     account_id: Option<i64>,
+    token_id: Option<i64>,
     state: AppState,
 ) {
     // Load followed account IDs for any authenticated user so we can filter
@@ -145,6 +152,12 @@ async fn run(
                         // A suspended/deleted account's connections are cut, not filtered.
                         if let Event::Kill { account_id: killed } = *event {
                             if account_id == Some(killed) {
+                                return;
+                            }
+                        }
+                        // A revoked token's connections are cut too.
+                        if let Event::KillTokens { token_ids } = &*event {
+                            if token_id.is_some_and(|id| token_ids.contains(&id)) {
                                 return;
                             }
                         }
@@ -500,7 +513,7 @@ fn to_wire(
         }
 
         // Handled by closing the connection in `run`, never sent on the wire.
-        Event::Kill { .. } => None,
+        Event::Kill { .. } | Event::KillTokens { .. } => None,
     }
 }
 
@@ -604,7 +617,10 @@ async fn to_wire_authenticated(
             )
         }
 
-        Event::Notification { .. } | Event::FiltersChanged { .. } | Event::Kill { .. } => None,
+        Event::Notification { .. }
+        | Event::FiltersChanged { .. }
+        | Event::Kill { .. }
+        | Event::KillTokens { .. } => None,
     }
 }
 

@@ -117,7 +117,7 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
     if let Some(token) = extract_bearer(&req) {
         if let Some(tok) = sqlx::query!(
             r#"SELECT t.id, u.account_id AS "account_id?", t.application_id, t.scopes,
-                      t.expires_in, t.created_at, t.revoked_at, u.id as "user_id?",
+                      t.expires_in, t.created_at, t.revoked_at, t.last_used_at, u.id as "user_id?",
                       u.disabled as "disabled?", a.suspended_at AS "suspended_at?",
                       a.requested_deletion_at AS "requested_deletion_at?",
                       (u.confirmed_at IS NOT NULL) AS "confirmed?", u.approved AS "approved?",
@@ -158,6 +158,26 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
                 Standing::Functional
             };
 
+            // `Api::AccessTokenTrackingConcern`: when the token was last used,
+            // and from where, at most once a day.
+            if valid
+                && tok
+                    .last_used_at
+                    .is_none_or(|at| at < chrono::Utc::now().naive_utc() - chrono::Duration::hours(24))
+            {
+                let ip = req
+                    .extensions()
+                    .get::<crate::remote_ip::ClientIp>()
+                    .and_then(|c| c.0)
+                    .map(|ip| ip.to_string());
+                let _ = sqlx::query!(
+                    "UPDATE oauth_access_tokens SET last_used_at = now(), last_used_ip = $1::text::inet WHERE id = $2",
+                    ip,
+                    tok.id,
+                )
+                .execute(&state.db)
+                .await;
+            }
             if valid && account_unavailable {
                 req.extensions_mut().insert(UnavailableAccount);
             } else if let (true, None) = (valid, tok.account_id) {

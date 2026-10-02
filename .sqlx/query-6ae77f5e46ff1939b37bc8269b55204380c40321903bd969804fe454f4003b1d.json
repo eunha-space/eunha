@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_access_grants SET revoked_at = now()\n           WHERE application_id = $1 AND resource_owner_id = $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ae77f5e46ff1939b37bc8269b55204380c40321903bd969804fe454f4003b1d"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_access_tokens SET revoked_at = now()\n           WHERE resource_owner_id = $1 AND revoked_at IS NULL\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3e9b7721e255f277363491a79abf5d284e57b60a8c819aa5cb9276c08b6b3a09"
+}

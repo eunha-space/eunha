@@ -16,6 +16,7 @@ mod poll_semantics;
 mod portability;
 mod preview_cards;
 mod schema_compatibility;
+mod sessions;
 mod signup_approval;
 mod software_updates;
 mod streaming;

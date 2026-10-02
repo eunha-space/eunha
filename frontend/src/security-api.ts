@@ -157,3 +157,57 @@ export async function addSecurityKey(
     },
   })
 }
+
+// ── Sessions, authorized applications, sign-in history ─────────────────────
+
+export interface Session {
+  id: string
+  ip: string | null
+  user_agent: string
+  browser: string
+  platform: string
+  description: string
+  created_at: string
+  updated_at: string
+  current: boolean
+}
+
+export interface AuthorizedApplication {
+  id: string
+  name: string
+  website: string | null
+  scopes: string[]
+  superapp: boolean
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface LoginActivity {
+  id: string
+  authentication_method: string | null
+  provider: string | null
+  success: boolean
+  failure_reason: string | null
+  ip: string | null
+  user_agent: string | null
+  browser: string
+  platform: string
+  created_at: string | null
+}
+
+export const getSessions = (token: string) => call<Session[]>('/api/eunha/v1/sessions', token)
+
+export const revokeSession = (token: string, id: string) =>
+  call<object>(`/api/eunha/v1/sessions/${id}`, token, 'DELETE')
+
+export const getAuthorizedApplications = (token: string) =>
+  call<AuthorizedApplication[]>('/api/eunha/v1/authorized_applications', token)
+
+export const revokeAuthorizedApplication = (token: string, id: string) =>
+  call<object>(`/api/eunha/v1/authorized_applications/${id}`, token, 'DELETE')
+
+export const getLoginActivities = (token: string, maxId?: string) =>
+  call<LoginActivity[]>(
+    `/api/eunha/v1/login_activities${maxId ? `?max_id=${encodeURIComponent(maxId)}` : ''}`,
+    token,
+  )

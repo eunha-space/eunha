@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_access_tokens SET last_used_at = now(), last_used_ip = $1::text::inet WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7612ffc31c297d0adddfc2a14bed18fbc5ba9d8fdb3aaa408ff547c86376b700"
+}

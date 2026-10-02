@@ -87,3 +87,27 @@ cookie, the browser's address and user agent, and an access token for the
 instance's web app with `read write follow`. Signing out ends it; at most ten
 are kept, the oldest purged first. Changing the password ends every other
 session.
+
+`GET /api/eunha/v1/sessions` lists them, newest activity first, with the
+browser and platform Mastodon would name and which one the asking token
+belongs to; `DELETE /api/eunha/v1/sessions/:id` ends one. Eunha's own web
+client signs in through OAuth rather than a session, so it appears among the
+authorized apps below.
+
+
+Authorized apps and sign-in history
+-----------------------------------
+
+`GET /api/eunha/v1/authorized_applications` lists every app holding a token the
+member has not revoked (Doorkeeper's `authorized_for`), with its scopes and when
+a token of it was last used. Eunha records that as Mastodon does, at most once a
+day per token (`oauth_access_tokens.last_used_at` and `last_used_ip`).
+`DELETE /api/eunha/v1/authorized_applications/:id` revokes the app's tokens and
+grants for the member, removes their web push subscriptions and closes their
+streaming connections; the instance's own web app (`superapp`) is not offered,
+as Mastodon's page does not offer it. Revoking a single token at
+`/oauth/revoke` removes its push subscriptions and closes its streams too.
+
+`GET /api/eunha/v1/login_activities` is the sign-in history, newest first, paged
+with `max_id` and `limit`: each attempt's method (`password`, `otp`,
+`webauthn`), whether it succeeded and why not, the address and the browser.

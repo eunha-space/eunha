@@ -84,7 +84,7 @@ async fn purge_old(db: &PgPool, user_id: i64) -> sqlx::Result<()> {
     )
     .fetch_all(db)
     .await?;
-    destroy_where_ids(db, &stale).await
+    destroy_where_ids(db, &stale).await.map(drop)
 }
 
 /// `Warden::Manager.after_fetch`: the session behind a cookie, if it is
@@ -120,8 +120,9 @@ pub async fn fetch(
     })
 }
 
-/// `SessionActivation.deactivate`: sign a browser out.
-pub async fn deactivate(db: &PgPool, session_id: &str) -> sqlx::Result<()> {
+/// `SessionActivation.deactivate`: sign a browser out. Each of these returns
+/// the access tokens it deleted, whose streams [`kill_streams`] closes.
+pub async fn deactivate(db: &PgPool, session_id: &str) -> sqlx::Result<Vec<i64>> {
     let ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT id FROM session_activations WHERE session_id = $1",
         session_id
@@ -132,7 +133,7 @@ pub async fn deactivate(db: &PgPool, session_id: &str) -> sqlx::Result<()> {
 }
 
 /// `session_activations.destroy_all`, every session the user has.
-pub async fn destroy_all(db: &PgPool, user_id: i64) -> sqlx::Result<()> {
+pub async fn destroy_all(db: &PgPool, user_id: i64) -> sqlx::Result<Vec<i64>> {
     let ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT id FROM session_activations WHERE user_id = $1",
         user_id
@@ -143,7 +144,11 @@ pub async fn destroy_all(db: &PgPool, user_id: i64) -> sqlx::Result<()> {
 }
 
 /// `User#clear_other_sessions`: every session but `keep`.
-pub async fn destroy_others(db: &PgPool, user_id: i64, keep: Option<i64>) -> sqlx::Result<()> {
+pub async fn destroy_others(
+    db: &PgPool,
+    user_id: i64,
+    keep: Option<i64>,
+) -> sqlx::Result<Vec<i64>> {
     let ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT id FROM session_activations WHERE user_id = $1 AND id IS DISTINCT FROM $2",
         user_id,
@@ -156,9 +161,9 @@ pub async fn destroy_others(db: &PgPool, user_id: i64, keep: Option<i64>) -> sql
 
 /// `SessionActivation#destroy`: the row, its access token and its web push
 /// subscription (`dependent: :destroy`).
-pub async fn destroy_where_ids(db: &PgPool, ids: &[i64]) -> sqlx::Result<()> {
+pub async fn destroy_where_ids(db: &PgPool, ids: &[i64]) -> sqlx::Result<Vec<i64>> {
     if ids.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let mut tx = db.begin().await?;
     let gone = sqlx::query!(
@@ -195,5 +200,81 @@ pub async fn destroy_where_ids(db: &PgPool, ids: &[i64]) -> sqlx::Result<()> {
         .execute(&mut *tx)
         .await?;
     }
-    tx.commit().await
+    tx.commit().await?;
+    Ok(tokens)
+}
+
+/// `Doorkeeper::Application.revoke_tokens_and_grants_for`, with what
+/// `OAuth::AuthorizedApplicationsController#destroy` does first: the web push
+/// subscriptions of the app's tokens removed and their streams closed.
+pub async fn revoke_application(
+    state: &crate::state::AppState,
+    application_id: i64,
+    user_id: i64,
+) -> sqlx::Result<()> {
+    let mut tx = state.db.begin().await?;
+    let tokens: Vec<i64> = sqlx::query_scalar!(
+        r#"UPDATE oauth_access_tokens SET revoked_at = now()
+           WHERE application_id = $1 AND resource_owner_id = $2 AND revoked_at IS NULL
+           RETURNING id"#,
+        application_id,
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM web_push_subscriptions WHERE access_token_id = ANY($1)",
+        &tokens
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        r#"UPDATE oauth_access_grants SET revoked_at = now()
+           WHERE application_id = $1 AND resource_owner_id = $2 AND revoked_at IS NULL"#,
+        application_id,
+        user_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    kill_streams(state, tokens);
+    Ok(())
+}
+
+/// `User#revoke_access!`: every grant and token the user has revoked, their
+/// web push subscriptions removed and their streams closed.
+pub async fn revoke_access(state: &crate::state::AppState, user_id: i64) -> sqlx::Result<()> {
+    let mut tx = state.db.begin().await?;
+    sqlx::query!(
+        "UPDATE oauth_access_grants SET revoked_at = now() WHERE resource_owner_id = $1 AND revoked_at IS NULL",
+        user_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let tokens: Vec<i64> = sqlx::query_scalar!(
+        r#"UPDATE oauth_access_tokens SET revoked_at = now()
+           WHERE resource_owner_id = $1 AND revoked_at IS NULL
+           RETURNING id"#,
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM web_push_subscriptions WHERE access_token_id = ANY($1)",
+        &tokens
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    kill_streams(state, tokens);
+    Ok(())
+}
+
+/// `AccessTokenExtension#push_to_streaming_api`.
+pub fn kill_streams(state: &crate::state::AppState, token_ids: Vec<i64>) {
+    if !token_ids.is_empty() {
+        state
+            .streaming
+            .publish(crate::streaming::Event::KillTokens { token_ids });
+    }
 }

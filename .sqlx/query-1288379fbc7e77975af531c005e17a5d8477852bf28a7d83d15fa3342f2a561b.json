@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.account_id, t.id AS token_id\n           FROM oauth_access_tokens t\n           JOIN users u ON u.id = t.resource_owner_id\n           JOIN accounts a ON a.id = u.account_id\n           WHERE t.token = $1 AND t.revoked_at IS NULL\n             AND NOT u.disabled AND a.suspended_at IS NULL\n             AND (t.expires_in IS NULL OR t.created_at + t.expires_in * interval '1 second' > now())",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "token_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1288379fbc7e77975af531c005e17a5d8477852bf28a7d83d15fa3342f2a561b"
+}

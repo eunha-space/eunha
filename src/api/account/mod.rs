@@ -404,7 +404,9 @@ pub async fn sso_post(
 /// `Warden::Manager.before_logout`: the session deactivated.
 pub async fn logout_post(state: AppState, headers: HeaderMap) -> Response {
     if let Some(session_id) = extract_session_token(&headers) {
-        let _ = crate::sessions::deactivate(&state.db, &session_id).await;
+        if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
+            crate::sessions::kill_streams(&state, tokens);
+        }
     }
 
     if is_htmx(&headers) {
@@ -555,14 +557,15 @@ pub async fn password_post(
         Ok(_) => {
             // `Auth::RegistrationsController#update`: every other session
             // ends, and Devise's `password_change` mail goes out.
-            if let Err(error) = crate::sessions::destroy_others(
+            match crate::sessions::destroy_others(
                 &state.db,
                 session.user_id,
                 Some(session.activation_id),
             )
             .await
             {
-                tracing::warn!(%error, "could not end the other sessions");
+                Ok(tokens) => crate::sessions::kill_streams(&state, tokens),
+                Err(error) => tracing::warn!(%error, "could not end the other sessions"),
             }
             crate::accounts::notify_password_change(&state, session.user_id).await;
             if htmx {

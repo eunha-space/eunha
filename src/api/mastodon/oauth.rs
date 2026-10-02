@@ -310,13 +310,23 @@ pub async fn revoke_token(
     state: AppState,
     FormOrJson(form): FormOrJson<RevokeRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    sqlx::query!(
+    let revoked: Vec<i64> = sqlx::query_scalar!(
         r#"UPDATE oauth_access_tokens SET revoked_at = now()
-           WHERE token = $1 AND revoked_at IS NULL"#,
+           WHERE token = $1 AND revoked_at IS NULL
+           RETURNING id"#,
         form.token,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    // `Oauth::TokensController#unsubscribe_for_token`, and the token's
+    // streams closed (`AccessTokenExtension#push_to_streaming_api`).
+    sqlx::query!(
+        "DELETE FROM web_push_subscriptions WHERE access_token_id = ANY($1)",
+        &revoked
     )
     .execute(&state.db)
     .await?;
+    crate::sessions::kill_streams(&state, revoked);
     Ok(Json(serde_json::json!({})))
 }
 
