@@ -9,11 +9,11 @@ API, so when that branch stops receiving fixes, what eunha reproduces is what
 is going out of support.
 
 Eunha asks nobody anything unless `software_update_url` names a server, which
-nothing does by default. Nothing in eunha reads the notices back: they are
-recorded for a Mastodon that may later boot on the database, and mailed to the
-instance's own administrators — who on a hosted instance cannot act on them,
-because only whoever runs the binary can take a release up. Operators who want
-the end-of-support warning name the server:
+nothing does by default. The notices are shown to the administrators on the
+admin software updates page, recorded for a Mastodon that may later boot on the
+database, and mailed to the instance's own administrators — who on a hosted
+instance cannot act on them, because only whoever runs the binary can take a
+release up. Operators who want the end-of-support warning name the server:
 
 ~~~~ toml
 software_update_url = "https://api.joinmastodon.org/update-check"
@@ -27,3 +27,10 @@ of their databases. Instances naming different servers are asked separately,
 and the set is read afresh each time, so a reload's arrivals and departures are
 picked up. Whoever tracks releases for a fleet is better served by
 `mise run mastodon:status`.
+
+`GET /api/v1/admin/software_updates` shows the recorded releases newer than the
+one eunha implements, by version, to a role with `view_devops`, as Mastodon's
+software updates page does; like that page, it is a 404 while no update server
+is configured. The web client's *Software updates* page under `/admin` reads
+it, and the dashboard warns about such releases (see
+[administration](./administration#the-dashboard)).

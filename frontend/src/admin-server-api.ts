@@ -533,6 +533,25 @@ export function setFollowRecommendationsSuppressed(
   )
 }
 
+// ── Software updates ────────────────────────────────────────────────────────
+
+export interface SoftwareUpdate {
+  version: string
+  type: 'patch' | 'minor' | 'major'
+  urgent: boolean
+  release_notes: string
+  end_of_support: string | null
+}
+
+/** A 404 when no update server is configured, as upstream's page is. */
+export function listSoftwareUpdates(token: string) {
+  return json<{ current_version: string; updates: SoftwareUpdate[] }>(
+    token,
+    'GET',
+    '/api/v1/admin/software_updates',
+  )
+}
+
 // ── Invites ─────────────────────────────────────────────────────────────────
 
 export interface AdminInvite {

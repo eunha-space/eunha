@@ -36,6 +36,7 @@ mod relays;
 mod roles;
 mod rules;
 mod settings;
+mod software_updates;
 mod webhooks;
 
 pub use accounts::*;
@@ -63,6 +64,7 @@ pub use relays::*;
 pub use roles::*;
 pub use rules::*;
 pub use settings::*;
+pub use software_updates::*;
 pub use webhooks::*;
 
 /// `REST::AccountSerializer` of an account, if it exists.

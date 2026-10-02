@@ -9,6 +9,7 @@ mod invites;
 mod relays;
 mod roles;
 mod rules;
+mod software_updates;
 mod webhooks;
 
 use reqwest::StatusCode;

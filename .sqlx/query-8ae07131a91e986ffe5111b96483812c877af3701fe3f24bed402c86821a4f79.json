@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT version, type, urgent, release_notes, end_of_support FROM software_updates",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "urgent",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "release_notes",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_of_support",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8ae07131a91e986ffe5111b96483812c877af3701fe3f24bed402c86821a4f79"
+}

@@ -49,8 +49,8 @@ pub struct Config {
     /// Where to ask about newer Mastodon releases and the end of support of the
     /// one eunha implements. Unset — the default — asks nobody anything.
     ///
-    /// Nothing in eunha reads the answer back: it is recorded for a Mastodon
-    /// that may later boot on the database, and mailed to this instance's own
+    /// The answer is shown on the admin software updates page, recorded for a
+    /// Mastodon that may later boot on the database, and mailed to this instance's own
     /// administrators. A hosted instance's administrators cannot act on it,
     /// since only whoever runs the binary can take a release up, so the
     /// request is made when an operator asks for it rather than by default.

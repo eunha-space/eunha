@@ -75,11 +75,12 @@ What the question can honestly mean is 'is the schema and API eunha reproduces \
 still supported?', which is worth an administrator's attention and is what gets \
 asked when it is asked at all.
 
-It is not asked by default because nothing in eunha reads the answer back. The \
-notices are recorded for a Mastodon that may later boot on the database, and \
-mailed to the instance's own administrators — who, on a hosted instance, cannot \
-act on them, since only whoever runs the binary can take a release up. An \
-operator who wants the end-of-support warning names the server and gets it."""
+It is not asked by default because the instance's administrators, who see the \
+notices on the admin software updates page and the dashboard and by mail, \
+cannot act on them on a hosted instance: only whoever runs the binary can take \
+a release up. The notices are also recorded for a Mastodon that may later boot \
+on the database. An operator who wants the end-of-support warning names the \
+server and gets it."""
 evidence = "tests/integration/surfaces/software_updates.rs"
 since = "4.7.0"
 reviewed_for = "4.7.1"
@@ -202,8 +203,9 @@ preview and test), the servers it federates with \
 exporting and importing domain blocks and allows as CSV, relays \
 (`Admin::RelaysController`), the list of every invite \
 (`Admin::InvitesController`), webhooks (`Admin::WebhooksController`, with \
-secret rotation), and suppressing follow recommendations \
-(`Admin::FollowRecommendationsController`) only as server-rendered admin \
+secret rotation), suppressing follow recommendations \
+(`Admin::FollowRecommendationsController`), and the software updates page \
+(`Admin::SoftwareUpdatesController`) only as server-rendered admin \
 pages. The REST API \
 has none of them."""
 eunha = """
@@ -218,8 +220,8 @@ only the keys given, uploads as multipart files), `site_uploads/:id` \
 `export_domain_allows` with `export` and `import`, a domain block import \
 answering with the blocks to confirm rather than a form, and `relays` with \
 `enable` and `disable`, `invites` with `deactivate_all`, `webhooks` with \
-`enable`, `disable` and `secret/rotate`, and `follow_recommendations` with \
-`suppress` and `unsuppress`. Each asks for the \
+`enable`, `disable` and `secret/rotate`, `follow_recommendations` with \
+`suppress` and `unsuppress`, and `software_updates`. Each asks for the \
 permission upstream's policy asks for, \
 validates as upstream's form or model does with its messages, and writes the \
 audit log entries its controller writes, which for the settings is none."""

@@ -42,6 +42,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     label: 'Follow recommendations',
     permission: 'manage_taxonomies',
   },
+  { to: '/admin/software_updates', label: 'Software updates', permission: 'view_devops' },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

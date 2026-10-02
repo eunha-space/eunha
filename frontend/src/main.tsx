@@ -67,6 +67,7 @@ import AdminRelays from './pages/admin/Relays.tsx'
 import AdminInvites from './pages/admin/AdminInvites.tsx'
 import AdminWebhooks from './pages/admin/Webhooks.tsx'
 import AdminFollowRecommendations from './pages/admin/FollowRecommendations.tsx'
+import AdminSoftwareUpdates from './pages/admin/SoftwareUpdates.tsx'
 import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -165,6 +166,7 @@ const router = createBrowserRouter([
   { path: '/admin/invites', element: <AdminInvites /> },
   { path: '/admin/webhooks', element: <AdminWebhooks /> },
   { path: '/admin/follow_recommendations', element: <AdminFollowRecommendations /> },
+  { path: '/admin/software_updates', element: <AdminSoftwareUpdates /> },
   // Strikes and appeals, at Mastodon's paths, which its moderation warning
   // notifications and emails link to.
   { path: '/disputes/strikes', element: <Strikes /> },
