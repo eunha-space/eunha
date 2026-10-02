@@ -143,7 +143,7 @@ pub async fn get_instance_rules(state: AppState) -> AppResult<Json<Vec<Rule>>> {
 /// `Api::V1::Instances::PrivacyPoliciesController`: `PrivacyPolicy.current`.
 pub async fn get_privacy_policy(state: AppState) -> AppResult<Json<crate::privacy_policy::Rest>> {
     let policy = crate::privacy_policy::current(&state).await?;
-    Ok(Json(crate::privacy_policy::serialize(&state, &policy)))
+    Ok(Json(crate::privacy_policy::serialize(&state, &policy)?))
 }
 
 // ── GET /api/v1/instance/extended_description ────────────────────────────

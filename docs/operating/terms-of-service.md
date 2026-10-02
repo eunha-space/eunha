@@ -120,10 +120,13 @@ The policy is written on the about page of the
 Percent signs
 -------------
 
-Upstream passes both texts through Ruby's `format` to fill in the domain, so a
-stray `%` either fails or prints something odd. Eunha replaces `%{domain}`,
-`%<domain>s` and `%%` and leaves any other `%` as it is (the
-`policy-text-percent-signs` divergence).
+Both texts go through Ruby's `format(text, domain:)` to fill in the domain, as
+upstream does: `%{domain}` and `%<domain>s` become the domain and `%%` a single
+`%`. A stray `%` is read as Ruby reads it, so write `%%` for a literal one. The
+`% s` in “100% sure” prints the argument hash (`{domain: "example.com"}`), and
+what Ruby refuses — an unknown `%{name}`, a trailing `%`, a second bare
+conversion, a bare one beside `%{domain}` — makes the endpoint answer 500, as
+upstream's unrescued exception does.
 
 
 What is not here

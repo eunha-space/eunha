@@ -8,7 +8,10 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;
 
-use crate::{error::AppResult, state::AppState};
+use crate::{
+    error::{AppError, AppResult},
+    state::AppState,
+};
 
 /// `PrivacyPolicy::DEFAULT_PRIVACY_POLICY`, Mastodon's
 /// `config/templates/privacy-policy.md`.
@@ -70,8 +73,8 @@ pub struct Rest {
     pub content: String,
 }
 
-pub fn serialize(state: &AppState, policy: &PrivacyPolicy) -> Rest {
-    Rest {
+pub fn serialize(state: &AppState, policy: &PrivacyPolicy) -> AppResult<Rest> {
+    Ok(Rest {
         // `updated_at.iso8601`: seconds, no fraction.
         updated_at: policy
             .updated_at
@@ -81,6 +84,7 @@ pub fn serialize(state: &AppState, policy: &PrivacyPolicy) -> Rest {
                 "%Y-%m-%dT%H:%M:%SZ"
             })
             .to_string(),
-        content: crate::markdown::render_policy(&policy.text, &state.instance.domain),
-    }
+        content: crate::markdown::render_policy(&policy.text, &state.instance.domain)
+            .map_err(AppError::Unrescued)?,
+    })
 }

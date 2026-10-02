@@ -43,6 +43,13 @@ pub enum AppError {
     Database(#[from] sqlx::Error),
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
+    /// An exception Mastodon raises and nothing rescues, carrying its message.
+    ///
+    /// Rails' `ActionDispatch::PublicExceptions` answers it, with the body it
+    /// renders for a JSON request; the message only reaches the log, as it
+    /// only reaches upstream's.
+    #[error("unrescued exception: {0}")]
+    Unrescued(String),
 }
 
 impl IntoResponse for AppError {
@@ -79,6 +86,14 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
                 )
+            }
+            AppError::Unrescued(e) => {
+                tracing::error!("unrescued exception: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": 500, "error": "Internal Server Error" })),
+                )
+                    .into_response();
             }
         };
 

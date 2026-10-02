@@ -268,7 +268,8 @@ pub async fn serialize(state: &AppState, tos: &TermsOfService) -> AppResult<Rest
     Ok(Rest {
         effective_date: effective_date_iso(tos),
         effective: tos.effective(),
-        content: crate::markdown::render_policy(&tos.text, &state.instance.domain),
+        content: crate::markdown::render_policy(&tos.text, &state.instance.domain)
+            .map_err(AppError::Unrescued)?,
         succeeded_by: succeeded_by(&state.db, tos).await?.map(|d| d.to_string()),
     })
 }

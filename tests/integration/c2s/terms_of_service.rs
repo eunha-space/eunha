@@ -170,6 +170,32 @@ async fn content_is_escaped_markdown_with_the_domain() {
     assert!(content.contains("100% sure"), "{content}");
 }
 
+/// Ruby's `format(text, domain:)`: a bare `% s` prints the argument hash, and
+/// what it raises on is upstream's unrescued exception.
+#[tokio::test]
+async fn percent_signs_are_read_as_ruby_reads_them() {
+    let ctx = TestContext::new("tos-percent").await;
+    insert(&ctx.db, "100% sure.", Some(day(-2)), true).await;
+    let (status, body) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["content"],
+        format!("<p>100{{domain: \"{}\"}}ure.</p>\n", ctx.domain)
+    );
+
+    insert(&ctx.db, "At %{domain}, 100% sure.", Some(day(-1)), true).await;
+    let (status, body) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        body,
+        serde_json::json!({ "status": 500, "error": "Internal Server Error" })
+    );
+
+    set_setting(&ctx.db, "site_terms", "\"Ask %{someone}.\"").await;
+    let (status, _) = get_json(&ctx, "/api/v1/instance/privacy_policy", None).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
 #[tokio::test]
 async fn configured_terms_are_served_until_a_version_is_published() {
     let ctx = TestContext::with_instance_config("tos-config", |instance| {

@@ -42,7 +42,6 @@ At the time of writing there are fifty-six. They cover:
     signed, and why the home timeline is never partial;
  -  the terms of service admin API and interstitial, and the configured
     terms and privacy policy eunha still reads;
- -  percent signs in policy texts;
  -  how a delivery from a domain this instance does not federate with is
     answered;
  -  the data export, import and archive takeout API, how imports are run,
