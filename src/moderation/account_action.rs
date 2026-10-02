@@ -41,9 +41,9 @@ impl Default for AccountAction {
 }
 
 /// The user behind a local account: what `UserPolicy` judges.
-struct UserRow {
-    id: i64,
-    email: String,
+pub(super) struct UserRow {
+    pub(super) id: i64,
+    pub(super) email: String,
 }
 
 /// `Admin::AccountAction#save!`, by `actor_id` on `target`.
@@ -309,7 +309,7 @@ pub fn warn_policy(acting: &Role, target: Option<&Role>) -> bool {
 }
 
 /// `UserMailer.warning` and the `moderation_warning` notification.
-async fn notify(
+pub(super) async fn notify(
     state: &AppState,
     target: &Account,
     user: Option<&UserRow>,

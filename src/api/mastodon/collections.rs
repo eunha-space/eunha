@@ -41,7 +41,7 @@ fn state_str(state: i32) -> &'static str {
     }
 }
 
-fn collection_uri(domain: &str, id: i64) -> String {
+pub(crate) fn collection_uri(domain: &str, id: i64) -> String {
     format!("https://{domain}/collections/{id}")
 }
 
@@ -704,7 +704,7 @@ async fn owner_signing_username(state: &AppState, owner_account_id: i64) -> Opti
 }
 
 /// Distribute an `Add`/`Update(FeaturedCollection)` to the owner's followers.
-async fn distribute_collection(
+pub(crate) async fn distribute_collection(
     state: &AppState,
     domain: &str,
     collection_id: i64,
@@ -748,7 +748,7 @@ async fn distribute_collection(
 }
 
 /// Distribute a `Remove` (collection deleted) to the owner's followers.
-async fn distribute_collection_removal(
+pub(crate) async fn distribute_collection_removal(
     state: &AppState,
     domain: &str,
     collection_id: i64,

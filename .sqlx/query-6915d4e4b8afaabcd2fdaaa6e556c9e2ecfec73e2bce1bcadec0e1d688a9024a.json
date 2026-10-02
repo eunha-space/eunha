@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reports SET action_taken_at = now(), action_taken_by_account_id = $2,\n                  updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6915d4e4b8afaabcd2fdaaa6e556c9e2ecfec73e2bce1bcadec0e1d688a9024a"
+}

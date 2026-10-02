@@ -159,14 +159,16 @@ id = "moderation-tools-rest-api"
 kind = "addition"
 summary = "Serves the moderation tools of Mastodon's web admin over the REST API"
 mastodon = """
-Has report notes, account moderation notes, the audit log, warning presets, \
+Has report notes, report actions on the cited posts, account moderation \
+notes, the audit log, warning presets, \
 username blocks, strikes and appeals, an account's posts and relationships, \
 and user management (role, password reset, two-factor, email, confirmation) \
 only as server-rendered admin and dispute pages. The REST API has none of \
 them."""
 eunha = """
 Serves them under `/api/v1/admin/`: `report_notes`, \
-`account_moderation_notes`, `reports/:id/history`, `action_logs` and \
+`account_moderation_notes`, `reports/:id/history`, `reports/:id/actions` \
+(upstream's report action buttons), `action_logs` and \
 `action_logs/filters`, `warning_presets`, `username_blocks`, \
 `disputes/appeals` with `approve` and `reject`, `accounts/:id/statuses` with \
 `batch`, `accounts/:id/relationships`, `roles`, and on `accounts/:id`: \

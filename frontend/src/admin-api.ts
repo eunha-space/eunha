@@ -995,6 +995,22 @@ export function getActionLogFilters(token: string) {
   )
 }
 
+/**
+ * `Admin::Reports::ActionsController`: remove or mark sensitive what the
+ * report cites, or limit or suspend its account. Answers with the report.
+ */
+export function reportModerationAction(
+  token: string,
+  reportId: string,
+  action: 'delete' | 'mark_as_sensitive' | 'silence' | 'suspend',
+  text?: string,
+) {
+  return json<AdminReport>(token, 'POST', `/api/v1/admin/reports/${reportId}/actions`, {
+    moderation_action: action,
+    text,
+  })
+}
+
 export function getReportHistory(token: string, reportId: string) {
   return json<ActionLog[]>(token, 'GET', `/api/v1/admin/reports/${reportId}/history`)
 }

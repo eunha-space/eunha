@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_warnings\n             (account_id, target_account_id, report_id, action, text, status_ids,\n              created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, $6, now(), now())\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Text",
+        "VarcharArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "44a5c0d66c1884b33f30326a06c23415cc60e3173ffeea000f52193c93b4a9e5"
+}

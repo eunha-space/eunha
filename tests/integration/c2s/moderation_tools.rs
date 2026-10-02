@@ -1063,3 +1063,127 @@ async fn test_user_access_management() {
         ]
     );
 }
+
+/// Acting on what a report cites: marking its posts sensitive edits the
+/// ones with media; removing them discards every one. Each logs, resolves
+/// the report, and strikes the account citing the posts.
+#[tokio::test]
+async fn test_report_moderation_actions() {
+    let ctx = TestContext::new("tools-report-actions").await;
+    make_admin(&ctx).await;
+    let (_, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let with_media = ctx.api.post_status(&ctx.bob_token, "look", "public").await;
+    let plain = ctx.api.post_status(&ctx.bob_token, "words", "public").await;
+    sqlx::query(
+        "INSERT INTO media_attachments (id, account_id, status_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, 0, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(id(&ctx.bob_id))
+    .bind(id(with_media["id"].as_str().unwrap()))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let report = file_report(
+        &ctx,
+        &carol_token,
+        json!({"account_id": ctx.bob_id, "status_ids": [with_media["id"], plain["id"]],
+               "category": "other"}),
+    )
+    .await;
+    let rid = report["id"].as_str().unwrap();
+    let url = format!("/api/v1/admin/reports/{rid}/actions");
+
+    let unknown = ctx
+        .api
+        .post_json(
+            &url,
+            Some(&ctx.alice_token),
+            &json!({"moderation_action": "nope"}),
+        )
+        .await;
+    assert_eq!(unknown.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let resolved = json_ok(
+        ctx.api
+            .post_json(
+                &url,
+                Some(&ctx.alice_token),
+                &json!({"moderation_action": "mark_as_sensitive", "text": "tag your media"}),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(resolved["action_taken"], true);
+    let sensitive: Vec<(i64, bool)> =
+        sqlx::query_as("SELECT id, sensitive FROM statuses WHERE account_id = $1 ORDER BY id")
+            .bind(id(&ctx.bob_id))
+            .fetch_all(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(
+        sensitive,
+        vec![
+            (id(with_media["id"].as_str().unwrap()), true),
+            (id(plain["id"].as_str().unwrap()), false),
+        ]
+    );
+    let edits: i64 = sqlx::query_scalar("SELECT count(*) FROM status_edits WHERE status_id = $1")
+        .bind(id(with_media["id"].as_str().unwrap()))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(edits, 1, "the version before is kept");
+
+    json_ok(
+        ctx.api
+            .post_json(
+                &url,
+                Some(&ctx.alice_token),
+                &json!({"moderation_action": "delete"}),
+            )
+            .await,
+    )
+    .await;
+    let kept: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM statuses WHERE account_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id(&ctx.bob_id))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(kept, 0);
+
+    let strikes: Vec<(i32, Vec<String>)> = sqlx::query_as(
+        "SELECT action, status_ids FROM account_warnings WHERE target_account_id = $1 ORDER BY id",
+    )
+    .bind(id(&ctx.bob_id))
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(strikes.len(), 2);
+    assert_eq!(strikes[0].0, 1_250);
+    assert_eq!(strikes[1].0, 1_500);
+    assert_eq!(strikes[1].1.len(), 2);
+    assert_eq!(
+        logs(&ctx).await,
+        vec![
+            ("update".to_string(), "Status".to_string()),
+            ("resolve".to_string(), "Report".to_string()),
+            ("destroy".to_string(), "Status".to_string()),
+            ("destroy".to_string(), "Status".to_string()),
+            ("resolve".to_string(), "Report".to_string()),
+        ]
+    );
+    let entries = json_ok(
+        ctx.api
+            .get(
+                "/api/v1/admin/action_logs?action_type=destroy_status",
+                Some(&ctx.alice_token),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(entries[0]["text"], "alice removed post by bob");
+}

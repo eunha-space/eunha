@@ -523,6 +523,22 @@ pub async fn delete_status(
         return Err(AppError::NotFound);
     }
 
+    remove_status(&state, &status, &account).await?;
+
+    let mut s = serialize_status(&state, &status, None).await?;
+    s.text = Some(status.text.clone());
+    Ok(Json(s))
+}
+
+/// `RemoveStatusService`: discard a status and its boosts, uncount it, take it
+/// off every feed, and tell other servers. For the author's own deletion and
+/// for a moderator's (`Admin::ModerationAction`).
+pub(crate) async fn remove_status(
+    state: &AppState,
+    status: &DbStatus,
+    account: &Account,
+) -> AppResult<()> {
+    let id = status.id;
     // Cascade-delete any reblogs of this status before soft-deleting the original.
     // Mastodon deletes reblogs when the original is removed.
     let deleted_reblogs = sqlx::query!(
@@ -641,12 +657,12 @@ pub async fn delete_status(
     // Federate the removal (Mastodon RemoveStatusService): a reblog sends
     // Undo(Announce); any other status sends Delete(Tombstone). Reach is the
     // full StatusReachFinder (unsafe) audience.
-    if crate::federation::keypair::has_signing_key(&state, account.id)
+    if crate::federation::keypair::has_signing_key(state, account.id)
         .await
         .unwrap_or(false)
     {
         let domain = &state.instance.domain;
-        let actor_url = crate::federation::tag::account_uri_of(domain, &account);
+        let actor_url = crate::federation::tag::account_uri_of(domain, account);
         let key_id = format!("{}#main-key", actor_url);
         use crate::db::models::vis;
         let distributable = matches!(status.visibility, vis::PUBLIC | vis::UNLISTED);
@@ -694,7 +710,7 @@ pub async fn delete_status(
 
         if let Some((activity, reblog_of_account_id)) = plan {
             let inboxes = crate::federation::delivery::status_reach_inboxes(
-                &state,
+                state,
                 id,
                 account.id,
                 status.in_reply_to_account_id,
@@ -709,7 +725,7 @@ pub async fn delete_status(
             .unwrap_or_default();
             if !inboxes.is_empty() {
                 if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    &state, activity, inboxes, key_id,
+                    state, activity, inboxes, key_id,
                 )
                 .await
                 {
@@ -719,9 +735,7 @@ pub async fn delete_status(
         }
     }
 
-    let mut s = serialize_status(&state, &status, None).await?;
-    s.text = Some(status.text.clone());
-    Ok(Json(s))
+    Ok(())
 }
 
 // ── POST /api/v1/statuses/:id/favourite ───────────────────────────────────

@@ -740,6 +740,10 @@ pub fn router() -> Router {
             get(admin::report_history),
         )
         .route(
+            "/api/v1/admin/reports/{id}/actions",
+            post(admin::report_moderation_action),
+        )
+        .route(
             "/api/v1/admin/account_moderation_notes",
             get(admin::list_account_moderation_notes).post(admin::create_account_moderation_note),
         )

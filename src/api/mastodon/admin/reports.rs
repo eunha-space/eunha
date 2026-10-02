@@ -408,3 +408,68 @@ pub async fn resolve_report(
     )
     .await
 }
+
+// ── POST /api/v1/admin/reports/:id/actions ───────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ReportActionForm {
+    /// `delete`, `mark_as_sensitive`, `silence` or `suspend`.
+    pub moderation_action: Option<String>,
+    pub text: Option<String>,
+}
+
+/// `Admin::Reports::ActionsController#create`: removing or marking sensitive
+/// what the report cites (`Admin::ModerationAction`), or limiting or
+/// suspending its account (`Admin::AccountAction`). A spam report's account
+/// is not notified. Eunha's own endpoint; see `moderation-tools-rest-api`.
+pub async fn report_moderation_action(
+    state: AppState,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(id): Path<i64>,
+    Params(form): Params<ReportActionForm>,
+) -> AppResult<Json<AdminReport>> {
+    require_scope(&auth, true)?;
+    let report = find(&state, id).await?;
+    // `authorize @report, :show?`
+    super::require_permission(&state, auth.account_id, flag::MANAGE_REPORTS).await?;
+    let kind = form.moderation_action.unwrap_or_default();
+    let send_email_notification = report.category != report_category::SPAM;
+    match kind.as_str() {
+        "delete" | "mark_as_sensitive" => {
+            crate::moderation::moderation_action::save(
+                &state,
+                auth.account_id,
+                id,
+                &kind,
+                form.text,
+                send_email_notification,
+            )
+            .await?;
+        }
+        "silence" | "suspend" => {
+            let target = sqlx::query_as!(
+                models::Account,
+                "SELECT * FROM accounts WHERE id = $1",
+                report.target_account_id
+            )
+            .fetch_one(&state.db)
+            .await?;
+            crate::moderation::account_action::save(
+                &state,
+                auth.account_id,
+                &target,
+                crate::moderation::account_action::AccountAction {
+                    kind: Some(kind),
+                    report_id: Some(id),
+                    text: form.text,
+                    send_email_notification,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+        // `admin.reports.unknown_action_msg`.
+        other => return Err(AppError::Unprocessable(format!("Unknown action: {other}"))),
+    }
+    render(&state, id).await
+}

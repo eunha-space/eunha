@@ -311,6 +311,22 @@ resolve or reopen its report as it is added (`create_and_resolve`,
 may be deleted by its author, or by a role that may handle reports and
 outranks the author's. Notes themselves are not logged.
 
+### Acting on what a report cites
+
+`POST /api/v1/admin/reports/:id/actions` is Mastodon's report action buttons,
+for a role with `manage_reports`. Its `moderation_action` is one of:
+
+ -  `delete`, which removes the reported posts and collections, logging each,
+    and keeps a remote server from sending them again;
+ -  `mark_as_sensitive`, which marks those carrying media or a link preview
+    sensitive, as an edit when the account is local, and the reported
+    collections too;
+ -  `silence` or `suspend`, which is the account action of that type.
+
+The first two resolve the report and strike the account citing the posts. A
+`text` goes with the strike. The account is notified unless the report is
+spam.
+
 ### The audit log
 
 `/api/v1/admin/action_logs` lists `admin_action_logs` newest first, for a role

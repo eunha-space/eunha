@@ -59,6 +59,14 @@ impl Target {
         }
     }
 
+    /// A `Collection` reads as its owner's `acct` and links to its URI.
+    pub fn collection(id: i64, owner_acct: impl Into<String>, uri: Option<String>) -> Self {
+        Self {
+            permalink: uri,
+            ..Self::new("Collection", id, owner_acct)
+        }
+    }
+
     pub fn domain_block(id: i64, domain: impl Into<String>) -> Self {
         Self::new("DomainBlock", id, domain)
     }

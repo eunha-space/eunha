@@ -9,6 +9,7 @@ import {
   getReport,
   getReportHistory,
   listReportNotes,
+  reportModerationAction,
   publicAccount,
   transitionReport,
   updateReport,
@@ -29,6 +30,7 @@ import {
   AdminAccountLink,
   AdminStatus,
   ChoiceSelect,
+  ConfirmButton,
   formatDate,
 } from '@/components/admin/admin-common.tsx'
 import { AccountActionDialog } from '@/components/admin/account-action-dialog.tsx'
@@ -225,6 +227,37 @@ export default function ReportDetail() {
               >
                 Mark as resolved
               </Button>
+              {report.statuses.length > 0 && (
+                <>
+                  <ConfirmButton
+                    title="Mark the reported posts as sensitive?"
+                    description="Their media is hidden behind a warning, the report is resolved, and the account gets a strike."
+                    confirmLabel="Mark as sensitive"
+                    destructive={false}
+                    disabled={report.action_taken}
+                    onConfirm={async () => {
+                      setReport(await reportModerationAction(token, report.id, 'mark_as_sensitive'))
+                      toast.success('Posts marked as sensitive.')
+                      load()
+                    }}
+                  >
+                    Mark as sensitive
+                  </ConfirmButton>
+                  <ConfirmButton
+                    title="Delete the reported posts?"
+                    description="The posts are removed, the report is resolved, and the account gets a strike. This cannot be undone."
+                    confirmLabel="Delete posts"
+                    disabled={report.action_taken}
+                    onConfirm={async () => {
+                      setReport(await reportModerationAction(token, report.id, 'delete'))
+                      toast.success('Posts deleted.')
+                      load()
+                    }}
+                  >
+                    Delete posts
+                  </ConfirmButton>
+                </>
+              )}
               {target && (
                 <>
                   {target.domain === null && (
