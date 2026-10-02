@@ -123,11 +123,12 @@ instance configuration:
 disable_automatic_switching_to_approved_registrations = true
 ~~~~
 
-Mastodon counts a moderator as active by `users.current_sign_in_at`, which its
-web pages move at most once a day. Eunha's own client signs in through OAuth
-and never moves it, so eunha also counts a moderator's token used within the
-eight days (`oauth_access_tokens.last_used_at`, recorded at most once a day);
-this is the `auto-close-registrations-counts-token-use` divergence.
+A moderator counts as active by `users.current_sign_in_at` alone, as in
+Mastodon. Signing in on the authorization page sets it (and counts the sign-in),
+and every authenticated request, eunha's own client's included, moves it again
+once it is a day old (`UserTrackingConcern`), keeping the previous one in
+`last_sign_in_at`. Such a request also counts a confirmed user towards the day's
+logins in Redis (`activity:logins:<day>`), as Mastodon's `ActivityTracker` does.
 
 ### Content retention
 

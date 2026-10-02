@@ -465,15 +465,23 @@ async fn test_user_stream() {
     assert!(quiet(&mut alice).await);
 }
 
-/// Home updates go only to users who signed in recently.
+/// Home updates go only to users who signed in recently. An API request
+/// signs its user in again (`UserTrackingConcern`), so bob's sign-in is
+/// taken back after he follows; streaming itself signs no one in.
 #[tokio::test]
 async fn test_user_stream_needs_a_recent_sign_in() {
     let ctx = TestContext::new("stream-user-inactive").await;
-    let mut alice = ws_connect(&ctx, "user", &ctx.alice_token).await;
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    sqlx::query("UPDATE users SET current_sign_in_at = NULL WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let mut bob = ws_connect(&ctx, "user", &ctx.bob_token).await;
     ctx.api
         .post_status(&ctx.alice_token, "into the void", "public")
         .await;
-    assert!(quiet(&mut alice).await);
+    assert!(quiet(&mut bob).await);
 }
 
 /// `user:notification` carries notifications and nothing else.

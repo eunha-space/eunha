@@ -53,9 +53,8 @@ pub async fn check(state: &AppState) -> anyhow::Result<bool> {
 }
 
 /// `active_moderators?`: someone whose role can manage reports signed in
-/// within the threshold, or — since eunha's own client signs in through
-/// OAuth and never moves `current_sign_in_at` the way Mastodon's web pages
-/// do — used a token within it.
+/// within the threshold, by `current_sign_in_at`, which every authenticated
+/// request moves once a day (`UserTrackingConcern`).
 async fn active_moderators(state: &AppState) -> anyhow::Result<bool> {
     let moderators = crate::push::accounts_who_can(state, &[flag::MANAGE_REPORTS]).await?;
     if moderators.is_empty() {
@@ -65,12 +64,7 @@ async fn active_moderators(state: &AppState) -> anyhow::Result<bool> {
         r#"SELECT EXISTS (
              SELECT 1 FROM users u
              WHERE u.account_id = ANY($1)
-               AND (u.current_sign_in_at >= now() - make_interval(hours => $2)
-                    OR EXISTS (
-                      SELECT 1 FROM oauth_access_tokens t
-                      WHERE t.resource_owner_id = u.id
-                        AND t.last_used_at >= now() - make_interval(hours => $2)
-                    ))
+               AND u.current_sign_in_at >= now() - make_interval(hours => $2)
            ) AS "e!""#,
         &moderators,
         MODERATOR_THRESHOLD_HOURS as i32,

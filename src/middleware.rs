@@ -118,6 +118,7 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
         if let Some(tok) = sqlx::query!(
             r#"SELECT t.id, u.account_id AS "account_id?", t.application_id, t.scopes,
                       t.expires_in, t.created_at, t.revoked_at, t.last_used_at, u.id as "user_id?",
+                      u.current_sign_in_at AS "current_sign_in_at?",
                       u.disabled as "disabled?", a.suspended_at AS "suspended_at?",
                       a.requested_deletion_at AS "requested_deletion_at?",
                       (u.confirmed_at IS NOT NULL) AS "confirmed?", u.approved AS "approved?",
@@ -178,6 +179,16 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
                 .execute(&state.db)
                 .await;
             }
+            // `UserTrackingConcern#update_user_sign_in`, a before action of
+            // every controller, the API's included: a user whose sign-in time
+            // is a day old, or unset, is signed in again now.
+            if let (true, Some(user_id)) = (valid, tok.user_id) {
+                if tok.current_sign_in_at.is_none_or(|at| {
+                    at < chrono::Utc::now().naive_utc() - SIGN_IN_UPDATE_FREQUENCY
+                }) {
+                    update_sign_in(&state, user_id, false).await;
+                }
+            }
             if valid && account_unavailable {
                 req.extensions_mut().insert(UnavailableAccount);
             } else if let (true, None) = (valid, tok.account_id) {
@@ -205,6 +216,61 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
     }
     next.run(req).await
 }
+
+/// `UserTrackingConcern::SIGN_IN_UPDATE_FREQUENCY`.
+pub const SIGN_IN_UPDATE_FREQUENCY: chrono::Duration = chrono::Duration::hours(24);
+
+/// `User#update_sign_in!(new_sign_in:)` and the `prepare_returning_user!` it
+/// ends with: the sign-in time moves to now, the last one to what it was (or
+/// now), the count goes up for a new sign-in, and a confirmed user counts
+/// towards the day's logins (`ActivityTracker.record('activity:logins', id)`).
+/// The feed regeneration `prepare_returning_user!` also starts for a user
+/// back after two weeks is the home feed's to do when it is read.
+pub async fn update_sign_in(state: &AppState, user_id: i64, new_sign_in: bool) {
+    let confirmed = match sqlx::query_scalar!(
+        r#"UPDATE users SET last_sign_in_at = COALESCE(current_sign_in_at, now()),
+                            current_sign_in_at = now(),
+                            sign_in_count = sign_in_count + CASE WHEN $2 THEN 1 ELSE 0 END
+           WHERE id = $1
+           RETURNING confirmed_at IS NOT NULL AS "confirmed!""#,
+        user_id,
+        new_sign_in,
+    )
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(confirmed) => confirmed.unwrap_or(false),
+        Err(error) => {
+            tracing::warn!(user_id, %error, "could not record a sign-in");
+            return;
+        }
+    };
+    if !confirmed {
+        return;
+    }
+    let today = chrono::Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight")
+        .and_utc()
+        .timestamp();
+    let key = state.redis_keys.key(format!("activity:logins:{today}"));
+    let mut redis = state.redis.clone();
+    let _: redis::RedisResult<()> = redis::pipe()
+        .cmd("PFADD")
+        .arg(&key)
+        .arg(user_id)
+        .ignore()
+        .cmd("EXPIRE")
+        .arg(&key)
+        .arg(ACTIVITY_EXPIRE_AFTER)
+        .ignore()
+        .query_async(&mut redis)
+        .await;
+}
+
+/// `ActivityTracker::EXPIRE_AFTER`: six months, as ActiveSupport counts them.
+const ACTIVITY_EXPIRE_AFTER: i64 = 15_778_476;
 
 /// Log failed requests (4xx/5xx) with their method, path and status.
 ///

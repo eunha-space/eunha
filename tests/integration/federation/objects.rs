@@ -330,7 +330,7 @@ async fn test_actor_serializes_profile_fields() {
             &[
                 ("display_name", "Alice :party:"),
                 ("fields_attributes[0][name]", "Website"),
-                ("fields_attributes[0][value]", "https://alice.example"),
+                ("fields_attributes[0][value]", "https://alice.org"),
             ],
         )
         .await;
@@ -362,7 +362,7 @@ async fn test_actor_serializes_profile_fields() {
     assert!(
         website["value"]
             .as_str()
-            .is_some_and(|v| v.contains("https://alice.example") && v.contains("<a ")),
+            .is_some_and(|v| v.contains("https://alice.org") && v.contains("<a ")),
         "field value should be linkified HTML: {website}"
     );
 

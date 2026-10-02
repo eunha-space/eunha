@@ -233,14 +233,10 @@ pub async fn issue_token(
                 tracing::warn!(code = %code_str, "authorization code not found or expired");
                 AppError::Unauthorized
             })?;
+            // The sign-in was recorded on the authorization page, as
+            // `Auth::SessionsController` records it; the exchange records none.
             let _account_id = sqlx::query_scalar!(
-                r#"UPDATE users SET
-                     last_sign_in_at    = current_sign_in_at,
-                     current_sign_in_at = now(),
-                     sign_in_count      = sign_in_count + 1
-                   WHERE id = $1
-                     AND disabled = false
-                   RETURNING account_id"#,
+                "SELECT account_id FROM users WHERE id = $1 AND disabled = false",
                 code.resource_owner_id,
             )
             .fetch_optional(&state.db)

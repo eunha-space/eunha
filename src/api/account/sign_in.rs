@@ -430,6 +430,7 @@ async fn on_authentication_success(
 ) {
     two_factor::clear_second_factor_attempts(state, user.user_id).await;
     let suspicious = suspicious_sign_in(state, user, ip).await;
+    crate::middleware::update_sign_in(state, user.user_id, true).await;
     crate::accounts::record_login(&state.db, user.user_id, ip, user_agent, method, true, None)
         .await;
     if suspicious {

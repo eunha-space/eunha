@@ -20,7 +20,8 @@ remembered for each domain, posting idempotency, notification
 group state, async refreshes, the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
-emailed to an account's subscribers, sign-ins waiting on a second factor
+emailed to an account's subscribers, the users who signed in each day
+(`activity:logins:<day>`), sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
 the translation service, the search index queues (`chewy:queue:<Index>`,
 see [search](./search)), the counts that limit how many new remote
