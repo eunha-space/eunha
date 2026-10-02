@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes SET approval_uri = NULL, state = 0, legacy = $2, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "031c46d9ef1bea32be5e99f56849688b4f5ee6515ba2faa9539cf33baafa06e3"
+}

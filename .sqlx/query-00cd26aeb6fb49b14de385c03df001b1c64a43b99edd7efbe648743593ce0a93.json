@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS reblog_id, s.account_id FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           WHERE s.reblog_of_id = $1 AND s.deleted_at IS NULL\n             AND s.visibility IN (0, 1)\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND ($2::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM blocks\n                 WHERE (account_id = $2 AND target_account_id = a.id)\n                    OR (account_id = a.id AND target_account_id = $2)\n             ))\n             AND ($2::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id\n             ))\n             AND ($3::bigint IS NULL OR s.id < $3)\n             AND ($4::bigint IS NULL OR s.id > $4)\n             AND ($5::bigint IS NULL OR s.id > $5)\n           ORDER BY s.id DESC LIMIT $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reblog_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "00cd26aeb6fb49b14de385c03df001b1c64a43b99edd7efbe648743593ce0a93"
+}

@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.id AS fav_id, f.account_id FROM favourites f\n           JOIN accounts a ON a.id = f.account_id\n           WHERE f.status_id = $1\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND ($2::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM blocks\n                 WHERE (account_id = $2 AND target_account_id = a.id)\n                    OR (account_id = a.id AND target_account_id = $2)\n             ))\n             AND ($2::bigint IS NULL OR NOT EXISTS (\n                 SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id\n             ))\n             AND ($3::bigint IS NULL OR f.id < $3)\n             AND ($4::bigint IS NULL OR f.id > $4)\n             AND ($5::bigint IS NULL OR f.id > $5)\n           ORDER BY f.id DESC LIMIT $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fav_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3c250f9b235d675947e104f9324920713e666bd8eca794ec303facebabd2bf3f"
+}

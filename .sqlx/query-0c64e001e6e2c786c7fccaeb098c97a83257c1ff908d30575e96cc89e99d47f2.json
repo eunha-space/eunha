@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.* FROM accounts a\n               JOIN users u ON u.account_id = a.id\n               LEFT JOIN user_roles ur ON ur.id = u.role_id\n               WHERE a.domain IS NULL\n               ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC\n               LIMIT 1",
+  "query": "SELECT * FROM accounts\n         WHERE lower(username) = lower($1)\n           AND (($2::text IS NULL AND domain IS NULL) OR lower(domain) = lower($2))\n         LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -290,7 +290,10 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text",
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -352,5 +355,5 @@
       true
     ]
   },
-  "hash": "e9934f2761799695256f6c52b0850e0f8e1a85380cc31b39674a520425ea970c"
+  "hash": "0c64e001e6e2c786c7fccaeb098c97a83257c1ff908d30575e96cc89e99d47f2"
 }
