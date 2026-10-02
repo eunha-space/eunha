@@ -193,40 +193,29 @@ id = "server-administration-rest-api"
 kind = "addition"
 summary = "Serves the server administration of Mastodon's web admin over the REST API"
 mastodon = """
-Has the server settings (`Form::AdminSettings` on the branding, about, \
-registrations, discovery, content retention and appearance pages) and \
-removing a site upload, the server rules (`Admin::RulesController`, with \
-translations and ordering), roles (`Admin::RolesController`), and \
-announcements (`Admin::AnnouncementsController`, with its distribution, \
-preview and test), the servers it federates with \
-(`Admin::InstancesController`, with moderation notes and delivery controls), \
-exporting and importing domain blocks and allows as CSV, relays \
-(`Admin::RelaysController`), the list of every invite \
-(`Admin::InvitesController`), webhooks (`Admin::WebhooksController`, with \
-secret rotation), suppressing follow recommendations \
-(`Admin::FollowRecommendationsController`), the software updates page \
-(`Admin::SoftwareUpdatesController`), and the dashboard's pending counts and \
-system checks (`Admin::DashboardController`) only as server-rendered admin \
-pages. The REST API \
-has none of them."""
+Has these only as server-rendered admin pages, with no REST API: the server \
+settings (`Form::AdminSettings` on its six pages) and site uploads, server \
+rules, roles, announcements with their mail distribution, the federation \
+pages (`Admin::InstancesController`, instance moderation notes and delivery \
+controls), the domain block and allow CSV export and import, relays, the list \
+of every invite, webhooks, follow recommendation suppressions, software \
+updates, and the dashboard's pending counts and system checks."""
 eunha = """
-Serves them under `/api/v1/admin/`: `settings` (`GET`, and `PATCH` with \
-only the keys given, uploads as multipart files), `site_uploads/:id` \
-(`DELETE`), `rules` with `move_up` and `move_down`, `roles` (`POST`) and \
-`roles/:id`, each role saying what the acting role may do with it, and \
-`announcements` with `publish`, `unpublish`, `preview`, `test` and \
-`distribution`, `instances` and `instances/:domain` with \
-`clear_delivery_errors`, `restart_delivery`, `stop_delivery`, purging by \
-`DELETE`, and `moderation_notes`, and `export_domain_blocks` and \
-`export_domain_allows` with `export` and `import`, a domain block import \
-answering with the blocks to confirm rather than a form, and `relays` with \
-`enable` and `disable`, `invites` with `deactivate_all`, `webhooks` with \
-`enable`, `disable` and `secret/rotate`, `follow_recommendations` with \
-`suppress` and `unsuppress`, `software_updates`, and `dashboard`. Each asks \
-for the \
-permission upstream's policy asks for, \
-validates as upstream's form or model does with its messages, and writes the \
-audit log entries its controller writes, which for the settings is none."""
+Serves them under `/api/v1/admin/`: `settings` (`PATCH` with only the keys \
+given, uploads as multipart files) and `site_uploads/:id`; `rules` with \
+`move_up` and `move_down`; `roles` and `roles/:id`, each role saying what the \
+acting role may do with it; `announcements` with `publish`, `unpublish`, \
+`preview`, `test` and `distribution`; `instances` and `instances/:domain` \
+with `clear_delivery_errors`, `restart_delivery`, `stop_delivery`, purging by \
+`DELETE`, and `moderation_notes`; `export_domain_blocks` and \
+`export_domain_allows` with `export` and `import`, a block import answering \
+with the blocks to confirm rather than a form; `relays` with `enable` and \
+`disable`; `invites` with `deactivate_all`; `webhooks` with `enable`, \
+`disable` and `secret/rotate`; `follow_recommendations` with `suppress` and \
+`unsuppress`; `software_updates`; and `dashboard`. Each asks for the \
+permission upstream's policy asks for, validates as upstream's form or model \
+does with its messages, and writes the audit log entries its controller \
+writes, which for most of these pages is none."""
 why = """
 Eunha's client is a single-page app with no server-rendered admin to inherit, \
 so these pages need an API to call. Like `moderation-tools-rest-api`, they \

@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are forty-one. They cover:
+At the time of writing there are forty-three. They cover:
 
  -  integrity proofs on outgoing activities;
  -  the invite tree, and the two ways eunha's invite API goes beyond
@@ -24,7 +24,9 @@ At the time of writing there are forty-one. They cover:
  -  what the update check asks about;
  -  when the local-keypair migration is recorded;
  -  what a mute silences;
- -  the moderation tools API;
+ -  the moderation tools API, and the server administration API;
+ -  the site's identity and registrations, which default to the instance
+    configuration until they are saved;
  -  the account move API, and when a moved follower leaves the old account;
  -  how command-line accounts are created;
  -  three details of delivery failures;
