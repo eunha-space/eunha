@@ -4203,3 +4203,24 @@ async fn test_update_credentials_accepts_json() {
     assert_eq!(body["source"]["privacy"], "unlisted");
     assert_eq!(body["fields"][0]["name"], "Site");
 }
+
+/// `pin` and `unpin` are Mastodon's older names for endorsing.
+#[tokio::test]
+async fn test_pin_and_unpin_endorse() {
+    let ctx = TestContext::new("pin-endorse").await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    for (verb, endorsed) in [("pin", true), ("unpin", false)] {
+        let rel: Value = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/accounts/{}/{verb}", ctx.bob_id),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(rel["endorsed"].as_bool(), Some(endorsed), "{verb}");
+    }
+}

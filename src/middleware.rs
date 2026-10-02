@@ -475,6 +475,8 @@ pub fn requires_user(method: &axum::http::Method, path: &str) -> bool {
                 | "in_collections"
                 | "endorse"
                 | "unendorse"
+                | "pin"
+                | "unpin"
         );
     }
     // `Api::V1::TagsController` but show.

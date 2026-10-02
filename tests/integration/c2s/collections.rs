@@ -411,3 +411,34 @@ async fn test_discoverable_visibility() {
         "owner cannot see own non-discoverable collection",
     );
 }
+
+/// Mastodon serves collections under `/api/v1_alpha` as well.
+#[tokio::test]
+async fn test_collections_under_v1_alpha() {
+    let ctx = TestContext::new("coll-alpha").await;
+    let body: Value = ctx
+        .api
+        .post_json(
+            "/api/v1_alpha/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Alpha", "discoverable": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = body["collection"]["id"].as_str().unwrap().to_owned();
+    let shown = ctx
+        .api
+        .get(&format!("/api/v1_alpha/collections/{id}"), None)
+        .await;
+    assert_eq!(shown.status(), StatusCode::OK);
+    let listed = ctx
+        .api
+        .get(
+            &format!("/api/v1_alpha/accounts/{}/collections", ctx.alice_id),
+            None,
+        )
+        .await;
+    assert_eq!(listed.status(), StatusCode::OK);
+}
