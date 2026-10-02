@@ -271,7 +271,7 @@ async fn test_settings_drive_the_instance() {
             StatusCode::UNPROCESSABLE_ENTITY
         )
         .await,
-        "Validation failed: Reason can't be blank"
+        "Validation failed: Invite request text can't be blank"
     );
     assert_eq!(
         signup("carol", Some("I like stars")).await.status(),
