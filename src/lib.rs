@@ -14,6 +14,7 @@ pub mod divergence;
 pub mod email;
 pub mod email_subscriptions;
 pub mod error;
+pub mod fasp;
 pub mod federation;
 pub mod feed;
 pub mod import;
@@ -85,6 +86,9 @@ pub fn build_app() -> Router {
         .merge(compressed)
         // Streaming WebSocket must be outside CompressionLayer to avoid body wrapping.
         .merge(api::mastodon::streaming_router())
+        // The FASP API signs each answer over its body's digest, which a
+        // compressed body would no longer match.
+        .merge(fasp::api::router())
         .layer(axum_middleware::from_fn(middleware::log_failures))
         .layer(axum_middleware::from_fn(middleware::authenticate))
         .layer(axum_middleware::from_fn(telemetry::observe))

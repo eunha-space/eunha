@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fasp_providers\n              SET confirmed = true, privacy_policy = $2, sign_in_url = $3,\n                  contact_email = $4, fediverse_account = $5, updated_at = now()\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "56bfb73ae24c8e8a005179c37a112563868dd4409d83b4be741eee29cc9a88e0"
+}

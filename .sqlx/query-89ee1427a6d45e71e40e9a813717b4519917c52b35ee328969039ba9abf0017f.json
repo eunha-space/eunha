@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, domain, uri, id_scheme, username FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "89ee1427a6d45e71e40e9a813717b4519917c52b35ee328969039ba9abf0017f"
+}

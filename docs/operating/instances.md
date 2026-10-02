@@ -149,7 +149,14 @@ disallow_unauthenticated_api_access = false
 # Mastodon's DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS (see the
 # administration page).
 disable_automatic_switching_to_approved_registrations = false
+# Mastodon's EXPERIMENTAL_FEATURES. The one eunha knows is `fasp` (see
+# auxiliary service providers); unknown names are ignored.
+experimental_features = ["fasp"]
 ~~~~
+
+`experimental_features` turns on what Mastodon keeps behind
+`EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under
+[auxiliary service providers](./fasp).
 
 Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that
 is not signed: actors, statuses and every collection answer 401 to an unsigned

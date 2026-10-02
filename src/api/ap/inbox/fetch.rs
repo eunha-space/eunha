@@ -248,6 +248,7 @@ async fn fetch_remote_status_depth(
         .await?
         .map(|id| (id, false)));
     };
+    crate::fasp::events::status_created(state, new_id).await;
 
     // Quote linkage (only if the quoted post is already local).
     let quote_uri = object
@@ -615,6 +616,7 @@ async fn resolve_or_fetch_remote_account_inner(
     crate::moderation::domain_block::apply_to_new_account(state, id, &domain)
         .await
         .map_err(AppError::Internal)?;
+    crate::fasp::events::account_created(state, id).await;
 
     Ok(id)
 }

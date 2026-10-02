@@ -35,6 +35,7 @@ export default defineConfig({
           { text: "Preview cards", link: "/operating/preview-cards" },
           { text: "Remote replies", link: "/operating/remote-replies" },
           { text: "Translation", link: "/operating/translation" },
+          { text: "Auxiliary service providers", link: "/operating/fasp" },
           { text: "Update notices", link: "/operating/update-notices" },
         ],
       },

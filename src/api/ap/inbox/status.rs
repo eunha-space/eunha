@@ -87,7 +87,7 @@ pub(super) async fn handle_delete(
             // be put back. Only a reply that was counted is subtracted, matching
             // what `Create` counted on the way in.
             let deleted_reply = sqlx::query!(
-                r#"SELECT account_id, in_reply_to_id, visibility FROM statuses
+                r#"SELECT id, account_id, in_reply_to_id, visibility FROM statuses
                    WHERE uri = $1 AND deleted_at IS NULL"#,
                 uri,
             )
@@ -98,6 +98,7 @@ pub(super) async fn handle_delete(
                     .execute(&state.db)
                     .await?;
             if let Some(row) = &deleted_reply {
+                crate::fasp::events::status_deleted(state, row.id).await;
                 if let Err(e) = crate::counters::on_status_deleted(
                     &state.db,
                     row.account_id,
@@ -269,6 +270,7 @@ pub(super) async fn handle_announce(
     // `ActivityPub::Activity::Announce`: `Trends.register!`.
     if let Some(boost_id) = inserted {
         crate::trends::register(state, boost_id).await;
+        crate::fasp::events::status_created(state, boost_id).await;
     }
 
     // Notify the local author that a remote account boosted their post
@@ -382,6 +384,9 @@ pub(super) async fn handle_like(
     .await?
     .rows_affected()
         > 0;
+    if favourited {
+        crate::fasp::events::favourite_created(state, status_id);
+    }
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -610,6 +615,7 @@ pub(super) async fn handle_update(
             let Some(row) = updated else {
                 return Ok(());
             };
+            crate::fasp::events::status_updated(state, row.id).await;
 
             // Replace media attachments
             sqlx::query!("DELETE FROM media_attachments WHERE status_id = $1", row.id)

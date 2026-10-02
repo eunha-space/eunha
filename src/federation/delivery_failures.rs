@@ -23,6 +23,10 @@ use redis::aio::ConnectionManager;
 /// (`DeliveryFailureTracker::FAILURE_THRESHOLDS[:days]`).
 const FAILURE_DAYS: usize = 7;
 
+/// Minutes with failures that mark a host unavailable, for a tracker counting
+/// minutes (`DeliveryFailureTracker::FAILURE_THRESHOLDS[:minutes]`).
+const FAILURE_MINUTES: usize = 5;
+
 /// How long the hosts marked unavailable are taken from memory before the
 /// table is read again, for a host another process marked.
 const UNAVAILABLE_TTL: Duration = Duration::from_secs(60);
@@ -74,16 +78,34 @@ impl DeliveryFailureTracker {
     /// (`DeliveryFailureTracker#track_failure!`).
     pub async fn track_failure(&self, host: &str) -> anyhow::Result<()> {
         let day = chrono::Utc::now().format("%Y%m%d").to_string();
+        self.track_failure_at(host, day, FAILURE_DAYS).await
+    }
+
+    /// Count a failed request to `host` at the resolution of minutes
+    /// (`DeliveryFailureTracker.new(url, resolution: :minutes)
+    /// .track_failure!`), which is how requests to a FASP are tracked: five
+    /// different minutes with failures mark the host unavailable.
+    pub async fn track_failure_minutes(&self, host: &str) -> anyhow::Result<()> {
+        let minute = chrono::Utc::now().format("%Y%m%d%H%M").to_string();
+        self.track_failure_at(host, minute, FAILURE_MINUTES).await
+    }
+
+    async fn track_failure_at(
+        &self,
+        host: &str,
+        stamp: String,
+        threshold: usize,
+    ) -> anyhow::Result<()> {
         let mut redis = self.redis.clone();
         let (_, days): (i64, usize) = redis::pipe()
             .cmd("SADD")
             .arg(self.key(host))
-            .arg(day)
+            .arg(stamp)
             .cmd("SCARD")
             .arg(self.key(host))
             .query_async(&mut redis)
             .await?;
-        if days >= FAILURE_DAYS {
+        if days >= threshold {
             // `UnavailableDomain.create`, which a domain already there fails
             // validation for and leaves as it is.
             let marked = sqlx::query!(

@@ -21,6 +21,10 @@ path = "tests/first_contact.rs"
 name = "remote_replies"
 path = "tests/remote_replies.rs"
 
+[[test]]
+name = "fasp"
+path = "tests/fasp.rs"
+
 [[bin]]
 name = "eunha-upload-media"
 path = "src/bin/upload_media.rs"
@@ -95,6 +99,12 @@ data-encoding = "2"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rsa = { version = "0.9", features = ["sha2", "pem"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
+# FASP's Ed25519 registration keys and response signatures (src/fasp/), the
+# structured fields RFC 9421 signature headers are, and the MD5 an account
+# search's refresh is keyed by.
+ed25519-dalek = "2"
+sfv = "0.15"
+md-5 = "0.10"
 
 # HTTP client (federation)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }

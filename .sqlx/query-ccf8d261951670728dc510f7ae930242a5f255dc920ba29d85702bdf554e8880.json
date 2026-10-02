@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET discoverable = $1 WHERE id = $2 AND discoverable IS DISTINCT FROM $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ccf8d261951670728dc510f7ae930242a5f255dc920ba29d85702bdf554e8880"
+}

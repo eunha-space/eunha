@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fasp_subscriptions WHERE id = $1 AND fasp_provider_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01f20eade5c860b0c663021ce000c41e5a7c5ac0767abfdcfa184d2c42090faf"
+}

@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, fasp_provider_id, threshold_timeframe, threshold_shares,\n                  threshold_likes, threshold_replies\n             FROM fasp_subscriptions\n            WHERE category = $1 AND subscription_type = $2\n            ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "fasp_provider_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "threshold_timeframe",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "threshold_shares",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "threshold_likes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "threshold_replies",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "867b7e9b0d8c45e67d223a44ec1cf1b56f4369a4ae507ec3e24409b7ada864a4"
+}

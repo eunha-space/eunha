@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fasp_follow_recommendations\n                         (requesting_account_id, recommended_account_id, created_at, updated_at)\n                       SELECT $1, $2, now(), now()\n                        WHERE NOT EXISTS (SELECT 1 FROM fasp_follow_recommendations\n                                           WHERE requesting_account_id = $1\n                                             AND recommended_account_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5093e0624fdce60bee6fc2286bfc6350bb9c09d67ffa855fcc683624805b6d8a"
+}

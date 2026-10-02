@@ -508,6 +508,7 @@ async fn purge_content(state: &AppState, account: &Account, options: &Options) -
         // Everything else hangs off `accounts` with an ON DELETE CASCADE (or
         // SET NULL) foreign key, so the row itself is the last thing to go.
         delete_avatar_and_header(state, account).await;
+        crate::fasp::events::account_deleted(state, account.id).await;
         sqlx::query!("DELETE FROM accounts WHERE id = $1", account.id)
             .execute(&state.db)
             .await?;
@@ -617,6 +618,7 @@ async fn purge_profile(state: &AppState, account: &Account, options: &Options) -
     }
 
     delete_avatar_and_header(state, account).await;
+    let was_discoverable = account.discoverable.unwrap_or(false);
     sqlx::query!(
         r#"UPDATE accounts SET
              silenced_at = NULL,
@@ -655,6 +657,8 @@ async fn purge_profile(state: &AppState, account: &Account, options: &Options) -
     )
     .execute(&state.db)
     .await?;
+    // Turning `discoverable` off is news to providers.
+    crate::fasp::events::account_updated(state, account.id, was_discoverable).await;
 
     // statuses_count / followers_count / following_count live in account_stats.
     sqlx::query!(

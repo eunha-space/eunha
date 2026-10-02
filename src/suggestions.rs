@@ -4,8 +4,9 @@
 //! server's most followed and most interacted-with accounts
 //! (`global_follow_recommendations`, which the daily
 //! `Scheduler::FollowRecommendationsScheduler` refreshes).
-//! `SimilarProfilesSource` needs Elasticsearch and `FaspSource` a FASP, and
-//! eunha has neither.
+//! With the `fasp` feature on, the accounts a FASP recommended to the viewer
+//! (`fasp`) join them. `SimilarProfilesSource` needs Elasticsearch, which
+//! eunha does not have.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -153,6 +154,26 @@ async fn global(
         .await?)
 }
 
+/// `AccountSuggestions::FaspSource`: the accounts providers recommended to
+/// the viewer, while the `fasp` feature is on.
+async fn fasp(state: &AppState, viewer: i64) -> anyhow::Result<Vec<i64>> {
+    if !crate::fasp::enabled(state) {
+        return Ok(vec![]);
+    }
+    let sql = format!(
+        "SELECT a.id FROM accounts a
+         WHERE a.id IN (SELECT r.recommended_account_id FROM fasp_follow_recommendations r
+                         WHERE r.requesting_account_id = $1)
+           AND {BASE_SCOPE}
+         LIMIT $2"
+    );
+    Ok(sqlx::query_scalar(&sql)
+        .bind(viewer)
+        .bind(BATCH_SIZE)
+        .fetch_all(&state.db)
+        .await?)
+}
+
 /// A shuffle that keeps its order for a viewer for [`ORDER_KEPT_FOR`]
 /// seconds, so paging through suggestions sees one list, as Mastodon's cached
 /// one is.
@@ -201,6 +222,9 @@ pub async fn get(
         for reason in reasons {
             add(id, reason);
         }
+    }
+    for id in fasp(state, viewer).await? {
+        add(id, "fasp".into());
     }
     let mut all: Vec<(i64, Vec<String>)> = order
         .into_iter()

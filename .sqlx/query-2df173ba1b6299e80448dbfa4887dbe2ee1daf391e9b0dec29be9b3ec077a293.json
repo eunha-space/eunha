@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fasp_backfill_requests SET fulfilled = true, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2df173ba1b6299e80448dbfa4887dbe2ee1daf391e9b0dec29be9b3ec077a293"
+}

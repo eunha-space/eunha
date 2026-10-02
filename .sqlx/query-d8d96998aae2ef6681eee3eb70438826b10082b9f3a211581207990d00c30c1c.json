@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fasp_providers\n                  SET delivery_last_failed_at = CASE WHEN $2 THEN NULL ELSE now() END,\n                      updated_at = now()\n                WHERE id = $1 AND NOT ($2 AND delivery_last_failed_at IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8d96998aae2ef6681eee3eb70438826b10082b9f3a211581207990d00c30c1c"
+}

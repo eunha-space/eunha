@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.ip, c.request_body, c.created_at,\n                  p.id AS provider_id, p.name, p.base_url\n             FROM fasp_debug_callbacks c\n             JOIN fasp_providers p ON p.id = c.fasp_provider_id\n            ORDER BY c.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "ip",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "request_body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "base_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8a24cc8e1a8bd2e2f073d337fd05d261c59a90b263f3151391d6f290127fab95"
+}

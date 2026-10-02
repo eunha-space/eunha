@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fasp_follow_recommendations WHERE created_at < now() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b36310cd513300c31416238d56f0956477dc817c34edfff8ee9ba1297acb4b55"
+}

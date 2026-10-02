@@ -93,9 +93,14 @@ pub async fn dismiss_suggestion(
 pub async fn get_suggestions_v2(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<SuggestionsParams>,
-) -> AppResult<Json<Vec<SuggestionV2>>> {
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse as _;
     auth.require_scope("read:accounts")?;
+    // `before_action :schedule_fasp_retrieval`.
+    let refresh =
+        crate::fasp::schedule_follow_recommendations(&state, auth.account_id, &headers).await;
     let (limit, offset) = params.window();
     let found = suggested(&state, auth.account_id, limit, offset).await?;
     let accounts: Vec<Account> = found.iter().map(|(a, _)| a.clone()).collect();
@@ -113,7 +118,13 @@ pub async fn get_suggestions_v2(
                 account: api,
             }
         })
-        .collect();
+        .collect::<Vec<SuggestionV2>>();
 
-    Ok(Json(suggestions))
+    let mut response = Json(suggestions).into_response();
+    if let Some(value) = refresh.and_then(|v| v.parse().ok()) {
+        response
+            .headers_mut()
+            .insert(crate::async_refresh::HEADER, value);
+    }
+    Ok(response)
 }

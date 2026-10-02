@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM statuses\n                WHERE in_reply_to_id = $1 AND deleted_at IS NULL\n                  AND created_at >= now() - make_interval(mins => $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fdbbd56295669070558e157b930d62592585ff28e727b6d8d8894b782c5bd15b"
+}

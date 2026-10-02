@@ -955,6 +955,33 @@ pub fn router() -> Router {
             post(admin::disable_admin_relay),
         )
         .route(
+            "/api/v1/admin/fasp/providers",
+            get(admin::list_admin_fasp_providers),
+        )
+        .route(
+            "/api/v1/admin/fasp/providers/{id}",
+            get(admin::get_admin_fasp_provider)
+                .put(admin::update_admin_fasp_provider)
+                .patch(admin::update_admin_fasp_provider)
+                .delete(admin::delete_admin_fasp_provider),
+        )
+        .route(
+            "/api/v1/admin/fasp/providers/{id}/registration",
+            post(admin::confirm_admin_fasp_registration),
+        )
+        .route(
+            "/api/v1/admin/fasp/providers/{id}/debug_calls",
+            post(admin::create_admin_fasp_debug_call),
+        )
+        .route(
+            "/api/v1/admin/fasp/debug/callbacks",
+            get(admin::list_admin_fasp_debug_callbacks),
+        )
+        .route(
+            "/api/v1/admin/fasp/debug/callbacks/{id}",
+            delete(admin::delete_admin_fasp_debug_callback),
+        )
+        .route(
             "/api/v1/admin/webhooks",
             get(admin::list_admin_webhooks).post(admin::create_admin_webhook),
         )
@@ -1303,7 +1330,10 @@ pub fn router() -> Router {
         // Polls (public read)
         .route("/api/v1/polls/{id}", get(polls::get_poll))
         // Search
-        .route("/api/v2/search", get(search::search))
+        .route(
+            "/api/v2/search",
+            get(search::search).layer(middleware::from_fn(crate::fasp::search_hook)),
+        )
         // Timelines
         .route("/api/v1/timelines/public", get(timelines::public_timeline))
         .route("/api/v1/timelines/link", get(timelines::link_timeline))

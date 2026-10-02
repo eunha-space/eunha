@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.indexable FROM statuses s JOIN accounts a ON a.id = s.account_id\n                WHERE s.id = $1 AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "indexable",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6b4c491f021c3a62812041a4f3e802e6743e1b70fa111cf8f32e489f1e76bd2f"
+}

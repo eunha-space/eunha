@@ -998,6 +998,7 @@ pub async fn post_status(
         "status.created",
         crate::moderation::webhooks::Object::Status(status.id),
     );
+    crate::fasp::events::status_created(&state, status.id).await;
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 

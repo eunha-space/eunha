@@ -83,6 +83,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "auto-close registrations",
             crate::auto_close_registrations::run(state.clone()),
         ),
+        until_stopped(
+            &state,
+            "FASP follow recommendation cleanup",
+            crate::fasp::workers::run_follow_recommendation_cleanup(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work
@@ -556,6 +561,7 @@ async fn publish_one(
         "status.created",
         crate::moderation::webhooks::Object::Status(status.id),
     );
+    crate::fasp::events::status_created(state, status.id).await;
 
     if let Err(e) = crate::counters::on_status_created(
         &state.db,

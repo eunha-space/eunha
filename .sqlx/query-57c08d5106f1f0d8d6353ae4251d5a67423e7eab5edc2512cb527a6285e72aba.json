@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fasp_subscriptions\n             (category, subscription_type, max_batch_size, threshold_timeframe,\n              threshold_shares, threshold_likes, threshold_replies, fasp_provider_id,\n              created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "57c08d5106f1f0d8d6353ae4251d5a67423e7eab5edc2512cb527a6285e72aba"
+}

@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.uri, s.local, s.reblog_of_id, a.id AS account_id, a.id_scheme,\n                  a.username, a.domain\n             FROM statuses s JOIN accounts a ON a.id = s.account_id\n            WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "423cdbdc0e6ec1adcb93e8306975c3a263e43f657a4c8e2e30a2dd36230ae99e"
+}

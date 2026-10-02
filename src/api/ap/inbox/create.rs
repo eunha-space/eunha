@@ -297,6 +297,7 @@ pub(super) async fn handle_create(
     {
         tracing::error!(account_id, error = %e, "failed to count a federated status");
     }
+    crate::fasp::events::status_created(state, inserted_id).await;
 
     // Record the FEP-044f quote. Matching Mastodon, fetch the quoted post when
     // it isn't cached locally so the quote serializes instead of being silently

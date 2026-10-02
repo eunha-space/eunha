@@ -560,6 +560,7 @@ pub(crate) async fn remove_status(
     sqlx::query!("UPDATE statuses SET deleted_at = now() WHERE id = $1", id)
         .execute(&state.db)
         .await?;
+    crate::fasp::events::status_deleted(state, id).await;
 
     if let Err(e) = crate::counters::on_status_deleted(
         &state.db,
@@ -749,6 +750,9 @@ pub async fn favourite_status(
     .await?
     .rows_affected()
         > 0;
+    if favourited {
+        crate::fasp::events::favourite_created(&state, id);
+    }
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -1003,6 +1007,7 @@ pub async fn reblog_status(
 
     // `ReblogService`: `Trends.register!`.
     crate::trends::register(&state, boost.id).await;
+    crate::fasp::events::status_created(&state, boost.id).await;
 
     // Notify original author
     push::create_and_push(
@@ -1147,6 +1152,21 @@ pub async fn unreblog_status(
     // Accept both the original status ID and the reblog's own ID.
     // When iOS sends the reblog wrapper's ID, resolve it to the original.
     let original_id = status_raw.reblog_of_id.unwrap_or(id);
+
+    // The boost's deletion is announced to providers while it is still there
+    // to describe.
+    if crate::fasp::enabled(&state) {
+        if let Some(boost_id) = sqlx::query_scalar!(
+            "SELECT id FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL",
+            auth.account_id,
+            original_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            crate::fasp::events::status_deleted(&state, boost_id).await;
+        }
+    }
 
     let deleted = sqlx::query!(
         "DELETE FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL RETURNING id",

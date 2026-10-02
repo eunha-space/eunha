@@ -359,14 +359,19 @@ async fn do_update_credentials(
         .execute(&state.db)
         .await?;
     }
+    // Whether this update changed `discoverable`, which providers are told
+    // of even when it turned it off (`saved_change_to_discoverable?`).
+    let mut discoverable_changed = false;
     if let Some(d) = discoverable {
-        sqlx::query!(
-            "UPDATE accounts SET discoverable = $1 WHERE id = $2",
+        discoverable_changed = sqlx::query!(
+            "UPDATE accounts SET discoverable = $1 WHERE id = $2 AND discoverable IS DISTINCT FROM $1",
             d,
             auth.account_id
         )
         .execute(&state.db)
-        .await?;
+        .await?
+        .rows_affected()
+            > 0;
     }
     if let Some(ix) = indexable {
         sqlx::query!(
@@ -476,7 +481,9 @@ async fn do_update_credentials(
     .execute(&state.db)
     .await?;
 
-    fetch_account(state, auth.account_id).await
+    let account = fetch_account(state, auth.account_id).await?;
+    crate::fasp::events::account_updated(state, auth.account_id, discoverable_changed).await;
+    Ok(account)
 }
 
 async fn distribute_account_update(state: &AppState, domain: &str, account: &Account) {

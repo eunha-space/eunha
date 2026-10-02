@@ -679,6 +679,7 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         "account.created",
         crate::moderation::webhooks::Object::Account(account_id),
     );
+    crate::fasp::events::account_created(&state, account_id).await;
 
     // `User#after_confirmation_tasks`: an approved user is prepared (the
     // inviter followed, staff told with `admin.sign_up`); one awaiting

@@ -462,6 +462,12 @@ pub struct InstanceConfig {
     /// service, if any (`[instance.translation]`).
     #[serde(default)]
     pub translation: TranslationConfig,
+    /// Mastodon's `EXPERIMENTAL_FEATURES`: the experimental features this
+    /// instance turns on, by name. The one eunha knows is `fasp`, Fediverse
+    /// Auxiliary Service Providers (docs/operating/fasp.md); a name it does
+    /// not know is ignored, as Mastodon ignores one.
+    #[serde(default)]
+    pub experimental_features: Vec<String>,
 }
 
 /// Mastodon's `config/translation.yml`. DeepL wins when both are set, as
@@ -488,6 +494,16 @@ pub struct TranslationConfig {
 }
 
 impl InstanceConfig {
+    /// `Mastodon::Feature.<name>_enabled?`.
+    pub fn feature_enabled(&self, name: &str) -> bool {
+        self.experimental_features.iter().any(|f| f.trim() == name)
+    }
+
+    /// `Mastodon::Feature.fasp_enabled?`.
+    pub fn fasp_enabled(&self) -> bool {
+        self.feature_enabled("fasp")
+    }
+
     /// `Api::BaseController#disallow_unauthenticated_api_access?`.
     pub fn disallows_unauthenticated_api_access(&self) -> bool {
         self.disallow_unauthenticated_api_access || self.limited_federation_mode

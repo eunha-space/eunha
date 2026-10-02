@@ -73,6 +73,8 @@ Running an instance:
  -  *docs/operating/translation.md*: DeepL and LibreTranslate, and what
     `POST /api/v1/statuses/:id/translate` translates.
  -  *docs/operating/update-notices.md*: the optional update check.
+ -  *docs/operating/fasp.md*: Fediverse Auxiliary Service Providers, behind
+    `experimental_features = ["fasp"]`.
 
 Tracking Mastodon:
 

@@ -512,6 +512,16 @@ pub(super) async fn handle_undo(
                 .and_then(|i| i.as_str())
                 .unwrap_or("");
             if !announce_uri.is_empty() {
+                // Announced to providers while the boost is still there.
+                if crate::fasp::enabled(state) {
+                    if let Some(boost_id) =
+                        sqlx::query_scalar!("SELECT id FROM statuses WHERE uri = $1", announce_uri)
+                            .fetch_optional(&state.db)
+                            .await?
+                    {
+                        crate::fasp::events::status_deleted(state, boost_id).await;
+                    }
+                }
                 let deleted = sqlx::query!(
                     "DELETE FROM statuses WHERE uri = $1 RETURNING id, reblog_of_id, account_id, visibility",
                     announce_uri,

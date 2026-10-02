@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fasp_providers\n             (name, base_url, remote_identifier, provider_public_key_pem,\n              server_private_key_pem, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), now())\n           ON CONFLICT (base_url) DO NOTHING\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8caefd2758ca3b4966e1ccacf5b37ac8ac3d08cc79aee5d444521147ba7d4931"
+}

@@ -372,6 +372,7 @@ pub async fn edit_status(
         "status.updated",
         crate::moderation::webhooks::Object::Status(id),
     );
+    crate::fasp::events::status_updated(&state, id).await;
 
     Ok(Json(api_status))
 }

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, category, max_count, cursor, fasp_provider_id FROM fasp_backfill_requests WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "category",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "cursor",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "fasp_provider_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "788b25a23ba4386e04bacdd13d2c44928c22917baeb2740d87c85ee0fcf2b285"
+}

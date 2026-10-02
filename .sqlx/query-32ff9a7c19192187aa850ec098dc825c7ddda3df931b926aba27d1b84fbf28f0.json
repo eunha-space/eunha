@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.indexable, s.visibility, s.reblog_of_id, s.in_reply_to_id\n             FROM statuses s JOIN accounts a ON a.id = s.account_id\n            WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "indexable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "32ff9a7c19192187aa850ec098dc825c7ddda3df931b926aba27d1b84fbf28f0"
+}

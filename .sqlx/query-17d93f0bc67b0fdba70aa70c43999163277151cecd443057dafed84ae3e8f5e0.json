@@ -1,20 +1,25 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id, in_reply_to_id, visibility FROM statuses\n                   WHERE uri = $1 AND deleted_at IS NULL",
+  "query": "SELECT id, account_id, in_reply_to_id, visibility FROM statuses\n                   WHERE uri = $1 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "account_id",
+        "name": "id",
         "type_info": "Int8"
       },
       {
         "ordinal": 1,
-        "name": "in_reply_to_id",
+        "name": "account_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 2,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "visibility",
         "type_info": "Int4"
       }
@@ -26,9 +31,10 @@
     },
     "nullable": [
       false,
+      false,
       true,
       false
     ]
   },
-  "hash": "c04da5b6588133be505a9c06899bfbf4a92d69b2e0dc06515b99ac747bcfed5e"
+  "hash": "17d93f0bc67b0fdba70aa70c43999163277151cecd443057dafed84ae3e8f5e0"
 }

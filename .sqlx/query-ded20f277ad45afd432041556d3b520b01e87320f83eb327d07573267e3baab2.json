@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fasp_debug_callbacks WHERE fasp_provider_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ded20f277ad45afd432041556d3b520b01e87320f83eb327d07573267e3baab2"
+}

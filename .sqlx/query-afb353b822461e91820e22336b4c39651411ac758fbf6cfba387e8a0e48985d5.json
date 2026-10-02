@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                 SELECT 1 FROM fasp_providers\n                  WHERE id = $1\n                    AND delivery_last_failed_at < now() - make_interval(secs => $2)\n               ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "afb353b822461e91820e22336b4c39651411ac758fbf6cfba387e8a0e48985d5"
+}
