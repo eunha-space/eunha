@@ -134,14 +134,19 @@ fulfilled.
 Searches and recommendations
 ----------------------------
 
-With `account_search` enabled, a signed-in account search through
-`/api/v2/search` — one that is not resolving a URL — also asks each such
-provider's `/account_search/v0/search` for up to ten matches. The accounts it
-names that the instance does not know are fetched in the background, for the
-next search to find; the answer carries a `Mastodon-Async-Refresh` header the
-client can poll at `/api/v1_alpha/async_refreshes/:id`, which counts the
-accounts fetched. A follow-up request carrying `Mastodon-Async-Refresh-Id`, or a
-search already running for the same query, starts nothing.
+With `account_search` enabled, every search through `/api/v2/search` answers
+with a `Mastodon-Async-Refresh` header the client can poll at
+`/api/v1_alpha/async_refreshes/:id`, keyed by the query as sent, as upstream's
+`handle_fasp_requests` does. A follow-up request carrying
+`Mastodon-Async-Refresh-Id`, or a search already running for the same query,
+gets none. When the search goes on to search accounts (it has no `type` or
+`type=accounts`, and is not resolving a URL), each such provider's
+`/account_search/v0/search` is also asked for up to ten matches, with the query
+trimmed and stripped of a leading `@`. The accounts it names that the instance
+does not know are fetched in the background, for the next search to find, and
+counted in the refresh keyed by that stripped query, which is finished at the
+end. As upstream, a search for posts or hashtags, or for `@name`, leaves the
+refresh its header names running until it expires a day later.
 
 With `follow_recommendation` enabled, `GET /api/v2/suggestions` asks each such
 provider's `/follow_recommendation/v0/accounts` whom the account might follow,

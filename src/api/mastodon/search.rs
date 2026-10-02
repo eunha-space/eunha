@@ -51,6 +51,7 @@ pub async fn search(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Query(q): Query<SearchQuery>,
     auth: Option<Extension<AuthenticatedUser>>,
+    query_fasp: Option<Extension<crate::fasp::QueryFasp>>,
 ) -> AppResult<Json<SearchResults>> {
     // `authorize_if_got_token! :read, :'read:search'`.
     if let Some(Extension(ref auth)) = auth {
@@ -125,6 +126,9 @@ pub async fn search(
     let wants = |kind: &str| search_type.is_none_or(|t| t == kind);
 
     if wants("accounts") {
+        if query_fasp.is_some() {
+            crate::fasp::query_account_search_providers(&state, &query).await;
+        }
         let found = crate::search::accounts::search(
             &state,
             &query,

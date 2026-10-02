@@ -324,36 +324,22 @@ pub async fn schedule_follow_recommendations(
     refresh.header_value(state, 3)
 }
 
-/// `Api::V2::SearchController#handle_fasp_requests` and the
-/// `Fasp::AccountSearchWorker` that `AccountSearchService` starts with it:
-/// for a search that looks for accounts, unless it follows up an earlier
-/// one or the same search is still running, ask providers for accounts
-/// matching it in the background, and return the `Mastodon-Async-Refresh`
-/// header to answer with.
-///
-/// `query` is the `q` parameter as sent, which keys the refresh; providers
-/// are asked for it as the account search reads it, trimmed and without a
-/// leading `@`.
-pub async fn schedule_account_search(
+/// `@query_fasp`: set on a search whose `Mastodon-Async-Refresh` header
+/// `handle_fasp_requests` created, for `AccountSearchService` to start
+/// `Fasp::AccountSearchWorker` if the search reaches it.
+#[derive(Debug, Clone, Copy)]
+pub struct QueryFasp;
+
+/// `Api::V2::SearchController#handle_fasp_requests`: unless the search
+/// follows up an earlier one, or the same `q` is still being searched,
+/// create the refresh keyed by an MD5 of `q` as sent and return the header to
+/// answer with. It does so for any search type, as upstream does.
+pub async fn handle_fasp_requests(
     state: &AppState,
     query: &str,
-    search_type: Option<&str>,
-    resolve: bool,
     headers: &axum::http::HeaderMap,
 ) -> Option<String> {
     if !enabled(state) || query.trim().is_empty() || headers.contains_key(ASYNC_REFRESH_ID_HEADER) {
-        return None;
-    }
-    // `SearchService`: only a search that is not resolving a URL, and looks
-    // for accounts, reaches `AccountSearchService`.
-    let trimmed = query.trim();
-    let url_query = resolve && (trimmed.starts_with("http://") || trimmed.starts_with("https://"));
-    if url_query
-        || !matches!(
-            search_type.filter(|t| !t.is_empty()),
-            None | Some("accounts")
-        )
-    {
         return None;
     }
     let key = workers::account_search_refresh_key(query);
@@ -364,33 +350,26 @@ pub async fn schedule_account_search(
         return None;
     }
     let refresh = crate::async_refresh::AsyncRefresh::create(state, &key, false).await;
-    // `SearchService`'s quote normalization, then `AccountSearchService`'s
-    // `strip` and `gsub(/\A@/, '')`.
-    let normalized: String = trimmed
-        .chars()
-        .map(|c| {
-            if "“”„«»「」『』《》".contains(c) {
-                '"'
-            } else {
-                c
-            }
-        })
-        .collect();
-    let normalized = normalized.trim();
-    let term = normalized
-        .strip_prefix('@')
-        .unwrap_or(normalized)
-        .to_owned();
-    workers::account_search_async(state, term, key).await;
     refresh.header_value(state, 3)
 }
 
+/// `AccountSearchService#call` with `query_fasp`:
+/// `Fasp::AccountSearchWorker.perform_async(@query)`, with the query as the
+/// account search reads it (stripped, without a leading `@`). The worker
+/// keys its refresh by that query, so a search sent with a leading `@` or
+/// surrounding space finishes a refresh other than the one its header names.
+pub async fn query_account_search_providers(state: &AppState, query: &str) {
+    let query = query.trim();
+    let query = query.strip_prefix('@').unwrap_or(query).to_owned();
+    workers::account_search_async(state, query).await;
+}
+
 /// `Api::V2::SearchController`'s `before_action :handle_fasp_requests`, as a
-/// layer around `GET /api/v2/search`: start the provider search the query
-/// calls for, and put its `Mastodon-Async-Refresh` header on a successful
-/// answer.
+/// layer around `GET /api/v2/search`: create the refresh, mark the request
+/// for the account search, and put the `Mastodon-Async-Refresh` header on
+/// whatever the action renders. An unrescued exception's page carries none.
 pub async fn search_hook(
-    request: axum::extract::Request,
+    mut request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let Some(state) = request.extensions().get::<AppState>().cloned() else {
@@ -401,31 +380,40 @@ pub async fn search_hook(
     }
     let params: std::collections::HashMap<String, String> =
         serde_urlencoded::from_str(request.uri().query().unwrap_or("")).unwrap_or_default();
-    let signed_in = request
+    let auth = request
         .extensions()
-        .get::<crate::middleware::AuthenticatedUser>()
-        .is_some();
+        .get::<crate::middleware::AuthenticatedUser>();
+    // The before actions that run first and may halt the request:
+    // `authorize_if_got_token!`, `validate_search_params!`,
+    // `query_pagination_error`, `remote_resolve_error` and
+    // `require_valid_pagination_options!`.
+    if auth.is_some_and(|auth| auth.require_scope("read:search").is_err()) {
+        return next.run(request).await;
+    }
+    let signed_in = auth.is_some();
     let resolve = params.get("resolve").is_some_and(|v| truthy(v));
-    // An anonymous search that pages or resolves is refused before this runs
-    // (`#query_pagination_error`, `#remote_resolve_error`).
     if !signed_in && (resolve || params.get("offset").is_some_and(|v| !v.is_empty())) {
         return next.run(request).await;
     }
+    let negative = |name: &str| {
+        params
+            .get(name)
+            .is_some_and(|v| crate::search::ruby_to_i(v) < 0)
+    };
+    if negative("limit") || negative("offset") {
+        return next.run(request).await;
+    }
     let header = match params.get("q") {
-        Some(q) => {
-            schedule_account_search(
-                &state,
-                q,
-                params.get("type").map(String::as_str),
-                resolve,
-                request.headers(),
-            )
-            .await
-        }
+        Some(q) => handle_fasp_requests(&state, q, request.headers()).await,
         None => None,
     };
+    if header.is_some() {
+        request.extensions_mut().insert(QueryFasp);
+    }
     let mut response = next.run(request).await;
-    if let Some(value) = header.filter(|_| response.status().is_success()) {
+    if let Some(value) =
+        header.filter(|_| response.status() != axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+    {
         if let Ok(value) = value.parse() {
             response
                 .headers_mut()

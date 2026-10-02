@@ -550,7 +550,8 @@ async fn more_objects_available(
 // ── Account search ───────────────────────────────────────────────────────
 
 /// The `AsyncRefresh` key of an account search for `query`
-/// (`"fasp:account_search:#{Digest::MD5.base64digest(params[:q])}"`).
+/// (`"fasp:account_search:#{Digest::MD5.base64digest(query)}"`), which the
+/// controller makes of `q` as sent and the worker of the query it was given.
 pub fn account_search_refresh_key(query: &str) -> String {
     use base64::Engine as _;
     use md5::Digest as _;
@@ -563,18 +564,16 @@ pub fn account_search_refresh_key(query: &str) -> String {
 
 /// `Fasp::AccountSearchWorker.perform_async(query)`: ask every provider that
 /// searches accounts for `query`, and fetch each account it names that this
-/// server does not know, counting them in the refresh under `refresh_key`.
-pub async fn account_search_async(state: &AppState, query: String, refresh_key: String) {
-    crate::jobs::push(state, AccountSearchWorker { query, refresh_key }).await;
+/// server does not know, counting them in the refresh keyed by `query` and
+/// finishing it at the end, unless the feature is off by then.
+pub async fn account_search_async(state: &AppState, query: String) {
+    crate::jobs::push(state, AccountSearchWorker { query }).await;
 }
 
 /// `Fasp::AccountSearchWorker`.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct AccountSearchWorker {
     pub query: String,
-    /// The `AsyncRefresh` the search counts its results in, keyed from the
-    /// query as it was sent.
-    pub refresh_key: String,
 }
 
 impl crate::jobs::Job for AccountSearchWorker {
@@ -582,8 +581,12 @@ impl crate::jobs::Job for AccountSearchWorker {
     const OPTIONS: crate::jobs::Options = options(0);
 
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
-        let refresh = crate::async_refresh::FinishOnDrop::new(state, &self.refresh_key);
-        let result = account_search(state, &self.query, &self.refresh_key).await;
+        if !super::enabled(state) {
+            return Ok(());
+        }
+        let refresh_key = account_search_refresh_key(&self.query);
+        let refresh = crate::async_refresh::FinishOnDrop::new(state, &refresh_key);
+        let result = account_search(state, &self.query, &refresh_key).await;
         refresh.finish().await;
         result.map_err(failed)
     }
@@ -594,9 +597,6 @@ async fn account_search(
     query: &str,
     refresh_key: &str,
 ) -> Result<(), request::Error> {
-    if !super::enabled(state) {
-        return Ok(());
-    }
     let providers = Provider::with_capability(state, "account_search")
         .await
         .map_err(anyhow::Error::from)?;

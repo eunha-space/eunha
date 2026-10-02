@@ -964,33 +964,19 @@ async fn test_fasp_account_search() {
     let ctx = fasp_ctx("fasp-search").await;
     let fake = spawn_fake().await;
     let fasp_id = register_and_confirm(&ctx, &fake).await;
-    ctx.api
-        .put_json(
-            &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
-            Some(&ctx.alice_token),
-            &json!({"capabilities": [
-                {"id": "account_search", "version": "0.1", "enabled": true},
-            ]}),
-        )
-        .await;
+    enable_account_search(&ctx, &fasp_id).await;
     let frank = format!("{}/users/frank", fake.base);
     fake.state.lock().unwrap().search_results = vec![frank.clone()];
 
     let response = ctx
         .api
         .get(
-            "/api/v2/search?q=%40frank&type=accounts",
+            "/api/v2/search?q=frank&type=accounts",
             Some(&ctx.alice_token),
         )
         .await;
     assert_eq!(response.status(), StatusCode::OK);
-    let header = response
-        .headers()
-        .get("mastodon-async-refresh")
-        .expect("the provider search is announced in a header")
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let header = async_refresh_header(&response).expect("the provider search is announced");
     let finished = wait_finished(&ctx, &header).await;
     assert_eq!(finished["async_refresh"]["result_count"], 1);
     let asked = fake
@@ -1006,16 +992,112 @@ async fn test_fasp_account_search() {
         .await
         .unwrap();
     assert_eq!(known, 1);
+}
 
-    // A search for statuses asks no provider.
+/// As upstream: the controller keys the refresh by `q` as sent and creates it
+/// for any search type, while the worker, started only by the account search,
+/// finishes the refresh keyed by the query it searched, without a leading
+/// `@`. A statuses search, or an account search for `@name`, leaves the
+/// refresh its header names running.
+#[tokio::test]
+async fn test_fasp_account_search_refresh_keys() {
+    let ctx = fasp_ctx("fasp-search-keys").await;
+    let fake = spawn_fake().await;
+    let fasp_id = register_and_confirm(&ctx, &fake).await;
+    enable_account_search(&ctx, &fasp_id).await;
+
     let response = ctx
         .api
         .get(
-            "/api/v2/search?q=frank&type=statuses",
+            "/api/v2/search?q=%40grace&type=accounts",
             Some(&ctx.alice_token),
         )
         .await;
-    assert!(response.headers().get("mastodon-async-refresh").is_none());
+    let at_header = async_refresh_header(&response).expect("a refresh for `@grace`");
+    let asked = fake
+        .wait_for("the search request", |r| {
+            r.path == "/account_search/v0/search"
+        })
+        .await;
+    assert_eq!(asked.query, "limit=10&term=grace");
+    // The worker finishes the refresh keyed by `grace`.
+    let mut finished = None;
+    for _ in 0..200 {
+        finished = key_status(&ctx, "grace").await;
+        if finished.as_deref() == Some("finished") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(finished.as_deref(), Some("finished"));
+    assert_eq!(refresh_status(&ctx, &at_header).await, "running");
+
+    // A statuses search announces a refresh that nothing finishes.
+    let response = ctx
+        .api
+        .get(
+            "/api/v2/search?q=heidi&type=statuses",
+            Some(&ctx.alice_token),
+        )
+        .await;
+    let header = async_refresh_header(&response).expect("a refresh for any search type");
+    assert_eq!(refresh_status(&ctx, &header).await, "running");
+    // And while it runs, the same `q` announces none.
+    let response = ctx
+        .api
+        .get(
+            "/api/v2/search?q=heidi&type=accounts",
+            Some(&ctx.alice_token),
+        )
+        .await;
+    assert!(async_refresh_header(&response).is_none());
+}
+
+async fn enable_account_search(ctx: &TestContext, fasp_id: &str) {
+    ctx.api
+        .put_json(
+            &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
+            Some(&ctx.alice_token),
+            &json!({"capabilities": [
+                {"id": "account_search", "version": "0.1", "enabled": true},
+            ]}),
+        )
+        .await;
+}
+
+fn async_refresh_header(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get("mastodon-async-refresh")
+        .map(|v| v.to_str().unwrap().to_owned())
+}
+
+async fn refresh_status(ctx: &TestContext, header: &str) -> String {
+    let id = header
+        .strip_prefix("id=\"")
+        .and_then(|rest| rest.split_once('"'))
+        .unwrap()
+        .0
+        .to_owned();
+    let body: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1_alpha/async_refreshes/{id}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    body["async_refresh"]["status"].as_str().unwrap().to_owned()
+}
+
+/// The status of the account search refresh keyed by `query`.
+async fn key_status(ctx: &TestContext, query: &str) -> Option<String> {
+    let key = eunha::fasp::workers::account_search_refresh_key(query);
+    eunha::async_refresh::AsyncRefresh::new(&ctx.state, &key)
+        .await
+        .status
 }
 
 /// Each announcement is a `Fasp::*Worker` job on the `fasp` queue, which a

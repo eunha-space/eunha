@@ -1131,28 +1131,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "fasp-account-search-refresh"
-kind = "behaviour"
-summary = "Starts a FASP account search's refresh only for account searches"
-mastodon = """
-`Api::V2::SearchController#handle_fasp_requests` creates the \
-`fasp:account_search` refresh, keyed by an MD5 of `q` as sent, for any search \
-type, though only an account search starts the worker; and the worker \
-finishes the refresh keyed by the query as `AccountSearchService` stripped it \
-of a leading `@`. A statuses search, or an account search for `@name`, leaves \
-a refresh running that nothing finishes, for the day it lives."""
-eunha = """
-Creates the refresh, and asks providers, only for a search that reaches the \
-account search, and finishes it under the key it was created with, asking \
-providers for the stripped query."""
-why = """
-A client polls a running refresh until it finishes; one that never does keeps \
-it polling for a day and holds off the next search for the same query."""
-evidence = "tests/fasp.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "quotes-count-counts-accepted"
 kind = "behaviour"
 summary = "A quote's leaving any state but accepted does not lower the count"
