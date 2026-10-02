@@ -237,7 +237,7 @@ fn guess_status_uri(url: &str) -> Option<String> {
 /// `StatusPolicy#show?` for a status we hold: the author has to be available,
 /// the audience has to include the viewer, and the author must not have blocked
 /// them.
-async fn authorized_status(
+pub(crate) async fn authorized_status(
     state: &AppState,
     id: i64,
     viewer: Option<i64>,

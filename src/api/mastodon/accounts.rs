@@ -26,8 +26,8 @@ mod search;
 pub use search::search_accounts;
 mod mutes_blocks;
 pub use mutes_blocks::{
-    block, block_account, get_blocks, get_mutes, mute, mute_account, unblock_account,
-    unmute_account,
+    block, block_account, get_blocks, get_mutes, mute, mute_account, unblock, unblock_account,
+    unmute, unmute_account,
 };
 mod follow_requests;
 pub use follow_requests::{

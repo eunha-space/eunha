@@ -68,17 +68,24 @@ pub async fn block_domain(
     Json(form): Json<DomainBlockForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:blocks")?;
-    let domain = form.domain.to_lowercase();
+    block_domain_for(&state, auth.account_id, &form.domain.to_lowercase()).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+/// `Account#block_domain!` followed by `AfterAccountDomainBlockWorker`:
+/// `account_id` blocks `domain`, given lowercased, and its follows,
+/// notifications and home feed entries from there go.
+pub async fn block_domain_for(state: &AppState, account_id: i64, domain: &str) -> AppResult<()> {
     sqlx::query!(
         r#"INSERT INTO account_domain_blocks (account_id, domain, created_at, updated_at) VALUES ($1, $2, now(), now())
            ON CONFLICT (account_id, domain) DO NOTHING"#,
-        auth.account_id,
+        account_id,
         domain,
     )
     .execute(&state.db)
     .await?;
 
-    after_block_domain(&state, auth.account_id, &domain).await?;
+    after_block_domain(state, account_id, domain).await?;
 
     // Clear the blocker's notifications originating from that domain
     // (Mastodon clear_notifications!).
@@ -86,42 +93,33 @@ pub async fn block_domain(
         r#"DELETE FROM notifications
            WHERE account_id = $1
              AND from_account_id IN (SELECT id FROM accounts WHERE domain = $2)"#,
-        auth.account_id,
+        account_id,
         domain,
     )
     .execute(&state.db)
     .await;
 
     // Strip that domain's posts from the blocker's cached home feed.
-    {
-        let mut redis = state.redis.clone();
-        let db = state.db.clone();
-        let account_id = auth.account_id;
-        let domain = domain.clone();
-        if crate::feed::sync_fanout() {
+    let mut redis = state.redis.clone();
+    let db = state.db.clone();
+    let redis_keys = state.redis_keys.clone();
+    let domain = domain.to_owned();
+    if crate::feed::sync_fanout() {
+        crate::feed::unmerge_domain_from_home(&mut redis, &redis_keys, &db, &domain, account_id)
+            .await;
+    } else {
+        crate::tenants::spawn(async move {
             crate::feed::unmerge_domain_from_home(
                 &mut redis,
-                &state.redis_keys,
+                &redis_keys,
                 &db,
                 &domain,
                 account_id,
             )
             .await;
-        } else {
-            crate::tenants::spawn(async move {
-                crate::feed::unmerge_domain_from_home(
-                    &mut redis,
-                    &state.redis_keys,
-                    &db,
-                    &domain,
-                    account_id,
-                )
-                .await;
-            });
-        }
+        });
     }
-
-    Ok(Json(serde_json::json!({})))
+    Ok(())
 }
 
 /// `AfterBlockDomainFromAccountService`'s follow work: the blocker's follows

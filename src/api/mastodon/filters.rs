@@ -13,7 +13,7 @@ use crate::{
     streaming::Event,
 };
 
-fn publish_filters_changed(state: &AppState, account_id: i64) {
+pub(crate) fn publish_filters_changed(state: &AppState, account_id: i64) {
     state.streaming.publish(Event::FiltersChanged {
         for_account_id: account_id,
     });
@@ -163,9 +163,10 @@ pub struct CreateFilterForm {
 }
 
 /// Maximum filter title length (Mastodon `CustomFilter::TITLE_LENGTH_LIMIT`).
-const FILTER_TITLE_MAX: usize = 256;
+pub(crate) const FILTER_TITLE_MAX: usize = 256;
 /// Valid filter contexts (Mastodon `CustomFilter::VALID_CONTEXTS`).
-const VALID_FILTER_CONTEXTS: &[&str] = &["home", "notifications", "public", "thread", "account"];
+pub(crate) const VALID_FILTER_CONTEXTS: &[&str] =
+    &["home", "notifications", "public", "thread", "account"];
 /// Valid filter actions (Mastodon `CustomFilter` action enum).
 const VALID_FILTER_ACTIONS: &[&str] = &["warn", "hide", "blur"];
 

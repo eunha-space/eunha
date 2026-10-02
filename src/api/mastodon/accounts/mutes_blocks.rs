@@ -81,17 +81,22 @@ pub async fn unmute_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:mutes")?;
+    unmute(&state, auth.account_id, target_id).await?;
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
+
+/// Mastodon's `UnmuteService`.
+pub async fn unmute(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     sqlx::query!(
         "DELETE FROM mutes WHERE account_id = $1 AND target_account_id = $2",
-        auth.account_id,
+        account_id,
         target_id
     )
     .execute(&state.db)
     .await?;
-
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(())
 }
 
 // ── POST /api/v1/accounts/:id/block ───────────────────────────────────────
@@ -301,19 +306,25 @@ pub async fn unblock_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:blocks")?;
+    unblock(&state, auth.account_id, target_id).await?;
+    build_relationship(&state, auth.account_id, target_id)
+        .await
+        .map(Json)
+}
+
+/// Mastodon's `UnblockService`: the block goes, and a remote target is told.
+pub async fn unblock(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     // Mastodon UnblockService: a no-op (and no Undo) when not actually blocking.
     let was_blocking = sqlx::query!(
         "DELETE FROM blocks WHERE account_id = $1 AND target_account_id = $2 RETURNING account_id",
-        auth.account_id,
+        account_id,
         target_id
     )
     .fetch_optional(&state.db)
     .await?
     .is_some();
     if !was_blocking {
-        return build_relationship(&state, auth.account_id, target_id)
-            .await
-            .map(Json);
+        return Ok(());
     }
 
     // Send Undo(Block) activity to remote target
@@ -329,19 +340,19 @@ pub async fn unblock_account(
         if target.domain.is_some() && !target_uri.is_empty() {
             if let Some(actor_row) = sqlx::query!(
                 "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
-                auth.account_id,
+                account_id,
             )
             .fetch_optional(&state.db)
             .await?
             {
-                if crate::federation::keypair::has_signing_key(&state, auth.account_id)
+                if crate::federation::keypair::has_signing_key(state, account_id)
                     .await
                     .unwrap_or(false)
                 {
                     let domain = state.instance.domain.clone();
                     let actor_url = crate::federation::tag::account_uri(
                         &domain,
-                        auth.account_id,
+                        account_id,
                         actor_row.id_scheme,
                         &actor_row.username,
                     );
@@ -364,7 +375,7 @@ pub async fn unblock_account(
                     };
                     if !inbox.is_empty() {
                         if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                            &state,
+                            state,
                             undo,
                             vec![inbox],
                             key_id,
@@ -379,9 +390,7 @@ pub async fn unblock_account(
         }
     }
 
-    build_relationship(&state, auth.account_id, target_id)
-        .await
-        .map(Json)
+    Ok(())
 }
 
 // ── GET /api/v1/blocks ────────────────────────────────────────────────────
