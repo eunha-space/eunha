@@ -194,13 +194,15 @@ summary = "Serves the server administration of Mastodon's web admin over the RES
 mastodon = """
 Has the server settings (`Form::AdminSettings` on the branding, about, \
 registrations, discovery, content retention and appearance pages) and \
-removing a site upload, and the server rules (`Admin::RulesController`, with \
-translations and ordering) only as server-rendered admin pages. The REST API \
-has none of them."""
+removing a site upload, the server rules (`Admin::RulesController`, with \
+translations and ordering), and roles (`Admin::RolesController`) only as \
+server-rendered admin pages. The REST API has none of them."""
 eunha = """
 Serves them under `/api/v1/admin/`: `settings` (`GET`, and `PATCH` with \
 only the keys given, uploads as multipart files), `site_uploads/:id` \
-(`DELETE`), and `rules` with `move_up` and `move_down`. Each asks for the permission upstream's policy asks for, \
+(`DELETE`), `rules` with `move_up` and `move_down`, and `roles` (`POST`) \
+and `roles/:id`, each role saying what the acting role may do with it. Each \
+asks for the permission upstream's policy asks for, \
 validates as upstream's form or model does with its messages, and writes the \
 audit log entries its controller writes, which for the settings is none."""
 why = """

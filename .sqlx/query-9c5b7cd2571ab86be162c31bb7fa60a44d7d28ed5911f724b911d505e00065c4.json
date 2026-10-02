@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, color, position, permissions, highlighted, collection_limit\n           FROM user_roles WHERE id <> $1 ORDER BY position ASC",
+  "query": "SELECT id, name, color, position, permissions, highlighted, collection_limit,\n                  require_2fa, created_at, updated_at\n           FROM user_roles WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,21 @@
         "ordinal": 6,
         "name": "collection_limit",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "require_2fa",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
@@ -51,8 +66,11 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "a330f794a135d4ce0297007ff1ab62905cb9a6cda7dc9495267bc851f5041d1b"
+  "hash": "9c5b7cd2571ab86be162c31bb7fa60a44d7d28ed5911f724b911d505e00065c4"
 }

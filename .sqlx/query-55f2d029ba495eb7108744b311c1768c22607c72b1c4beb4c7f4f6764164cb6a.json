@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_roles\n           SET name = $2, color = $3, highlighted = $4, position = $5, require_2fa = $6,\n               collection_limit = $7, permissions = $8, updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55f2d029ba495eb7108744b311c1768c22607c72b1c4beb4c7f4f6764164cb6a"
+}

@@ -3,7 +3,7 @@
 // relays, invites, webhooks, follow recommendations, software updates and the
 // dashboard), as eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
-import { json } from './admin-api.ts'
+import { json, type Permission } from './admin-api.ts'
 
 // ── Server settings ─────────────────────────────────────────────────────────
 
@@ -145,4 +145,60 @@ export function deleteRule(token: string, id: string) {
 /** `move_up` or `move_down`, answered with the rules in their new order. */
 export function moveRule(token: string, id: string, direction: 'move_up' | 'move_down') {
   return json<AdminRule[]>(token, 'POST', `/api/v1/admin/rules/${id}/${direction}`)
+}
+
+// ── Roles ───────────────────────────────────────────────────────────────────
+
+/** The id of `UserRole.everyone`. */
+export const EVERYONE_ROLE_ID = '-99'
+
+export interface AdminRole {
+  id: string
+  name: string
+  /** The computed permissions, as `REST::RoleSerializer` sends them. */
+  permissions: string
+  color: string
+  highlighted: boolean
+  collection_limit: number
+  position: number
+  require_2fa: boolean
+  /** The role's own permissions, by name. */
+  permissions_as_keys: Permission[]
+  everyone: boolean
+  users_count: number
+  can_update: boolean
+  can_destroy: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface RoleParams {
+  name?: string
+  color?: string
+  highlighted?: boolean
+  position?: number
+  require_2fa?: boolean
+  collection_limit?: number
+  permissions_as_keys?: Permission[]
+}
+
+/** `UserRole.assignable`, lowest first; the everyone role is fetched apart. */
+export function listRoles(token: string) {
+  return json<AdminRole[]>(token, 'GET', '/api/v1/admin/roles')
+}
+
+export function getRole(token: string, id: string) {
+  return json<AdminRole>(token, 'GET', `/api/v1/admin/roles/${id}`)
+}
+
+export function createRole(token: string, params: RoleParams) {
+  return json<AdminRole>(token, 'POST', '/api/v1/admin/roles', params)
+}
+
+export function updateRole(token: string, id: string, params: RoleParams) {
+  return json<AdminRole>(token, 'PATCH', `/api/v1/admin/roles/${id}`, params)
+}
+
+export function deleteRole(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/roles/${id}`)
 }

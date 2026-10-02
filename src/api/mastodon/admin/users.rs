@@ -7,7 +7,7 @@ use axum::{
     extract::{Extension, Path},
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::super::extractors::Params;
 use super::accounts::AdminAccount;
@@ -90,61 +90,18 @@ async fn render(state: &AppState, account_id: i64) -> AppResult<Json<AdminAccoun
 
 // ── GET /api/v1/admin/roles ───────────────────────────────────────────────
 
-/// `REST::RoleSerializer`, with the position the role form orders by.
-#[derive(Debug, Serialize)]
-pub struct AssignableRole {
-    #[serde(flatten)]
-    pub role: super::accounts::RoleEntity,
-    pub position: i32,
-}
-
 /// `UserRole.assignable`: every role but the everyone role, lowest first, as
-/// the change-role form offers them. Asks for `manage_roles`, which is
-/// `UserRolePolicy#index?` and what changing a role needs.
+/// the change-role form offers them and the roles page lists them above the
+/// everyone role (`/api/v1/admin/roles/-99`). Asks for `manage_roles`, which
+/// is `UserRolePolicy#index?` and what changing a role needs.
 pub async fn list_assignable_roles(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AssignableRole>>> {
+) -> AppResult<Json<Vec<super::roles::AdminRole>>> {
     auth.require_scope("admin:read")?;
-    super::require_permission(&state, auth.account_id, flag::MANAGE_ROLES).await?;
-    let rows = sqlx::query!(
-        r#"SELECT id, name, color, position, permissions, highlighted, collection_limit
-           FROM user_roles WHERE id <> $1 ORDER BY position ASC"#,
-        EVERYONE_ROLE_ID
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let everyone = sqlx::query_scalar!(
-        "SELECT permissions FROM user_roles WHERE id = $1",
-        EVERYONE_ROLE_ID
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .unwrap_or(flag::DEFAULT);
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| {
-                let computed = if r.permissions & flag::ADMINISTRATOR != 0 {
-                    flag::ALL
-                } else {
-                    r.permissions | everyone
-                };
-                AssignableRole {
-                    role: super::accounts::RoleEntity::of(&Role {
-                        id: Some(r.id),
-                        name: r.name,
-                        color: r.color,
-                        position: r.position,
-                        permissions: r.permissions,
-                        highlighted: r.highlighted,
-                        collection_limit: r.collection_limit,
-                        computed,
-                    }),
-                    position: r.position,
-                }
-            })
-            .collect(),
-    ))
+    let acting = role::acting(&state.db, auth.account_id).await?;
+    authorize(acting.can(&[flag::MANAGE_ROLES]))?;
+    Ok(Json(super::roles::assignable(&state, &acting).await?))
 }
 
 // ── PUT /api/v1/admin/accounts/:id/role ───────────────────────────────────

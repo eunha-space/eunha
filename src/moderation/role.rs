@@ -34,6 +34,51 @@ pub mod flag {
     pub const ALL: i64 = (1 << 23) - 1;
     /// `Flags::DEFAULT`, what `UserRole.everyone` is created with.
     pub const DEFAULT: i64 = INVITE_USERS;
+    /// `Flags::SAFE`, all the everyone role may hold.
+    pub const SAFE: i64 = INVITE_USERS | INVITE_BYPASS_APPROVAL;
+
+    /// `UserRole::FLAGS` by name, in its order.
+    pub const NAMES: &[(&str, i64)] = &[
+        ("administrator", ADMINISTRATOR),
+        ("view_devops", VIEW_DEVOPS),
+        ("view_audit_log", VIEW_AUDIT_LOG),
+        ("view_dashboard", VIEW_DASHBOARD),
+        ("manage_reports", MANAGE_REPORTS),
+        ("manage_federation", MANAGE_FEDERATION),
+        ("manage_settings", MANAGE_SETTINGS),
+        ("manage_blocks", MANAGE_BLOCKS),
+        ("manage_taxonomies", MANAGE_TAXONOMIES),
+        ("manage_appeals", MANAGE_APPEALS),
+        ("manage_users", MANAGE_USERS),
+        ("manage_invites", MANAGE_INVITES),
+        ("manage_rules", MANAGE_RULES),
+        ("manage_announcements", MANAGE_ANNOUNCEMENTS),
+        ("manage_custom_emojis", MANAGE_CUSTOM_EMOJIS),
+        ("manage_webhooks", MANAGE_WEBHOOKS),
+        ("invite_users", INVITE_USERS),
+        ("manage_roles", MANAGE_ROLES),
+        ("manage_user_access", MANAGE_USER_ACCESS),
+        ("delete_user_data", DELETE_USER_DATA),
+        ("view_feeds", VIEW_FEEDS),
+        ("invite_bypass_approval", INVITE_BYPASS_APPROVAL),
+        ("manage_email_subscriptions", MANAGE_EMAIL_SUBSCRIPTIONS),
+    ];
+
+    /// `UserRole#permissions_as_keys`.
+    pub fn as_keys(permissions: i64) -> Vec<&'static str> {
+        NAMES
+            .iter()
+            .filter(|(_, bit)| permissions & bit == *bit)
+            .map(|(name, _)| *name)
+            .collect()
+    }
+
+    /// `UserRole#permissions_as_keys=`: the named flags, unknown names ignored.
+    pub fn from_keys<S: AsRef<str>>(keys: &[S]) -> i64 {
+        keys.iter()
+            .filter_map(|key| NAMES.iter().find(|(name, _)| *name == key.as_ref()))
+            .fold(0, |bits, (_, bit)| bits | bit)
+    }
 
     /// `Flags::CATEGORIES[:moderation]`.
     pub const MODERATION: &[i64] = &[

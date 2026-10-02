@@ -801,7 +801,10 @@ pub fn router() -> Router {
             "/api/v1/admin/accounts/{id}/relationships",
             get(admin::list_admin_relationships),
         )
-        .route("/api/v1/admin/roles", get(admin::list_assignable_roles))
+        .route(
+            "/api/v1/admin/roles",
+            get(admin::list_assignable_roles).post(admin::create_admin_role),
+        )
         .route(
             "/api/v1/admin/accounts/{id}/role",
             put(admin::change_user_role),
@@ -852,6 +855,12 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/rules/{id}/move_down",
             post(admin::move_admin_rule_down),
+        )
+        .route(
+            "/api/v1/admin/roles/{id}",
+            get(admin::get_admin_role)
+                .patch(admin::update_admin_role)
+                .delete(admin::delete_admin_role),
         )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))

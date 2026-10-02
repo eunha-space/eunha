@@ -5,11 +5,8 @@ Who may invite is Mastodon's `invite_users` permission, and it lives on the
 **everyone role** — `user_roles` id -99, seeded by migration 009 with
 `UserRole::Flags::DEFAULT`, which is that one permission. Every member has that
 role unless given another, so an instance invites the way upstream does until it
-says otherwise. One that would rather hand invites out itself takes the bit off:
-
-~~~~
-UPDATE user_roles SET permissions = permissions & ~(1 << 16) WHERE id = -99;
-~~~~
+says otherwise. One that would rather hand invites out itself takes *Invite
+Users* off the base role on the [roles](./administration#roles) page.
 
 Staff keep it through their own role. A role carrying `administrator` (1 << 0)
 computes to every permission there is, and any other role's permissions are
@@ -19,23 +16,17 @@ still invite. `verify_credentials` reports that computed set rather than the raw
 column, so a client hides the invite page for exactly the accounts the server
 would refuse.
 
-Eunha has no role editor and no `eunha` subcommand for one: roles are rows, and
-an instance that needs to change one runs the `UPDATE`. Upstream will only let
-the everyone role hold `Flags::SAFE` — `invite_users` and
-`invite_bypass_approval` — and nothing here enforces that, so a hand-written
-value should stay inside it.
+Roles are edited there as in Mastodon, which lets the everyone role hold only
+`Flags::SAFE`: `invite_users` and `invite_bypass_approval`.
 
 The other half of `SAFE` is what an invite does to the approval queue. On an
-instance with `approval_required`, an invite skips review only when whoever
+instance whose sign-ups need approval, an invite skips review only when whoever
 wrote it holds `invite_bypass_approval`, which is Mastodon's
 `Invite#bypass_approval?` — a question about the inviter, not about whether an
 invite was used. The everyone role does not carry it, so an ordinary member may
 bring someone and the admin still sees them first. An instance that would rather
-an invite be the whole of the decision grants it:
-
-~~~~
-UPDATE user_roles SET permissions = permissions | (1 << 21) WHERE id = -99;
-~~~~
+an invite be the whole of the decision grants *Invite Users without review* to
+the base role.
 
 Staff invites bypass already, through the `administrator` flag.
 

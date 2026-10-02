@@ -28,6 +28,7 @@ mod username_blocks;
 mod users;
 mod warning_presets;
 // The server administration Mastodon has only as server-rendered admin pages.
+mod roles;
 mod rules;
 mod settings;
 
@@ -48,6 +49,7 @@ pub use username_blocks::*;
 pub use users::*;
 pub use warning_presets::*;
 // The server administration Mastodon has only as server-rendered admin pages.
+pub use roles::*;
 pub use rules::*;
 pub use settings::*;
 

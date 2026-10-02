@@ -128,3 +128,33 @@ an existing one; one with blank text is ignored. Deleting a rule discards it
 (`deleted_at`), so reports that cite it still show it. Moving the first rule
 up puts it last, as Mastodon's `Rule#move!` does. As in Mastodon, none of this
 is logged.
+
+
+Roles
+-----
+
+`/api/v1/admin/roles` lists the roles a user can be given, lowest first, and
+creates one; `/api/v1/admin/roles/:id` shows, edits and deletes one. The
+everyone role, id -99, is reached by its id. All of it needs `manage_roles`,
+and each role says whether the acting role may edit (`can_update`) or delete
+(`can_destroy`) it, as Mastodon's `UserRolePolicy` decides:
+
+ -  a role may be edited only by a role positioned above it, or by its own
+    holder;
+ -  a role may be deleted only by a role above it, and never by its own holder.
+    The everyone role cannot be deleted. Deleting a role leaves its users with
+    none, which is the everyone role.
+
+A role's permissions are given by name, as `permissions_as_keys`, and a save
+is checked against the editor's own role, with Mastodon's messages:
+
+ -  it may not grant a permission the editor's role lacks, or be positioned
+    above the editor's role;
+ -  the editor may not change the permissions or position of their own role,
+    nor whether it requires two-factor authentication unless it is an
+    administrator role;
+ -  the everyone role may hold only `invite_users` and `invite_bypass_approval`;
+ -  a name is required (except for the everyone role), a color must be a CSS
+    hex color, and the collection limit may not be negative.
+
+Creating, editing and deleting a role are logged.
