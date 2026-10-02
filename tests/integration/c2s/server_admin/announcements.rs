@@ -33,23 +33,30 @@ async fn test_announcements() {
         .post_status(&ctx.alice_token, "see this", "public")
         .await;
     let status_url = status["url"].as_str().unwrap().to_owned();
-    let mut events = ctx.state.streaming.subscribe();
+    sqlx::query("UPDATE users SET current_sign_in_at = now() WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let mut events = ctx
+        .state
+        .streaming
+        .subscribe(&format!("timeline:{}", ctx.alice_id));
     let now = json_ok(post(json!({"text": format!("Hello all, {status_url}")})).await).await;
     assert_eq!(now["published"], true);
     assert!(now["published_at"].is_string());
     // `PublishScheduledAnnouncementWorker` streams it, rendered for nobody.
     let event = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            if let eunha::streaming::Event::Announcement { payload } =
-                &*events.recv().await.unwrap()
-            {
-                break payload.to_string();
+            let message = events.recv().await.unwrap();
+            if message["event"] == "announcement" {
+                break message;
             }
         }
     })
     .await
     .expect("an announcement event");
-    let streamed: Value = serde_json::from_str(&event).unwrap();
+    let streamed = &event["payload"];
     assert_eq!(streamed["id"], now["id"]);
     assert!(streamed.get("read").is_none());
 

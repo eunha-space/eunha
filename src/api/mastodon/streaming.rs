@@ -1,144 +1,984 @@
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Extension, Query,
-    },
-    http::HeaderMap,
-    response::IntoResponse,
-};
-use bytes::Bytes;
-use serde::Deserialize;
-use std::collections::HashSet;
+//! Mastodon's streaming server (`streaming/index.js`), ported: the WebSocket
+//! at `/api/v1/streaming` with its `subscribe` and `unsubscribe` messages, the
+//! server-sent events endpoints under it, and `/api/v1/streaming/health`.
+//!
+//! Every connection is authenticated, as Mastodon's is. A connection listens
+//! on the `timeline:*` channels of the instance's [`crate::streaming`] bus,
+//! where the Rails side's messages are published, and passes them on; only
+//! `update` and `status.update` on the public and hashtag streams are
+//! filtered here, for the viewer's languages, blocks, mutes, domain blocks,
+//! the feed access settings and keyword filters, since everything else was
+//! filtered and rendered for the recipient before it was published.
+
+use std::collections::{BTreeMap, HashMap};
+use std::convert::Infallible;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use axum::{
+    body::{Body, Bytes},
+    extract::ws::{
+        rejection::WebSocketUpgradeRejection, CloseFrame, Message, WebSocket, WebSocketUpgrade,
+    },
+    extract::Request,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+};
+use serde_json::{Map, Value};
+use tokio::sync::mpsc;
 use tracing::Instrument as _;
 
-use crate::{middleware::AuthenticatedUser, state::AppState, streaming::Event};
+use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
-pub struct StreamingParams {
-    stream: Option<String>,
-    /// Browsers can't set the Authorization header on WebSocket upgrades,
-    /// so clients pass the token here instead.
-    access_token: Option<String>,
+/// `PERMISSION_VIEW_FEEDS`.
+const PERMISSION_VIEW_FEEDS: i64 = 0x0000000000100000;
+
+/// The WebSocket keep-alive: a ping every 30 seconds, and a connection that
+/// did not answer the last one is terminated.
+const WS_PING_EVERY: Duration = Duration::from_secs(30);
+
+/// The event stream's `:thump` comment, every 15 seconds.
+const SSE_HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
+
+// ── Errors (`streaming/errors.js`) ─────────────────────────────────────────
+
+#[derive(Debug)]
+enum StreamError {
+    /// `AuthenticationError`: 401.
+    Authentication(&'static str),
+    /// `RequestError`: 400.
+    Request(&'static str),
+    /// Anything else: 500, `An unexpected error occurred`.
+    Unexpected,
 }
 
-pub async fn handler(
-    ws: WebSocketUpgrade,
-    Query(params): Query<StreamingParams>,
-    state: AppState,
-    // Auth may already be resolved by the authenticate middleware (Bearer header).
-    auth: Option<Extension<AuthenticatedUser>>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    // The streaming server refuses a disabled user's token, as Mastodon's does.
-    let authenticated = auth.filter(|a| !a.0.user_disabled);
-    let account_id: Option<i64> = authenticated.as_ref().map(|a| a.0.account_id);
-    let token_id: Option<i64> = authenticated.as_ref().map(|a| a.0.token_id);
+impl StreamError {
+    /// `extractStatusAndMessage`.
+    fn status_and_message(&self) -> (StatusCode, &'static str) {
+        match self {
+            Self::Authentication(message) => (StatusCode::UNAUTHORIZED, message),
+            Self::Request(message) => (StatusCode::BAD_REQUEST, message),
+            Self::Unexpected => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred",
+            ),
+        }
+    }
 
-    // The masto library passes the access token as the WebSocket subprotocol rather
-    // than as a query param. Browsers require the server to echo back the requested
-    // subprotocol — if we don't, the browser aborts the connection immediately.
-    let protocol_token = headers
-        .get("sec-websocket-protocol")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
+    /// `errorMiddleware`'s answer: `{"error": message}`.
+    fn into_json_response(self) -> Response {
+        let (status, message) = self.status_and_message();
+        json_response(status, &serde_json::json!({ "error": message }))
+    }
+}
 
-    let token = params
-        .access_token
-        .clone()
-        .or_else(|| protocol_token.clone());
-    let initial_stream = params.stream.clone();
+impl From<sqlx::Error> for StreamError {
+    fn from(error: sqlx::Error) -> Self {
+        tracing::error!(%error, "streaming: database error");
+        Self::Unexpected
+    }
+}
 
-    let ws = if let Some(proto) = protocol_token.clone() {
-        ws.protocols([proto])
-    } else {
-        ws
+fn json_response(status: StatusCode, body: &Value) -> Response {
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
+    )
+        .into_response()
+}
+
+// ── The request (`req` and `ResolvedAccount`) ──────────────────────────────
+
+/// Who is streaming: what `accountFromToken` reads, and the keyword filters
+/// cached on the request.
+struct Session {
+    access_token_id: i64,
+    scopes: Vec<String>,
+    account_id: i64,
+    chosen_languages: Option<Vec<String>>,
+    permissions: i64,
+    /// `req.cachedFilters`, dropped on `filters_changed`.
+    cached_filters: Mutex<Option<Arc<BTreeMap<i64, CachedFilter>>>>,
+}
+
+impl Session {
+    /// `isInScope`.
+    fn is_in_scope(&self, necessary: &[&str]) -> bool {
+        self.scopes.iter().any(|s| necessary.contains(&s.as_str()))
+    }
+}
+
+/// The query string as `querystring.parse` reads it, first value of each key.
+fn parse_query(query: Option<&str>) -> HashMap<String, String> {
+    let mut parsed = HashMap::new();
+    for (key, value) in url::form_urlencoded::parse(query.unwrap_or("").as_bytes()) {
+        parsed
+            .entry(key.into_owned())
+            .or_insert_with(|| value.into_owned());
+    }
+    parsed
+}
+
+/// `accountFromRequest`: the `Authorization` header, else the `access_token`
+/// parameter, else the `Sec-WebSocket-Protocol` header.
+async fn account_from_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    query: &HashMap<String, String>,
+) -> Result<Session, StreamError> {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let access_token = query
+        .get("access_token")
+        .filter(|t| !t.is_empty())
+        .map(String::as_str)
+        .or_else(|| {
+            headers
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .and_then(|v| v.to_str().ok())
+                .filter(|t| !t.is_empty())
+        });
+    let token = match (authorization, access_token) {
+        (Some(authorization), _) => authorization
+            .strip_prefix("Bearer ")
+            .unwrap_or(authorization),
+        (None, Some(token)) => token,
+        (None, None) => return Err(StreamError::Authentication("Missing access token")),
     };
+    account_from_token(state, token).await
+}
 
-    tracing::info!(?initial_stream, ?account_id, "streaming: upgrade accepted");
-    // The upgraded connection is served from a task axum spawns, which starts
-    // outside this request's span; take the tenant along.
+/// `accountFromToken`.
+async fn account_from_token(state: &AppState, token: &str) -> Result<Session, StreamError> {
+    let row = sqlx::query!(
+        r#"SELECT oauth_access_tokens.id, users.account_id, users.chosen_languages,
+                  oauth_access_tokens.scopes, COALESCE(user_roles.permissions, 0) AS "permissions!"
+           FROM oauth_access_tokens
+           INNER JOIN users ON oauth_access_tokens.resource_owner_id = users.id
+           INNER JOIN accounts ON accounts.id = users.account_id
+           LEFT OUTER JOIN user_roles ON user_roles.id = users.role_id
+           WHERE oauth_access_tokens.token = $1 AND oauth_access_tokens.revoked_at IS NULL
+             AND users.disabled IS FALSE AND accounts.suspended_at IS NULL
+           LIMIT 1"#,
+        token,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(StreamError::Authentication("Invalid access token"))?;
+    Ok(Session {
+        access_token_id: row.id,
+        scopes: row
+            .scopes
+            .unwrap_or_default()
+            .split(' ')
+            .map(str::to_owned)
+            .collect(),
+        account_id: row.account_id,
+        chosen_languages: row.chosen_languages,
+        permissions: row.permissions,
+        cached_filters: Mutex::new(None),
+    })
+}
+
+/// `checkScopes`: `read`, or `read:notifications` for the notifications
+/// stream and `read:statuses` for any other.
+fn check_scopes(session: &Session, channel_name: Option<&str>) -> Result<(), StreamError> {
+    let narrow = if channel_name == Some("user:notification") {
+        "read:notifications"
+    } else {
+        "read:statuses"
+    };
+    if session.is_in_scope(&["read", narrow]) {
+        Ok(())
+    } else {
+        Err(StreamError::Authentication(
+            "Access token does not have the required scopes",
+        ))
+    }
+}
+
+/// `channelNameFromPath`.
+fn channel_name_from_path(path: &str, query: &HashMap<String, String>) -> Option<&'static str> {
+    let only_media = query.get("only_media").is_some_and(|v| is_truthy(v));
+    Some(match path {
+        "/api/v1/streaming/user" => "user",
+        "/api/v1/streaming/user/notification" => "user:notification",
+        "/api/v1/streaming/public" if only_media => "public:media",
+        "/api/v1/streaming/public" => "public",
+        "/api/v1/streaming/public/local" if only_media => "public:local:media",
+        "/api/v1/streaming/public/local" => "public:local",
+        "/api/v1/streaming/public/remote" if only_media => "public:remote:media",
+        "/api/v1/streaming/public/remote" => "public:remote",
+        "/api/v1/streaming/hashtag" => "hashtag",
+        "/api/v1/streaming/hashtag/local" => "hashtag:local",
+        "/api/v1/streaming/direct" => "direct",
+        "/api/v1/streaming/list" => "list",
+        _ => return None,
+    })
+}
+
+/// `isTruthy` (`utils.js`).
+fn is_truthy(value: &str) -> bool {
+    !value.is_empty() && !["0", "f", "F", "false", "FALSE", "off", "OFF"].contains(&value)
+}
+
+/// JavaScript truthiness, for the values of a parsed message.
+fn js_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(_) | Value::Object(_) => true,
+    }
+}
+
+/// `normalizeHashtag` (`utils.js`): NFKC, lower case, the ASCII folding of
+/// `app/lib/ascii_folder.rb`, then only letters, numbers, `_`, `·` and ZWNJ.
+fn normalize_hashtag(tag: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    const NON_ASCII_CHARS: &str = "ÀÁÂÃÄÅàáâãäåĀāĂăĄąÇçĆćĈĉĊċČčÐðĎďĐđÈÉÊËèéêëĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħÌÍÎÏìíîïĨĩĪīĬĭĮįİıĴĵĶķĸĹĺĻļĽľĿŀŁłÑñŃńŅņŇňŉŊŋÒÓÔÕÖØòóôõöøŌōŎŏŐőŔŕŖŗŘřŚśŜŝŞşŠšſŢţŤťŦŧÙÚÛÜùúûüŨũŪūŬŭŮůŰűŲųŴŵÝýÿŶŷŸŹźŻżŽž";
+    const EQUIVALENT_ASCII_CHARS: &str = "AAAAAAaaaaaaAaAaAaCcCcCcCcCcDdDdDdEEEEeeeeEeEeEeEeEeGgGgGgGgHhHhIIIIiiiiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnNnnNnOOOOOOooooooOoOoOoRrRrRrSsSsSsSssTtTtTtUUUUuuuuUuUuUuUuUuUuWwYyyYyYZzZzZz";
+    static INVALID: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r"[^\p{L}\p{N}_\x{00b7}\x{200c}]").expect("valid regex")
+    });
+    let lowered = tag.nfkc().collect::<String>().to_lowercase();
+    let folded: String = lowered
+        .chars()
+        .map(|c| match NON_ASCII_CHARS.chars().position(|n| n == c) {
+            Some(i) => EQUIVALENT_ASCII_CHARS.chars().nth(i).unwrap_or(c),
+            None => c,
+        })
+        .collect();
+    INVALID.replace_all(&folded, "").into_owned()
+}
+
+/// What `streamFrom` is told about a channel's messages.
+#[derive(Clone, Copy, Default)]
+struct FilterOptions {
+    needs_filtering: bool,
+    filter_local: bool,
+    filter_remote: bool,
+}
+
+/// `getFeedAccessSettings`: a feed whose setting is `disabled` is filtered out
+/// for anyone whose role may not `view_feeds`.
+async fn feed_access_settings(
+    state: &AppState,
+    kind: &str,
+    session: &Session,
+) -> Result<(bool, bool), StreamError> {
+    if session.permissions & PERMISSION_VIEW_FEEDS != 0 {
+        return Ok((true, true));
+    }
+    let (local_var, remote_var) = if kind == "hashtag" {
+        ("local_topic_feed_access", "remote_topic_feed_access")
+    } else {
+        ("local_live_feed_access", "remote_live_feed_access")
+    };
+    let rows = sqlx::query!(
+        "SELECT var, value FROM settings WHERE var IN ($1, $2)",
+        local_var,
+        remote_var
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StreamError::Unexpected)?;
+    let (mut local, mut remote) = (true, true);
+    for row in rows {
+        let access = row.value.as_deref() != Some("--- disabled\n");
+        if row.var == local_var {
+            local = access;
+        } else {
+            remote = access;
+        }
+    }
+    Ok((local, remote))
+}
+
+/// `channelNameToIds`: the bus channels a stream listens on, and how their
+/// messages are filtered.
+async fn channel_name_to_ids(
+    state: &AppState,
+    session: &Session,
+    name: Option<&str>,
+    params: &Map<String, Value>,
+) -> Result<(Vec<String>, FilterOptions), StreamError> {
+    let feed = |kind: &'static str, channel: String| async move {
+        let (local, remote) = feed_access_settings(state, kind, session).await?;
+        Ok::<_, StreamError>((
+            vec![channel],
+            FilterOptions {
+                needs_filtering: true,
+                filter_local: !local,
+                filter_remote: !remote,
+            },
+        ))
+    };
+    let account_id = session.account_id;
+    match name {
+        Some("user") => {
+            // `channelsForUserStream`.
+            let mut ids = vec![format!("timeline:{account_id}")];
+            if session.is_in_scope(&["read", "read:notifications"]) {
+                ids.push(format!("timeline:{account_id}:notifications"));
+            }
+            Ok((ids, FilterOptions::default()))
+        }
+        Some("user:notification") => Ok((
+            vec![format!("timeline:{account_id}:notifications")],
+            FilterOptions::default(),
+        )),
+        Some("public") => feed("public", "timeline:public".into()).await,
+        Some("public:local") => feed("public", "timeline:public:local".into()).await,
+        Some("public:remote") => feed("public", "timeline:public:remote".into()).await,
+        Some("public:media") => feed("public", "timeline:public:media".into()).await,
+        Some("public:local:media") => feed("public", "timeline:public:local:media".into()).await,
+        Some("public:remote:media") => feed("public", "timeline:public:remote:media".into()).await,
+        Some("direct") => Ok((
+            vec![format!("timeline:direct:{account_id}")],
+            FilterOptions::default(),
+        )),
+        Some(kind @ ("hashtag" | "hashtag:local")) => {
+            let tag = params.get("tag").filter(|t| js_truthy(t));
+            let Some(tag) = tag else {
+                return Err(StreamError::Request("Missing tag name parameter"));
+            };
+            // `normalizeHashtag` of anything but a string throws.
+            let tag = tag.as_str().ok_or(StreamError::Unexpected)?;
+            let suffix = if kind == "hashtag:local" {
+                ":local"
+            } else {
+                ""
+            };
+            feed(
+                "hashtag",
+                format!("timeline:hashtag:{}{suffix}", normalize_hashtag(tag)),
+            )
+            .await
+        }
+        Some("list") => {
+            let Some(list) = params.get("list").filter(|l| js_truthy(l)) else {
+                return Err(StreamError::Request("Missing list name parameter"));
+            };
+            // `authorizeListAccess`; an id the database cannot read is as
+            // unauthorized as somebody else's list.
+            let list_id = match list {
+                Value::String(s) => s.trim().parse::<i64>().ok(),
+                Value::Number(n) => n.as_i64(),
+                _ => None,
+            };
+            let owned = match list_id {
+                Some(id) => sqlx::query_scalar!(
+                    r#"SELECT EXISTS (SELECT 1 FROM lists WHERE id = $1 AND account_id = $2) AS "e!""#,
+                    id,
+                    account_id
+                )
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(false),
+                None => false,
+            };
+            match (owned, list_id) {
+                (true, Some(id)) => Ok((
+                    vec![format!("timeline:list:{id}")],
+                    FilterOptions::default(),
+                )),
+                _ => Err(StreamError::Authentication(
+                    "Not authorized to stream this list",
+                )),
+            }
+        }
+        _ => Err(StreamError::Request("Unknown stream type")),
+    }
+}
+
+/// `streamNameFromChannelName`: the `stream` of each WebSocket message.
+fn stream_name_from_channel_name(name: &str, params: &Map<String, Value>) -> Value {
+    let mut stream = vec![Value::String(name.to_owned())];
+    let extra = match name {
+        "list" => params.get("list"),
+        "hashtag" | "hashtag:local" => params.get("tag"),
+        _ => None,
+    };
+    if let Some(extra) = extra.filter(|v| js_truthy(v)) {
+        stream.push(extra.clone());
+    }
+    Value::Array(stream)
+}
+
+// ── Keyword filters ────────────────────────────────────────────────────────
+
+/// One of `req.cachedFilters`.
+struct CachedFilter {
+    regexp: Option<regex::Regex>,
+    expires_at: Option<chrono::NaiveDateTime>,
+    filter: Value,
+}
+
+/// The filters of the viewer that have keywords and have not expired, keyed
+/// and shaped as the streaming server caches them.
+async fn load_filters(
+    state: &AppState,
+    account_id: i64,
+) -> Result<BTreeMap<i64, CachedFilter>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT filter.id AS id, filter.phrase AS title, filter.context AS context,
+                  filter.expires_at AS expires_at, filter.action AS filter_action,
+                  keyword.keyword AS keyword, keyword.whole_word AS whole_word
+           FROM custom_filter_keywords keyword
+           JOIN custom_filters filter ON keyword.custom_filter_id = filter.id
+           WHERE filter.account_id = $1 AND (filter.expires_at IS NULL OR filter.expires_at > NOW())"#,
+        account_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut keywords: BTreeMap<i64, Vec<(String, bool)>> = BTreeMap::new();
+    let mut filters: BTreeMap<i64, CachedFilter> = BTreeMap::new();
+    for row in rows {
+        keywords
+            .entry(row.id)
+            .or_default()
+            .push((row.keyword, row.whole_word));
+        filters.entry(row.id).or_insert_with(|| {
+            let mut filter = serde_json::json!({
+                "id": row.id.to_string(),
+                "title": row.title,
+                "context": row.context,
+                "expires_at": row.expires_at.map(js_date),
+            });
+            // `['warn', 'hide'][filter.filter_action]`: `blur` comes out
+            // undefined, and `JSON.stringify` leaves it out.
+            match row.filter_action {
+                0 => filter["filter_action"] = "warn".into(),
+                1 => filter["filter_action"] = "hide".into(),
+                _ => {}
+            }
+            CachedFilter {
+                regexp: None,
+                expires_at: row.expires_at,
+                filter,
+            }
+        });
+    }
+    for (id, filter) in filters.iter_mut() {
+        let alternatives: Vec<String> = keywords[id]
+            .iter()
+            .map(|(keyword, whole_word)| {
+                let mut expr = regex::escape(keyword);
+                if *whole_word {
+                    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+                    if keyword.chars().next().is_some_and(word) {
+                        expr = format!(r"(?-u:\b){expr}");
+                    }
+                    if keyword.chars().last().is_some_and(word) {
+                        expr = format!(r"{expr}(?-u:\b)");
+                    }
+                }
+                expr
+            })
+            .collect();
+        filter.regexp = regex::Regex::new(&format!("(?i){}", alternatives.join("|"))).ok();
+    }
+    Ok(filters)
+}
+
+/// A `Date` as `JSON.stringify` writes it.
+fn js_date(at: chrono::NaiveDateTime) -> String {
+    at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+}
+
+/// The text the keyword filters are matched against: the spoiler, the
+/// content, the poll's options and the media descriptions, as the DOM reads
+/// them.
+fn searchable_text(status: &Value) -> String {
+    static BR: once_cell::sync::Lazy<regex::Regex> =
+        once_cell::sync::Lazy::new(|| regex::Regex::new(r"<br\s*/?>").expect("valid regex"));
+    let text = |v: &Value| match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let spoiler = match &status["spoiler_text"] {
+        v if js_truthy(v) => text(v),
+        _ => String::new(),
+    };
+    let mut parts = vec![spoiler, text(&status["content"])];
+    if let Some(options) = status["poll"]["options"].as_array() {
+        parts.extend(options.iter().map(|o| text(&o["title"])));
+    }
+    if let Some(media) = status["media_attachments"].as_array() {
+        parts.extend(media.iter().map(|m| text(&m["description"])));
+    }
+    let html = BR
+        .replace_all(&parts.join("\n\n"), "\n")
+        .replace("</p><p>", "\n\n");
+    scraper::Html::parse_fragment(&html)
+        .root_element()
+        .text()
+        .collect()
+}
+
+/// The `FilterResult`s of the viewer's keyword filters that match.
+fn filter_results(filters: &BTreeMap<i64, CachedFilter>, status: &Value) -> Vec<Value> {
+    let content = searchable_text(status);
+    let now = chrono::Utc::now().naive_utc();
+    let mut results = vec![];
+    for cached in filters.values() {
+        if cached.expires_at.is_some_and(|at| at < now) || content.is_empty() {
+            continue;
+        }
+        if let Some(found) = cached.regexp.as_ref().and_then(|r| r.find(&content)) {
+            results.push(serde_json::json!({
+                "filter": cached.filter,
+                "keyword_matches": [found.as_str()],
+                "status_matches": null,
+            }));
+        }
+    }
+    results
+}
+
+// ── Listening (`streamFrom`) ───────────────────────────────────────────────
+
+/// Where a listener's messages go.
+#[derive(Clone)]
+enum Output {
+    /// `streamToWs`, with the stream's name.
+    Ws {
+        out: mpsc::UnboundedSender<Outgoing>,
+        stream: Arc<Value>,
+    },
+    /// `streamToHttp`.
+    Sse {
+        out: mpsc::UnboundedSender<Outgoing>,
+    },
+}
+
+enum Outgoing {
+    Text(String),
+    /// `onKill`.
+    Kill,
+}
+
+impl Output {
+    fn send(&self, event: &str, payload: &Value) -> bool {
+        // `transmit`: an object goes as its JSON, a string as it is.
+        let encoded = match payload {
+            Value::Object(_) | Value::Array(_) | Value::Null => Value::String(payload.to_string()),
+            other => other.clone(),
+        };
+        match self {
+            Self::Ws { out, stream } => {
+                let message = format!(
+                    r#"{{"stream":{},"event":{},"payload":{}}}"#,
+                    stream,
+                    Value::String(event.to_owned()),
+                    encoded,
+                );
+                out.send(Outgoing::Text(message)).is_ok()
+            }
+            Self::Sse { out } => {
+                let data = match &encoded {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                out.send(Outgoing::Text(format!("event: {event}\ndata: {data}\n\n")))
+                    .is_ok()
+            }
+        }
+    }
+}
+
+/// A spawned listener, stopped when dropped: `unsubscribe`.
+struct Listener(tokio::task::JoinHandle<()>);
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// `streamFrom`: one listener per channel.
+fn stream_from(
+    state: &AppState,
+    session: &Arc<Session>,
+    channel_ids: &[String],
+    output: Output,
+    options: FilterOptions,
+) -> Vec<Listener> {
+    channel_ids
+        .iter()
+        .map(|channel| {
+            let mut subscription = state.streaming.subscribe(channel);
+            let (state, session, output) = (state.clone(), session.clone(), output.clone());
+            Listener(crate::tenants::spawn(async move {
+                while let Some(message) = subscription.recv().await {
+                    if let Some((event, payload)) =
+                        listen(&state, &session, options, &message).await
+                    {
+                        if !output.send(&event, &payload) {
+                            break;
+                        }
+                    }
+                }
+            }))
+        })
+        .collect()
+}
+
+/// `streamFrom`'s listener: what of a message reaches the client.
+async fn listen(
+    state: &AppState,
+    session: &Session,
+    options: FilterOptions,
+    message: &Value,
+) -> Option<(String, Value)> {
+    let event = message.get("event").filter(|e| js_truthy(e))?;
+    let payload = message.get("payload").filter(|p| js_truthy(p))?;
+    let event = match event {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    if !options.needs_filtering || (event != "update" && event != "status.update") {
+        return Some((event, payload.clone()));
+    }
+
+    let account = &payload["account"];
+    let local_payload = account["username"] == account["acct"];
+    if if local_payload {
+        options.filter_local
+    } else {
+        options.filter_remote
+    } {
+        return None;
+    }
+    if let Some(languages) = &session.chosen_languages {
+        let language = payload["language"].as_str();
+        if !language.is_some_and(|l| languages.iter().any(|c| c == l)) {
+            return None;
+        }
+    }
+
+    // Blocks, mutes and domain blocks, of the author and everyone mentioned.
+    let author_id = id_of(&account["id"])?;
+    let mut targets = vec![author_id];
+    if let Some(mentions) = payload["mentions"].as_array() {
+        targets.extend(mentions.iter().filter_map(|m| id_of(&m["id"])));
+    }
+    let blocked = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM blocks
+             WHERE (account_id = $1 AND target_account_id = ANY($3))
+                OR (account_id = $2 AND target_account_id = $1)
+             UNION
+             SELECT 1 FROM mutes WHERE account_id = $1 AND target_account_id = ANY($3)
+           ) AS "e!""#,
+        session.account_id,
+        author_id,
+        &targets,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|error| tracing::error!(%error, "streaming: could not check blocks"))
+    .ok()?;
+    if blocked {
+        return None;
+    }
+    if let Some(domain) = account["acct"].as_str().and_then(|a| a.split('@').nth(1)) {
+        let domain_blocked = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM account_domain_blocks WHERE account_id = $1 AND domain = $2) AS "e!""#,
+            session.account_id,
+            domain,
+        )
+        .fetch_one(&state.db)
+        .await
+        .ok()?;
+        if domain_blocked {
+            return None;
+        }
+    }
+
+    // A payload rendered for the viewer already says what filters it.
+    if payload.get("filtered").is_some() {
+        return Some((event, payload.clone()));
+    }
+    let cached = session
+        .cached_filters
+        .lock()
+        .expect("cached filters lock")
+        .clone();
+    let filters = match cached {
+        Some(filters) => filters,
+        None => {
+            let loaded = Arc::new(load_filters(state, session.account_id).await.ok()?);
+            *session.cached_filters.lock().expect("cached filters lock") = Some(loaded.clone());
+            loaded
+        }
+    };
+    let results = filter_results(&filters, payload);
+    let mut payload = payload.clone();
+    payload
+        .as_object_mut()?
+        .insert("filtered".into(), Value::Array(results));
+    Some((event, payload))
+}
+
+fn id_of(value: &Value) -> Option<i64> {
+    match value {
+        Value::String(s) => s.parse().ok(),
+        Value::Number(n) => n.as_i64(),
+        _ => None,
+    }
+}
+
+/// `subscribeHttpToSystemChannel` and `subscribeWebsocketToSystemChannel`:
+/// `kill` on the token's or the account's system channel ends the
+/// connection, and `filters_changed` drops the cached filters.
+fn subscribe_to_system_channels(
+    state: &AppState,
+    session: &Arc<Session>,
+    out: mpsc::UnboundedSender<Outgoing>,
+) -> Vec<Listener> {
+    [
+        format!("timeline:access_token:{}", session.access_token_id),
+        format!("timeline:system:{}", session.account_id),
+    ]
+    .into_iter()
+    .map(|channel| {
+        let mut subscription = state.streaming.subscribe(&channel);
+        let (session, out) = (session.clone(), out.clone());
+        Listener(crate::tenants::spawn(async move {
+            while let Some(message) = subscription.recv().await {
+                match message.get("event").and_then(Value::as_str) {
+                    Some("kill") => {
+                        let _ = out.send(Outgoing::Kill);
+                    }
+                    Some("filters_changed") => {
+                        *session.cached_filters.lock().expect("cached filters lock") = None;
+                    }
+                    _ => {}
+                }
+            }
+        }))
+    })
+    .collect()
+}
+
+// ── Routes ─────────────────────────────────────────────────────────────────
+
+/// `GET /api/v1/streaming/health`.
+pub async fn health() -> Response {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/plain"),
+            (header::CACHE_CONTROL, "private, no-store"),
+        ],
+        "OK",
+    )
+        .into_response()
+}
+
+/// Everything else under `/api/v1/streaming`: a WebSocket upgrade, on any
+/// path, as the streaming server takes one; otherwise the event stream the
+/// path names.
+pub async fn handler(
+    state: AppState,
+    ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
+    request: Request,
+) -> Response {
+    let query = parse_query(request.uri().query());
+    let headers = request.headers().clone();
+    match ws {
+        Ok(ws) => websocket(state, ws, headers, query).await,
+        Err(_) => event_stream(state, request.uri().path(), headers, query).await,
+    }
+}
+
+// ── Server-sent events ─────────────────────────────────────────────────────
+
+/// `authenticationMiddleware`, then the `/api/v1/streaming/*splat` route.
+async fn event_stream(
+    state: AppState,
+    path: &str,
+    headers: HeaderMap,
+    query: HashMap<String, String>,
+) -> Response {
+    let Some(channel_name) = channel_name_from_path(path, &query) else {
+        return StreamError::Request("Unknown channel requested").into_json_response();
+    };
+    let session = match account_from_request(&state, &headers, &query).await {
+        Ok(session) => Arc::new(session),
+        Err(error) => return error.into_json_response(),
+    };
+    if let Err(error) = check_scopes(&session, Some(channel_name)) {
+        return error.into_json_response();
+    }
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let system = subscribe_to_system_channels(&state, &session, out_tx.clone());
+
+    let params: Map<String, Value> = query
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+        .collect();
+    let (channel_ids, options) =
+        match channel_name_to_ids(&state, &session, Some(channel_name), &params).await {
+            Ok(resolved) => resolved,
+            Err(error) => return error.into_json_response(),
+        };
+    let listeners = stream_from(
+        &state,
+        &session,
+        &channel_ids,
+        Output::Sse { out: out_tx },
+        options,
+    );
+    tracing::debug!(
+        ?channel_ids,
+        account_id = session.account_id,
+        "streaming: event stream"
+    );
+
+    let (body_tx, mut body_rx) = mpsc::channel::<Bytes>(64);
+    let stop = state.stop.clone();
+    crate::tenants::spawn(async move {
+        let _held = (system, listeners);
+        if body_tx.send(Bytes::from_static(b":)\n")).await.is_err() {
+            return;
+        }
+        let mut heartbeat = tokio::time::interval(SSE_HEARTBEAT_EVERY);
+        heartbeat.tick().await;
+        loop {
+            tokio::select! {
+                () = stop.cancelled() => break,
+                () = body_tx.closed() => break,
+                outgoing = out_rx.recv() => match outgoing {
+                    Some(Outgoing::Text(text)) => {
+                        if body_tx.send(Bytes::from(text)).await.is_err() {
+                            break;
+                        }
+                    }
+                    // `res.end()`.
+                    Some(Outgoing::Kill) | None => break,
+                },
+                _ = heartbeat.tick() => {
+                    if body_tx.send(Bytes::from_static(b":thump\n\n")).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    let body = futures::stream::poll_fn(move |cx| {
+        body_rx
+            .poll_recv(cx)
+            .map(|chunk| chunk.map(Ok::<_, Infallible>))
+    });
+    let mut response = Response::new(Body::from_stream(body));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+
+/// The `upgrade` handler: authenticate first, and answer a refusal with a bare
+/// HTTP response naming the error in `X-Error-Message`.
+async fn websocket(
+    state: AppState,
+    ws: WebSocketUpgrade,
+    headers: HeaderMap,
+    query: HashMap<String, String>,
+) -> Response {
+    let session = match account_from_request(&state, &headers, &query).await {
+        Ok(session) => Arc::new(session),
+        Err(error) => {
+            let (status, message) = error.status_and_message();
+            return (
+                status,
+                [
+                    (header::CONNECTION, "close"),
+                    (header::CONTENT_TYPE, "text/plain"),
+                    (header::HeaderName::from_static("x-error-message"), message),
+                ],
+            )
+                .into_response();
+        }
+    };
+    // `ws` answers with the first subprotocol the client offered, which is
+    // how clients that pass the token as the subprotocol get it accepted.
+    let protocol = headers
+        .get(header::SEC_WEBSOCKET_PROTOCOL)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').map(str::trim).find(|p| !p.is_empty()))
+        .map(str::to_owned);
+    let ws = match protocol {
+        Some(protocol) => ws.protocols([protocol]),
+        None => ws,
+    };
+    // The upgraded connection runs in a task axum spawns, outside this
+    // request's span; take the tenant along.
     let span = tracing::Span::current();
     ws.on_upgrade(move |socket| {
         async move {
-            let (account_id, token_id) = if account_id.is_some() {
-                (account_id, token_id)
-            } else if let Some(tok) = token {
-                match resolve_token(&state, &tok).await {
-                    Some((account, token)) => (Some(account), Some(token)),
-                    None => (None, None),
-                }
-            } else {
-                (None, None)
-            };
-
-            tracing::info!(?initial_stream, ?account_id, "streaming: connection open");
-            run(socket, initial_stream, account_id, token_id, state).await;
-            tracing::info!("streaming: connection closed");
+            tracing::debug!(account_id = session.account_id, "streaming: websocket open");
+            on_connection(socket, state, session, query).await;
+            tracing::debug!("streaming: websocket closed");
         }
         .instrument(span)
     })
 }
 
-async fn resolve_token(state: &AppState, token: &str) -> Option<(i64, i64)> {
-    sqlx::query!(
-        r#"SELECT u.account_id, t.id AS token_id
-           FROM oauth_access_tokens t
-           JOIN users u ON u.id = t.resource_owner_id
-           JOIN accounts a ON a.id = u.account_id
-           WHERE t.token = $1 AND t.revoked_at IS NULL
-             AND NOT u.disabled AND a.suspended_at IS NULL
-             AND (t.expires_in IS NULL OR t.created_at + t.expires_in * interval '1 second' > now())"#,
-        token,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()
-    .map(|row| (row.account_id, row.token_id))
-}
+/// A WebSocket's subscriptions: their listeners, keyed by their channels
+/// joined with `;`.
+type Subscribed = HashMap<String, Vec<Listener>>;
 
-/// Returns true for streams that require authentication.
-fn requires_auth(stream: &str) -> bool {
-    matches!(stream, "user" | "user:notification" | "direct") || stream.starts_with("list:")
-}
-
-async fn run(
+/// `onConnection`.
+async fn on_connection(
     mut socket: WebSocket,
-    initial_stream: Option<String>,
-    account_id: Option<i64>,
-    token_id: Option<i64>,
     state: AppState,
+    session: Arc<Session>,
+    query: HashMap<String, String>,
 ) {
-    // Load followed account IDs for any authenticated user so we can filter
-    // home-timeline events without a DB query per message.
-    let following: HashSet<i64> = if let Some(aid) = account_id {
-        sqlx::query_scalar!(
-            "SELECT target_account_id FROM follows
-             WHERE account_id = $1",
-            aid,
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let mut subscriptions = Subscribed::new();
+    let _system = subscribe_to_system_channels(&state, &session, out_tx.clone());
+
+    if let Some(stream) = query.get("stream").filter(|s| !s.is_empty()) {
+        let params: Map<String, Value> = query
+            .iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect();
+        if let Some(error) = subscribe(
+            &state,
+            &session,
+            &out_tx,
+            &mut subscriptions,
+            Some(stream.as_str()),
+            &params,
         )
-        .fetch_all(&state.db)
         .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
-    } else {
-        HashSet::new()
-    };
+        {
+            if socket.send(Message::Text(error.into())).await.is_err() {
+                return;
+            }
+        }
+    }
 
-    // Active stream subscriptions. Seeded by ?stream= query param; updated via
-    // {"type":"subscribe"/"unsubscribe","stream":"..."} messages (multiplexed protocol).
-    let mut subscribed: HashSet<String> = initial_stream
-        .into_iter()
-        .filter(|s| !requires_auth(s) || account_id.is_some())
-        .collect();
-
-    let mut online = track_online(&state, account_id, &subscribed, None);
-    let mut rx = state.streaming.subscribe();
-    let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
-    heartbeat.tick().await; // consume the immediate first tick
-
+    let mut alive = true;
+    let mut ping = tokio::time::interval(WS_PING_EVERY);
+    ping.tick().await;
     loop {
         tokio::select! {
             () = state.stop.cancelled() => {
@@ -147,92 +987,74 @@ async fn run(
                 let _ = socket.send(Message::Close(None)).await;
                 break;
             }
-            result = rx.recv() => {
-                match result {
-                    Ok(event) => {
-                        // A suspended/deleted account's connections are cut, not filtered.
-                        if let Event::Kill { account_id: killed } = *event {
-                            if account_id == Some(killed) {
-                                return;
-                            }
-                        }
-                        // A revoked token's connections are cut too.
-                        if let Event::KillTokens { token_ids } = &*event {
-                            if token_id.is_some_and(|id| token_ids.contains(&id)) {
-                                return;
-                            }
-                        }
-                        for stream in &subscribed {
-                            let msg = route_event(&event, stream, account_id, &following, &state.db).await;
-                            if let Some(msg) = msg {
-                                if socket.send(Message::Text(msg.into())).await.is_err() {
-                                    return;
-                                }
-                                // No break: send a separate message per matching stream,
-                                // matching Mastodon's behaviour.
-                            }
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            msg = socket.recv() => {
-                match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        tracing::debug!(stream = ?subscribed, text = %text, "streaming: client message");
-                        #[derive(Deserialize)]
-                        struct Cmd {
-                            #[serde(rename = "type")]
-                            kind: String,
-                            stream: Option<String>,
-                        }
-                        if let Ok(cmd) = serde_json::from_str::<Cmd>(&text) {
-                            match cmd.kind.as_str() {
-                                "subscribe" => {
-                                    if let Some(s) = cmd.stream {
-                                        if requires_auth(&s) && account_id.is_none() {
-                                            tracing::warn!(stream = %s, "streaming: unauthenticated subscribe to auth-required stream ignored");
-                                        } else {
-                                            tracing::info!(stream = %s, "streaming: subscribed");
-                                            subscribed.insert(s);
-                                        }
-                                    }
-                                }
-                                "unsubscribe" => {
-                                    if let Some(s) = cmd.stream {
-                                        tracing::info!(stream = %s, "streaming: unsubscribed");
-                                        subscribed.remove(&s);
-                                    }
-                                }
-                                _ => {}
-                            }
-                            online = track_online(&state, account_id, &subscribed, online.take());
-                        }
-                    }
-                    Some(Ok(Message::Ping(p))) => {
-                        let _ = socket.send(Message::Pong(p)).await;
-                    }
-                    Some(Ok(Message::Close(frame))) => {
-                        tracing::debug!(?frame, "streaming: client close frame");
-                        break;
-                    }
-                    Some(Ok(other)) => {
-                        tracing::debug!(?other, "streaming: unexpected message type");
-                        break;
-                    }
-                    Some(Err(e)) => {
-                        tracing::warn!(error = %e, "streaming: socket error");
-                        break;
-                    }
-                    None => {
-                        tracing::debug!("streaming: socket recv returned None");
+            outgoing = out_rx.recv() => match outgoing {
+                Some(Outgoing::Text(text)) => {
+                    if socket.send(Message::Text(text.into())).await.is_err() {
                         break;
                     }
                 }
-            }
-            _ = heartbeat.tick() => {
-                // Ping frame resets Cloudflare's idle connection timer.
+                // `websocket.close()`.
+                Some(Outgoing::Kill) | None => {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break;
+                }
+            },
+            message = socket.recv() => match message {
+                Some(Ok(Message::Text(text))) => {
+                    // Anything that is not a JSON object is logged and ignored.
+                    let Ok(Value::Object(mut json)) = serde_json::from_str::<Value>(&text) else {
+                        tracing::debug!("streaming: unparseable message");
+                        continue;
+                    };
+                    let kind = json.remove("type");
+                    let stream = json.remove("stream").map(|s| match s {
+                        // `firstParam`.
+                        Value::Array(items) => items.into_iter().next().unwrap_or(Value::Null),
+                        other => other,
+                    });
+                    let channel_name = stream.as_ref().and_then(Value::as_str);
+                    let reply = match kind.as_ref().and_then(Value::as_str) {
+                        Some("subscribe") => {
+                            subscribe(&state, &session, &out_tx, &mut subscriptions, channel_name, &json).await
+                        }
+                        Some("unsubscribe") => {
+                            match channel_name_to_ids(&state, &session, channel_name, &json).await {
+                                Ok((channel_ids, _)) => {
+                                    subscriptions.remove(&channel_ids.join(";"));
+                                    None
+                                }
+                                Err(_) => Some(r#"{"error":"Error unsubscribing from channel"}"#.to_owned()),
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(reply) = reply {
+                        if socket.send(Message::Text(reply.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Some(Ok(Message::Binary(_))) => {
+                    let _ = socket
+                        .send(Message::Close(Some(CloseFrame {
+                            code: 1003,
+                            reason: "The mastodon streaming server does not support binary messages".into(),
+                        })))
+                        .await;
+                    break;
+                }
+                Some(Ok(Message::Pong(_))) => alive = true,
+                Some(Ok(Message::Ping(payload))) => {
+                    let _ = socket.send(Message::Pong(payload)).await;
+                }
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+            },
+            _ = ping.tick() => {
+                // Did not answer the last ping: `ws.terminate()`.
+                if !alive {
+                    break;
+                }
+                alive = false;
                 if socket.send(Message::Ping(Bytes::new())).await.is_err() {
                     break;
                 }
@@ -241,524 +1063,76 @@ async fn run(
     }
 }
 
-/// Count the connection as its account being online while it is subscribed to
-/// the account's own stream, as the streaming server sets
-/// `subscribed:timeline:<id>` for `user` and `user:notification`.
-fn track_online(
+/// `subscribeWebsocketToChannel`; the error frame to send, if it failed.
+async fn subscribe(
     state: &AppState,
-    account_id: Option<i64>,
-    subscribed: &HashSet<String>,
-    current: Option<crate::streaming::OnlineGuard>,
-) -> Option<crate::streaming::OnlineGuard> {
-    let own = subscribed
-        .iter()
-        .any(|s| s == "user" || s == "user:notification");
-    match account_id.filter(|_| own) {
-        Some(id) => current.or_else(|| Some(state.streaming.online(id))),
-        None => None,
-    }
-}
-
-/// Dispatch an event to the right handler based on the subscribed stream name.
-async fn route_event(
-    event: &Event,
-    stream: &str,
-    account_id: Option<i64>,
-    following: &HashSet<i64>,
-    db: &sqlx::PgPool,
+    session: &Arc<Session>,
+    out: &mpsc::UnboundedSender<Outgoing>,
+    subscriptions: &mut Subscribed,
+    channel_name: Option<&str>,
+    params: &Map<String, Value>,
 ) -> Option<String> {
-    let wire = route_event_unfiltered(event, stream, account_id, following, db).await?;
-    // The streaming server's custom filters: a signed-in viewer's `update`
-    // and `status.update` carry `filtered`, the filters that match.
-    match (event, account_id) {
-        (Event::NewStatus { status_id, .. } | Event::StatusUpdate { status_id, .. }, Some(aid)) => {
-            Some(
-                with_filter_results(&wire, aid, *status_id, db)
-                    .await
-                    .unwrap_or(wire),
-            )
+    let resolved = match check_scopes(session, channel_name) {
+        Ok(()) => channel_name_to_ids(state, session, channel_name, params).await,
+        Err(error) => Err(error),
+    };
+    let (channel_ids, options) = match resolved {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            let (status, message) = error.status_and_message();
+            return Some(format!(
+                r#"{{"error":{},"status":{}}}"#,
+                Value::String(message.to_owned()),
+                status.as_u16()
+            ));
         }
-        _ => Some(wire),
+    };
+    let key = channel_ids.join(";");
+    if subscriptions.contains_key(&key) {
+        return None;
     }
+    let channel_name = channel_name.unwrap_or_default();
+    let output = Output::Ws {
+        out: out.clone(),
+        stream: Arc::new(stream_name_from_channel_name(channel_name, params)),
+    };
+    let listeners = stream_from(state, session, &channel_ids, output, options);
+    subscriptions.insert(key, listeners);
+    None
 }
 
-/// `wire` with the viewer's `FilterResult`s set as the payload's `filtered`.
-async fn with_filter_results(
-    wire: &str,
-    viewer_id: i64,
-    status_id: i64,
-    db: &sqlx::PgPool,
-) -> Option<String> {
-    let status = sqlx::query_as!(
-        crate::db::models::Status,
-        "SELECT * FROM statuses WHERE id = $1",
-        status_id
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()?;
-    let results = super::timelines::compute_filter_results(db, viewer_id, &[status]).await;
-    let filtered = results
-        .get(&status_id)
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!([]));
-    let mut outer: serde_json::Value = serde_json::from_str(wire).ok()?;
-    let mut payload: serde_json::Value =
-        serde_json::from_str(outer.get("payload")?.as_str()?).ok()?;
-    payload.as_object_mut()?.insert("filtered".into(), filtered);
-    outer.as_object_mut()?.insert(
-        "payload".into(),
-        serde_json::Value::String(payload.to_string()),
-    );
-    serde_json::to_string(&outer).ok()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-async fn route_event_unfiltered(
-    event: &Event,
-    stream: &str,
-    account_id: Option<i64>,
-    following: &HashSet<i64>,
-    db: &sqlx::PgPool,
-) -> Option<String> {
-    match stream {
-        "user" => to_wire_user(event, account_id, following, db).await,
-        "user:notification" => to_wire_user_notification(event, account_id),
-        s if s.starts_with("list:") || s == "direct" => {
-            to_wire_authenticated(event, s, account_id, db).await
-        }
-        _ => to_wire(event, stream, account_id, following),
-    }
-}
-
-// ── user stream (with per-viewer context injection) ────────────────────────
-
-/// `user` stream: delivers status updates (with viewer context) and notifications.
-async fn to_wire_user(
-    event: &Event,
-    account_id: Option<i64>,
-    following: &HashSet<i64>,
-    db: &sqlx::PgPool,
-) -> Option<String> {
-    match event {
-        Event::NewStatus {
-            author_id,
-            status_id,
-            payload,
-            ..
-        } => {
-            let deliver = account_id
-                .map(|aid| aid == *author_id || following.contains(author_id))
-                .unwrap_or(false);
-            if !deliver {
-                return None;
-            }
-            let enriched = inject_viewer_context(payload, account_id?, *status_id, db).await?;
-            Some(wire("update", &["user"], &enriched))
-        }
-
-        Event::StatusUpdate {
-            author_id,
-            status_id,
-            payload,
-            ..
-        } => {
-            let deliver = account_id
-                .map(|aid| aid == *author_id || following.contains(author_id))
-                .unwrap_or(false);
-            if !deliver {
-                return None;
-            }
-            let enriched = inject_viewer_context(payload, account_id?, *status_id, db).await?;
-            Some(wire("status.update", &["user"], &enriched))
-        }
-
-        // Notifications and deletes fall through to the standard path.
-        other => to_wire(other, "user", account_id, following),
-    }
-}
-
-/// `user:notification` stream: delivers notifications only, no status events.
-fn to_wire_user_notification(event: &Event, account_id: Option<i64>) -> Option<String> {
-    match event {
-        Event::Notification {
-            for_account_id,
-            payload,
-        } => {
-            if account_id != Some(*for_account_id) {
-                return None;
-            }
-            Some(wire(
-                "notification",
-                &["user", "user:notification"],
-                payload,
-            ))
-        }
-        _ => None,
-    }
-}
-
-// ── Viewer-context injection ───────────────────────────────────────────────
-
-async fn inject_viewer_context(
-    payload: &str,
-    aid: i64,
-    status_id: i64,
-    db: &sqlx::PgPool,
-) -> Option<String> {
-    let favourited = sqlx::query_scalar!(
-        "SELECT 1 AS e FROM favourites WHERE account_id = $1 AND status_id = $2",
-        aid,
-        status_id
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .is_some();
-
-    let reblogged = sqlx::query_scalar!(
-        "SELECT 1 AS e FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL",
-        aid, status_id
-    )
-    .fetch_optional(db).await.ok().flatten().is_some();
-
-    let bookmarked = sqlx::query_scalar!(
-        "SELECT 1 AS e FROM bookmarks WHERE account_id = $1 AND status_id = $2",
-        aid,
-        status_id
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .is_some();
-
-    let mut value: serde_json::Value = serde_json::from_str(payload).ok()?;
-    if let serde_json::Value::Object(ref mut obj) = value {
-        obj.insert("favourited".into(), serde_json::json!(favourited));
-        obj.insert("reblogged".into(), serde_json::json!(reblogged));
-        obj.insert("muted".into(), serde_json::json!(false));
-        obj.insert("bookmarked".into(), serde_json::json!(bookmarked));
-        obj.insert("pinned".into(), serde_json::json!(false));
-    }
-    serde_json::to_string(&value).ok()
-}
-
-// ── Public / hashtag streams (no DB lookups) ──────────────────────────────
-
-/// Build the Mastodon streaming wire format for an event, or return `None`
-/// if the event should not be delivered to this subscription.
-fn to_wire(
-    event: &Event,
-    stream: &str,
-    account_id: Option<i64>,
-    following: &HashSet<i64>,
-) -> Option<String> {
-    match event {
-        Event::NewStatus {
-            author_id,
-            is_public,
-            hashtags,
-            has_media,
-            payload,
-            ..
-        } => {
-            if !should_deliver(
-                stream, *is_public, *has_media, hashtags, *author_id, account_id, following,
-            ) {
-                return None;
-            }
-            Some(wire("update", &stream_label(stream), payload))
-        }
-
-        Event::StatusUpdate {
-            author_id,
-            is_public,
-            hashtags,
-            has_media,
-            payload,
-            ..
-        } => {
-            if !should_deliver(
-                stream, *is_public, *has_media, hashtags, *author_id, account_id, following,
-            ) {
-                return None;
-            }
-            Some(wire("status.update", &stream_label(stream), payload))
-        }
-
-        Event::Notification {
-            for_account_id,
-            payload,
-        } => {
-            if stream != "user" {
-                return None;
-            }
-            if account_id != Some(*for_account_id) {
-                return None;
-            }
-            Some(wire("notification", &["user"], payload))
-        }
-
-        Event::DeleteStatus { status_id } => {
-            if !is_status_stream(stream) {
-                return None;
-            }
-            Some(
-                serde_json::json!({
-                    "stream": stream_label(stream),
-                    "event": "delete",
-                    "payload": status_id.to_string(),
-                })
-                .to_string(),
-            )
-        }
-
-        Event::FiltersChanged { for_account_id } => {
-            if stream != "user" {
-                return None;
-            }
-            if account_id != Some(*for_account_id) {
-                return None;
-            }
-            Some(
-                serde_json::json!({
-                    "stream": ["user"],
-                    "event": "filters_changed",
-                    "payload": "",
-                })
-                .to_string(),
-            )
-        }
-
-        // Handled by closing the connection in `run`, never sent on the wire.
-        Event::Kill { .. } | Event::KillTokens { .. } => None,
-
-        Event::Announcement { payload } => {
-            if stream != "user" || account_id.is_none() {
-                return None;
-            }
-            Some(wire("announcement", &["user"], payload))
-        }
-
-        Event::AnnouncementReaction { payload } => {
-            if stream != "user" || account_id.is_none() {
-                return None;
-            }
-            Some(wire("announcement.reaction", &["user"], payload))
-        }
-
-        Event::AnnouncementDelete { announcement_id } => {
-            if stream != "user" || account_id.is_none() {
-                return None;
-            }
-            Some(
-                serde_json::json!({
-                    "stream": ["user"],
-                    "event": "announcement.delete",
-                    "payload": announcement_id.to_string(),
-                })
-                .to_string(),
-            )
-        }
-    }
-}
-
-/// Decide if a `NewStatus` / `StatusUpdate` should be delivered to `stream`.
-fn should_deliver(
-    stream: &str,
-    is_public: bool,
-    has_media: bool,
-    hashtags: &[String],
-    author_id: i64,
-    account_id: Option<i64>,
-    following: &HashSet<i64>,
-) -> bool {
-    match stream {
-        "public" => is_public,
-        "public:local" => is_public,
-        "public:media" => is_public && has_media,
-        "public:local:media" => is_public && has_media,
-        // public:remote needs federated content; always false until AP inbox is wired.
-        "public:remote" | "public:remote:media" => false,
-        "user" => account_id
-            .map(|aid| aid == author_id || following.contains(&author_id))
-            .unwrap_or(false),
-        s if s.starts_with("hashtag:local:") => {
-            let tag = &s["hashtag:local:".len()..];
-            is_public && hashtags.iter().any(|h| h.eq_ignore_ascii_case(tag))
-        }
-        s if s.starts_with("hashtag:") => {
-            let tag = &s["hashtag:".len()..];
-            is_public && hashtags.iter().any(|h| h.eq_ignore_ascii_case(tag))
-        }
-        _ => false,
-    }
-}
-
-// ── list: and direct streams (DB lookups) ─────────────────────────────────
-
-/// Handle `list:N` and `direct` streams which require DB lookups.
-async fn to_wire_authenticated(
-    event: &Event,
-    stream: &str,
-    account_id: Option<i64>,
-    db: &sqlx::PgPool,
-) -> Option<String> {
-    let aid = account_id?;
-    match event {
-        Event::NewStatus {
-            author_id,
-            is_direct,
-            status_id,
-            payload,
-            ..
-        } => {
-            let deliver =
-                deliver_authenticated(stream, *is_direct, *status_id, *author_id, aid, db).await;
-            if !deliver {
-                return None;
-            }
-            let stream_arr = stream_label(stream);
-            Some(wire("update", &stream_arr, payload))
-        }
-
-        Event::StatusUpdate {
-            author_id, payload, ..
-        } => {
-            if let Some(list_id_str) = stream.strip_prefix("list:") {
-                if let Ok(list_id) = list_id_str.parse::<i64>() {
-                    let in_list = sqlx::query_scalar!(
-                        r#"SELECT 1 AS e FROM list_accounts la
-                           JOIN lists l ON l.id = la.list_id
-                           WHERE la.list_id = $1 AND la.account_id = $2
-                             AND l.account_id = $3"#,
-                        list_id,
-                        *author_id,
-                        aid,
-                    )
-                    .fetch_optional(db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some();
-                    if !in_list {
-                        return None;
-                    }
-                    let stream_arr = stream_label(stream);
-                    return Some(wire("status.update", &stream_arr, payload));
-                }
-            }
-            None
-        }
-
-        Event::DeleteStatus { status_id } => {
-            let stream_arr = stream_label(stream);
-            Some(
-                serde_json::json!({
-                    "stream": stream_arr,
-                    "event": "delete",
-                    "payload": status_id.to_string(),
-                })
-                .to_string(),
-            )
-        }
-
-        Event::Notification { .. }
-        | Event::FiltersChanged { .. }
-        | Event::Kill { .. }
-        | Event::KillTokens { .. }
-        | Event::Announcement { .. }
-        | Event::AnnouncementDelete { .. }
-        | Event::AnnouncementReaction { .. } => None,
-    }
-}
-
-async fn deliver_authenticated(
-    stream: &str,
-    is_direct: bool,
-    status_id: i64,
-    author_id: i64,
-    aid: i64,
-    db: &sqlx::PgPool,
-) -> bool {
-    if stream == "direct" {
-        // Deliver if the viewer authored it, or if they are mentioned.
-        return is_direct
-            && (author_id == aid
-                || sqlx::query_scalar!(
-            "SELECT 1 AS e FROM statuses WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL",
-            status_id, aid
-        )
-                .fetch_optional(db)
-                .await
-                .ok()
-                .flatten()
-                .is_some());
+    #[test]
+    fn normalizes_hashtags_as_the_streaming_server_does() {
+        assert_eq!(normalize_hashtag("Café"), "cafe");
+        assert_eq!(normalize_hashtag("ＲＵＳＴ"), "rust");
+        assert_eq!(normalize_hashtag("foo-bar!"), "foobar");
+        assert_eq!(normalize_hashtag("한국어"), "한국어");
     }
 
-    if let Some(list_id_str) = stream.strip_prefix("list:") {
-        if let Ok(list_id) = list_id_str.parse::<i64>() {
-            return sqlx::query_scalar!(
-                r#"SELECT 1 AS e FROM list_accounts la
-                   JOIN lists l ON l.id = la.list_id
-                   WHERE la.list_id = $1 AND la.account_id = $2
-                     AND l.account_id = $3"#,
-                list_id,
-                author_id,
-                aid,
-            )
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
-        }
+    #[test]
+    fn reads_only_media_as_is_truthy_does() {
+        assert!(is_truthy("1"));
+        assert!(is_truthy("true"));
+        assert!(!is_truthy("0"));
+        assert!(!is_truthy("false"));
+        assert!(!is_truthy(""));
     }
 
-    false
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-fn is_status_stream(stream: &str) -> bool {
-    matches!(
-        stream,
-        "public"
-            | "public:local"
-            | "public:media"
-            | "public:local:media"
-            | "public:remote"
-            | "public:remote:media"
-            | "user"
-            | "direct"
-    ) || stream.starts_with("hashtag:")
-        || stream.starts_with("list:")
-}
-
-/// Encode an event as a Mastodon streaming JSON message.
-/// `payload` is already a serialised JSON string; `serde_json::json!` will
-/// double-encode it as required by the protocol.
-fn wire(event: &str, streams: &[&str], payload: &str) -> String {
-    serde_json::json!({
-        "stream": streams,
-        "event": event,
-        "payload": payload,
-    })
-    .to_string()
-}
-
-fn stream_label(stream: &str) -> Vec<&str> {
-    match stream {
-        "public:local" => vec!["public", "public:local"],
-        "public:media" => vec!["public", "public:media"],
-        "public:local:media" => vec!["public", "public:local", "public:local:media"],
-        "public:remote" => vec!["public", "public:remote"],
-        "public:remote:media" => vec!["public", "public:remote", "public:remote:media"],
-        s if s.starts_with("hashtag:local:") => vec!["hashtag", "hashtag:local"],
-        s if s.starts_with("hashtag:") => vec!["hashtag"],
-        s if s.starts_with("list:") => vec!["list"],
-        other => vec![other],
+    #[test]
+    fn searches_what_the_dom_reads_of_a_status() {
+        let status = serde_json::json!({
+            "spoiler_text": "",
+            "content": "<p>Hello &amp; welcome<br>to <a href=\"x\">#rust</a></p><p>again</p>",
+            "poll": {"options": [{"title": "yes"}]},
+            "media_attachments": [{"description": null}],
+        });
+        assert_eq!(
+            searchable_text(&status),
+            "\n\nHello & welcome\nto #rust\n\nagain\n\nyes\n\n"
+        );
     }
 }

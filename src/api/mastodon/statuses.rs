@@ -25,7 +25,6 @@ use crate::{
     middleware::{AuthenticatedUser, ResolvedInstance},
     push,
     state::AppState,
-    streaming::Event,
 };
 
 mod post;
@@ -531,12 +530,15 @@ pub(crate) async fn remove_status(
 ) -> AppResult<()> {
     let id = status.id;
     // Cascade-delete any reblogs of this status before soft-deleting the original.
-    // Mastodon deletes reblogs when the original is removed.
+    // Mastodon deletes reblogs when the original is removed, at the same time
+    // (`discard_with_reblogs`), which is how they are told apart afterwards.
+    let discarded_at = chrono::Utc::now().naive_utc();
     let deleted_reblogs = sqlx::query!(
-        r#"UPDATE statuses SET deleted_at = now()
+        r#"UPDATE statuses SET deleted_at = $2
            WHERE reblog_of_id = $1 AND deleted_at IS NULL
            RETURNING account_id, visibility"#,
-        id
+        id,
+        discarded_at,
     )
     .fetch_all(&state.db)
     .await?;
@@ -556,9 +558,13 @@ pub(crate) async fn remove_status(
     }
     let reblogger_ids: Vec<i64> = deleted_reblogs.iter().map(|r| r.account_id).collect();
 
-    sqlx::query!("UPDATE statuses SET deleted_at = now() WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "UPDATE statuses SET deleted_at = $2 WHERE id = $1",
+        id,
+        discarded_at
+    )
+    .execute(&state.db)
+    .await?;
     crate::fasp::events::status_deleted(state, id).await;
 
     if let Err(e) = crate::counters::on_status_deleted(
@@ -608,9 +614,7 @@ pub(crate) async fn remove_status(
     .execute(&state.db)
     .await?;
 
-    state
-        .streaming
-        .publish(Event::DeleteStatus { status_id: id });
+    crate::streaming::fan_out::remove(state, id).await;
 
     // Remove from follower feeds and list feeds in background
     {
@@ -1028,21 +1032,9 @@ pub async fn reblog_status(
     let reblog = fetch_reblog_data(&state, &boost).await?;
     let api_boost = build_status(&state, &boost, &boost_account, media, reblog, Some(ctx)).await?;
 
-    if let Ok(payload) = serde_json::to_string(&api_boost) {
-        let hashtags: Vec<String> = api_boost.tags.iter().map(|t| t.name.clone()).collect();
-        state.streaming.publish(Event::NewStatus {
-            author_id: boost_account.id,
-            is_public: original.visibility == crate::db::models::vis::PUBLIC,
-            is_direct: false,
-            status_id: boost.id,
-            hashtags,
-            has_media: !api_boost.media_attachments.is_empty(),
-            payload: std::sync::Arc::new(payload),
-        });
-    }
-
     // Fan the boost into followers' home feeds (mirrors the post path) so it
-    // appears immediately, not only after a feed repopulate.
+    // appears immediately, not only after a feed repopulate, then stream it
+    // (`DistributionWorker`).
     {
         let mut redis = state.redis.clone();
         let redis_keys = state.redis_keys.clone();
@@ -1051,9 +1043,12 @@ pub async fn reblog_status(
         let bid = boost.id;
         if feed::sync_fanout() {
             feed::fanout_new_status(&mut redis, &redis_keys, &db, booster_id, bid, &[]).await;
+            crate::streaming::fan_out::distribute(&state, bid, false).await;
         } else {
+            let state = state.clone();
             crate::tenants::spawn(async move {
                 feed::fanout_new_status(&mut redis, &redis_keys, &db, booster_id, bid, &[]).await;
+                crate::streaming::fan_out::distribute(&state, bid, false).await;
             });
         }
     }
@@ -1192,6 +1187,7 @@ pub async fn unreblog_status(
         // `RemoveStatusService`: `unpush_from_home_timelines` and
         // `unpush_from_list_timelines`, which bring back a boost of the same
         // post this one held back.
+        crate::streaming::fan_out::remove_boost(&state, del.id, auth.account_id).await;
         crate::feed::unpush_boost(&state, auth.account_id, del.id, original_id).await;
         sqlx::query!(
             r#"UPDATE account_stats SET statuses_count = GREATEST(statuses_count - 1, 0), updated_at = now()

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT oauth_access_tokens.id, users.account_id, users.chosen_languages,\n                  oauth_access_tokens.scopes, COALESCE(user_roles.permissions, 0) AS \"permissions!\"\n           FROM oauth_access_tokens\n           INNER JOIN users ON oauth_access_tokens.resource_owner_id = users.id\n           INNER JOIN accounts ON accounts.id = users.account_id\n           LEFT OUTER JOIN user_roles ON user_roles.id = users.role_id\n           WHERE oauth_access_tokens.token = $1 AND oauth_access_tokens.revoked_at IS NULL\n             AND users.disabled IS FALSE AND accounts.suspended_at IS NULL\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "chosen_languages",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "scopes",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "permissions!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "33116f6a0d8fcf0a14ad4d3f20b423bde95bccb8dc96c73586035a34895b2983"
+}

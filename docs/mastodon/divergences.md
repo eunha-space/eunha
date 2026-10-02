@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are sixty-one. They cover:
+At the time of writing there are sixty-three. They cover:
 
  -  integrity proofs on outgoing activities, and Linked Data signatures
     over contexts eunha does not ship;
@@ -65,7 +65,9 @@ At the time of writing there are sixty-one. They cover:
     on a remote account runs;
  -  how quotes are counted, how quote request rejections are named, where
     quote verification retries run, and how forwarded activities are
-    retried.
+    retried;
+ -  where the streaming server and its channels run, and how home
+    timeline updates are decided.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

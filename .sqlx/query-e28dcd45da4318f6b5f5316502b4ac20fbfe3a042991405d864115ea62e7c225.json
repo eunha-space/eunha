@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain, silenced_at IS NOT NULL AS \"silenced!\",\n                  suspended_at IS NOT NULL AS \"suspended!\"\n           FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "silenced!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "suspended!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "e28dcd45da4318f6b5f5316502b4ac20fbfe3a042991405d864115ea62e7c225"
+}

@@ -146,9 +146,7 @@ pub async fn suspend(
     // Terminate the account's streaming connections (Mastodon publishes a
     // `kill` event on `timeline:system:{id}` for a local account).
     if local {
-        state
-            .streaming
-            .publish(crate::streaming::Event::Kill { account_id });
+        state.streaming.kill_account(account_id);
     }
     Ok(())
 }
@@ -169,9 +167,7 @@ pub async fn mark_deleted(state: &AppState, account_id: i64) -> Result<()> {
     .unwrap_or(false);
     tx.commit().await?;
     if local {
-        state
-            .streaming
-            .publish(crate::streaming::Event::Kill { account_id });
+        state.streaming.kill_account(account_id);
     }
     Ok(())
 }
@@ -807,9 +803,7 @@ async fn purge_statuses(
 /// (`unpush_from_home_timelines` / `unpush_from_list_timelines` /
 /// `unpush_from_public_timelines`).
 async fn remove_status_side_effects(state: &AppState, author_id: i64, status_id: i64) {
-    state
-        .streaming
-        .publish(crate::streaming::Event::DeleteStatus { status_id });
+    crate::streaming::fan_out::remove_batched(state, status_id).await;
     let mut redis = state.redis.clone();
     crate::feed::fanout_remove_status(
         &mut redis,

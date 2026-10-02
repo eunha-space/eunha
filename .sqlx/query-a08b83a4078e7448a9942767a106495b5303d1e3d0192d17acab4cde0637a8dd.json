@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT 1 AS e FROM bookmarks WHERE account_id = $1 AND status_id = $2",
+  "query": "SELECT EXISTS (SELECT 1 FROM mentions WHERE status_id = $1 AND account_id = $2) AS \"e!\"",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "e",
-        "type_info": "Int4"
+        "name": "e!",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "6652a3dfd736ca00be93bf32fd6021f91788358053b61f035ebaa13ee06c8f6e"
+  "hash": "a08b83a4078e7448a9942767a106495b5303d1e3d0192d17acab4cde0637a8dd"
 }

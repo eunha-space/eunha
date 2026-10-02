@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT target_account_id FROM follows\n             WHERE account_id = $1",
+  "query": "SELECT account_id FROM mentions WHERE status_id = $1 AND NOT silent",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "target_account_id",
+        "name": "account_id",
         "type_info": "Int8"
       }
     ],
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "6552867da71d4b234765a0b64dc1b86ca0b7c82620ad909cb1d52662058f78e5"
+  "hash": "a44d1b4a2efed894e6b7e6ee93d3c679dddad07904de562a711b6c7d1a94e438"
 }

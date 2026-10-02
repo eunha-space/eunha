@@ -136,6 +136,8 @@ pub(super) async fn handle_delete(
                     .execute(&state.db)
                     .await?;
             if let Some(row) = &deleted_reply {
+                // `RemoveStatusService`.
+                crate::streaming::fan_out::remove(state, row.id).await;
                 crate::fasp::events::status_deleted(state, row.id).await;
                 // `RemoveStatusService`: the quote the status made.
                 crate::quotes::status_removed(state, row.id).await;
@@ -365,7 +367,9 @@ pub(super) async fn handle_announce(
                 vis_str,
             )
             .await;
+            crate::streaming::fan_out::distribute(state, boost_id, false).await;
         } else {
+            let state = state.clone();
             crate::tenants::spawn(async move {
                 crate::feed::fanout_new_status(
                     &mut redis,
@@ -386,6 +390,7 @@ pub(super) async fn handle_announce(
                     vis_str,
                 )
                 .await;
+                crate::streaming::fan_out::distribute(&state, boost_id, false).await;
             });
         }
     }

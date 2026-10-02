@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.visibility, s.reblog_of_id, s.deleted_at,\n                  a.domain IS NULL AS \"local!\",\n                  (s.ordered_media_attachment_ids IS NOT NULL\n                   AND cardinality(s.ordered_media_attachment_ids) > 0\n                   OR EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = s.id)) AS \"with_media!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "deleted_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "with_media!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "5ec5fe47bf6ebf375610838b43e8f6ae8dd217b593e999d491061259685a0221"
+}

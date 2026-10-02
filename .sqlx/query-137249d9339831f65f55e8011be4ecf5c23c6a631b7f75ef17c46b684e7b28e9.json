@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM blocks\n             WHERE (account_id = $1 AND target_account_id = ANY($3))\n                OR (account_id = $2 AND target_account_id = $1)\n             UNION\n             SELECT 1 FROM mutes WHERE account_id = $1 AND target_account_id = ANY($3)\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "137249d9339831f65f55e8011be4ecf5c23c6a631b7f75ef17c46b684e7b28e9"
+}

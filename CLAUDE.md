@@ -83,6 +83,8 @@ Tracking Mastodon:
  -  *docs/mastodon/tracking.md*: `mastodon.toml`, `eunha-schema`, the schema
     check, and the steps for adopting a new Mastodon release.
  -  *docs/mastodon/signing-keys.md* and *docs/mastodon/http-signatures.md*.
+ -  *docs/mastodon/streaming.md*: the streaming API, its channels, and what
+    is filtered for each connection.
  -  *docs/mastodon/remote-actors.md*: how a remote actor's document becomes
     its account row (`ProcessAccountService`).
  -  *docs/mastodon/quotes.md*: a quote's states, the consent handshake,

@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.id, l.account_id, l.replies_policy\n           FROM lists l\n           JOIN list_accounts la ON la.list_id = l.id\n           JOIN users u ON u.account_id = l.account_id\n           WHERE l.id = $1 AND la.account_id = $2\n             AND (la.follow_id IS NOT NULL OR l.account_id = $2)\n             AND u.current_sign_in_at >= now() - make_interval(days => $3)\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "replies_policy",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "29e5f261a974042076d6e5298c33529cd3887bf6d2b9b9b49568ff96bcd0a207"
+}

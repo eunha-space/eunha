@@ -753,7 +753,10 @@ pub(super) async fn handle_create(
         });
     }
 
-    // Fanout to home and list feeds
+    // `AccountConversation#push_to_streaming_api`, once the status is whole.
+    crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
+
+    // Fanout to home and list feeds, then stream it (`DistributionWorker`).
     let vis_str = crate::db::models::vis::to_str(visibility);
     let mut redis = state.redis.clone();
     let redis_keys = state.redis_keys.clone();
@@ -778,7 +781,9 @@ pub(super) async fn handle_create(
             vis_str,
         )
         .await;
+        crate::streaming::fan_out::distribute(state, inserted_id, false).await;
     } else {
+        let state = state.clone();
         crate::tenants::spawn(async move {
             crate::feed::fanout_new_status(
                 &mut redis,
@@ -799,6 +804,7 @@ pub(super) async fn handle_create(
                 vis_str,
             )
             .await;
+            crate::streaming::fan_out::distribute(&state, inserted_id, false).await;
         });
     }
 

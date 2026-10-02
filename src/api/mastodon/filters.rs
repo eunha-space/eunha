@@ -10,13 +10,10 @@ use crate::{
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
     state::AppState,
-    streaming::Event,
 };
 
 pub(crate) fn publish_filters_changed(state: &AppState, account_id: i64) {
-    state.streaming.publish(Event::FiltersChanged {
-        for_account_id: account_id,
-    });
+    state.streaming.filters_changed(account_id);
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────

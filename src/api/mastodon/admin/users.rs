@@ -287,9 +287,7 @@ pub async fn reset_user_password(
     authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
     crate::accounts::change_password(&state.db, s.user.id).await?;
     // `revoke_access!` kills the user's streaming connections.
-    state.streaming.publish(crate::streaming::Event::Kill {
-        account_id: s.user.account_id,
-    });
+    state.streaming.kill_account(s.user.account_id);
     crate::accounts::send_reset_password_instructions(&state, s.user.id).await?;
     action_log::log(&state.db, auth.account_id, "reset_password", &s.target).await?;
     render(&state, id).await

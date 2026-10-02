@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT filter.id AS id, filter.phrase AS title, filter.context AS context,\n                  filter.expires_at AS expires_at, filter.action AS filter_action,\n                  keyword.keyword AS keyword, keyword.whole_word AS whole_word\n           FROM custom_filter_keywords keyword\n           JOIN custom_filters filter ON keyword.custom_filter_id = filter.id\n           WHERE filter.account_id = $1 AND (filter.expires_at IS NULL OR filter.expires_at > NOW())",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "context",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "filter_action",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "keyword",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "whole_word",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "51ab263d88e73a4e989d85386ca59cc97a60c435f27652660efd9b57ab86ae5d"
+}

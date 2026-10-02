@@ -360,7 +360,7 @@ pub async fn unpublish_admin_announcement(
     .await?;
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
-    crate::announcements::unpublish(&state, id);
+    crate::announcements::unpublish(&state, id).await;
     Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
@@ -392,7 +392,7 @@ pub async fn delete_admin_announcement(
     action_log::log(&mut *tx, auth.account_id, "destroy", &target(&row)).await?;
     tx.commit().await?;
     if row.published {
-        crate::announcements::unpublish(&state, id);
+        crate::announcements::unpublish(&state, id).await;
     }
     Ok(Json(serde_json::json!({})))
 }

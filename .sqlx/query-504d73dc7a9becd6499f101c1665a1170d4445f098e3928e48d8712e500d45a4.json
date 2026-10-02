@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET deleted_at = now()\n           WHERE reblog_of_id = $1 AND deleted_at IS NULL\n           RETURNING account_id, visibility",
+  "query": "UPDATE statuses SET deleted_at = $2\n           WHERE reblog_of_id = $1 AND deleted_at IS NULL\n           RETURNING account_id, visibility",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Timestamp"
       ]
     },
     "nullable": [
@@ -24,5 +25,5 @@
       false
     ]
   },
-  "hash": "7cb53ef55b1f120139b3ebfe6a478c9b84898ddf88acbeeda6b714fec02a1f49"
+  "hash": "504d73dc7a9becd6499f101c1665a1170d4445f098e3928e48d8712e500d45a4"
 }

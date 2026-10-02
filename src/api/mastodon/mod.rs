@@ -1427,11 +1427,9 @@ pub fn router() -> Router {
 /// Routes that must NOT be wrapped by CompressionLayer (WebSocket upgrades).
 pub fn streaming_router() -> Router {
     Router::new()
+        .route("/api/v1/streaming/health", get(streaming::health))
         .route("/api/v1/streaming", get(streaming::handler))
-        .route(
-            "/api/v1/streaming/health",
-            get(|| async { axum::http::StatusCode::OK }),
-        )
+        .route("/api/v1/streaming/{*path}", get(streaming::handler))
 }
 
 async fn empty_object() -> Json<serde_json::Value> {

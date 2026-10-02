@@ -273,8 +273,6 @@ pub async fn revoke_access(state: &crate::state::AppState, user_id: i64) -> sqlx
 /// `AccessTokenExtension#push_to_streaming_api`.
 pub fn kill_streams(state: &crate::state::AppState, token_ids: Vec<i64>) {
     if !token_ids.is_empty() {
-        state
-            .streaming
-            .publish(crate::streaming::Event::KillTokens { token_ids });
+        state.streaming.kill_tokens(&token_ids);
     }
 }

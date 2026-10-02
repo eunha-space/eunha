@@ -260,9 +260,7 @@ pub async fn save(
     // After the transaction, as Mastodon's `suspend!` and `disable!` run inside
     // it but publish to Redis as they go.
     match kind.as_str() {
-        "disable" => state.streaming.publish(crate::streaming::Event::Kill {
-            account_id: target.id,
-        }),
+        "disable" => state.streaming.kill_account(target.id),
         "suspend" => {
             crate::delete_account::suspend(
                 state,

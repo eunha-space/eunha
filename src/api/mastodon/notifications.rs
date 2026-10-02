@@ -1755,6 +1755,8 @@ pub async fn accept_notification_request(
     auth.require_scope("write:notifications")?;
     let from = request_sender(&state, auth.account_id, id).await?;
     accept_request(&state, auth.account_id, from).await?;
+    // The `UnfilterNotificationsWorker` that was the last one queued.
+    state.streaming.notifications_merged(auth.account_id);
     Ok(Json(serde_json::json!({})))
 }
 
@@ -1797,8 +1799,13 @@ pub async fn accept_all_notification_requests(
     super::extractors::Params(form): super::extractors::Params<BulkRequestsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    for from in bulk_senders(&state, auth.account_id, &form.id.0).await? {
+    let senders = bulk_senders(&state, auth.account_id, &form.id.0).await?;
+    for &from in &senders {
         accept_request(&state, auth.account_id, from).await?;
+    }
+    // Only the last of the `UnfilterNotificationsWorker`s streams.
+    if !senders.is_empty() {
+        state.streaming.notifications_merged(auth.account_id);
     }
     Ok(Json(serde_json::json!({})))
 }

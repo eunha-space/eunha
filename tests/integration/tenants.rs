@@ -127,9 +127,9 @@ async fn test_a_lone_tenant_answers_any_host() {
 
 /// Open a streaming connection to whichever tenant `host` names, through the
 /// shared listener.
-async fn open_stream(base_url: &str, host: &str, stream: &str) -> Ws {
+async fn open_stream(base_url: &str, host: &str, stream: &str, token: &str) -> Ws {
     let url = format!(
-        "{}/api/v1/streaming?stream={stream}",
+        "{}/api/v1/streaming?stream={stream}&access_token={token}",
         base_url.replace("http://", "ws://")
     );
     let mut request = url.into_client_request().unwrap();
@@ -160,8 +160,8 @@ async fn test_streams_do_not_cross_tenants() {
     let a = TestContext::new("tenant-stream-a").await;
     let b = TestContext::new("tenant-stream-b").await;
     let base_url = serve(vec![a.state.clone(), b.state.clone()]).await;
-    let mut on_a = open_stream(&base_url, &a.domain, "public").await;
-    let mut on_b = open_stream(&base_url, &b.domain, "public").await;
+    let mut on_a = open_stream(&base_url, &a.domain, "public", &a.bob_token).await;
+    let mut on_b = open_stream(&base_url, &b.domain, "public", &b.bob_token).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     ApiClient::new(&base_url, &a.domain)

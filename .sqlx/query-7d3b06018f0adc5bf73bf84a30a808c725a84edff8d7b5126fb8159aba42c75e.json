@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT 1 AS e FROM statuses WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL",
+  "query": "SELECT EXISTS (SELECT 1 FROM lists WHERE id = $1 AND account_id = $2) AS \"e!\"",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "e",
-        "type_info": "Int4"
+        "name": "e!",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "b9a87a50c19afca738c0bf2cb922f88239124d14171c46957db05e2d21a9cc5d"
+  "hash": "7d3b06018f0adc5bf73bf84a30a808c725a84edff8d7b5126fb8159aba42c75e"
 }

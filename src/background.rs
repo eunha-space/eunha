@@ -646,7 +646,6 @@ async fn publish_one(
     }
 
     // Publish to streaming and fan-out to feeds
-    use crate::api::mastodon::status_serialize::{build_status, fetch_status_media};
     let mut status_with_uri = status.clone();
     status_with_uri.uri = Some(uri);
     // `LinkCrawlWorker.perform_async(@status.id)`.
@@ -664,28 +663,6 @@ async fn publish_one(
         },
     )
     .await;
-    if let Ok(media) = fetch_status_media(state, status_with_uri.id).await {
-        if let Ok(api_status) =
-            build_status(state, &status_with_uri, &account, media, None, None).await
-        {
-            if matches!(visibility.as_str(), "public" | "unlisted" | "private") {
-                if let Ok(payload) = serde_json::to_string(&api_status) {
-                    let hashtags: Vec<String> =
-                        api_status.tags.iter().map(|t| t.name.clone()).collect();
-                    state.streaming.publish(crate::streaming::Event::NewStatus {
-                        author_id: account.id,
-                        is_public: visibility == "public",
-                        is_direct: visibility == "direct",
-                        status_id: status_with_uri.id,
-                        hashtags,
-                        has_media: !api_status.media_attachments.is_empty(),
-                        payload: std::sync::Arc::new(payload),
-                    });
-                }
-            }
-        }
-    }
-
     // Fan-out to follower home feeds and list feeds
     let tag_ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT tag_id FROM statuses_tags WHERE status_id = $1",
@@ -712,6 +689,7 @@ async fn publish_one(
         &vis,
     )
     .await;
+    crate::streaming::fan_out::distribute(state, sid, false).await;
 
     // Send mention notifications (mirrors post_status)
     let mut notified = std::collections::HashSet::new();

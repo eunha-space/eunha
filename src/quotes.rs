@@ -8,7 +8,7 @@
 use serde_json::Value;
 use sqlx::PgPool;
 
-use crate::db::models::{quote_state, vis};
+use crate::db::models::quote_state;
 use crate::state::AppState;
 
 /// A row of `quotes`.
@@ -599,25 +599,9 @@ async fn try_distribute_update(
         }
     }
 
-    // The new version, to whoever's timelines have it.
-    if matches!(
-        status.visibility,
-        vis::PUBLIC | vis::UNLISTED | vis::PRIVATE
-    ) {
-        let api_status =
-            crate::api::mastodon::statuses::serialize_status(state, &status, None).await?;
-        let payload = serde_json::to_string(&api_status)?;
-        state
-            .streaming
-            .publish(crate::streaming::Event::StatusUpdate {
-                author_id: author.id,
-                is_public: status.visibility == vis::PUBLIC,
-                status_id: status.id,
-                hashtags: api_status.tags.iter().map(|t| t.name.clone()).collect(),
-                has_media: !api_status.media_attachments.is_empty(),
-                payload: std::sync::Arc::new(payload),
-            });
-    }
+    // `DistributionWorker` with `update`: the new version to whoever's
+    // timelines and streams have it.
+    crate::streaming::fan_out::distribute(state, status.id, true).await;
     Ok(())
 }
 

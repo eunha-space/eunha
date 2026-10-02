@@ -5,11 +5,9 @@
 //! `Scheduler::ScheduledStatusesScheduler` that publishes scheduled
 //! announcements and unpublishes expired ones.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::state::AppState;
-use crate::streaming::Event;
 
 /// How often the schedule is looked at. Mastodon's scheduler runs every five
 /// minutes and queues each announcement for its exact time; a minute is close
@@ -88,9 +86,12 @@ pub async fn publish(state: &AppState, id: i64) -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     if let Some(announcement) = rendered.into_iter().next() {
-        state.streaming.publish(Event::Announcement {
-            payload: Arc::new(serde_json::to_string(&announcement)?),
-        });
+        let payload = serde_json::to_value(&announcement)?;
+        crate::streaming::fan_out::to_active_accounts(
+            state,
+            serde_json::json!({"event": "announcement", "payload": payload}),
+        )
+        .await;
     }
     Ok(())
 }
@@ -106,10 +107,12 @@ pub fn publish_later(state: &AppState, id: i64) {
 }
 
 /// `UnpublishAnnouncementWorker#perform`: take it off every stream.
-pub fn unpublish(state: &AppState, id: i64) {
-    state.streaming.publish(Event::AnnouncementDelete {
-        announcement_id: id,
-    });
+pub async fn unpublish(state: &AppState, id: i64) {
+    crate::streaming::fan_out::to_active_accounts(
+        state,
+        serde_json::json!({"event": "announcement.delete", "payload": id.to_string()}),
+    )
+    .await;
 }
 
 /// `PublishAnnouncementReactionWorker#perform`: the reaction's new count, to
@@ -133,9 +136,11 @@ pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::
         "static_url": row.url,
         "announcement_id": id.to_string(),
     });
-    state.streaming.publish(Event::AnnouncementReaction {
-        payload: Arc::new(payload.to_string()),
-    });
+    crate::streaming::fan_out::to_active_accounts(
+        state,
+        serde_json::json!({"event": "announcement.reaction", "payload": payload}),
+    )
+    .await;
     Ok(())
 }
 

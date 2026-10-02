@@ -713,21 +713,6 @@ pub async fn post_status(
     )
     .await;
 
-    if matches!(visibility.as_str(), "public" | "unlisted" | "private") {
-        if let Ok(payload) = serde_json::to_string(&api_status) {
-            let hashtags: Vec<String> = api_status.tags.iter().map(|t| t.name.clone()).collect();
-            state.streaming.publish(Event::NewStatus {
-                author_id: account.id,
-                is_public: visibility == "public",
-                is_direct: visibility == "direct",
-                status_id: status.id,
-                hashtags,
-                has_media: !api_status.media_attachments.is_empty(),
-                payload: std::sync::Arc::new(payload),
-            });
-        }
-    }
-
     // Notify the author of the parent status if this is a reply
     let mut notified = std::collections::HashSet::new();
     if let Some(parent_id) = in_reply_to_id {
@@ -810,6 +795,9 @@ pub async fn post_status(
         }
     }
 
+    // `AccountConversation#push_to_streaming_api`, once the status is whole.
+    crate::api::mastodon::conversations::push_for_status(&state, status.id).await;
+
     // Fan-out to follower feeds and list feeds in background (non-blocking)
     {
         let tag_ids: Vec<i64> = sqlx::query_scalar!(
@@ -840,7 +828,9 @@ pub async fn post_status(
                 &vis,
             )
             .await;
+            crate::streaming::fan_out::distribute(&state, status_id, false).await;
         } else {
+            let state = state.clone();
             crate::tenants::spawn(async move {
                 feed::fanout_new_status(
                     &mut redis,
@@ -861,6 +851,7 @@ pub async fn post_status(
                     &vis,
                 )
                 .await;
+                crate::streaming::fan_out::distribute(&state, status_id, false).await;
             });
         }
     }

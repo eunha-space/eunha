@@ -378,6 +378,7 @@ pub async fn mark_conversation_unread(
         row.last_status_id,
     )
     .await?;
+    push_to_streaming(&state, id).await;
     Ok(Json(conv))
 }
 
@@ -416,10 +417,62 @@ pub async fn mark_conversation_read(
         row.last_status_id,
     )
     .await?;
+    push_to_streaming(&state, id).await;
     Ok(Json(conv))
 }
 
 // ── Shared helper ─────────────────────────────────────────────────────────
+
+/// [`push_to_streaming`] for every conversation a new status is the last of.
+pub(crate) async fn push_for_status(state: &AppState, status_id: i64) {
+    let rows = sqlx::query_scalar!(
+        "SELECT id FROM account_conversations WHERE last_status_id = $1",
+        status_id
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    for row in rows {
+        push_to_streaming(state, row).await;
+    }
+}
+
+/// `AccountConversation#push_to_streaming_api` (`after_commit`) and
+/// `PushConversationWorker`: the conversation as rendered for its account, to
+/// the account's `direct` stream, when somebody streams it.
+pub(crate) async fn push_to_streaming(state: &AppState, row_id: i64) {
+    let Ok(Some(row)) = sqlx::query!(
+        "SELECT account_id, unread, participant_account_ids, last_status_id FROM account_conversations WHERE id = $1",
+        row_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    else {
+        return;
+    };
+    let channel = format!("timeline:direct:{}", row.account_id);
+    if !state.streaming.is_subscribed(&channel) {
+        return;
+    }
+    let Ok(conversation) = build_conversation_response(
+        state,
+        row.account_id,
+        row_id,
+        row.unread,
+        row.participant_account_ids,
+        row.last_status_id,
+    )
+    .await
+    else {
+        return;
+    };
+    if let Ok(payload) = serde_json::to_value(&conversation) {
+        state.streaming.publish(
+            &channel,
+            serde_json::json!({"event": "conversation", "payload": payload}),
+        );
+    }
+}
 
 async fn build_conversation_response(
     state: &AppState,

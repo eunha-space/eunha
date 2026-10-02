@@ -426,6 +426,45 @@ pub async fn is_feed_populated(
         .unwrap_or(false)
 }
 
+/// What `FeedManager#add_to_feed` answered for the status, read back after
+/// the fan-out wrote the home feed: the feed holds it, or was never built and
+/// so had nothing to keep it out. The streaming API pushes an update only for
+/// a status that went in.
+pub async fn home_would_hold(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    account_id: i64,
+    status_id: i64,
+) -> bool {
+    if !is_feed_populated(redis, keys, account_id).await {
+        return true;
+    }
+    redis
+        .zscore::<_, _, Option<f64>>(feed_key(keys, account_id), status_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+/// [`home_would_hold`] for a list's feed.
+pub async fn list_would_hold(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    list_id: i64,
+    status_id: i64,
+) -> bool {
+    if !is_list_feed_populated(redis, keys, list_id).await {
+        return true;
+    }
+    redis
+        .zscore::<_, _, Option<f64>>(list_feed_key(keys, list_id), status_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
 pub async fn feed_push(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
