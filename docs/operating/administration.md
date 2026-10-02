@@ -271,3 +271,11 @@ Relays that forward posts signed by someone else rely on Linked Data
 signatures, which eunha does not verify, so such a post is taken only when
 its author's own server sends it. A relay needs unsigned fetches, so it does
 not work while authorized fetch is on.
+
+
+Invites
+-------
+
+Every invite on the server is listed, and all of them deactivated, at
+`/api/v1/admin/invites`, for a role with `manage_invites`; see
+[invites](./invites#every-invite).

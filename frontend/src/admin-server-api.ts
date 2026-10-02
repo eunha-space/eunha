@@ -444,6 +444,44 @@ export function deleteRelay(token: string, id: string) {
   return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/relays/${id}`)
 }
 
+// ── Invites ─────────────────────────────────────────────────────────────────
+
+export interface AdminInvite {
+  id: string
+  code: string
+  url: string
+  uses: number
+  max_uses: number | null
+  expires_at: string | null
+  expired: boolean
+  valid_for_use: boolean
+  autofollow: boolean
+  comment: string | null
+  created_at: string
+  account: Account | null
+}
+
+export function listAdminInvites(
+  token: string,
+  filter?: 'available' | 'expired',
+  page = 1,
+) {
+  return json<AdminInvite[]>(
+    token,
+    'GET',
+    `/api/v1/admin/invites${query({ [filter ?? '']: filter ? '1' : undefined, page })}`,
+  )
+}
+
+export function deactivateAllInvites(token: string) {
+  return json<Record<string, never>>(token, 'POST', '/api/v1/admin/invites/deactivate_all')
+}
+
+/** `DELETE /api/v1/invites/:id`, which a role with `manage_invites` may call on any. */
+export async function expireInvite(token: string, id: string) {
+  await request(token, 'DELETE', `/api/v1/invites/${id}`)
+}
+
 export function distributeAnnouncement(token: string, id: string) {
   return json<AdminAnnouncement>(
     token,

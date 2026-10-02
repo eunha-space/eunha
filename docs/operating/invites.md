@@ -47,3 +47,17 @@ codes themselves are the allowance. `manage_invites` is what it takes to hand
 them out, and listing your own invites takes no permission at all — a member who
 cannot create one still has to be able to read what they were given, which is
 where eunha parts company with `InvitesController#index`.
+
+
+Every invite
+------------
+
+A role with `manage_invites` sees every invite on the server at
+`/api/v1/admin/invites`, newest first and forty a page, each with who made it,
+how often it was used and whether it can still be used; `?available=1` and
+`?expired=1` narrow it as Mastodon's filter does.
+`POST /api/v1/admin/invites/deactivate_all` expires every invite that can
+still be used, and such a role may expire any one invite with
+`DELETE /api/v1/invites/:id`. This is Mastodon's `Admin::InvitesController`,
+which logs nothing, and the web client's *Invites* page under `/admin`; new
+invites are still made on the invite page.

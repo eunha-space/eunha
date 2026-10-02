@@ -30,6 +30,7 @@ mod warning_presets;
 // The server administration Mastodon has only as server-rendered admin pages.
 mod announcements;
 mod instances;
+mod invites;
 mod relays;
 mod roles;
 mod rules;
@@ -54,6 +55,7 @@ pub use warning_presets::*;
 // The server administration Mastodon has only as server-rendered admin pages.
 pub use announcements::*;
 pub use instances::*;
+pub use invites::*;
 pub use relays::*;
 pub use roles::*;
 pub use rules::*;

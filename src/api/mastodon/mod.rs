@@ -949,6 +949,11 @@ pub fn router() -> Router {
             "/api/v1/admin/relays/{id}/disable",
             post(admin::disable_admin_relay),
         )
+        .route("/api/v1/admin/invites", get(admin::list_admin_invites))
+        .route(
+            "/api/v1/admin/invites/deactivate_all",
+            post(admin::deactivate_all_invites),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

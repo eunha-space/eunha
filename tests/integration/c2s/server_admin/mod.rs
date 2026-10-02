@@ -4,6 +4,7 @@
 
 mod announcements;
 mod instances;
+mod invites;
 mod relays;
 mod roles;
 mod rules;

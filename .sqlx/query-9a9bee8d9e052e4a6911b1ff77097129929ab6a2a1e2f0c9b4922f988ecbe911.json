@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id, i.code, i.uses, i.max_uses, i.expires_at, i.autofollow, i.comment,\n                  i.created_at, u.account_id,\n                  (i.expires_at IS NOT NULL AND i.expires_at < now()) AS \"expired!\",\n                  (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled\n                   AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                   AND NOT a.memorial AND a.moved_to_account_id IS NULL) AS \"functional!\"\n           FROM invites i\n           JOIN users u ON u.id = i.user_id\n           JOIN accounts a ON a.id = u.account_id\n           WHERE (NOT $1 OR i.expires_at IS NULL OR i.expires_at >= now())\n             AND (NOT $2 OR (i.expires_at IS NOT NULL AND i.expires_at < now()))\n           ORDER BY i.created_at DESC\n           LIMIT $3 OFFSET $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "autofollow",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "expired!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "functional!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "9a9bee8d9e052e4a6911b1ff77097129929ab6a2a1e2f0c9b4922f988ecbe911"
+}
