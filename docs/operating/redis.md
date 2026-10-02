@@ -23,8 +23,10 @@ what was used today that trends are rescored from, the posts waiting to be
 emailed to an account's subscribers, the users who signed in each day
 (`activity:logins:<day>`), sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
-the translation service, the search index queues (`chewy:queue:<Index>`,
-see [search](./search)), the counts that limit how many new remote
+the translation service, the JSON-LD contexts fetched to check Linked Data
+signatures (`jsonld:context:<url>`), the search index queues
+(`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
+new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
 `discovery_per_request:*`), the circuit breakers on deliveries
 (`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the

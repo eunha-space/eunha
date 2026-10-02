@@ -107,10 +107,15 @@ Three separate things get called JSON-LD and only one of them is dangerous.
 The `@context` key is a namespacing convention. Eunha emits it, inlines its term
 definitions (`src/api/ap/note.rs`), and never resolves it. This stays.
 
-Remote context resolution eunha does not do, and will not. Fetching a context at
-verification time is an SSRF surface, an availability dependency on someone
-else's web server, and a source of nondeterminism in a security path. What
-expansion and compaction eunha does is ojak's, over the contexts ojak ships.
+Remote context resolution eunha does in one place only, because Mastodon does:
+checking a Linked Data signature, which can only be checked over the contexts
+its signer named. Fetching a context at verification time is an SSRF surface,
+an availability dependency on someone else's web server, and a source of
+nondeterminism in a security path, so that fetch is bounded on every side —
+private addresses refused, a megabyte a context, eight contexts and thirty
+seconds an activity — and cached for 30 days, as Mastodon caches it. Nothing
+else eunha reads resolves a context: what expansion and compaction eunha does
+is ojak's, over the contexts ojak ships.
 
 Ojak's inbox normalises every activity by default; eunha asks it not to
 (`read_inbox_as_written`) and reads the activity as its sender wrote it. The
@@ -128,7 +133,8 @@ and whose posts eunha cannot take, is a relay that does not work, so eunha
 does both too
 ([Linked Data signatures](../mastodon/http-signatures#linked-data-signatures)).
 The danger is contained three ways. Canonicalisation runs over ojak's bundled
-contexts only, refusing a document that names another, and its blank-node
+contexts and the few a signer named that are fetched for it, within the bounds
+above, refusing a document whose contexts cannot be had, and its blank-node
 labelling has a work budget. `@graph`, `@included` and `@reverse` are refused,
 which is what the 2025 forgeries (GHSA-9rfg-v8g9-9367) used. And an activity
 taken on such a signature is read as JSON-LD processing reads it, normalised by

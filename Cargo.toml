@@ -29,6 +29,10 @@ path = "tests/fasp.rs"
 name = "remote_actors"
 path = "tests/remote_actors.rs"
 
+[[test]]
+name = "linked_data_contexts"
+path = "tests/linked_data_contexts.rs"
+
 [[bin]]
 name = "eunha-upload-media"
 path = "src/bin/upload_media.rs"

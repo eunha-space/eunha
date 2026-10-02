@@ -182,6 +182,12 @@ pub fn federation() -> Federation<AppState> {
                 tracing::debug!(actor = %id, %error, "account not stored from its key fetch");
             }
         })
+        // A relayed activity's Linked Data Signature is checked over the
+        // contexts its signer named, those ojak does not ship fetched and
+        // cached as Mastodon's document loader fetches and caches them.
+        .remote_contexts(ojak::contexts::Limits::default(), |ctx: Ctx, iri: String| async move {
+            crate::federation::json_ld_contexts::load(ctx.data(), &iri).await
+        })
         // A domain this instance does not federate with (`domain_not_allowed?`:
         // suspended, or off the allow list in limited federation mode): a
         // request signed with a key there is refused 403 before any key is

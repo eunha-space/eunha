@@ -49,28 +49,6 @@ since = "4.7.0"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "linked-data-signatures-over-bundled-contexts"
-kind = "behaviour"
-summary = "Checks a Linked Data signature only over contexts it ships"
-mastodon = """
-Turns a signed activity into RDF with its preloaded contexts, and fetches any \
-other context the activity names (`JsonLdHelper#load_jsonld_context`), \
-caching it for 30 days."""
-eunha = """
-Turns it into RDF with the contexts ojak ships, Mastodon's preloaded ones \
-among them, and fetches nothing: an activity naming another context is not \
-verified on its signature, and is fetched from its own server instead, or \
-dropped."""
-why = """
-Fetching a context named by an activity nobody has authenticated yet is a \
-request-forgery primitive and makes a security check depend on someone \
-else's web server staying up and unchanged (docs/design/protocol.md). The \
-activities relays pass on are Mastodon's, which name only contexts ojak ships."""
-evidence = "tests/integration/federation/linked_data_signatures.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "invite-tree"
 kind = "addition"
 summary = "Exposes who invited whom"

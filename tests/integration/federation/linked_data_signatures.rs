@@ -2,6 +2,9 @@
 //! them: on what a relay or a forwarding server passes on, so that the
 //! servers it reaches can still tell who wrote it.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use serde_json::{json, Value};
 
 use crate::helpers::TestContext;
@@ -231,21 +234,40 @@ async fn test_a_relayed_post_is_taken_on_its_authors_signature() {
     assert_eq!(resp.status(), 202, "dropped, as Mastodon drops it");
     assert!(stored(2).await.is_none(), "a changed post is not taken");
 
-    // Naming a context ojak does not ship: Mastodon would fetch it, and if
-    // it defines nothing the signature holds; eunha fetches no context to
-    // check a signature, so the post is not taken.
-    let mut elsewhere = sign(&create(4));
-    elsewhere["@context"] = json!([
-        "https://www.w3.org/ns/activitystreams",
-        "https://w3id.org/security/v1",
-        "https://contexts.invalid/empty"
-    ]);
-    let resp = ctx
-        .api
-        .post_signed("/inbox", &elsewhere, &relay_key_id, &relay_key)
-        .await;
-    assert_eq!(resp.status(), 202);
-    assert!(stored(4).await.is_none());
+    // Naming a context ojak does not ship, it is fetched to check the
+    // signature, as Mastodon fetches it (tests/linked_data_contexts.rs);
+    // one that defines nothing would leave the signature holding. But one
+    // on a private address is refused, as Mastodon's `Request` refuses it,
+    // without a request being made, and the post is not taken.
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counted = requests.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let private = format!("http://{}/empty", listener.local_addr().unwrap());
+    let app = axum::Router::new().fallback(move || {
+        counted.fetch_add(1, Ordering::SeqCst);
+        async {
+            (
+                [("content-type", "application/ld+json")],
+                r#"{"@context": {}}"#,
+            )
+        }
+    });
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    for context in [private.as_str(), "https://contexts.invalid/empty"] {
+        let mut elsewhere = sign(&create(4));
+        elsewhere["@context"] = json!([
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+            context
+        ]);
+        let resp = ctx
+            .api
+            .post_signed("/inbox", &elsewhere, &relay_key_id, &relay_key)
+            .await;
+        assert_eq!(resp.status(), 202);
+        assert!(stored(4).await.is_none(), "{context} is not fetched");
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
 
     // Unsigned, from a relay: bob's server cannot be asked, so it is not
     // taken either.

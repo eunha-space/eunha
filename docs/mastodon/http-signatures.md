@@ -54,7 +54,17 @@ from its own server, and drops it if that does not work either. The
 signature covers what the activity means, not how its keys are spelled, so
 one taken on it is read as JSON-LD processing reads it, as Mastodon compacts
 it before reading it. A post from an account nobody here follows is taken
-when it came through an enabled relay (`requested_through_relay?`). Its
-contexts have to be ones ojak ships, Mastodon's preloaded ones among them,
-since nothing is fetched to read a signature; one naming another context is
-not verified, where Mastodon would fetch it.
+when it came through an enabled relay (`requested_through_relay?`).
+
+The signature is checked over the contexts its signer named. Those ojak ships,
+Mastodon's preloaded ones among them, are read from ojak; any other is fetched
+as Mastodon's document loader fetches it (`JsonLdHelper#load_jsonld_context`):
+a GET asking for `application/ld+json`, taken only as a `200` of that type and
+at most a megabyte, through the guarded client that refuses private addresses
+unless `allowed_private_networks` names them, and kept in Redis for 30 days
+under `jsonld:context:<url>` (see [Shared Redis](../operating/redis.md)). One
+activity may cause at most eight to be loaded, those its contexts name in turn
+included, within thirty seconds in all. A context that cannot be fetched, or
+is not one by those rules, leaves the signature unchecked, and the activity is
+fetched from its own server instead, or dropped. The activity is then read over
+the same contexts.
