@@ -58,6 +58,7 @@ import AdminAccountStatusDetail from './pages/admin/AccountStatusDetail.tsx'
 import AdminRelationships from './pages/admin/Relationships.tsx'
 // The server administration Mastodon has only as server-rendered admin pages.
 import AdminSettings from './pages/admin/Settings.tsx'
+import AdminRules from './pages/admin/Rules.tsx'
 import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -147,6 +148,7 @@ const router = createBrowserRouter([
   // Server administration, at Mastodon's admin paths.
   { path: '/admin/settings', element: <AdminSettings /> },
   { path: '/admin/settings/:page', element: <AdminSettings /> },
+  { path: '/admin/rules', element: <AdminRules /> },
   // Strikes and appeals, at Mastodon's paths, which its moderation warning
   // notifications and emails link to.
   { path: '/disputes/strikes', element: <Strikes /> },

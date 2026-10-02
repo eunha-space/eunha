@@ -835,6 +835,24 @@ pub fn router() -> Router {
             "/api/v1/admin/site_uploads/{id}",
             delete(admin::delete_site_upload),
         )
+        .route(
+            "/api/v1/admin/rules",
+            get(admin::list_admin_rules).post(admin::create_admin_rule),
+        )
+        .route(
+            "/api/v1/admin/rules/{id}",
+            get(admin::get_admin_rule)
+                .patch(admin::update_admin_rule)
+                .delete(admin::delete_admin_rule),
+        )
+        .route(
+            "/api/v1/admin/rules/{id}/move_up",
+            post(admin::move_admin_rule_up),
+        )
+        .route(
+            "/api/v1/admin/rules/{id}/move_down",
+            post(admin::move_admin_rule_down),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

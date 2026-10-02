@@ -1,6 +1,8 @@
 //! The server administration Mastodon has only as server-rendered admin
 //! pages, as eunha serves it over REST: the server settings and site uploads,
-//! and what the settings drive.
+//! and what the settings drive, here; the rest in the modules below.
+
+mod rules;
 
 use reqwest::StatusCode;
 use serde_json::{json, Value};

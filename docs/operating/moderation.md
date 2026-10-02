@@ -224,8 +224,8 @@ nothing about a second report while an earlier one about the same account
 is still open.
 
 Server rules come from the `rules` table. `/api/v1/instance/rules` serves
-them, and so do both versions of `/api/v1/instance`. Eunha has no endpoint
-for editing them, so they are edited in the database.
+them, and so do both versions of `/api/v1/instance`. They are edited as
+[server rules](./administration#server-rules).
 
 
 Webhooks

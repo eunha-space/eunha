@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rule_translations\n                       SET language = COALESCE($2, language), text = $3,\n                           hint = COALESCE($4, hint), updated_at = now()\n                       WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06b32b791247da0d023d9d2a12089af091e19d0bf5bbd0430e4a0aac74f4cdee"
+}

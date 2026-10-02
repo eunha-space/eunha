@@ -114,3 +114,17 @@ everything.
 
 Eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon.
+
+
+Server rules
+------------
+
+`/api/v1/admin/rules` lists, creates, edits and deletes the server rules, for a
+role with `manage_rules`; `…/move_up` and `…/move_down` reorder them. A rule's
+text is required and at most 300 characters, and so is each translation's,
+one per language. Translations are given as Rails' nested attributes,
+`translations_attributes`, each with an `id` to change or `_destroy` to remove
+an existing one; one with blank text is ignored. Deleting a rule discards it
+(`deleted_at`), so reports that cite it still show it. Moving the first rule
+up puts it last, as Mastodon's `Rule#move!` does. As in Mastodon, none of this
+is logged.

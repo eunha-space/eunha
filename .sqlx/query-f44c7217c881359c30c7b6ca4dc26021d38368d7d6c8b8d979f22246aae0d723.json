@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rules SET priority = $2, updated_at = now() WHERE id = $1 AND priority <> $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f44c7217c881359c30c7b6ca4dc26021d38368d7d6c8b8d979f22246aae0d723"
+}

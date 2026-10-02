@@ -93,3 +93,56 @@ export function updateAdminSettings(
 export function deleteSiteUpload(token: string, id: string) {
   return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/site_uploads/${id}`)
 }
+
+// ── Rules ───────────────────────────────────────────────────────────────────
+
+export interface AdminRuleTranslation {
+  id: string
+  language: string
+  text: string
+  hint: string
+}
+
+export interface AdminRule {
+  id: string
+  text: string
+  hint: string
+  priority: number
+  translations: AdminRuleTranslation[]
+  created_at: string
+  updated_at: string
+}
+
+/** A rule's form: `translations_attributes` as Rails' nested attributes. */
+export interface RuleParams {
+  text: string
+  hint: string
+  translations_attributes: {
+    id?: string
+    language: string
+    text: string
+    hint: string
+    _destroy?: boolean
+  }[]
+}
+
+export function listRules(token: string) {
+  return json<AdminRule[]>(token, 'GET', '/api/v1/admin/rules')
+}
+
+export function createRule(token: string, params: RuleParams) {
+  return json<AdminRule>(token, 'POST', '/api/v1/admin/rules', params)
+}
+
+export function updateRule(token: string, id: string, params: RuleParams) {
+  return json<AdminRule>(token, 'PATCH', `/api/v1/admin/rules/${id}`, params)
+}
+
+export function deleteRule(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/rules/${id}`)
+}
+
+/** `move_up` or `move_down`, answered with the rules in their new order. */
+export function moveRule(token: string, id: string, direction: 'move_up' | 'move_down') {
+  return json<AdminRule[]>(token, 'POST', `/api/v1/admin/rules/${id}/${direction}`)
+}
