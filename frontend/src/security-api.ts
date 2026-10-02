@@ -221,6 +221,7 @@ export interface Preferences {
   locale: string | null
   time_zone: string | null
   always_send_emails: boolean
+  aggregate_reblogs: boolean
   notification_emails: Record<string, boolean | string | null>
 }
 

@@ -1163,6 +1163,10 @@ pub async fn unreblog_status(
         )
         .execute(&state.db)
         .await?;
+        // `RemoveStatusService`: `unpush_from_home_timelines` and
+        // `unpush_from_list_timelines`, which bring back a boost of the same
+        // post this one held back.
+        crate::feed::unpush_boost(&state, auth.account_id, del.id, original_id).await;
         sqlx::query!(
             r#"UPDATE account_stats SET statuses_count = GREATEST(statuses_count - 1, 0), updated_at = now()
                WHERE account_id = $1"#,

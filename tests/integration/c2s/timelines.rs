@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-use crate::helpers::TestContext;
+use crate::helpers::{seed_user, TestContext};
 use sqlx::Executor as _;
 
 /// Public timeline must only contain statuses with visibility == "public".
@@ -1092,9 +1092,12 @@ async fn test_reblog_appears_in_home_timeline() {
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
 
+    // Someone alice does not follow: a boost of her own recent post would
+    // be left out (`aggregate_reblogs`), as it is on Mastodon.
+    let (_, carol_token) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
     let alice_status = ctx
         .api
-        .post_status(&ctx.alice_token, "alice original for reblog", "public")
+        .post_status(&carol_token, "carol original for reblog", "public")
         .await;
     let alice_status_id = alice_status["id"].as_str().unwrap();
 

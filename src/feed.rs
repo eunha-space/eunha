@@ -22,6 +22,395 @@ fn feed_key(keys: &RedisKeyspace, account_id: i64) -> String {
     keys.key(format!("feed:home:{}", account_id))
 }
 
+// ── Reblog aggregation ────────────────────────────────────────────────────
+
+/// `FeedManager::REBLOG_FALLOFF`: a boost of a post already among this many
+/// of the newest in a feed, or boosted by something that is, is not added
+/// again.
+pub const REBLOG_FALLOFF: usize = 80;
+
+/// A feed and the keys `FeedManager` tracks its boosts under:
+/// `<feed>:reblogs`, the boosted posts with a boost in the feed scored by
+/// that boost, and `<feed>:reblogs:<id>`, the other boosts of one held back.
+struct Timeline {
+    key: String,
+    reblogs: String,
+}
+
+impl Timeline {
+    fn home(keys: &RedisKeyspace, account_id: i64) -> Self {
+        Self {
+            key: feed_key(keys, account_id),
+            reblogs: keys.key(format!("feed:home:{account_id}:reblogs")),
+        }
+    }
+
+    fn list(keys: &RedisKeyspace, list_id: i64) -> Self {
+        Self {
+            key: list_feed_key(keys, list_id),
+            reblogs: keys.key(format!("feed:list:{list_id}:reblogs")),
+        }
+    }
+
+    fn reblog_set(&self, reblog_of_id: i64) -> String {
+        format!("{}:{reblog_of_id}", self.reblogs)
+    }
+}
+
+/// `User#aggregates_reblogs?`: the `aggregate_reblogs` setting, on unless the
+/// user turned it off.
+pub fn aggregates_reblogs(settings: Option<&str>) -> bool {
+    crate::accounts::user_setting_bool(settings, "aggregate_reblogs", true)
+}
+
+/// [`aggregates_reblogs`] for each of `account_ids` that has a user who
+/// turned it off.
+async fn not_aggregating(db: &PgPool, account_ids: &[i64]) -> std::collections::HashSet<i64> {
+    sqlx::query!(
+        "SELECT account_id, settings FROM users WHERE account_id = ANY($1)",
+        account_ids,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|u| !aggregates_reblogs(u.settings.as_deref()))
+    .map(|u| u.account_id)
+    .collect()
+}
+
+/// The `reblog_of_id` of each of `ids` that is a boost.
+async fn reblogs_of(db: &PgPool, ids: &[i64]) -> std::collections::HashMap<i64, i64> {
+    sqlx::query!(
+        r#"SELECT id, reblog_of_id AS "reblog_of_id!" FROM statuses
+           WHERE id = ANY($1) AND reblog_of_id IS NOT NULL"#,
+        ids,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|s| (s.id, s.reblog_of_id))
+    .collect()
+}
+
+/// `FeedManager#add_to_feed`: whether the status went in. A boost, when the
+/// user aggregates them, stays out if the post it boosts is among the
+/// [`REBLOG_FALLOFF`] newest, or another boost of it is; the latter is kept
+/// aside in case that boost is deleted. A post stays out if a boost of it
+/// already went in.
+async fn add_to_feed(
+    redis: &mut ConnectionManager,
+    timeline: &Timeline,
+    status_id: i64,
+    reblog_of_id: Option<i64>,
+    aggregate: bool,
+) -> redis::RedisResult<bool> {
+    match reblog_of_id.filter(|_| aggregate) {
+        Some(reblog_of_id) => {
+            let rank: Option<usize> = redis::cmd("ZREVRANK")
+                .arg(&timeline.key)
+                .arg(reblog_of_id)
+                .query_async(redis)
+                .await?;
+            if rank.is_some_and(|rank| rank < REBLOG_FALLOFF) {
+                return Ok(false);
+            }
+            let tracked: i64 = redis::cmd("ZADD")
+                .arg(&timeline.reblogs)
+                .arg("NX")
+                .arg(status_id as f64)
+                .arg(reblog_of_id)
+                .query_async(redis)
+                .await?;
+            if tracked == 1 {
+                redis::pipe()
+                    .zadd(&timeline.key, status_id, status_id as f64)
+                    .ignore()
+                    .expire(&timeline.reblogs, FEED_TTL_SECS as i64)
+                    .ignore()
+                    .query_async::<()>(redis)
+                    .await?;
+                Ok(true)
+            } else {
+                let set = timeline.reblog_set(reblog_of_id);
+                redis::pipe()
+                    .sadd(&set, status_id)
+                    .ignore()
+                    .expire(&set, FEED_TTL_SECS as i64)
+                    .ignore()
+                    .query_async::<()>(redis)
+                    .await?;
+                Ok(false)
+            }
+        }
+        None => {
+            // A boost may arrive before the post it boosts; then the post
+            // stays out.
+            let boosted: Option<f64> = redis::cmd("ZSCORE")
+                .arg(&timeline.reblogs)
+                .arg(status_id)
+                .query_async(redis)
+                .await?;
+            if boosted.is_some() {
+                return Ok(false);
+            }
+            redis
+                .zadd::<_, _, _, ()>(&timeline.key, status_id, status_id as f64)
+                .await?;
+            Ok(true)
+        }
+    }
+}
+
+/// `FeedManager#remove_from_feed`: take the status out, and when it was a
+/// boost standing in for others, put the oldest boost held back in its place.
+async fn remove_from_feed(
+    redis: &mut ConnectionManager,
+    timeline: &Timeline,
+    status_id: i64,
+    reblog_of_id: Option<i64>,
+    aggregate: bool,
+) -> redis::RedisResult<()> {
+    match reblog_of_id.filter(|_| aggregate) {
+        Some(reblog_of_id) => {
+            let rank: Option<usize> = redis::cmd("ZREVRANK")
+                .arg(&timeline.key)
+                .arg(status_id)
+                .query_async(redis)
+                .await?;
+            if rank.is_none() {
+                return Ok(());
+            }
+            let set = timeline.reblog_set(reblog_of_id);
+            let (others,): (Vec<i64>,) = redis::pipe()
+                .srem(&set, status_id)
+                .ignore()
+                .zrem(&timeline.reblogs, reblog_of_id)
+                .ignore()
+                .smembers(&set)
+                .query_async(redis)
+                .await?;
+            let mut pipe = redis::pipe();
+            if let Some(other) = others.into_iter().min() {
+                pipe.zadd(&timeline.key, other, other as f64)
+                    .ignore()
+                    .zadd(&timeline.reblogs, reblog_of_id, other as f64)
+                    .ignore();
+            }
+            pipe.zrem(&timeline.key, status_id)
+                .ignore()
+                .query_async::<()>(redis)
+                .await
+        }
+        None => {
+            redis::pipe()
+                .del(timeline.reblog_set(status_id))
+                .ignore()
+                .zrem(&timeline.reblogs, status_id)
+                .ignore()
+                .zrem(&timeline.key, status_id)
+                .ignore()
+                .query_async::<()>(redis)
+                .await
+        }
+    }
+}
+
+/// `FeedManager#trim`: keep the newest [`FEED_MAX_ITEMS`], and stop tracking
+/// boosts older than the [`REBLOG_FALLOFF`]th entry, dropping the boosts held
+/// back for them.
+async fn trim(redis: &mut ConnectionManager, timeline: &Timeline) -> redis::RedisResult<()> {
+    let (falloff,): (Vec<(i64, f64)>,) = redis::pipe()
+        .zremrangebyrank(&timeline.key, 0, -(FEED_MAX_ITEMS + 1))
+        .ignore()
+        .cmd("ZREVRANGEBYSCORE")
+        .arg(&timeline.key)
+        .arg("+inf")
+        .arg("-inf")
+        .arg("WITHSCORES")
+        .arg("LIMIT")
+        .arg(REBLOG_FALLOFF)
+        .arg(1)
+        .query_async(redis)
+        .await?;
+    let Some((_, falloff_score)) = falloff.first() else {
+        return Ok(());
+    };
+    let stale: Vec<i64> = redis::cmd("ZRANGEBYSCORE")
+        .arg(&timeline.reblogs)
+        .arg(0)
+        .arg(*falloff_score)
+        .query_async(redis)
+        .await?;
+    if stale.is_empty() {
+        return Ok(());
+    }
+    let mut pipe = redis::pipe();
+    for reblog_of_id in stale {
+        pipe.zrem(&timeline.reblogs, reblog_of_id)
+            .ignore()
+            .del(timeline.reblog_set(reblog_of_id))
+            .ignore();
+    }
+    pipe.query_async(redis).await
+}
+
+/// `add_to_feed` then `trim`, as `push_to_home` and `push_to_list` do.
+async fn push(
+    redis: &mut ConnectionManager,
+    timeline: &Timeline,
+    status_id: i64,
+    reblog_of_id: Option<i64>,
+    aggregate: bool,
+) {
+    let pushed = async {
+        if add_to_feed(redis, timeline, status_id, reblog_of_id, aggregate).await? {
+            trim(redis, timeline).await?;
+        }
+        redis::RedisResult::Ok(())
+    }
+    .await;
+    if let Err(error) = pushed {
+        tracing::warn!(%error, key = %timeline.key, "could not add a status to a feed");
+    }
+}
+
+/// `FeedManager#merge_into_home` and `#merge_into_list`: [`add_to_feed`] for
+/// each of `newest_first`, oldest first, then one [`trim`].
+async fn merge(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    timeline: &Timeline,
+    newest_first: &[i64],
+    aggregate: bool,
+) {
+    let reblogs = reblogs_of(db, newest_first).await;
+    let merged = async {
+        for &id in newest_first.iter().rev() {
+            add_to_feed(redis, timeline, id, reblogs.get(&id).copied(), aggregate).await?;
+        }
+        trim(redis, timeline).await
+    }
+    .await;
+    if let Err(error) = merged {
+        tracing::warn!(%error, key = %timeline.key, "could not merge statuses into a feed");
+    }
+}
+
+/// What [`add_to_feed`] and [`trim`], run over `candidates` oldest first on an
+/// empty feed, leave: the feed, the boosts tracked (`(boosted, boost)`), and
+/// the boosts held back. How a feed is filled from the database.
+#[derive(Debug, Default, PartialEq)]
+pub struct Aggregated {
+    pub feed: Vec<i64>,
+    pub tracked: Vec<(i64, i64)>,
+    pub held_back: Vec<(i64, i64)>,
+}
+
+/// [`Aggregated`] for `candidates`, each a status and what it boosts, oldest
+/// first.
+pub fn aggregate(candidates: &[(i64, Option<i64>)], aggregate: bool) -> Aggregated {
+    use std::collections::{BTreeMap, HashMap};
+    let mut feed: Vec<i64> = Vec::new();
+    let mut position: HashMap<i64, usize> = HashMap::new();
+    let mut tracked: BTreeMap<i64, i64> = BTreeMap::new();
+    let mut held_back: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
+    for &(id, reblog_of_id) in candidates {
+        match reblog_of_id.filter(|_| aggregate) {
+            Some(boosted) => {
+                let rank = position.get(&boosted).map(|&p| feed.len() - 1 - p);
+                if rank.is_some_and(|rank| rank < REBLOG_FALLOFF) {
+                    continue;
+                }
+                if tracked.contains_key(&boosted) {
+                    held_back.entry(boosted).or_default().push(id);
+                    continue;
+                }
+                tracked.insert(boosted, id);
+            }
+            None => {
+                if tracked.contains_key(&id) {
+                    continue;
+                }
+            }
+        }
+        position.insert(id, feed.len());
+        feed.push(id);
+        // `trim`
+        if feed.len() > REBLOG_FALLOFF {
+            let falloff = feed[feed.len() - 1 - REBLOG_FALLOFF];
+            tracked.retain(|boosted, boost| {
+                let keep = *boost > falloff;
+                if !keep {
+                    held_back.remove(boosted);
+                }
+                keep
+            });
+        }
+    }
+    let keep_from = feed.len().saturating_sub(FEED_MAX_ITEMS as usize);
+    Aggregated {
+        feed: feed.split_off(keep_from),
+        tracked: tracked.into_iter().collect(),
+        held_back: held_back
+            .into_iter()
+            .flat_map(|(boosted, boosts)| boosts.into_iter().map(move |b| (boosted, b)))
+            .collect(),
+    }
+}
+
+/// Write `candidates` (newest first, as the database lists them) into an
+/// emptied feed, aggregated as [`aggregate`] says.
+async fn fill(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    timeline: &Timeline,
+    newest_first: &[i64],
+    aggregate_reblogs: bool,
+) {
+    let reblogs = reblogs_of(db, newest_first).await;
+    let candidates: Vec<(i64, Option<i64>)> = newest_first
+        .iter()
+        .rev()
+        .map(|id| (*id, reblogs.get(id).copied()))
+        .collect();
+    let plan = aggregate(&candidates, aggregate_reblogs);
+    let mut pipe = redis::pipe();
+    for &id in &plan.feed {
+        pipe.zadd(&timeline.key, id, id as f64).ignore();
+    }
+    pipe.expire(&timeline.key, FEED_TTL_SECS as i64).ignore();
+    for &(boosted, boost) in &plan.tracked {
+        pipe.zadd(&timeline.reblogs, boosted, boost as f64).ignore();
+    }
+    pipe.expire(&timeline.reblogs, FEED_TTL_SECS as i64)
+        .ignore();
+    for &(boosted, boost) in &plan.held_back {
+        let set = timeline.reblog_set(boosted);
+        pipe.sadd(&set, boost)
+            .ignore()
+            .expire(&set, FEED_TTL_SECS as i64)
+            .ignore();
+    }
+    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+}
+
+/// `FeedManager#clean_feeds!` for one feed's boost tracking: the tracked set
+/// and every set of boosts held back.
+async fn clean_reblogs(redis: &mut ConnectionManager, timeline: &Timeline) {
+    let tracked: Vec<i64> = redis
+        .zrange(&timeline.reblogs, 0, -1)
+        .await
+        .unwrap_or_default();
+    let mut pipe = redis::pipe();
+    pipe.del(&timeline.reblogs).ignore();
+    for boosted in tracked {
+        pipe.del(timeline.reblog_set(boosted)).ignore();
+    }
+    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+}
+
 fn populated_key(keys: &RedisKeyspace, account_id: i64) -> String {
     keys.key(format!("feed:home:{}:populated", account_id))
 }
@@ -192,14 +581,13 @@ pub async fn feed_populate(
     .flatten()
     .collect();
 
+    let timeline = Timeline::home(keys, account_id);
+    clean_reblogs(redis, &timeline).await;
     if !status_ids.is_empty() {
-        let key = feed_key(keys, account_id);
-        let mut pipe = redis::pipe();
-        for &id in &status_ids {
-            pipe.zadd(&key, id, id as f64);
-        }
-        pipe.expire(&key, FEED_TTL_SECS as i64);
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+        let aggregate = !not_aggregating(db, &[account_id])
+            .await
+            .contains(&account_id);
+        fill(redis, db, &timeline, &status_ids, aggregate).await;
     }
 }
 
@@ -216,7 +604,7 @@ pub async fn fanout_new_status(
     // Look up the status's reply shape and language so it is only fanned to
     // followers who should see it (Mastodon FeedManager#filter_from_home).
     let reply_meta = sqlx::query!(
-        "SELECT reply, in_reply_to_account_id, language FROM statuses WHERE id = $1",
+        "SELECT reply, in_reply_to_account_id, language, reblog_of_id FROM statuses WHERE id = $1",
         status_id,
     )
     .fetch_optional(db)
@@ -226,6 +614,7 @@ pub async fn fanout_new_status(
     let is_reply = reply_meta.as_ref().map(|m| m.reply).unwrap_or(false);
     let reply_to = reply_meta.as_ref().and_then(|m| m.in_reply_to_account_id);
     let language = reply_meta.as_ref().and_then(|m| m.language.clone());
+    let reblog_of_id = reply_meta.as_ref().and_then(|m| m.reblog_of_id);
 
     let mut follower_ids: Vec<i64> = if is_reply && reply_to.is_none() {
         // Orphan reply (parent gone): filtered from every follower's home.
@@ -326,29 +715,92 @@ pub async fn fanout_new_status(
         }
     };
 
-    let score = status_id as f64;
-    let mut pipe = redis::pipe();
-    let mut any = false;
-    for (&id, init) in recipients.iter().zip(initialized.iter()) {
-        if init.is_some() {
-            let key = feed_key(keys, id);
-            pipe.zadd(&key, status_id, score);
-            pipe.zremrangebyrank(&key, 0, -(FEED_MAX_ITEMS + 1));
-            any = true;
-        }
-    }
-    if any {
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+    let ready: Vec<i64> = recipients
+        .iter()
+        .zip(initialized.iter())
+        .filter(|(_, init)| init.is_some())
+        .map(|(&id, _)| id)
+        .collect();
+    let separate = if reblog_of_id.is_some() {
+        not_aggregating(db, &ready).await
+    } else {
+        Default::default()
+    };
+    for id in ready {
+        let timeline = Timeline::home(keys, id);
+        push(
+            redis,
+            &timeline,
+            status_id,
+            reblog_of_id,
+            !separate.contains(&id),
+        )
+        .await;
     }
 }
 
-/// Remove a deleted status from all followers' initialized feeds.
+/// Remove a deleted status from all followers' initialized feeds. The status
+/// row must still be there to say whether it was a boost; for one already
+/// gone, use [`fanout_remove_boost`].
 pub async fn fanout_remove_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
     author_id: i64,
     status_id: i64,
+) {
+    let reblog_of_id = reblogs_of(db, &[status_id]).await.get(&status_id).copied();
+    fanout_remove_boost(redis, keys, db, author_id, status_id, reblog_of_id).await;
+}
+
+/// Take a boost already deleted from the database out of its author's
+/// followers' feeds and lists, putting back another boost of the same post it
+/// held back. Runs inline under [`sync_fanout`], otherwise in a task.
+pub async fn unpush_boost(
+    state: &crate::state::AppState,
+    author_id: i64,
+    boost_id: i64,
+    reblog_of_id: i64,
+) {
+    let mut redis = state.redis.clone();
+    let keys = state.redis_keys.clone();
+    let db = state.db.clone();
+    let work = async move {
+        fanout_remove_boost(
+            &mut redis,
+            &keys,
+            &db,
+            author_id,
+            boost_id,
+            Some(reblog_of_id),
+        )
+        .await;
+        fanout_remove_boost_from_lists(
+            &mut redis,
+            &keys,
+            &db,
+            author_id,
+            boost_id,
+            Some(reblog_of_id),
+        )
+        .await;
+    };
+    if sync_fanout() {
+        work.await;
+    } else {
+        crate::tenants::spawn(work);
+    }
+}
+
+/// `FeedManager#unpush_from_home` for every follower of `author_id`:
+/// [`fanout_remove_status`] for a status that boosted `reblog_of_id`.
+pub async fn fanout_remove_boost(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    author_id: i64,
+    status_id: i64,
+    reblog_of_id: Option<i64>,
 ) {
     let follower_ids: Vec<i64> = sqlx::query_scalar!(
         "SELECT account_id FROM follows WHERE target_account_id = $1",
@@ -371,16 +823,25 @@ pub async fn fanout_remove_status(
         }
     };
 
-    let mut pipe = redis::pipe();
-    let mut any = false;
-    for (&id, init) in recipients.iter().zip(initialized.iter()) {
-        if init.is_some() {
-            pipe.zrem(feed_key(keys, id), status_id);
-            any = true;
+    let ready: Vec<i64> = recipients
+        .iter()
+        .zip(initialized.iter())
+        .filter(|(_, init)| init.is_some())
+        .map(|(&id, _)| id)
+        .collect();
+    let separate = if reblog_of_id.is_some() {
+        not_aggregating(db, &ready).await
+    } else {
+        Default::default()
+    };
+    for id in ready {
+        let timeline = Timeline::home(keys, id);
+        let aggregate = !separate.contains(&id);
+        if let Err(error) =
+            remove_from_feed(redis, &timeline, status_id, reblog_of_id, aggregate).await
+        {
+            tracing::warn!(%error, account_id = id, "could not remove a status from a home feed");
         }
-    }
-    if any {
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
     }
 }
 
@@ -528,14 +989,11 @@ pub async fn list_feed_populate(
         .unwrap_or_default(),
     };
 
+    let timeline = Timeline::list(keys, list_id);
+    clean_reblogs(redis, &timeline).await;
     if !status_ids.is_empty() {
-        let key = list_feed_key(keys, list_id);
-        let mut pipe = redis::pipe();
-        for &id in &status_ids {
-            pipe.zadd(&key, id, id as f64);
-        }
-        pipe.expire(&key, FEED_TTL_SECS as i64);
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+        let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
+        fill(redis, db, &timeline, &status_ids, aggregate).await;
     }
 }
 
@@ -581,9 +1039,13 @@ pub async fn fanout_to_lists(
         }
     };
 
-    let score = status_id as f64;
-    let mut pipe = redis::pipe();
-    let mut any = false;
+    let reblog_of_id = reblogs_of(db, &[status_id]).await.get(&status_id).copied();
+    let owners: Vec<i64> = lists.iter().map(|l| l.account_id).collect();
+    let separate = if reblog_of_id.is_some() {
+        not_aggregating(db, &owners).await
+    } else {
+        Default::default()
+    };
 
     for (list, init) in lists.iter().zip(initialized.iter()) {
         if init.is_none() {
@@ -621,19 +1083,16 @@ pub async fn fanout_to_lists(
         };
 
         if passes {
-            let key = list_feed_key(keys, list.id);
-            pipe.zadd(&key, status_id, score);
-            pipe.zremrangebyrank(&key, 0, -(FEED_MAX_ITEMS + 1));
-            any = true;
+            let timeline = Timeline::list(keys, list.id);
+            let aggregate = !separate.contains(&list.account_id);
+            push(redis, &timeline, status_id, reblog_of_id, aggregate).await;
         }
-    }
-
-    if any {
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
     }
 }
 
-/// Remove a deleted status from all initialized list feeds that contain the author.
+/// Remove a deleted status from all initialized list feeds that contain the
+/// author. As with [`fanout_remove_status`], the row must still be there; for
+/// one already gone, use [`fanout_remove_boost_from_lists`].
 pub async fn fanout_remove_from_lists(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -641,13 +1100,27 @@ pub async fn fanout_remove_from_lists(
     author_id: i64,
     status_id: i64,
 ) {
-    let list_ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT l.id FROM lists l JOIN list_accounts la ON la.list_id = l.id WHERE la.account_id = $1",
+    let reblog_of_id = reblogs_of(db, &[status_id]).await.get(&status_id).copied();
+    fanout_remove_boost_from_lists(redis, keys, db, author_id, status_id, reblog_of_id).await;
+}
+
+/// `FeedManager#unpush_from_list` for every list holding `author_id`.
+pub async fn fanout_remove_boost_from_lists(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    author_id: i64,
+    status_id: i64,
+    reblog_of_id: Option<i64>,
+) {
+    let lists = sqlx::query!(
+        "SELECT l.id, l.account_id FROM lists l JOIN list_accounts la ON la.list_id = l.id WHERE la.account_id = $1",
         author_id,
     )
     .fetch_all(db)
     .await
     .unwrap_or_default();
+    let list_ids: Vec<i64> = lists.iter().map(|l| l.id).collect();
 
     if list_ids.is_empty() {
         return;
@@ -665,16 +1138,23 @@ pub async fn fanout_remove_from_lists(
         }
     };
 
-    let mut pipe = redis::pipe();
-    let mut any = false;
-    for (&list_id, init) in list_ids.iter().zip(initialized.iter()) {
-        if init.is_some() {
-            pipe.zrem(list_feed_key(keys, list_id), status_id);
-            any = true;
+    let owners: Vec<i64> = lists.iter().map(|l| l.account_id).collect();
+    let separate = if reblog_of_id.is_some() {
+        not_aggregating(db, &owners).await
+    } else {
+        Default::default()
+    };
+    for (list, init) in lists.iter().zip(initialized.iter()) {
+        if init.is_none() {
+            continue;
         }
-    }
-    if any {
-        let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+        let timeline = Timeline::list(keys, list.id);
+        let aggregate = !separate.contains(&list.account_id);
+        if let Err(error) =
+            remove_from_feed(redis, &timeline, status_id, reblog_of_id, aggregate).await
+        {
+            tracing::warn!(%error, list_id = list.id, "could not remove a status from a list feed");
+        }
     }
 }
 
@@ -748,13 +1228,15 @@ pub async fn backfill_list_member(
         return;
     }
 
-    let key = list_feed_key(keys, list_id);
-    let mut pipe = redis::pipe();
-    for &id in &recent {
-        pipe.zadd(&key, id, id as f64);
-    }
-    pipe.zremrangebyrank(&key, 0, -(FEED_MAX_ITEMS + 1));
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+    let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
+    merge(
+        redis,
+        db,
+        &Timeline::list(keys, list_id),
+        &recent,
+        aggregate,
+    )
+    .await;
 }
 
 /// Delete an account's home feed keys (Mastodon's `FeedManager#clean_feeds!`,
@@ -764,6 +1246,7 @@ pub async fn delete_home_feed(
     keys: &RedisKeyspace,
     account_id: i64,
 ) {
+    clean_reblogs(redis, &Timeline::home(keys, account_id)).await;
     let _: redis::RedisResult<()> = redis::pipe()
         .del(feed_key(keys, account_id))
         .del(populated_key(keys, account_id))
@@ -773,6 +1256,7 @@ pub async fn delete_home_feed(
 
 /// Delete a list's Redis feed keys (called when the list itself is deleted).
 pub async fn delete_list_feed(redis: &mut ConnectionManager, keys: &RedisKeyspace, list_id: i64) {
+    clean_reblogs(redis, &Timeline::list(keys, list_id)).await;
     let _: redis::RedisResult<()> = redis::pipe()
         .del(list_feed_key(keys, list_id))
         .del(list_populated_key(keys, list_id))
@@ -804,13 +1288,17 @@ pub async fn backfill_follow(
         return;
     }
 
-    let key = feed_key(keys, follower_id);
-    let mut pipe = redis::pipe();
-    for &id in &recent {
-        pipe.zadd(&key, id, id as f64);
-    }
-    pipe.zremrangebyrank(&key, 0, -(FEED_MAX_ITEMS + 1));
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+    let aggregate = !not_aggregating(db, &[follower_id])
+        .await
+        .contains(&follower_id);
+    merge(
+        redis,
+        db,
+        &Timeline::home(keys, follower_id),
+        &recent,
+        aggregate,
+    )
+    .await;
 }
 
 /// Remove the (former) followee's statuses from the follower's home feed.
@@ -850,15 +1338,14 @@ pub async fn unmerge_from_home(
     .await
     .unwrap_or_default();
 
-    if ids.is_empty() {
-        return;
-    }
-
-    let mut pipe = redis::pipe();
-    for id in ids {
-        pipe.zrem(&key, id);
-    }
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+    unmerge(
+        redis,
+        db,
+        into_account_id,
+        &Timeline::home(keys, into_account_id),
+        &ids,
+    )
+    .await;
 }
 
 /// Remove every home-feed entry authored by an account on `domain`, used when a
@@ -892,12 +1379,82 @@ pub async fn unmerge_domain_from_home(
     .fetch_all(db)
     .await
     .unwrap_or_default();
+    unmerge(
+        redis,
+        db,
+        into_account_id,
+        &Timeline::home(keys, into_account_id),
+        &ids,
+    )
+    .await;
+}
+
+/// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it.
+async fn unmerge(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    owner_id: i64,
+    timeline: &Timeline,
+    ids: &[i64],
+) {
     if ids.is_empty() {
         return;
     }
-    let mut pipe = redis::pipe();
-    for id in ids {
-        pipe.zrem(&key, id);
+    let reblogs = reblogs_of(db, ids).await;
+    let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
+    for &id in ids {
+        let reblog_of_id = reblogs.get(&id).copied();
+        if let Err(error) = remove_from_feed(redis, timeline, id, reblog_of_id, aggregate).await {
+            tracing::warn!(%error, key = %timeline.key, "could not remove a status from a feed");
+            return;
+        }
     }
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{aggregate, Aggregated, REBLOG_FALLOFF};
+
+    #[test]
+    fn a_second_boost_is_held_back() {
+        // 1 is a post from someone not followed; 10 and 11 boost it.
+        let plan = aggregate(&[(10, Some(1)), (11, Some(1)), (12, None)], true);
+        assert_eq!(
+            plan,
+            Aggregated {
+                feed: vec![10, 12],
+                tracked: vec![(1, 10)],
+                held_back: vec![(1, 11)],
+            }
+        );
+        // Not aggregating, every boost goes in.
+        assert_eq!(
+            aggregate(&[(10, Some(1)), (11, Some(1))], false).feed,
+            vec![10, 11]
+        );
+    }
+
+    #[test]
+    fn a_boost_of_a_recent_post_stays_out() {
+        let plan = aggregate(&[(1, None), (10, Some(1))], true);
+        assert_eq!(plan.feed, vec![1]);
+        assert!(plan.tracked.is_empty());
+    }
+
+    #[test]
+    fn tracking_falls_off_after_eighty_entries() {
+        let mut candidates = vec![(1000, None), (1001, Some(1000))];
+        candidates.extend((0..REBLOG_FALLOFF as i64).map(|i| (2000 + i, None)));
+        // The post is now further down than the falloff: a new boost goes in.
+        candidates.push((3000, Some(1000)));
+        let plan = aggregate(&candidates, true);
+        assert_eq!(plan.feed.last(), Some(&3000));
+        assert_eq!(plan.tracked, vec![(1000, 3000)]);
+        // A boost of something tracked within the falloff is held back.
+        let mut candidates = vec![(10, Some(1))];
+        candidates.extend((0..(REBLOG_FALLOFF as i64 - 1)).map(|i| (100 + i, None)));
+        candidates.push((500, Some(1)));
+        let plan = aggregate(&candidates, true);
+        assert_eq!(plan.held_back, vec![(1, 500)]);
+    }
 }

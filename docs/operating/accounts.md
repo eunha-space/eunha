@@ -207,6 +207,8 @@ privacy section uses both.
     has no translation for is cleared.
  -  `time_zone` is the zone the times in mail are written in (see
     [Time zones](#time-zones)).
+ -  `aggregate_reblogs` (on unless turned off) groups boosts in the home
+    timeline and lists (see [Boosts in timelines](#boosts-in-timelines)).
  -  `notification_emails` turns the mails eunha sends on or off: the
     notification emails `follow`, `follow_request`, `reblog`, `favourite`,
     `mention` and `quote` (see [Notification emails](#notification-emails)),
@@ -220,8 +222,25 @@ privacy section uses both.
 reads.
 
 
-Notification emails
+Boosts in timelines
 -------------------
+
+With `aggregate_reblogs` on, the home feed and each list's feed keep a post
+from showing up again and again as people boost it, the way Mastodon's
+`FeedManager#add_to_feed` does:
+
+ -  a boost of a post that is among the 80 newest entries of the feed
+    (`REBLOG_FALLOFF`) is not added;
+ -  nor is a second boost of a post whose first boost is among them; it is
+    kept aside instead, and if the first boost is undone or deleted, the
+    oldest boost kept aside takes its place;
+ -  a post whose boost arrived before it is not added again.
+
+What a feed tracks for this lives in Redis beside the feed, under Mastodon's
+key names (`feed:home:<id>:reblogs`, `feed:home:<id>:reblogs:<post>`), and
+expires with it. Turning the setting off affects only boosts that arrive
+afterwards. A home page served from the database while the feed is rebuilt
+leaves out the boosts the page itself shows to be repeats.
 
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:

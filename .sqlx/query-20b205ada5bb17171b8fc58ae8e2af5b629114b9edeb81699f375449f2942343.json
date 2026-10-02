@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT reply, in_reply_to_account_id, language FROM statuses WHERE id = $1",
+  "query": "SELECT reply, in_reply_to_account_id, language, reblog_of_id FROM statuses WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "language",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -27,8 +32,9 @@
     "nullable": [
       false,
       true,
+      true,
       true
     ]
   },
-  "hash": "fd0a00f565323bd11393f6843b563dc4061c5a2c9cd4c31485c884d4b1eb250e"
+  "hash": "20b205ada5bb17171b8fc58ae8e2af5b629114b9edeb81699f375449f2942343"
 }

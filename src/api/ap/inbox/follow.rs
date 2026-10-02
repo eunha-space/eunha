@@ -513,7 +513,7 @@ pub(super) async fn handle_undo(
                 .unwrap_or("");
             if !announce_uri.is_empty() {
                 let deleted = sqlx::query!(
-                    "DELETE FROM statuses WHERE uri = $1 RETURNING reblog_of_id, account_id, visibility",
+                    "DELETE FROM statuses WHERE uri = $1 RETURNING id, reblog_of_id, account_id, visibility",
                     announce_uri,
                 )
                 .fetch_optional(&state.db)
@@ -521,6 +521,8 @@ pub(super) async fn handle_undo(
                 match deleted {
                     Some(row) => {
                         if let Some(original_id) = row.reblog_of_id {
+                            crate::feed::unpush_boost(state, row.account_id, row.id, original_id)
+                                .await;
                             sqlx::query!(
                                 r#"UPDATE status_stats SET reblogs_count = (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL), updated_at = now() WHERE status_id = $1"#,
                                 original_id,

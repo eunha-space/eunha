@@ -62,6 +62,9 @@ pub struct Preferences {
     /// Mail notifications even while a client of the member's is listening
     /// (`always_send_emails`).
     pub always_send_emails: bool,
+    /// Leave out of the home timeline and lists a boost of a post recently
+    /// boosted or posted there (`aggregate_reblogs`).
+    pub aggregate_reblogs: bool,
     pub notification_emails: NotificationEmails,
 }
 
@@ -107,6 +110,7 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         locale: row.locale,
         time_zone: row.time_zone,
         always_send_emails: user_setting_bool(settings, "always_send_emails", false),
+        aggregate_reblogs: crate::feed::aggregates_reblogs(settings),
         notification_emails: NotificationEmails {
             follow: bool_of("notification_emails.follow", true),
             reblog: bool_of("notification_emails.reblog", false),
@@ -140,6 +144,7 @@ pub struct Update {
     pub indexable: Option<bool>,
     pub show_application: Option<bool>,
     pub always_send_emails: Option<bool>,
+    pub aggregate_reblogs: Option<bool>,
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
@@ -185,6 +190,9 @@ pub async fn update(
     }
     if let Some(always) = form.always_send_emails {
         set("always_send_emails", always.into());
+    }
+    if let Some(aggregate) = form.aggregate_reblogs {
+        set("aggregate_reblogs", aggregate.into());
     }
     let emails = &form.notification_emails;
     for ((key, _), value) in NOTIFICATION_EMAILS.iter().zip([

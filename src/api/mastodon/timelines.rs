@@ -326,15 +326,40 @@ pub async fn home_timeline(
                 });
             }
         }
-        newest_first(
-            min_id,
-            home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?,
-        )
+        let page =
+            home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?;
+        newest_first(min_id, aggregate_page(&state, auth.account_id, page).await)
     };
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
+}
+
+/// A home page read from the database while the feed is rebuilt, with the
+/// boosts the feed would have held back (`aggregate_reblogs`) left out, as
+/// far as the page itself shows them.
+async fn aggregate_page(state: &AppState, account_id: i64, page: Vec<DbStatus>) -> Vec<DbStatus> {
+    let settings = sqlx::query_scalar!(
+        "SELECT settings FROM users WHERE account_id = $1",
+        account_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    if !feed::aggregates_reblogs(settings.as_deref()) {
+        return page;
+    }
+    let mut candidates: Vec<(i64, Option<i64>)> =
+        page.iter().map(|s| (s.id, s.reblog_of_id)).collect();
+    candidates.sort_unstable_by_key(|(id, _)| *id);
+    let kept: std::collections::HashSet<i64> = feed::aggregate(&candidates, true)
+        .feed
+        .into_iter()
+        .collect();
+    page.into_iter().filter(|s| kept.contains(&s.id)).collect()
 }
 
 // Hydrate status IDs from a Redis feed with viewer-specific read-time filters applied.

@@ -13,7 +13,9 @@ redis_key_prefix = "tenant-example"
 The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
 adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
-markers, ActivityPub and preview card locks, tombstones, the oEmbed endpoints
+markers and the boosts each feed tracks (`feed:home:<id>:reblogs` and
+`feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
+preview card locks, tombstones, the oEmbed endpoints
 remembered for each domain, posting idempotency, notification
 group state, async refreshes, the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
@@ -26,8 +28,9 @@ user, the matching key pattern, and only the commands Eunha uses:
 
 ~~~~
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
-+zrangebyscore +zrevrangebyscore +mget +del +sadd +scard
-+incrby +pfadd +pfcount +expire +smembers +srem +hset +hget +hincrby
++zrange +zrangebyscore +zrevrangebyscore +zrevrank +zscore +mget +del
++sadd +scard +incrby +pfadd +pfcount +expire +smembers +srem +hset +hget
++hincrby
 +scan
 ~~~~
 

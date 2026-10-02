@@ -17,6 +17,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { MailPreferences } from '@/components/mail-preferences.tsx'
 import { PrivacySettings } from '@/components/privacy-settings.tsx'
 import { SessionsSettings } from '@/components/sessions-settings.tsx'
+import { TimelinePreferences } from '@/components/timeline-preferences.tsx'
 import { TwoFactorSettings } from '@/components/two-factor-settings.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
@@ -226,6 +227,8 @@ export default function Settings() {
           <PrivacySettings token={token} />
 
           <MailPreferences token={token} />
+
+          <TimelinePreferences token={token} />
 
           <section className="space-y-2 rounded-lg border p-4">
             <h2 className="font-semibold">Layout</h2>

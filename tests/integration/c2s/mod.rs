@@ -2,6 +2,7 @@
 
 mod accounts;
 mod admin;
+mod aggregate_reblogs;
 mod announcements;
 mod annual_reports;
 mod apps;

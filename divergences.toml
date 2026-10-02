@@ -771,7 +771,9 @@ done, answers `GET /api/v1/timelines/home` with `206` and a \
 `Mastodon-Async-Refresh` header (`retry=5`)."""
 eunha = """
 Reads a home feed Redis does not hold from the database in the request, and \
-answers `200` with the whole page and no header."""
+answers `200` with the whole page and no header. That page leaves out the \
+boosts `aggregate_reblogs` would have held back as far as the page itself \
+shows them; the feed filled meanwhile aggregates them as upstream does."""
 why = """
 The database query that fills a missing feed is fast enough to run in the \
 request, so there is nothing for the client to wait for; a partial answer \
@@ -1041,14 +1043,14 @@ summary = "Serves the preferences Mastodon has only as web forms over a REST API
 mastodon = """
 Sets `noindex` (shown inverted as \"include profile page in search engines\"), \
 `show_application`, the interface language and time zone, the languages \
-shown in public timelines and the notification email settings through \
+shown in public timelines, grouping boosts, and the notification email settings through \
 `/settings/privacy` and `/settings/preferences/*` web forms behind a \
 session."""
 eunha = """
 Serves `GET` and `PATCH /api/eunha/v1/preferences` for `noindex` (or \
 `indexable`, its inverse), `show_application`, `chosen_languages`, `locale`, \
 `time_zone` (with the zones to choose from at `preferences/time_zones`), \
-`always_send_emails`, and the notification emails eunha sends (`follow`, \
+`always_send_emails`, `aggregate_reblogs`, and the notification emails eunha sends (`follow`, \
 `follow_request`, `reblog`, `favourite`, `mention`, `quote`, and for staff \
 `report`, `pending_account`, `trends`, `appeal`, `end_of_support`, \
 `software_updates`), stored in \
