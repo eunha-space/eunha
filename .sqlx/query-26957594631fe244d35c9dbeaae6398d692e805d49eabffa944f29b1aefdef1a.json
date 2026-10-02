@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT settings, chosen_languages, locale FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "settings",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "chosen_languages",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "locale",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "26957594631fe244d35c9dbeaae6398d692e805d49eabffa944f29b1aefdef1a"
+}

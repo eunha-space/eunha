@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"status_id!\", a.name, a.website\n           FROM statuses s\n           JOIN oauth_applications a ON a.id = s.application_id\n           LEFT JOIN users u ON u.account_id = s.account_id\n           WHERE s.id = ANY($1::bigint[])\n             AND (s.account_id = $2\n                  OR (u.id IS NOT NULL\n                      AND COALESCE(u.settings, '') !~ '\"show_application\"\\s*:\\s*false'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "website",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "4eacf17401a89448d8ae3ac57002814df5f95de7d2de9d1b1afab81bfd892945"
+}

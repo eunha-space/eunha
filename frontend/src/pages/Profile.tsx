@@ -641,6 +641,18 @@ export default function Profile() {
     loadPinned()
   }, [loadPinned])
 
+  // Mastodon's profile page carries `<meta name="robots" content="noindex,
+  // noarchive">` for an account whose owner asked search engines to stay
+  // away (`noindex`).
+  useEffect(() => {
+    if (!account?.noindex) return
+    const meta = document.createElement('meta')
+    meta.name = 'robots'
+    meta.content = 'noindex, noarchive'
+    document.head.appendChild(meta)
+    return () => meta.remove()
+  }, [account?.noindex])
+
   useEffect(() => {
     setAccount(null)
     setRel(null)

@@ -1454,7 +1454,7 @@ async fn build_status_list(
     let tags_map = batch_statuses_tags(state, &enrich_ids).await?;
     let mentions_map = batch_status_mentions(state, &enrich_ids).await?;
     let applications_map =
-        super::status_serialize::fetch_status_applications(state, &enrich_ids).await;
+        super::status_serialize::fetch_status_applications(state, &enrich_ids, viewer_id).await;
     let all_statuses_for_emoji: Vec<DbStatus> = statuses
         .iter()
         .cloned()

@@ -1755,6 +1755,33 @@ pub async fn batch_account_stats(
     .collect()
 }
 
+/// `Account#user_prefers_noindex?` for each local account among `account_ids`:
+/// the user's `noindex` setting, or `Setting.noindex` when they never chose.
+pub async fn batch_noindex(
+    state: &AppState,
+    account_ids: &[i64],
+) -> std::collections::HashMap<i64, bool> {
+    if account_ids.is_empty() {
+        return std::collections::HashMap::new();
+    }
+    let site_default = crate::settings::boolean(state, "noindex").await;
+    sqlx::query!(
+        "SELECT account_id, settings FROM users WHERE account_id = ANY($1::bigint[])",
+        account_ids,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|r| {
+        (
+            r.account_id,
+            crate::accounts::user_setting_bool(r.settings.as_deref(), "noindex", site_default),
+        )
+    })
+    .collect()
+}
+
 /// Convert a slice of DB accounts to API accounts with profile emojis and roles populated.
 /// [`batch_accounts_to_api`] for one account.
 pub async fn account_to_api(state: &AppState, account: &Account) -> super::types::Account {
@@ -1772,6 +1799,7 @@ pub async fn batch_accounts_to_api(
     let roles_map = batch_account_roles(state, accounts).await;
     let ids: Vec<i64> = accounts.iter().map(|a| a.id).collect();
     let stats_map = batch_account_stats(state, &ids).await;
+    let noindex_map = batch_noindex(state, &ids).await;
     // `AccountSerializer#email_subscriptions`, while the feature is enabled.
     let email_subscriptions = if crate::email_subscriptions::enabled(state).await {
         let local: Vec<i64> = accounts
@@ -1792,6 +1820,9 @@ pub async fn batch_accounts_to_api(
             api.email_subscriptions = email_subscriptions
                 .as_ref()
                 .map(|offering| offering.contains(&a.id));
+            if let Some(&noindex) = noindex_map.get(&a.id) {
+                api.noindex = Some(noindex);
+            }
             if let Some(&(s, fg, fr)) = stats_map.get(&a.id) {
                 api.statuses_count = s;
                 api.following_count = fg;
@@ -1842,7 +1873,8 @@ pub async fn user_defaults(state: &AppState, account_id: i64) -> UserDefaults {
             .unwrap_or(if locked { "private" } else { "public" })
             .to_string(),
         sensitive: s
-            .get("web.default_sensitive")
+            .get("default_sensitive")
+            .or_else(|| s.get("web.default_sensitive"))
             .or_else(|| s.get("sensitive"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
@@ -1878,6 +1910,9 @@ pub async fn apply_account_stats(
         api.statuses_count = st.statuses_count;
         api.following_count = st.following_count;
         api.followers_count = st.followers_count;
+    }
+    if let Some(&noindex) = batch_noindex(state, &[account_id]).await.get(&account_id) {
+        api.noindex = Some(noindex);
     }
 }
 

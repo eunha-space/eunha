@@ -15,6 +15,7 @@ mod oembed;
 mod password_reset;
 mod poll_semantics;
 mod portability;
+mod preferences;
 mod preview_cards;
 mod schema_compatibility;
 mod sessions;

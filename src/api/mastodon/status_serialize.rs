@@ -949,26 +949,15 @@ pub async fn build_status_with_app(
 ) -> AppResult<super::types::Status> {
     let viewer_account_id = viewer_ctx.as_ref().map(|c| c.account_id);
 
-    // Mastodon shows which app posted a status — `show_application?` — and it
-    // shows it to everyone, since the setting behind it defaults to on. eunha
-    // recorded `application_id` and served it only from the POST that created
-    // the status, so a status read back from a timeline lost the attribution it
-    // had a second earlier. Fetched here rather than at each call site, so a
-    // caller that does not already have it still gets it.
+    // Mastodon shows which app posted a status — `show_application?` — to
+    // everyone unless the author turned `show_application` off, and to the
+    // author always. Fetched here rather than at each call site, so a caller
+    // that does not already have it still gets it.
     let application = match (application, s.application_id) {
         (Some(app), _) => Some(app),
-        (None, Some(app_id)) => sqlx::query!(
-            "SELECT name, website FROM oauth_applications WHERE id = $1",
-            app_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| super::types::Application {
-            name: r.name,
-            website: r.website,
-        }),
+        (None, Some(_)) => fetch_status_applications(state, &[s.id], viewer_account_id)
+            .await
+            .remove(&s.id),
         (None, None) => None,
     };
 
@@ -1017,7 +1006,9 @@ pub async fn build_status_with_app(
     if let Some(ref mut rb) = api.reblog {
         if rb.application.is_none() {
             if let Ok(rid) = rb.id.parse::<i64>() {
-                rb.application = fetch_status_applications(state, &[rid]).await.remove(&rid);
+                rb.application = fetch_status_applications(state, &[rid], viewer_account_id)
+                    .await
+                    .remove(&rid);
             }
         }
     }
@@ -1210,13 +1201,14 @@ pub(super) async fn fetch_status_card(
 /// Which application posted each of these statuses.
 ///
 /// Mastodon's `show_application?` is `user_shows_application? || viewer is the
-/// author`, and the setting behind it defaults to on, so in practice a status
-/// carries its application for everyone. The sync serializer cannot query, so
-/// list endpoints fetch the set in one go and fill it in, as they do for emojis
-/// and counts.
+/// author`: the author's `show_application` setting, which defaults to on, or
+/// the author asking. An author with no user — a remote account — shows none.
+/// The sync serializer cannot query, so list endpoints fetch the set in one go
+/// and fill it in, as they do for emojis and counts.
 pub async fn fetch_status_applications(
     state: &AppState,
     status_ids: &[i64],
+    viewer_account_id: Option<i64>,
 ) -> std::collections::HashMap<i64, super::types::Application> {
     if status_ids.is_empty() {
         return std::collections::HashMap::new();
@@ -1225,8 +1217,13 @@ pub async fn fetch_status_applications(
         r#"SELECT s.id AS "status_id!", a.name, a.website
            FROM statuses s
            JOIN oauth_applications a ON a.id = s.application_id
-           WHERE s.id = ANY($1::bigint[])"#,
+           LEFT JOIN users u ON u.account_id = s.account_id
+           WHERE s.id = ANY($1::bigint[])
+             AND (s.account_id = $2
+                  OR (u.id IS NOT NULL
+                      AND COALESCE(u.settings, '') !~ '"show_application"\s*:\s*false'))"#,
         status_ids,
+        viewer_account_id,
     )
     .fetch_all(&state.db)
     .await

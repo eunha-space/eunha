@@ -47,7 +47,8 @@ At the time of writing there are forty-one. They cover:
     checked;
  -  the sessions, authorized apps and sign-in history API, and how a password
     reset token is stored;
- -  deleting one's own account over the API.
+ -  deleting one's own account over the API, and the preferences Mastodon
+    sets only through web forms.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

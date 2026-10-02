@@ -478,22 +478,14 @@ pub async fn get_status(
     } else {
         None
     };
-    let application = if let Some(app_id) = status.application_id {
-        sqlx::query!(
-            "SELECT name, website FROM oauth_applications WHERE id = $1",
-            app_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| super::types::Application {
-            name: r.name,
-            website: r.website,
-        })
-    } else {
-        None
-    };
+    // `show_application?`: the author's setting, or the author asking.
+    let application = super::status_serialize::fetch_status_applications(
+        &state,
+        &[status.id],
+        viewer_ctx.as_ref().map(|c| c.account_id),
+    )
+    .await
+    .remove(&status.id);
 
     let s = super::status_serialize::build_status_with_app(
         &state,

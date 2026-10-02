@@ -247,7 +247,7 @@ async fn do_update_credentials(
             obj.insert("default_privacy".into(), serde_json::json!(p));
         }
         if let Some(s) = source_sensitive {
-            obj.insert("web.default_sensitive".into(), serde_json::json!(s));
+            obj.insert("default_sensitive".into(), serde_json::json!(s));
         }
         if let Some(l) = &source_language {
             obj.insert(

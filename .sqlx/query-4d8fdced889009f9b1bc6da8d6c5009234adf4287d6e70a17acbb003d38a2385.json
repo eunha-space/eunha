@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET chosen_languages = $1, updated_at = now() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "VarcharArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d8fdced889009f9b1bc6da8d6c5009234adf4287d6e70a17acbb003d38a2385"
+}

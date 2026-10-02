@@ -180,3 +180,32 @@ yet confirmed or approved is told instead how to fix their address and that the
 username becomes available again, as upstream's page does. Eunha's
 `DELETE /api/v1/accounts` has no Mastodon counterpart and is recorded as a
 divergence.
+
+
+Privacy and preferences
+-----------------------
+
+What Mastodon's privacy page and preference pages set without an API is served
+at `GET` and `PATCH /api/eunha/v1/preferences`; what Mastodon's API already
+sets (`discoverable`, `locked`, `indexable`, `hide_collections`, the posting
+defaults under `source`) stays with `update_credentials`. The settings page's
+privacy section uses both.
+
+ -  `noindex` (the privacy form's “include profile page in search engines”,
+    posted inverted as `indexable`, which is also accepted) asks search
+    engines to stay away: the account entity's `noindex` says so, and the web
+    client's profile page carries
+    `<meta name="robots" content="noindex, noarchive">`. A member who never
+    chose follows `Setting.noindex`.
+ -  `show_application` off hides the app a post was sent from from everyone
+    but its author, as `show_application?` does.
+ -  `chosen_languages` limits public timelines to those languages; an empty
+    list clears it. `locale` is the language eunha writes mail in; one Mastodon
+    has no translation for is cleared.
+ -  `notification_emails` turns the staff mails eunha sends on or off:
+    `report`, `pending_account`, `trends`, `appeal`, `end_of_support`, and
+    `software_updates` (`none`, `critical`, `patch` or `all`).
+
+`source[sensitive]` is kept under Mastodon's `default_sensitive` key in
+`users.settings`; eunha used to write `web.default_sensitive`, which it still
+reads.

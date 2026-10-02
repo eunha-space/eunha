@@ -7,6 +7,7 @@ pub mod health;
 pub mod invite_grants;
 pub mod invite_tree;
 pub mod portability;
+pub mod preferences;
 pub mod sessions;
 pub mod terms_of_service;
 pub mod two_factor;
@@ -24,4 +25,5 @@ pub fn router() -> Router {
         .merge(portability::routes())
         .merge(two_factor::routes())
         .merge(sessions::routes())
+        .merge(preferences::routes())
 }

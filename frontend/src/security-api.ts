@@ -211,3 +211,23 @@ export const getLoginActivities = (token: string, maxId?: string) =>
     `/api/eunha/v1/login_activities${maxId ? `?max_id=${encodeURIComponent(maxId)}` : ''}`,
     token,
   )
+
+// ── Preferences Mastodon keeps on its web settings pages ───────────────────
+
+export interface Preferences {
+  noindex: boolean
+  show_application: boolean
+  chosen_languages: string[] | null
+  locale: string | null
+  notification_emails: Record<string, boolean | string | null>
+}
+
+export const getPreferences = (token: string) =>
+  call<Preferences>('/api/eunha/v1/preferences', token)
+
+export const updatePreferences = (
+  token: string,
+  changes: Partial<Omit<Preferences, 'notification_emails'>> & {
+    notification_emails?: Record<string, boolean | string>
+  },
+) => call<Preferences>('/api/eunha/v1/preferences', token, 'PATCH', changes)
