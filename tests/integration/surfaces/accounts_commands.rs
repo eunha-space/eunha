@@ -184,7 +184,9 @@ async fn test_an_owner_created_on_the_command_line_can_sign_in() {
         .json()
         .await
         .unwrap();
-    assert_eq!(instance["contact"]["account"]["username"], "gardener");
+    // The contact account is whoever `site_contact_username` names, as in
+    // Mastodon; creating an owner does not change it.
+    assert_eq!(instance["contact"]["account"]["username"], "alice");
 }
 
 /// Without `--approve`, an account is approved as a sign-up would be:

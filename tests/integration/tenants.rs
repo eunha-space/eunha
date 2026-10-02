@@ -512,6 +512,20 @@ async fn instance_title(base_url: &str, host: &str) -> (StatusCode, Option<Strin
     (status, title)
 }
 
+/// Whether `/api/v2/instance` on `host` says it is in limited federation mode.
+async fn limited_federation(base_url: &str, host: &str) -> (StatusCode, Option<bool>) {
+    let response = ApiClient::new(base_url, host)
+        .get("/api/v2/instance", None)
+        .await;
+    let status = response.status();
+    let limited = response
+        .json::<Value>()
+        .await
+        .ok()
+        .and_then(|instance| instance["configuration"]["limited_federation"].as_bool());
+    (status, limited)
+}
+
 /// Tenants are added, changed and removed while the process goes on serving the
 /// rest: a new one answers, a changed one comes back with its new
 /// configuration, and a removed one's host is refused and its background work
@@ -588,7 +602,7 @@ async fn test_tenants_come_and_go_without_a_restart() {
 
     let renamed = || {
         let mut tenant = tenant_config(&c);
-        tenant.config.instance.title = "renamed on reload".into();
+        tenant.config.instance.limited_federation_mode = true;
         tenant
     };
     let reloaded = tenants
@@ -597,8 +611,8 @@ async fn test_tenants_come_and_go_without_a_restart() {
         .expect("changing a tenant reloads");
     assert_eq!(reloaded.restarted, std::slice::from_ref(&c.domain));
     assert_eq!(
-        instance_title(&base_url, &c.domain).await,
-        (StatusCode::OK, Some("renamed on reload".to_string())),
+        limited_federation(&base_url, &c.domain).await,
+        (StatusCode::OK, Some(true)),
         "the changed tenant comes back with its new configuration"
     );
 
@@ -612,8 +626,8 @@ async fn test_tenants_come_and_go_without_a_restart() {
     };
     assert!(error.contains("bind_address"), "{error}");
     assert_eq!(
-        instance_title(&base_url, &c.domain).await,
-        (StatusCode::OK, Some("renamed on reload".to_string())),
+        limited_federation(&base_url, &c.domain).await,
+        (StatusCode::OK, Some(true)),
         "a refused reload leaves the tenants as they were"
     );
 }
