@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO global_follow_recommendations (account_id, rank, reason)\n           SELECT account_id, sum(rank) AS rank, array_agg(reason) AS reason\n           FROM (\n             SELECT account_summaries.account_id AS account_id,\n                    count(follows.id) / (1.0 + count(follows.id)) AS rank,\n                    'most_followed' AS reason\n             FROM follows\n             INNER JOIN account_summaries ON account_summaries.account_id = follows.target_account_id\n             INNER JOIN users ON users.account_id = follows.account_id\n             WHERE users.current_sign_in_at >= (now() - interval '30 days')\n               AND account_summaries.sensitive = 'f'\n               AND NOT EXISTS (SELECT 1 FROM follow_recommendation_suppressions\n                               WHERE follow_recommendation_suppressions.account_id = follows.target_account_id)\n             GROUP BY account_summaries.account_id\n             HAVING count(follows.id) >= 5\n             UNION ALL\n             SELECT account_summaries.account_id AS account_id,\n                    sum(status_stats.reblogs_count + status_stats.favourites_count)\n                      / (1.0 + sum(status_stats.reblogs_count + status_stats.favourites_count)) AS rank,\n                    'most_interactions' AS reason\n             FROM status_stats\n             INNER JOIN statuses ON statuses.id = status_stats.status_id\n             INNER JOIN account_summaries ON account_summaries.account_id = statuses.account_id\n             WHERE statuses.id >= ((date_part('epoch', now() - interval '30 days') * 1000)::bigint << 16)\n               AND account_summaries.sensitive = 'f'\n               AND NOT EXISTS (SELECT 1 FROM follow_recommendation_suppressions\n                               WHERE follow_recommendation_suppressions.account_id = statuses.account_id)\n             GROUP BY account_summaries.account_id\n             HAVING sum(status_stats.reblogs_count + status_stats.favourites_count) >= 5\n           ) t0\n           GROUP BY account_id\n           ORDER BY rank DESC\n           ON CONFLICT (account_id) DO UPDATE\n             SET rank = EXCLUDED.rank, reason = EXCLUDED.reason, stale = 'f'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4569edf191641a2f6229869c34fb90be1f2c6a0c3a3b88e7a25855004225ddbf"
+}

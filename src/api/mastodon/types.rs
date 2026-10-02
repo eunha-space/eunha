@@ -906,7 +906,7 @@ pub struct NotificationPagination {
 
 #[derive(Debug, Serialize)]
 pub struct SuggestionV2 {
-    pub source: String,
+    pub source: Option<String>,
     pub sources: Vec<String>,
     pub account: Account,
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM global_follow_recommendations WHERE stale",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e66b90b75435ff51e76c7425da3a8553e1ae546db5f1ebe864ed90b67f8b7cf6"
+}

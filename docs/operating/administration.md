@@ -64,11 +64,12 @@ size, the favicon at 16, 32 and 48 pixels.
 | `authorized_fetch`                                               | signed fetches, unless the instance configuration decides                              |
 | `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                |
 | `wrapstodon`                                                     | annual reports                                                                         |
+| `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                              |
 
 The rest are saved for a Mastodon on the same database and read by nothing in
 eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
 `mascot`, `noindex`, `preview_sensitive_media`, `captcha_enabled` (eunha has
-no CAPTCHA), `bootstrap_timeline_accounts`, and `backups_retention_period`.
+no CAPTCHA), and `backups_retention_period`.
 
 ### Settings and the instance configuration
 
@@ -298,3 +299,39 @@ the events [moderation](./moderation#webhooks) lists, each one the moderator's
 role could see. Its template, if any, must parse as Mastodon's does: text, and
 <code v-pre>{{path.to.value}}</code> expressions of lower-case names and array
 indices. As in Mastodon, none of this is logged.
+
+
+Follow recommendations
+----------------------
+
+`/api/v1/suggestions` and `/api/v2/suggestions` suggest whom to follow from
+Mastodon's sources, each suggestion with the sources that put it there:
+
+ -  `featured`: the accounts the `bootstrap_timeline_accounts` setting names;
+ -  `friends_of_friends`: accounts followed by the accounts one follows, most
+    often first. As in Mastodon, an account whose `hide_collections` is unset
+    counts as hiding whom it follows;
+ -  `most_followed` and `most_interactions`: the server's recommendations,
+    those mostly posting in the user's language first.
+
+Only discoverable accounts that are not limited, suspended, moved or a
+memorial are suggested, and never one the user follows, has asked to follow,
+blocks, is blocked by, mutes, dismissed, or whose domain the user blocks. The
+list is shuffled, and keeps its order for a quarter of an hour, so paging
+through it with `offset` sees one list, as Mastodon's cached list does.
+Mastodon's similar-profiles source needs Elasticsearch and its FASP source a
+FASP provider; eunha has neither, as a Mastodon without them has neither.
+
+Once a day each instance refreshes the recommendations as Mastodon's
+`FollowRecommendationsScheduler` does: it records the language and
+sensitivity each discoverable, unlocked account mostly posts with
+(`account_summaries`), then recommends the accounts at least five recently
+active local users follow, and those whose posts drew at least five boosts
+and favourites this month (`global_follow_recommendations`), leaving out
+sensitive ones.
+
+`/api/v1/admin/follow_recommendations` lists the recommendations, those in a
+`language` first (the moderator's own by default), or with
+`status=suppressed` the accounts kept out of them, for a role with
+`manage_taxonomies`. `…/suppress` and `…/unsuppress` with `account_ids` keep
+accounts out and let them back, at once. As in Mastodon, neither is logged.

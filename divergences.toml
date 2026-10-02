@@ -201,8 +201,10 @@ preview and test), the servers it federates with \
 (`Admin::InstancesController`, with moderation notes and delivery controls), \
 exporting and importing domain blocks and allows as CSV, relays \
 (`Admin::RelaysController`), the list of every invite \
-(`Admin::InvitesController`), and webhooks (`Admin::WebhooksController`, with \
-secret rotation) only as server-rendered admin pages. The REST API \
+(`Admin::InvitesController`), webhooks (`Admin::WebhooksController`, with \
+secret rotation), and suppressing follow recommendations \
+(`Admin::FollowRecommendationsController`) only as server-rendered admin \
+pages. The REST API \
 has none of them."""
 eunha = """
 Serves them under `/api/v1/admin/`: `settings` (`GET`, and `PATCH` with \
@@ -215,8 +217,9 @@ only the keys given, uploads as multipart files), `site_uploads/:id` \
 `DELETE`, and `moderation_notes`, and `export_domain_blocks` and \
 `export_domain_allows` with `export` and `import`, a domain block import \
 answering with the blocks to confirm rather than a form, and `relays` with \
-`enable` and `disable`, `invites` with `deactivate_all`, and `webhooks` with \
-`enable`, `disable` and `secret/rotate`. Each asks for the \
+`enable` and `disable`, `invites` with `deactivate_all`, `webhooks` with \
+`enable`, `disable` and `secret/rotate`, and `follow_recommendations` with \
+`suppress` and `unsuppress`. Each asks for the \
 permission upstream's policy asks for, \
 validates as upstream's form or model does with its messages, and writes the \
 audit log entries its controller writes, which for the settings is none."""

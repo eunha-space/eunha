@@ -2213,8 +2213,12 @@ async fn test_get_suggestions_v2() {
 async fn test_suggestions_exclude_blocked() {
     let ctx = TestContext::new("suggest-block").await;
 
-    // Bob follows Alice → Bob is a follow-back suggestion for Alice.
-    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    // Bob is discoverable and one of the accounts the setting features.
+    crate::helpers::set_setting(&ctx.db, "bootstrap_timeline_accounts", "bob").await;
+    sqlx::query("UPDATE accounts SET discoverable = true WHERE username = 'bob'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
     let before: Vec<Value> = ctx
         .api
         .get("/api/v2/suggestions", Some(&ctx.alice_token))

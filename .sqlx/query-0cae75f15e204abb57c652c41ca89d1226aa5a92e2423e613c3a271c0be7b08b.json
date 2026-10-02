@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM follow_recommendation_suppressions WHERE account_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0cae75f15e204abb57c652c41ca89d1226aa5a92e2423e613c3a271c0be7b08b"
+}

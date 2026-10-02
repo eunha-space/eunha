@@ -499,6 +499,40 @@ export function webhookAction(
   return json<AdminWebhook>(token, 'POST', `/api/v1/admin/webhooks/${id}/${action}`)
 }
 
+// ── Follow recommendations ──────────────────────────────────────────────────
+
+export interface AdminFollowRecommendation {
+  account: Account
+  reason: string[]
+  rank: number | null
+  language: string | null
+  suppressed: boolean
+}
+
+export function listFollowRecommendations(
+  token: string,
+  params: { language?: string; status?: 'suppressed'; page?: number },
+) {
+  return json<AdminFollowRecommendation[]>(
+    token,
+    'GET',
+    `/api/v1/admin/follow_recommendations${query(params)}`,
+  )
+}
+
+export function setFollowRecommendationsSuppressed(
+  token: string,
+  accountIds: string[],
+  suppressed: boolean,
+) {
+  return json<Record<string, never>>(
+    token,
+    'POST',
+    `/api/v1/admin/follow_recommendations/${suppressed ? 'suppress' : 'unsuppress'}`,
+    { account_ids: accountIds },
+  )
+}
+
 // ── Invites ─────────────────────────────────────────────────────────────────
 
 export interface AdminInvite {

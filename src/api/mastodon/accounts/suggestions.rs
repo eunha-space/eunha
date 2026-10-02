@@ -1,49 +1,72 @@
-//! Follow suggestions (`/api/v1` and `/api/v2`) and dismissing a suggestion.
+//! Follow suggestions (`/api/v1` and `/api/v2`) and dismissing a suggestion,
+//! from [`crate::suggestions`].
 
 use super::*;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SuggestionsParams {
+    pub limit: Option<String>,
+    pub offset: Option<String>,
+}
+
+impl SuggestionsParams {
+    /// `limit_param(DEFAULT_ACCOUNTS_LIMIT)`, at most `MAX_LIMIT`, and the
+    /// v2 `offset`.
+    fn window(&self) -> (usize, usize) {
+        let limit = self
+            .limit
+            .as_deref()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(40)
+            .clamp(1, 80) as usize;
+        let offset = self
+            .offset
+            .as_deref()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0)
+            .max(0) as usize;
+        (limit, offset)
+    }
+}
+
+/// The suggested accounts, in the order suggested, with their sources.
+async fn suggested(
+    state: &AppState,
+    viewer: i64,
+    limit: usize,
+    offset: usize,
+) -> AppResult<Vec<(Account, Vec<String>)>> {
+    let found = crate::suggestions::get(state, viewer, limit, offset)
+        .await
+        .map_err(AppError::Internal)?;
+    let ids: Vec<i64> = found.iter().map(|(id, _)| *id).collect();
+    let mut accounts: std::collections::HashMap<i64, Account> =
+        sqlx::query_as!(Account, "SELECT * FROM accounts WHERE id = ANY($1)", &ids)
+            .fetch_all(&state.db)
+            .await?
+            .into_iter()
+            .map(|a| (a.id, a))
+            .collect();
+    Ok(found
+        .into_iter()
+        .filter_map(|(id, sources)| accounts.remove(&id).map(|a| (a, sources)))
+        .collect())
+}
 
 // ── GET /api/v1/suggestions ────────────────────────────────────────────────
 
 pub async fn get_suggestions(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<SuggestionsParams>,
 ) -> AppResult<Json<Vec<ApiAccount>>> {
     auth.require_scope("read:accounts")?;
-    let limit = params.limit_clamped(40, 80);
-
-    let accounts = sqlx::query_as!(
-        Account,
-        r#"SELECT a.* FROM accounts a
-           JOIN follows f ON f.account_id = a.id
-           WHERE f.target_account_id = $1
-             AND a.domain IS NULL
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             AND NOT EXISTS (
-               SELECT 1 FROM follows f2
-               WHERE f2.account_id = $1 AND f2.target_account_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM follow_recommendation_mutes sd
-               WHERE sd.account_id = $1 AND sd.target_account_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM blocks b
-               WHERE (b.account_id = $1 AND b.target_account_id = a.id)
-                  OR (b.account_id = a.id AND b.target_account_id = $1)
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM mutes m
-               WHERE m.account_id = $1 AND m.target_account_id = a.id
-             )
-           ORDER BY f.created_at DESC
-           LIMIT $2"#,
-        auth.account_id,
-        limit,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
+    let (limit, _) = params.window();
+    let accounts: Vec<Account> = suggested(&state, auth.account_id, limit, 0)
+        .await?
+        .into_iter()
+        .map(|(a, _)| a)
+        .collect();
     Ok(Json(batch_accounts_to_api(&state, &accounts).await))
 }
 
@@ -70,54 +93,23 @@ pub async fn dismiss_suggestion(
 pub async fn get_suggestions_v2(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<SuggestionsParams>,
 ) -> AppResult<Json<Vec<SuggestionV2>>> {
     auth.require_scope("read:accounts")?;
-    let limit = params.limit_clamped(40, 80);
-
-    let accounts = sqlx::query_as!(
-        Account,
-        r#"SELECT a.* FROM accounts a
-           JOIN follows f ON f.account_id = a.id
-           WHERE f.target_account_id = $1
-             AND a.domain IS NULL
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             AND NOT EXISTS (
-               SELECT 1 FROM follows f2
-               WHERE f2.account_id = $1 AND f2.target_account_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM follow_recommendation_mutes sd
-               WHERE sd.account_id = $1 AND sd.target_account_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM blocks b
-               WHERE (b.account_id = $1 AND b.target_account_id = a.id)
-                  OR (b.account_id = a.id AND b.target_account_id = $1)
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM mutes m
-               WHERE m.account_id = $1 AND m.target_account_id = a.id
-             )
-           ORDER BY f.created_at DESC
-           LIMIT $2"#,
-        auth.account_id,
-        limit,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
+    let (limit, offset) = params.window();
+    let found = suggested(&state, auth.account_id, limit, offset).await?;
+    let accounts: Vec<Account> = found.iter().map(|(a, _)| a.clone()).collect();
     let emojis_map = batch_account_emojis(&state, &accounts).await;
     let roles_map = batch_account_roles(&state, &accounts).await;
-    let suggestions = accounts
-        .iter()
-        .map(|a| {
-            let mut api = account_from_db(&state.urls, a);
+    let suggestions = found
+        .into_iter()
+        .map(|(a, sources)| {
+            let mut api = account_from_db(&state.urls, &a);
             api.emojis = emojis_map.get(&a.id).cloned().unwrap_or_default();
             api.roles = roles_map.get(&a.id).cloned().unwrap_or_default();
             SuggestionV2 {
-                source: "past_interactions".to_string(),
-                sources: vec!["friends_of_friends".to_string()],
+                source: crate::suggestions::legacy_source(&sources).map(str::to_owned),
+                sources,
                 account: api,
             }
         })

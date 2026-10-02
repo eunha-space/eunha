@@ -73,6 +73,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "announcement schedule",
             crate::announcements::run_schedule(state.clone()),
         ),
+        until_stopped(
+            &state,
+            "follow recommendations",
+            crate::suggestions::run(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work

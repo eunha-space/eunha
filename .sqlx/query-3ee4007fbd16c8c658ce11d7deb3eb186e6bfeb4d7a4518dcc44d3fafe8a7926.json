@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_summaries (account_id, language, sensitive)\n           SELECT accounts.id AS account_id,\n                  mode() WITHIN GROUP (ORDER BY language ASC) AS language,\n                  mode() WITHIN GROUP (ORDER BY sensitive ASC) AS sensitive\n           FROM accounts\n           CROSS JOIN LATERAL (\n             SELECT s.language, s.sensitive FROM (\n               SELECT statuses.language, statuses.sensitive, statuses.reblog_of_id\n               FROM statuses\n               WHERE statuses.account_id = accounts.id AND statuses.deleted_at IS NULL\n               ORDER BY statuses.id DESC LIMIT 1000\n             ) s\n             WHERE s.reblog_of_id IS NULL\n             LIMIT 20\n           ) t0\n           WHERE accounts.suspended_at IS NULL AND accounts.requested_deletion_at IS NULL\n             AND accounts.silenced_at IS NULL AND accounts.moved_to_account_id IS NULL\n             AND accounts.discoverable AND NOT accounts.locked\n             AND (NOT $1 OR EXISTS (\n                   SELECT 1 FROM account_stats st WHERE st.account_id = accounts.id\n                     AND st.last_status_at >= now() - interval '1 week'))\n           GROUP BY accounts.id\n           ON CONFLICT (account_id) DO UPDATE\n             SET language = EXCLUDED.language, sensitive = EXCLUDED.sensitive",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ee4007fbd16c8c658ce11d7deb3eb186e6bfeb4d7a4518dcc44d3fafe8a7926"
+}

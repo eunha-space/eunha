@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO follow_recommendation_suppressions (account_id, created_at, updated_at)\n           SELECT id, now(), now() FROM accounts WHERE id = ANY($1)\n           ON CONFLICT (account_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89f1d9994f66fba6e7da6a3f279e88117ffa70ce7918eccbd089f5df69e486e5"
+}

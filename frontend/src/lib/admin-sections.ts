@@ -37,6 +37,11 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { to: '/admin/relays', label: 'Relays', permission: 'manage_federation' },
   { to: '/admin/invites', label: 'Invites', permission: 'manage_invites' },
   { to: '/admin/webhooks', label: 'Webhooks', permission: 'manage_webhooks' },
+  {
+    to: '/admin/follow_recommendations',
+    label: 'Follow recommendations',
+    permission: 'manage_taxonomies',
+  },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

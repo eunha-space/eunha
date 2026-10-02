@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH first_degree AS (\n             SELECT target_account_id FROM follows\n             JOIN accounts AS target_accounts ON follows.target_account_id = target_accounts.id\n             WHERE account_id = $1 AND NOT target_accounts.hide_collections\n           )\n           SELECT accounts.id\n           FROM accounts\n           JOIN follows ON follows.target_account_id = accounts.id\n           JOIN account_stats ON account_stats.account_id = accounts.id\n           LEFT OUTER JOIN follow_recommendation_mutes\n             ON follow_recommendation_mutes.target_account_id = accounts.id\n            AND follow_recommendation_mutes.account_id = $1\n           WHERE follows.account_id IN (SELECT * FROM first_degree)\n             AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.target_account_id = follows.target_account_id AND b.account_id = $1)\n             AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.target_account_id = $1 AND b.account_id = follows.target_account_id)\n             AND NOT EXISTS (SELECT 1 FROM mutes m WHERE m.target_account_id = follows.target_account_id AND m.account_id = $1)\n             AND (accounts.domain IS NULL OR NOT EXISTS (SELECT 1 FROM account_domain_blocks b WHERE b.account_id = $1 AND b.domain = accounts.domain))\n             AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.target_account_id = follows.target_account_id AND f.account_id = $1)\n             AND NOT EXISTS (SELECT 1 FROM follow_requests f WHERE f.target_account_id = follows.target_account_id AND f.account_id = $1)\n             AND follows.target_account_id <> $1\n             AND accounts.discoverable\n             AND accounts.suspended_at IS NULL\n             AND accounts.silenced_at IS NULL\n             AND accounts.moved_to_account_id IS NULL\n             AND accounts.memorial = FALSE\n             AND follow_recommendation_mutes.target_account_id IS NULL\n           GROUP BY accounts.id, account_stats.id\n           ORDER BY COUNT(*) DESC, account_stats.followers_count ASC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "65905aaefcdfc86856db04521c6428aeda8fa4b099bd2e89f7c3a0a7edbd4318"
+}

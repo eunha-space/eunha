@@ -43,6 +43,7 @@ pub mod snowflake;
 pub mod software_updates;
 pub mod state;
 pub mod streaming;
+pub mod suggestions;
 pub mod telemetry;
 pub mod templates;
 pub mod tenants;

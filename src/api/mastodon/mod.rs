@@ -971,6 +971,18 @@ pub fn router() -> Router {
             "/api/v1/admin/webhooks/{id}/secret/rotate",
             post(admin::rotate_admin_webhook_secret),
         )
+        .route(
+            "/api/v1/admin/follow_recommendations",
+            get(admin::list_follow_recommendations),
+        )
+        .route(
+            "/api/v1/admin/follow_recommendations/suppress",
+            post(admin::suppress_follow_recommendations),
+        )
+        .route(
+            "/api/v1/admin/follow_recommendations/unsuppress",
+            post(admin::unsuppress_follow_recommendations),
+        )
         .route("/api/v1/admin/invites", get(admin::list_admin_invites))
         .route(
             "/api/v1/admin/invites/deactivate_all",
