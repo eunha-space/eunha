@@ -311,3 +311,73 @@ async fn test_a_signed_post_from_elsewhere_needs_a_reason_to_be_taken() {
 fn eunha_through_relay() -> &'static str {
     "eunha:requestedThroughRelay"
 }
+
+/// A relayed post signed by an author whose key `ProcessAccountService`
+/// moved into `keypairs`, leaving `accounts.public_key` blank as Mastodon
+/// 4.7 leaves it, is checked against that stored key.
+#[tokio::test]
+async fn test_a_relayed_post_is_checked_against_the_authors_keypair() {
+    let ctx = TestContext::new("ldsig-keypair").await;
+    let (bob_id, bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
+    let (_, relay, relay_key) = seed_remote(&ctx, "relay", "relay.invalid").await;
+    sqlx::query(
+        "INSERT INTO keypairs (account_id, uri, type, public_key, created_at, updated_at)
+         SELECT id, $2, 0, public_key, now(), now() FROM accounts WHERE id = $1",
+    )
+    .bind(bob_id)
+    .bind(format!("{bob}#main-key"))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE accounts SET public_key = '' WHERE id = $1")
+        .bind(bob_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO relays (inbox_url, state, created_at, updated_at) VALUES ($1, 2, now(), now())",
+    )
+    .bind(format!("{relay}/inbox"))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{bob}/statuses/1/activity"),
+        "type": "Create",
+        "actor": bob,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [format!("{bob}/followers")],
+        "object": {
+            "id": format!("{bob}/statuses/1"),
+            "type": "Note",
+            "attributedTo": bob,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [format!("{bob}/followers")],
+            "content": "<p>signed with a stored keypair</p>",
+            "published": "2026-10-01T12:00:00Z",
+        },
+    });
+    let now = chrono::Utc::now().timestamp();
+    let signed = ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        &create,
+        &format!("{bob}#main-key"),
+        &ojak::sig::PrivateKey::from_pem(&bob_key).unwrap(),
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    )
+    .unwrap();
+    let resp = ctx
+        .api
+        .post_signed("/inbox", &signed, &format!("{relay}#main-key"), &relay_key)
+        .await;
+    assert_eq!(resp.status(), 202);
+    let taken: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE uri = $1")
+        .bind(format!("{bob}/statuses/1"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(taken, 1, "bob's stored keypair verified the signature");
+}

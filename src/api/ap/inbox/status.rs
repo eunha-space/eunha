@@ -473,6 +473,18 @@ pub(super) async fn handle_update(
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
 ) -> AppResult<()> {
+    // `@account.schedule_refresh_if_stale!`.
+    if let Some(sender) = activity.get("actor").and_then(|a| a.as_str()) {
+        if let Some(id) = sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+            sender
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            crate::federation::process_account::schedule_refresh_if_stale(state, id).await;
+        }
+    }
     let fetched_object;
     let object = match activity.get("object") {
         Some(o) if o.is_object() => o,
@@ -489,7 +501,16 @@ pub(super) async fn handle_update(
         _ => return Ok(()),
     };
 
-    let obj_type = object.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    // `equals_or_includes_any?(@object['type'], %w(Application Group …))`:
+    // an actor may have several types.
+    let obj_type = if crate::federation::fetch_resource::type_matches(
+        object,
+        &crate::federation::fetch_resource::ACTOR_TYPES,
+    ) {
+        "Person"
+    } else {
+        object.get("type").and_then(|t| t.as_str()).unwrap_or("")
+    };
     match obj_type {
         "FeaturedCollection" => {
             // Mirror an updated remote collection.
@@ -729,158 +750,36 @@ pub(super) async fn handle_update(
     Ok(())
 }
 
-/// Mastodon's `ActivityPub::ProcessAccountService` on a known remote actor:
-/// take its profile from `object`, its actor document. The caller has made
-/// sure the document is the actor's own.
+/// Mastodon's `ActivityPub::Activity::Update#update_account`: the sender
+/// describes itself anew, and `ProcessAccountService` stores what it says.
+/// The caller has made sure the document is the sender's own.
 pub(crate) async fn update_remote_actor(state: &AppState, object: &Value) -> AppResult<()> {
     let actor_uri = object.get("id").and_then(|i| i.as_str()).unwrap_or("");
     if actor_uri.is_empty() {
         return Ok(());
     }
-    // `return if domain_not_allowed?(json['id'])`.
-    if crate::federation::moderation::domain_not_allowed(state, actor_uri).await {
-        return Ok(());
-    }
-
-    let display_name = object
-        .get("name")
-        .and_then(|n| n.as_str())
-        .unwrap_or("")
-        .to_string();
-    let note = object
-        .get("summary")
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
-    let inbox_url = object
-        .get("inbox")
-        .and_then(|i| i.as_str())
-        .unwrap_or("")
-        .to_string();
-    let shared_inbox_url = object
-        .get("endpoints")
-        .and_then(|e| e.get("sharedInbox"))
-        .and_then(|s| s.as_str())
-        .map(str::to_owned);
-    let public_key = object
-        .get("publicKey")
-        .and_then(|k| k.get("publicKeyPem"))
-        .and_then(|p| p.as_str())
-        .unwrap_or("")
-        .to_string();
-    let locked = object
-        .get("manuallyApprovesFollowers")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let avatar_remote_url = object
-        .get("icon")
-        .and_then(|i| if i.is_object() { i.get("url") } else { None })
-        .and_then(|v| v.as_str())
-        .map(str::to_owned);
-    let header_remote_url = object
-        .get("image")
-        .and_then(|i| if i.is_object() { i.get("url") } else { None })
-        .and_then(|v| v.as_str())
-        .map(str::to_owned);
-
-    // `set_suspension!`: follow the actor's `suspended` flag, and while
-    // the account is suspended take only its protocol attributes
-    // (`set_immediate_attributes! unless @account.suspended?`).
-    if let Some(existing) = sqlx::query_as!(
+    let Some(account) = sqlx::query_as!(
         crate::db::models::Account,
-        "SELECT * FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+        "SELECT * FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
         actor_uri,
     )
     .fetch_optional(&state.db)
     .await?
-    {
-        let flagged = object
-            .get("suspended")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let suspended = crate::moderation::remote::set_suspension(state, &existing, flagged)
-            .await
-            .map_err(crate::error::AppError::Internal)?;
-        if suspended {
-            // `set_fetchable_key! unless suspended locally`.
-            let local_suspension = existing.suspension_origin
-                != Some(crate::delete_account::suspension_origin::REMOTE);
-            sqlx::query!(
-                r#"UPDATE accounts
-                   SET inbox_url = CASE WHEN $2 != '' THEN $2 ELSE inbox_url END,
-                       shared_inbox_url = COALESCE($3, shared_inbox_url),
-                       public_key = CASE WHEN $4 != '' AND NOT $5 THEN $4 ELSE public_key END,
-                       updated_at = now()
-                   WHERE id = $1"#,
-                existing.id,
-                inbox_url,
-                shared_inbox_url,
-                public_key,
-                local_suspension,
-            )
-            .execute(&state.db)
-            .await?;
-            return Ok(());
-        }
-    }
-
-    // Don't clear inbox_url or public_key if the update omits them (sparse update guard)
-    sqlx::query!(
-        r#"UPDATE accounts
-           SET display_name = $2,
-               note = $3,
-               inbox_url = CASE WHEN $4 != '' THEN $4 ELSE inbox_url END,
-               shared_inbox_url = COALESCE($5, shared_inbox_url),
-               public_key = CASE WHEN $6 != '' THEN $6 ELSE public_key END,
-               locked = $7,
-               avatar_remote_url = COALESCE($8, avatar_remote_url),
-               header_remote_url = COALESCE($9, header_remote_url),
-               followers_url = COALESCE($10, followers_url),
-               following_url = COALESCE($11, following_url),
-               also_known_as = $12,
-               updated_at = now()
-           WHERE uri = $1 AND domain IS NOT NULL"#,
-        actor_uri,
-        display_name,
-        note,
-        inbox_url,
-        shared_inbox_url,
-        public_key,
-        locked,
-        avatar_remote_url,
-        header_remote_url,
-        object.get("followers").and_then(|v| v.as_str()),
-        object.get("following").and_then(|v| v.as_str()),
-        &super::also_known_as_of(object),
-    )
-    .execute(&state.db)
-    .await?;
-
-    // `set_fetchable_attributes!`: `movedTo` names the account this one now
-    // redirects to, fetched if unknown, and its absence clears the redirect.
-    let moved_to = match object.get("movedTo").and_then(super::value_or_id) {
-        Some(uri) if !uri.is_empty() && uri != actor_uri => {
-            match crate::federation::local_uri::account(state, uri).await {
-                Some(id) => Some(id),
-                None => resolve_or_fetch_remote_account(state, uri).await.ok(),
-            }
-        }
-        _ => None,
+    else {
+        return Ok(());
     };
-    sqlx::query!(
-        "UPDATE accounts SET moved_to_account_id = $2 WHERE uri = $1 AND domain IS NOT NULL",
-        actor_uri,
-        moved_to,
+    if let Err(error) = crate::federation::process_account::process(
+        state,
+        object,
+        crate::federation::process_account::Options {
+            account: Some(&account),
+            signed_with_known_key: true,
+            ..Default::default()
+        },
     )
-    .execute(&state.db)
-    .await?;
-
-    // An actor that renamed itself carries the new handle here.
-    let claimed_username = object
-        .get("preferredUsername")
-        .and_then(|u| u.as_str())
-        .unwrap_or_default();
-    crate::federation::handle::rename_if_handle_changed(state, actor_uri, claimed_username).await?;
-
+    .await
+    {
+        tracing::debug!(actor_uri, %error, "Update of an actor not stored");
+    }
     Ok(())
 }

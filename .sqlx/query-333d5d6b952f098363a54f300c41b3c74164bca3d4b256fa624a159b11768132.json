@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT k.public_key, a.uri AS \"actor!\"\n           FROM keypairs k JOIN accounts a ON a.id = k.account_id\n           WHERE k.uri = $1 AND k.type = 0 AND NOT k.revoked\n             AND (k.expires_at IS NULL OR k.expires_at > now())\n             AND a.domain IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "public_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "actor!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "333d5d6b952f098363a54f300c41b3c74164bca3d4b256fa624a159b11768132"
+}

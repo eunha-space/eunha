@@ -189,21 +189,15 @@ pub fn federation() -> Federation<AppState> {
         .known_key(|ctx: Ctx, key_id: String| async move { known_key(&ctx, &key_id).await })
         // An actor seen for the first time is created from the document
         // fetched for its key, as Mastodon does, rather than fetched again
-        // by the worker for the activity it sent. Two first activities race
-        // to create it; the loser's insert fails on the account's uniqueness,
-        // and its worker finds the winner's row.
+        // by the worker for the activity it sent; a known actor whose key
+        // no longer verified has its keys refreshed from it, or all of it
+        // when it was last refreshed a day ago. Two first activities race
+        // to create it; `ProcessAccountService`'s lock holds the second
+        // until the first has stored it.
         .key_fetched(|ctx: Ctx, actor: Value| async move {
-            let Some(id) = actor.get("id").and_then(Value::as_str).map(str::to_owned) else {
-                return;
-            };
-            if actor.get("inbox").is_none() {
-                return;
-            }
-            if let Err(error) =
-                super::inbox::resolve_or_fetch_remote_account_prefetched(ctx.data(), &id, actor)
-                    .await
-            {
-                tracing::debug!(actor = %id, %error, "account not created from its key fetch");
+            let id = actor.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+            if let Err(error) = super::inbox::store_key_fetched_actor(ctx.data(), actor).await {
+                tracing::debug!(actor = %id, %error, "account not stored from its key fetch");
             }
         })
         // A domain this instance does not federate with (`domain_not_allowed?`:
@@ -412,6 +406,26 @@ async fn forward_to_collections(ctx: &Ctx, forward: ojak::federation::Forward) -
 /// The key eunha holds for `key_id`: the public key of the remote account
 /// whose actor the key ID names.
 async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<ojak::federation::KnownKey>> {
+    // `Keypair.from_keyid`: a usable RSA key stored under this id…
+    let stored = sqlx::query!(
+        r#"SELECT k.public_key, a.uri AS "actor!"
+           FROM keypairs k JOIN accounts a ON a.id = k.account_id
+           WHERE k.uri = $1 AND k.type = 0 AND NOT k.revoked
+             AND (k.expires_at IS NULL OR k.expires_at > now())
+             AND a.domain IS NOT NULL"#,
+        key_id,
+    )
+    .fetch_optional(&ctx.data().db)
+    .await?;
+    if let Some(stored) = stored {
+        return Ok(Url::parse(&stored.actor)
+            .ok()
+            .map(|actor| ojak::federation::KnownKey {
+                pem: stored.public_key,
+                actor,
+            }));
+    }
+    // …or, the way RSA keys used to be stored, its owner's `public_key`.
     let owner = ojak::sig::verification::key_owner(key_id);
     let pem = sqlx::query_scalar!(
         "SELECT public_key FROM accounts WHERE uri = $1 AND domain IS NOT NULL AND public_key != ''",

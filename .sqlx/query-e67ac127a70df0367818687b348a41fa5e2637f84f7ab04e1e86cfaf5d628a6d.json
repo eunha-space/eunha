@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts (id, username, domain, uri, protocol, private_key, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, NULL, now(), now())\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e67ac127a70df0367818687b348a41fa5e2637f84f7ab04e1e86cfaf5d628a6d"
+}

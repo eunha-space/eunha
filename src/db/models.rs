@@ -727,6 +727,106 @@ pub mod feature_policy {
         .map(|(_, name)| name)
         .collect()
     }
+
+    /// `ActivityPub::Parser::InteractionPolicyParser#bitmap`: an actor's
+    /// `interactionPolicy.canFeature`, read against its collections and id.
+    #[must_use]
+    pub fn parse(
+        policy: Option<&serde_json::Value>,
+        followers: &str,
+        following: &str,
+        actor: &str,
+    ) -> i32 {
+        use serde_json::Value;
+
+        let blank = match policy {
+            None | Some(Value::Null) => true,
+            Some(Value::Object(o)) => o.is_empty(),
+            Some(Value::Array(a)) => a.is_empty(),
+            Some(Value::String(s)) => s.trim().is_empty(),
+            Some(_) => false,
+        };
+        let Some(policy) = policy.filter(|_| !blank) else {
+            return 0;
+        };
+        let sub = |partial: Option<&Value>| -> i32 {
+            // `Array(partial_json)`: anything that is not a string is kept
+            // as it is, and so is never recognised.
+            let mut actors: Vec<Value> = match partial {
+                None | Some(Value::Null) => Vec::new(),
+                Some(Value::Array(items)) => items.clone(),
+                Some(Value::Object(o)) => o
+                    .iter()
+                    .map(|(k, v)| Value::Array(vec![Value::String(k.clone()), v.clone()]))
+                    .collect(),
+                Some(item) => vec![item.clone()],
+            };
+            let mut unique = Vec::new();
+            for actor in actors.drain(..) {
+                if !unique.contains(&actor) {
+                    unique.push(actor);
+                }
+            }
+            let mut actors = unique;
+            let mut delete = |candidate: &str| {
+                let before = actors.len();
+                actors.retain(|a| a.as_str() != Some(candidate));
+                actors.len() != before
+            };
+            let mut flags = 0;
+            let public = delete("as:Public")
+                | delete("Public")
+                | delete("https://www.w3.org/ns/activitystreams#Public");
+            if public {
+                flags |= PUBLIC;
+            }
+            if delete(followers) {
+                flags |= FOLLOWERS;
+            }
+            if delete(following) {
+                flags |= FOLLOWING;
+            }
+            let includes_target_actor = delete(actor);
+            if !actors.is_empty() {
+                flags |= UNSUPPORTED;
+            }
+            if flags == 0 && includes_target_actor {
+                flags |= DISABLED;
+            }
+            flags
+        };
+        let mut flags = sub(policy.get("automaticApproval"));
+        flags <<= 16;
+        flags | sub(policy.get("manualApproval"))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn parses_can_feature() {
+            let policy = serde_json::json!({
+                "automaticApproval": "https://www.w3.org/ns/activitystreams#Public",
+                "manualApproval": ["https://x.test/users/a/followers", "https://other.test/u"],
+            });
+            assert_eq!(
+                parse(
+                    Some(&policy),
+                    "https://x.test/users/a/followers",
+                    "https://x.test/users/a/following",
+                    "https://x.test/users/a"
+                ),
+                (PUBLIC << 16) | FOLLOWERS | UNSUPPORTED
+            );
+            let only_self = serde_json::json!({"automaticApproval": ["https://x.test/users/a"]});
+            assert_eq!(
+                parse(Some(&only_self), "", "", "https://x.test/users/a"),
+                DISABLED << 16
+            );
+            assert_eq!(parse(None, "", "", "https://x.test/users/a"), 0);
+        }
+    }
 }
 
 /// Integer-to-text helpers for custom_filters.action (warn=0 hide=1).

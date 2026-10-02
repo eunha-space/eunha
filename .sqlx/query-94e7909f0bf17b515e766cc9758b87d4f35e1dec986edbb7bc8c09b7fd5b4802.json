@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO featured_tags\n                 (account_id, tag_id, name, statuses_count, last_status_at, created_at, updated_at)\n               SELECT $1, $2, $3, count(s.id), max(s.created_at), now(), now()\n               FROM statuses s JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2\n               WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)\n               ON CONFLICT (account_id, tag_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94e7909f0bf17b515e766cc9758b87d4f35e1dec986edbb7bc8c09b7fd5b4802"
+}

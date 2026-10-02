@@ -15,7 +15,7 @@ use create::handle_create;
 pub use fetch::{
     fetch_remote_account, fetch_remote_status, fetch_remote_status_prefetched,
     resolve_or_fetch_remote_account, resolve_or_fetch_remote_account_prefetched,
-    store_remote_status_prefetched,
+    store_key_fetched_actor, store_remote_status_prefetched,
 };
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
@@ -65,33 +65,6 @@ pub(super) fn as_string_vec(v: Option<&Value>) -> Vec<String> {
             .collect(),
         _ => vec![],
     }
-}
-
-/// `JsonLdHelper#value_or_id`: a reference that is either an id or an
-/// embedded object carrying one.
-pub(super) fn value_or_id(v: &Value) -> Option<&str> {
-    match v {
-        Value::String(s) => Some(s),
-        Value::Object(o) => o.get("id").and_then(Value::as_str),
-        _ => None,
-    }
-}
-
-/// `alsoKnownAs` as `ProcessAccountService` keeps it: at most
-/// `Account::ALSO_KNOWN_AS_HARD_LIMIT` ids, embedded objects reduced to theirs.
-pub(super) fn also_known_as_of(actor: &Value) -> Vec<String> {
-    const ALSO_KNOWN_AS_HARD_LIMIT: usize = 256;
-    let items: Vec<&Value> = match actor.get("alsoKnownAs") {
-        Some(Value::Array(items)) => items.iter().collect(),
-        Some(Value::Null) | None => Vec::new(),
-        Some(item) => vec![item],
-    };
-    items
-        .into_iter()
-        .take(ALSO_KNOWN_AS_HARD_LIMIT)
-        .filter_map(value_or_id)
-        .map(str::to_owned)
-        .collect()
 }
 
 /// Returns true when the two URI strings share the same host, or for
@@ -692,6 +665,23 @@ pub(super) fn json_uri(v: Option<&Value>) -> &str {
         }
     })
     .unwrap_or("")
+}
+
+/// Store a remote `FeaturedCollection` the account `owner_id` features, and
+/// the items it embeds.
+pub(crate) async fn mirror_remote_collection(
+    state: &AppState,
+    owner_id: i64,
+    collection: &Value,
+) -> AppResult<()> {
+    if let Some(id) = upsert_remote_collection(state, owner_id, collection).await? {
+        if let Some(items) = collection.get("orderedItems").and_then(|v| v.as_array()) {
+            for item in items {
+                let _ = mirror_item_into(state, id, item).await;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Insert or update a mirrored remote collection (`local = false`).

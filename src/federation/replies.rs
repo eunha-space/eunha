@@ -79,7 +79,7 @@ fn value_or_id(value: &Value) -> Option<&str> {
 
 /// `JsonLdHelper#non_matching_uri_hosts?`: true unless both are HTTP(S) URIs
 /// on the same host.
-fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
+pub(crate) fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
     let host = |uri: &str| {
         url::Url::parse(uri)
             .ok()
@@ -94,7 +94,7 @@ fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
 
 /// `JsonLdHelper#fetch_collection_page`: an embedded page as it is, or a
 /// linked one fetched — only from `reference_uri`'s host, when one is given.
-async fn fetch_collection_page(
+pub(crate) async fn fetch_collection_page(
     state: &AppState,
     collection_or_uri: &Value,
     reference_uri: Option<&str>,
@@ -116,7 +116,7 @@ async fn fetch_collection_page(
 }
 
 /// `JsonLdHelper#collection_page_items`.
-fn collection_page_items(collection: &Value) -> Vec<Value> {
+pub(crate) fn collection_page_items(collection: &Value) -> Vec<Value> {
     let items = match collection.get("type").and_then(Value::as_str) {
         Some("Collection" | "CollectionPage") => collection.get("items"),
         Some("OrderedCollection" | "OrderedCollectionPage") => collection.get("orderedItems"),
@@ -133,7 +133,7 @@ fn collection_page_items(collection: &Value) -> Vec<Value> {
 /// page until `max_items` have been gathered or `max_pages` read, with the
 /// page count Mastodon reports — which counts one more than was fetched when
 /// the collection runs out first.
-async fn collection_items(
+pub(crate) async fn collection_items(
     state: &AppState,
     collection_or_uri: &Value,
     max_pages: usize,
@@ -162,7 +162,7 @@ async fn collection_items(
 }
 
 /// Rails' `present?` for a JSON value.
-fn is_present(value: &Value) -> bool {
+pub(crate) fn is_present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::String(s) => !s.trim().is_empty(),

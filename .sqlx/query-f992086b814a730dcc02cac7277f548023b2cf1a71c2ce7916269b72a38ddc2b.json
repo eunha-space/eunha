@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n               SET featured_collection_url = $2,\n                   collections_url = $3,\n                   display_name = $4,\n                   note = $5,\n                   locked = $6,\n                   fields = $7,\n                   also_known_as = $8,\n                   discoverable = $9,\n                   indexable = $10,\n                   memorial = $11,\n                   show_featured = COALESCE($12, show_featured),\n                   show_media = COALESCE($13, show_media),\n                   show_media_replies = COALESCE($14, show_media_replies),\n                   attribution_domains = $15\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Bool",
+        "Jsonb",
+        "VarcharArray",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "VarcharArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f992086b814a730dcc02cac7277f548023b2cf1a71c2ce7916269b72a38ddc2b"
+}

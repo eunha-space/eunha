@@ -11,7 +11,13 @@
 //! Mastodon enqueues `VerifyAccountLinksWorker`. Already-verified fields are left
 //! untouched; a field only loses its badge when its value changes (handled at
 //! save time by preserving `verified_at` only for unchanged values).
+//!
+//! A remote account's fields are verified too, some minutes after
+//! `ProcessAccountService` stores them, against the account's `url`: a value
+//! that is nothing but a link to itself is the candidate there. Its server
+//! sends the fields without `verified_at`, so each refresh verifies afresh.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use scraper::{Html, Selector};
@@ -111,10 +117,81 @@ pub fn spawn(state: &AppState, account_id: i64) {
     });
 }
 
+/// The longest `VerifyAccountLinksWorker` waits after a remote account is
+/// stored (`ProcessAccountService::VERIFY_DELAY`), in seconds.
+static VERIFY_DELAY_SECS: AtomicU64 = AtomicU64::new(10 * 60);
+
+/// Verify remote accounts' links at once, for tests.
+pub fn verify_without_delay_for_tests() {
+    VERIFY_DELAY_SECS.store(0, Ordering::SeqCst);
+}
+
+/// `VerifyAccountLinksWorker.perform_in(rand(VERIFY_DELAY), id)`, for a
+/// remote account `ProcessAccountService` just stored. Once at a time per
+/// account (`lock: :until_executed, lock_ttl: 1.hour`).
+pub fn spawn_later(state: &AppState, account_id: i64) {
+    let state = state.clone();
+    crate::tenants::spawn(async move {
+        let Some(lock) = crate::redis_lock::try_acquire(
+            &state,
+            &format!("verify_account_links:{account_id}"),
+            60 * 60 * 1000,
+        )
+        .await
+        else {
+            return;
+        };
+        let most = VERIFY_DELAY_SECS.load(Ordering::SeqCst);
+        if most > 0 {
+            tokio::time::sleep(Duration::from_secs(rand::random_range(0..most))).await;
+        }
+        if let Err(e) = verify_account_links(&state, account_id).await {
+            tracing::warn!(error = %e, account_id, "link verification failed");
+        }
+        drop(lock);
+    });
+}
+
+/// `Account::Field#value_for_verification` for a remote account: the URL of
+/// a value that is nothing but a link to itself, `<a href="X">X</a>`.
+fn remote_value_for_verification(value: &str) -> Option<String> {
+    let fragment = Html::parse_fragment(value);
+    let root = fragment.root_element();
+    let mut children = root.children();
+    let only = children.next()?;
+    if children.next().is_some() {
+        return None;
+    }
+    let element = scraper::ElementRef::wrap(only)?;
+    if element.value().name() != "a" {
+        return None;
+    }
+    let href = element.value().attr("href")?;
+    (href == element.text().collect::<String>()).then(|| href.to_owned())
+}
+
+/// `Account::Field#requires_verification?` for one of a remote account's
+/// stored fields.
+fn remote_field_requires_verification(field: &Value) -> bool {
+    let verified = field.get("verified_at").is_some_and(|v| !v.is_null());
+    !verified
+        && field
+            .get("value")
+            .and_then(Value::as_str)
+            .and_then(remote_value_for_verification)
+            .is_some_and(|url| is_verifiable(&url))
+}
+
+/// `@account.fields.any?(&:requires_verification?)`, for a remote account.
+pub fn any_requires_verification_remote(fields: &Value) -> bool {
+    fields
+        .as_array()
+        .is_some_and(|fields| fields.iter().any(remote_field_requires_verification))
+}
+
 async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Result<()> {
-    // Local accounts only (domain IS NULL), matching Mastodon's worker.
     let row = sqlx::query!(
-        r#"SELECT username, fields FROM accounts WHERE id = $1 AND domain IS NULL"#,
+        r#"SELECT username, domain, url, fields FROM accounts WHERE id = $1"#,
         account_id,
     )
     .fetch_optional(&state.db)
@@ -122,11 +199,24 @@ async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Resu
     let Some(row) = row else {
         return Ok(());
     };
+    let remote = row.domain.is_some();
     let Some(mut fields) = row.fields.and_then(|v| v.as_array().cloned()) else {
         return Ok(());
     };
 
-    let link_back = format!("https://{}/@{}", state.urls.local_domain, row.username,);
+    // `ActivityPub::TagManager#url_for`: a remote account's own `url`, when
+    // it is an http(s) one.
+    let link_back = if remote {
+        match row
+            .url
+            .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
+        {
+            Some(url) => url,
+            None => return Ok(()),
+        }
+    } else {
+        format!("https://{}/@{}", state.urls.local_domain, row.username)
+    };
 
     let mut changed = false;
     for field in &mut fields {
@@ -134,10 +224,18 @@ async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Resu
         let Some(value) = field.get("value").and_then(|v| v.as_str()) else {
             continue;
         };
-        if already_verified || !is_verifiable(value) {
+        let value = if remote {
+            match remote_value_for_verification(value) {
+                Some(url) => url,
+                None => continue,
+            }
+        } else {
+            value.to_owned()
+        };
+        if already_verified || !is_verifiable(&value) {
             continue;
         }
-        if links_back(&state.fetch, value, &link_back).await {
+        if links_back(&state.fetch, &value, &link_back).await {
             let now = crate::api::mastodon::convert::mastodon_date(chrono::Utc::now().naive_utc());
             if let Some(obj) = field.as_object_mut() {
                 obj.insert("verified_at".into(), Value::String(now));
@@ -222,5 +320,25 @@ mod tests {
         // "meta" contains the substring "me" but is not the token "me".
         let html = r#"<a rel="meta" href="https://a.example">a</a>"#;
         assert!(rel_me_hrefs(html).is_empty());
+    }
+
+    #[test]
+    fn remote_values_are_verified_only_when_they_are_a_bare_link() {
+        assert_eq!(
+            remote_value_for_verification(
+                r#"<a href="https://a.example/me" rel="me">https://a.example/me</a>"#
+            ),
+            Some("https://a.example/me".into())
+        );
+        assert_eq!(
+            remote_value_for_verification(
+                r#"<a href="https://a.example/me"><span>a.example/me</span></a>"#
+            ),
+            None
+        );
+        assert_eq!(
+            remote_value_for_verification("see https://a.example/me"),
+            None
+        );
     }
 }

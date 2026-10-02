@@ -133,6 +133,31 @@ async fn serve(
     body: Bytes,
 ) -> Response {
     let path = uri.path().to_owned();
+    // WebFinger, which confirms each actor's handle before it is stored.
+    if path == "/.well-known/webfinger" {
+        let host = fake.base.trim_start_matches("http://");
+        let name = uri
+            .query()
+            .and_then(|q| q.strip_prefix("resource="))
+            .map(|r| r.replace("%3A", ":").replace("%40", "@"))
+            .and_then(|r| {
+                r.strip_prefix("acct:")
+                    .and_then(|r| r.strip_suffix(&format!("@{host}")))
+                    .map(str::to_owned)
+            });
+        return match name {
+            Some(name) => axum::Json(json!({
+                "subject": format!("acct:{name}@{host}"),
+                "links": [{
+                    "rel": "self",
+                    "type": "application/activity+json",
+                    "href": format!("{}/users/{name}", fake.base),
+                }],
+            }))
+            .into_response(),
+            None => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
     if path.starts_with("/users/") {
         return match fake.state.lock().unwrap().documents.get(&path) {
             Some(document) => (
@@ -213,6 +238,8 @@ async fn spawn_fake() -> Fake {
                 "id": actor,
                 "type": "Person",
                 "preferredUsername": name,
+                "webfinger": format!("{name}@{}", base.trim_start_matches("http://")),
+                "discoverable": true,
                 "inbox": format!("{actor}/inbox"),
                 "outbox": format!("{actor}/outbox"),
                 "publicKey": {
@@ -241,6 +268,7 @@ async fn fasp_ctx(label: &str) -> TestContext {
     eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
         .parse()
         .unwrap()]);
+    eunha::federation::webfinger::use_plain_http_for_tests();
     TestContext::with_instance_config(label, |instance| {
         instance.experimental_features = vec!["fasp".into()];
     })
@@ -897,18 +925,15 @@ async fn test_fasp_follow_recommendations() {
         format!("accountUri={}", urlencoding::encode(&alice_uri(&ctx).await))
     );
 
-    // Remote accounts are not discoverable here until eunha records the flag
-    // from their actors, so the test marks eve the way a Mastodon would.
-    let eve_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
-        .bind(&eve)
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE accounts SET discoverable = true WHERE id = $1")
-        .bind(eve_id)
-        .execute(&ctx.db)
-        .await
-        .unwrap();
+    // Eve's actor says she is discoverable, which is what lets her be
+    // suggested.
+    let (eve_id, discoverable): (i64, Option<bool>) =
+        sqlx::query_as("SELECT id, discoverable FROM accounts WHERE uri = $1")
+            .bind(&eve)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(discoverable, Some(true));
     let suggestions: Value = ctx
         .api
         .http

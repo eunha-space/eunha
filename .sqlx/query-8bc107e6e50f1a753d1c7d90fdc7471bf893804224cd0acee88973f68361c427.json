@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM keypairs WHERE account_id = $1 AND uri <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bc107e6e50f1a753d1c7d90fdc7471bf893804224cd0acee88973f68361c427"
+}

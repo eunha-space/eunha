@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET last_webfingered_at = NULL\n           WHERE domain = $1 AND protocol = 0 AND last_webfingered_at IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e3e91648c511caaca2268d6361792f899d54ccae63cbcb308c5ddc2e6d544f0"
+}

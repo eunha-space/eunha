@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (account_id = $2 AND reblog_of_id IS NULL AND visibility <> 3) AS \"pinnable!\"\n               FROM statuses WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pinnable!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1ba785063899f2338bfe3b79d0e80b106ce72ed772f65f09366e9a2cadeba5b6"
+}

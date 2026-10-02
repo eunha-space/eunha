@@ -22,8 +22,10 @@ activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
 emailed to an account's subscribers, sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
-the translation service, and the search index queues (`chewy:queue:<Index>`,
-see [search](./search)) — uses that namespace.
+the translation service, the search index queues (`chewy:queue:<Index>`,
+see [search](./search)), and the counts that limit how many new remote
+accounts one domain or one request may bring (`unique_subdomains_for:*`,
+`discovery_per_request:*`) — uses that namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:

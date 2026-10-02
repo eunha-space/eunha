@@ -5,98 +5,11 @@
 //! renamed here too, rather than becoming a second account that has to be
 //! merged back later. A handle is only ever taken on webfinger's word, because
 //! an actor document can claim any `preferredUsername` and believing it would
-//! let one account take another's.
+//! let one account take another's; `ProcessAccountService`
+//! (`crate::federation::process_account`) asks it, and renames.
 
 use crate::error::AppResult;
 use crate::state::AppState;
-
-/// Adopt a remote account's new handle, if it can be verified.
-///
-/// Mastodon 4.7.0 treats an actor's `id` as the account's identity, so an
-/// account whose `preferredUsername` changes is renamed in place instead of
-/// turning into a second account that later has to be merged. The claimed
-/// handle is only taken once webfinger resolves it back to this same actor:
-/// anyone can put any `preferredUsername` in their actor document, and
-/// believing it outright would let one account take over another's handle.
-pub async fn rename_if_handle_changed(
-    state: &AppState,
-    actor_uri: &str,
-    claimed_username: &str,
-) -> AppResult<()> {
-    if claimed_username.is_empty() {
-        return Ok(());
-    }
-
-    let Some(account) = sqlx::query!(
-        "SELECT id, username, domain FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
-        actor_uri,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    else {
-        return Ok(());
-    };
-    let Some(domain) = account.domain else {
-        return Ok(());
-    };
-    if account.username.eq_ignore_ascii_case(claimed_username) {
-        return Ok(());
-    }
-
-    match crate::federation::webfinger::resolve(&state.fetcher, claimed_username, &domain).await {
-        Ok(resolved) if resolved == actor_uri => {}
-        Ok(resolved) => {
-            tracing::warn!(
-                actor_uri,
-                claimed_username,
-                resolved,
-                "ignoring a handle change that webfinger maps to a different actor"
-            );
-            return Ok(());
-        }
-        Err(e) => {
-            tracing::warn!(actor_uri, claimed_username, error = %e, "could not verify a handle change");
-            return Ok(());
-        }
-    }
-
-    // The handle may still be held by another account we know about. Webfinger
-    // has just said it belongs to this one, so the other account's handle is
-    // the wrong one; upstream invalidates it and retries the rename.
-    if rename(state, account.id, claimed_username).await.is_err() {
-        invalidate_conflicting_handle(state, account.id, claimed_username, &domain).await?;
-        if let Err(e) = rename(state, account.id, claimed_username).await {
-            tracing::warn!(
-                actor_uri,
-                claimed_username,
-                error = %e,
-                "could not adopt a verified handle change"
-            );
-            return Ok(());
-        }
-    }
-
-    tracing::info!(
-        actor_uri,
-        from = %account.username,
-        to = claimed_username,
-        "remote account changed handle"
-    );
-    Ok(())
-}
-
-pub(crate) async fn rename(state: &AppState, account_id: i64, username: &str) -> sqlx::Result<()> {
-    sqlx::query!(
-        r#"UPDATE accounts
-           SET username = $2, last_webfingered_at = now(), updated_at = now()
-           WHERE id = $1"#,
-        account_id,
-        username,
-    )
-    .execute(&state.db)
-    .await
-    .map(|_| ())
-}
 
 /// Take the handle away from whichever other remote account is holding it.
 ///

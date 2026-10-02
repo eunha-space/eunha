@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, username, domain FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+  "query": "SELECT id, image_remote_url, updated_at FROM custom_emojis WHERE shortcode = $1 AND domain = $2",
   "describe": {
     "columns": [
       {
@@ -10,25 +10,26 @@
       },
       {
         "ordinal": 1,
-        "name": "username",
+        "name": "image_remote_url",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
-        "name": "domain",
-        "type_info": "Varchar"
+        "name": "updated_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
     "nullable": [
       false,
-      false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "43207eaf068c067b337742d1ec94e6f98f4e72e057971a8383f1ebed2e3019dc"
+  "hash": "a367207cb48f9d20c3bd4e651f53df93b62fcb14692bf3703b1687a0411f734c"
 }

@@ -25,6 +25,10 @@ path = "tests/remote_replies.rs"
 name = "fasp"
 path = "tests/fasp.rs"
 
+[[test]]
+name = "remote_actors"
+path = "tests/remote_actors.rs"
+
 [[bin]]
 name = "eunha-upload-media"
 path = "src/bin/upload_media.rs"
@@ -185,6 +189,8 @@ htmlize = { version = "1.1.0", features = ["entities"] }
 chardetng = "1.0.0"
 roxmltree = "0.21.1"
 encoding_rs = "0.8"
+# The public suffix list, for `PublicSuffix.domain` (src/federation/process_account.rs)
+psl = "2"
 
 [dev-dependencies]
 axum-test = "17"

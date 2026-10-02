@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis (shortcode, domain, uri, image_remote_url, created_at, updated_at)\n                   VALUES ($1, $2, $3, $4, now(), now())\n                   ON CONFLICT (shortcode, domain) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b688199d5d3f023af4ca3be0961724d0255049061dcc132198f9ee3e3a525d3"
+}

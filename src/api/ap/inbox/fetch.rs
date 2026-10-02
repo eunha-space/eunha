@@ -373,14 +373,18 @@ pub async fn fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResul
         .map_err(AppError::Internal)?;
     // The document has to be the actor asked for: one naming another would
     // rewrite that other account.
-    let id = actor.get("id").and_then(Value::as_str).unwrap_or_default();
-    if id != actor_uri {
-        return Err(AppError::NotFound);
+    match crate::federation::process_account::process_fetched_actor(
+        state, actor_uri, &actor, false, false, None,
+    )
+    .await
+    {
+        Ok(Some(id)) => Ok(id),
+        Ok(None) => Err(AppError::NotFound),
+        Err(error) => {
+            tracing::debug!(actor_uri, %error, "actor not stored");
+            Err(AppError::NotFound)
+        }
     }
-    let account_id =
-        resolve_or_fetch_remote_account_prefetched(state, actor_uri, actor.clone()).await?;
-    super::status::update_remote_actor(state, &actor).await?;
-    Ok(account_id)
 }
 
 /// As [`resolve_or_fetch_remote_account`], for an actor document already in
@@ -391,6 +395,32 @@ pub async fn resolve_or_fetch_remote_account_prefetched(
     json: Value,
 ) -> AppResult<i64> {
     resolve_or_fetch_remote_account_inner(state, actor_uri, Some(json)).await
+}
+
+/// The actor document ojak fetched to verify a signature, which the account
+/// is stored from: in full for an actor not known yet or not refreshed for a
+/// day, and otherwise only its keys, as Mastodon's signature verification
+/// refreshes a key that no longer verifies (`keypair_refresh_key!`).
+pub async fn store_key_fetched_actor(state: &AppState, actor: Value) -> AppResult<Option<i64>> {
+    let Some(id) = actor.get("id").and_then(Value::as_str).map(str::to_owned) else {
+        return Ok(None);
+    };
+    let canonical = crate::federation::portable::canonical(&id);
+    let known = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+        canonical,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let only_key = known
+        .as_ref()
+        .is_some_and(|account| !crate::federation::process_account::possibly_stale(account));
+    crate::federation::process_account::process_fetched_actor(
+        state, &id, &actor, false, only_key, None,
+    )
+    .await
+    .map_err(AppError::Internal)
 }
 
 async fn resolve_or_fetch_remote_account_inner(
@@ -448,10 +478,15 @@ async fn resolve_or_fetch_remote_account_inner(
         }
     }
 
-    if let Some(id) = sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri)
+    let known = || async {
+        sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE uri = $1 ORDER BY id LIMIT 1",
+            actor_uri
+        )
         .fetch_optional(&state.db)
-        .await?
-    {
+        .await
+    };
+    if let Some(id) = known().await? {
         return Ok(id);
     }
     // `FetchRemoteActorService` and `ProcessAccountService`: an account this
@@ -467,159 +502,18 @@ async fn resolve_or_fetch_remote_account_inner(
             .await
             .map_err(AppError::Internal)?,
     };
-    let portable = crate::federation::portable::reach(&actor);
-
-    let username = actor
-        .get("preferredUsername")
-        .and_then(|u| u.as_str())
-        .unwrap_or("unknown");
-    let domain = match &portable {
-        Some(reach) => reach.domain.clone(),
-        None => url::Url::parse(actor_uri)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_owned))
-            .unwrap_or_default(),
-    };
-    let display_name = actor
-        .get("name")
-        .and_then(|n| n.as_str())
-        .unwrap_or("")
-        .to_string();
-    let note = actor
-        .get("summary")
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
-    let url = actor
-        .get("url")
-        .and_then(|u| u.as_str())
-        .unwrap_or(actor_uri)
-        .to_string();
-    let inbox_url = actor
-        .get("inbox")
-        .and_then(|i| i.as_str())
-        .unwrap_or("")
-        .to_string();
-    let outbox_url = actor
-        .get("outbox")
-        .and_then(|o| o.as_str())
-        .unwrap_or("")
-        .to_string();
-    // As Mastodon's ProcessAccountService reads it, and stored as '' when
-    // absent: the column is NOT NULL, and plenty of actors have no shared inbox.
-    let shared_inbox_url = match actor.get("endpoints") {
-        Some(endpoints) if endpoints.is_object() => endpoints.get("sharedInbox"),
-        _ => actor.get("sharedInbox"),
-    }
-    .and_then(|s| s.as_str())
-    .unwrap_or("")
-    .to_string();
-    // A portable actor's endpoints are `ap` ids too; it is reached at its
-    // first gateway.
-    let (inbox_url, outbox_url, shared_inbox_url) = match portable {
-        Some(reach) => (reach.inbox, reach.outbox, reach.shared_inbox),
-        None => (inbox_url, outbox_url, shared_inbox_url),
-    };
-    let public_key = actor
-        .get("publicKey")
-        .and_then(|k| k.get("publicKeyPem"))
-        .and_then(|p| p.as_str())
-        .unwrap_or("")
-        .to_string();
-    let avatar_remote_url = actor
-        .get("icon")
-        .and_then(|i| if i.is_object() { i.get("url") } else { None })
-        .and_then(|v| v.as_str())
-        .map(str::to_owned);
-    let header_remote_url = actor
-        .get("image")
-        .and_then(|i| if i.is_object() { i.get("url") } else { None })
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let also_known_as = super::also_known_as_of(&actor);
-
-    if let Some(id) = sqlx::query_scalar!(
-        r#"UPDATE accounts
-           SET display_name = $2,
-               note = $3,
-               inbox_url = $4,
-               shared_inbox_url = $5,
-               public_key = $6,
-               avatar_remote_url = COALESCE($7, avatar_remote_url),
-               header_remote_url = CASE WHEN $8 != '' THEN $8 ELSE header_remote_url END,
-               also_known_as = $9,
-               updated_at = now()
-           WHERE uri = $1 AND uri != ''
-           RETURNING id"#,
-        actor_uri,
-        display_name,
-        note,
-        inbox_url,
-        shared_inbox_url,
-        public_key,
-        avatar_remote_url,
-        header_remote_url,
-        &also_known_as,
+    match crate::federation::process_account::process_fetched_actor(
+        state, actor_uri, &actor, false, false, None,
     )
-    .fetch_optional(&state.db)
-    .await?
+    .await
     {
-        // `Account`'s `update_index('accounts', :self)`.
-        crate::search::elasticsearch::indexing::account(state, id).await;
-        return Ok(id);
+        Ok(Some(id)) => Ok(id),
+        outcome => {
+            if let Err(error) = outcome {
+                tracing::debug!(actor_uri, %error, "actor not stored");
+            }
+            // Another request may have stored it meanwhile.
+            known().await?.ok_or(AppError::NotFound)
+        }
     }
-
-    // `followers_url` and `following_url`, which a post's quote policy is read
-    // against.
-    let followers_url = actor
-        .get("followers")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let following_url = actor
-        .get("following")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let new_id = crate::snowflake::next_id();
-    let id = sqlx::query_scalar!(
-        r#"INSERT INTO accounts
-             (id, username, domain, display_name, note, url, uri,
-              inbox_url, outbox_url, shared_inbox_url, public_key,
-              avatar_remote_url, header_remote_url, followers_url, following_url,
-              also_known_as, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now(), now())
-           RETURNING id"#,
-        new_id,
-        username,
-        domain,
-        display_name,
-        note,
-        url,
-        actor_uri,
-        inbox_url,
-        outbox_url,
-        shared_inbox_url,
-        public_key,
-        avatar_remote_url,
-        header_remote_url,
-        followers_url,
-        following_url,
-        &also_known_as,
-    )
-    .fetch_one(&state.db)
-    .await?;
-
-    // `create_account`: a blocked domain's account starts out suspended or
-    // limited, from the time of the block.
-    crate::moderation::domain_block::apply_to_new_account(state, id, &domain)
-        .await
-        .map_err(AppError::Internal)?;
-    crate::fasp::events::account_created(state, id).await;
-    crate::search::elasticsearch::indexing::account(state, id).await;
-
-    Ok(id)
 }

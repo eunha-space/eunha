@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM featured_tags ft USING tags t\n           WHERE ft.tag_id = t.id AND ft.account_id = $1 AND lower(t.name) <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68441e42e957cd4b7822b2646e75778f8e1d7a6651f6d5429272b33a7e179f0d"
+}

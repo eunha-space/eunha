@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT uri, type, public_key FROM keypairs WHERE account_id = $1 ORDER BY type",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "public_key",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "0b33129c7c8082dea09986d9ae9b5c4ca778c4a94ac67fc8b16e7591c925a93e"
+}

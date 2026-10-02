@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_stats\n                     (account_id, statuses_count, following_count, followers_count, created_at, updated_at)\n                   VALUES ($1, COALESCE($2::bigint, 0), COALESCE($3::bigint, 0), COALESCE($4::bigint, 0), now(), now())\n                   ON CONFLICT (account_id) DO UPDATE\n                     SET statuses_count = COALESCE($2::bigint, account_stats.statuses_count),\n                         following_count = COALESCE($3::bigint, account_stats.following_count),\n                         followers_count = COALESCE($4::bigint, account_stats.followers_count),\n                         updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d3341bcba1ef35157e66976c4e121f2aaaa8a5995e6f170b900328253c4eb439"
+}

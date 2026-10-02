@@ -36,6 +36,7 @@ async fn spawn_remote_actor(
         "id": actor_uri,
         "type": "Person",
         "preferredUsername": "eve",
+        "webfinger": format!("eve@{}", base.trim_start_matches("http://")),
         "inbox": format!("{actor_uri}/inbox"),
         "outbox": format!("{actor_uri}/outbox"),
         "publicKey": {
@@ -47,7 +48,15 @@ async fn spawn_remote_actor(
     if shared_inbox {
         document["endpoints"] = json!({ "sharedInbox": format!("{base}/inbox") });
     }
+    let jrd = json!({
+        "subject": format!("acct:eve@{}", base.trim_start_matches("http://")),
+        "links": [{"rel": "self", "type": "application/activity+json", "href": actor_uri}],
+    });
     let app = Router::new()
+        .route(
+            "/.well-known/webfinger",
+            get(move || async move { axum::Json(jrd) }),
+        )
         .route(
             "/users/eve",
             get(
@@ -73,6 +82,7 @@ async fn follow_from_new_actor(label: &str, shared_inbox: bool) -> usize {
     eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
         .parse()
         .unwrap()]);
+    eunha::federation::webfinger::use_plain_http_for_tests();
     let ctx = TestContext::new(label).await;
 
     let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();

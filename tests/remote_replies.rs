@@ -77,6 +77,9 @@ async fn spawn_remote(remote: &Remote) -> (String, String) {
             "id": actor,
             "type": "Person",
             "preferredUsername": "eve",
+            // The port is part of the handle, which `preferredUsername`
+            // alone cannot say.
+            "webfinger": format!("eve@{}", base.trim_start_matches("http://")),
             "inbox": format!("{actor}/inbox"),
             "outbox": format!("{actor}/outbox"),
             "publicKey": {
@@ -84,6 +87,13 @@ async fn spawn_remote(remote: &Remote) -> (String, String) {
                 "owner": actor,
                 "publicKeyPem": public_pem,
             },
+        }),
+    );
+    remote.put(
+        "/.well-known/webfinger",
+        json!({
+            "subject": format!("acct:eve@{}", base.trim_start_matches("http://")),
+            "links": [{"rel": "self", "type": "application/activity+json", "href": actor}],
         }),
     );
     let app = Router::new().fallback(serve).with_state(remote.clone());
@@ -129,6 +139,7 @@ async fn context_ctx(label: &str) -> (TestContext, Remote, String, String) {
     eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
         .parse()
         .unwrap()]);
+    eunha::federation::webfinger::use_plain_http_for_tests();
     let ctx = TestContext::new(label).await;
     let remote = Remote::default();
     let (base, private_pem) = spawn_remote(&remote).await;

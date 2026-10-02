@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n               SET last_webfingered_at = CASE WHEN $2 THEN last_webfingered_at ELSE now() END,\n                   protocol = $3,\n                   inbox_url = $4,\n                   outbox_url = $5,\n                   shared_inbox_url = $6,\n                   followers_url = $7,\n                   following_url = $8,\n                   url = $9,\n                   uri = $10,\n                   actor_type = $11,\n                   created_at = COALESCE($12, created_at),\n                   feature_approval_policy = $13,\n                   updated_at = now()\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamp",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1765bfaa449b09d7aee3c2087097154ec8c292838014e54fcf751d021a746f7f"
+}

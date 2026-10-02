@@ -1,0 +1,226 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT username, domain, display_name, note, uri, url, locked, discoverable,\n                  indexable, memorial, fields, also_known_as, attribution_domains,\n                  avatar_remote_url, avatar_description, header_remote_url, header_description,\n                  inbox_url, outbox_url, shared_inbox_url, followers_url, following_url,\n                  featured_collection_url, collections_url, actor_type, created_at,\n                  feature_approval_policy, show_media, show_featured, show_media_replies,\n                  last_webfingered_at, protocol, public_key, hide_collections, moved_to_account_id\n           FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "locked",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "discoverable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "indexable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "memorial",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "fields",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "also_known_as",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 12,
+        "name": "attribution_domains",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 13,
+        "name": "avatar_remote_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "avatar_description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "header_remote_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "header_description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "inbox_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "outbox_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "shared_inbox_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 20,
+        "name": "followers_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 21,
+        "name": "following_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 22,
+        "name": "featured_collection_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "collections_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 24,
+        "name": "actor_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 25,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 26,
+        "name": "feature_approval_policy",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 27,
+        "name": "show_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 28,
+        "name": "show_featured",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 29,
+        "name": "show_media_replies",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 30,
+        "name": "last_webfingered_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 31,
+        "name": "protocol",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 32,
+        "name": "public_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 33,
+        "name": "hide_collections",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 34,
+        "name": "moved_to_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "135bc5c1ca19975b6fb3a48eda8c802c25b1abf548b7ca0917ba06d4e9b31851"
+}

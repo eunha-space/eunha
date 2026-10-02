@@ -90,6 +90,8 @@ pub(super) async fn handle_create(
         Ok(id) => id,
         Err(_) => return Ok(()),
     };
+    // `@account.schedule_refresh_if_stale!`.
+    crate::federation::process_account::schedule_refresh_if_stale(state, account_id).await;
 
     // Parse tag array once: mentions, hashtags, emojis.
     // ActivityPub allows "tag" to be either a single object or an array.

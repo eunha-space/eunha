@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM status_pins WHERE account_id = $1 AND status_id <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2a083ceb85a0bf71fc16ed458b84535be3ef279a8b23b247f3e2344e1d4e68a"
+}

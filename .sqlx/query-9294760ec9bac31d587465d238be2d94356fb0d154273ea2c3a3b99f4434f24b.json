@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT username, fields FROM accounts WHERE id = $1 AND domain IS NULL",
+  "query": "SELECT username, domain, url, fields FROM accounts WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,6 +10,16 @@
       },
       {
         "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
         "name": "fields",
         "type_info": "Jsonb"
       }
@@ -21,8 +31,10 @@
     },
     "nullable": [
       false,
+      true,
+      true,
       true
     ]
   },
-  "hash": "cc107e2857e148131b6f0021e59bbe62957ec951c8e7ab6467ebd167f7f6f195"
+  "hash": "9294760ec9bac31d587465d238be2d94356fb0d154273ea2c3a3b99f4434f24b"
 }

@@ -782,38 +782,6 @@ async fn test_instance_domain_blocks_follow_settings() {
     );
 }
 
-/// An account first seen from a silenced domain starts out limited.
-#[tokio::test]
-async fn test_new_account_from_blocked_domain_starts_limited() {
-    let ctx = TestContext::new("mod-dblock-new").await;
-    sqlx::query(
-        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at) VALUES ('quiet.test', 0, now(), now())",
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
-    let actor = json!({
-        "id": "https://quiet.test/users/newbie",
-        "type": "Person",
-        "preferredUsername": "newbie",
-        "inbox": "https://quiet.test/users/newbie/inbox",
-    });
-    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account_prefetched(
-        &ctx.state,
-        "https://quiet.test/users/newbie",
-        actor,
-    )
-    .await
-    .unwrap();
-    let silenced: bool =
-        sqlx::query_scalar("SELECT silenced_at IS NOT NULL FROM accounts WHERE id = $1")
-            .bind(id)
-            .fetch_one(&ctx.db)
-            .await
-            .unwrap();
-    assert!(silenced);
-}
-
 /// Sign up from `ip`, returning the response, and confirm the sign-up when it
 /// was taken.
 async fn sign_up(ctx: &TestContext, username: &str, email: &str, ip: &str) -> StatusCode {

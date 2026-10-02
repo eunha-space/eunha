@@ -29,7 +29,8 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 
 /// A handle nobody can verify is not adopted: an actor document may claim any
 /// `preferredUsername`, and taking its word for it would let one account seize
-/// another's handle. The rest of the profile update still applies.
+/// another's handle. As in Mastodon, whose `check_webfinger!` raises, the rest
+/// of the update is not applied either: it is the same document.
 #[tokio::test]
 async fn test_unverifiable_handle_change_is_ignored() {
     let ctx = TestContext::new("handle-unverified").await;
@@ -76,8 +77,8 @@ async fn test_unverifiable_handle_change_is_ignored() {
         "an unverifiable handle change must not rename the account"
     );
     assert_eq!(
-        account.display_name, "Erin, renamed",
-        "the rest of the profile update should still apply"
+        account.display_name, "erin",
+        "an update whose handle cannot be verified is dropped whole"
     );
 }
 

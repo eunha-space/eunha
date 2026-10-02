@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+  "query": "SELECT * FROM accounts WHERE id = $1 AND domain IS NOT NULL AND suspended_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -291,7 +291,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -354,5 +354,5 @@
       true
     ]
   },
-  "hash": "02008feed6dc0268dabc2a4b1af6715d26f706ca7f70f000399e418bc4a70e4f"
+  "hash": "69e41e17323c139a65f08ef1344810fe77a2cc43ba83e3216e5936c3603fe5aa"
 }

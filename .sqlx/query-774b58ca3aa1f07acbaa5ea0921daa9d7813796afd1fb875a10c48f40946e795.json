@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE custom_emojis\n                       SET image_remote_url = $2,\n                           image_file_name = CASE WHEN $3 THEN NULL ELSE image_file_name END,\n                           updated_at = now()\n                       WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "774b58ca3aa1f07acbaa5ea0921daa9d7813796afd1fb875a10c48f40946e795"
+}

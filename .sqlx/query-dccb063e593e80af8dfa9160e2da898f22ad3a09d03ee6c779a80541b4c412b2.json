@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ft.id FROM featured_tags ft JOIN tags t ON t.id = ft.tag_id\n               WHERE ft.account_id = $1 AND lower(t.name) = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dccb063e593e80af8dfa9160e2da898f22ad3a09d03ee6c779a80541b4c412b2"
+}

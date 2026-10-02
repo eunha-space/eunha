@@ -261,6 +261,13 @@ async fn test_an_inbound_move_moves_local_followers_and_relationships() {
 async fn test_an_actor_update_keeps_also_known_as_and_moved_to() {
     let ctx = TestContext::new("move-update").await;
     let (olga_id, olga, olga_key) = seed_remote(&ctx, "olga").await;
+    // The document names its key, or the key is forgotten and the next
+    // Update cannot be verified, as in Mastodon.
+    let olga_public: String = sqlx::query_scalar("SELECT public_key FROM accounts WHERE id = $1")
+        .bind(olga_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
     let bob_uri = format!("https://{}/users/bob", ctx.domain);
     let update = |moved: Option<&str>| {
         let mut actor = json!({
@@ -268,6 +275,11 @@ async fn test_an_actor_update_keeps_also_known_as_and_moved_to() {
             "type": "Person",
             "preferredUsername": "olga",
             "inbox": format!("{olga}/inbox"),
+            "publicKey": {
+                "id": format!("{olga}#main-key"),
+                "owner": olga,
+                "publicKeyPem": olga_public,
+            },
             "alsoKnownAs": ["https://older.invalid/users/olga", { "id": "https://oldest.invalid/@olga" }],
         });
         if let Some(moved) = moved {

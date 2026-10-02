@@ -83,6 +83,8 @@ Tracking Mastodon:
  -  *docs/mastodon/tracking.md*: `mastodon.toml`, `eunha-schema`, the schema
     check, and the steps for adopting a new Mastodon release.
  -  *docs/mastodon/signing-keys.md* and *docs/mastodon/http-signatures.md*.
+ -  *docs/mastodon/remote-actors.md*: how a remote actor's document becomes
+    its account row (`ProcessAccountService`).
  -  *docs/mastodon/entity-parity.md*, *docs/mastodon/differential-testing.md*
     and *docs/mastodon/federation-testing.md*: the harnesses that compare
     eunha with upstream, and the environment traps that fake failures.
