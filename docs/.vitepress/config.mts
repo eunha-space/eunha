@@ -48,6 +48,7 @@ export default defineConfig({
           { text: "HTTP signatures", link: "/mastodon/http-signatures" },
           { text: "Content formatting", link: "/mastodon/formatting" },
           { text: "Remote actors", link: "/mastodon/remote-actors" },
+          { text: "Quotes", link: "/mastodon/quotes" },
           { text: "API entity parity", link: "/mastodon/entity-parity" },
           { text: "Differential testing", link: "/mastodon/differential-testing" },
           { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },

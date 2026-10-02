@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes q\n           SET state = CASE WHEN old.state = 1 THEN 3 ELSE 2 END,\n               approval_uri = NULL,\n               updated_at = now()\n           FROM (SELECT id, state FROM quotes WHERE id = $1 FOR UPDATE) old\n           WHERE q.id = old.id AND old.state <> 3\n           RETURNING old.state AS old_state, q.state AS new_state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "old_state",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "new_state",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "045309675403ac5e559c756ca8a01968c0022e9055026e28d146cd5b5fed5236"
+}

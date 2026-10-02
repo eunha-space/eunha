@@ -26,9 +26,10 @@ pub fn note_context() -> Value {
             "Emoji": "toot:Emoji",
             "focalPoint": { "@container": "@list", "@id": "toot:focalPoint" },
             "fep": "https://w3id.org/fep/044f#",
+            // Mastodon's `quotes` context extension.
             "quote": { "@id": "fep:quote", "@type": "@id" },
-            "quoteUrl": { "@id": "fep:quote", "@type": "@id" },
-            "_misskey_quote": "https://misskey-hub.net/ns#quoteUri",
+            "quoteUri": "http://fedibird.com/ns#quoteUri",
+            "_misskey_quote": "https://misskey-hub.net/ns#_misskey_quote",
             "quoteAuthorization": { "@id": "fep:quoteAuthorization", "@type": "@id" },
             // FEP-7888 / GoToSocial interaction policy terms, so the
             // `interactionPolicy` we emit below survives JSON-LD expansion.
@@ -93,15 +94,14 @@ pub async fn build_note(
                   s.created_at, s.edited_at, s.uri, s.url, s.in_reply_to_id, s.language,
                   s.quote_approval_policy,
                   a.username, a.uri AS account_uri, a.id_scheme,
-                  quoted_s.uri AS "quote_uri?",
-                  qr.approval_uri AS "quote_authorization_uri?"
+                  qr.id AS "quote_id?",
+                  quoted_s.uri AS "quote_uri?"
            FROM statuses s
            JOIN accounts a ON a.id = s.account_id
-           -- Include pending (0) and accepted (1) quotes, not rejected/revoked:
-           -- the `quote` field declares the quote relationship (needed even
-           -- while pending, e.g. as a QuoteRequest's inlined instrument), while
-           -- `quoteAuthorization` separately proves it once accepted.
-           LEFT JOIN quotes qr ON qr.status_id = s.id AND qr.state IN (0, 1)
+           -- `quote?`: a quote in whatever state. A quoted post that is gone
+           -- is a Tombstone, and the stamp is named as
+           -- `TagManager#approval_uri_for` names it.
+           LEFT JOIN quotes qr ON qr.status_id = s.id
            LEFT JOIN statuses quoted_s ON quoted_s.id = qr.quoted_status_id AND quoted_s.deleted_at IS NULL
            WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL
              AND s.reblog_of_id IS NULL"#,
@@ -395,15 +395,23 @@ pub async fn build_note(
         note["updated"] = json!(edited.and_utc().to_rfc3339());
     }
 
-    // FEP-044f quote linkage. `quote`/`quoteUrl` declare the quote relationship
-    // (present from creation, even while pending); `quoteAuthorization` proves
-    // it and is added only once the quoted author's server grants approval.
-    if let Some(q) = s.quote_uri.clone().filter(|u| !u.is_empty()) {
-        note["quote"] = json!(q);
-        note["quoteUrl"] = json!(q);
-        note["_misskey_quote"] = json!(q);
-        if let Some(auth) = s.quote_authorization_uri.clone().filter(|u| !u.is_empty()) {
-            note["quoteAuthorization"] = json!(auth);
+    // FEP-044f quote linkage, as `ActivityPub::NoteSerializer` writes it:
+    // `quote` whatever the quote's state (a Tombstone for a quoted post that
+    // is gone), `_misskey_quote` and `quoteUri` for one that is there, and
+    // `quoteAuthorization` once there is a stamp to name.
+    if let Some(quote_id) = s.quote_id {
+        match s.quote_uri.clone().filter(|u| !u.is_empty()) {
+            Some(q) => {
+                note["quote"] = json!(q);
+                note["_misskey_quote"] = json!(q);
+                note["quoteUri"] = json!(q);
+            }
+            None => note["quote"] = json!({ "type": "Tombstone" }),
+        }
+        if let Some(quote) = crate::quotes::find(&state.db, quote_id).await? {
+            if let Some(stamp) = crate::quotes::approval_uri_for(state, &quote, true).await? {
+                note["quoteAuthorization"] = json!(stamp);
+            }
         }
     }
 

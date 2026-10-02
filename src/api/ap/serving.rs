@@ -110,24 +110,6 @@ pub fn federation() -> Federation<AppState> {
                 )
             },
         )
-        .object(
-            "quote_authorization",
-            "/users/{username}/quote_authorizations/{id}",
-            |ctx: Ctx, values: Values| async move {
-                let Some(id) = number(&values["id"]) else {
-                    return Ok(Found::NotFound);
-                };
-                found(
-                    super::collections::quote_authorization_document(
-                        ctx.data(),
-                        domain(&ctx),
-                        &values["username"],
-                        id,
-                    )
-                    .await,
-                )
-            },
-        )
         .handle(|ctx: Ctx, username: String| async move { by_username(&ctx, &username).await })
         .map_alias(|ctx: Ctx, url: Url| async move {
             // A profile page, /@username, names whom the handle does.
@@ -290,6 +272,29 @@ pub fn federation() -> Federation<AppState> {
                     },
                 )
                 .object(
+                    &scheme.kind("quote_authorization"),
+                    &scheme.template("/quote_authorizations/{quote_id}"),
+                    move |ctx: Ctx, values: Values| async move {
+                        let identifier = match scheme {
+                            Scheme::Username => &values["username"],
+                            Scheme::Id => &values["id"],
+                        };
+                        let (Some(who), Some(id)) =
+                            (scheme.who(identifier), number(&values["quote_id"]))
+                        else {
+                            return Ok(Found::NotFound);
+                        };
+                        found(
+                            super::collections::quote_authorization_document(
+                                ctx.data(),
+                                who,
+                                id,
+                            )
+                            .await,
+                        )
+                    },
+                )
+                .object(
                     &scheme.kind("account_collections"),
                     &scheme.template("/collections"),
                     move |ctx: Ctx, values: Values| async move {
@@ -338,7 +343,7 @@ pub fn federation() -> Federation<AppState> {
                 require_signature(&ctx).await
             });
         }
-        for kind in ["status", "status_activity"] {
+        for kind in ["status", "status_activity", "quote_authorization"] {
             builder =
                 builder.guard(
                     &scheme.kind(kind),
@@ -350,7 +355,7 @@ pub fn federation() -> Federation<AppState> {
     }
     // The instance actor is exempt, as `InstanceActorsController` is: a peer
     // in authorized fetch mode has to fetch its key before it can sign.
-    for kind in ["collection", "feature_authorization", "quote_authorization"] {
+    for kind in ["collection", "feature_authorization"] {
         builder = builder.guard(
             kind,
             |ctx: Ctx, _| async move { require_signature(&ctx).await },

@@ -40,7 +40,8 @@ Eunha signs where `Payloadable#serialize_payload` signs: a public or unlisted
 status's `Create`, `Update` and `Announce` and its poll's `Update`, an
 account's profile `Update`, a `QuoteRequest` and a `FeatureRequest`, unless
 authorized fetch is on; and, whatever the mode, the `Delete` of a public or
-unlisted status, the `Undo` of such a boost, and an account's own `Delete`.
+unlisted status, the `Undo` of such a boost, an account's own `Delete`, and
+the `Delete` of a revoked quote's `QuoteAuthorization` ([quotes](./quotes.md)).
 Follows, likes, blocks, reports, moves, direct and followers-only posts go
 unsigned, as Mastodon sends them. With `sign_integrity_proofs` on, the
 FEP-8b32 proof is attached first and the signature covers it, the order

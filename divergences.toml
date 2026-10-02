@@ -1277,6 +1277,27 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "quotes-count-counts-accepted"
+kind = "behaviour"
+summary = "A quote's leaving any state but accepted does not lower the count"
+mastodon = """
+`Quote#update_counter_caches!` adds one to the quoted post's `quotes_count` \
+when a quote becomes accepted, and takes one off whenever its state changes to \
+anything else (the code carries a TODO saying as much), so a pending quote \
+that is rejected, or marked pending again, takes off one it never added."""
+eunha = """
+Takes one off only when the quote was accepted. A legacy quote's count moves \
+on no update, and an accepted one created or destroyed counts as Mastodon's \
+callbacks count it."""
+why = """
+The count is of accepted quotes, and is shown on the post. Following the \
+upstream arithmetic would lower it for every remote quote refused or never \
+approved, until it said nothing true."""
+evidence = "tests/integration/federation/quote.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "peers-search-falls-back-to-the-database"
 kind = "behaviour"
 summary = "Peer search asks the database when Elasticsearch fails"
@@ -1340,5 +1361,24 @@ restart loses nothing a week does not restore, and a durable queue would add \
 a table and a worker for work that is safe to lose. An account redirecting to \
 itself is not a redirect, and following it would loop."""
 evidence = "tests/remote_actors.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "quote-request-rejects-are-named-apart"
+kind = "behaviour"
+summary = "Each Reject of a QuoteRequest has an id of its own"
+mastodon = """
+`ActivityPub::RejectQuoteRequestSerializer` names the Reject \
+`{actor}#rejects/quote_requests/{quote.id}` after a quote that \
+`ActivityPub::Activity::QuoteRequest#reject_quote_request!` never saves, so \
+its id is nil and every Reject an account sends has the one id."""
+eunha = """
+Ends the id with a fresh Snowflake id instead."""
+why = """
+Servers keep the ids of activities they have seen and drop a second one with \
+the same id, as ojak does: under Mastodon's id only an account's first refusal \
+would ever be heard."""
+evidence = "tests/integration/federation/quote.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

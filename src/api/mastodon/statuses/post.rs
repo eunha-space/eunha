@@ -219,73 +219,76 @@ pub async fn post_status(
         None
     };
 
-    // Validate quoted_status_id
+    // `set_quoted_status`: `Status.find(quoted_status_id)&.proper`, then
+    // `authorize(@quoted_status, :quote?)`; any failure is the same 404.
     let mut quoted_author_id: Option<i64> = None;
     let quote_of_id: Option<i64> = if let Some(ref qid_str) = form.quoted_status_id {
-        let qid = qid_str
-            .parse::<i64>()
-            .map_err(|_| AppError::Unprocessable("invalid quoted_status_id".into()))?;
-        let quoted = sqlx::query!(
-            "SELECT id, account_id, visibility, reblog_of_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        let quoted_not_found = || {
+            AppError::NotFoundMsg(
+                "The post you are trying to quote does not appear to exist.".into(),
+            )
+        };
+        let qid = qid_str.parse::<i64>().map_err(|_| quoted_not_found())?;
+        let found = sqlx::query!(
+            r#"SELECT COALESCE(s.reblog_of_id, s.id) AS "id!" FROM statuses s
+               WHERE s.id = $1 AND s.deleted_at IS NULL"#,
             qid,
         )
         .fetch_optional(&state.db)
         .await?
-        .ok_or_else(|| AppError::Unprocessable("quoted_status_id does not exist".into()))?;
-        // Cannot quote direct messages
-        if quoted.visibility == 3 {
-            return Err(AppError::Unprocessable(
-                "cannot quote a direct message".into(),
-            ));
-        }
-        // Cannot quote a reblog; must quote the original post directly
-        if quoted.reblog_of_id.is_some() {
-            return Err(AppError::Unprocessable("cannot quote a reblog".into()));
-        }
-        // Quoting a followers-only post forces the quote down to followers-only,
-        // so the quoted content is never exposed to a wider audience than the
-        // original (Mastodon PostStatusService#preprocess_attributes).
-        if quoted.visibility == crate::db::models::vis::PRIVATE
-            && matches!(visibility.as_str(), "public" | "unlisted")
-        {
-            visibility = "private".to_string();
-        }
-        // Block check against quoted author
-        let blocked = sqlx::query_scalar!(
-            r#"SELECT 1 FROM blocks
-               WHERE (account_id = $1 AND target_account_id = $2)
-                  OR (account_id = $2 AND target_account_id = $1)
-               LIMIT 1"#,
-            account.id,
-            quoted.account_id,
+        .ok_or_else(quoted_not_found)?;
+        let quoted = sqlx::query_as!(
+            DbStatus,
+            "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+            found.id,
         )
         .fetch_optional(&state.db)
-        .await?;
-        if blocked.is_some() {
-            return Err(AppError::Unprocessable(
-                "not allowed to interact with this post".into(),
-            ));
-        }
-        // `authorize(@quoted_status, :quote?)`: its policy must not deny us.
+        .await?
+        .ok_or_else(quoted_not_found)?;
+        // `StatusPolicy#quote?`: `show? && !blocking_author? &&
+        // quote_policy_for_account(current_account) != :denied`.
         let relation = sqlx::query!(
             r#"SELECT
+                 (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!",
                  EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "follows_author!",
                  EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS "followed_by_author!",
-                 (SELECT quote_approval_policy FROM statuses WHERE id = $3) AS "policy!""#,
+                 EXISTS (SELECT 1 FROM blocks
+                         WHERE (account_id = $1 AND target_account_id = $2)
+                            OR (account_id = $2 AND target_account_id = $1)) AS "blocked!",
+                 EXISTS (SELECT 1 FROM mentions WHERE status_id = $3 AND account_id = $1) AS "mentioned!"
+               FROM accounts a WHERE a.id = $2"#,
             account.id,
             quoted.account_id,
             quoted.id,
         )
-        .fetch_one(&state.db)
-        .await?;
-        if crate::db::models::quote_policy::for_account(
-            relation.policy,
-            account.id == quoted.account_id,
-            relation.follows_author,
-            relation.followed_by_author,
-        ) == crate::db::models::quote_policy::ForAccount::Denied
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(quoted_not_found)?;
+        let own = account.id == quoted.account_id;
+        use crate::db::models::vis;
+        let shown = !relation.unavailable
+            && match quoted.visibility {
+                vis::DIRECT | vis::LIMITED => own || relation.mentioned,
+                vis::PRIVATE => own || relation.follows_author || relation.mentioned,
+                _ => own || !relation.blocked,
+            };
+        let policy_denies = quoted.visibility == vis::DIRECT
+            || quoted.visibility == vis::LIMITED
+            || crate::db::models::quote_policy::for_account(
+                quoted.quote_approval_policy,
+                own,
+                relation.follows_author,
+                relation.followed_by_author,
+            ) == crate::db::models::quote_policy::ForAccount::Denied;
+        if !shown || (relation.blocked && !own) || policy_denies {
+            return Err(quoted_not_found());
+        }
+        // Quoting a followers-only post forces the quote down to followers-only,
+        // so the quoted content is never exposed to a wider audience than the
+        // original (Mastodon PostStatusService#preprocess_attributes).
+        if quoted.visibility == vis::PRIVATE && matches!(visibility.as_str(), "public" | "unlisted")
         {
-            return Err(AppError::Forbidden);
+            visibility = "private".to_string();
         }
         quoted_author_id = Some(quoted.account_id);
         Some(quoted.id)
@@ -304,7 +307,7 @@ pub async fn post_status(
         if let Some(qauthor) = quoted_author_id {
             if qauthor != account.id && !resolved.iter().any(|(_, a)| a.id == qauthor) {
                 return Err(AppError::Unprocessable(
-                    "Validation failed: The quoted user must be mentioned in a direct message"
+                    "Validation failed: Cannot quote a non-mentioned user in a Private Mention post."
                         .into(),
                 ));
             }
@@ -418,9 +421,8 @@ pub async fn post_status(
         }
         Some(policy) => policy,
         None => {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Quote approval policy is invalid".into(),
-            ))
+            // `raise ActiveRecord::RecordInvalid`, with no record to name.
+            return Err(AppError::Unprocessable("Record invalid".into()));
         }
     };
     let status = sqlx::query_as!(
@@ -449,74 +451,59 @@ pub async fn post_status(
     .fetch_one(&state.db)
     .await?;
 
-    // Create a quotes record if this is a quote post. When the quoted author is
-    // remote we ask for consent via a FEP-044f QuoteRequest (sent below) and keep
-    // the quote pending until they Accept; local quotes accept by visibility.
-    let mut quote_request_activity_uri: Option<String> = None;
+    // `attach_quote!`: `Quote.create(quoted_status:, status:)`, accepted at
+    // once when the quoted post is ours (the policy was checked above); a
+    // remote author is asked (`QuoteRequestWorker`, below), and the request
+    // is named under the quoter (`Quote#set_activity_uri`).
+    let mut quote_row: Option<crate::quotes::Quote> = None;
     if let Some(qid) = quote_of_id {
         let quoted = sqlx::query!(
-            "SELECT s.account_id, s.visibility, s.quote_approval_policy, a.domain
-             FROM statuses s JOIN accounts a ON a.id = s.account_id
-             WHERE s.id = $1",
+            "SELECT s.account_id, a.domain FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
             qid,
         )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-        let quoted_is_remote = quoted.as_ref().and_then(|q| q.domain.clone()).is_some();
-        let quoted_account_id = quoted.as_ref().map(|q| q.account_id).unwrap_or(account.id);
-
-        let (quote_state, activity_uri) = if quoted_is_remote {
-            let au = format!(
-                "https://{}/users/{}/quote_requests/{}",
-                instance.domain,
-                account.username,
-                crate::snowflake::next_id()
-            );
-            quote_request_activity_uri = Some(au.clone());
-            (crate::db::models::quote_state::PENDING, Some(au))
+        .fetch_one(&state.db)
+        .await?;
+        let quoted_is_remote = quoted.domain.is_some();
+        let activity_uri = quoted_is_remote.then(|| {
+            format!(
+                "{}/quote_requests/{}",
+                crate::federation::tag::account_uri_of(&instance.domain, &account),
+                uuid::Uuid::new_v4()
+            )
+        });
+        let quote_state = if quoted_is_remote {
+            crate::db::models::quote_state::PENDING
         } else {
-            // `quote.accept! if @quoted_status.local? && StatusPolicy#quote?`:
-            // the policy was checked before the post was made, so a local
-            // quote is accepted.
-            (crate::db::models::quote_state::ACCEPTED, None)
+            crate::db::models::quote_state::ACCEPTED
         };
-
-        let quote_row_id = crate::snowflake::next_id();
-        let _ = sqlx::query!(
+        let quote_id = sqlx::query_scalar!(
             r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, activity_uri, state, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
-               ON CONFLICT DO NOTHING"#,
-            quote_row_id,
+               ON CONFLICT DO NOTHING
+               RETURNING id"#,
+            crate::snowflake::next_id(),
             status.id,
             qid,
             account.id,
-            quoted_account_id,
+            quoted.account_id,
             activity_uri,
             quote_state,
         )
-        .execute(&state.db)
-        .await;
-
-        // Accepted quotes count toward the quoted status's quotes_count.
-        if quote_state == crate::db::models::quote_state::ACCEPTED {
-            let _ = sqlx::query!(
-                r#"INSERT INTO status_stats (status_id, quotes_count, created_at, updated_at)
-                   VALUES ($1, 1, now(), now())
-                   ON CONFLICT (status_id) DO UPDATE
-                     SET quotes_count = status_stats.quotes_count + 1, updated_at = now()"#,
-                qid,
-            )
-            .execute(&state.db)
-            .await;
+        .fetch_optional(&state.db)
+        .await?;
+        if let Some(quote_id) = quote_id {
+            crate::quotes::created(&state.db, Some(qid), quote_state).await;
+            quote_row = crate::quotes::find(&state.db, quote_id).await?;
         }
     }
 
     // Store tags and mentions
     store_statuses_tags(&state, status.id, account.id, &hashtags).await?;
     store_status_mentions(&state, status.id, &resolved).await?;
+    // `status.quote.ensure_quoted_access`
+    if let Some(quote) = &quote_row {
+        crate::quotes::ensure_quoted_access(&state.db, quote).await;
+    }
 
     // Mastodon assigns a conversation_id to every status. For replies, inherit
     // the parent's conversation; otherwise create a new one.
@@ -785,6 +772,12 @@ pub async fn post_status(
         notified.insert(mentioned.id);
     }
 
+    // `notify_quoted_account!`: a local author whose post this accepted quote
+    // quotes.
+    if let Some(quote) = quote_row.as_ref().filter(|q| q.accepted()) {
+        crate::quotes::notify(&state, quote).await;
+    }
+
     // Notify followers who opted in to per-account posting notifications (the
     // "bell"). Mastodon's FeedInsertWorker#notify? excludes replies to other
     // accounts (self-replies still notify), reblogs, and edits.
@@ -899,34 +892,28 @@ pub async fn post_status(
         let quote_note = quote_of_id.map(|_| bundle.note.clone());
         let activity = bundle.into_create();
 
-        // FEP-044f: ask a remote quoted author for consent to quote them.
-        if let (Some(qr_uri), Some(qid)) = (&quote_request_activity_uri, quote_of_id) {
-            let quoted_uri: Option<String> =
-                sqlx::query_scalar!("SELECT uri FROM statuses WHERE id = $1", qid)
+        // `QuoteRequestWorker`: ask a remote quoted author for consent, at
+        // their own inbox (`quoted_account.inbox_url`).
+        if let Some(quote) = quote_row.as_ref().filter(|q| q.activity_uri.is_some()) {
+            let quoted = match quote.quoted_status_id {
+                Some(qid) => {
+                    sqlx::query!(
+                        r#"SELECT s.uri AS "uri?", a.inbox_url
+                       FROM statuses s JOIN accounts a ON a.id = s.account_id
+                       WHERE s.id = $1"#,
+                        qid,
+                    )
                     .fetch_optional(&state.db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .flatten();
-            if let (Some(quoted_status_uri), Ok(Some(qa))) = (
-                quoted_uri,
-                sqlx::query!(
-                    "SELECT a.inbox_url, a.shared_inbox_url
-                         FROM statuses s JOIN accounts a ON a.id = s.account_id
-                         WHERE s.id = $1",
-                    qid,
-                )
-                .fetch_optional(&state.db)
-                .await,
-            ) {
-                let qinbox = if !qa.shared_inbox_url.is_empty() {
-                    qa.shared_inbox_url
-                } else {
-                    qa.inbox_url
-                };
-                if !qinbox.is_empty() {
+                    .await?
+                }
+                None => None,
+            };
+            if let Some(quoted) = quoted.filter(|q| !q.inbox_url.is_empty()) {
+                if let (Some(quoted_status_uri), Some(request_uri)) =
+                    (quoted.uri, quote.activity_uri.as_deref())
+                {
                     if let Ok(mut qr) = crate::federation::consent::quote_request(
-                        qr_uri,
+                        request_uri,
                         &actor_url,
                         &quoted_status_uri,
                         &uri,
@@ -943,7 +930,7 @@ pub async fn post_status(
                         if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
                             &state,
                             qr,
-                            vec![qinbox],
+                            vec![quoted.inbox_url],
                             key_id.clone(),
                             crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
                         )

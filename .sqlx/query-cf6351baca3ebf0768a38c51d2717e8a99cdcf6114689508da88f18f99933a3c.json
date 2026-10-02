@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.quote_approval_policy, s.visibility, s.reblog_of_id,\n                  a.username, a.id_scheme,\n                  (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS \"unavailable!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.uri = $1 AND s.deleted_at IS NULL AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "quote_approval_policy",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "unavailable!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "cf6351baca3ebf0768a38c51d2717e8a99cdcf6114689508da88f18f99933a3c"
+}

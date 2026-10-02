@@ -535,6 +535,58 @@ pub async fn status_reach_inboxes(
         .collect())
 }
 
+/// `StatusReachFinder.new(status, unsafe:).inboxes` for the status with
+/// `status_id`, read from its row, deleted or not: a deleted status still
+/// reaches the boosters whose boosts went with it, as
+/// `reblogs.rewhere(deleted_at: [nil, @status.deleted_at])` does.
+pub async fn status_reach_of(
+    state: &AppState,
+    status_id: i64,
+    unsafe_reach: bool,
+) -> anyhow::Result<Vec<String>> {
+    use crate::db::models::vis;
+    let Some(status) = sqlx::query!(
+        r#"SELECT s.account_id, s.in_reply_to_account_id, s.visibility, s.deleted_at,
+                  o.account_id AS "reblog_of_account_id?"
+           FROM statuses s LEFT JOIN statuses o ON o.id = s.reblog_of_id
+           WHERE s.id = $1"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(Vec::new());
+    };
+    let deleted_boosters: Vec<i64> = match status.deleted_at {
+        Some(deleted_at) => {
+            sqlx::query_scalar!(
+                "SELECT account_id FROM statuses WHERE reblog_of_id = $1 AND deleted_at = $2",
+                status_id,
+                deleted_at,
+            )
+            .fetch_all(&state.db)
+            .await?
+        }
+        None => Vec::new(),
+    };
+    status_reach_inboxes(
+        state,
+        status_id,
+        status.account_id,
+        status.in_reply_to_account_id,
+        matches!(status.visibility, vis::PUBLIC | vis::UNLISTED),
+        unsafe_reach,
+        status.visibility == vis::PUBLIC,
+        matches!(
+            status.visibility,
+            vis::PUBLIC | vis::UNLISTED | vis::PRIVATE
+        ),
+        status.reblog_of_account_id,
+        &deleted_boosters,
+    )
+    .await
+}
+
 /// Deliver to a specific set of inboxes (for mentions, DMs, consent replies).
 pub async fn deliver_to_inboxes(
     state: &AppState,

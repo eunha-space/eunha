@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT q.id FROM quotes q JOIN accounts a ON a.id = q.quoted_account_id\n           WHERE q.activity_uri = $1 AND a.uri = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "750675816720fd0389b882ed7b387127a7e57054f00317d2a9f06e680ec704f4"
+}

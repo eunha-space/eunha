@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(s.reblog_of_id, s.id) AS \"id!\" FROM statuses s\n               WHERE s.id = $1 AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7c5cbba85992cc3f1b09dc144fb18c4988151f1e7efd440d426b754eaccfa499"
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status_id, quoted_status_id, state FROM quotes\n           WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "quoted_status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "38c06c8dfad0854a3551f8c9d2fd2fcef83e5c8e5cce9198de2998131e366566"
+}

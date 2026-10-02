@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, approval_uri FROM quotes WHERE status_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "approval_uri",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "ebac324f6911d76e6e2be42daf6b9d4201d09fdc499b898e35400241d3749f36"
+}

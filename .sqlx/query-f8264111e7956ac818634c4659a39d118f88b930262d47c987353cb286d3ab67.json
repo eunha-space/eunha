@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility,\n                  -- `object.account.sensitized? || object.sensitive`\n                  (s.sensitive OR a.sensitized_at IS NOT NULL) AS \"sensitive!\",\n                  s.created_at, s.edited_at, s.uri, s.url, s.in_reply_to_id, s.language,\n                  s.quote_approval_policy,\n                  a.username, a.uri AS account_uri, a.id_scheme,\n                  qr.id AS \"quote_id?\",\n                  quoted_s.uri AS \"quote_uri?\"\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           -- `quote?`: a quote in whatever state. A quoted post that is gone\n           -- is a Tombstone, and the stamp is named as\n           -- `TagManager#approval_uri_for` names it.\n           LEFT JOIN quotes qr ON qr.status_id = s.id\n           LEFT JOIN statuses quoted_s ON quoted_s.id = qr.quoted_status_id AND quoted_s.deleted_at IS NULL\n           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL\n             AND s.reblog_of_id IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "spoiler_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "sensitive!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "edited_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "quote_approval_policy",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "account_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "quote_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 17,
+        "name": "quote_uri?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "f8264111e7956ac818634c4659a39d118f88b930262d47c987353cb286d3ab67"
+}

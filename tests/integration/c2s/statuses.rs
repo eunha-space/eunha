@@ -6452,7 +6452,9 @@ async fn test_quote_of_private_forces_private_visibility() {
         Some(&ctx.bob_token),
         &json!({"status": "quoting alice", "quoted_status_id": original_id, "visibility": "private"}),
     ).await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    // `set_quoted_status` answers a post that may not be quoted as one that
+    // is not there.
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 /// Quoting increments quotes_count on the original status.
@@ -6550,21 +6552,28 @@ async fn test_get_status_quotes_nonexistent_returns_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// Quoting a nonexistent status returns 422.
+/// Quoting a nonexistent status is a 404 that says so
+/// (`statuses.errors.quoted_status_not_found`).
 #[tokio::test]
-async fn test_quote_nonexistent_status_returns_422() {
+async fn test_quote_nonexistent_status_returns_404() {
     let ctx = TestContext::new("quote-nonexistent").await;
     let resp = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.alice_token),
         &json!({"status": "quoting thin air", "quoted_status_id": "9999999999999", "visibility": "public"}),
     ).await;
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "The post you are trying to quote does not appear to exist."
+    );
 }
 
-/// Quoting a direct message returns 422.
+/// Quoting a direct message is refused as a post that is not there
+/// (`quote_policy_for_account` is `:denied` for one).
 #[tokio::test]
-async fn test_quote_direct_message_returns_422() {
+async fn test_quote_direct_message_returns_404() {
     let ctx = TestContext::new("quote-direct").await;
     let dm = ctx
         .api
@@ -6579,7 +6588,7 @@ async fn test_quote_direct_message_returns_422() {
             &json!({"status": "quoting DM", "quoted_status_id": dm_id, "visibility": "public"}),
         )
         .await;
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 /// Deleting a quote post decrements quotes_count.
@@ -6800,7 +6809,8 @@ async fn test_unreblog_when_blocked_by_author_returns_200() {
 
 // ── quote post contract fixes ─────────────────────────────────────────────────
 
-/// Quoting a reblog is not allowed; must return 422.
+/// Quoting a reblog quotes the post it boosts
+/// (`Status.find(quoted_status_id)&.proper`).
 #[tokio::test]
 async fn test_quote_reblog_unwraps_to_original() {
     let ctx = TestContext::new("quote-reblog-unwrap").await;
@@ -6826,22 +6836,23 @@ async fn test_quote_reblog_unwraps_to_original() {
         .unwrap();
     let reblog_id = reblog["id"].as_str().unwrap();
 
-    // Quoting a reblog is not allowed — must return 422
     let resp = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.alice_token),
         &json!({"status": "quoting a boost", "quoted_status_id": reblog_id, "visibility": "public"}),
     ).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
     assert_eq!(
-        resp.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "quoting a reblog must return 422"
+        body["quote"]["quoted_status"]["id"].as_str(),
+        Some(original_id),
+        "a quote of a boost quotes the boosted post"
     );
 }
 
-/// Quoting a post by a user who blocked you returns 422.
+/// Quoting a post by a user who blocked you is a 404.
 #[tokio::test]
-async fn test_quote_blocked_by_quotee_returns_422() {
+async fn test_quote_blocked_by_quotee_returns_404() {
     let ctx = TestContext::new("quote-blocked-by").await;
 
     let original = ctx
@@ -6864,12 +6875,12 @@ async fn test_quote_blocked_by_quotee_returns_422() {
         Some(&ctx.bob_token),
         &json!({"status": "quoting despite block", "quoted_status_id": original_id, "visibility": "public"}),
     ).await;
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// Quoting a post when you blocked the author returns 422.
+/// Quoting a post when you blocked the author is a 404.
 #[tokio::test]
-async fn test_quote_quoter_blocked_quotee_returns_422() {
+async fn test_quote_quoter_blocked_quotee_returns_404() {
     let ctx = TestContext::new("quote-blocked-quotee").await;
 
     let original = ctx
@@ -6892,7 +6903,7 @@ async fn test_quote_quoter_blocked_quotee_returns_422() {
         Some(&ctx.bob_token),
         &json!({"status": "quoting despite block", "quoted_status_id": original_id, "visibility": "public"}),
     ).await;
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 /// A quote still waiting for its author's consent (as one of a remote post

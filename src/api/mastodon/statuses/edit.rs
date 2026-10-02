@@ -23,6 +23,9 @@ pub struct EditStatusForm {
     // `poll: null` (remove the poll) — Mastodon keys off `options.key?(:poll)`.
     #[serde(default, deserialize_with = "double_option")]
     pub poll: Option<Option<PollForm>>,
+    /// `update_options[:quote_approval_policy] = quote_approval_policy if
+    /// status_params[:quote_approval_policy].present?`
+    pub quote_approval_policy: Option<String>,
 }
 
 fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
@@ -113,12 +116,34 @@ pub async fn edit_status(
         (None, _) => false, // absent: no change
     };
 
+    // `@status.quote_approval_policy = @options[:quote_approval_policy] if
+    // @options[:quote_approval_policy].present?`, then `downgrade_quote_policy`
+    // for a post only some may see.
+    let new_quote_policy = match form
+        .quote_approval_policy
+        .as_deref()
+        .filter(|p| !p.is_empty())
+    {
+        Some(requested) => crate::db::models::quote_policy::from_api(requested)
+            .ok_or_else(|| AppError::Unprocessable("Record invalid".into()))?,
+        None => status.quote_approval_policy,
+    };
+    let new_quote_policy = if matches!(
+        status.visibility,
+        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+    ) {
+        new_quote_policy
+    } else {
+        0
+    };
+
     // Mastodon only records an edit (and bumps edited_at / notifies) when the
     // submission actually changes the status; a no-op edit returns it as-is.
     let significant = new_text != status.text
         || new_spoiler != status.spoiler_text
         || new_sensitive != status.sensitive
         || new_language != status.language
+        || new_quote_policy != status.quote_approval_policy
         || media_changed
         || poll_changed;
 
@@ -167,8 +192,8 @@ pub async fn edit_status(
     let resolved = resolve_mention_accounts(&state, &mention_handles, &instance_domain).await;
 
     sqlx::query!(
-        "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, edited_at = now() WHERE id = $5",
-        new_text, new_spoiler, new_sensitive, new_language, id,
+        "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, quote_approval_policy = $6, edited_at = now() WHERE id = $5",
+        new_text, new_spoiler, new_sensitive, new_language, id, new_quote_policy,
     )
     .execute(&state.db)
     .await?;
@@ -294,76 +319,12 @@ pub async fn edit_status(
         None => {}
     }
 
-    // Notify accounts who reblogged this status (Mastodon notify_about_update!).
-    let interacted: Vec<i64> = sqlx::query_scalar!(
-        "SELECT account_id FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL",
-        id,
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    let notify_title = format!("{} edited a status", account.display_name);
-    for recipient_id in interacted {
-        push::create_and_push(
-            &state,
-            recipient_id,
-            auth.account_id,
-            "update",
-            Some(id),
-            notify_title.clone(),
-            "".into(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-        )
-        .await;
-    }
-
-    // Notify accounts whose accepted quotes point at this status (Mastodon's
-    // quoted_update). The notification references the quoting status.
-    if let Ok(quoters) = sqlx::query!(
-        "SELECT account_id, status_id FROM quotes WHERE quoted_status_id = $1 AND state = 1",
-        id,
-    )
-    .fetch_all(&state.db)
-    .await
-    {
-        let quote_title = format!("{} edited a quoted post", account.display_name);
-        for q in quoters {
-            push::create_and_push(
-                &state,
-                q.account_id,
-                auth.account_id,
-                "quoted_update",
-                Some(q.status_id),
-                quote_title.clone(),
-                "".into(),
-                crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-            )
-            .await;
-        }
-    }
+    // `broadcast_updates!`: `DistributionWorker` with `update`, which tells
+    // the boosters and quoters, and the timelines that have it.
+    crate::quotes::distribute_update(&state, id, false).await;
 
     let (updated_status, _) = fetch_status_with_account(&state, id).await?;
     let api_status = serialize_status(&state, &updated_status, Some(auth.account_id)).await?;
-
-    if matches!(
-        updated_status.visibility,
-        crate::db::models::vis::PUBLIC
-            | crate::db::models::vis::UNLISTED
-            | crate::db::models::vis::PRIVATE
-    ) {
-        if let Ok(payload) = serde_json::to_string(&api_status) {
-            let hashtags: Vec<String> = api_status.tags.iter().map(|t| t.name.clone()).collect();
-            state.streaming.publish(Event::StatusUpdate {
-                author_id: account.id,
-                is_public: updated_status.visibility == crate::db::models::vis::PUBLIC,
-                status_id: id,
-                hashtags,
-                has_media: !api_status.media_attachments.is_empty(),
-                payload: std::sync::Arc::new(payload),
-            });
-        }
-    }
 
     if let Err(e) = federate_status_update(&state, id, &account, &updated_status).await {
         tracing::warn!(status_id = id, error = %e, "failed to enqueue ActivityPub status update");

@@ -9,6 +9,9 @@ use serde_json::json;
 pub enum AppError {
     #[error("not found")]
     NotFound,
+    /// A 404 that says why, as Mastodon's `quoted_status_not_found` does.
+    #[error("not found: {0}")]
+    NotFoundMsg(String),
     #[error("unauthorized")]
     Unauthorized,
     #[error("unauthorized: {0}")]
@@ -46,6 +49,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             AppError::NotFound => (StatusCode::NOT_FOUND, "Record not found".to_string()),
+            AppError::NotFoundMsg(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             AppError::UnauthorizedMsg(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             AppError::Forbidden => (

@@ -68,9 +68,28 @@ pub(super) async fn handle_delete(
                 return Ok(());
             }
 
+            // `case @object['type']`: a `QuoteAuthorization` is a stamp taken
+            // back (`revoke_quote`), a `Note` or `Question` a status, and
+            // anything else whichever of the two it turns out to be.
+            let object_type = activity
+                .get("object")
+                .and_then(|o| o.get("type"))
+                .and_then(|t| t.as_str());
+            let may_be_stamp = !matches!(object_type, Some("Note" | "Question"));
+            if object_type == Some("QuoteAuthorization") {
+                if same_host(actor_uri, uri) {
+                    delete_later(state, actor_uri, uri).await;
+                }
+                super::quote::revoke_by_stamp(state, actor_uri, uri).await?;
+                return Ok(());
+            }
+
             // Reject if the actor's domain doesn't match the object's domain —
             // prevents one server from deleting another server's content.
             if !same_host(actor_uri, uri) {
+                if may_be_stamp && super::quote::revoke_by_stamp(state, actor_uri, uri).await? {
+                    return Ok(());
+                }
                 tracing::warn!(
                     actor_uri,
                     uri,
@@ -99,6 +118,8 @@ pub(super) async fn handle_delete(
                     .await?;
             if let Some(row) = &deleted_reply {
                 crate::fasp::events::status_deleted(state, row.id).await;
+                // `RemoveStatusService`: the quote the status made.
+                crate::quotes::status_removed(state, row.id).await;
                 if let Err(e) = crate::counters::on_status_deleted(
                     &state.db,
                     row.account_id,
@@ -120,6 +141,10 @@ pub(super) async fn handle_delete(
             // Delete so a late Create with this URI is skipped.
             if deleted.rows_affected() == 0 {
                 delete_later(state, actor_uri, uri).await;
+                // `delete_status || revoke_quote`
+                if may_be_stamp {
+                    super::quote::revoke_by_stamp(state, actor_uri, uri).await?;
+                }
             }
 
             // Create a tombstone so that a subsequent Create with the same URI is rejected.
@@ -604,12 +629,23 @@ pub(super) async fn handle_update(
                 Some(id) => Some(super::remote_quote_policy(state, id, object).await),
                 None => None,
             };
-            let previous_text: Option<String> = sqlx::query_scalar!(
-                "SELECT text FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+            let previous = sqlx::query!(
+                "SELECT text, spoiler_text, edited_at FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
                 note_uri
             )
             .fetch_optional(&state.db)
             .await?;
+            let previous_text: Option<String> = previous.as_ref().map(|p| p.text.clone());
+            // `handle_explicit_update!` when the post says it was edited
+            // since we last had it, `handle_implicit_update!` otherwise.
+            let explicit = match (edited_at, previous.as_ref().and_then(|p| p.edited_at)) {
+                (Some(new), Some(old)) => new > old,
+                (Some(_), None) => true,
+                (None, _) => false,
+            };
+            let text_changed = previous
+                .as_ref()
+                .is_some_and(|p| p.text != text || p.spoiler_text != spoiler_text);
             let updated = sqlx::query!(
                 r#"UPDATE statuses
                    SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,
@@ -743,6 +779,22 @@ pub(super) async fn handle_update(
             crate::search::elasticsearch::indexing::status(state, row.id).await;
 
             sync_remote_poll(state, row.id, row.account_id, object).await?;
+
+            // `update_quote!` or `update_quote_approval!`, then
+            // `broadcast_updates!`: for an edit that changed something, and
+            // for any update that moved the quote.
+            let quote_moved = super::quote::update_quote(
+                state,
+                row.id,
+                row.account_id,
+                object,
+                activity.get("@context"),
+                explicit,
+            )
+            .await?;
+            if quote_moved || (explicit && text_changed) {
+                crate::quotes::distribute_update(state, row.id, false).await;
+            }
         }
         _ => {}
     }

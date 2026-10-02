@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, quote_approval_policy = $6, edited_at = now() WHERE id = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5ebc7d518badf049aff0f6b1422d89f3a7b8817ea212e7f673fc52bbfeea7fc"
+}

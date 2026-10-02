@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.account_id FROM mentions m JOIN accounts a ON a.id = m.account_id\n               WHERE m.status_id = $1 AND NOT m.silent AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76e8416bd4ef2b31d36631b1b494aed0311cce173c61e9e057844df4bdda2d99"
+}

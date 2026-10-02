@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_stats (status_id, quotes_count, created_at, updated_at)\n               VALUES ($1, 1, now(), now())\n               ON CONFLICT (status_id) DO UPDATE\n                 SET quotes_count = GREATEST(status_stats.quotes_count, 0) + 1, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de14da31ac13ea5da30f4b5b16ff06cd8b5b3f26b4c8a6e1a327af48ec66d312"
+}

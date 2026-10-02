@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT q.id FROM quotes q JOIN statuses s ON s.id = q.status_id\n           WHERE q.quoted_status_id = $1 AND q.status_id = $2 AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f2e9f1697929ca7e4b00246b43cd706dda504dd47a2a1612edd0558dd0e342db"
+}

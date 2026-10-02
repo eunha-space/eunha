@@ -290,60 +290,49 @@ pub async fn feature_authorization_document(
     Ok(body)
 }
 
-/// `/users/{username}/quote_authorizations/{id}` — the QuoteAuthorization
-/// stamp proving a local account authorized a quote of one of its posts.
+/// `ActivityPub::QuoteAuthorizationsController#show`: the stamp by which a
+/// local account authorized a quote of one of its posts, at
+/// `/users/{username}/quote_authorizations/{id}` (or under `/ap/users/{id}`).
+/// Only an accepted quote of `who`'s whose two statuses are both still there
+/// has one, and only a quoted status the reader may see.
 pub async fn quote_authorization_document(
     state: &AppState,
-    domain: &str,
-    username: &str,
+    who: AccountRef<'_>,
     id: i64,
 ) -> AppResult<Value> {
-    let row = sqlx::query!(
-        r#"SELECT qs.uri AS "quoted_status_uri?", ss.uri AS "quoting_status_uri?",
-                  qa.id AS quoted_account_id, qa.id_scheme AS quoted_account_id_scheme
-           FROM quotes q
-           JOIN statuses qs ON qs.id = q.quoted_status_id
-           JOIN statuses ss ON ss.id = q.status_id
-           JOIN accounts qa ON qa.id = q.quoted_account_id
-           WHERE q.id = $1 AND q.state = 1
-             AND qa.username = $2 AND qa.domain IS NULL"#,
-        id,
-        username,
+    let account = super::objects::load_local_account(state, who).await?;
+    let quote = crate::quotes::find(&state.db, id)
+        .await?
+        .filter(|q| q.accepted() && q.quoted_account_id == Some(account.id))
+        .ok_or(AppError::NotFound)?;
+    let quoted_status_id = quote.quoted_status_id.ok_or(AppError::NotFound)?;
+    // `@quote.status.present? && @quote.quoted_status.present?`, and
+    // `authorize @quote.quoted_status, :show?` for a reader who may be
+    // anyone: an accepted quote of somebody else's is of a public or
+    // unlisted post (`Quote#validate_visibility`).
+    let statuses = sqlx::query!(
+        r#"SELECT id, visibility FROM statuses
+           WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL"#,
+        &[quote.status_id, quoted_status_id][..],
     )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
-    let (Some(quoted_status_uri), Some(quoting_status_uri)) =
-        (row.quoted_status_uri, row.quoting_status_uri)
-    else {
+    .fetch_all(&state.db)
+    .await?;
+    let quoted_visible = statuses.iter().any(|s| {
+        s.id == quoted_status_id
+            && matches!(
+                s.visibility,
+                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+            )
+    });
+    if !statuses.iter().any(|s| s.id == quote.status_id) || !quoted_visible {
         return Err(AppError::NotFound);
-    };
+    }
 
-    let auth_id = format!("https://{domain}/users/{username}/quote_authorizations/{id}");
-    // The quoted account is local, so its actor id follows from its id scheme.
-    let quoted_account_uri = crate::federation::tag::account_uri(
-        domain,
-        row.quoted_account_id,
-        row.quoted_account_id_scheme,
-        username,
-    );
-    let mut body = crate::federation::consent::quote_authorization(
-        &auth_id,
-        &quoted_account_uri,
-        &quoting_status_uri,
-        &quoted_status_uri,
-    )
-    .map_err(AppError::Internal)?;
-    body["@context"] = json!([
-        "https://www.w3.org/ns/activitystreams",
-        {
-            "toot": "http://joinmastodon.org/ns#",
-            "QuoteAuthorization": "toot:QuoteAuthorization",
-            "interactingObject": { "@id": "toot:interactingObject", "@type": "@id" },
-            "interactionTarget": { "@id": "toot:interactionTarget", "@type": "@id" },
-        }
-    ]);
+    let mut body = crate::quotes::authorization_object(state, &quote, true)
+        .await
+        .map_err(AppError::Internal)?
+        .ok_or(AppError::NotFound)?;
+    body["@context"] = crate::federation::consent::quote_authorization_context();
     Ok(body)
 }
 

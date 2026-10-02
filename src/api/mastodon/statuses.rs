@@ -574,23 +574,9 @@ pub(crate) async fn remove_status(
     crate::search::elasticsearch::indexing::status(state, status.reblog_of_id.unwrap_or(id)).await;
     crate::search::elasticsearch::indexing::account(state, account.id).await;
 
-    // Decrement the quoted status's quotes_count if this was an accepted quote.
-    if let Some(quoted_id) = sqlx::query_scalar!(
-        "SELECT quoted_status_id FROM quotes WHERE status_id = $1 AND state = 1",
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .flatten()
-    {
-        let _ = sqlx::query!(
-            r#"UPDATE status_stats SET quotes_count = GREATEST(quotes_count - 1, 0), updated_at = now()
-               WHERE status_id = $1"#,
-            quoted_id,
-        )
-        .execute(&state.db)
-        .await;
-    }
+    // The quote this status made: revoked if it was an accepted quote of a
+    // local post, uncounted if it was any other accepted quote.
+    crate::quotes::status_removed(state, id).await;
 
     // Decrement original's reblogs_count if this was a boost
     if let Some(original_id) = status.reblog_of_id {
@@ -1763,7 +1749,9 @@ pub async fn update_interaction_policy(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
     let (status, account) = fetch_status_with_account(&state, id).await?;
-    // `authorize @status, :update?`
+    // `set_status`: `authorize @status, :show?` hides what the caller may not
+    // see; then `authorize @status, :update?`.
+    check_status_visible(&state, &status, auth.account_id).await?;
     if status.account_id != auth.account_id {
         return Err(AppError::Forbidden);
     }
@@ -1776,9 +1764,9 @@ pub async fn update_interaction_policy(
                 .quote_policy
         }
     };
-    let mut policy = crate::db::models::quote_policy::from_api(&requested).ok_or_else(|| {
-        AppError::Unprocessable("Validation failed: Quote approval policy is invalid".into())
-    })?;
+    // `raise ActiveRecord::RecordInvalid`, with no record to name.
+    let mut policy = crate::db::models::quote_policy::from_api(&requested)
+        .ok_or_else(|| AppError::Unprocessable("Record invalid".into()))?;
     // `downgrade_quote_policy`: a local post no one else may see allows no
     // quotes.
     if !matches!(
@@ -1801,7 +1789,9 @@ pub async fn update_interaction_policy(
         .fetch_one(&state.db)
         .await?;
     if changed {
-        // `broadcast_updates!`
+        // `broadcast_updates!`: local timelines, without notifying anyone, and
+        // the servers that have it.
+        crate::quotes::distribute_update(&state, id, true).await;
         if let Err(error) = federate_status_update(&state, id, &account, &status).await {
             tracing::warn!(
                 status_id = id,
@@ -2323,12 +2313,19 @@ pub async fn store_status_mentions(
     status_id: i64,
     resolved: &[(String, Account)],
 ) -> AppResult<()> {
-    sqlx::query!("DELETE FROM mentions WHERE status_id = $1", status_id)
-        .execute(&state.db)
-        .await?;
+    // `ProcessMentionsService` takes away only the active mentions no longer
+    // in the text: a silent one, which `Quote#ensure_quoted_access` made so
+    // that the quoted author can see the quote, stays.
+    sqlx::query!(
+        "DELETE FROM mentions WHERE status_id = $1 AND NOT silent",
+        status_id
+    )
+    .execute(&state.db)
+    .await?;
     for (_, account) in resolved {
         sqlx::query!(
-            "INSERT INTO mentions (status_id, account_id, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT DO NOTHING",
+            r#"INSERT INTO mentions (status_id, account_id, created_at, updated_at) VALUES ($1, $2, now(), now())
+               ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()"#,
             status_id, account.id,
         )
         .execute(&state.db)
@@ -2363,7 +2360,7 @@ mod inline_quote_tests {
             "type": "Note",
             "attributedTo": "https://seoul.earth/users/sohu",
             "quote": "https://hackers.pub/ap/notes/abc",
-            "quoteUrl": "https://hackers.pub/ap/notes/abc",
+            "quoteUri": "https://hackers.pub/ap/notes/abc",
         });
 
         inline_quote_instrument(&mut request, note.clone());

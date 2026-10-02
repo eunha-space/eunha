@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, status_id, quoted_status_id, quoted_account_id, state,\n                  approval_uri, activity_uri, legacy\n           FROM quotes WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "quoted_status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "quoted_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "state",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "approval_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "legacy",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cca5b7f3ae24ffb66695644cb4b4d7828170b4e3bbaaf00599302c339f4f6d5c"
+}

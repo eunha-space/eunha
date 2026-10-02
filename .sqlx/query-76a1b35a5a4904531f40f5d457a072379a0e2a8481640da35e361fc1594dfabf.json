@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO quotes (id, status_id, account_id, state, legacy, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), now())\n           ON CONFLICT (status_id) DO NOTHING\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76a1b35a5a4904531f40f5d457a072379a0e2a8481640da35e361fc1594dfabf"
+}

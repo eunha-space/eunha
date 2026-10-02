@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications WHERE activity_type = 'Quote' AND activity_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d899d1b1aeb886b12d989649daef40006a09c988ac2dad02c3097d38a55135f1"
+}

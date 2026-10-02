@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS \"follows_author!\",\n             EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS \"followed_by_author!\",\n             EXISTS (SELECT 1 FROM blocks\n                     WHERE (account_id = $1 AND target_account_id = $2)\n                        OR (account_id = $2 AND target_account_id = $1)) AS \"blocked!\",\n             EXISTS (SELECT 1 FROM account_domain_blocks\n                     WHERE account_id = $2 AND domain = $3) AS \"domain_blocked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "follows_author!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "followed_by_author!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "blocked!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "domain_blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "49c4e10b8abda6a980da56b56d6aaffbde11327f76f684f0f477f81557f88c61"
+}

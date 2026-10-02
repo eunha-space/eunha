@@ -175,12 +175,14 @@ async fn batch_notification_status_ids(
                    WHEN 'Mention'   THEN m.status_id
                    WHEN 'Favourite' THEN f.status_id
                    WHEN 'Poll'      THEN p.status_id
+                   WHEN 'Quote'     THEN q.status_id
                    ELSE NULL
                END AS "status_id: i64"
            FROM notifications n
            LEFT JOIN mentions   m ON m.id = n.activity_id AND n.activity_type = 'Mention'
            LEFT JOIN favourites f ON f.id = n.activity_id AND n.activity_type = 'Favourite'
            LEFT JOIN polls      p ON p.id = n.activity_id AND n.activity_type = 'Poll'
+           LEFT JOIN quotes     q ON q.id = n.activity_id AND n.activity_type = 'Quote'
            WHERE n.id = ANY($1::bigint[])
              AND n.activity_id IS NOT NULL"#,
         notification_ids,

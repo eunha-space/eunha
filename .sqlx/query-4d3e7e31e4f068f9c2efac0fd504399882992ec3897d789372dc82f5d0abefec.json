@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mentions WHERE status_id = $1 AND NOT silent",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d3e7e31e4f068f9c2efac0fd504399882992ec3897d789372dc82f5d0abefec"
+}

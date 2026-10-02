@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT local AS \"local?\" FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4e08421bca875b73e889a2d45e0c3a5444e923699febba3634e73815ab1b24be"
+}

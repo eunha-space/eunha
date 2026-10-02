@@ -153,9 +153,59 @@ pub fn quote_authorization(
     ))
 }
 
+/// The `@context` of a document carrying a `QuoteAuthorization`: Mastodon's
+/// `quote_authorizations` extension.
+pub fn quote_authorization_context() -> Value {
+    context(authorization_terms(
+        "QuoteAuthorization",
+        "https://w3id.org/fep/044f#QuoteAuthorization",
+    ))
+}
+
+/// `ActivityPub::DeleteQuoteAuthorizationSerializer`: `actor` takes back the
+/// stamp `authorization` (a `QuoteAuthorization` without its `@context`),
+/// addressed to the public. The context is the stamp's, as the serializer
+/// hoists its object's `context_extensions`.
+pub fn delete_quote_authorization(id: &str, actor: &str, authorization: Value) -> Value {
+    json!({
+        "@context": quote_authorization_context(),
+        "id": id,
+        "type": "Delete",
+        "actor": actor,
+        "to": [vocab::ACTIVITYSTREAMS_PUBLIC],
+        "object": authorization,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_quote_authorization_shape() {
+        let stamp = quote_authorization(
+            "https://b.test/users/bob/quote_authorizations/1",
+            "https://b.test/users/bob",
+            "https://a.test/notes/1",
+            "https://b.test/notes/9",
+        )
+        .unwrap();
+        let mut object = stamp.clone();
+        object.as_object_mut().unwrap().remove("@context");
+        let v = delete_quote_authorization(
+            "https://b.test/users/bob/quote_authorizations/1#delete",
+            "https://b.test/users/bob",
+            object,
+        );
+        assert_eq!(v["type"], "Delete");
+        assert_eq!(
+            v["to"],
+            json!(["https://www.w3.org/ns/activitystreams#Public"])
+        );
+        assert_eq!(v["object"]["type"], "QuoteAuthorization");
+        assert!(v["object"].get("@context").is_none());
+        assert_eq!(v["@context"], stamp["@context"]);
+    }
 
     #[test]
     fn feature_request_shape() {

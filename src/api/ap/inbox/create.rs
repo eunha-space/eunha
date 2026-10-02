@@ -251,15 +251,6 @@ pub(super) async fn handle_create(
         .map(|s| s.to_string())
         .filter(|s| ["ko", "en"].contains(&s.as_str()));
 
-    // FEP-044f quote linkage. Resolved after the status is inserted (below) so a
-    // quoted post that quotes back can't recurse forever.
-    let quote_uri = object
-        .get("quote")
-        .and_then(|v| v.as_str())
-        .or_else(|| object.get("quoteUrl").and_then(|v| v.as_str()))
-        .or_else(|| object.get("quoteUri").and_then(|v| v.as_str()))
-        .or_else(|| object.get("_misskey_quote").and_then(|v| v.as_str()));
-
     let status_id = crate::snowflake::next_id();
     let created_at = published.unwrap_or_else(|| chrono::Utc::now().naive_utc());
 
@@ -315,41 +306,18 @@ pub(super) async fn handle_create(
     crate::search::elasticsearch::indexing::status(state, inserted_id).await;
     crate::search::elasticsearch::indexing::account(state, account_id).await;
 
-    // Record the FEP-044f quote. Matching Mastodon, fetch the quoted post when
-    // it isn't cached locally so the quote serializes instead of being silently
-    // dropped; the fetch is bounded by fetch_remote_status's depth limit.
-    if let Some(q) = quote_uri {
-        let mut quoted: Option<(i64, i64)> = sqlx::query!(
-            "SELECT id, account_id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-            q,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|r| (r.id, r.account_id));
-        if quoted.is_none() {
-            if let Some(qid) = fetch_remote_status(state, q).await? {
-                quoted = sqlx::query!("SELECT id, account_id FROM statuses WHERE id = $1", qid)
-                    .fetch_optional(&state.db)
-                    .await?
-                    .map(|r| (r.id, r.account_id));
-            }
-        }
-        if let Some((quoted_id, quoted_account_id)) = quoted {
-            let _ = sqlx::query!(
-                r#"INSERT INTO quotes
-                     (id, status_id, quoted_status_id, account_id, quoted_account_id, state, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, 1, now(), now())
-                   ON CONFLICT (status_id) DO NOTHING"#,
-                crate::snowflake::next_id(),
-                inserted_id,
-                quoted_id,
-                account_id,
-                quoted_account_id,
-            )
-            .execute(&state.db)
-            .await;
-        }
-    }
+    // `process_quote` and `fetch_and_verify_quote`: the quote is recorded
+    // pending and verified against its stamp, after the status is inserted so
+    // that a quoted post that quotes back cannot recurse forever.
+    super::quote::process_quote(
+        state,
+        inserted_id,
+        account_id,
+        object,
+        activity.get("@context"),
+        0,
+    )
+    .await?;
 
     // Media attachments. Domains blocked with `reject_media` (or fully
     // suspended) federate text but not media, so skip storing attachments.

@@ -471,12 +471,15 @@ pub mod quote_state {
     pub const ACCEPTED: i32 = 1;
     pub const REJECTED: i32 = 2;
     pub const REVOKED: i32 = 3;
+    /// The quoted post was gone when the quote arrived (a `Tombstone`).
+    pub const DELETED: i32 = 4;
 
     pub fn to_str(v: i32) -> &'static str {
         match v {
             ACCEPTED => "accepted",
             REJECTED => "rejected",
             REVOKED => "revoked",
+            DELETED => "deleted",
             _ => "pending",
         }
     }

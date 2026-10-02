@@ -34,6 +34,7 @@ pub mod portability;
 pub mod preview_card;
 pub mod privacy_policy;
 pub mod push;
+pub mod quotes;
 pub mod rails_encryption;
 pub mod redis_keys;
 pub mod redis_lock;

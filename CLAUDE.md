@@ -85,6 +85,8 @@ Tracking Mastodon:
  -  *docs/mastodon/signing-keys.md* and *docs/mastodon/http-signatures.md*.
  -  *docs/mastodon/remote-actors.md*: how a remote actor's document becomes
     its account row (`ProcessAccountService`).
+ -  *docs/mastodon/quotes.md*: a quote's states, the consent handshake,
+    verifying stamps, and revoking.
  -  *docs/mastodon/entity-parity.md*, *docs/mastodon/differential-testing.md*
     and *docs/mastodon/federation-testing.md*: the harnesses that compare
     eunha with upstream, and the environment traps that fake failures.

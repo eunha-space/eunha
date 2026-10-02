@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, state, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, 0, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35081827ca3d4a35d91095537e2f6ddcead97158dc5733beed0a1c3326793c83"
+}

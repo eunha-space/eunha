@@ -289,6 +289,17 @@ async fn notification_activity(
     from_account_id: i64,
     status_id: Option<i64>,
 ) -> Option<(&'static str, i64)> {
+    // A `quote` is about the Quote, as Mastodon's `LocalNotificationWorker`
+    // is given it; `status_id` is the quoting status.
+    if notification_type == "quote" {
+        let sid = status_id?;
+        return sqlx::query_scalar!("SELECT id FROM quotes WHERE status_id = $1", sid)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten()
+            .map(|id| ("Quote", id));
+    }
     if let Some(sid) = status_id {
         return Some(("Status", sid));
     }
@@ -552,6 +563,25 @@ pub async fn create_and_push(
         );
         return;
     };
+
+    // `LocalNotificationWorker`: an `update` or `quoted_update` replaces the
+    // earlier ones about the same status, so the newest edit is what is said.
+    if matches!(notification_type, "update" | "quoted_update") {
+        if let Err(e) = sqlx::query!(
+            r#"DELETE FROM notifications
+               WHERE account_id = $1 AND "type" = $2
+                 AND activity_type = $3 AND activity_id = $4"#,
+            recipient_id,
+            notification_type,
+            activity_type_val,
+            activity_id_val,
+        )
+        .execute(&db)
+        .await
+        {
+            tracing::warn!(error = %e, "could not replace an earlier update notification");
+        }
+    }
 
     // Dedup: don't insert the same (account, from, type, activity) twice
     let existing = sqlx::query_scalar!(

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.account_id, s.in_reply_to_account_id, s.visibility, s.deleted_at,\n                  o.account_id AS \"reblog_of_account_id?\"\n           FROM statuses s LEFT JOIN statuses o ON o.id = s.reblog_of_id\n           WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "deleted_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "reblog_of_account_id?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0e667b1131dba7373711d69ba5a476fbd74f65fedecf8bd95cbfae3bb6a7a697"
+}

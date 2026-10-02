@@ -1222,7 +1222,7 @@ async fn test_quote_policy_bitmap() {
             .status()
         }
     };
-    assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::FORBIDDEN);
+    assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::NOT_FOUND);
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
     assert_eq!(quote(ctx.bob_token.clone()).await, StatusCode::OK);
 }

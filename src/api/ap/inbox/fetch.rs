@@ -52,7 +52,22 @@ pub async fn store_remote_status_prefetched(
 
 /// Largest depth to which `fetch_remote_status` follows references (in-reply-to
 /// and quoted posts), to avoid unbounded fetch chains.
-const MAX_FETCH_DEPTH: u8 = 2;
+pub(super) const MAX_FETCH_DEPTH: u8 = 2;
+
+/// [`fetch_remote_status`] at `depth` in a chain of references, with the
+/// object already in hand when `prefetched`.
+pub(super) async fn fetch_remote_status_at_depth(
+    state: &AppState,
+    uri: &str,
+    prefetched: Option<Value>,
+    depth: u8,
+) -> AppResult<Option<i64>> {
+    Ok(
+        Box::pin(fetch_remote_status_depth(state, uri, prefetched, depth))
+            .await?
+            .map(|(id, _)| id),
+    )
+}
 
 /// Whether two URIs name the same HTTP(S) host, which is how Mastodon decides
 /// whether an object's attribution can be believed; for portable ids, the
@@ -250,47 +265,16 @@ async fn fetch_remote_status_depth(
     };
     crate::fasp::events::status_created(state, new_id).await;
 
-    // Quote linkage (only if the quoted post is already local).
-    let quote_uri = object
-        .get("quote")
-        .and_then(|v| v.as_str())
-        .or_else(|| object.get("quoteUrl").and_then(|v| v.as_str()))
-        .or_else(|| object.get("quoteUri").and_then(|v| v.as_str()))
-        .or_else(|| object.get("_misskey_quote").and_then(|v| v.as_str()));
-    if let Some(q) = quote_uri {
-        let mut quoted: Option<(i64, i64)> = sqlx::query!(
-            "SELECT id, account_id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-            q,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|r| (r.id, r.account_id));
-        if quoted.is_none() && depth < MAX_FETCH_DEPTH {
-            if let Some((qid, _)) =
-                Box::pin(fetch_remote_status_depth(state, q, None, depth + 1)).await?
-            {
-                quoted = sqlx::query!("SELECT id, account_id FROM statuses WHERE id = $1", qid)
-                    .fetch_optional(&state.db)
-                    .await?
-                    .map(|r| (r.id, r.account_id));
-            }
-        }
-        if let Some((quoted_id, quoted_account_id)) = quoted {
-            let _ = sqlx::query!(
-                r#"INSERT INTO quotes
-                     (id, status_id, quoted_status_id, account_id, quoted_account_id, state, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, 1, now(), now())
-                   ON CONFLICT (status_id) DO NOTHING"#,
-                crate::snowflake::next_id(),
-                new_id,
-                quoted_id,
-                account_id,
-                quoted_account_id,
-            )
-            .execute(&state.db)
-            .await;
-        }
-    }
+    // `process_quote` and `fetch_and_verify_quote`.
+    Box::pin(super::quote::process_quote(
+        state,
+        new_id,
+        account_id,
+        object,
+        fetched.get("@context"),
+        depth,
+    ))
+    .await?;
 
     // Media attachments.
     for att in object

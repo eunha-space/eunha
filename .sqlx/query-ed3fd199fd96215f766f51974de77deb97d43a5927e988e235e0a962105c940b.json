@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT activity_type FROM notifications WHERE account_id = $1 AND \"type\" = 'quote'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "activity_type",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ed3fd199fd96215f766f51974de77deb97d43a5927e988e235e0a962105c940b"
+}
