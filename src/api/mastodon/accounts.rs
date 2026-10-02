@@ -168,6 +168,7 @@ pub async fn lookup_account(
         api.emojis = fetch_account_emojis(&state, &account).await;
         api.roles = fetch_account_roles(&state, account.id).await;
         apply_account_stats(&state, &mut api, account.id).await;
+        api.email_subscriptions = crate::email_subscriptions::serialized(&state, &account).await;
         return Ok(Json(api));
     }
 
@@ -222,6 +223,8 @@ pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json
     api_account.emojis = fetch_account_emojis(&state, &account).await;
     api_account.roles = fetch_account_roles(&state, account.id).await;
     apply_account_stats(&state, &mut api_account, account.id).await;
+    api_account.email_subscriptions =
+        crate::email_subscriptions::serialized(&state, &account).await;
     if let Some(moved_account_id) = account.moved_to_account_id {
         if let Ok(Some(moved)) = sqlx::query_as!(
             Account,
@@ -1769,12 +1772,26 @@ pub async fn batch_accounts_to_api(
     let roles_map = batch_account_roles(state, accounts).await;
     let ids: Vec<i64> = accounts.iter().map(|a| a.id).collect();
     let stats_map = batch_account_stats(state, &ids).await;
+    // `AccountSerializer#email_subscriptions`, while the feature is enabled.
+    let email_subscriptions = if crate::email_subscriptions::enabled(state).await {
+        let local: Vec<i64> = accounts
+            .iter()
+            .filter(|a| a.domain.is_none())
+            .map(|a| a.id)
+            .collect();
+        Some(crate::email_subscriptions::offering(state, &local).await)
+    } else {
+        None
+    };
     accounts
         .iter()
         .map(|a| {
             let mut api = super::convert::account_from_db(&state.urls, a);
             api.emojis = emojis_map.get(&a.id).cloned().unwrap_or_default();
             api.roles = roles_map.get(&a.id).cloned().unwrap_or_default();
+            api.email_subscriptions = email_subscriptions
+                .as_ref()
+                .map(|offering| offering.contains(&a.id));
             if let Some(&(s, fg, fr)) = stats_map.get(&a.id) {
                 api.statuses_count = s;
                 api.following_count = fg;

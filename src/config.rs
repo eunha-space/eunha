@@ -417,6 +417,11 @@ pub struct InstanceConfig {
     pub privacy_policy: String,
     #[serde(default)]
     pub terms_of_service: String,
+    /// Whether this instance offers email subscriptions at all. Mastodon's
+    /// `DISABLE_EMAIL_SUBSCRIPTIONS=true` is this set to `false`; with it on,
+    /// as by default, an administrator still has to enable the feature.
+    #[serde(default = "default_true")]
+    pub email_subscriptions: bool,
 }
 
 fn default_true() -> bool {

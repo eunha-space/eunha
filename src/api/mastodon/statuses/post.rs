@@ -710,6 +710,18 @@ pub async fn post_status(
 
     // `LinkCrawlWorker.perform_async(@status.id)`.
     crate::preview_card::crawl(&state, status.id);
+    // `process_email_subscriptions!`
+    crate::email_subscriptions::status_posted(
+        &state,
+        &crate::email_subscriptions::PostedStatus {
+            id: status.id,
+            account_id: account.id,
+            visibility: visibility.clone(),
+            in_reply_to_id,
+            in_reply_to_account_id,
+        },
+    )
+    .await;
 
     if matches!(visibility.as_str(), "public" | "unlisted" | "private") {
         if let Ok(payload) = serde_json::to_string(&api_status) {

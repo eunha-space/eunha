@@ -48,6 +48,8 @@ pub async fn verify_credentials(
 
     api_account.roles = fetch_account_roles(&state, account.id).await;
     api_account.role = fetch_account_role(&state, account.id).await;
+    api_account.email_subscriptions =
+        crate::email_subscriptions::serialized(&state, &account).await;
 
     Ok(Json(api_account))
 }
@@ -630,6 +632,7 @@ async fn build_credential_account_response(
     });
     api_account.roles = fetch_account_roles(state, auth.account_id).await;
     api_account.role = fetch_account_role(state, auth.account_id).await;
+    api_account.email_subscriptions = crate::email_subscriptions::serialized(state, &account).await;
     Ok(Json(api_account))
 }
 

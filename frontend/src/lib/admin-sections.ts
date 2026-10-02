@@ -19,6 +19,11 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { to: '/admin/trends/links', label: 'Trends', permission: 'manage_taxonomies' },
   { to: '/admin/tags', label: 'Hashtags', permission: 'manage_taxonomies' },
   { to: '/admin/custom_emojis', label: 'Custom emoji', permission: 'manage_custom_emojis' },
+  {
+    to: '/admin/email_subscriptions',
+    label: 'Email newsletters',
+    permission: 'manage_settings',
+  },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

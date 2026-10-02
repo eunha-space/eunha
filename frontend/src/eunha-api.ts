@@ -188,3 +188,68 @@ export async function deleteAccount(
     body: JSON.stringify(challenge),
   })
 }
+
+// ── Email subscriptions ────────────────────────────────────────────────────
+// Mastodon 4.7. Subscribing is `POST /api/v1/accounts/:id/email_subscriptions`,
+// which asks for no token; an account's own switch lives on Mastodon's web
+// privacy settings page, so eunha serves it at /api/eunha/v1/email_subscriptions.
+
+/** `ValidationErrorFormatter`'s `details`: per attribute, `ERR_*` codes. */
+export type ValidationDetails = Record<string, { error: string; description: string }[]>
+
+export class SubscribeError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public details: ValidationDetails | null,
+  ) {
+    super(message)
+    this.name = 'SubscribeError'
+  }
+}
+
+export async function subscribeByEmail(accountId: string, email: string): Promise<void> {
+  const res = await fetch(
+    `${window.location.origin}/api/v1/accounts/${accountId}/email_subscriptions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    },
+  )
+  if (res.ok) return
+  let message = `Subscribing failed (${res.status})`
+  let details: ValidationDetails | null = null
+  try {
+    const body = (await res.json()) as { error?: string; details?: ValidationDetails }
+    if (body.error) message = body.error
+    details = body.details ?? null
+  } catch {
+    // A 404 from a feature that is off has no body.
+  }
+  throw new SubscribeError(res.status, message, details)
+}
+
+export interface OwnEmailSubscriptions {
+  /** The feature is enabled and this account's role may use it. */
+  available: boolean
+  enabled: boolean
+  /** Confirmed subscribers. */
+  subscribers: number
+}
+
+export async function getOwnEmailSubscriptions(token: string): Promise<OwnEmailSubscriptions> {
+  const res = await eunhaFetch('/api/eunha/v1/email_subscriptions', token)
+  return res.json() as Promise<OwnEmailSubscriptions>
+}
+
+export async function setOwnEmailSubscriptions(
+  token: string,
+  enabled: boolean,
+): Promise<OwnEmailSubscriptions> {
+  const res = await eunhaFetch('/api/eunha/v1/email_subscriptions', token, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  })
+  return res.json() as Promise<OwnEmailSubscriptions>
+}

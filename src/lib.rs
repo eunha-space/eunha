@@ -8,6 +8,7 @@ pub mod db;
 pub mod delete_account;
 pub mod divergence;
 pub mod email;
+pub mod email_subscriptions;
 pub mod error;
 pub mod federation;
 pub mod feed;

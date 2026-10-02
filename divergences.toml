@@ -413,3 +413,68 @@ like a URL under a top-level domain that does not exist."""
 evidence = "src/preview_card/mod.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "email-subscriptions-rest-api"
+kind = "addition"
+summary = "Serves the email subscription admin pages and the owner's switch over REST"
+mastodon = """
+Manages email subscriptions from web forms only: the admin pages under \
+`/admin/email_subscriptions` (setup, disable, purge, footer text, each \
+account's list), and the account owner's switch on the privacy settings page. \
+The REST API has only `POST /api/v1/accounts/:id/email_subscriptions`."""
+eunha = """
+Serves what those forms do under `/api/v1/admin/email_subscriptions`, \
+authorized by upstream's `EmailSubscriptionPolicy` (`manage_settings`), and \
+the owner's switch at `/api/eunha/v1/email_subscriptions`."""
+why = """
+Eunha's client is a single-page app with no server-rendered admin or settings \
+pages to inherit, so these need an API to call. As with `invites-rest-api`, \
+the admin calls sit at the paths upstream would plausibly use and answer only \
+what its forms would allow; the owner's switch, which upstream would keep \
+among the user's settings, is under `/api/eunha/`."""
+evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "email-subscription-unsubscribe-token"
+kind = "behaviour"
+summary = "Unsubscribe links carry the subscription's confirmation token"
+mastodon = """
+Links `/unsubscribe` with a signed GlobalID of the subscription \
+(`to_sgid(for: 'unsubscribe')`), signed with `secret_key_base` and valid for \
+a month."""
+eunha = """
+Links `/unsubscribe?token=` with the subscription's confirmation token, which \
+Mastodon keeps after confirming. It does not expire, and a link Mastodon \
+mailed before the instance moved to eunha is not recognised."""
+why = """
+Eunha does not have Mastodon's `secret_key_base` and cannot sign or verify a \
+GlobalID. The confirmation token is as secret, was only ever sent to the \
+subscriber, and is unique by index, so it names the subscription without a \
+new column. A link that keeps working is what an unsubscribe link is for."""
+evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "email-distribution-in-process"
+kind = "behaviour"
+summary = "The five-minute wait before mailing subscribers runs in the process"
+mastodon = """
+Schedules `EmailDistributionWorker` in Sidekiq five minutes after the first \
+post of a batch, unique per account for up to a day."""
+eunha = """
+Waits in a task of the eunha process, held unique by a Redis key that lives \
+eleven minutes. A stopped instance leaves the batch in Redis for the next \
+post to send; one that dies outright holds the next batch back until the key \
+expires."""
+why = """
+Eunha has no durable queue for work due at a time, and a five-minute wait \
+does not justify one: the batch itself is in Redis for an hour, as upstream \
+keeps it, so what a restart can lose is only the timing. The short key keeps \
+a crash from silencing an account's emails for a day."""
+evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

@@ -36,6 +36,8 @@ import AdminCanonicalEmailBlocks from './pages/admin/CanonicalEmailBlocks.tsx'
 import AdminTrends from './pages/admin/Trends.tsx'
 import AdminTags from './pages/admin/Tags.tsx'
 import AdminCustomEmojis from './pages/admin/CustomEmojis.tsx'
+import AdminEmailSubscriptions from './pages/admin/EmailSubscriptions.tsx'
+import AdminEmailSubscriptionAccount from './pages/admin/EmailSubscriptionAccount.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -94,6 +96,11 @@ const router = createBrowserRouter([
   { path: '/admin/trends/tags', element: <AdminTrends /> },
   { path: '/admin/tags', element: <AdminTags /> },
   { path: '/admin/custom_emojis', element: <AdminCustomEmojis /> },
+  { path: '/admin/email_subscriptions', element: <AdminEmailSubscriptions /> },
+  {
+    path: '/admin/email_subscriptions/accounts/:id',
+    element: <AdminEmailSubscriptionAccount />,
+  },
   { path: '/:acct', element: <Profile /> },
   // Static second segments outrank the dynamic `:id` thread route, so these
   // win over `/:acct/:id` (status ids are numeric and never collide).

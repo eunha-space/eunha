@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, email, locale, confirmation_token\n         FROM email_subscriptions\n         WHERE account_id = $1 AND confirmed_at IS NOT NULL\n         ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "confirmation_token",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "01da5810845e631c29f20efe42725af9d1c4c5dadb0a09977103d5f3208cb39e"
+}

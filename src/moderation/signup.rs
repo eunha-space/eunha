@@ -16,6 +16,11 @@ pub fn skip_mx_check() {
     SKIP_MX_CHECK.store(true, Ordering::Relaxed);
 }
 
+/// Whether [`skip_mx_check`] was called.
+pub fn mx_check_skipped() -> bool {
+    SKIP_MX_CHECK.load(Ordering::Relaxed)
+}
+
 /// `DomainMaterializable.domain_variants`: the domain and each parent.
 pub fn domain_variants(domain: &str) -> Vec<String> {
     let labels: Vec<&str> = domain.split('.').collect();

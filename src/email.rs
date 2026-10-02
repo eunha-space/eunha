@@ -443,10 +443,131 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// The address these emails come from, which the page confirming a
+    /// subscription asks the subscriber to add to their contacts.
+    pub fn from_address(&self) -> &str {
+        &self.from
+    }
+
+    /// `EmailSubscriptionMailer#confirmation`.
+    pub async fn send_subscription_confirmation(
+        &self,
+        envelope: &SubscriptionEnvelope,
+        acct: &str,
+        avatar_url: &str,
+        confirm_url: &str,
+    ) -> anyhow::Result<()> {
+        let ko = envelope.locale.starts_with("ko");
+        let name = html_escape(&envelope.name);
+        let subject = if ko {
+            "이메일 주소 확인"
+        } else {
+            "Confirm your email address"
+        };
+        let title = if ko {
+            format!("{name} 님으로부터 이메일 업데이트를 받겠습니까?")
+        } else {
+            format!("Get email updates from {name}?")
+        };
+        let action = if ko {
+            "이메일 주소 확인"
+        } else {
+            "Confirm email address"
+        };
+        let confirm_url = html_escape(confirm_url);
+        let body = format!(
+            "<p><img src=\"{avatar}\" alt=\"\" width=\"64\" height=\"64\"></p>\
+             <h1>{title}</h1>\
+             <p>Confirm you'd like to receive emails from {name} (@{acct}) when they \
+             publish new posts.</p>\
+             <p><a href=\"{confirm_url}\">{action}</a></p>\
+             <p>If you're not sure why you received this email, you can delete it. You \
+             will not be subscribed if you don't click on the link above.</p>{footer}",
+            avatar = html_escape(avatar_url),
+            acct = html_escape(acct),
+            footer = subscription_footer(envelope),
+        );
+        self.send_with_headers(&envelope.to, subject, &body, &list_headers(envelope))
+            .await
+    }
+
+    /// `EmailSubscriptionMailer#notification`: `posts`, newest first, and the
+    /// invitation to an account here. `raw_name` is the account's display
+    /// name as the subject uses it, blank or not; `excerpt` the newest post's
+    /// text, truncated.
+    pub async fn send_subscription_notification(
+        &self,
+        envelope: &SubscriptionEnvelope,
+        raw_name: &str,
+        excerpt: &str,
+        posts: &[MailedStatus],
+        sign_up_url: &str,
+    ) -> anyhow::Result<()> {
+        let ko = envelope.locale.starts_with("ko");
+        let subject = match (posts.len() == 1, ko) {
+            (true, false) => format!("New post: \"{excerpt}\""),
+            (true, true) => format!("새 게시물: \"{excerpt}\""),
+            (false, false) => format!("New posts from {raw_name}"),
+            (false, true) => format!("{raw_name}의 새 게시물"),
+        };
+        let mut body = String::new();
+        for post in posts {
+            let warning = if post.spoiler_text.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "<p><strong>{}</strong></p>",
+                    html_escape(&post.spoiler_text)
+                )
+            };
+            body.push_str(&format!(
+                "<table role=\"presentation\" width=\"100%\"><tr>\
+                 <td width=\"48\"><img src=\"{avatar}\" alt=\"\" width=\"48\" height=\"48\"></td>\
+                 <td><strong>{name}</strong><br>@{acct}</td></tr></table>\
+                 {warning}<div>{content}</div>\
+                 <p><a href=\"{url}\">{created_at}</a></p><hr>",
+                avatar = html_escape(&post.avatar_url),
+                name = html_escape(&post.name),
+                acct = html_escape(&post.acct),
+                content = post.content,
+                url = html_escape(&post.url),
+                created_at = html_escape(&post.created_at),
+            ));
+        }
+        let interact = if posts.len() == 1 {
+            "Interact with this post and discover more like it."
+        } else {
+            "Interact with these posts and discover more."
+        };
+        let create_account = if ko {
+            "마스토돈 계정 생성"
+        } else {
+            "Create a Mastodon account"
+        };
+        body.push_str(&format!(
+            "<p>{interact}</p><p><a href=\"{}\">{create_account}</a></p>{}",
+            html_escape(sign_up_url),
+            subscription_footer(envelope),
+        ));
+        self.send_with_headers(&envelope.to, &subject, &body, &list_headers(envelope))
+            .await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
+        self.send_with_headers(to, subject, html, &[]).await
+    }
+
+    async fn send_with_headers(
+        &self,
+        to: &str,
+        subject: &str,
+        html: &str,
+        headers: &[(&'static str, String)],
+    ) -> anyhow::Result<()> {
         if let Some(smtp) = &self.smtp {
+            use lettre::message::header::{HeaderName, HeaderValue};
             use lettre::AsyncTransport;
-            let message = lettre::Message::builder()
+            let mut builder = lettre::Message::builder()
                 .from(
                     self.from
                         .parse()
@@ -456,7 +577,14 @@ impl EmailSender {
                     .parse()
                     .map_err(|_| anyhow::anyhow!("Invalid email recipient"))?)
                 .subject(subject)
-                .header(lettre::message::header::ContentType::TEXT_HTML)
+                .header(lettre::message::header::ContentType::TEXT_HTML);
+            for (name, value) in headers {
+                builder = builder.raw_header(HeaderValue::new(
+                    HeaderName::new_from_ascii_str(name),
+                    value.clone(),
+                ));
+            }
+            let message = builder
                 .body(html.to_owned())
                 .map_err(|_| anyhow::anyhow!("Could not build email"))?;
             smtp.send(message)
@@ -474,6 +602,69 @@ pub fn html_escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// What every email to a subscriber carries besides its body.
+#[derive(Debug, Clone)]
+pub struct SubscriptionEnvelope {
+    pub to: String,
+    pub locale: String,
+    /// The account's display name, or its username when that is blank.
+    pub name: String,
+    pub domain: String,
+    /// `List-ID`, already in its angle brackets.
+    pub list_id: String,
+    pub unsubscribe_url: String,
+    pub privacy_policy_url: String,
+    /// `Setting.email_footer_text`, when an administrator set one.
+    pub footer_text: Option<String>,
+}
+
+/// A post as `notification_mailer/status` shows it.
+#[derive(Debug, Clone)]
+pub struct MailedStatus {
+    pub name: String,
+    pub acct: String,
+    pub avatar_url: String,
+    pub spoiler_text: String,
+    /// The post's HTML, as the API serves it.
+    pub content: String,
+    pub url: String,
+    pub created_at: String,
+}
+
+/// `set_list_headers`: what lets a mail client offer to unsubscribe in one
+/// click.
+fn list_headers(envelope: &SubscriptionEnvelope) -> Vec<(&'static str, String)> {
+    vec![
+        ("List-ID", envelope.list_id.clone()),
+        ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click".into()),
+        (
+            "List-Unsubscribe",
+            format!("<{}>", envelope.unsubscribe_url),
+        ),
+    ]
+}
+
+/// The footer of `email_subscription_mailer/notification`, which the
+/// confirmation shares.
+fn subscription_footer(envelope: &SubscriptionEnvelope) -> String {
+    let mut footer = format!(
+        "<p><small>You're receiving this email because you opted into email updates \
+         from {name}. Don't want to receive these emails? \
+         <a href=\"{unsubscribe}\">Unsubscribe</a></small></p>\
+         <p><small>Emails are sent from {domain}, a server powered by Mastodon. To \
+         understand how this server processes your personal data, refer to the \
+         <a href=\"{privacy}\">Privacy Policy</a>.</small></p>",
+        name = html_escape(&envelope.name),
+        unsubscribe = html_escape(&envelope.unsubscribe_url),
+        domain = html_escape(&envelope.domain),
+        privacy = html_escape(&envelope.privacy_policy_url),
+    );
+    if let Some(text) = &envelope.footer_text {
+        footer.push_str(&format!("<p><small>{}</small></p>", html_escape(text)));
+    }
+    footer
 }
 
 #[cfg(test)]

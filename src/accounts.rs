@@ -325,7 +325,7 @@ pub async fn reset_password(db: &PgPool, username: &str) -> Result<String> {
 /// characters Mastodon's `EmailAddressValidator` refuses outright (`%`, `,`,
 /// `"`) and no whitespace — the shape it accepts, short of parsing the address
 /// as the `mail` gem does.
-fn valid_email(email: &str) -> bool {
+pub fn valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };

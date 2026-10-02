@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM email_subscriptions\n         WHERE confirmed_at IS NULL AND created_at <= now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "634c1eafa76afeb513c221be1686b14210050bf89c9600b7e4d4fb86bf88e1a4"
+}

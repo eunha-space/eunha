@@ -43,6 +43,7 @@ import { ReportDialog } from '@/components/report-dialog.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { EmailSubscriptionForm } from '@/components/email-subscription-form.tsx'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -581,6 +582,18 @@ function ProfileImageCropModal({
   )
 }
 
+/**
+ * `email_subscriptions` from the account entity, which masto.js does not
+ * model: present and true while the account offers subscriptions by email.
+ */
+function offersEmailSubscriptions(account: mastodon.v1.Account): boolean {
+  const extra = account as unknown as {
+    emailSubscriptions?: boolean
+    email_subscriptions?: boolean
+  }
+  return extra.emailSubscriptions === true || extra.email_subscriptions === true
+}
+
 export default function Profile() {
   const { acct = '' } = useParams()
   const handle = acct.replace(/^@/, '')
@@ -1096,6 +1109,13 @@ export default function Profile() {
               <b className="text-foreground">{account.followersCount}</b> followers
             </Link>
           </div>
+          {/* Mastodon shows it to visitors only: `!me && account.email_subscriptions`. */}
+          {!token && offersEmailSubscriptions(account) && (
+            <EmailSubscriptionForm
+              accountId={account.id}
+              name={account.displayName || account.username}
+            />
+          )}
 
           <div className="space-y-2">
             {!!pinned?.length && (

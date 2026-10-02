@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Ban, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ApiError, deleteAccount } from '../eunha-api.ts'
+import {
+  ApiError,
+  deleteAccount,
+  getOwnEmailSubscriptions,
+  setOwnEmailSubscriptions,
+  type OwnEmailSubscriptions,
+} from '../eunha-api.ts'
 import { beginLogin, getToken, logout } from '../auth.ts'
 import { isAdvancedLayout, setAdvancedLayout } from '../lib/panes.ts'
 import { clearMe, getMeAccount } from '../me.ts'
@@ -125,6 +131,55 @@ function DeleteAccount({ token }: { token: string }) {
   )
 }
 
+/**
+ * Mastodon's "Send posts via email", on its privacy settings page: shown while
+ * the feature is enabled to an account whose role may use it.
+ */
+function EmailSubscriptions({ token }: { token: string }) {
+  const [own, setOwn] = useState<OwnEmailSubscriptions | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getOwnEmailSubscriptions(token)
+      .then(setOwn)
+      .catch(() => {})
+  }, [token])
+
+  if (!own?.available) return null
+
+  const toggle = async (on: boolean) => {
+    setSaving(true)
+    try {
+      setOwn(await setOwnEmailSubscriptions(token, on))
+    } catch {
+      toast.error('Could not save the setting')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">Send posts via email</h2>
+      <p className="text-muted-foreground text-sm">
+        Add an email sign-up form to your profile that appears for logged-out users. When
+        visitors enter their email address and opt in, they get email updates for your public
+        posts.
+      </p>
+      {(own.subscribers > 0 || own.enabled) && (
+        <p className="text-sm">
+          {own.enabled ? 'Active' : 'Inactive'} · {own.subscribers}{' '}
+          {own.subscribers === 1 ? 'subscriber' : 'subscribers'}
+        </p>
+      )}
+      <Label className="text-sm font-normal">
+        <Switch checked={own.enabled} disabled={saving} onCheckedChange={toggle} />
+        Offer email subscriptions on my profile
+      </Label>
+    </section>
+  )
+}
+
 export default function Settings() {
   const token = getToken()
   const [advanced, setAdvanced] = useState(() => isAdvancedLayout())
@@ -188,6 +243,8 @@ export default function Settings() {
               <Ban /> Blocked and muted
             </Button>
           </section>
+
+          <EmailSubscriptions token={token} />
 
           <DeleteAccount token={token} />
         </div>

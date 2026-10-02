@@ -34,6 +34,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         until_stopped(&state, "trends review", run_trends_review(state.clone())),
         until_stopped(
             &state,
+            "email subscription cleanup",
+            crate::email_subscriptions::run_cleanup(state.clone()),
+        ),
+        until_stopped(
+            &state,
             "delivery cleanup",
             crate::federation::delivery::run_delivery_cleanup(state.clone()),
         ),
@@ -592,6 +597,19 @@ async fn publish_one(
     status_with_uri.uri = Some(uri);
     // `LinkCrawlWorker.perform_async(@status.id)`.
     crate::preview_card::crawl(state, status_with_uri.id);
+    // `PostStatusService#process_email_subscriptions!`, which a scheduled
+    // post goes through when it is published.
+    crate::email_subscriptions::status_posted(
+        state,
+        &crate::email_subscriptions::PostedStatus {
+            id: status_with_uri.id,
+            account_id: account.id,
+            visibility: visibility.clone(),
+            in_reply_to_id,
+            in_reply_to_account_id,
+        },
+    )
+    .await;
     if let Ok(media) = fetch_status_media(state, status_with_uri.id).await {
         if let Ok(api_status) =
             build_status(state, &status_with_uri, &account, media, None, None).await

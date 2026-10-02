@@ -34,6 +34,8 @@ export const PERMISSION = {
   manage_user_access: 1 << 18,
   delete_user_data: 1 << 19,
   view_feeds: 1 << 20,
+  invite_bypass_approval: 1 << 21,
+  manage_email_subscriptions: 1 << 22,
 } as const
 
 export type Permission = keyof typeof PERMISSION
@@ -724,4 +726,100 @@ export function getRetention(
     end_at: endAt,
     frequency,
   })
+}
+
+// ── Email subscriptions ────────────────────────────────────────────────────
+// What Mastodon's admin pages for email newsletters do, which eunha serves as
+// REST (Mastodon has only the web forms).
+
+/** A role that may offer email subscriptions. */
+export interface EmailSubscriptionRole {
+  id: string
+  name: string
+  color: string
+  accounts: number
+}
+
+/**
+ * `active`, `disabled` (turned off by the user), `no_access` (the role no
+ * longer allows it), or `inactive`.
+ */
+export type EmailSubscriptionStatus = 'active' | 'disabled' | 'no_access' | 'inactive'
+
+export interface EmailSubscriptionAccount {
+  account: Account
+  status: EmailSubscriptionStatus
+  subscribers: number
+  last_status_at: string | null
+}
+
+export interface EmailSubscriptionsOverview {
+  /** Whether whoever runs the server lets the feature be enabled at all. */
+  available: boolean
+  enabled: boolean
+  email_footer_text: string
+  roles: EmailSubscriptionRole[]
+  accounts: EmailSubscriptionAccount[]
+}
+
+export interface EmailSubscriber {
+  id: string
+  email: string
+  created_at: string
+  confirmed_at: string | null
+}
+
+const EMAIL_SUBSCRIPTIONS = '/api/v1/admin/email_subscriptions'
+
+export function getEmailSubscriptions(token: string) {
+  return json<EmailSubscriptionsOverview>(token, 'GET', EMAIL_SUBSCRIPTIONS)
+}
+
+export function setupEmailSubscriptions(
+  token: string,
+  agreements: { agreement_email_volume: boolean; agreement_privacy_and_terms: boolean },
+) {
+  return json<EmailSubscriptionsOverview>(
+    token,
+    'POST',
+    `${EMAIL_SUBSCRIPTIONS}/setup`,
+    agreements,
+  )
+}
+
+export function disableEmailSubscriptions(token: string) {
+  return json<EmailSubscriptionsOverview>(token, 'POST', `${EMAIL_SUBSCRIPTIONS}/disable`)
+}
+
+export function purgeEmailSubscriptions(token: string) {
+  return json<EmailSubscriptionsOverview>(token, 'POST', `${EMAIL_SUBSCRIPTIONS}/purge`)
+}
+
+export function updateEmailFooterText(token: string, email_footer_text: string) {
+  return json<EmailSubscriptionsOverview>(
+    token,
+    'PUT',
+    `${EMAIL_SUBSCRIPTIONS}/additional_footer_text`,
+    { email_footer_text },
+  )
+}
+
+export function getEmailSubscriptionAccount(token: string, id: string) {
+  return json<EmailSubscriptionAccount>(token, 'GET', `${EMAIL_SUBSCRIPTIONS}/accounts/${id}`)
+}
+
+export function setEmailSubscriptionAccount(token: string, id: string, enabled: boolean) {
+  return json<EmailSubscriptionAccount>(
+    token,
+    'POST',
+    `${EMAIL_SUBSCRIPTIONS}/accounts/${id}/${enabled ? 'enable' : 'disable'}`,
+  )
+}
+
+export function listEmailSubscribers(token: string, id: string) {
+  return paginate<EmailSubscriber>(token, `${EMAIL_SUBSCRIPTIONS}/accounts/${id}/subscriptions`)
+}
+
+export function deleteEmailSubscriber(token: string, id: string) {
+  return empty(token, 'DELETE', `${EMAIL_SUBSCRIPTIONS}/${id}`)
 }

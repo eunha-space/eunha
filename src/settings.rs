@@ -62,6 +62,22 @@ pub async fn string(state: &AppState, var: &str) -> String {
     }
 }
 
+/// `Setting[var] = value`: stored YAML-encoded, the way `Setting#value=`
+/// writes it (`--- true`).
+pub async fn set(state: &AppState, var: &str, value: Value) -> anyhow::Result<()> {
+    let yaml = format!("--- {}", serde_yaml::to_string(&value)?);
+    sqlx::query!(
+        r#"INSERT INTO settings (var, value, created_at, updated_at)
+           VALUES ($1, $2, now(), now())
+           ON CONFLICT (var) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"#,
+        var,
+        yaml,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
 /// [`get`] as a boolean, Ruby-truthy: nil and false are false.
 pub async fn boolean(state: &AppState, var: &str) -> bool {
     match get(state, var).await {

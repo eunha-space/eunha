@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} — {{ domain }}</title>
+<script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body class="centered">
+<div class="card">
+  <h1>{{ title }}</h1>
+  <p class="sub">{{ domain }}</p>
+  {% for paragraph in paragraphs %}
+  <p class="hint">{{ paragraph | safe }}</p>
+  {% endfor %}
+  {% if form_token %}
+  <form method="POST" action="/unsubscribe">
+    <input type="hidden" name="token" value="{{ form_token }}">
+    <button type="submit">{{ form_button }}</button>
+  </form>
+  {% endif %}
+  {% if link_href %}
+  <p class="footer"><a href="{{ link_href }}">{{ link_text }}</a></p>
+  {% endif %}
+</div>
+</body>
+</html>

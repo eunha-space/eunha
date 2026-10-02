@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.name, r.color,\n                  (SELECT count(*) FROM users u WHERE u.role_id = r.id) AS \"accounts!\"\n           FROM user_roles r\n           WHERE r.permissions & $1 <> 0\n           ORDER BY r.position DESC, r.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "accounts!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "ff0f9f7d9b12129a5e204c6c7859a1b946dd6f772c42f81185a0344af1abcd80"
+}

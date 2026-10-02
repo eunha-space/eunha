@@ -434,17 +434,40 @@ impl TestContext {
     /// A context that signs (or does not sign) FEP-8b32 integrity proofs,
     /// whatever the shipped default happens to be.
     pub async fn with_integrity_proofs(label: &str, sign_integrity_proofs: bool) -> Self {
-        Self::build(label, sign_integrity_proofs, false).await
+        Self::build(label, sign_integrity_proofs, false, |_| {}).await
     }
 
     /// A context whose instance reviews new accounts before they may sign in.
     /// `approval_required` is read off the config at startup, so a test that
     /// needs it has to ask for it here rather than set it afterwards.
     pub async fn with_approval_required(label: &str) -> Self {
-        Self::build(label, eunha::config::default_sign_integrity_proofs(), true).await
+        Self::build(
+            label,
+            eunha::config::default_sign_integrity_proofs(),
+            true,
+            |_| {},
+        )
+        .await
     }
 
-    async fn build(label: &str, sign_integrity_proofs: bool, approval_required: bool) -> Self {
+    /// A context whose configuration `configure` has changed from the
+    /// default, for what is read off it at startup.
+    pub async fn with_config(label: &str, configure: fn(&mut eunha::config::Config)) -> Self {
+        Self::build(
+            label,
+            eunha::config::default_sign_integrity_proofs(),
+            false,
+            configure,
+        )
+        .await
+    }
+
+    async fn build(
+        label: &str,
+        sign_integrity_proofs: bool,
+        approval_required: bool,
+        configure: fn(&mut eunha::config::Config),
+    ) -> Self {
         // Make fanout/populate/backfill run inline so tests don't race with background tasks.
         eunha::feed::enable_sync_fanout();
         eunha::moderation::signup::skip_mx_check();
@@ -526,7 +549,7 @@ impl TestContext {
         let fake_s3 = spawn_fake_s3().await;
         let (vapid_private_key, vapid_public_key) =
             eunha::push::generate_vapid_keypair().expect("generate test VAPID keypair");
-        let config = eunha::config::Config {
+        let mut config = eunha::config::Config {
             database_url: db_url,
             pooled_database_url: None,
             pooled_client_slots: None,
@@ -566,6 +589,7 @@ impl TestContext {
                 icon_url: None,
                 privacy_policy: String::new(),
                 terms_of_service: String::new(),
+                email_subscriptions: true,
             },
             // Exercise the same path a Mastodon 4.7 database uses: local
             // signing keys in `keypairs`, encrypted with these secrets.
@@ -579,6 +603,7 @@ impl TestContext {
             workers: Default::default(),
             limits: Default::default(),
         };
+        configure(&mut config);
         let state = eunha::state::AppState::new(db, config)
             .await
             .expect("failed to initialize AppState");

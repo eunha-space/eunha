@@ -7,6 +7,7 @@ pub mod collections;
 pub mod conversations;
 pub mod convert;
 pub mod domain_blocks;
+pub mod email_subscriptions;
 pub mod emojis;
 pub mod extractors;
 pub mod favourites;
@@ -632,6 +633,47 @@ pub fn router() -> Router {
             "/api/v1/admin/trends/links/{id}/reject",
             post(admin::admin_reject_trending_link),
         )
+        // Email subscriptions: what Mastodon's admin pages for them do.
+        .route(
+            "/api/v1/admin/email_subscriptions",
+            get(admin::show_email_subscriptions),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/setup",
+            post(admin::setup_email_subscriptions),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/disable",
+            post(admin::disable_email_subscriptions),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/purge",
+            post(admin::purge_email_subscriptions),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/additional_footer_text",
+            put(admin::update_email_footer_text),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/accounts/{id}",
+            get(admin::show_email_subscription_account),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/accounts/{id}/subscriptions",
+            get(admin::list_email_subscription_subscribers),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/accounts/{id}/enable",
+            post(admin::enable_email_subscription_account),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/accounts/{id}/disable",
+            post(admin::disable_email_subscription_account),
+        )
+        .route(
+            "/api/v1/admin/email_subscriptions/{id}",
+            delete(admin::delete_email_subscription),
+        )
         .route("/api/v1/admin/tags", get(admin::list_admin_tags))
         .route(
             "/api/v1/admin/tags/{id}",
@@ -867,6 +909,19 @@ pub fn router() -> Router {
         .route("/api/v1/accounts", get(accounts::get_accounts_batch))
         .route("/api/v1/accounts/lookup", get(accounts::lookup_account))
         .route("/api/v1/accounts/{id}", get(accounts::get_account))
+        // Email subscriptions: no token, as Mastodon asks none.
+        .route(
+            "/api/v1/accounts/{id}/email_subscriptions",
+            post(email_subscriptions::create),
+        )
+        .route(
+            "/email_subscriptions/confirmation",
+            get(email_subscriptions::confirmation),
+        )
+        .route(
+            "/unsubscribe",
+            get(email_subscriptions::unsubscribe_page).post(email_subscriptions::unsubscribe),
+        )
         .route(
             "/api/v1/accounts/{id}/featured_tags",
             get(accounts::get_account_featured_tags),

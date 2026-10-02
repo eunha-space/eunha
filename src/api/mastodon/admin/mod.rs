@@ -13,12 +13,14 @@ use serde::{Deserialize, Serialize};
 
 mod accounts;
 mod blocks;
+mod email_subscriptions;
 mod federation;
 mod reports;
 mod trends;
 
 pub use accounts::*;
 pub use blocks::*;
+pub use email_subscriptions::*;
 pub use federation::*;
 pub use reports::*;
 pub use trends::*;

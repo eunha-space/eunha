@@ -10,6 +10,7 @@ mod bookmarks;
 mod collections;
 mod conversations;
 mod domain_blocks;
+mod email_subscriptions;
 mod favourites;
 mod featured_tags;
 mod feed_access;

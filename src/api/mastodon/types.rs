@@ -56,6 +56,10 @@ pub struct Account {
     /// than the handle the account claims.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid_handle: Option<bool>,
+    /// Mastodon 4.7: whether visitors may subscribe to the account's posts by
+    /// email, present only while the instance has the feature enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_subscriptions: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mute_expires_at: Option<String>, // only on MutedAccount (GET /api/v1/mutes)
     #[serde(skip_serializing_if = "Option::is_none")]
