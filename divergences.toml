@@ -743,6 +743,29 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "auto-close-registrations-counts-token-use"
+kind = "behaviour"
+summary = "Counts a moderator's token use as activity before closing registrations"
+mastodon = """
+`Scheduler::AutoCloseRegistrationsScheduler` switches open registrations to \
+approval when no user who can manage reports has a `current_sign_in_at` \
+within a week and a day, a time its web pages move at most daily."""
+eunha = """
+Switches them under the same condition, except that a moderator who used an \
+OAuth token within that time (`oauth_access_tokens.last_used_at`) counts as \
+active too. The switch is turned off per instance by the configuration's \
+`disable_automatic_switching_to_approved_registrations`, standing in for \
+`DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS`."""
+why = """
+Eunha's web client signs in through OAuth and then only calls the API, which \
+never moves `current_sign_in_at`, so a moderator working in it every day would \
+read as gone and registrations would close under them. Token use is recorded \
+at most daily, as Mastodon records the sign-in time."""
+evidence = "tests/integration/c2s/server_admin/auto_close_registrations.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "async-refresh-ids-signed-without-rails"
 kind = "behaviour"
 summary = "Signs async refresh ids with a key derived from the VAPID key"

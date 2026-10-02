@@ -78,6 +78,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "follow recommendations",
             crate::suggestions::run(state.clone()),
         ),
+        until_stopped(
+            &state,
+            "auto-close registrations",
+            crate::auto_close_registrations::run(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work

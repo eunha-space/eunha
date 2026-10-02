@@ -132,7 +132,7 @@ aliases = ["garden.eunha.site"]
 Authorized fetch and limited federation
 ---------------------------------------
 
-Mastodon reads three deployment modes from its environment. Instances sharing
+Mastodon reads these deployment modes from its environment. Instances sharing
 a process share its environment too, so eunha reads them from each instance's
 `[instance]` table instead, and a `SIGHUP` reload picks up a change to them:
 
@@ -146,6 +146,9 @@ authorized_fetch = true
 limited_federation_mode = false
 # Mastodon's DISALLOW_UNAUTHENTICATED_API_ACCESS.
 disallow_unauthenticated_api_access = false
+# Mastodon's DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS (see the
+# administration page).
+disable_automatic_switching_to_approved_registrations = false
 ~~~~
 
 Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that

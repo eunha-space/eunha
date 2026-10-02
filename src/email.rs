@@ -527,6 +527,30 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// `AdminMailer#auto_close_registrations`.
+    pub async fn send_auto_close_registrations(
+        &self,
+        to: &str,
+        instance_domain: &str,
+    ) -> anyhow::Result<()> {
+        let instance = html_escape(instance_domain);
+        let body = format!(
+            "<p>Due to a lack of recent moderator activity, registrations on {instance} have \
+             been automatically switched to requiring manual review, to prevent {instance} \
+             from being used as a platform for potential bad actors. You can switch it back to \
+             open registrations at any time.</p>"
+        );
+        self.send(
+            to,
+            &format!(
+                "Registrations for {instance_domain} have been automatically switched to \
+                 requiring approval"
+            ),
+            &body,
+        )
+        .await
+    }
+
     /// Mastodon's `AdminMailer#new_pending_account`.
     pub async fn send_new_pending_account(
         &self,

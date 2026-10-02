@@ -99,6 +99,36 @@ federation mode, decides whatever is saved; the settings then list it under
 `overridden`, and the web client shows it disabled, as Mastodon's form does
 when its environment variable is set.
 
+### Registrations close themselves on an idle server
+
+Once an hour each instance runs Mastodon's
+`Scheduler::AutoCloseRegistrationsScheduler`. When registrations are `open`
+and no one whose role can manage reports has been active for eight days (a
+week, and the day a sign-in time may lag), it saves `registrations_mode` as
+`approved` and mails everyone whose role can manage settings that it did
+(`AdminMailer#auto_close_registrations`). Nothing reopens them: an
+administrator who wants open registrations back saves the setting again.
+Registrations that are `approved` or `none`, configured or saved, are left
+alone.
+
+This changes sign-ups on an instance whose moderators have gone quiet, an
+instance that was configured open and never had its settings saved included:
+after an upgrade it may start asking for approval within the hour. To keep
+registrations open regardless, as Mastodon's
+`DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS=true` does, set in the
+instance configuration:
+
+~~~~ toml
+[instance]
+disable_automatic_switching_to_approved_registrations = true
+~~~~
+
+Mastodon counts a moderator as active by `users.current_sign_in_at`, which its
+web pages move at most once a day. Eunha's own client signs in through OAuth
+and never moves it, so eunha also counts a moderator's token used within the
+eight days (`oauth_access_tokens.last_used_at`, recorded at most once a day);
+this is the `auto-close-registrations-counts-token-use` divergence.
+
 ### Content retention
 
 Once a day each instance runs what Mastodon's `VacuumScheduler` runs for the

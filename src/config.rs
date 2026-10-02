@@ -442,6 +442,12 @@ pub struct InstanceConfig {
     /// limiting federation.
     #[serde(default)]
     pub disallow_unauthenticated_api_access: bool,
+    /// Mastodon's `DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS`:
+    /// keep open registrations open when no moderator has been active for a
+    /// week, rather than switching them to approval
+    /// (`Scheduler::AutoCloseRegistrationsScheduler`).
+    #[serde(default)]
+    pub disable_automatic_switching_to_approved_registrations: bool,
 }
 
 impl InstanceConfig {

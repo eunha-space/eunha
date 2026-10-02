@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod announcements;
 pub mod api;
 pub mod async_refresh;
+pub mod auto_close_registrations;
 pub mod background;
 pub mod browser_detection;
 pub mod config;

@@ -3,6 +3,7 @@
 //! and what the settings drive, here; the rest in the modules below.
 
 mod announcements;
+mod auto_close_registrations;
 mod dashboard;
 mod follow_recommendations;
 mod instances;
