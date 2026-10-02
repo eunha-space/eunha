@@ -16,6 +16,7 @@ mod blocks;
 mod email_subscriptions;
 mod federation;
 mod reports;
+mod terms_of_service;
 mod trends;
 
 pub use accounts::*;
@@ -23,6 +24,7 @@ pub use blocks::*;
 pub use email_subscriptions::*;
 pub use federation::*;
 pub use reports::*;
+pub use terms_of_service::*;
 pub use trends::*;
 
 /// `limit` and the id bounds of `to_a_paginated_by_id`.

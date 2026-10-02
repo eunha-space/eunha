@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import Home from './pages/Home.tsx'
 import Callback from './pages/Callback.tsx'
 import Profile from './pages/Profile.tsx'
@@ -18,6 +18,8 @@ import Explore from './pages/Explore.tsx'
 import StatusHistory from './pages/StatusHistory.tsx'
 import BlockedAccounts from './pages/BlockedAccounts.tsx'
 import About from './pages/About.tsx'
+import TermsOfService from './pages/TermsOfService.tsx'
+import PrivacyPolicy from './pages/PrivacyPolicy.tsx'
 import InviteTree from './pages/InviteTree.tsx'
 import Invites from './pages/Invites.tsx'
 import Signup from './pages/Signup.tsx'
@@ -38,6 +40,14 @@ import AdminTags from './pages/admin/Tags.tsx'
 import AdminCustomEmojis from './pages/admin/CustomEmojis.tsx'
 import AdminEmailSubscriptions from './pages/admin/EmailSubscriptions.tsx'
 import AdminEmailSubscriptionAccount from './pages/admin/EmailSubscriptionAccount.tsx'
+import {
+  AdminTermsOfServiceDraft,
+  AdminTermsOfServiceGenerate,
+  AdminTermsOfServiceHistory,
+  AdminTermsOfServiceIndex,
+  AdminTermsOfServicePreview,
+} from './pages/admin/TermsOfService.tsx'
+import { TermsOfServiceInterstitial } from './components/terms-of-service-interstitial.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -63,6 +73,12 @@ const router = createBrowserRouter([
   { path: '/follow-requests', element: <FollowRequests /> },
   { path: '/search', element: <SearchPage /> },
   { path: '/about', element: <About /> },
+  // Mastodon's policy pages, which `urls.privacy_policy` and
+  // `urls.terms_of_service` point at; `/terms` is its old address.
+  { path: '/privacy-policy', element: <PrivacyPolicy /> },
+  { path: '/terms-of-service', element: <TermsOfService /> },
+  { path: '/terms-of-service/:date', element: <TermsOfService /> },
+  { path: '/terms', element: <Navigate to="/terms-of-service" replace /> },
   { path: '/invite-tree', element: <InviteTree /> },
   { path: '/invites', element: <Invites /> },
   { path: '/signup', element: <Signup /> },
@@ -101,6 +117,11 @@ const router = createBrowserRouter([
     path: '/admin/email_subscriptions/accounts/:id',
     element: <AdminEmailSubscriptionAccount />,
   },
+  { path: '/admin/terms_of_service', element: <AdminTermsOfServiceIndex /> },
+  { path: '/admin/terms_of_service/draft', element: <AdminTermsOfServiceDraft /> },
+  { path: '/admin/terms_of_service/history', element: <AdminTermsOfServiceHistory /> },
+  { path: '/admin/terms_of_service/generate', element: <AdminTermsOfServiceGenerate /> },
+  { path: '/admin/terms_of_service/:id/preview', element: <AdminTermsOfServicePreview /> },
   { path: '/:acct', element: <Profile /> },
   // Static second segments outrank the dynamic `:id` thread route, so these
   // win over `/:acct/:id` (status ids are numeric and never collide).
@@ -119,6 +140,7 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider defaultTheme="system" storageKey="eunha-theme">
       <ComposeModalProvider>
         <RouterProvider router={router} />
+        <TermsOfServiceInterstitial />
         <Toaster />
       </ComposeModalProvider>
     </ThemeProvider>

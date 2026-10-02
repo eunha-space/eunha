@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Code, Network, Ticket } from 'lucide-react'
+import { Code, FileText, Network, Shield, Ticket } from 'lucide-react'
 
-import { getInstance, getInstanceText } from '../api.ts'
+import { getInstance } from '../api.ts'
 import { getToken } from '../auth.ts'
 import type { mastodon } from '../masto.ts'
 import { TopBar } from '@/components/top-bar.tsx'
@@ -22,14 +22,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // page, rather than a stack of empty headings.
 export default function About() {
   const [instance, setInstance] = useState<mastodon.v2.Instance | null>(null)
-  const [privacy, setPrivacy] = useState('')
-  const [terms, setTerms] = useState('')
   const token = getToken()
 
   useEffect(() => {
     getInstance().then(setInstance).catch(() => {})
-    getInstanceText('privacy_policy').then(setPrivacy).catch(() => {})
-    getInstanceText('terms_of_service').then(setTerms).catch(() => {})
   }, [])
 
   if (!instance) {
@@ -43,6 +39,9 @@ export default function About() {
 
   const { registrations, contact, languages, usage, rules, sourceUrl } = instance
   const activeMonth = usage?.users?.activeMonth
+  // Mastodon 4.4 added `urls.terms_of_service`; masto's types predate it.
+  const urls = instance.configuration?.urls as { termsOfService?: string | null } | undefined
+  const termsUrl = urls?.termsOfService
   // `enabled` is the instance's own switch; approval is a second gate behind it.
   const signup = !registrations?.enabled
     ? 'Closed — new accounts are by invitation only.'
@@ -109,17 +108,29 @@ export default function About() {
           </Section>
         )}
 
-        {privacy && (
-          <Section title="Privacy">
-            <p className="text-sm whitespace-pre-wrap">{privacy}</p>
-          </Section>
-        )}
-
-        {terms && (
-          <Section title="Terms of service">
-            <p className="text-sm whitespace-pre-wrap">{terms}</p>
-          </Section>
-        )}
+        {/* Mastodon's about page links its policies rather than inlining them.
+            There is always a privacy policy — the server falls back to
+            Mastodon's own — while terms of service exist only once an
+            administrator has published some, which `urls.terms_of_service`
+            says. */}
+        <Section title="Policies">
+          <div className="flex flex-col gap-1">
+            <Link
+              to="/privacy-policy"
+              className="text-primary inline-flex items-center gap-2 text-sm font-medium"
+            >
+              <Shield className="size-4" /> Privacy policy
+            </Link>
+            {termsUrl && (
+              <Link
+                to="/terms-of-service"
+                className="text-primary inline-flex items-center gap-2 text-sm font-medium"
+              >
+                <FileText className="size-4" /> Terms of service
+              </Link>
+            )}
+          </div>
+        </Section>
 
         <Section title="This software">
           <a

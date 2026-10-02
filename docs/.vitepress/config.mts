@@ -27,6 +27,7 @@ export default defineConfig({
           { text: "Invites", link: "/operating/invites" },
           { text: "Moderation", link: "/operating/moderation" },
           { text: "Email subscriptions", link: "/operating/email-subscriptions" },
+          { text: "Terms of service and privacy policy", link: "/operating/terms-of-service" },
           { text: "Account moves", link: "/operating/account-moves" },
           { text: "Preview cards", link: "/operating/preview-cards" },
           { text: "Remote replies", link: "/operating/remote-replies" },

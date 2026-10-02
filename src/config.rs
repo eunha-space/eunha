@@ -413,8 +413,12 @@ pub struct InstanceConfig {
     pub vapid_private_key: String,
     pub vapid_public_key: String,
     pub icon_url: Option<String>,
+    /// Served as the privacy policy while the `site_terms` setting is blank
+    /// (docs/operating/terms-of-service.md).
     #[serde(default)]
     pub privacy_policy: String,
+    /// Served as terms of service effective on 2025-01-01 until a version is
+    /// published, and never read after (docs/operating/terms-of-service.md).
     #[serde(default)]
     pub terms_of_service: String,
     /// Whether this instance offers email subscriptions at all. Mastodon's

@@ -24,6 +24,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     label: 'Email newsletters',
     permission: 'manage_settings',
   },
+  { to: '/admin/terms_of_service', label: 'Terms of service', permission: 'manage_settings' },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

@@ -147,13 +147,10 @@ pub async fn get_instance_rules(state: AppState) -> AppResult<Json<Vec<Rule>>> {
 
 // ── GET /api/v1/instance/privacy_policy ──────────────────────────────────
 
-pub async fn get_privacy_policy(
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-) -> AppResult<Json<ExtendedDescription>> {
-    Ok(Json(ExtendedDescription {
-        updated_at: super::convert::mastodon_date(chrono::Utc::now()),
-        content: instance.privacy_policy.clone(),
-    }))
+/// `Api::V1::Instances::PrivacyPoliciesController`: `PrivacyPolicy.current`.
+pub async fn get_privacy_policy(state: AppState) -> AppResult<Json<crate::privacy_policy::Rest>> {
+    let policy = crate::privacy_policy::current(&state).await?;
+    Ok(Json(crate::privacy_policy::serialize(&state, &policy)))
 }
 
 // ── GET /api/v1/instance/extended_description ────────────────────────────
@@ -285,53 +282,30 @@ pub async fn search_peers(
 
 // ── GET /api/v1/instance/terms_of_service ────────────────────────────────
 
+/// `Api::V1::Instances::TermsOfServiceController#index`: `TermsOfService.current`,
+/// a 404 when there is none.
 pub async fn get_terms_of_service(
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-) -> AppResult<Json<Vec<TermsOfServiceByDate>>> {
-    if instance.terms_of_service.is_empty() {
-        return Ok(Json(vec![]));
-    }
-    Ok(Json(vec![TermsOfServiceByDate {
-        effective_date: "2025-01-01".to_string(),
-        effective: true,
-        content: instance.terms_of_service.clone(),
-        succeeded_by: None,
-    }]))
+    state: AppState,
+) -> AppResult<Json<crate::terms_of_service::Rest>> {
+    let tos = crate::terms_of_service::current(&state)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(
+        crate::terms_of_service::serialize(&state, &tos).await?,
+    ))
 }
 
 // ── GET /api/v1/instance/terms_of_service/{date} ─────────────────────────
-// Mastodon supports versioned ToS by effective date. eunha has a single ToS,
-// so we return it for any date, or 404 if the ToS is empty.
 
-#[derive(Debug, serde::Serialize)]
-pub struct TermsOfServiceByDate {
-    pub effective_date: String,
-    pub effective: bool,
-    pub content: String,
-    pub succeeded_by: Option<String>,
-}
-
+/// `#show`: `TermsOfService.published.find_by!(effective_date:)`.
 pub async fn get_terms_of_service_by_date(
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    state: AppState,
     Path(date): Path<String>,
-) -> AppResult<Json<TermsOfServiceByDate>> {
-    if instance.terms_of_service.is_empty() {
-        return Err(crate::error::AppError::NotFound);
-    }
-    // Validate that `date` looks like a date (YYYY-MM-DD); return 404 for other dates
-    if date.len() != 10 || !date.chars().all(|c| c.is_ascii_digit() || c == '-') {
-        return Err(crate::error::AppError::NotFound);
-    }
-    // Only recognise the single fixed effective date
-    if date != "2025-01-01" {
-        return Err(crate::error::AppError::NotFound);
-    }
-    Ok(Json(TermsOfServiceByDate {
-        effective_date: date,
-        effective: true,
-        content: instance.terms_of_service.clone(),
-        succeeded_by: None,
-    }))
+) -> AppResult<Json<crate::terms_of_service::Rest>> {
+    let tos = crate::terms_of_service::published_by_date(&state, &date).await?;
+    Ok(Json(
+        crate::terms_of_service::serialize(&state, &tos).await?,
+    ))
 }
 
 pub async fn get_instance_v2(
@@ -389,16 +363,13 @@ pub async fn get_instance_v2(
                 streaming: streaming_url,
                 status: None,
                 about: Some(format!("{base_url}/about")),
-                privacy_policy: if instance.privacy_policy.is_empty() {
-                    None
-                } else {
-                    Some(format!("{base_url}/api/v1/instance/privacy_policy"))
-                },
-                terms_of_service: if instance.terms_of_service.is_empty() {
-                    None
-                } else {
-                    Some(format!("{base_url}/api/v1/instance/terms_of_service"))
-                },
+                // `privacy_policy_url`: there is always a policy, if only
+                // the one Mastodon ships.
+                privacy_policy: Some(format!("{base_url}/privacy-policy")),
+                // `terms_of_service_url` when `TermsOfService.current` exists.
+                terms_of_service: crate::terms_of_service::current(&state)
+                    .await?
+                    .map(|_| format!("{base_url}/terms-of-service")),
             },
             vapid: VapidConfiguration {
                 public_key: instance.vapid_public_key.clone(),

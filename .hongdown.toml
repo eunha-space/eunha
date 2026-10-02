@@ -1,2 +1,4 @@
 include = ["*.md", "docs/**/*.md"]
-exclude = ["**/node_modules/**", "AGENTS.md"]
+# src/templates/*.md are Mastodon's policy templates, kept byte for byte as
+# upstream ships them.
+exclude = ["**/node_modules/**", "AGENTS.md", "src/templates/**"]

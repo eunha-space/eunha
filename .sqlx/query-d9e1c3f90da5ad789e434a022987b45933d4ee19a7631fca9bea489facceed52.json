@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users u SET require_tos_interstitial = true\n           FROM accounts a\n           WHERE a.id = u.account_id AND u.confirmed_at IS NOT NULL AND u.created_at <= $1\n             AND (a.suspended_at IS NOT NULL\n                  OR u.current_sign_in_at IS NULL OR u.current_sign_in_at < $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9e1c3f90da5ad789e434a022987b45933d4ee19a7631fca9bea489facceed52"
+}

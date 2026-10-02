@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE terms_of_services\n               SET text = $2, changelog = $3, published_at = $4, effective_date = $5,\n                   updated_at = $6\n               WHERE id = $1\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Timestamp",
+        "Date",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8322197ba5103f0ec32921a94c78a8a8350d31110dec65c4887b7baf85e574ca"
+}

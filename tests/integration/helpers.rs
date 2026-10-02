@@ -462,11 +462,26 @@ impl TestContext {
         .await
     }
 
+    /// A context whose instance configuration `adjust` has changed, for what
+    /// is read off it at startup.
+    pub async fn with_instance_config(
+        label: &str,
+        adjust: impl FnOnce(&mut eunha::config::InstanceConfig),
+    ) -> Self {
+        Self::build(
+            label,
+            eunha::config::default_sign_integrity_proofs(),
+            false,
+            move |config: &mut eunha::config::Config| adjust(&mut config.instance),
+        )
+        .await
+    }
+
     async fn build(
         label: &str,
         sign_integrity_proofs: bool,
         approval_required: bool,
-        configure: fn(&mut eunha::config::Config),
+        configure: impl FnOnce(&mut eunha::config::Config),
     ) -> Self {
         // Make fanout/populate/backfill run inline so tests don't race with background tasks.
         eunha::feed::enable_sync_fanout();

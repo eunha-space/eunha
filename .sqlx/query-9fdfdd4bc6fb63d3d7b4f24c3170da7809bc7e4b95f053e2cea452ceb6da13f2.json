@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM terms_of_services\n             WHERE effective_date IS NOT DISTINCT FROM $1 AND id <> $2\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9fdfdd4bc6fb63d3d7b4f24c3170da7809bc7e4b95f053e2cea452ceb6da13f2"
+}

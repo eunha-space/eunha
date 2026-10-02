@@ -6,11 +6,16 @@ pub mod email_subscriptions;
 pub mod health;
 pub mod invite_grants;
 pub mod invite_tree;
+pub mod terms_of_service;
 
 pub fn router() -> Router {
     Router::new()
         .route("/api/eunha/v1/health", get(health::health))
         .route("/api/eunha/v1/invite_tree", get(invite_tree::invite_tree))
+        .route(
+            "/api/eunha/v1/terms_of_service/interstitial",
+            get(terms_of_service::show).delete(terms_of_service::dismiss),
+        )
         .merge(invite_grants::routes())
         .merge(email_subscriptions::routes())
 }

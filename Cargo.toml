@@ -113,6 +113,8 @@ dotenvy = "0.15"
 url = { version = "2", features = ["serde"] }
 urlencoding = "2"
 minijinja = "2"
+# Markdown for policy documents, rendered the way Redcarpet does (src/markdown.rs)
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 mime = "0.3"

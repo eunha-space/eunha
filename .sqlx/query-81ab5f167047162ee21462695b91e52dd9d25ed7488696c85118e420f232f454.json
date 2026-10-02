@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE terms_of_services SET notification_sent_at = now() AT TIME ZONE 'UTC',\n                updated_at = now() AT TIME ZONE 'UTC'\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81ab5f167047162ee21462695b91e52dd9d25ed7488696c85118e420f232f454"
+}

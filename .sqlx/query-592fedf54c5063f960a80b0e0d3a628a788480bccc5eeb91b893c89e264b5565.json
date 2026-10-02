@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO terms_of_services\n                 (text, changelog, published_at, notification_sent_at, effective_date,\n                  created_at, updated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $6)\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamp",
+        "Timestamp",
+        "Date",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "592fedf54c5063f960a80b0e0d3a628a788480bccc5eeb91b893c89e264b5565"
+}

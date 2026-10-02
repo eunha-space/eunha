@@ -6,30 +6,67 @@ export function getInstance(): Promise<mastodon.v2.Instance> {
   return restClient().v2.instance.fetch()
 }
 
-// The instance's own policy documents. masto types `extendedDescription` but
-// neither of these, and both are plain public GETs, so they are fetched
-// directly. Each is empty until an instance configures one — `privacy_policy`
-// and `terms_of_service` in its config.toml — so callers render what comes
-// back only when there is something in it.
-export async function getInstanceText(
-  kind: 'privacy_policy' | 'terms_of_service',
-): Promise<string> {
-  const res = await fetch(`${window.location.origin}/api/v1/instance/${kind}`)
-  if (!res.ok) return ''
-  const body: unknown = await res.json()
-  // `privacy_policy` is one object; `terms_of_service` is a list of versions by
-  // effective date, of which eunha only ever has the one.
-  if (Array.isArray(body)) {
-    const current = body.find(
-      (v): v is { content?: string } =>
-        typeof v === 'object' && v !== null && 'content' in v,
-    )
-    return current?.content ?? ''
-  }
-  if (typeof body === 'object' && body !== null && 'content' in body) {
-    return String((body as { content?: string }).content ?? '')
-  }
-  return ''
+// The instance's own policy documents. masto types neither, and both are plain
+// public GETs, so they are fetched directly. `content` is HTML the server
+// rendered from Markdown with HTML escaped (Mastodon's Redcarpet settings).
+
+/** `REST::TermsOfServiceSerializer`. */
+export interface TermsOfService {
+  /** `YYYY-MM-DD`. */
+  effective_date: string
+  effective: boolean
+  content: string
+  succeeded_by: string | null
+}
+
+/** `REST::PrivacyPolicySerializer`. */
+export interface PrivacyPolicy {
+  updated_at: string
+  content: string
+}
+
+/**
+ * The current terms, or with `date` the version effective then; `null` when
+ * there are none (the server answers 404).
+ */
+export async function getTermsOfService(date?: string): Promise<TermsOfService | null> {
+  const path = date
+    ? `/api/v1/instance/terms_of_service/${encodeURIComponent(date)}`
+    : '/api/v1/instance/terms_of_service'
+  const res = await fetch(`${window.location.origin}${path}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+  return (await res.json()) as TermsOfService
+}
+
+export async function getPrivacyPolicy(): Promise<PrivacyPolicy> {
+  const res = await fetch(`${window.location.origin}/api/v1/instance/privacy_policy`)
+  if (!res.ok) throw new Error(`GET /api/v1/instance/privacy_policy failed: ${res.status}`)
+  return (await res.json()) as PrivacyPolicy
+}
+
+// The terms of service interstitial: terms a notification flagged this user to
+// be shown, until they open the terms page (eunha's stand-in for the page
+// Mastodon's web app renders; the `terms-of-service-interstitial-api`
+// divergence).
+const INTERSTITIAL = '/api/eunha/v1/terms_of_service/interstitial'
+
+export async function getTermsOfServiceInterstitial(
+  token: string,
+): Promise<TermsOfService | null> {
+  const res = await fetch(`${window.location.origin}${INTERSTITIAL}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return null
+  const body = (await res.json()) as { terms_of_service: TermsOfService | null }
+  return body.terms_of_service
+}
+
+export async function dismissTermsOfServiceInterstitial(token: string): Promise<void> {
+  await fetch(`${window.location.origin}${INTERSTITIAL}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
 }
 
 export async function getHomeTimeline(

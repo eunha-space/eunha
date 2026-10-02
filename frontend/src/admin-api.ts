@@ -823,3 +823,94 @@ export function listEmailSubscribers(token: string, id: string) {
 export function deleteEmailSubscriber(token: string, id: string) {
   return empty(token, 'DELETE', `${EMAIL_SUBSCRIPTIONS}/${id}`)
 }
+// ── Terms of service ───────────────────────────────────────────────────────
+//
+// Mastodon serves these as admin web forms; eunha serves the same actions at
+// the same paths under `/api/v1/admin/` (the `terms-of-service-rest-api`
+// divergence), all behind `manage_settings`.
+
+/** A version as the admin pages show it. */
+export interface AdminTermsOfService {
+  /** `null` for a draft not saved yet, or terms from the instance config. */
+  id: string | null
+  text: string
+  changelog: string
+  /** `YYYY-MM-DD`. */
+  effective_date: string | null
+  published_at: string | null
+  notification_sent_at: string | null
+  effective: boolean
+  /** The text and changelog rendered from Markdown, HTML escaped. */
+  text_html: string
+  changelog_html: string
+}
+
+/** `TermsOfService::Generator::VARIABLES`. */
+export interface TermsOfServiceGenerator {
+  domain: string | null
+  min_age: string | null
+  jurisdiction: string | null
+  choice_of_law: string | null
+  admin_email: string | null
+  dmca_address: string | null
+  dmca_email: string | null
+  arbitration_address: string | null
+  arbitration_website: string | null
+}
+
+export function getTermsOfService(token: string) {
+  return json<AdminTermsOfService>(token, 'GET', '/api/v1/admin/terms_of_service')
+}
+
+export function getTermsOfServiceHistory(token: string) {
+  return json<AdminTermsOfService[]>(token, 'GET', '/api/v1/admin/terms_of_service/history')
+}
+
+export function getTermsOfServiceDraft(token: string) {
+  return json<AdminTermsOfService>(token, 'GET', '/api/v1/admin/terms_of_service/draft')
+}
+
+export function saveTermsOfServiceDraft(
+  token: string,
+  params: {
+    text: string
+    changelog: string
+    effective_date: string
+    action_type: 'save_draft' | 'publish'
+  },
+) {
+  return json<AdminTermsOfService>(token, 'PUT', '/api/v1/admin/terms_of_service/draft', params)
+}
+
+export function getTermsOfServiceGenerator(token: string) {
+  return json<TermsOfServiceGenerator>(token, 'GET', '/api/v1/admin/terms_of_service/generate')
+}
+
+export function generateTermsOfService(token: string, params: TermsOfServiceGenerator) {
+  return json<AdminTermsOfService>(
+    token,
+    'POST',
+    '/api/v1/admin/terms_of_service/generate',
+    params,
+  )
+}
+
+export function previewTermsOfService(token: string, id: string) {
+  return json<{ terms_of_service: AdminTermsOfService; user_count: number }>(
+    token,
+    'GET',
+    `/api/v1/admin/terms_of_service/${id}/preview`,
+  )
+}
+
+export function testTermsOfService(token: string, id: string) {
+  return empty(token, 'POST', `/api/v1/admin/terms_of_service/${id}/test`)
+}
+
+export function distributeTermsOfService(token: string, id: string) {
+  return json<AdminTermsOfService>(
+    token,
+    'POST',
+    `/api/v1/admin/terms_of_service/${id}/distribution`,
+  )
+}

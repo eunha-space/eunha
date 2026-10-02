@@ -553,6 +553,37 @@ impl EmailSender {
             .await
     }
 
+    /// `UserMailer#terms_of_service_changed`. `date` is the version's usable
+    /// effective date as Rails' `l` formats it, `url` its page, and
+    /// `changelog_html` its changelog already rendered from Markdown.
+    pub async fn send_terms_of_service_changed(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        date: &str,
+        url: &str,
+        changelog_html: &str,
+    ) -> anyhow::Result<()> {
+        let domain = html_escape(instance_domain);
+        let url = html_escape(url);
+        let body = format!(
+            "<h1>Important update</h1>\
+             <p>The terms of service of {domain} are changing</p>\
+             <p>You are receiving this e-mail because we're making some changes to our terms \
+             of service at {domain}. These updates will take effect on <strong>{date}</strong>. \
+             We encourage you to review the <a href=\"{url}\" target=\"_blank\">updated terms \
+             in full here</a>.</p>\
+             <p><strong>At a glance, here is what this update means for you:</strong></p>\
+             {changelog_html}\
+             <p>By continuing to use {domain}, you are agreeing to these terms. If you disagree \
+             with the updated terms, you may terminate your agreement with {domain} at any time \
+             by deleting your account.</p>\
+             <p>The {domain} team</p>"
+        );
+        self.send(to, "Updates to our terms of service", &body)
+            .await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         self.send_with_headers(to, subject, html, &[]).await
     }

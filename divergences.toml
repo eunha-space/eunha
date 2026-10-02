@@ -438,6 +438,34 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "terms-of-service-rest-api"
+kind = "addition"
+summary = "Serves terms of service administration over the REST API"
+mastodon = """
+Drafts, publishes, generates from its template, previews, test-mails and \
+distributes terms of service from server-rendered admin pages alone \
+(`Admin::TermsOfServiceController` and its `drafts`, `generates`, \
+`histories`, `previews`, `tests` and `distributions`). The REST API only \
+serves the published versions, at `/api/v1/instance/terms_of_service`."""
+eunha = """
+Serves the same actions under `/api/v1/admin/terms_of_service`: `GET` the \
+latest published version, `GET history`, `GET` and `PUT draft` (with \
+`action_type=publish` to publish), `GET` and `POST generate`, and `GET \
+{id}/preview`, `POST {id}/test` and `POST {id}/distribution`. Each runs \
+upstream's model validations and `TermsOfServicePolicy` (`manage_settings`, \
+and for the last three a published version nobody has been notified of), \
+logs `publish` as upstream does, and refuses with a 422 carrying upstream's \
+validation messages."""
+why = """
+Eunha has no server-rendered admin; its admin pages are a client of the REST \
+API. Like `admin-custom-emoji-rest-api`, the paths sit beside upstream's \
+admin API, mirror its admin routes, and answer only what its forms would \
+allow."""
+evidence = "tests/integration/c2s/terms_of_service.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "email-subscription-unsubscribe-token"
 kind = "behaviour"
 summary = "Unsubscribe links carry the subscription's confirmation token"
@@ -455,6 +483,31 @@ GlobalID. The confirmation token is as secret, was only ever sent to the \
 subscriber, and is unique by index, so it names the subscription without a \
 new column. A link that keeps working is what an unsubscribe link is for."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "terms-of-service-interstitial-api"
+kind = "addition"
+summary = "Tells its web client about the terms of service interstitial over an API"
+mastodon = """
+Flags the users a terms of service notification does not mail \
+(`require_tos_interstitial`), and its web app renders the terms in place of \
+any page for a flagged user until they open `/terms-of-service`, which \
+clears the flag. No API exposes the flag."""
+eunha = """
+Sets the flag the same way, and serves `GET` and `DELETE \
+/api/eunha/v1/terms_of_service/interstitial`: the first answers with the \
+latest published terms for a flagged user (unflagging one whose terms have \
+since been removed), the second clears the flag. Eunha's web client shows \
+the interstitial from the first, and calls the second when the terms page is \
+opened."""
+why = """
+Eunha's web client is a single-page app; it has no server-rendered pages for \
+the server to replace. The flag stays upstream's column with upstream's \
+meaning, so a Mastodon web app on the same database would show the same \
+users the same page."""
+evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 
@@ -486,6 +539,30 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "terms-of-service-config-fallback"
+kind = "behaviour"
+summary = "Serves the configured terms of service until a version is published"
+mastodon = """
+Serves terms of service only from the `terms_of_services` table; with no \
+published version, `/api/v1/instance/terms_of_service` is a 404 and \
+`urls.terms_of_service` is null."""
+eunha = """
+Does the same once any version has been published. Until then, an \
+instance whose configuration has `terms_of_service` text serves it as a \
+published version effective on 2025-01-01, already notified, and a new \
+draft starts from it."""
+why = """
+Before eunha read the table it served the configured text, as effective on \
+2025-01-01. Dropping it would take terms away from instances that had them; \
+importing it would mean writing to the database from configuration on \
+startup, which eunha does not do. Publishing once — the draft already holds \
+the text — moves it into the table, after which the configuration is not \
+read."""
+evidence = "tests/integration/c2s/terms_of_service.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "email-distribution-in-process"
 kind = "behaviour"
 summary = "The five-minute wait before mailing subscribers runs in the process"
@@ -503,6 +580,26 @@ does not justify one: the batch itself is in Redis for an hour, as upstream \
 keeps it, so what a restart can lose is only the timing. The short key keeps \
 a crash from silencing an account's emails for a day."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "privacy-policy-config-fallback"
+kind = "behaviour"
+summary = "Reads the configured privacy policy when the setting is blank"
+mastodon = """
+Serves the `site_terms` setting as the privacy policy, or when that is blank \
+its built-in policy, dated 2022-10-07."""
+eunha = """
+Serves `site_terms` the same way, and between it and the built-in policy, \
+the instance configuration's `privacy_policy`, dated as the built-in one is \
+since the configuration records no time."""
+why = """
+The configuration is where eunha kept the policy before it read the setting, \
+and eunha has no admin page that writes `site_terms` yet. An instance that \
+wrote a policy there keeps it; one that moves onto a Mastodon database, or \
+whose administrator sets `site_terms`, gets upstream's answer."""
+evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 
@@ -541,5 +638,25 @@ The database query that fills a missing feed is fast enough to run in the \
 request, so there is nothing for the client to wait for; a partial answer \
 would only make it poll."""
 evidence = "tests/integration/c2s/async_refreshes.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "policy-text-percent-signs"
+kind = "behaviour"
+summary = "Leaves a policy's percent signs alone unless they name the domain"
+mastodon = """
+Runs the terms of service and privacy policy through Ruby's `format(text, \
+domain:)` before rendering them, so `%{domain}` becomes the local domain, \
+`%%` a single `%`, an unknown `%{name}` raises, and a bare conversion such \
+as the `% s` in \"100% sure\" prints the argument hash."""
+eunha = """
+Replaces `%{domain}`, `%<domain>s` and `%%` the same way and leaves every \
+other `%` as written."""
+why = """
+Where the two differ, upstream answers with an error page or garbled text; \
+neither is behaviour a client could rely on, and an administrator's stray \
+percent sign should not take the terms down."""
+evidence = "src/markdown.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

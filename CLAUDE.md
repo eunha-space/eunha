@@ -62,6 +62,8 @@ Running an instance:
     fetched, their images and authors.
  -  *docs/operating/remote-replies.md*: fetching remote threads' replies,
     and async refreshes (`Mastodon-Async-Refresh`).
+ -  *docs/operating/terms-of-service.md*: terms of service versions, their
+    admin API and notification, and the privacy policy.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

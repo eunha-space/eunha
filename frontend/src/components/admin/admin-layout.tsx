@@ -155,6 +155,7 @@ const SECTION_PREFIXES: Record<string, string[]> = {
   ],
   '/admin/trends/links': ['/admin/trends'],
   '/admin/email_subscriptions': ['/admin/email_subscriptions'],
+  '/admin/terms_of_service': ['/admin/terms_of_service'],
 }
 
 function sectionOwns(section: AdminSection, pathname: string): boolean {

@@ -692,6 +692,37 @@ pub fn router() -> Router {
             "/api/v1/admin/canonical_email_blocks/{id}",
             get(admin::get_canonical_email_block).delete(admin::delete_canonical_email_block),
         )
+        // Terms of service, at Mastodon's admin paths
+        .route(
+            "/api/v1/admin/terms_of_service",
+            get(admin::admin_terms_of_service),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/history",
+            get(admin::admin_terms_of_service_history),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/draft",
+            get(admin::admin_terms_of_service_draft)
+                .put(admin::update_admin_terms_of_service_draft),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/generate",
+            get(admin::admin_terms_of_service_generator)
+                .post(admin::generate_admin_terms_of_service),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/{id}/preview",
+            get(admin::admin_terms_of_service_preview),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/{id}/test",
+            post(admin::test_admin_terms_of_service),
+        )
+        .route(
+            "/api/v1/admin/terms_of_service/{id}/distribution",
+            post(admin::distribute_admin_terms_of_service),
+        )
         // Account move and aliases
         .route("/api/v1/accounts/move", post(accounts::move_account))
         .route(
