@@ -118,6 +118,21 @@ pub async fn accounts(state: &AppState, prefix: &str, id: i64, days_ago: i64) ->
         .unwrap_or(0)
 }
 
+/// `Trends::History#aggregate(days_ago.days.ago.to_date..0.days.ago.to_date).accounts`:
+/// distinct users over today and the `days_ago` days before it, counted once
+/// across all of them.
+pub async fn aggregate_accounts(state: &AppState, prefix: &str, id: i64, days_ago: i64) -> i64 {
+    let mut redis = state.redis.clone();
+    let mut command = redis::cmd("PFCOUNT");
+    for ago in 0..=days_ago {
+        command.arg(format!(
+            "{}:accounts",
+            key(state, prefix, id, day_start(ago))
+        ));
+    }
+    command.query_async(&mut redis).await.unwrap_or(0)
+}
+
 /// The start of today, as `Time#beginning_of_day.to_i` in UTC.
 pub fn today() -> i64 {
     day_start(0)

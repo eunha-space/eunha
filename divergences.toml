@@ -1254,3 +1254,21 @@ an empty result is what Mastodon gives for the neighbouring case."""
 evidence = "src/search/query.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "peers-search-falls-back-to-the-database"
+kind = "behaviour"
+summary = "Peer search asks the database when Elasticsearch fails"
+mastodon = """
+`Api::V1::Peers::SearchController` queries `InstancesIndex` without a rescue \
+for search server errors, so a cluster that is down or refusing makes \
+`/api/v1/peers/search` answer 500."""
+eunha = """
+Falls back to the database query Mastodon uses without Elasticsearch, as \
+account and hashtag search already do in both."""
+why = """
+A peer search is autocomplete for a domain field; a 500 helps nobody, and the \
+database answer is what the endpoint gives on any instance without a cluster."""
+evidence = "src/search/peers.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

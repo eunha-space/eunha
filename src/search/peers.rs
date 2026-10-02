@@ -30,6 +30,11 @@ pub async fn search(state: &AppState, q: Option<&str>) -> AppResult<Option<Vec<S
     let Some(domain) = normalize_domain(q) else {
         return Ok(Some(vec![]));
     };
+    // Mastodon answers 500 when the search server fails here; eunha asks
+    // the database instead, as the other searches do.
+    if let Some(found) = crate::search::elasticsearch::peers(state, &domain).await {
+        return Ok(Some(found));
+    }
     // `Instance.searchable.domain_starts_with(domain)`. The `instances`
     // materialized view is the union of the domains accounts are on and those
     // a block or allow names; this reads the same union, so that a view nobody

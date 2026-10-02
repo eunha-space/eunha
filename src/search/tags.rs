@@ -26,6 +26,9 @@ pub struct Options {
 pub async fn search(state: &AppState, query: &str, options: &Options) -> AppResult<Vec<FoundTag>> {
     let query = query.trim();
     let query = query.strip_prefix('#').unwrap_or(query);
+    if let Some(found) = crate::search::elasticsearch::tags(state, query, options).await {
+        return Ok(found);
+    }
     search_for(state, query, options).await
 }
 

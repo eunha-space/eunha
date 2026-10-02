@@ -88,6 +88,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "FASP follow recommendation cleanup",
             crate::fasp::workers::run_follow_recommendation_cleanup(state.clone()),
         ),
+        until_stopped(
+            &state,
+            "search indexing",
+            crate::search::elasticsearch::indexing::run(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work
@@ -574,6 +579,9 @@ async fn publish_one(
     {
         tracing::error!(scheduled_id, error = %e, "failed to count a published status");
     }
+    // `update_index('statuses', :proper)` and the account's stats.
+    crate::search::elasticsearch::indexing::status(state, status.id).await;
+    crate::search::elasticsearch::indexing::account(state, account.id).await;
 
     // Attach media ids if any
     if let Some(ids) = params["media_ids"].as_array() {

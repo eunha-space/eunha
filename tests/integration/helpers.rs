@@ -738,6 +738,7 @@ impl TestContext {
                 translation: Default::default(),
                 secret_key_base: None,
                 experimental_features: Vec::new(),
+                elasticsearch: Default::default(),
             },
             // Exercise the same path a Mastodon 4.7 database uses: local
             // signing keys in `keypairs`, encrypted with these secrets.

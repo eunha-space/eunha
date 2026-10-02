@@ -91,8 +91,11 @@ pub async fn search(
     if remaining > 0 {
         // `terms_for_query`: a local handle searches on the username alone.
         let terms = if domain_is_local { &username } else { query };
-        let ranked = match viewer {
-            Some(viewer) => {
+        let from_elasticsearch =
+            crate::search::elasticsearch::accounts(state, terms, viewer, options, remaining).await;
+        let ranked = match (from_elasticsearch, viewer) {
+            (Some(found), _) => found,
+            (None, Some(viewer)) => {
                 advanced_search_for(
                     state,
                     terms,
@@ -103,7 +106,7 @@ pub async fn search(
                 )
                 .await?
             }
-            None => search_for(state, terms, remaining, options.offset).await?,
+            (None, None) => search_for(state, terms, remaining, options.offset).await?,
         };
         for account in ranked {
             if !results.iter().any(|a| a.id == account.id) {

@@ -68,6 +68,11 @@ enum Command {
         #[command(subcommand)]
         command: AccountsCommand,
     },
+    /// Manage full-text search, as `tootctl search` does.
+    Search {
+        #[command(subcommand)]
+        command: SearchCommand,
+    },
     /// Rewrite the addresses local accounts and posts were given under a
     /// domain the instance had before.
     ///
@@ -150,6 +155,53 @@ enum Command {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum SearchCommand {
+    /// Create or upgrade the Elasticsearch indexes and fill them from the
+    /// database, as `tootctl search deploy` does.
+    ///
+    /// An index that does not exist yet, or whose mapping or analysis differs
+    /// from what this binary creates, is created afresh, which erases what it
+    /// held. Then every row is imported, unless `--no-import`, and documents
+    /// whose row is gone are deleted, unless `--no-clean`.
+    Deploy {
+        /// Batches written at once.
+        #[arg(short = 'c', long, default_value_t = 5)]
+        concurrency: usize,
+        /// Rows in each batch.
+        #[arg(short = 'b', long, default_value_t = 100)]
+        batch_size: i64,
+        /// Only these indexes: instances, accounts, tags, statuses,
+        /// public_statuses. Comma-separated, or given more than once.
+        #[arg(long, value_delimiter = ',', value_parser = parse_index)]
+        only: Vec<eunha::search::elasticsearch::Index>,
+        /// Do not import data from the database into the indexes.
+        #[arg(long)]
+        no_import: bool,
+        /// Do not remove documents whose row is gone.
+        #[arg(long)]
+        no_clean: bool,
+        /// Update a changed index's mapping and analysis in place, without
+        /// re-creating it or importing anything.
+        #[arg(long)]
+        only_mapping: bool,
+        /// Carry on an interrupted import from the last batch it wrote,
+        /// instead of from the first row.
+        #[arg(long)]
+        resume: bool,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
+}
+
+fn parse_index(name: &str) -> Result<eunha::search::elasticsearch::Index, String> {
+    eunha::search::elasticsearch::Index::from_option(name).ok_or_else(|| {
+        format!("{name} is not one of instances, accounts, tags, statuses, public_statuses")
+    })
 }
 
 #[derive(Subcommand, Debug)]
@@ -407,6 +459,37 @@ async fn main() -> anyhow::Result<()> {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
             let db = command_database(&config).await?;
             print_status(&accounts::batch_status(&db, &tag).await?);
+            return Ok(());
+        }
+        Some(Command::Search {
+            command:
+                SearchCommand::Deploy {
+                    concurrency,
+                    batch_size,
+                    only,
+                    no_import,
+                    no_clean,
+                    only_mapping,
+                    resume,
+                    instance,
+                },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database_sized(&config, concurrency as u32 + 1).await?;
+            let state = eunha::state::AppState::new(db, config).await?;
+            let options = eunha::search::elasticsearch::deploy::Options {
+                concurrency,
+                batch_size,
+                only,
+                import: !no_import,
+                clean: !no_clean,
+                only_mapping,
+                resume,
+            };
+            eunha::search::elasticsearch::deploy::deploy(&state, &options, |line| {
+                println!("{line}")
+            })
+            .await?;
             return Ok(());
         }
         Some(Command::RenameDomain { from, to, instance }) => {
@@ -855,10 +938,18 @@ async fn create_account(
 /// A one-off command's connection to its instance's database, once the schema
 /// is known to match this binary.
 async fn command_database(config: &config::Config) -> anyhow::Result<sqlx::PgPool> {
+    command_database_sized(config, 1).await
+}
+
+/// [`command_database`] with room for `connections` queries at once.
+async fn command_database_sized(
+    config: &config::Config,
+    connections: u32,
+) -> anyhow::Result<sqlx::PgPool> {
     let db = tenants::connect(
         &config.database_url,
         &config::DatabasePoolConfig {
-            max_connections: 1,
+            max_connections: connections.max(1),
             ..Default::default()
         },
     )

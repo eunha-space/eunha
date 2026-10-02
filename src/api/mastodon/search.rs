@@ -143,6 +143,30 @@ pub async fn search(
 
     // `status_searchable?`: posts are searched only with Elasticsearch, and
     // only for a signed-in user. Without it, a post is found by its URL alone.
+    if wants("statuses") && state.search.is_some() {
+        if let Some(viewer) = viewer_id {
+            let parse_id = |v: Option<&str>| present(v).map(ruby_to_i);
+            let options = crate::search::elasticsearch::StatusOptions {
+                limit,
+                offset,
+                account_id: parse_id(q.account_id.as_deref()),
+                min_id: parse_id(q.min_id.as_deref()),
+                max_id: parse_id(q.max_id.as_deref()),
+            };
+            use crate::search::elasticsearch::StatusSearchError;
+            let ids = match crate::search::elasticsearch::statuses(&state, &query, viewer, &options)
+                .await
+            {
+                Ok(ids) => ids,
+                Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
+                Err(StatusSearchError::InvalidDate) => {
+                    return Err(AppError::Unprocessable("Invalid date supplied".into()))
+                }
+                Err(StatusSearchError::App(e)) => return Err(e),
+            };
+            results.statuses = render_statuses(&state, &ids, viewer).await?;
+        }
+    }
 
     if wants("hashtags") {
         let found = crate::search::tags::search(
@@ -212,6 +236,28 @@ async fn resolve_url_into(
         _ => {}
     }
     Ok(())
+}
+
+/// The posts found, rendered in the order found.
+async fn render_statuses(
+    state: &AppState,
+    ids: &[i64],
+    viewer: i64,
+) -> AppResult<Vec<super::types::Status>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let rows = sqlx::query_as::<_, crate::db::models::Status>(
+        "SELECT * FROM statuses WHERE id = ANY($1) AND deleted_at IS NULL",
+    )
+    .bind(ids)
+    .fetch_all(&state.db)
+    .await?;
+    let mut by_id: std::collections::HashMap<i64, crate::db::models::Status> =
+        rows.into_iter().map(|s| (s.id, s)).collect();
+    let ordered: Vec<crate::db::models::Status> =
+        ids.iter().filter_map(|id| by_id.remove(id)).collect();
+    super::timelines::build_status_list_with_filters(state, ordered, Some(viewer)).await
 }
 
 /// `REST::TagSerializer` for each hashtag found: its history, and for a

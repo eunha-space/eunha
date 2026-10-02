@@ -21,8 +21,9 @@ group state, async refreshes, the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
 emailed to an account's subscribers, sign-ins waiting on a second factor
-with their attempt counts, and translated statuses with the language list of
-the translation service — uses that namespace.
+with their attempt counts, translated statuses with the language list of
+the translation service, and the search index queues (`chewy:queue:<Index>`,
+see [search](./search)) — uses that namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
@@ -32,12 +33,13 @@ user, the matching key pattern, and only the commands Eunha uses:
 +zrange +zrangebyscore +zrevrangebyscore +zrevrank +zscore +mget +del
 +sadd +scard +incrby +pfadd +pfcount +expire +smembers +srem +hset +hget
 +hincrby
-+scan
++scan +sscan
 ~~~~
 
 `SCAN` is only ever given a `MATCH` pattern under the instance's own prefix: the
 federation admin page uses it to find the servers deliveries are failing to, as
-Mastodon lists its `exhausted_deliveries` keys.
+Mastodon lists its `exhausted_deliveries` keys. `SSCAN` reads the search index
+queues, and is only used when Elasticsearch is enabled.
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used
 for lock release. Tenant users receive `FCALL`, but not `EVAL`, `EVALSHA`,

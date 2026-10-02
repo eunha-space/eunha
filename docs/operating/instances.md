@@ -216,6 +216,32 @@ variable names. What is translated, and how, is in
 [translation](./translation.md).
 
 
+Search
+------
+
+Mastodon's `ES_*` variables are per-instance settings too, under
+`[instance.elasticsearch]`. Instances may share one cluster when each has its
+own `prefix`:
+
+~~~~ toml
+[instance.elasticsearch]
+enabled = true                 # ES_ENABLED=true
+host = "localhost"             # ES_HOST, a host or a URL with its scheme
+port = 9200                    # ES_PORT
+user = "elastic"               # ES_USER
+pass = "..."                   # ES_PASS
+prefix = "garden"              # ES_PREFIX
+preset = "single_node_cluster" # ES_PRESET
+ca_file = "/etc/ssl/es-ca.pem" # ES_CA_FILE
+query_timeout = "10s"          # ES_QUERY_TIMEOUT
+~~~~
+
+A single instance configured from the environment also reads the `ES_*`
+variables themselves. A `SIGHUP` reload picks up a change by restarting the
+instance; the indexes themselves are created by `eunha search deploy`.
+[Search](./search) describes the rest.
+
+
 Private Prometheus metrics
 --------------------------
 

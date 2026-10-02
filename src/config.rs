@@ -468,6 +468,10 @@ pub struct InstanceConfig {
     /// not know is ignored, as Mastodon ignores one.
     #[serde(default)]
     pub experimental_features: Vec<String>,
+    /// Mastodon's `ES_*` settings: full-text search with Elasticsearch or
+    /// OpenSearch (docs/operating/search.md). Off unless `enabled` is set.
+    #[serde(default)]
+    pub elasticsearch: ElasticsearchConfig,
 }
 
 /// Mastodon's `config/translation.yml`. DeepL wins when both are set, as
@@ -491,6 +495,62 @@ pub struct TranslationConfig {
     /// `LIBRE_TRANSLATE_API_KEY`.
     #[serde(default)]
     pub libre_translate_api_key: Option<String>,
+}
+
+/// Mastodon's `ES_ENABLED`, `ES_HOST`, `ES_PORT`, `ES_USER`, `ES_PASS`,
+/// `ES_PREFIX`, `ES_PRESET`, `ES_CA_FILE` and `ES_QUERY_TIMEOUT`, under
+/// `[instance.elasticsearch]`. The `ES_*` environment variables themselves
+/// are read too, for a single instance configured from the environment.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct ElasticsearchConfig {
+    /// `ES_ENABLED=true`.
+    pub enabled: bool,
+    /// `ES_HOST`: a host name, or a URL with its scheme (`https://...`).
+    pub host: String,
+    /// `ES_PORT`.
+    pub port: u16,
+    /// `ES_USER`.
+    pub user: Option<String>,
+    /// `ES_PASS`.
+    pub pass: Option<String>,
+    /// `ES_PREFIX`: put before every index name, joined with `_`. Instances
+    /// sharing one cluster each need their own.
+    pub prefix: Option<String>,
+    /// `ES_PRESET`: `single_node_cluster` (the default), `small_cluster` or
+    /// `large_cluster`, which decide replicas and shards.
+    pub preset: Option<String>,
+    /// `ES_CA_FILE`: a PEM certificate to trust for the cluster's TLS.
+    pub ca_file: Option<String>,
+    /// `ES_QUERY_TIMEOUT`, as Elasticsearch reads a time unit (`10s`).
+    pub query_timeout: String,
+}
+
+impl Default for ElasticsearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "localhost".into(),
+            port: 9200,
+            user: None,
+            pass: None,
+            prefix: None,
+            preset: None,
+            ca_file: None,
+            query_timeout: "10s".into(),
+        }
+    }
+}
+
+impl ElasticsearchConfig {
+    /// `"#{host}:#{port}"`, with `http://` when the host names no scheme.
+    pub fn base_url(&self) -> String {
+        if self.host.contains("://") {
+            format!("{}:{}", self.host.trim_end_matches('/'), self.port)
+        } else {
+            format!("http://{}:{}", self.host, self.port)
+        }
+    }
 }
 
 impl InstanceConfig {
@@ -541,6 +601,7 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         dotenvy::dotenv().ok();
         adopt_mastodon_env();
+        adopt_mastodon_elasticsearch_env();
         let cfg = config::Config::builder()
             .add_source(config::File::with_name("config").required(false))
             .add_source(config::Environment::default().separator("__"))
@@ -553,6 +614,43 @@ impl Config {
             .add_source(config::File::from(std::path::Path::new(path)))
             .build()?;
         Ok(cfg.try_deserialize()?)
+    }
+}
+
+/// Accept Mastodon's `ES_*` variables for `[instance.elasticsearch]`, so that
+/// a Mastodon `.env.production` configures search as it did there. A value
+/// eunha's own spelling already sets is left alone.
+fn adopt_mastodon_elasticsearch_env() {
+    for (mastodon, field) in [
+        ("ES_ENABLED", "ENABLED"),
+        ("ES_HOST", "HOST"),
+        ("ES_PORT", "PORT"),
+        ("ES_USER", "USER"),
+        ("ES_PASS", "PASS"),
+        ("ES_PREFIX", "PREFIX"),
+        ("ES_PRESET", "PRESET"),
+        ("ES_CA_FILE", "CA_FILE"),
+        ("ES_QUERY_TIMEOUT", "QUERY_TIMEOUT"),
+    ] {
+        let eunha = format!("INSTANCE__ELASTICSEARCH__{field}");
+        if std::env::var_os(&eunha).is_some() {
+            continue;
+        }
+        let Ok(value) = std::env::var(mastodon) else {
+            continue;
+        };
+        // `ENV.fetch(...).presence`: a blank value is no value.
+        if value.trim().is_empty() {
+            continue;
+        }
+        // `ENV['ES_ENABLED'] == 'true'`: anything else is off.
+        let value = if mastodon == "ES_ENABLED" {
+            (value == "true").to_string()
+        } else {
+            value
+        };
+        // Safety: called once, before any threads read the environment.
+        unsafe { std::env::set_var(eunha, value) };
     }
 }
 

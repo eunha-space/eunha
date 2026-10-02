@@ -56,6 +56,9 @@ pub struct AppState {
     /// return once they have finished the pass they are in, and its streaming
     /// connections close.
     pub stop: tokio_util::sync::CancellationToken,
+    /// The Elasticsearch or OpenSearch cluster this instance searches, when
+    /// `[instance.elasticsearch]` enables one (crate::search::elasticsearch).
+    pub search: Option<Arc<crate::search::elasticsearch::Client>>,
 }
 
 impl AppState {
@@ -139,6 +142,13 @@ impl AppState {
         )?);
 
         let uris = crate::api::ap::serving::uris(&config.instance.domain)?;
+        let search = if config.instance.elasticsearch.enabled {
+            Some(Arc::new(crate::search::elasticsearch::Client::new(
+                &config.instance.elasticsearch,
+            )?))
+        } else {
+            None
+        };
         let instance = Arc::new(config.instance.clone());
         Ok(Self {
             db,
@@ -162,6 +172,7 @@ impl AppState {
             urls,
             uris,
             stop: tokio_util::sync::CancellationToken::new(),
+            search,
         })
     }
 }
