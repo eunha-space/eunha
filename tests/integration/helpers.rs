@@ -610,6 +610,8 @@ impl TestContext {
         // No SMTP in tests: keep what each instance would have mailed, for
         // `TestContext::mail_to` to read.
         eunha::email::capture_for_tests();
+        // And send notification emails at once rather than two minutes on.
+        eunha::notification_mail::send_without_delay();
         // Likewise for inbound activities: handle them in the request rather
         // than on the ingress queue, so a POST to /inbox has taken effect by
         // the time it returns.

@@ -77,7 +77,9 @@ confirmation token: Mastodon signs a GlobalID with `secret_key_base`, which
 eunha does not have (the `email-subscription-unsubscribe-token` divergence).
 A link mailed by Mastodon before the switch to eunha therefore no longer
 works, and one mailed by eunha does not expire after a month as Mastodon's
-does.
+does. The same address serves the unsubscribe links in members' notification
+emails, told apart by their signed token (see
+[Account security](./accounts.md#notification-emails)).
 
 
 Distribution

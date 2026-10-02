@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email, u.locale, u.time_zone,\n                  (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled\n                   AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                   AND NOT a.memorial AND a.moved_to_account_id IS NULL\n                   AND NOT (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login\n                            AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w\n                                            WHERE w.user_id = u.id))\n                  ) AS \"functional!\"\n           FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)\n           WHERE u.account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "time_zone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "functional!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "fdb8bb1a40b9a3a68dd36706c8c6520209b724f3155a83a2da84e096b4a5959b"
+}

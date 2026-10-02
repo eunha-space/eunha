@@ -767,7 +767,7 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
     }
     let mut mailed = vec![];
     for status in &statuses {
-        mailed.push(mailed_status(state, status, &account).await);
+        mailed.push(mailed_status(state, status, &account, None, "en").await);
     }
     let excerpt = truncate(&statuses[0].text, 17);
     let sign_up_url = if crate::settings::registrations_mode(state).await.enabled() {
@@ -809,11 +809,14 @@ fn truncate(text: &str, length: usize) -> String {
     format!("{kept}...")
 }
 
-/// The `notification_mailer/status` partial's inputs.
-async fn mailed_status(
+/// The `notification_mailer/status` partial's inputs, its date in
+/// `time_zone` (UTC for a subscriber, who has none).
+pub(crate) async fn mailed_status(
     state: &AppState,
     status: &crate::db::models::Status,
     account: &Account,
+    time_zone: Option<&str>,
+    locale: &str,
 ) -> crate::email::MailedStatus {
     use crate::api::mastodon::status_serialize::{build_status, fetch_status_media};
     let content = match fetch_status_media(state, status.id).await {
@@ -835,7 +838,11 @@ async fn mailed_status(
             account.acct(),
             status.id
         ),
-        created_at: status.created_at.format("%b %d, %Y, %H:%M UTC").to_string(),
+        created_at: crate::time_zones::format_with_time_zone(
+            status.created_at.and_utc(),
+            time_zone,
+            locale,
+        ),
     }
 }
 

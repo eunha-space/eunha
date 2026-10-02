@@ -134,6 +134,7 @@ async fn run(
         .filter(|s| !requires_auth(s) || account_id.is_some())
         .collect();
 
+    let mut online = track_online(&state, account_id, &subscribed, None);
     let mut rx = state.streaming.subscribe();
     let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
     heartbeat.tick().await; // consume the immediate first tick
@@ -206,6 +207,7 @@ async fn run(
                                 }
                                 _ => {}
                             }
+                            online = track_online(&state, account_id, &subscribed, online.take());
                         }
                     }
                     Some(Ok(Message::Ping(p))) => {
@@ -236,6 +238,24 @@ async fn run(
                 }
             }
         }
+    }
+}
+
+/// Count the connection as its account being online while it is subscribed to
+/// the account's own stream, as the streaming server sets
+/// `subscribed:timeline:<id>` for `user` and `user:notification`.
+fn track_online(
+    state: &AppState,
+    account_id: Option<i64>,
+    subscribed: &HashSet<String>,
+    current: Option<crate::streaming::OnlineGuard>,
+) -> Option<crate::streaming::OnlineGuard> {
+    let own = subscribed
+        .iter()
+        .any(|s| s == "user" || s == "user:notification");
+    match account_id.filter(|_| own) {
+        Some(id) => current.or_else(|| Some(state.streaming.online(id))),
+        None => None,
     }
 }
 

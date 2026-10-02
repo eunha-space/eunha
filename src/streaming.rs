@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
 #[derive(Clone, Debug)]
@@ -63,6 +64,29 @@ pub enum Event {
 #[derive(Clone)]
 pub struct StreamBus {
     tx: broadcast::Sender<Arc<Event>>,
+    /// How many connections each account has subscribed to its own stream
+    /// (`user` or `user:notification`): Mastodon's
+    /// `subscribed:timeline:<id>` keys, which `NotifyService` reads to tell
+    /// whether the recipient is online.
+    online: Arc<Mutex<HashMap<i64, usize>>>,
+}
+
+/// One connection counted in [`StreamBus::is_online`] until it is dropped.
+pub struct OnlineGuard {
+    online: Arc<Mutex<HashMap<i64, usize>>>,
+    account_id: i64,
+}
+
+impl Drop for OnlineGuard {
+    fn drop(&mut self) {
+        let mut online = self.online.lock().expect("online lock");
+        if let Some(count) = online.get_mut(&self.account_id) {
+            *count -= 1;
+            if *count == 0 {
+                online.remove(&self.account_id);
+            }
+        }
+    }
 }
 
 impl Default for StreamBus {
@@ -74,7 +98,10 @@ impl Default for StreamBus {
 impl StreamBus {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(1024);
-        Self { tx }
+        Self {
+            tx,
+            online: Arc::default(),
+        }
     }
 
     pub fn publish(&self, event: Event) {
@@ -83,5 +110,30 @@ impl StreamBus {
 
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<Event>> {
         self.tx.subscribe()
+    }
+
+    /// Count a connection subscribed to `account_id`'s own stream until the
+    /// guard is dropped.
+    pub fn online(&self, account_id: i64) -> OnlineGuard {
+        *self
+            .online
+            .lock()
+            .expect("online lock")
+            .entry(account_id)
+            .or_default() += 1;
+        OnlineGuard {
+            online: self.online.clone(),
+            account_id,
+        }
+    }
+
+    /// `NotifyService#subscribed_to_streaming_api?`: a connection of this
+    /// process is subscribed to the account's `user` or `user:notification`
+    /// stream.
+    pub fn is_online(&self, account_id: i64) -> bool {
+        self.online
+            .lock()
+            .expect("online lock")
+            .contains_key(&account_id)
     }
 }

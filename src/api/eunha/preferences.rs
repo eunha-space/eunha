@@ -3,7 +3,7 @@
 //! "include profile page in search engines" (`noindex`, which the form shows
 //! inverted as `indexable`) and "display from which app you sent a post"
 //! (`show_application`), and from `Settings::Preferences::*` the interface
-//! language, the languages to show in public timelines, and the staff
+//! language and time zone, the languages to show in public timelines, and the
 //! notification emails eunha sends.
 //!
 //! What Mastodon offers through the REST API already — the posting defaults
@@ -28,8 +28,15 @@ pub fn routes() -> Router {
         .route("/api/eunha/v1/preferences/time_zones", get(time_zones))
 }
 
-/// The `notification_emails.*` settings for the mails eunha sends staff.
+/// The `notification_emails.*` settings that are on or off: the
+/// notification emails (`NotificationMailer`), then the staff mails.
 const NOTIFICATION_EMAILS: &[(&str, bool)] = &[
+    ("follow", true),
+    ("reblog", false),
+    ("favourite", false),
+    ("mention", true),
+    ("quote", true),
+    ("follow_request", true),
     ("report", true),
     ("pending_account", true),
     ("trends", true),
@@ -52,11 +59,20 @@ pub struct Preferences {
     /// `users.time_zone`: the zone times in mail are written in, a name
     /// `ActiveSupport::TimeZone` knows, or null for UTC.
     pub time_zone: Option<String>,
+    /// Mail notifications even while a client of the member's is listening
+    /// (`always_send_emails`).
+    pub always_send_emails: bool,
     pub notification_emails: NotificationEmails,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct NotificationEmails {
+    pub follow: Option<bool>,
+    pub reblog: Option<bool>,
+    pub favourite: Option<bool>,
+    pub mention: Option<bool>,
+    pub quote: Option<bool>,
+    pub follow_request: Option<bool>,
     pub report: Option<bool>,
     pub pending_account: Option<bool>,
     pub trends: Option<bool>,
@@ -90,7 +106,14 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         chosen_languages: row.chosen_languages.filter(|l| !l.is_empty()),
         locale: row.locale,
         time_zone: row.time_zone,
+        always_send_emails: user_setting_bool(settings, "always_send_emails", false),
         notification_emails: NotificationEmails {
+            follow: bool_of("notification_emails.follow", true),
+            reblog: bool_of("notification_emails.reblog", false),
+            favourite: bool_of("notification_emails.favourite", false),
+            mention: bool_of("notification_emails.mention", true),
+            quote: bool_of("notification_emails.quote", true),
+            follow_request: bool_of("notification_emails.follow_request", true),
             report: bool_of("notification_emails.report", true),
             pending_account: bool_of("notification_emails.pending_account", true),
             trends: bool_of("notification_emails.trends", true),
@@ -116,6 +139,7 @@ pub struct Update {
     /// What Mastodon's privacy form posts: `noindex`, inverted.
     pub indexable: Option<bool>,
     pub show_application: Option<bool>,
+    pub always_send_emails: Option<bool>,
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
@@ -159,8 +183,17 @@ pub async fn update(
     if let Some(show) = form.show_application {
         set("show_application", show.into());
     }
+    if let Some(always) = form.always_send_emails {
+        set("always_send_emails", always.into());
+    }
     let emails = &form.notification_emails;
     for ((key, _), value) in NOTIFICATION_EMAILS.iter().zip([
+        emails.follow,
+        emails.reblog,
+        emails.favourite,
+        emails.mention,
+        emails.quote,
+        emails.follow_request,
         emails.report,
         emails.pending_account,
         emails.trends,

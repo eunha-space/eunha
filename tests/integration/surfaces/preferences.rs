@@ -31,6 +31,14 @@ async fn test_preferences_default_and_change() {
     assert!(prefs["chosen_languages"].is_null());
     assert_eq!(prefs["notification_emails"]["report"], true);
     assert_eq!(prefs["notification_emails"]["software_updates"], "critical");
+    // `UserSettings`' defaults for the notification emails.
+    assert_eq!(prefs["notification_emails"]["follow"], true);
+    assert_eq!(prefs["notification_emails"]["mention"], true);
+    assert_eq!(prefs["notification_emails"]["quote"], true);
+    assert_eq!(prefs["notification_emails"]["follow_request"], true);
+    assert_eq!(prefs["notification_emails"]["favourite"], false);
+    assert_eq!(prefs["notification_emails"]["reblog"], false);
+    assert_eq!(prefs["always_send_emails"], false);
 
     let changed: Value = patch(
         &ctx,

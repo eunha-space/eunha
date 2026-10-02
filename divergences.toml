@@ -558,6 +558,49 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "notification-email-unsubscribe-token"
+kind = "behaviour"
+summary = "Notification email unsubscribe links are signed with a VAPID-derived key, and cover quotes"
+mastodon = """
+Links `/unsubscribe?token=&type=` with the user's signed GlobalID \
+(`to_sgid(for: 'unsubscribe')`, keyed from `secret_key_base`, valid for a \
+month), and accepts `follow`, `reblog`, `favourite`, `mention` and \
+`follow_request` as the type, so the link in a `quote` mail answers 404."""
+eunha = """
+Signs `User/<id>` with HMAC-SHA256 under a key derived for `unsubscribe` from \
+the instance's VAPID private key, as `base64url(message)--hexdigest`, with no \
+expiry, and accepts `quote` as well."""
+why = """
+Eunha has no `secret_key_base`, so it can neither sign nor read Mastodon's \
+GlobalIDs; the async refresh ids already take the same route. A link that \
+keeps working is what an unsubscribe link is for, and one in a mail eunha \
+sent should not be refused."""
+evidence = "tests/integration/c2s/notification_emails.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "notification-email-wait-in-process"
+kind = "behaviour"
+summary = "The two-minute wait before a notification email runs in the process"
+mastodon = """
+Enqueues `NotificationMailer` with `deliver_later(wait: 2.minutes)` in \
+Sidekiq, and tells whether the recipient is online from the \
+`subscribed:timeline:<id>` keys every streaming server sets in Redis."""
+eunha = """
+Waits in a task of the eunha process, and counts the streaming connections \
+of that process. An instance stopped or restarted within the two minutes \
+does not send the mails it was waiting on."""
+why = """
+Eunha has no durable queue for work due at a time, and streaming is served \
+by the same process that creates the notification. A notification email is \
+a convenience on top of a notification that is already stored and pushed, \
+so losing one to a restart costs little."""
+evidence = "tests/integration/c2s/notification_emails.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "terms-of-service-interstitial-api"
 kind = "addition"
 summary = "Tells its web client about the terms of service interstitial over an API"
@@ -1004,9 +1047,11 @@ session."""
 eunha = """
 Serves `GET` and `PATCH /api/eunha/v1/preferences` for `noindex` (or \
 `indexable`, its inverse), `show_application`, `chosen_languages`, `locale`, \
-`time_zone` (with the zones to choose from at `preferences/time_zones`) \
-and the staff notification emails eunha sends (`report`, `pending_account`, \
-`trends`, `appeal`, `end_of_support`, `software_updates`), stored in \
+`time_zone` (with the zones to choose from at `preferences/time_zones`), \
+`always_send_emails`, and the notification emails eunha sends (`follow`, \
+`follow_request`, `reblog`, `favourite`, `mention`, `quote`, and for staff \
+`report`, `pending_account`, `trends`, `appeal`, `end_of_support`, \
+`software_updates`), stored in \
 `users.settings`, `users.chosen_languages`, `users.locale` and \
 `users.time_zone` as Mastodon stores them."""
 why = """

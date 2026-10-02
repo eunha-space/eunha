@@ -17,6 +17,7 @@
   {% if form_token %}
   <form method="POST" action="/unsubscribe">
     <input type="hidden" name="token" value="{{ form_token }}">
+    {% if form_type %}<input type="hidden" name="type" value="{{ form_type }}">{% endif %}
     <button type="submit">{{ form_button }}</button>
   </form>
   {% endif %}

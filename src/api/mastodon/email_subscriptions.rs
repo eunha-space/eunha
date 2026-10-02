@@ -108,6 +108,8 @@ struct Page<'a> {
     title: String,
     paragraphs: Vec<String>,
     form_token: Option<&'a str>,
+    /// The notification type a user unsubscribes from, posted with the token.
+    form_type: Option<&'a str>,
     form_button: &'static str,
     link: Option<(String, &'static str)>,
 }
@@ -122,6 +124,7 @@ fn render(state: &AppState, locale: Locale, page: Page<'_>) -> Response {
             title => page.title,
             paragraphs => page.paragraphs,
             form_token => page.form_token,
+            form_type => page.form_type,
             form_button => page.form_button,
             link_href => link_href,
             link_text => link_text,
@@ -202,6 +205,7 @@ pub async fn confirmation(
                 unsubscribe,
             ],
             form_token: None,
+            form_type: None,
             form_button: "",
             link: None,
         },
@@ -211,6 +215,9 @@ pub async fn confirmation(
 #[derive(Debug, Deserialize)]
 pub struct UnsubscribeParams {
     pub token: Option<String>,
+    /// For a user's link, the notification type to stop mailing.
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
 }
 
 /// GET /unsubscribe: ask before unsubscribing.
@@ -222,6 +229,9 @@ pub async fn unsubscribe_page(
     let Some(token) = q.token.filter(|t| !t.is_empty()) else {
         return not_found();
     };
+    if let Some(user_id) = crate::notification_mail::user_from_token(&state, &token) {
+        return user_page(&state, &headers, &token, user_id, q.kind.as_deref(), false).await;
+    }
     let account = match subs::subscription_account(&state, &token).await {
         Ok(Some(account)) => account,
         Ok(None) => return not_found(),
@@ -246,6 +256,7 @@ pub async fn unsubscribe_page(
                 "You'll stop receiving emails when this account publishes new posts.".into(),
             ],
             form_token: Some(&token),
+            form_type: None,
             form_button: if ko { "구독 해지" } else { "Unsubscribe" },
             link: None,
         },
@@ -261,14 +272,18 @@ pub async fn unsubscribe(
     Query(q): Query<UnsubscribeParams>,
     form: Result<Form<UnsubscribeParams>, axum::extract::rejection::FormRejection>,
 ) -> Response {
+    let form = form.ok().map(|Form(f)| f);
+    let kind = form.as_ref().and_then(|f| f.kind.clone()).or(q.kind);
     let token = form
-        .ok()
-        .and_then(|Form(f)| f.token)
+        .and_then(|f| f.token)
         .or(q.token)
         .filter(|t| !t.is_empty());
     let Some(token) = token else {
         return not_found();
     };
+    if let Some(user_id) = crate::notification_mail::user_from_token(&state, &token) {
+        return user_page(&state, &headers, &token, user_id, kind.as_deref(), true).await;
+    }
     let account = match subs::unsubscribe(&state, &token).await {
         Ok(Some(account)) => account,
         Ok(None) => return not_found(),
@@ -296,6 +311,110 @@ pub async fn unsubscribe(
                 format!("You'll no longer receive emails from {name}.")
             }],
             form_token: None,
+            form_type: None,
+            form_button: "",
+            link: Some((
+                "/".to_string(),
+                if ko {
+                    "서버 홈페이지로 이동"
+                } else {
+                    "Go to server homepage"
+                },
+            )),
+        },
+    )
+}
+
+/// `UnsubscriptionsController` for a user's link from a notification email:
+/// `show` asks (`create` false), `create` turns `notification_emails.<type>`
+/// off. A type it cannot unsubscribe from is a 404, as
+/// `require_type_if_user!` makes it.
+async fn user_page(
+    state: &AppState,
+    headers: &HeaderMap,
+    token: &str,
+    user_id: i64,
+    kind: Option<&str>,
+    create: bool,
+) -> Response {
+    let Some(kind) = kind.and_then(|k| {
+        crate::notification_mail::UNSUBSCRIBABLE_TYPES
+            .iter()
+            .find(|t| **t == k)
+    }) else {
+        return not_found();
+    };
+    let locale = page_locale(headers);
+    let ko = locale == Locale::Ko;
+    // `unsubscriptions.notification_emails.<type>`
+    let label = match (*kind, ko) {
+        ("favourite", false) => "favorite notification emails",
+        ("follow", false) => "follow notification emails",
+        ("follow_request", false) => "follow request emails",
+        ("mention", false) => "mention notification emails",
+        ("reblog", false) => "boost notification emails",
+        ("quote", false) => "quote notification emails",
+        ("favourite", true) => "좋아요 알림 이메일",
+        ("follow", true) => "팔로우 알림 이메일",
+        ("follow_request", true) => "팔로우 요청 이메일",
+        ("mention", true) => "멘션 알림 이메일",
+        ("reblog", true) => "부스트 알림 이메일",
+        _ => "인용 알림 이메일",
+    };
+    let domain = crate::email::html_escape(&state.instance.domain);
+    if !create {
+        let exists = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE id = $1) AS "e!""#,
+            user_id
+        )
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(false);
+        if !exists {
+            return not_found();
+        }
+        return render(
+            state,
+            locale,
+            Page {
+                title: if ko {
+                    format!("{label} 구독을 해지할까요?")
+                } else {
+                    format!("Unsubscribe from {label}?")
+                },
+                paragraphs: vec![format!(
+                    "You'll stop receiving {label} from Mastodon on {domain}."
+                )],
+                form_token: Some(token),
+                form_type: Some(kind),
+                form_button: if ko { "구독 해지" } else { "Unsubscribe" },
+                link: None,
+            },
+        );
+    }
+    match crate::notification_mail::unsubscribe(state, user_id, kind).await {
+        Ok(true) => {}
+        Ok(false) => return not_found(),
+        Err(error) => {
+            tracing::error!(%error, "could not unsubscribe a user from notification emails");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    render(
+        state,
+        locale,
+        Page {
+            title: if ko {
+                "구독이 해지되었습니다"
+            } else {
+                "You are unsubscribed"
+            }
+            .to_string(),
+            paragraphs: vec![format!(
+                "You'll no longer receive {label} from Mastodon on {domain}."
+            )],
+            form_token: None,
+            form_type: None,
             form_button: "",
             link: Some((
                 "/".to_string(),

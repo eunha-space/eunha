@@ -25,6 +25,7 @@ pub mod middleware;
 pub mod migrate;
 pub mod moderation;
 pub mod moves;
+pub mod notification_mail;
 pub mod open_files;
 pub mod portability;
 pub mod preview_card;

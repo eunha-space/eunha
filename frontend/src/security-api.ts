@@ -220,6 +220,7 @@ export interface Preferences {
   chosen_languages: string[] | null
   locale: string | null
   time_zone: string | null
+  always_send_emails: boolean
   notification_emails: Record<string, boolean | string | null>
 }
 

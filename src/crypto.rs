@@ -97,3 +97,45 @@ fn hash_password_blocking(password: &str) -> AppResult<String> {
         .map(|h| h.to_string())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hashing failed: {e}")))
 }
+
+/// Rails' `message_verifier(purpose)` without `SECRET_KEY_BASE`, which eunha
+/// does not have: HMAC-SHA256 under a key derived for `purpose` from the
+/// instance's VAPID private key, as `base64url(message)--hexdigest` so it can
+/// sit in a path or a query string. `MessageVerifier#generate`.
+pub fn sign_message(secret: &str, purpose: &[u8], message: &str) -> String {
+    use base64::Engine;
+    use hmac::Mac;
+    let data = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(message);
+    let mut mac = message_signer(secret, purpose);
+    mac.update(data.as_bytes());
+    format!("{data}--{}", hex::encode(mac.finalize().into_bytes()))
+}
+
+/// `MessageVerifier#verify`: the message [`sign_message`] signed for
+/// `purpose`, or `None` for anything else.
+pub fn verify_message(secret: &str, purpose: &[u8], signed: &str) -> Option<String> {
+    use base64::Engine;
+    use hmac::Mac;
+    let (data, digest) = signed.rsplit_once("--")?;
+    let digest = hex::decode(digest).ok()?;
+    let mut mac = message_signer(secret, purpose);
+    mac.update(data.as_bytes());
+    mac.verify_slice(&digest).ok()?;
+    let message = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(data)
+        .ok()?;
+    String::from_utf8(message).ok()
+}
+
+type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+
+/// A key for this purpose rather than the secret itself, as Rails derives one
+/// per verifier name from its secret.
+fn message_signer(secret: &str, purpose: &[u8]) -> HmacSha256 {
+    use hmac::Mac;
+    let mut derive =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC takes a key of any length");
+    derive.update(purpose);
+    let key = derive.finalize().into_bytes();
+    HmacSha256::new_from_slice(&key).expect("HMAC takes a key of any length")
+}

@@ -207,13 +207,55 @@ privacy section uses both.
     has no translation for is cleared.
  -  `time_zone` is the zone the times in mail are written in (see
     [Time zones](#time-zones)).
- -  `notification_emails` turns the staff mails eunha sends on or off:
-    `report`, `pending_account`, `trends`, `appeal`, `end_of_support`, and
-    `software_updates` (`none`, `critical`, `patch` or `all`).
+ -  `notification_emails` turns the mails eunha sends on or off: the
+    notification emails `follow`, `follow_request`, `reblog`, `favourite`,
+    `mention` and `quote` (see [Notification emails](#notification-emails)),
+    and for staff `report`, `pending_account`, `trends`, `appeal`,
+    `end_of_support`, and `software_updates` (`none`, `critical`, `patch` or
+    `all`). `always_send_emails` mails notifications even while the member is
+    online.
 
 `source[sensitive]` is kept under Mastodon's `default_sensitive` key in
 `users.settings`; eunha used to write `web.default_sensitive`, which it still
 reads.
+
+
+Notification emails
+-------------------
+
+When a notification reaches a member, eunha mails it where Mastodon's
+`NotifyService#send_email!` would, written as `NotificationMailer` writes it:
+
+ -  only a notification that was delivered, not one the member's notification
+    policy filtered;
+ -  only the types `NotificationMailer` has: `follow`, `follow_request`,
+    `mention`, `quote`, `favourite` and `reblog`, each when the member has
+    `notification_emails.<type>` on — by default all but `favourite` and
+    `reblog`;
+ -  only while nothing of the member's is listening — no streaming connection
+    subscribed to their `user` or `user:notification` stream, and no web push
+    subscription — unless they set `always_send_emails`;
+ -  two minutes after the notification (`deliver_later(wait: 2.minutes)`), and
+    only if the notification and its post still exist then and the member is
+    still functional: confirmed, approved, not disabled, not suspended, moved
+    or a memorial, and with the second factor their role asks for.
+
+A mail names the other account in the subject, shows the post (its date in
+the member's time zone) or the account, and links to it, to the follow
+requests, to the notification settings and to unsubscribing. It carries
+`List-ID: <type.username.domain>`, `List-Unsubscribe` with
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click`, the auto-reply
+suppression headers every Mastodon mail has, and for a post in a conversation
+`In-Reply-To` and `References` so mail clients thread it. English and Korean
+are written; other locales get English.
+
+The unsubscribe link is `/unsubscribe?token=…&type=…`, the address email
+subscriptions use. `GET` asks, as `UnsubscriptionsController#show` does, and
+`POST` — the page's button, or a mail client's one-click request — turns
+`notification_emails.<type>` off. The token names the user, signed with a key
+derived from the instance's VAPID key, since eunha has no `secret_key_base`
+to sign a GlobalID with; it does not expire, and a link Mastodon mailed is not
+recognised. A subscription's confirmation token is still read as before.
 
 
 Time zones

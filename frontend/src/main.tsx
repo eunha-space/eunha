@@ -93,6 +93,8 @@ const router = createBrowserRouter([
   { path: '/public', element: <PublicTimeline /> },
   { path: '/notifications', element: <Notifications /> },
   { path: '/follow-requests', element: <FollowRequests /> },
+  // Mastodon's address for it, which its notification emails link.
+  { path: '/follow_requests', element: <Navigate to="/follow-requests" replace /> },
   { path: '/search', element: <SearchPage /> },
   { path: '/about', element: <About /> },
   // Mastodon's policy pages, which `urls.privacy_policy` and

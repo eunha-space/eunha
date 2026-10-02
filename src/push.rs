@@ -649,6 +649,15 @@ pub async fn create_and_push(
         )
         .await;
     });
+
+    // `send_email! if email_needed?`
+    crate::notification_mail::notification_delivered(
+        state,
+        notification_id,
+        recipient_id,
+        notification_type,
+    )
+    .await;
 }
 
 /// `LocalNotificationWorker` and `NotifyService` for the notification types

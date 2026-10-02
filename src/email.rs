@@ -159,52 +159,133 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
-    pub async fn send_notification(
-        &self,
-        to: &str,
-        name: &str,
-        notification_type: &str,
-        actor: &str,
-        instance_url: &str,
-        locale: &str,
-    ) -> anyhow::Result<()> {
-        let (subject, body) = match (locale, notification_type) {
-            ("ko", "mention") => (
-                format!("{actor}님이 회원님을 멘션했습니다"),
-                format!("<p>안녕하세요 {name},</p><p><strong>{actor}</strong>님이 게시물에서 회원님을 멘션했습니다.</p><p><a href=\"{instance_url}\">{instance_url}</a>에서 확인하세요.</p>"),
+    /// `NotificationMailer`: `mention`, `quote`, `follow`, `favourite`,
+    /// `reblog` and `follow_request`, with the list headers that let a mail
+    /// client unsubscribe in one click and, for a post, the conversation
+    /// headers that thread it.
+    pub async fn send_notification_mail(&self, mail: &NotificationMail) -> anyhow::Result<()> {
+        let ko = mail.locale.starts_with("ko");
+        let name = mail.actor_acct.as_str();
+        // `notification_mailer.<type>.{subject,title,body}` and the button.
+        let (subject, title, body, action) = match (mail.kind, ko) {
+            ("mention", false) => (
+                format!("You were mentioned by {name}"),
+                "New mention",
+                format!("You were mentioned by {name} in:"),
+                "Reply",
             ),
-            ("ko", "follow") => (
-                format!("{actor}님이 회원님을 팔로우했습니다"),
-                format!("<p>안녕하세요 {name},</p><p><strong>{actor}</strong>님이 회원님을 팔로우하기 시작했습니다.</p><p><a href=\"{instance_url}\">{instance_url}</a>에서 확인하세요.</p>"),
+            ("mention", true) => (
+                format!("{name} 님의 멘션"),
+                "새 답글",
+                format!("{name} 님이 나를 멘션했습니다:"),
+                "답장",
             ),
-            ("ko", "favourite") => (
-                format!("{actor}님이 회원님의 게시물을 좋아합니다"),
-                format!("<p>안녕하세요 {name},</p><p><strong>{actor}</strong>님이 회원님의 게시물을 즐겨찾기했습니다.</p><p><a href=\"{instance_url}\">{instance_url}</a>에서 확인하세요.</p>"),
+            ("quote", false) => (
+                format!("{name} quoted your post"),
+                "New quote",
+                format!("Your post was quoted by {name}:"),
+                "Reply",
             ),
-            ("ko", "reblog") => (
-                format!("{actor}님이 회원님의 게시물을 부스트했습니다"),
-                format!("<p>안녕하세요 {name},</p><p><strong>{actor}</strong>님이 회원님의 게시물을 부스트했습니다.</p><p><a href=\"{instance_url}\">{instance_url}</a>에서 확인하세요.</p>"),
+            ("quote", true) => (
+                format!("{name} 님이 내 게시물을 인용했습니다"),
+                "새 인용",
+                format!("당신의 게시물을 {name} 님이 인용했습니다:"),
+                "답장",
             ),
-            (_, "mention") => (
-                format!("{actor} mentioned you"),
-                format!("<p>Hi {name},</p><p><strong>{actor}</strong> mentioned you in a post.</p><p>Visit <a href=\"{instance_url}\">{instance_url}</a> to see it.</p>"),
+            ("follow", false) => (
+                format!("{name} is now following you"),
+                "New follower",
+                format!("{name} is now following you!"),
+                "View profile",
             ),
-            (_, "follow") => (
-                format!("{actor} followed you"),
-                format!("<p>Hi {name},</p><p><strong>{actor}</strong> started following you.</p><p>Visit <a href=\"{instance_url}\">{instance_url}</a> to see their profile.</p>"),
+            ("follow", true) => (
+                format!("{name} 님이 나를 팔로우했습니다"),
+                "새 팔로워",
+                format!("{name} 님이 나를 팔로우했습니다!"),
+                "프로필 보기",
             ),
-            (_, "favourite") => (
-                format!("{actor} liked your post"),
-                format!("<p>Hi {name},</p><p><strong>{actor}</strong> favourited your post.</p><p>Visit <a href=\"{instance_url}\">{instance_url}</a> to see it.</p>"),
+            ("favourite", false) => (
+                format!("{name} favorited your post"),
+                "New favorite",
+                format!("Your post was favorited by {name}:"),
+                "View post",
             ),
-            (_, "reblog") => (
-                format!("{actor} boosted your post"),
-                format!("<p>Hi {name},</p><p><strong>{actor}</strong> boosted your post.</p><p>Visit <a href=\"{instance_url}\">{instance_url}</a> to see it.</p>"),
+            ("favourite", true) => (
+                format!("{name} 님이 내 게시물을 마음에 들어했습니다"),
+                "새 좋아요",
+                format!("당신의 게시물을 {name} 님이 마음에 들어했습니다:"),
+                "게시물 보기",
+            ),
+            ("reblog", false) => (
+                format!("{name} boosted your post"),
+                "New boost",
+                format!("Your post was boosted by {name}:"),
+                "View post",
+            ),
+            ("reblog", true) => (
+                format!("{name} 님이 내 게시물을 부스트 했습니다"),
+                "새 부스트",
+                format!("당신의 게시물을 {name} 님이 부스트 했습니다:"),
+                "게시물 보기",
+            ),
+            ("follow_request", false) => (
+                format!("Pending follower: {name}"),
+                "New follow request",
+                format!("{name} has requested to follow you"),
+                "Manage follow requests",
+            ),
+            ("follow_request", true) => (
+                format!("{name} 님이 보낸 팔로우 요청"),
+                "새 팔로우 요청",
+                format!("{name} 님이 내게 팔로우 요청을 보냈습니다"),
+                "팔로우 요청 관리",
             ),
             _ => return Ok(()),
         };
-
-        self.send(to, &subject, &body).await
+        let card = match (&mail.status, &mail.account) {
+            (Some(status), _) => mailed_status_card(status),
+            (None, Some(account)) => format!(
+                "<table role=\"presentation\" width=\"100%\"><tr>\
+                 <td width=\"48\"><img src=\"{avatar}\" alt=\"\" width=\"48\" height=\"48\"></td>\
+                 <td><strong>{name}</strong><br>@{acct}</td></tr></table>",
+                avatar = html_escape(&account.avatar_url),
+                name = html_escape(&account.name),
+                acct = html_escape(&account.acct),
+            ),
+            (None, None) => String::new(),
+        };
+        let (preferences, unsubscribe) = if ko {
+            ("이메일 설정 변경", "구독 해제")
+        } else {
+            ("Change email preferences", "Unsubscribe")
+        };
+        let html = format!(
+            "<h1>{title}</h1><p>{body}</p>{card}\
+             <p><a href=\"{button_url}\">{action}</a></p><hr>\
+             <p><small><a href=\"{preferences_url}\">{preferences}</a> · \
+             <a href=\"{unsubscribe_url}\">{unsubscribe}</a></small></p>",
+            body = html_escape(&body),
+            button_url = html_escape(&mail.button_url),
+            preferences_url = html_escape(&mail.preferences_url),
+            unsubscribe_url = html_escape(&mail.unsubscribe_url),
+        );
+        let mut headers = vec![
+            // `ApplicationMailer#set_autoreply_headers!`
+            ("Auto-Submitted", "auto-generated".to_owned()),
+            ("Precedence", "list".to_owned()),
+            ("X-Auto-Response-Suppress", "All".to_owned()),
+            // `set_list_headers!`
+            ("List-ID", mail.list_id.clone()),
+            ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click".into()),
+            ("List-Unsubscribe", format!("<{}>", mail.unsubscribe_url)),
+        ];
+        // `thread_by_conversation!`
+        if let Some(thread) = &mail.conversation_message_id {
+            headers.push(("In-Reply-To", thread.clone()));
+            headers.push(("References", thread.clone()));
+        }
+        self.send_with_headers(&mail.to, &subject, &html, &headers)
+            .await
     }
 
     /// Tell an administrator that newer Mastodon releases exist than the one
@@ -553,27 +634,8 @@ impl EmailSender {
         };
         let mut body = String::new();
         for post in posts {
-            let warning = if post.spoiler_text.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "<p><strong>{}</strong></p>",
-                    html_escape(&post.spoiler_text)
-                )
-            };
-            body.push_str(&format!(
-                "<table role=\"presentation\" width=\"100%\"><tr>\
-                 <td width=\"48\"><img src=\"{avatar}\" alt=\"\" width=\"48\" height=\"48\"></td>\
-                 <td><strong>{name}</strong><br>@{acct}</td></tr></table>\
-                 {warning}<div>{content}</div>\
-                 <p><a href=\"{url}\">{created_at}</a></p><hr>",
-                avatar = html_escape(&post.avatar_url),
-                name = html_escape(&post.name),
-                acct = html_escape(&post.acct),
-                content = post.content,
-                url = html_escape(&post.url),
-                created_at = html_escape(&post.created_at),
-            ));
+            body.push_str(&mailed_status_card(post));
+            body.push_str("<hr>");
         }
         let interact = if posts.len() == 1 {
             "Interact with this post and discover more like it."
@@ -970,6 +1032,64 @@ pub struct MailedStatus {
     pub content: String,
     pub url: String,
     pub created_at: String,
+}
+
+/// The `notification_mailer/status` partial: the author, the content warning,
+/// the post, and its date linking to it.
+fn mailed_status_card(post: &MailedStatus) -> String {
+    let warning = if post.spoiler_text.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<p><strong>{}</strong></p>",
+            html_escape(&post.spoiler_text)
+        )
+    };
+    format!(
+        "<table role=\"presentation\" width=\"100%\"><tr>\
+         <td width=\"48\"><img src=\"{avatar}\" alt=\"\" width=\"48\" height=\"48\"></td>\
+         <td><strong>{name}</strong><br>@{acct}</td></tr></table>\
+         {warning}<div>{content}</div>\
+         <p><a href=\"{url}\">{created_at}</a></p>",
+        avatar = html_escape(&post.avatar_url),
+        name = html_escape(&post.name),
+        acct = html_escape(&post.acct),
+        content = post.content,
+        url = html_escape(&post.url),
+        created_at = html_escape(&post.created_at),
+    )
+}
+
+/// An account as `application/mailer/account` shows it.
+#[derive(Debug, Clone)]
+pub struct MailedAccount {
+    pub name: String,
+    pub acct: String,
+    pub avatar_url: String,
+}
+
+/// One `NotificationMailer` mail, ready to render.
+#[derive(Debug, Clone)]
+pub struct NotificationMail {
+    /// `email_address_with_name(user.email, account.username)`.
+    pub to: String,
+    pub locale: String,
+    /// The notification type, which is the mailer action.
+    pub kind: &'static str,
+    /// The other account's `pretty_acct`, which the subject names.
+    pub actor_acct: String,
+    /// The post, for `mention`, `quote`, `favourite` and `reblog`.
+    pub status: Option<MailedStatus>,
+    /// The account, for `follow` and `follow_request`.
+    pub account: Option<MailedAccount>,
+    pub button_url: String,
+    /// `settings_preferences_notifications_url`.
+    pub preferences_url: String,
+    pub unsubscribe_url: String,
+    /// `<type.username.domain>`.
+    pub list_id: String,
+    /// `<conversation-id.date@domain>`, for a post in a conversation.
+    pub conversation_message_id: Option<String>,
 }
 
 /// `set_list_headers`: what lets a mail client offer to unsubscribe in one

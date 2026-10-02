@@ -28,6 +28,7 @@ mod moderation;
 mod moderation_tools;
 mod moves;
 mod mutes;
+mod notification_emails;
 mod notifications;
 mod polls;
 mod push;

@@ -20,8 +20,6 @@
 //! that vanished while its work ran would let the next request start the same
 //! work again.
 
-use base64::Engine;
-use hmac::{Hmac, Mac};
 use redis::AsyncCommands;
 use serde_json::{json, Value};
 
@@ -218,36 +216,13 @@ impl Drop for FinishOnDrop {
     }
 }
 
-type HmacSha256 = Hmac<sha2::Sha256>;
-
-fn signer(state: &AppState) -> HmacSha256 {
-    // Derive a key for this purpose rather than use the VAPID key itself, as
-    // Rails derives one per verifier name from its secret.
-    let mut derive = HmacSha256::new_from_slice(state.instance.vapid_private_key.as_bytes())
-        .expect("HMAC takes a key of any length");
-    derive.update(b"async_refreshes");
-    let key = derive.finalize().into_bytes();
-    HmacSha256::new_from_slice(&key).expect("HMAC takes a key of any length")
-}
-
 /// `MessageVerifier#generate`, in URL-safe base64 so the id can sit in a path.
 fn sign(state: &AppState, key: &str) -> String {
-    let data = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key);
-    let mut mac = signer(state);
-    mac.update(data.as_bytes());
-    format!("{data}--{}", hex::encode(mac.finalize().into_bytes()))
+    crate::crypto::sign_message(&state.instance.vapid_private_key, b"async_refreshes", key)
 }
 
 /// `MessageVerifier#verify`: the key an id signs, or `None` for an id that was
 /// not signed here.
 fn verify(state: &AppState, id: &str) -> Option<String> {
-    let (data, digest) = id.rsplit_once("--")?;
-    let digest = hex::decode(digest).ok()?;
-    let mut mac = signer(state);
-    mac.update(data.as_bytes());
-    mac.verify_slice(&digest).ok()?;
-    let key = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(data)
-        .ok()?;
-    String::from_utf8(key).ok()
+    crate::crypto::verify_message(&state.instance.vapid_private_key, b"async_refreshes", id)
 }

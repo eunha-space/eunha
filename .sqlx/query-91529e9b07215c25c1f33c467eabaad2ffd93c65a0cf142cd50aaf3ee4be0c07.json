@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, settings,\n                  EXISTS (SELECT 1 FROM web_push_subscriptions w WHERE w.user_id = users.id)\n                    AS \"push!\"\n           FROM users WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "settings",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "push!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "91529e9b07215c25c1f33c467eabaad2ffd93c65a0cf142cd50aaf3ee4be0c07"
+}
