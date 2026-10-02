@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM backups WHERE id = $1 RETURNING dump_file_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dump_file_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "7118b124080ff88dbdeee1a0de9b7922a2e87ff90fc1fcea7e289ddf06592375"
+}

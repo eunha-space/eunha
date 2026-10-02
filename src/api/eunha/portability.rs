@@ -19,7 +19,7 @@ use serde::Serialize;
 use crate::{
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
-    portability::{export, import},
+    portability::{backup, export, import},
     state::AppState,
 };
 
@@ -46,6 +46,9 @@ fn attachment(filename: &str, content_type: &str, body: String) -> Response {
 struct ExportPage {
     #[serde(flatten)]
     summary: export::Summary,
+    backups: Vec<backup::Backup>,
+    /// `policy(:backup).create?`.
+    can_request_backup: bool,
 }
 
 /// GET /api/eunha/v1/exports — `Settings::ExportsController#show`.
@@ -57,6 +60,8 @@ async fn show_exports(
     auth.require_scope("read")?;
     Ok(Json(ExportPage {
         summary: export::summary(&state, auth.account_id).await?,
+        backups: backup::list(&state, auth.account_id).await?,
+        can_request_backup: backup::can_create(&state, auth.account_id).await?,
     }))
 }
 
@@ -72,6 +77,45 @@ async fn download_export(
     auth.require_scope(kind.scope())?;
     let body = export::generate(&state, auth.account_id, kind).await?;
     Ok(attachment(kind.filename(), kind.content_type(), body))
+}
+
+/// GET /api/eunha/v1/backups
+async fn list_backups(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<Vec<backup::Backup>>> {
+    let auth = signed_in(auth)?;
+    auth.require_scope("read")?;
+    Ok(Json(backup::list(&state, auth.account_id).await?))
+}
+
+/// POST /api/eunha/v1/backups — `Settings::ExportsController#create`.
+async fn create_backup(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<backup::Backup>> {
+    let auth = signed_in(auth)?;
+    auth.require_scope("read")?;
+    Ok(Json(backup::create(&state, auth.account_id).await?))
+}
+
+#[derive(Serialize)]
+struct DownloadLink {
+    url: String,
+}
+
+/// GET /api/eunha/v1/backups/{id}/download — `BackupsController#download`,
+/// which redirects to the link this returns.
+async fn download_backup(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<DownloadLink>> {
+    let auth = signed_in(auth)?;
+    auth.require_scope("read")?;
+    Ok(Json(DownloadLink {
+        url: backup::download_url(&state, auth.account_id, id).await?,
+    }))
 }
 
 /// GET /api/eunha/v1/imports — `Settings::ImportsController#index`'s recent
@@ -204,6 +248,11 @@ pub fn routes() -> Router {
     Router::new()
         .route("/api/eunha/v1/exports", get(show_exports))
         .route("/api/eunha/v1/exports/{file}", get(download_export))
+        .route(
+            "/api/eunha/v1/backups",
+            get(list_backups).post(create_backup),
+        )
+        .route("/api/eunha/v1/backups/{id}/download", get(download_backup))
         .route(
             "/api/eunha/v1/imports",
             get(list_imports)

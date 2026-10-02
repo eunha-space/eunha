@@ -677,6 +677,19 @@ impl EmailSender {
             .await
     }
 
+    /// `UserMailer#backup_ready`. Upstream links its `/backups/{id}/download`,
+    /// which needs a signed-in web session; eunha's settings are a
+    /// single-page app, so this links its export page instead.
+    pub async fn send_backup_ready(&self, to: &str, instance_domain: &str) -> anyhow::Result<()> {
+        let url = format!("https://{instance_domain}/settings/export");
+        let body = format!(
+            "<h1>Archive takeout</h1><p>You requested a full backup of your Mastodon account.</p>\
+             <p>It's now ready for download!</p><p><a href=\"{url}\">{url}</a></p>"
+        );
+        self.send(to, "Your archive is ready for download", &body)
+            .await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         self.send_with_headers(to, subject, html, &[]).await
     }

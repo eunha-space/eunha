@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE backups\n         SET dump_file_name = $2, dump_content_type = 'application/zip', dump_file_size = $3,\n             dump_updated_at = now(), processed = true, updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8cb05cf7f8b1e671078a4d26db12d4ee59c63f4b71c2aa4c042cb29ff5c37c4e"
+}

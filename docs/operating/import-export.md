@@ -2,12 +2,14 @@ Data export and import
 ======================
 
 A member can take their follows, blocks, lists and the rest away to another
-server, and bring them in from one, the way Mastodon's *Import and export*
-settings do it. Eunha runs upstream's models and services for this; what
-differs is that it serves them over REST under `/api/eunha/v1/` rather than
-as settings pages (the `data-portability-rest-api` divergence), and runs the
-background work on its own queue. The code is in *src/portability/* and the
-routes in *src/api/eunha/portability.rs*.
+server, bring them in from one, and download an archive of their posts, the
+way Mastodon's *Import and export* settings do it. Eunha runs upstream's
+models and services for this; what differs is that it serves them over REST
+under `/api/eunha/v1/` rather than as settings pages (the
+`data-portability-rest-api` divergence), and runs the background work on its
+own queues. The code is in *src/portability/*, the routes in
+*src/api/eunha/portability.rs*, and the web app's page is at
+`/settings/export`.
 
 This is one account's data. Moving a whole Mastodon instance's database onto
 eunha is something else: see [Importing a Mastodon instance](./importing.md).
@@ -37,7 +39,8 @@ writes a time, `2030-01-02 03:04:05 UTC`.
 
 `GET /api/eunha/v1/exports` answers the export page's counts (`storage`,
 `statuses`, `follows`, `followers`, `lists`, `mutes`, `blocks`,
-`domain_blocks`, `bookmarks`, `custom_filters`).
+`domain_blocks`, `bookmarks`, `custom_filters`), the account's archives, and
+`can_request_backup`.
 
 Exports need only the token's read scope for what they list, and work for an
 account that cannot otherwise use the API, as upstream skips
@@ -121,3 +124,40 @@ import Mastodon's own workers had scheduled is taken up as well. A row that
 errors fails at once rather than being retried, and an import whose rows
 have all been run is finished (the `bulk-imports-run-in-process`
 divergence).
+
+Imports, finished or not, are deleted a week after they were made.
+
+
+Archive takeout
+---------------
+
+`POST /api/eunha/v1/backups` asks for an archive, at most once every six
+days (upstream's `BackupPolicy`; the page says seven), under the Redis lock
+`lock:backup:{user id}`. It is upstream's `BackupService`. The zip holds, in
+this order:
+
+ -  `outbox.json`, an `OrderedCollection` of every post as the `Create` or
+    `Announce` that made it, attachments pointing at their files in the zip;
+ -  each attached media file at its storage path,
+    `media_attachments/files/{id partition}/original/{file}`;
+ -  `likes.json` and `bookmarks.json`, collections of post URIs;
+ -  `avatar.*` and `header.*`;
+ -  `actor.json`, whose `outbox`, `likes`, `bookmarks`, `icon` and `image`
+    name those files.
+
+The activities and actor are the ones eunha federates (the
+`archive-takeout-details` divergence). The zip is stored where Paperclip
+stores a backup's dump,
+`backups/dumps/{id partition}/original/archive-{time}-{hex}.zip`, in the media
+bucket, and `backups` records it. The account's older archives are then
+deleted, and the member is mailed a link to `/settings/export`.
+`GET /api/eunha/v1/backups/{id}/download` answers `{"url": ...}`, a link to the
+file signed for an hour.
+
+Archives are built by each instance's archive queue, from
+`eunha.backup_jobs`, so a restart loses no request. A build that fails is
+retried five times, backing off, and then the request is dropped.
+
+Once a day, archives older than the `backups_retention_period` setting
+(seven days unless an administrator changed it; not a positive number keeps
+them) are deleted, files and all.

@@ -5,7 +5,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-use crate::helpers::{seed_user, TestContext};
+use crate::helpers::{seed_user, tiny_png, TestContext};
 
 async fn remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
     let uri = format!("https://{domain}/users/{username}");
@@ -377,6 +377,7 @@ async fn exports_are_byte_for_byte_mastodons() {
     assert_eq!(summary["domain_blocks"], 2);
     assert_eq!(summary["bookmarks"], 2);
     assert_eq!(summary["custom_filters"], 2);
+    assert_eq!(summary["can_request_backup"], true);
 
     let resp = ctx
         .api
@@ -988,4 +989,236 @@ async fn imports_resume_where_they_stopped_and_are_vacuumed() {
         .await
         .unwrap();
     assert_eq!(left, vec![scheduled, id(fresh["id"].as_str().unwrap())]);
+}
+
+fn zip_entries(bytes: &[u8]) -> (Vec<String>, zip::ZipArchive<std::io::Cursor<Vec<u8>>>) {
+    let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+    let names = (0..archive.len())
+        .map(|i| archive.name_for_index(i).unwrap().to_owned())
+        .collect();
+    (names, archive)
+}
+
+fn zip_json(archive: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, name: &str) -> Value {
+    let file = archive.by_name(name).unwrap();
+    serde_json::from_reader(file).unwrap()
+}
+
+#[tokio::test]
+async fn archive_takeout_zips_posts_media_and_actor() {
+    let ctx = TestContext::new("backup").await;
+    let alice = id(&ctx.alice_id);
+    let d = &ctx.domain;
+
+    let media: Value = ctx
+        .api
+        .post_multipart_file(
+            "/api/v1/media",
+            &ctx.alice_token,
+            "pic.png",
+            "image/png",
+            tiny_png(),
+            &[],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let post: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({ "status": "with a picture", "media_ids": [media["id"]] }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let bobs = ctx
+        .api
+        .post_status(&ctx.bob_token, "likeable", "public")
+        .await;
+    let bob_id = bobs["id"].as_str().unwrap();
+    for action in ["favourite", "bookmark", "reblog"] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{bob_id}/{action}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK, "{action}");
+    }
+    // An avatar, stored where Paperclip keeps one.
+    let avatar_key = format!(
+        "accounts/avatars/{}/original/face.png",
+        eunha::media::int_to_path(alice)
+    );
+    ctx.state
+        .storage
+        .store(&tiny_png(), &avatar_key, "image/png")
+        .await
+        .unwrap();
+    exec(
+        &ctx,
+        "UPDATE accounts SET avatar_file_name = 'face.png', avatar_content_type = 'image/png' WHERE id = $1",
+        &[alice],
+    )
+    .await;
+
+    let resp = ctx
+        .api
+        .post_json("/api/eunha/v1/backups", Some(&ctx.alice_token), &json!({}))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let backup: Value = resp.json().await.unwrap();
+    assert_eq!(backup["processed"], true);
+    let backup_id = backup["id"].as_str().unwrap();
+
+    let link: Value = ctx
+        .api
+        .get(
+            &format!("/api/eunha/v1/backups/{backup_id}/download"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let file_name =
+        sqlx::query_scalar::<_, String>("SELECT dump_file_name FROM backups WHERE id = $1")
+            .bind(id(backup_id))
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let key = format!(
+        "backups/dumps/{}/original/{file_name}",
+        eunha::media::int_to_path(id(backup_id))
+    );
+    assert!(link["url"].as_str().unwrap().contains(&key), "{link}");
+    assert!(file_name.starts_with("archive-") && file_name.ends_with(".zip"));
+    let bytes = ctx.state.storage.get(&key).await.unwrap();
+
+    let media_id = id(media["id"].as_str().unwrap());
+    let media_file = sqlx::query_scalar::<_, String>(
+        "SELECT file_file_name FROM media_attachments WHERE id = $1",
+    )
+    .bind(media_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let media_path = format!(
+        "media_attachments/files/{}/original/{media_file}",
+        eunha::media::int_to_path(media_id)
+    );
+    let (names, mut archive) = zip_entries(&bytes);
+    assert_eq!(
+        names,
+        vec![
+            "outbox.json".to_owned(),
+            media_path.clone(),
+            "likes.json".into(),
+            "bookmarks.json".into(),
+            "avatar.png".into(),
+            "actor.json".into(),
+        ]
+    );
+    let bob_uri = format!("https://{d}/users/bob/statuses/{bob_id}");
+    let likes = zip_json(&mut archive, "likes.json");
+    assert_eq!(likes["id"], "likes.json");
+    assert_eq!(likes["type"], "OrderedCollection");
+    assert_eq!(likes["orderedItems"], json!([bob_uri]));
+    assert!(likes.get("totalItems").is_none());
+    let bookmarks = zip_json(&mut archive, "bookmarks.json");
+    assert_eq!(bookmarks["orderedItems"], json!([bob_uri]));
+    let outbox = zip_json(&mut archive, "outbox.json");
+    assert_eq!(outbox["id"], "outbox.json");
+    assert_eq!(outbox["totalItems"], 2);
+    let items = outbox["orderedItems"].as_array().unwrap();
+    assert_eq!(items[0]["type"], "Create");
+    assert!(items[0].get("@context").is_none());
+    assert_eq!(items[0]["object"]["id"], post["uri"]);
+    assert_eq!(
+        items[0]["object"]["attachment"][0]["url"],
+        media_path.as_str()
+    );
+    assert_eq!(items[1]["type"], "Announce");
+    assert_eq!(items[1]["object"], bob_uri.as_str());
+    let actor = zip_json(&mut archive, "actor.json");
+    assert_eq!(actor["outbox"], "outbox.json");
+    assert_eq!(actor["likes"], "likes.json");
+    assert_eq!(actor["bookmarks"], "bookmarks.json");
+    assert_eq!(actor["icon"]["url"], "avatar.png");
+    let mut picture = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name(&media_path).unwrap(), &mut picture).unwrap();
+    assert_eq!(picture, ctx.state.storage.get(&media_path).await.unwrap());
+    assert!(!picture.is_empty());
+    let mut avatar = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name("avatar.png").unwrap(), &mut avatar).unwrap();
+    assert_eq!(avatar, tiny_png());
+
+    // `BackupPolicy`: one archive in six days.
+    let resp = ctx
+        .api
+        .post_json("/api/eunha/v1/backups", Some(&ctx.alice_token), &json!({}))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let page: Value = ctx
+        .api
+        .get("/api/eunha/v1/exports", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(page["can_request_backup"], false);
+    assert_eq!(page["backups"].as_array().unwrap().len(), 1);
+    // Someone else's archive is nobody's business.
+    let resp = ctx
+        .api
+        .get(
+            &format!("/api/eunha/v1/backups/{backup_id}/download"),
+            Some(&ctx.bob_token),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // Six days on, another may be made, and it replaces the first.
+    exec(
+        &ctx,
+        "UPDATE backups SET created_at = now() - interval '6 days 1 hour'",
+        &[],
+    )
+    .await;
+    let resp = ctx
+        .api
+        .post_json("/api/eunha/v1/backups", Some(&ctx.alice_token), &json!({}))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let second: Value = resp.json().await.unwrap();
+    let ids = sqlx::query_scalar::<_, i64>("SELECT id FROM backups ORDER BY id")
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![id(second["id"].as_str().unwrap())]);
+    assert!(
+        ctx.state.storage.get(&key).await.unwrap().is_empty(),
+        "the old file went too"
+    );
+
+    // `Vacuum::BackupsVacuum` keeps archives `backups_retention_period` days.
+    exec(
+        &ctx,
+        "UPDATE backups SET created_at = now() - interval '8 days'",
+        &[],
+    )
+    .await;
+    assert_eq!(
+        eunha::portability::backup::vacuum(&ctx.state)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(count(&ctx, "SELECT count(*) FROM backups", &[]).await, 0);
 }

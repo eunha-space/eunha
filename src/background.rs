@@ -59,7 +59,12 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             &state,
-            "import vacuum",
+            "archive queue",
+            crate::portability::backup::run_queue(state.clone()),
+        ),
+        until_stopped(
+            &state,
+            "import and archive vacuum",
             crate::portability::run_vacuum(state.clone()),
         ),
     ];
@@ -144,6 +149,8 @@ pub struct QueueWakes {
     pub media: tokio::sync::Notify,
     /// A data import was confirmed.
     pub imports: tokio::sync::Notify,
+    /// An archive takeout was requested.
+    pub backups: tokio::sync::Notify,
     /// A scheduled status was created or moved.
     pub scheduled_statuses: tokio::sync::Notify,
     /// A poll was created, or when it ends changed.

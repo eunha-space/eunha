@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT processed, dump_file_size FROM backups WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "processed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "dump_file_size",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "13742afe5dcea8f6ec4a058f69e27c1bbbba470ffb83712ad4be7ca9e79eb5d8"
+}

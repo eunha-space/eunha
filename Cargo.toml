@@ -143,6 +143,8 @@ aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 sha1 = "0.10"
 flate2 = "1"
+# Archive takeout (src/portability/backup.rs), zipped as Mastodon's rubyzip does
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Push notifications (VAPID + Web Push)
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }

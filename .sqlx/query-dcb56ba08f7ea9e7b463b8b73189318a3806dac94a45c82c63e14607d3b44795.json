@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.backup_jobs (backup_id) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dcb56ba08f7ea9e7b463b8b73189318a3806dac94a45c82c63e14607d3b44795"
+}

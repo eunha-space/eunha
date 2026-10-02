@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH picked AS (\n             SELECT backup_id FROM eunha.backup_jobs\n             WHERE run_at <= now()\n               AND (locked_at IS NULL OR locked_at < now() - $2::text::interval)\n             ORDER BY run_at, backup_id\n             LIMIT 1\n             FOR UPDATE SKIP LOCKED\n           )\n           UPDATE eunha.backup_jobs j\n           SET locked_at = now(), locked_by = $1, attempts = j.attempts + 1, updated_at = now()\n           FROM picked WHERE j.backup_id = picked.backup_id\n           RETURNING j.backup_id, j.attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "backup_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "attempts",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "47986907e5b2042d250116c622bdcd5dcdeab2140d6164502a8f53d301739afa"
+}

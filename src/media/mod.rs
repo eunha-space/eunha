@@ -57,6 +57,50 @@ impl Storage {
         Ok(key.to_string())
     }
 
+    /// [`Storage::store`] for a file on disk, streamed rather than read into
+    /// memory: an archive takeout can be large.
+    pub async fn store_file(
+        &self,
+        path: &std::path::Path,
+        key: &str,
+        content_type: &str,
+    ) -> AppResult<String> {
+        let body = aws_sdk_s3::primitives::ByteStream::from_path(path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("S3 upload body: {}", e)))?;
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(self.object_key(key))
+            .body(body)
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("S3 upload: {}", e)))?;
+        Ok(key.to_string())
+    }
+
+    /// A link that fetches `key` for `expires_in`, signed with the storage's
+    /// credentials: Paperclip's `expiring_url`, which Mastodon hands out for
+    /// an archive takeout.
+    pub async fn presigned_url(
+        &self,
+        key: &str,
+        expires_in: std::time::Duration,
+    ) -> AppResult<String> {
+        let config = aws_sdk_s3::presigning::PresigningConfig::expires_in(expires_in)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("S3 presigning: {}", e)))?;
+        let request = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(self.object_key(key))
+            .presigned(config)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("S3 presigning: {}", e)))?;
+        Ok(request.uri().to_string())
+    }
+
     pub fn public_url(&self, key: &str) -> String {
         format!(
             "{}/{}",

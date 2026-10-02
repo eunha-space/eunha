@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.user_id, u.account_id AS \"account_id?\", u.email AS \"email?\",\n                  (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled) AS \"active?\"\n           FROM backups b LEFT JOIN users u ON u.id = b.user_id\n           WHERE b.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "email?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "active?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "53df4206ffd795317df25e24608eb212799d3d4f80d04a11b1f106f4334b91a3"
+}

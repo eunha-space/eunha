@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT dump_file_name FROM backups WHERE id = $1 AND user_id = $2 AND processed",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dump_file_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "cfa23260873870b4a70481be3d4547f873f7c93ca8d7a308046bcc4eefe2aa90"
+}

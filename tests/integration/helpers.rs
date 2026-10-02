@@ -30,26 +30,62 @@ fn replace_db_name(url: &str, db: &str) -> String {
 // ── fake S3 server ──────────────────────────────────────────────────────────
 
 /// Spawns a minimal HTTP server that accepts all S3-style PUT/DELETE requests
-/// and returns success responses. Returns the base URL of the server.
+/// and returns success responses. What is PUT is kept and served back to a
+/// GET of the same path; anything else GETs as an empty body. Returns the
+/// base URL of the server.
 pub async fn spawn_fake_s3() -> String {
     use axum::http::Request;
     use axum::{body::Body, response::Response, routing::any, Router};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    let app = Router::new().fallback(any(|req: Request<Body>| async move {
-        match req.method().as_str() {
-            "PUT" => Response::builder()
-                .status(AxumStatus::OK)
-                .header("ETag", "\"test-etag-000\"")
-                .body(Body::empty())
-                .unwrap(),
-            "DELETE" => Response::builder()
-                .status(AxumStatus::NO_CONTENT)
-                .body(Body::empty())
-                .unwrap(),
-            _ => Response::builder()
-                .status(AxumStatus::OK)
-                .body(Body::empty())
-                .unwrap(),
+    let objects: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::default();
+    let app = Router::new().fallback(any(move |req: Request<Body>| {
+        let objects = objects.clone();
+        async move {
+            let path = req.uri().path().to_owned();
+            match req.method().as_str() {
+                "PUT" => {
+                    let chunked = req
+                        .headers()
+                        .get("x-amz-content-sha256")
+                        .and_then(|v| v.to_str().ok())
+                        .is_some_and(|v| v.starts_with("STREAMING"))
+                        || req
+                            .headers()
+                            .get("content-encoding")
+                            .and_then(|v| v.to_str().ok())
+                            .is_some_and(|v| v.contains("aws-chunked"));
+                    let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+                        .await
+                        .unwrap_or_default();
+                    let body = if chunked {
+                        decode_aws_chunked(&body)
+                    } else {
+                        body.to_vec()
+                    };
+                    objects.lock().unwrap().insert(path, body);
+                    Response::builder()
+                        .status(AxumStatus::OK)
+                        .header("ETag", "\"test-etag-000\"")
+                        .body(Body::empty())
+                        .unwrap()
+                }
+                "DELETE" => {
+                    objects.lock().unwrap().remove(&path);
+                    Response::builder()
+                        .status(AxumStatus::NO_CONTENT)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+                _ => {
+                    let body = objects.lock().unwrap().get(&path).cloned();
+                    Response::builder()
+                        .status(AxumStatus::OK)
+                        .body(body.map(Body::from).unwrap_or_else(Body::empty))
+                        .unwrap()
+                }
+            }
         }
     }));
 
@@ -57,6 +93,25 @@ pub async fn spawn_fake_s3() -> String {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     format!("http://{}", addr)
+}
+
+/// The payload of an `aws-chunked` body: `<hex size>[;…]\r\n<bytes>\r\n`
+/// chunks up to one of size zero, then trailers.
+fn decode_aws_chunked(body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(eol) = rest.windows(2).position(|w| w == b"\r\n") {
+        let line = String::from_utf8_lossy(&rest[..eol]);
+        let size =
+            usize::from_str_radix(line.split(';').next().unwrap_or("0").trim(), 16).unwrap_or(0);
+        rest = &rest[eol + 2..];
+        if size == 0 || rest.len() < size {
+            break;
+        }
+        out.extend_from_slice(&rest[..size]);
+        rest = rest.get(size + 2..).unwrap_or_default();
+    }
+    out
 }
 
 // ── client wrapper ─────────────────────────────────────────────────────────

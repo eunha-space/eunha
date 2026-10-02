@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM eunha.backup_jobs WHERE backup_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f068613130809a2167d8e6729988f4264d25ec55040eedfbb311b51a960d83b2"
+}

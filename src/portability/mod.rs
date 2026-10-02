@@ -12,18 +12,22 @@
 //! `data-portability-rest-api` divergence); the handlers are in
 //! *src/api/eunha/portability.rs*.
 
+pub mod backup;
 pub mod csv;
 pub mod export;
 pub mod import;
 
 use crate::state::AppState;
 
-/// `Scheduler::VacuumScheduler`'s share of this: once a day, imports past
-/// their time are cleared away.
+/// `Scheduler::VacuumScheduler`'s share of this: once a day, imports and
+/// archives past their time are cleared away.
 pub async fn run_vacuum(state: AppState) {
     while !state.stop.is_cancelled() {
         if let Err(error) = import::vacuum(&state).await {
             tracing::error!(%error, "import vacuum failed");
+        }
+        if let Err(error) = backup::vacuum(&state).await {
+            tracing::error!(%error, "archive vacuum failed");
         }
         crate::background::rest(&state.stop, std::time::Duration::from_secs(24 * 60 * 60)).await;
     }
