@@ -295,23 +295,15 @@ pub struct PeersSearchParams {
     pub q: Option<String>,
 }
 
+/// `Api::V1::Peers::SearchController#index` (crate::search::peers).
 pub async fn search_peers(
     state: AppState,
     Query(params): Query<PeersSearchParams>,
-) -> AppResult<Json<Vec<String>>> {
+) -> AppResult<Json<Option<Vec<String>>>> {
     require_enabled_api(&state, "peers_api_enabled").await?;
-    let q = params.q.as_deref().unwrap_or("").trim().to_string();
-    let pattern = format!("%{}%", q);
-    let rows = sqlx::query_scalar!(
-        "SELECT DISTINCT domain FROM accounts WHERE domain IS NOT NULL AND domain ILIKE $1 ORDER BY domain LIMIT 20",
-        pattern,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .flatten()
-    .collect();
-    Ok(Json(rows))
+    Ok(Json(
+        crate::search::peers::search(&state, params.q.as_deref()).await?,
+    ))
 }
 
 // ── GET /api/v1/instance/terms_of_service ────────────────────────────────

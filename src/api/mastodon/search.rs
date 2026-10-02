@@ -1,3 +1,5 @@
+//! `GET /api/v2/search`: `Api::V2::SearchController` and `SearchService`.
+
 use axum::{
     extract::{Extension, Query},
     Json,
@@ -5,35 +7,43 @@ use axum::{
 use serde::Deserialize;
 
 use super::{
-    accounts::{batch_account_emojis, batch_account_roles, batch_accounts_to_api},
-    convert::status_from_db,
-    status_serialize::{
-        batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
-        batch_status_mentions, batch_status_polls, batch_statuses_tags, build_status,
-        fetch_reblog_data, fetch_status_media, hydrate_status_stats,
-    },
-    types::{SearchResults, Status, Tag},
+    accounts::batch_accounts_to_api,
+    extractors::FlexBool,
+    status_serialize::{build_status, fetch_reblog_data, fetch_status_media},
+    types::{SearchResults, Tag},
 };
 use crate::{
     api::mastodon::resolve_url::Resolved,
-    error::AppResult,
+    error::{AppError, AppResult},
     middleware::{AuthenticatedUser, ResolvedInstance},
+    search::ruby_to_i,
     state::AppState,
 };
 
-// ── GET /api/v2/search ────────────────────────────────────────────────────
+/// `RESULTS_LIMIT`.
+const RESULTS_LIMIT: i64 = 20;
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
-    pub q: String,
+    pub q: Option<String>,
     #[serde(rename = "type")]
     pub search_type: Option<String>,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-    pub resolve: Option<bool>,
-    pub following: Option<bool>,
+    pub limit: Option<String>,
+    pub offset: Option<String>,
+    pub resolve: Option<FlexBool>,
+    pub following: Option<FlexBool>,
     pub account_id: Option<String>,
-    pub exclude_unreviewed: Option<bool>,
+    pub exclude_unreviewed: Option<FlexBool>,
+    pub min_id: Option<String>,
+    pub max_id: Option<String>,
+}
+
+fn truthy(value: Option<FlexBool>) -> bool {
+    value.is_some_and(|FlexBool(b)| b)
+}
+
+fn present(value: Option<&str>) -> Option<&str> {
+    value.filter(|v| !v.trim().is_empty())
 }
 
 pub async fn search(
@@ -42,444 +52,206 @@ pub async fn search(
     Query(q): Query<SearchQuery>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<SearchResults>> {
-    let limit = q.limit.unwrap_or(20).clamp(1, 40);
-    let query = q.q.trim();
-    let account_pattern = format!("%{}%", q.q.to_lowercase());
-    let search_type = q.search_type.as_deref();
+    // `authorize_if_got_token! :read, :'read:search'`.
+    if let Some(Extension(ref auth)) = auth {
+        auth.require_scope("read:search")?;
+    }
+    // `validate_search_params!`: `params.require(:q)`.
+    let Some(raw_query) = present(q.q.as_deref()) else {
+        return Err(AppError::BadRequest(
+            "param is missing or the value is empty: q".into(),
+        ));
+    };
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
+    let resolve = truthy(q.resolve);
 
-    // Mastodon restricts anonymous search: pagination and remote resolution both
-    // require authentication (SearchController#query_pagination_error /
-    // #remote_resolve_error).
+    // Pagination and remote resolution both need a signed-in user
+    // (`query_pagination_error`, `remote_resolve_error`).
     if viewer_id.is_none() {
-        if q.offset.is_some() {
-            return Err(crate::error::AppError::UnauthorizedMsg(
+        if present(q.offset.as_deref()).is_some() {
+            return Err(AppError::UnauthorizedMsg(
                 "Search queries pagination is not supported without authentication".into(),
             ));
         }
-        if q.resolve == Some(true) {
-            return Err(crate::error::AppError::UnauthorizedMsg(
+        if resolve {
+            return Err(AppError::UnauthorizedMsg(
                 "Search queries that resolve remote resources are not supported without authentication".into(),
             ));
         }
     }
 
-    let offset = q.offset.unwrap_or(0).max(0);
+    // `require_valid_pagination_options!`.
+    let limit_param = q.limit.as_deref().map(ruby_to_i);
+    let offset_param = q.offset.as_deref().map(ruby_to_i);
+    if limit_param.is_some_and(|l| l < 0) || offset_param.is_some_and(|o| o < 0) {
+        return Err(AppError::BadRequest(
+            "Pagination values for `offset` and `limit` must be positive".into(),
+        ));
+    }
+    // `limit_param(RESULTS_LIMIT)`.
+    let limit = limit_param.map_or(RESULTS_LIMIT, |l| l.abs().min(RESULTS_LIMIT * 2));
 
-    // `SearchService#url_query?`: a query that looks like a URL is resolved
-    // rather than searched, and only when the caller asked to resolve — which
-    // is why this sits above every other kind of search and returns whatever it
-    // finds on its own. `ResolveURLService` fetches the URL, following the
-    // `rel="alternate"` link when what answers is a page rather than an object,
-    // so a server that serves its objects from a different path than its pages
-    // resolves like any other.
-    if q.resolve.unwrap_or(false) && (query.starts_with("http://") || query.starts_with("https://"))
-    {
-        let mut results = SearchResults {
-            accounts: vec![],
-            statuses: vec![],
-            hashtags: vec![],
-            collections: vec![],
-        };
-        // `@offset` is zero unless a type was named, and a resolved resource is
-        // dropped once the caller has paged past it.
-        let url_offset = if search_type.is_none() { 0 } else { offset };
-        if url_offset == 0 {
-            match crate::api::mastodon::resolve_url::resolve_url(&state, query, viewer_id).await? {
-                Some(Resolved::Status(id))
-                    if search_type.is_none() || search_type == Some("statuses") =>
-                {
-                    let s = sqlx::query_as!(
-                        crate::db::models::Status,
-                        "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-                        id,
-                    )
-                    .fetch_one(&state.db)
-                    .await?;
-                    let account = sqlx::query_as!(
-                        crate::db::models::Account,
-                        "SELECT * FROM accounts WHERE id = $1",
-                        s.account_id
-                    )
-                    .fetch_one(&state.db)
-                    .await?;
-                    let media = fetch_status_media(&state, s.id).await?;
-                    let reblog = fetch_reblog_data(&state, &s).await?;
-                    // Compute the viewer's context so quote_approval / interaction
-                    // flags reflect the requester rather than defaulting to unknown.
-                    let ctx = if let Some(vid) = viewer_id {
-                        super::statuses::batch_viewer_contexts(&state, vid, &[s.id])
-                            .await?
-                            .remove(&s.id)
-                    } else {
-                        None
-                    };
-                    results.statuses =
-                        vec![build_status(&state, &s, &account, media, reblog, ctx).await?];
-                }
-                Some(Resolved::Account(id))
-                    if search_type.is_none() || search_type == Some("accounts") =>
-                {
-                    let account = sqlx::query_as!(
-                        crate::db::models::Account,
-                        "SELECT * FROM accounts WHERE id = $1",
-                        id,
-                    )
-                    .fetch_one(&state.db)
-                    .await?;
-                    results.accounts = batch_accounts_to_api(&state, &[account]).await;
-                }
-                _ => {}
-            }
+    // `SearchService#call`.
+    let query = crate::search::normalize_query(raw_query);
+    let search_type = present(q.search_type.as_deref());
+    // A page past the first is only for a search of one type.
+    let offset = if search_type.is_none() {
+        0
+    } else {
+        offset_param.unwrap_or(0)
+    };
+    let mut results = SearchResults {
+        accounts: vec![],
+        statuses: vec![],
+        hashtags: vec![],
+        collections: vec![],
+    };
+    if query.is_empty() || limit == 0 {
+        return Ok(Json(results));
+    }
+
+    // `url_query?`: a URL is resolved rather than searched, and only when the
+    // caller asked to resolve. `ResolveURLService` fetches the URL, following
+    // the `rel="alternate"` link when what answers is a page rather than an
+    // object, so a server that serves its objects from a different path than
+    // its pages resolves like any other.
+    if resolve && (query.starts_with("http://") || query.starts_with("https://")) {
+        if offset == 0 {
+            resolve_url_into(&state, &query, viewer_id, search_type, &mut results).await?;
         }
         return Ok(Json(results));
     }
 
-    // Detect @user@domain or user@domain handle patterns for exact acct lookup
-    let handle_parts: Option<(String, Option<String>)> = {
-        let trimmed = q.q.trim().trim_start_matches('@');
-        if trimmed.contains('@') {
-            let mut parts = trimmed.splitn(2, '@');
-            let user = parts.next().unwrap_or("").to_lowercase();
-            let dom = parts.next().map(|d| d.to_lowercase());
-            if !user.is_empty() {
-                Some((user, dom))
+    let wants = |kind: &str| search_type.is_none_or(|t| t == kind);
+
+    if wants("accounts") {
+        let found = crate::search::accounts::search(
+            &state,
+            &query,
+            viewer_id,
+            &crate::search::accounts::Options {
+                limit,
+                offset,
+                resolve,
+                following: truthy(q.following),
+                use_searchable_text: true,
+            },
+        )
+        .await?;
+        results.accounts = batch_accounts_to_api(&state, &found).await;
+    }
+
+    // `status_searchable?`: posts are searched only with Elasticsearch, and
+    // only for a signed-in user. Without it, a post is found by its URL alone.
+
+    if wants("hashtags") {
+        let found = crate::search::tags::search(
+            &state,
+            &query,
+            &crate::search::tags::Options {
+                limit,
+                offset,
+                exclude_unreviewed: truthy(q.exclude_unreviewed),
+            },
+        )
+        .await?;
+        results.hashtags = render_tags(&state, &instance.domain, &found, viewer_id).await?;
+    }
+
+    Ok(Json(results))
+}
+
+/// `url_resource_results`: what the URL names, when it is of the type asked
+/// for.
+async fn resolve_url_into(
+    state: &AppState,
+    query: &str,
+    viewer_id: Option<i64>,
+    search_type: Option<&str>,
+    results: &mut SearchResults,
+) -> AppResult<()> {
+    match crate::api::mastodon::resolve_url::resolve_url(state, query, viewer_id).await? {
+        Some(Resolved::Status(id)) if search_type.is_none_or(|t| t == "statuses") => {
+            let s = sqlx::query_as!(
+                crate::db::models::Status,
+                "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+                id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            let account = sqlx::query_as!(
+                crate::db::models::Account,
+                "SELECT * FROM accounts WHERE id = $1",
+                s.account_id
+            )
+            .fetch_one(&state.db)
+            .await?;
+            let media = fetch_status_media(state, s.id).await?;
+            let reblog = fetch_reblog_data(state, &s).await?;
+            // The viewer's context, so that quote_approval and the interaction
+            // flags describe the requester rather than defaulting to unknown.
+            let ctx = if let Some(vid) = viewer_id {
+                super::statuses::batch_viewer_contexts(state, vid, &[s.id])
+                    .await?
+                    .remove(&s.id)
             } else {
                 None
-            }
-        } else {
-            None
-        }
-    };
-
-    let db_accounts: Vec<crate::db::models::Account> = if search_type.is_none()
-        || search_type == Some("accounts")
-    {
-        let following_filter = q.following.unwrap_or(false);
-
-        // If query is a handle (user@domain), do an exact acct lookup first
-        if let Some((ref uname, ref domain)) = handle_parts {
-            let exact: Vec<crate::db::models::Account> = if let Some(dom) = domain {
-                sqlx::query_as!(
-                    crate::db::models::Account,
-                    r#"SELECT * FROM accounts
-                       WHERE suspended_at IS NULL AND requested_deletion_at IS NULL
-                         AND lower(username) = $1 AND lower(domain) = $2
-                       LIMIT $3"#,
-                    uname,
-                    dom,
-                    limit
-                )
-                .fetch_all(&state.db)
-                .await?
-            } else {
-                sqlx::query_as!(
-                    crate::db::models::Account,
-                    r#"SELECT * FROM accounts
-                       WHERE suspended_at IS NULL AND requested_deletion_at IS NULL
-                         AND lower(username) = $1 AND domain IS NULL
-                       LIMIT $2"#,
-                    uname,
-                    limit
-                )
-                .fetch_all(&state.db)
-                .await?
             };
-            if !exact.is_empty() {
-                exact
-            } else {
-                // resolve=true with a full user@domain: fetch via WebFinger
-                if q.resolve.unwrap_or(false) {
-                    if let Some(dom) = domain {
-                        if let Ok(actor_url) =
-                            crate::federation::webfinger::resolve_allowed(&state, uname, dom).await
-                        {
-                            if let Ok(account_id) =
-                                crate::api::ap::inbox::resolve_or_fetch_remote_account(
-                                    &state, &actor_url,
-                                )
-                                .await
-                            {
-                                if let Ok(Some(account)) = sqlx::query_as!(
-                                    crate::db::models::Account,
-                                    "SELECT * FROM accounts WHERE id = $1",
-                                    account_id,
-                                )
-                                .fetch_optional(&state.db)
-                                .await
-                                {
-                                    let api_accounts =
-                                        batch_accounts_to_api(&state, &[account]).await;
-                                    return Ok(Json(SearchResults {
-                                        accounts: api_accounts,
-                                        statuses: vec![],
-                                        hashtags: vec![],
-                                        collections: vec![],
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                }
-                if following_filter {
-                    let vid = viewer_id.ok_or(crate::error::AppError::Unauthorized)?;
-                    sqlx::query_as!(
-                        crate::db::models::Account,
-                        r#"SELECT a.* FROM accounts a
-                           JOIN follows f ON f.target_account_id = a.id
-                           LEFT JOIN account_stats ast ON ast.account_id = a.id
-                           WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                             AND a.moved_to_account_id IS NULL
-                             AND f.account_id = $3
-                             AND (lower(a.username) LIKE $1 OR lower(a.display_name) LIKE $1)
-                           ORDER BY COALESCE(ast.followers_count, 0) DESC LIMIT $2 OFFSET $4"#,
-                        account_pattern,
-                        limit,
-                        vid,
-                        offset
-                    )
-                    .fetch_all(&state.db)
-                    .await?
-                } else {
-                    sqlx::query_as!(
-                        crate::db::models::Account,
-                        r#"SELECT a.* FROM accounts a
-                           LEFT JOIN account_stats ast ON ast.account_id = a.id
-                           WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                             AND a.moved_to_account_id IS NULL
-                             AND (lower(a.username) LIKE $1 OR lower(a.display_name) LIKE $1)
-                           ORDER BY COALESCE(ast.followers_count, 0) DESC LIMIT $2 OFFSET $3"#,
-                        account_pattern,
-                        limit,
-                        offset
-                    )
-                    .fetch_all(&state.db)
-                    .await?
-                }
-            }
-        } else if following_filter {
-            let vid = viewer_id.ok_or(crate::error::AppError::Unauthorized)?;
-            sqlx::query_as!(
+            results.statuses = vec![build_status(state, &s, &account, media, reblog, ctx).await?];
+        }
+        Some(Resolved::Account(id)) if search_type.is_none_or(|t| t == "accounts") => {
+            let account = sqlx::query_as!(
                 crate::db::models::Account,
-                r#"SELECT a.* FROM accounts a
-                   JOIN follows f ON f.target_account_id = a.id
-                   LEFT JOIN account_stats ast ON ast.account_id = a.id
-                   WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                     AND a.moved_to_account_id IS NULL
-                     AND f.account_id = $3
-                     AND (lower(a.username) LIKE $1 OR lower(a.display_name) LIKE $1)
-                   ORDER BY COALESCE(ast.followers_count, 0) DESC LIMIT $2 OFFSET $4"#,
-                account_pattern,
-                limit,
-                vid,
-                offset
+                "SELECT * FROM accounts WHERE id = $1",
+                id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            results.accounts = batch_accounts_to_api(state, &[account]).await;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// `REST::TagSerializer` for each hashtag found: its history, and for a
+/// signed-in user whether they follow and feature it.
+async fn render_tags(
+    state: &AppState,
+    domain: &str,
+    found: &[crate::search::tags::FoundTag],
+    viewer_id: Option<i64>,
+) -> AppResult<Vec<Tag>> {
+    let ids: Vec<i64> = found.iter().map(|t| t.id).collect();
+    let histories = super::tags::fetch_tags_histories(state, &ids).await;
+    let (followed, featured): (Vec<i64>, Vec<i64>) = match viewer_id {
+        Some(viewer) => (
+            sqlx::query_scalar!(
+                "SELECT tag_id FROM tag_follows WHERE account_id = $1 AND tag_id = ANY($2)",
+                viewer,
+                &ids,
             )
             .fetch_all(&state.db)
-            .await?
-        } else {
-            sqlx::query_as!(
-                crate::db::models::Account,
-                r#"SELECT a.* FROM accounts a
-                   LEFT JOIN account_stats ast ON ast.account_id = a.id
-                   WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                     AND a.moved_to_account_id IS NULL
-                     AND (lower(a.username) LIKE $1 OR lower(a.display_name) LIKE $1)
-                   ORDER BY COALESCE(ast.followers_count, 0) DESC LIMIT $2 OFFSET $3"#,
-                account_pattern,
-                limit,
-                offset
+            .await?,
+            sqlx::query_scalar!(
+                "SELECT tag_id FROM featured_tags WHERE account_id = $1 AND tag_id = ANY($2)",
+                viewer,
+                &ids,
             )
             .fetch_all(&state.db)
-            .await?
-        }
-    } else {
-        vec![]
+            .await?,
+        ),
+        None => (vec![], vec![]),
     };
-    let accounts = batch_accounts_to_api(&state, &db_accounts).await;
-
-    let statuses = if (search_type.is_none() || search_type == Some("statuses")) && auth.is_some() {
-        let fts_query = q.q.trim().to_string();
-        let filter_account_id: Option<i64> = q.account_id.as_deref().and_then(|s| s.parse().ok());
-        let rows = sqlx::query_as!(
-            crate::db::models::Status,
-            r#"SELECT s.* FROM statuses s
-               JOIN accounts a ON a.id = s.account_id
-               WHERE s.deleted_at IS NULL
-                 AND (s.visibility IN (0, 1) OR s.account_id = $4)
-                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                 AND ($3::bigint IS NULL OR s.account_id = $3)
-                 AND ($4::bigint IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM blocks b
-                     WHERE (b.account_id = $4 AND b.target_account_id = s.account_id)
-                        OR (b.account_id = s.account_id AND b.target_account_id = $4)
-                 ))
-                 AND ($4::bigint IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM mutes mu
-                     WHERE mu.account_id = $4 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
-                 ) OR EXISTS (
-                     -- Mute exemption: a post that mentions me.
-                     SELECT 1 FROM mentions mn
-                     WHERE mn.status_id = s.id AND mn.account_id = $4 AND NOT mn.silent
-                 ) OR EXISTS (
-                     -- Mute exemption: a quote of a post of mine.
-                     SELECT 1 FROM quotes q
-                     WHERE q.status_id = s.id AND q.quoted_account_id = $4
-                 ))
-                 AND to_tsvector('simple', coalesce(s.text, ''))
-                     @@ websearch_to_tsquery('simple', $1)
-               ORDER BY s.id DESC LIMIT $2 OFFSET $5"#,
-            fts_query,
-            limit,
-            filter_account_id,
-            viewer_id,
-            offset
-        )
-        .fetch_all(&state.db)
-        .await?;
-
-        let all_ids: Vec<i64> = rows.iter().map(|s| s.id).collect();
-        let media_map = batch_status_media(&state, &all_ids).await?;
-        let reblog_map = batch_reblog_data(&state, &rows).await?;
-        let reblog_ids: Vec<i64> = reblog_map.values().map(|(rs, _, _)| rs.id).collect();
-        let mut enrich_ids = all_ids.clone();
-        enrich_ids.extend_from_slice(&reblog_ids);
-        let tags_map = batch_statuses_tags(&state, &enrich_ids).await?;
-        let mentions_map = batch_status_mentions(&state, &enrich_ids).await?;
-        let all_statuses_for_emoji: Vec<crate::db::models::Status> = rows
-            .iter()
-            .cloned()
-            .chain(reblog_map.values().map(|(rs, _, _)| rs.clone()))
-            .collect();
-        let emojis_map = batch_status_emojis(&state, &all_statuses_for_emoji).await?;
-        let polls_map = batch_status_polls(&state, &enrich_ids, viewer_id).await?;
-        let cards_map = batch_status_cards(&state, &enrich_ids, viewer_id).await?;
-        let ctxs = if let Some(vid) = viewer_id {
-            super::statuses::batch_viewer_contexts(&state, vid, &all_ids).await?
-        } else {
-            std::collections::HashMap::new()
-        };
-        let account_ids: Vec<i64> = rows
-            .iter()
-            .map(|s| s.account_id)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        let accounts: Vec<crate::db::models::Account> = sqlx::query_as!(
-            crate::db::models::Account,
-            "SELECT * FROM accounts WHERE id = ANY($1::bigint[])",
-            &account_ids,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        let account_map: std::collections::HashMap<i64, crate::db::models::Account> =
-            accounts.into_iter().map(|a| (a.id, a)).collect();
-        let all_accounts_for_emoji: Vec<crate::db::models::Account> = {
-            let mut seen = std::collections::HashSet::new();
-            account_map
-                .values()
-                .chain(reblog_map.values().map(|(_, ra, _)| ra))
-                .filter(|a| seen.insert(a.id))
-                .cloned()
-                .collect()
-        };
-        let account_emojis_map = batch_account_emojis(&state, &all_accounts_for_emoji).await;
-        let account_roles_map = batch_account_roles(&state, &all_accounts_for_emoji).await;
-
-        let mut result: Vec<Status> = Vec::with_capacity(rows.len());
-        for s in &rows {
-            let Some(account) = account_map.get(&s.account_id) else {
-                continue;
-            };
-            let media = media_map.get(&s.id).cloned().unwrap_or_default();
-            let reblog = reblog_map.get(&s.id).cloned();
-            let mentions = mentions_map.get(&s.id).cloned().unwrap_or_default();
-            let rb_mentions = reblog
-                .as_ref()
-                .and_then(|(rs, _, _)| mentions_map.get(&rs.id))
-                .cloned()
-                .unwrap_or_default();
-            let ctx = ctxs.get(&s.id).cloned();
-            let mut api = status_from_db(
-                &state.urls,
-                s,
-                account,
-                media,
-                reblog,
-                ctx,
-                &mentions,
-                &rb_mentions,
-            );
-            api.account.emojis = account_emojis_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
-            api.account.roles = account_roles_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
-            api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
-            api.mentions = mentions;
-            api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
-            api.poll = polls_map.get(&s.id).cloned();
-            api.card = cards_map.get(&s.id).cloned();
-            if let Some(ref mut rb) = api.reblog {
-                let rid: i64 = rb.id.parse().unwrap_or(0);
-                let rb_id: i64 = rb.account.id.parse().unwrap_or(0);
-                rb.account.emojis = account_emojis_map.get(&rb_id).cloned().unwrap_or_default();
-                rb.account.roles = account_roles_map.get(&rb_id).cloned().unwrap_or_default();
-                rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
-                rb.mentions = rb_mentions;
-                rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();
-                rb.poll = polls_map.get(&rid).cloned();
-                rb.card = cards_map.get(&rid).cloned();
-            }
-            result.push(api);
-        }
-        hydrate_status_stats(&state, result.iter_mut()).await;
-        result
-    } else {
-        vec![]
-    };
-
-    let hashtags = if search_type.is_none() || search_type == Some("hashtags") {
-        // Strip leading # and use prefix match (Mastodon's matches_name scope)
-        let tag_term = q.q.trim().trim_start_matches('#').to_lowercase();
-        let tag_prefix = format!("{}%", tag_term);
-        let exclude_unreviewed = q.exclude_unreviewed.unwrap_or(false);
-        sqlx::query!(
-            r#"SELECT id, name FROM tags
-               WHERE lower(name) LIKE $1
-                 AND (listable IS NULL OR listable = true)
-                 AND (NOT $4::boolean OR reviewed_at IS NOT NULL OR lower(name) = $5)
-               ORDER BY LENGTH(name) ASC, name ASC
-               LIMIT $2 OFFSET $3"#,
-            tag_prefix,
-            limit,
-            offset,
-            exclude_unreviewed,
-            tag_term
-        )
-        .fetch_all(&state.db)
-        .await?
-        .into_iter()
-        .map(|r| Tag {
-            id: r.id.to_string(),
-            name: r.name.clone(),
-            url: format!("https://{}/tags/{}", instance.domain, r.name),
-            history: vec![],
-            following: None,
-            featuring: None,
+    Ok(found
+        .iter()
+        .map(|t| Tag {
+            id: t.id.to_string(),
+            name: t.display_name.clone(),
+            url: format!("https://{domain}/tags/{}", t.name),
+            history: histories.get(&t.id).cloned().unwrap_or_default(),
+            following: viewer_id.map(|_| followed.contains(&t.id)),
+            featuring: viewer_id.map(|_| featured.contains(&t.id)),
         })
-        .collect()
-    } else {
-        vec![]
-    };
-
-    Ok(Json(SearchResults {
-        accounts,
-        statuses,
-        hashtags,
-        collections: vec![],
-    }))
+        .collect())
 }

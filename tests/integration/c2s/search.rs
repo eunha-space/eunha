@@ -24,34 +24,30 @@ async fn test_search_accounts() {
         .any(|a| a["username"].as_str() == Some("alice")));
 }
 
-/// Search for a status by its text returns the matching status.
+/// Without Elasticsearch, posts are not searched by their text at all
+/// (`SearchService#status_searchable?` is `Chewy.enabled? && ...`): only a
+/// URL resolves to one. tests/integration/c2s/search_elasticsearch.rs covers
+/// post search with Elasticsearch.
 #[tokio::test]
-async fn test_search_statuses() {
+async fn test_search_statuses_need_elasticsearch() {
     let ctx = TestContext::new("search-status").await;
 
     ctx.api
         .post_status(&ctx.alice_token, "uniqueterm12345", "public")
         .await;
 
-    let resp = ctx
-        .api
-        .get(
-            "/api/v2/search?q=uniqueterm12345&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = resp.json().await.unwrap();
-
-    let statuses = body["statuses"].as_array().unwrap();
-    assert!(
-        statuses.iter().any(|s| s["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("uniqueterm12345")
-            || s["text"].as_str().unwrap_or("").contains("uniqueterm12345")),
-        "search did not find status with uniqueterm12345"
-    );
+    for path in [
+        "/api/v2/search?q=uniqueterm12345&type=statuses",
+        "/api/v2/search?q=uniqueterm12345",
+    ] {
+        let resp = ctx.api.get(path, Some(&ctx.alice_token)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body: Value = resp.json().await.unwrap();
+        assert!(
+            body["statuses"].as_array().unwrap().is_empty(),
+            "{path}: no post search without Elasticsearch",
+        );
+    }
 }
 
 /// Search without a type param returns accounts, statuses, and hashtags.
@@ -71,74 +67,168 @@ async fn test_search_all_types() {
         .await
         .unwrap();
 
-    assert!(
-        body["accounts"].is_array(),
-        "accounts missing from search result"
-    );
-    assert!(
-        body["statuses"].is_array(),
-        "statuses missing from search result"
-    );
-    assert!(
-        body["hashtags"].is_array(),
-        "hashtags missing from search result"
-    );
+    for key in ["accounts", "statuses", "hashtags", "collections"] {
+        assert!(body[key].is_array(), "{key} missing from search result");
+    }
+    assert_eq!(body["hashtags"][0]["name"], "alltype999");
 }
 
-/// Search with limit=1 returns at most one result per category.
+/// `params.require(:q)`: a missing or blank query is a 400, and
+/// `require_valid_pagination_options!` refuses a negative limit or offset.
 #[tokio::test]
-async fn test_search_limit_param() {
-    let ctx = TestContext::new("search-limit").await;
+async fn test_search_parameter_validation() {
+    let ctx = TestContext::new("search-params").await;
 
-    ctx.api
-        .post_status(&ctx.alice_token, "limitterm888", "public")
-        .await;
-    ctx.api
-        .post_status(&ctx.alice_token, "limitterm888 second", "public")
-        .await;
+    for path in [
+        "/api/v2/search",
+        "/api/v2/search?q=",
+        "/api/v2/search?q=%20%20",
+        "/api/v2/search?q=alice&limit=-1",
+        "/api/v2/search?q=alice&type=accounts&offset=-1",
+    ] {
+        let resp = ctx.api.get(path, Some(&ctx.alice_token)).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
 
+    // `limit=0` is a valid request for nothing.
     let body: Value = ctx
         .api
+        .get("/api/v2/search?q=alice&limit=0", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(body["accounts"].as_array().unwrap().is_empty());
+}
+
+/// `SearchService`: the offset applies only to a search of one type — a
+/// mixed search always starts from the first result.
+#[tokio::test]
+async fn test_search_offset_needs_a_type() {
+    let ctx = TestContext::new("search-offset").await;
+
+    let mixed: Value = ctx
+        .api
+        .get("/api/v2/search?q=alice&offset=5", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        mixed["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["username"] == "alice"),
+        "an untyped search ignores the offset: {mixed}",
+    );
+
+    let typed: Value = ctx
+        .api
         .get(
-            "/api/v2/search?q=limitterm888&type=statuses&limit=1",
+            "/api/v2/search?q=alice&type=accounts&offset=5",
             Some(&ctx.alice_token),
         )
         .await
         .json()
         .await
         .unwrap();
-
-    let statuses = body["statuses"].as_array().unwrap();
     assert!(
-        statuses.len() <= 1,
-        "limit=1 should return at most 1 status, got {}",
-        statuses.len()
+        typed["accounts"].as_array().unwrap().is_empty(),
+        "a typed search pages past what there is: {typed}",
     );
 }
 
-/// GET /api/v2/search with offset parameter is accepted (returns 200).
+/// `AccountSearchService::MIN_QUERY_LENGTH`: an anonymous query shorter than
+/// three characters ranks nothing, a signed-in one does, and anonymous
+/// `following` is ignored rather than refused.
 #[tokio::test]
-async fn test_search_offset_param_accepted() {
-    let ctx = TestContext::new("search-offset").await;
+async fn test_search_accounts_anonymous_rules() {
+    let ctx = TestContext::new("search-anon-acct").await;
 
-    ctx.api
-        .post_status(&ctx.alice_token, "offsetterm777 first", "public")
-        .await;
+    let anon: Value = ctx
+        .api
+        .get("/api/v2/search?q=al&type=accounts", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(anon["accounts"].as_array().unwrap().is_empty(), "{anon}");
+
+    let signed_in: Value = ctx
+        .api
+        .get("/api/v2/search?q=al&type=accounts", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        signed_in["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["username"] == "alice"),
+        "{signed_in}",
+    );
 
     let resp = ctx
         .api
+        .get("/api/v2/search?q=alice&type=accounts&following=true", None)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["accounts"][0]["username"], "alice");
+}
+
+/// The exact match for a complete handle comes first and is found whatever
+/// state the account is in (`Account.find_local`), while the ranked results
+/// leave suspended accounts out.
+#[tokio::test]
+async fn test_search_exact_match_for_a_complete_handle() {
+    let ctx = TestContext::new("search-exact").await;
+
+    let handle = format!("bob@{}", ctx.domain);
+    let body: Value = ctx
+        .api
         .get(
-            "/api/v2/search?q=offsetterm777&type=statuses&offset=1",
+            &format!("/api/v2/search?q=%40{handle}&type=accounts"),
             Some(&ctx.alice_token),
         )
-        .await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "offset param should be accepted"
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["accounts"][0]["id"], ctx.bob_id.as_str(), "{body}");
+
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let exact: Value = ctx
+        .api
+        .get(
+            &format!("/api/v2/search?q={handle}&type=accounts"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(exact["accounts"][0]["id"], ctx.bob_id.as_str(), "{exact}");
+
+    let ranked: Value = ctx
+        .api
+        .get("/api/v2/search?q=bob&type=accounts", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        ranked["accounts"].as_array().unwrap().is_empty(),
+        "{ranked}"
     );
-    let body: Value = resp.json().await.unwrap();
-    assert!(body["statuses"].is_array(), "statuses field missing");
 }
 
 /// GET /api/v2/search?following=true only returns accounts the viewer follows.
@@ -213,232 +303,59 @@ async fn test_search_hashtags() {
     );
 }
 
-/// Search does not return statuses from accounts blocked by or blocking the viewer.
+/// `Tag.search_for` matches the normalized name (`HashtagNormalizer`), and
+/// `REST::TagSerializer` says whether a signed-in user follows and features
+/// each tag.
 #[tokio::test]
-async fn test_search_excludes_blocked_accounts() {
-    let ctx = TestContext::new("search-block").await;
+async fn test_search_hashtags_normalized_with_relationships() {
+    let ctx = TestContext::new("search-hash-norm").await;
 
-    // Bob posts a searchable status.
     ctx.api
-        .post_status(&ctx.bob_token, "blocksearchterm42 hello", "public")
+        .post_status(&ctx.alice_token, "I enjoy #Blahajnorm", "public")
         .await;
-
-    // Verify it appears before the block.
-    let before: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=blocksearchterm42&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        before["statuses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|s| { s["account"]["id"].as_str() == Some(ctx.bob_id.as_str()) }),
-        "bob's status should appear in search before block",
-    );
-
-    // Alice blocks Bob.
     ctx.api
         .post_json(
-            &format!("/api/v1/accounts/{}/block", ctx.bob_id),
+            "/api/v1/tags/blahajnorm/follow",
             Some(&ctx.alice_token),
             &json!({}),
         )
         .await;
 
-    let after: Value = ctx
+    // Full-width, accented and with a leading hash: all the same tag.
+    for q in [
+        "%23BL%C3%85HAJ",
+        "%EF%BC%A2%EF%BD%8C%EF%BD%81%EF%BD%88%EF%BD%81%EF%BD%8A",
+    ] {
+        let body: Value = ctx
+            .api
+            .get(
+                &format!("/api/v2/search?q={q}&type=hashtags"),
+                Some(&ctx.alice_token),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        let tag = &body["hashtags"][0];
+        assert!(
+            tag["name"]
+                .as_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case("blahajnorm")),
+            "{q}: {body}"
+        );
+        assert_eq!(tag["following"], true, "{body}");
+        assert_eq!(tag["featuring"], false, "{body}");
+        assert!(tag["history"].is_array());
+    }
+
+    let anon: Value = ctx
         .api
-        .get(
-            "/api/v2/search?q=blocksearchterm42&type=statuses",
-            Some(&ctx.alice_token),
-        )
+        .get("/api/v2/search?q=blahajnorm&type=hashtags", None)
         .await
         .json()
         .await
         .unwrap();
-    assert!(
-        after["statuses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|s| { s["account"]["id"].as_str() != Some(ctx.bob_id.as_str()) }),
-        "blocked account's statuses should not appear in search results",
-    );
-}
-
-/// Search does not return statuses from muted accounts.
-#[tokio::test]
-async fn test_search_excludes_muted_accounts() {
-    let ctx = TestContext::new("search-mute").await;
-
-    ctx.api
-        .post_status(&ctx.bob_token, "mutesearchterm55 hello", "public")
-        .await;
-
-    // Verify it appears before the mute.
-    let before: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=mutesearchterm55&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        before["statuses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|s| { s["account"]["id"].as_str() == Some(ctx.bob_id.as_str()) }),
-        "bob's status should appear in search before mute",
-    );
-
-    ctx.api
-        .post_json(
-            &format!("/api/v1/accounts/{}/mute", ctx.bob_id),
-            Some(&ctx.alice_token),
-            &json!({}),
-        )
-        .await;
-
-    let after: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=mutesearchterm55&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        after["statuses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|s| { s["account"]["id"].as_str() != Some(ctx.bob_id.as_str()) }),
-        "muted account's statuses should not appear in search results",
-    );
-}
-
-/// Viewer's own private and direct statuses appear in their own search results.
-#[tokio::test]
-async fn test_search_own_private_statuses() {
-    let ctx = TestContext::new("search-private").await;
-
-    ctx.api
-        .post_status(&ctx.alice_token, "privateuniqueterm11111", "private")
-        .await;
-    ctx.api
-        .post_status(&ctx.alice_token, "directuniqueterm22222", "direct")
-        .await;
-
-    // Alice can find her own private status.
-    let body: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=privateuniqueterm11111&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    let statuses = body["statuses"].as_array().unwrap();
-    assert!(
-        statuses.iter().any(|s| s["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("privateuniqueterm11111")),
-        "alice should find her own private status in search results",
-    );
-
-    // Alice can find her own direct status.
-    let body: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=directuniqueterm22222&type=statuses",
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    let statuses = body["statuses"].as_array().unwrap();
-    assert!(
-        statuses.iter().any(|s| s["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("directuniqueterm22222")),
-        "alice should find her own direct status in search results",
-    );
-
-    // Bob cannot find alice's private status.
-    let body: Value = ctx
-        .api
-        .get(
-            "/api/v2/search?q=privateuniqueterm11111&type=statuses",
-            Some(&ctx.bob_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    let statuses = body["statuses"].as_array().unwrap();
-    assert!(
-        statuses.iter().all(|s| !s["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("privateuniqueterm11111")),
-        "bob should not find alice's private status in search results",
-    );
-}
-
-/// GET /api/v2/search?account_id= filters statuses to the specified account.
-#[tokio::test]
-async fn test_search_account_id_filter() {
-    let ctx = TestContext::new("search-acct-id").await;
-
-    ctx.api
-        .post_status(&ctx.alice_token, "alicesearch uniqueword9876", "public")
-        .await;
-    ctx.api
-        .post_status(&ctx.bob_token, "bobsearch uniqueword9876", "public")
-        .await;
-
-    // Search filtered to alice's account should only return alice's status.
-    let body: Value = ctx
-        .api
-        .get(
-            &format!(
-                "/api/v2/search?q=uniqueword9876&type=statuses&account_id={}",
-                ctx.alice_id
-            ),
-            Some(&ctx.alice_token),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    let statuses = body["statuses"].as_array().unwrap();
-    assert!(
-        statuses
-            .iter()
-            .all(|s| s["account"]["id"].as_str() == Some(ctx.alice_id.as_str())),
-        "search with account_id should only return that account's statuses, got: {statuses:?}",
-    );
-    assert!(
-        !statuses.is_empty(),
-        "alice's status should appear in filtered search",
-    );
+    assert!(anon["hashtags"][0].get("following").is_none(), "{anon}");
 }
 
 /// Anonymous search cannot paginate (Mastodon returns 401 when offset/min_id/
@@ -669,4 +586,58 @@ async fn test_search_url_of_a_private_status_is_authorized() {
         body["statuses"].as_array().unwrap().is_empty(),
         "a stranger who knows the address still may not read it",
     );
+}
+
+/// `Api::V1::Peers::SearchController`: domains that start with the
+/// normalized query, ten at most, never a blocked one, and `null` for a
+/// blank query.
+#[tokio::test]
+async fn test_peers_search() {
+    let ctx = TestContext::new("search-peers").await;
+    for (i, domain) in [
+        "peer-one.example",
+        "peer-two.example",
+        "other.example",
+        "peer-blocked.example",
+    ]
+    .iter()
+    .enumerate()
+    {
+        sqlx::query(
+            "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at) \
+             VALUES ($1, 'someone', $2, $3, now(), now())",
+        )
+        .bind(9_000_000 + i as i64)
+        .bind(domain)
+        .bind(format!("https://{domain}/users/someone"))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at) \
+         VALUES ('peer-blocked.example', 1, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let mut found: Vec<String> = ctx
+        .api
+        .get("/api/v1/peers/search?q=PEER-", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    found.sort();
+    assert_eq!(found, ["peer-one.example", "peer-two.example"]);
+
+    let blank: Value = ctx
+        .api
+        .get("/api/v1/peers/search?q=", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(blank.is_null(), "{blank}");
 }

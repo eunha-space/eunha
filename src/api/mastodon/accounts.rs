@@ -864,20 +864,12 @@ pub async fn get_account_pins(
 
 #[derive(Debug, Deserialize)]
 pub struct AccountSearchQuery {
-    pub q: String,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-    pub resolve: Option<bool>,
-    pub following: Option<bool>,
+    pub q: Option<String>,
+    pub limit: Option<String>,
+    pub offset: Option<String>,
+    pub resolve: Option<super::extractors::FlexBool>,
+    pub following: Option<super::extractors::FlexBool>,
 }
-
-/// Minimum query length for non-exact matches by an unauthenticated viewer.
-/// Mirrors Mastodon's `AccountSearchService::MIN_QUERY_LENGTH`.
-const MIN_ACCOUNT_QUERY_LENGTH: usize = 3;
-
-// The weighted document Mastodon ranks a search against: display name (A) >
-// username (B) > domain (C). See app/models/concerns/account/search.rb.
-const ACCOUNT_TEXT_SEARCH_RANKS: &str = "(setweight(to_tsvector('simple', accounts.display_name), 'A') || setweight(to_tsvector('simple', accounts.username), 'B') || setweight(to_tsvector('simple', coalesce(accounts.domain, '')), 'C'))";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
