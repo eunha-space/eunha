@@ -394,6 +394,54 @@ async fn test_import_config_fills_only_what_is_not_saved() {
     assert!(again.written.is_empty(), "{again:?}");
 }
 
+/// `eunha migrate` imports the configuration once, into a database migration
+/// 023 found serving, and never again; a database with nothing owed is left
+/// to Mastodon's defaults.
+#[tokio::test]
+async fn test_migrate_imports_the_configuration_once_when_owed() {
+    let ctx = TestContext::new("srv-settings-owed").await;
+    sqlx::query("DELETE FROM settings")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM eunha.site_settings_import")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let mut instance = ctx.state.instance.as_ref().clone();
+    instance.title = "Configured title".into();
+
+    let nothing = eunha::settings_import::import_if_owed(&ctx.db, &instance)
+        .await
+        .unwrap();
+    assert_eq!(nothing, None, "nothing owed");
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["title"], "Mastodon");
+
+    // What migration 023 leaves for a database that was serving.
+    sqlx::query("INSERT INTO eunha.site_settings_import DEFAULT VALUES")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let report = eunha::settings_import::import_if_owed(&ctx.db, &instance)
+        .await
+        .unwrap()
+        .expect("owed");
+    assert!(report.written.iter().any(|w| w == "site_title"));
+    assert!(!eunha::settings_import::owed(&ctx.db).await.unwrap());
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["title"], "Configured title");
+
+    sqlx::query("DELETE FROM settings WHERE var = 'site_title'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let again = eunha::settings_import::import_if_owed(&ctx.db, &instance)
+        .await
+        .unwrap();
+    assert_eq!(again, None, "imported once");
+}
+
 /// `ContactPresenter#account`: the account `site_contact_username` names,
 /// remote ones included.
 #[tokio::test]

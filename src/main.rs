@@ -35,6 +35,11 @@ enum Command {
     /// and some of them are destructive. Running them from a deploy script,
     /// before the new binary starts, means a failure is found with the old
     /// version still serving rather than with nothing serving at all.
+    ///
+    /// A database that was serving before eunha read the site settings from
+    /// the database alone then gets `eunha settings import-config`, once: what
+    /// its instance configuration says about the site is copied into the
+    /// settings nobody has saved yet, so that the upgrade keeps serving it.
     Migrate {
         /// Report what is pending without applying anything. Exits non-zero if
         /// a database is behind this binary.
@@ -169,9 +174,10 @@ enum SettingsCommand {
     /// into the settings and terms tables, where nothing is saved yet.
     ///
     /// Eunha used to take these from the configuration until an administrator
-    /// saved them; it now reads only the database, as Mastodon does. Run this
-    /// once when upgrading, then remove the keys from the configuration.
-    /// Running it again changes nothing.
+    /// saved them; it now reads only the database, as Mastodon does. `eunha
+    /// migrate` runs this once for an instance that was already serving;
+    /// remove the keys from the configuration afterwards. Running it again
+    /// changes nothing.
     ImportConfig {
         /// Report what would be written, writing nothing.
         #[arg(long)]
@@ -525,22 +531,7 @@ async fn main() -> anyhow::Result<()> {
             let db = command_database(&config).await?;
             let report =
                 eunha::settings_import::import_config(&db, &config.instance, dry_run).await?;
-            for var in &report.written {
-                println!("{} {var}", if dry_run { "would write" } else { "wrote" });
-            }
-            for var in &report.kept {
-                println!("kept saved {var}");
-            }
-            if report.terms_published {
-                println!(
-                    "{} the configured terms of service, effective 2025-01-01",
-                    if dry_run {
-                        "would publish"
-                    } else {
-                        "published"
-                    }
-                );
-            }
+            print_settings_import("", &report, dry_run);
             println!("OK");
             return Ok(());
         }
@@ -687,16 +678,27 @@ fn reload_on_hangup(tenants: Arc<tenants::Tenants>, dir: PathBuf) -> anyhow::Res
 /// bucket, which has no bearing on whether the schema can be brought up to
 /// date.
 async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> anyhow::Result<()> {
-    let targets: Vec<(String, String)> = match tenants {
+    type Target = (String, String, anyhow::Result<config::InstanceConfig>);
+    let targets: Vec<Target> = match tenants {
         Some(dir) => tenants::load_dir(dir)?
             .into_iter()
-            .map(|tenant| (format!("{}: ", tenant.source), tenant.config.database_url))
+            .map(|tenant| {
+                (
+                    format!("{}: ", tenant.source),
+                    tenant.config.database_url,
+                    Ok(tenant.config.instance),
+                )
+            })
             .collect(),
-        None => vec![(String::new(), migration_database_url()?)],
+        None => vec![(
+            String::new(),
+            migration_database_url()?,
+            config::Config::instance_from_env(),
+        )],
     };
 
     let mut behind = false;
-    for (label, database_url) in targets {
+    for (label, database_url, instance) in targets {
         let db = tenants::connect(
             &database_url,
             &config::DatabasePoolConfig {
@@ -714,6 +716,26 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
             (false, _) => {
                 migrate::run(&db).await?;
                 println!("{label}Migrations applied.");
+                // The one-time `eunha settings import-config` an instance that
+                // was serving before eunha read the settings alone is owed, so
+                // that no deploy has to remember it.
+                if eunha::settings_import::owed(&db).await? {
+                    match instance {
+                        Ok(instance) => {
+                            if let Some(report) =
+                                eunha::settings_import::import_if_owed(&db, &instance).await?
+                            {
+                                print_settings_import(&label, &report, false);
+                                println!("{label}Site settings imported from the configuration.");
+                            }
+                        }
+                        Err(error) => println!(
+                            "{label}Site settings not imported yet, for want of an [instance] \
+                             configuration ({error:#}); the next `eunha migrate` that can read \
+                             it imports them, as `eunha settings import-config` does."
+                        ),
+                    }
+                }
             }
         }
     }
@@ -721,6 +743,29 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// What `eunha settings import-config` wrote, kept, or would write.
+fn print_settings_import(label: &str, report: &eunha::settings_import::Report, dry_run: bool) {
+    for var in &report.written {
+        println!(
+            "{label}{} {var}",
+            if dry_run { "would write" } else { "wrote" }
+        );
+    }
+    for var in &report.kept {
+        println!("{label}kept saved {var}");
+    }
+    if report.terms_published {
+        println!(
+            "{label}{} the configured terms of service, effective 2025-01-01",
+            if dry_run {
+                "would publish"
+            } else {
+                "published"
+            }
+        );
+    }
 }
 
 /// Rehearse pending migrations against a copy of a live database, and report

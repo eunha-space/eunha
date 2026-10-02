@@ -93,8 +93,9 @@ Before eunha read the table, an instance's terms were the `terms_of_service`
 text in its configuration, served as effective on 2025-01-01. Eunha no longer
 reads it: with nothing published, `/api/v1/instance/terms_of_service` is a 404
 and `urls.terms_of_service` is null, as in Mastodon.
-`eunha settings import-config` (see
-[administration](./administration#settings-and-the-instance-configuration))
+The import `eunha migrate` runs once for an instance that was already
+serving, or `eunha settings import-config` (see
+[administration](./administration#settings-and-the-instance-configuration)),
 publishes it once, while nothing else is published, as the version it was
 served as: effective on 2025-01-01, already notified so nobody is mailed about
 terms they were already served, and with an empty changelog. The key can be
@@ -108,8 +109,8 @@ Privacy policy
 Mastodon does, rendered the same way as the terms, and when it is blank the
 policy Mastodon ships (*config/templates/privacy-policy.md*), dated 2022-10-07
 as upstream dates it. The configuration's `privacy_policy`, where eunha kept
-the policy before, is read only by `eunha settings import-config`, which copies
-it into a `site_terms` nobody has saved.
+the policy before, is read only by that import, which copies it into a
+`site_terms` nobody has saved.
 
 The policy is written on the about page of the
 [server settings](./administration#server-settings), as in Mastodon.

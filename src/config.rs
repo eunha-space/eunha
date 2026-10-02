@@ -672,6 +672,20 @@ impl Config {
         Ok(cfg.try_deserialize()?)
     }
 
+    /// Only the `[instance]` section of what [`Config::from_env`] reads, for a
+    /// command that needs the instance's own settings and nothing else, such
+    /// as `eunha migrate` importing the site settings.
+    pub fn instance_from_env() -> anyhow::Result<InstanceConfig> {
+        dotenvy::dotenv().ok();
+        adopt_mastodon_env();
+        adopt_mastodon_elasticsearch_env();
+        let cfg = config::Config::builder()
+            .add_source(config::File::with_name("config").required(false))
+            .add_source(config::Environment::default().separator("__"))
+            .build()?;
+        Ok(cfg.get("instance")?)
+    }
+
     pub fn from_file(path: &str) -> anyhow::Result<Self> {
         let cfg = config::Config::builder()
             .add_source(config::File::from(std::path::Path::new(path)))

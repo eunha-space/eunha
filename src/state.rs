@@ -69,8 +69,9 @@ impl AppState {
         if !deprecated.is_empty() {
             tracing::warn!(
                 keys = ?deprecated,
-                "these [instance] keys are no longer read; copy them into the settings once \
-                 with `eunha settings import-config`, then remove them"
+                "these [instance] keys are no longer read; `eunha migrate` copies them into \
+                 the settings once for an instance that was serving, and \
+                 `eunha settings import-config` whenever asked; remove them"
             );
         }
         let http = reqwest::Client::builder()

@@ -29,6 +29,43 @@ is applied from code at startup and records itself then; `mastodon:plan` lists
 those separately from ones still to write.
 
 
+Site settings
+-------------
+
+Eunha used to serve the site's title, descriptions, contact address,
+registrations, privacy policy and terms of service from `[instance]` until an
+administrator saved them, and now reads them only from Mastodon's tables. So
+that an upgrade does not leave an instance titled `Mastodon` with registrations
+closed, `eunha migrate` copies what the configuration says into the settings
+nobody has saved, as `eunha settings import-config` does
+([administration](./administration#settings-and-the-instance-configuration)
+lists the keys):
+
+~~~~ console
+$ eunha migrate
+Migrations applied.
+wrote site_title
+wrote registrations_mode
+kept saved site_contact_email
+Site settings imported from the configuration.
+~~~~
+
+It does so once per database, and only for one that was serving: migration 023
+leaves a row in `eunha.site_settings_import` when the database already has
+users, and the import removes it. A database migrated before it has any users —
+a new instance, or one about to receive `eunha import-mastodon` — is owed
+nothing and starts from Mastodon's defaults or the restored data. Whatever an
+administrator saved is kept, and nothing is imported again afterwards, even
+into a setting deleted later.
+
+The single-instance `eunha migrate` reads `[instance]` from `config.toml` and
+the environment for this; with `--tenants`, each tenant's file. When it cannot
+read one, it says so, migrates anyway, and leaves the import for the next
+`eunha migrate` that can. `eunha migrate --check` imports nothing, and
+`eunha rehearse-migration` has no configuration, so its clone keeps the row and
+gains no settings.
+
+
 Domain blocks written before migration 015
 ------------------------------------------
 

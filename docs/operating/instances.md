@@ -142,11 +142,15 @@ console writes them.
 Older eunha read `title`, `description`, `short_description`, `contact_email`,
 `registrations_open`, `approval_required`, `privacy_policy` and
 `terms_of_service` from `[instance]`. They are read no longer, and a server
-that finds them set logs a warning. Copy them into the database once with
-`eunha settings import-config` (with `--instance` under `--tenants`), as
+that finds them set logs a warning. `eunha migrate --tenants <dir>` copies them
+into each tenant's database once, as `eunha settings import-config` does, for
+every tenant that already had users when the release that stopped reading them
+was migrated; each line it prints names the tenant's file (see
+[migrations](./migrations#site-settings)). A tenant whose `[instance]` could not
+be read then is imported by the next `eunha migrate` that can read it. Run
+`eunha settings import-config --instance <host>` by hand for anything else, as
 [administration](./administration#settings-and-the-instance-configuration)
-describes, then delete them. Neither `eunha migrate` nor starting the server
-does it.
+describes, then delete the keys. Starting the server never does it.
 
 
 Authorized fetch and limited federation

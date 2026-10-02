@@ -86,8 +86,10 @@ account (`@name@domain`).
 Eunha's instance configuration carried the title, descriptions, contact
 address, whether registrations are open, the privacy policy and the terms of
 service before eunha read the settings, and served them until an administrator
-saved the settings. It no longer reads them. An instance upgrading copies them
-into the database once with:
+saved the settings. It no longer reads them. An instance upgrading has them
+copied into the database once, by the first `eunha migrate` of the release
+that stopped reading them (see [migrations](./migrations#site-settings)). The
+same import can be run by hand:
 
 ~~~~ sh
 eunha settings import-config            # --dry-run to see what it would write
@@ -112,9 +114,8 @@ safe to run again:
 and, while nothing is published, publishes `terms_of_service` as the version it
 was served as (see
 [terms of service](./terms-of-service#terms-from-the-instance-configuration)).
-`eunha migrate` does not do this, and neither does the server: the schema
-migrations change the schema only. A server whose configuration still sets any
-of these keys logs a warning naming them; remove them once imported.
+The server never does this. A server whose configuration still sets any of
+these keys logs a warning naming them; remove them once imported.
 
 `authorized_fetch` set in the instance configuration, or forced by limited
 federation mode, decides whatever is saved; the settings then list it under

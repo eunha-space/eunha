@@ -8,6 +8,10 @@
 //! Mastodon does, so an instance upgrading runs this once to keep what it
 //! served. Nothing already saved is overwritten, and running it again
 //! changes nothing.
+//!
+//! `eunha migrate` runs it by itself, once, for a database that was serving
+//! when migration 023 was applied ([`import_if_owed`]), so that no deploy has
+//! to remember it.
 
 use serde_yaml::Value;
 use sqlx::PgPool;
@@ -133,7 +137,42 @@ pub async fn import_config(
     if dry_run {
         tx.rollback().await?;
     } else {
+        // Whatever `eunha migrate` still owed this database, this was it.
+        sqlx::query("DELETE FROM eunha.site_settings_import")
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
     }
     Ok(report)
+}
+
+/// `eunha migrate`'s share of [`import_config`]: run it if the database
+/// still owes it — it was serving when migration 023 was applied, and has not
+/// been imported into since — and say what it wrote; `None` when nothing was
+/// owed.
+///
+/// # Errors
+///
+/// When the database cannot be read or written.
+pub async fn import_if_owed(
+    db: &PgPool,
+    instance: &InstanceConfig,
+) -> anyhow::Result<Option<Report>> {
+    if !owed(db).await? {
+        return Ok(None);
+    }
+    import_config(db, instance, false).await.map(Some)
+}
+
+/// Whether `eunha migrate` still owes this database [`import_config`].
+///
+/// # Errors
+///
+/// When the database cannot be read.
+pub async fn owed(db: &PgPool) -> anyhow::Result<bool> {
+    Ok(
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM eunha.site_settings_import)")
+            .fetch_one(db)
+            .await?,
+    )
 }
