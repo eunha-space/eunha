@@ -531,6 +531,7 @@ pub async fn get_notifications(
         &uri,
         bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
     );
+    crate::email_subscriptions::fill(&state, result.iter_mut().map(|n| &mut n.account)).await;
     Ok((resp_headers, Json(result)))
 }
 
@@ -1056,7 +1057,8 @@ pub async fn get_notifications_v2(
         });
     }
 
-    let accounts_vec: Vec<_> = accounts_map.into_values().collect();
+    let mut accounts_vec: Vec<_> = accounts_map.into_values().collect();
+    crate::email_subscriptions::fill(&state, accounts_vec.iter_mut()).await;
     let partial_accounts = if expand_accounts == "partial_avatars" {
         Some(
             accounts_vec
@@ -1668,6 +1670,7 @@ pub async fn get_notification_requests(
         .zip(result.last())
         .map(|(n, o)| (n.id.as_str(), o.id.as_str()));
     let resp_headers = super::link_headers(&req_headers, &uri, bounds);
+    crate::email_subscriptions::fill(&state, result.iter_mut().map(|n| &mut n.account)).await;
     Ok((resp_headers, Json(result)))
 }
 
@@ -1857,6 +1860,7 @@ pub async fn get_notification_request(
         m.get(&acc.id).cloned().unwrap_or_default()
     };
     apply_account_stats(&state, &mut api_account, acc.id).await;
+    crate::email_subscriptions::fill(&state, std::iter::once(&mut api_account)).await;
     Ok(Json(NotificationRequest {
         id: r.id.to_string(),
         created_at: super::convert::mastodon_date(r.created_at),
@@ -1990,6 +1994,7 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         m.get(&from_account.id).cloned().unwrap_or_default()
     };
     apply_account_stats(state, &mut notif_account, from_account.id).await;
+    crate::email_subscriptions::fill(state, std::iter::once(&mut notif_account)).await;
     Ok(Notification {
         id: n.id.to_string(),
         notification_type: n.r#type.clone().unwrap_or_default(),

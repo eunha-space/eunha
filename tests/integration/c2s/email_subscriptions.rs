@@ -715,3 +715,46 @@ async fn test_unconfirmed_subscriptions_are_cleaned_up() {
             .unwrap();
     assert_eq!(left, vec!["confirmed@example.com", "new@example.com"]);
 }
+
+/// Accounts embedded in statuses and notifications carry
+/// `email_subscriptions` too, as Mastodon's serializer gives every account.
+#[tokio::test]
+async fn test_embedded_accounts_say_whether_they_offer_subscriptions() {
+    let ctx = TestContext::new("email-subs-embedded").await;
+    offer(&ctx).await;
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "for subscribers", "public")
+        .await;
+    assert_eq!(post["account"]["email_subscriptions"], true);
+    let bob_post = ctx
+        .api
+        .post_status(&ctx.bob_token, "not offered", "public")
+        .await;
+    assert_eq!(bob_post["account"]["email_subscriptions"], false);
+
+    // Bob favourites alice's post; alice's notification names bob.
+    ctx.api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/favourite",
+                post["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    let notifications: Vec<serde_json::Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let favourite = notifications
+        .iter()
+        .find(|n| n["type"] == "favourite")
+        .expect("a favourite notification");
+    assert_eq!(favourite["account"]["email_subscriptions"], false);
+    assert_eq!(favourite["status"]["account"]["email_subscriptions"], true);
+}

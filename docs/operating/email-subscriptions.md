@@ -49,11 +49,9 @@ Three things have to agree before an account can be subscribed to:
 While all three hold, the account's API entity carries
 `"email_subscriptions": true` (and `false` for every other account; the
 attribute is absent while the feature is off), and eunha's profile page shows
-signed-out visitors the form. Eunha adds the attribute to the account
-endpoints (one account, lookup, the batch and list endpoints, and
-`verify_credentials`) but not yet to the accounts embedded in statuses and
-notifications, which Mastodon's serializer also gives it; that gap is a bug,
-and clients read it from the profile.
+signed-out visitors the form. Every serialized account carries the
+attribute, as with Mastodon's serializer: the account endpoints, and the
+accounts embedded in statuses and notifications.
 
 
 What a subscriber goes through

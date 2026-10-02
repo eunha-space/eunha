@@ -848,6 +848,29 @@ pub async fn run_cleanup(state: AppState) {
     }
 }
 
+/// `AccountSerializer#email_subscriptions` for accounts already serialized:
+/// set while the feature is enabled, left out otherwise.
+pub async fn fill<'a>(
+    state: &AppState,
+    accounts: impl IntoIterator<Item = &'a mut crate::api::mastodon::types::Account>,
+) {
+    if !enabled(state).await {
+        return;
+    }
+    let mut accounts: Vec<&mut crate::api::mastodon::types::Account> =
+        accounts.into_iter().collect();
+    let ids: Vec<i64> = accounts.iter().filter_map(|a| a.id.parse().ok()).collect();
+    let offering = offering(state, &ids).await;
+    for account in &mut accounts {
+        account.email_subscriptions = Some(
+            account
+                .id
+                .parse::<i64>()
+                .is_ok_and(|id| offering.contains(&id)),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
