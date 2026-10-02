@@ -11,7 +11,6 @@ use super::scheduled_statuses::ScheduledStatusResponse;
 use super::{
     accounts::{batch_account_emojis, batch_account_roles, batch_accounts_to_api},
     convert::{account_from_db, status_from_db},
-    formatting::{HASHTAG_RE, MENTION_RE},
     status_serialize::{
         batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
         batch_status_mentions, batch_status_polls, batch_statuses_tags, build_status,
@@ -2164,37 +2163,32 @@ pub async fn build_viewer_context(
         }))
 }
 
+/// `Extractor.extract_hashtags`, each name once, lowercased.
 pub fn extract_hashtags(text: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
-    HASHTAG_RE
-        .captures_iter(text)
-        .filter_map(|c| {
-            let tag = c[2].to_lowercase();
-            if seen.insert(tag.clone()) {
-                Some(tag)
-            } else {
-                None
+    crate::formatter::extractor::extract_hashtags(text)
+        .into_iter()
+        .filter_map(|e| match e.kind {
+            crate::formatter::extractor::Kind::Hashtag(tag) => {
+                let tag = tag.to_lowercase();
+                seen.insert(tag.clone()).then_some(tag)
             }
+            _ => None,
         })
         .collect()
 }
 
+/// `text.scan(Account::MENTION_RE)`, as `ProcessMentionsService` reads it:
+/// each username and domain once, lowercased.
 pub fn extract_mention_handles(text: &str) -> Vec<(String, Option<String>)> {
     let mut seen = std::collections::HashSet::new();
-    MENTION_RE
-        .captures_iter(text)
-        .filter_map(|c| {
-            let username = c[2].to_lowercase();
-            let domain = c.get(3).map(|m| m.as_str().to_lowercase());
-            let key = match &domain {
-                Some(d) => format!("{}@{}", username, d),
-                None => username.clone(),
-            };
-            if seen.insert(key) {
-                Some((username, domain))
-            } else {
-                None
-            }
+    crate::formatter::extractor::mention_handles(text)
+        .into_iter()
+        .filter_map(|(username, domain)| {
+            let username = username.to_lowercase();
+            let domain = domain.map(|d| d.to_lowercase());
+            seen.insert((username.clone(), domain.clone()))
+                .then_some((username, domain))
         })
         .collect()
 }

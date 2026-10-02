@@ -51,12 +51,17 @@ struct Row {
     updated_at: NaiveDateTime,
 }
 
-impl From<Row> for AdminAnnouncement {
-    fn from(r: Row) -> Self {
+impl Row {
+    fn into_api(self, domain: &str) -> AdminAnnouncement {
+        let r = self;
         let date = super::super::convert::mastodon_date;
-        Self {
+        AdminAnnouncement {
             id: r.id.to_string(),
-            content: super::super::formatting::text_to_html(&r.text),
+            // `linkify`, without the database to look mentions up in.
+            content: crate::formatter::text::format(
+                &r.text,
+                &crate::formatter::Options::new(domain),
+            ),
             text: r.text,
             published: r.published,
             published_at: r.published_at.map(date),
@@ -138,7 +143,11 @@ pub async fn list_admin_announcements(
     )
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().map(Into::into).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| r.into_api(&state.urls.local_domain))
+            .collect(),
+    ))
 }
 
 /// `GET /api/v1/admin/announcements/:id`: `Announcements#edit`.
@@ -149,7 +158,7 @@ pub async fn get_admin_announcement(
 ) -> AppResult<Json<AdminAnnouncement>> {
     let row = find(&state, id).await?;
     authorize(&state, &auth, false).await?;
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -261,7 +270,7 @@ pub async fn create_admin_announcement(
     if row.published {
         crate::announcements::publish_later(&state, row.id);
     }
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
 /// `PATCH /api/v1/admin/announcements/:id`: `Announcements#update`. A
@@ -298,7 +307,7 @@ pub async fn update_admin_announcement(
     if row.published {
         crate::announcements::publish_later(&state, row.id);
     }
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
 /// `POST /api/v1/admin/announcements/:id/publish`: `publish!`, logged as an
@@ -325,7 +334,7 @@ pub async fn publish_admin_announcement(
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
     crate::announcements::publish_later(&state, id);
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
 /// `POST /api/v1/admin/announcements/:id/unpublish`: `unpublish!`, logged as
@@ -352,7 +361,7 @@ pub async fn unpublish_admin_announcement(
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
     crate::announcements::unpublish(&state, id);
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 
 /// `DELETE /api/v1/admin/announcements/:id`: `destroy!`, with its dismissals
@@ -421,15 +430,16 @@ pub async fn preview_admin_announcement(
     .fetch_one(&state.db)
     .await?;
     Ok(Json(AnnouncementPreview {
-        announcement: row.into(),
+        announcement: row.into_api(&state.urls.local_domain),
         user_count,
     }))
 }
 
 async fn mail(state: &AppState, to: &str, text: &str) {
+    let text = super::super::formatting::linkify(state, text).await;
     if let Err(error) = state
         .email
-        .send_announcement_published(to, &state.instance.domain, text)
+        .send_announcement_published(to, &state.instance.domain, &text)
         .await
     {
         tracing::warn!(%error, "could not mail an announcement");
@@ -481,5 +491,5 @@ pub async fn distribute_admin_announcement(
             mail(&background, &email, &text).await;
         }
     });
-    Ok(Json(row.into()))
+    Ok(Json(row.into_api(&state.urls.local_domain)))
 }

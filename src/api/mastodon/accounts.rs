@@ -1812,7 +1812,7 @@ pub async fn batch_accounts_to_api(
     } else {
         None
     };
-    accounts
+    let mut api_accounts: Vec<super::types::Account> = accounts
         .iter()
         .map(|a| {
             let mut api = super::convert::account_from_db(&state.urls, a);
@@ -1831,7 +1831,9 @@ pub async fn batch_accounts_to_api(
             }
             api
         })
-        .collect()
+        .collect();
+    super::formatting::link_profile_mentions(state, api_accounts.iter_mut()).await;
+    api_accounts
 }
 
 /// Read a user's stored preferences from `users.settings` (a JSON object).
@@ -1915,6 +1917,7 @@ pub async fn apply_account_stats(
     if let Some(&noindex) = batch_noindex(state, &[account_id]).await.get(&account_id) {
         api.noindex = Some(noindex);
     }
+    super::formatting::link_profile_mentions(state, std::iter::once(api)).await;
 }
 
 // ── DELETE /api/v1/accounts ────────────────────────────────────────────────

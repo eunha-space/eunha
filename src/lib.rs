@@ -17,6 +17,7 @@ pub mod error;
 pub mod fasp;
 pub mod federation;
 pub mod feed;
+pub mod formatter;
 pub mod import;
 pub mod languages;
 pub mod link_verification;

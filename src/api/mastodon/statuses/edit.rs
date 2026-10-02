@@ -440,30 +440,14 @@ pub(crate) async fn status_edits(
     .fetch_all(&state.db)
     .await?;
 
-    // Every version is rendered the same way, current and historical alike.
-    // Upstream's serializer runs `status_content_format` over each edit just as
-    // it does over a status, so a past version's newlines, links and mentions
-    // come back as markup — rendering only the current one left the rest as
-    // source text, which reads as one run-on line with a bare URL in it.
-    //
-    // `status_edits` stores the source text, not the mentions that were live at
-    // the time, so the status's current mentions are the map for every version.
-    // Upstream has no better answer either: `StatusEdit` does not respond to
-    // `active_mentions`, so its preloaded accounts are just the author.
-    let current_mentions = crate::api::mastodon::status_serialize::fetch_status_mentions(state, id)
-        .await
-        .unwrap_or_default();
-    let instance_domain = state.instance.domain.clone();
-    let mention_map =
-        crate::api::mastodon::formatting::mention_map_from_api(&current_mentions, &instance_domain);
-    let is_local = account.domain.is_none();
+    // Every version is rendered the same way, current and historical alike:
+    // upstream's serializer runs `status_content_format` over each edit just
+    // as it does over a status. A `StatusEdit` does not respond to
+    // `active_mentions`, so the only account preloaded for its mentions is the
+    // author's, and a mention of anyone else stays text.
+    let local_domain = state.urls.local_domain.clone();
     let render = |text: &str| -> String {
-        if is_local {
-            crate::api::mastodon::formatting::render_content(text, &instance_domain, &mention_map)
-        } else {
-            // Remote content already arrives as HTML; cleaning is the whole job.
-            ammonia::clean(text)
-        }
+        crate::api::mastodon::formatting::status_content(&local_domain, text, &account, &[])
     };
     let current_content = render(&status.text);
 

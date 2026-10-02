@@ -370,7 +370,12 @@ pub(super) async fn notify(
     })
     .collect();
     let acct = format!("@{}@{}", target.username, state.instance.domain);
-    let text = crate::email::html_escape(text).replace('\n', "<br>");
+    // `linkify(@warning.text)`.
+    let text = if text.is_empty() {
+        String::new()
+    } else {
+        crate::api::mastodon::formatting::linkify(state, text).await
+    };
     let email = state.email.clone();
     let to = user.email.clone();
     let domain = state.instance.domain.clone();

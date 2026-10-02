@@ -608,7 +608,12 @@ pub async fn fetch_status_mentions(
                 Some(d) => format!("{}@{}", r.username, d),
                 None => r.username.clone(),
             },
-            url: r.url.unwrap_or_default(),
+            // `ActivityPub::TagManager#url_for`.
+            url: if r.domain.is_none() {
+                format!("https://{}/@{}", state.urls.local_domain, r.username)
+            } else {
+                r.url.unwrap_or_default()
+            },
             username: r.username,
         })
         .collect())
@@ -678,7 +683,12 @@ pub async fn batch_status_mentions(
                     Some(d) => format!("{}@{}", r.username, d),
                     None => r.username.clone(),
                 },
-                url: r.url.unwrap_or_default(),
+                // `ActivityPub::TagManager#url_for`.
+                url: if r.domain.is_none() {
+                    format!("https://{}/@{}", state.urls.local_domain, r.username)
+                } else {
+                    r.url.unwrap_or_default()
+                },
                 username: r.username,
             });
     }
@@ -1188,6 +1198,19 @@ pub async fn hydrate_status_stats<'a>(
             apply(rb);
         }
     }
+
+    // What `status_content_format` and `account_bio_format` need the
+    // database for: the quote fallback, and the accounts a local bio mentions.
+    super::formatting::apply_quote_fallbacks(state, &mut refs).await;
+    let mut accounts: Vec<&mut super::types::Account> = Vec::new();
+    for s in refs.iter_mut() {
+        let s = &mut **s;
+        accounts.push(&mut s.account);
+        if let Some(rb) = s.reblog.as_deref_mut() {
+            accounts.push(&mut rb.account);
+        }
+    }
+    super::formatting::link_profile_mentions(state, accounts).await;
 }
 
 /// Look up an already-cached preview card for a status. Never does network I/O.

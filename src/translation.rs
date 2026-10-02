@@ -539,7 +539,8 @@ fn build_status_translation(
         };
         match source {
             Source::Content => {
-                out.content = sanitize_strict(&unwrap_emoji_shortcodes(&translation.text));
+                out.content =
+                    crate::formatter::sanitize::strict(&unwrap_emoji_shortcodes(&translation.text));
             }
             Source::SpoilerText => {
                 out.spoiler_text = text_content(&unwrap_emoji_shortcodes(&translation.text));
@@ -746,78 +747,6 @@ fn decode_entities(text: &str) -> String {
     fragment.root_element().text().collect()
 }
 
-/// `Sanitize::Config::MASTODON_STRICT`.
-pub fn sanitize_strict(html: &str) -> String {
-    use std::sync::LazyLock;
-    static BUILDER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
-        let mut builder = ammonia::Builder::empty();
-        builder
-            .add_tags([
-                "p",
-                "br",
-                "span",
-                "a",
-                "del",
-                "s",
-                "pre",
-                "blockquote",
-                "code",
-                "b",
-                "strong",
-                "u",
-                "i",
-                "em",
-                "ul",
-                "ol",
-                "li",
-                "ruby",
-                "rt",
-                "rp",
-            ])
-            .add_generic_attributes(["lang"])
-            .add_tag_attributes("a", ["href", "class", "translate"])
-            .add_tag_attributes("span", ["class", "translate"])
-            .add_tag_attributes("ol", ["start", "reversed"])
-            .add_tag_attributes("li", ["value"])
-            .add_tag_attributes("p", ["class"])
-            .add_url_schemes([
-                "http", "https", "dat", "dweb", "ipfs", "ipns", "ssb", "gopher", "xmpp", "magnet",
-                "gemini",
-            ])
-            .url_relative(ammonia::UrlRelative::Deny)
-            .link_rel(Some("nofollow noopener"))
-            .set_tag_attribute_value("a", "target", "_blank")
-            .attribute_filter(|_element, attribute, value| match attribute {
-                // `ALLOWED_CLASS_TRANSFORMER`.
-                "class" => Some(
-                    value
-                        .split(['\t', '\n', '\x0c', '\r', ' '])
-                        .filter(|c| {
-                            ["h-", "p-", "u-", "dt-", "e-"]
-                                .iter()
-                                .any(|prefix| c.starts_with(prefix))
-                                || matches!(
-                                    *c,
-                                    "mention"
-                                        | "hashtag"
-                                        | "ellipsis"
-                                        | "invisible"
-                                        | "quote-inline"
-                                )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .into(),
-                ),
-                // `TRANSLATE_TRANSFORMER`.
-                "translate" => (value == "no").then(|| value.into()),
-                _ => Some(value.into()),
-            });
-        builder
-    });
-    BUILDER.clean(html).to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,17 +774,6 @@ mod tests {
     fn decodes_entities_without_parsing_tags() {
         assert_eq!(decode_entities("a &amp; b &lt;i&gt; <b>"), "a & b <i> <b>");
         assert_eq!(decode_entities("\nline"), "\nline");
-    }
-
-    #[test]
-    fn strict_sanitizer_keeps_mastodon_markup() {
-        let html = sanitize_strict(
-            "<p class=\"x\">a <a href=\"https://e.example/\" class=\"mention u-url\">b</a><script>x</script><img src=x></p>",
-        );
-        assert_eq!(
-            html,
-            "<p class=\"\">a <a href=\"https://e.example/\" class=\"mention u-url\" target=\"_blank\" rel=\"nofollow noopener\">b</a></p>"
-        );
     }
 
     #[test]

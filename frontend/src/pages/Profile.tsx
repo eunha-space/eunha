@@ -1084,10 +1084,11 @@ export default function Profile() {
                     field.verifiedAt ? 'bg-emerald-500/10' : ''
                   }`}
                 >
-                  <dt
-                    className="text-muted-foreground truncate font-medium"
-                    dangerouslySetInnerHTML={{ __html: field.name }}
-                  />
+                  {/* A field's name is plain text, a remote account's as it
+                      arrived: Mastodon escapes it, and so does React. */}
+                  <dt className="text-muted-foreground truncate font-medium">
+                    {field.name}
+                  </dt>
                   <dd className="flex min-w-0 items-center gap-1">
                     <span
                       className="[&_a]:text-primary min-w-0 truncate [&_a]:underline"

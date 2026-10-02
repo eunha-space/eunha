@@ -18,6 +18,7 @@ mod featured_tags;
 mod feed_access;
 mod filters;
 mod follow_requests;
+mod formatting;
 mod gates;
 mod instance;
 mod invites;

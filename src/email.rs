@@ -403,7 +403,7 @@ impl EmailSender {
 
     /// Mastodon's `UserMailer#warning`: a strike, told to the account it is
     /// against. `action` is the `AccountWarning#action` key, `text` the
-    /// moderator's (already escaped) explanation, `reason` the report category
+    /// moderator's explanation as `linkify` writes it, `reason` the report category
     /// and the rules it cited.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_warning(
@@ -463,9 +463,7 @@ impl EmailSender {
         if !explanation.is_empty() {
             body.push_str(&format!("<p>{explanation}</p>"));
         }
-        if !text.is_empty() {
-            body.push_str(&format!("<p>{text}</p>"));
-        }
+        body.push_str(text);
         if let Some((category, rules)) = reason {
             let label = match category {
                 "spam" => "Spam",
@@ -736,7 +734,7 @@ impl EmailSender {
     }
 
     /// `UserMailer#announcement_published`: the announcement's text, as
-    /// written.
+    /// `linkify` writes it.
     pub async fn send_announcement_published(
         &self,
         to: &str,
@@ -744,11 +742,10 @@ impl EmailSender {
         text: &str,
     ) -> anyhow::Result<()> {
         let domain = html_escape(instance_domain);
-        let text = html_escape(text).replace('\n', "<br>");
         let body = format!(
             "<h1>{domain} service announcement</h1>\
              <p>The administrators of {domain} are making an announcement:</p>\
-             <p>{text}</p>"
+             {text}"
         );
         self.send(to, "Service announcement", &body).await
     }

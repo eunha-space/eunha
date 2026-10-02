@@ -8,8 +8,8 @@
 use serde_json::{json, Value};
 
 use crate::api::mastodon::convert;
-use crate::api::mastodon::formatting::render_content;
 use crate::db::models::{self, vis};
+use crate::formatter::{self, MentionTarget};
 use crate::{error::AppResult, state::AppState};
 
 /// JSON-LD `@context` for a `Create(Note)` / `Note` we serve. Declares the Toot,
@@ -164,8 +164,12 @@ pub async fn build_note(
     .fetch_all(&state.db)
     .await?;
 
-    let mut mention_map: std::collections::HashMap<String, (String, String)> =
-        std::collections::HashMap::new();
+    // `preloaded_accounts` for the content: the author, then the mentioned.
+    let mut preloaded = vec![MentionTarget {
+        username: s.username.clone(),
+        domain: None,
+        url: format!("https://{domain}/@{}", s.username),
+    }];
     // Addressing (to/cc) — narrowed for silenced authors and augmented with
     // group actors' followers collections.
     let mut mention_uris: Vec<String> = Vec::new();
@@ -187,24 +191,14 @@ pub async fn build_note(
             Some(d) => format!("{}@{}", m.username, d),
             None => m.username.clone(),
         };
-        // Keys used by render_content's linkifier (lowercase user / user@domain).
-        let url_for_render = m
-            .url
-            .clone()
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| href.clone());
-        mention_map
-            .entry(m.username.to_lowercase())
-            .or_insert_with(|| (url_for_render.clone(), acct.clone()));
-        if let Some(d) = &m.domain {
-            mention_map
-                .entry(format!(
-                    "{}@{}",
-                    m.username.to_lowercase(),
-                    d.to_lowercase()
-                ))
-                .or_insert_with(|| (url_for_render.clone(), acct.clone()));
-        }
+        preloaded.push(MentionTarget {
+            username: m.username.clone(),
+            domain: m.domain.clone(),
+            url: match &m.domain {
+                None => format!("https://{domain}/@{}", m.username),
+                Some(_) => m.url.clone().unwrap_or_default(),
+            },
+        });
         mention_tags.push(json!({
             "type": "Mention",
             "href": href.clone(),
@@ -303,7 +297,19 @@ pub async fn build_note(
     }
 
     // ── Content + addressing ────────────────────────────────────────────────
-    let content = render_content(&s.text, domain, &mention_map);
+    // `status_content_format`, with the quote fallback for the quoted post.
+    let quote_url = crate::api::mastodon::formatting::quote_fallback_urls(state, &[s.id])
+        .await
+        .remove(&s.id);
+    let content = formatter::html_aware(
+        &s.text,
+        true,
+        &formatter::Options {
+            preloaded_accounts: &preloaded,
+            quoted_status_url: quote_url.as_deref(),
+            ..formatter::Options::new(domain)
+        },
+    );
     let (to, cc) = vis::audience(s.visibility, &followers_url, &mention_uris);
 
     let mut note = json!({

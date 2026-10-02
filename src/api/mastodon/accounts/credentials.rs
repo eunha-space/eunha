@@ -576,25 +576,19 @@ pub async fn patch_profile(
     let fields = crate::api::mastodon::convert::fields_from_db(
         a.fields.as_ref().unwrap_or(&serde_json::json!([])),
     );
-    let formatted_fields = fields
-        .iter()
-        .map(|f| crate::api::mastodon::types::Field {
-            name: f.name.clone(),
-            value: crate::api::mastodon::formatting::format_field_value(&f.value),
-            verified_at: f.verified_at.clone(),
-        })
-        .collect();
+    // `ProfileSerializer`: `account_bio_format` and `account_field_value_format`.
+    let mut texts: Vec<&str> = vec![&a.note];
+    texts.extend(fields.iter().map(|f| f.value.as_str()));
+    let lookup = crate::api::mastodon::formatting::mention_lookup(&state, &texts).await;
+    let formatted_fields =
+        crate::api::mastodon::formatting::field_values(domain, fields.clone(), true, &lookup);
     Ok(Json(crate::api::mastodon::types::Profile {
         id: a.id.to_string(),
         username: a.username.clone(),
         display_name: a.display_name.clone(),
         note: a.note.clone(),
         fields,
-        formatted_note: crate::api::mastodon::formatting::render_content(
-            &a.note,
-            domain,
-            &std::collections::HashMap::new(),
-        ),
+        formatted_note: crate::formatter::local_bio(&a.note, domain, &lookup),
         formatted_fields,
         avatar: Some(crate::api::mastodon::convert::account_avatar_url_for(
             &state.urls,
@@ -754,25 +748,19 @@ async fn build_profile(
     let fields = crate::api::mastodon::convert::fields_from_db(
         a.fields.as_ref().unwrap_or(&serde_json::json!([])),
     );
-    let formatted_fields = fields
-        .iter()
-        .map(|f| crate::api::mastodon::types::Field {
-            name: f.name.clone(),
-            value: crate::api::mastodon::formatting::format_field_value(&f.value),
-            verified_at: f.verified_at.clone(),
-        })
-        .collect();
+    // `ProfileSerializer`: `account_bio_format` and `account_field_value_format`.
+    let mut texts: Vec<&str> = vec![&a.note];
+    texts.extend(fields.iter().map(|f| f.value.as_str()));
+    let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
+    let formatted_fields =
+        crate::api::mastodon::formatting::field_values(domain, fields.clone(), true, &lookup);
     let profile = crate::api::mastodon::types::Profile {
         id: a.id.to_string(),
         username: a.username.clone(),
         display_name: a.display_name.clone(),
         note: a.note.clone(),
         fields,
-        formatted_note: crate::api::mastodon::formatting::render_content(
-            &a.note,
-            domain,
-            &std::collections::HashMap::new(),
-        ),
+        formatted_note: crate::formatter::local_bio(&a.note, domain, &lookup),
         formatted_fields,
         avatar: Some(crate::api::mastodon::convert::account_avatar_url_for(
             &state.urls,

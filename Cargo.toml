@@ -148,15 +148,16 @@ itertools = "0.14"
 indexmap = "2"
 regex = "1"
 unicode-normalization = "0.1"
+fancy-regex = "0.16"
+idna = "1"
 unicode-segmentation = "1"
 once_cell = "1"
-ammonia = "4"
 clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 blurhash = "0.2"
 csv = "1"
 img-parts = "0.4.0"
-scraper = "0.23"
+scraper = { version = "0.23", features = ["deterministic"] }
 # The tree scraper parses into, for walking a fragment back out as HTML.
 ego-tree = "0.10"
 

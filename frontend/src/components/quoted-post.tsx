@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { stripQuoteFallback } from '@/lib/content.ts'
 
 // A compact, read-only rendering of a post embedded inside another: the target
 // of a quote, both when displayed on a status card and when previewed in the
@@ -29,7 +30,11 @@ export function QuotedPost({
       </div>
       <div
         className="text-foreground/90 mt-1 line-clamp-6 text-sm [&_a]:underline"
-        dangerouslySetInnerHTML={{ __html: status.content }}
+        dangerouslySetInnerHTML={{
+          __html: status.quote
+            ? stripQuoteFallback(status.content)
+            : status.content,
+        }}
       />
       {status.mediaAttachments.length > 0 && (
         <p className="text-muted-foreground mt-1 text-xs">

@@ -1,4 +1,3 @@
-use super::formatting::{format_field_value, mention_map_from_api, render_content};
 use super::types;
 use crate::db::models;
 /// Conversions from DB models → Mastodon API types.
@@ -176,23 +175,17 @@ fn status_url_from_uri(uri: &str) -> Option<String> {
 }
 
 /// Render an account bio to the HTML the API's top-level `note` field serves,
-/// mirroring Mastodon's `account_bio_format` (`html_aware_format(note, local?)`).
-/// Local bios are stored as plain text, so we linkify and wrap them on the fly;
-/// the raw source stays available through `source.note`. Remote bios already
-/// arrive as HTML from federation and are served as-is.
+/// Mastodon's `account_bio_format` (`html_aware_format(note, local?)`): a local
+/// bio is stored as plain text and goes through `TextFormatter`, a remote one
+/// arrived as HTML and is sanitized with `MASTODON_STRICT`. Mentions in a
+/// local bio are left unlinked here, where there is no database to look them
+/// up in; [`super::formatting::link_profile_mentions`] links them.
 fn render_account_note(urls: &InstanceUrls, a: &models::Account) -> String {
-    if a.note.is_empty() {
-        return String::new();
-    }
-    if a.domain.is_none() {
-        render_content(
-            &a.note,
-            &urls.local_domain,
-            &std::collections::HashMap::new(),
-        )
-    } else {
-        a.note.clone()
-    }
+    crate::formatter::html_aware(
+        &a.note,
+        a.domain.is_none(),
+        &crate::formatter::Options::new(&urls.local_domain),
+    )
 }
 
 /// What a viewing account knows about its relationship to the account being
@@ -390,18 +383,14 @@ pub fn account_from_db_for_viewer(
         emojis: vec![],
         fields: if suspended {
             vec![]
-        } else if a.domain.is_none() {
-            // Local accounts: format field values as HTML (linkify URLs) matching Mastodon's FieldSerializer
-            fields_from_db(a.fields.as_ref().unwrap_or(&serde_json::json!([])))
-                .into_iter()
-                .map(|f| types::Field {
-                    name: f.name,
-                    value: format_field_value(&f.value),
-                    verified_at: f.verified_at,
-                })
-                .collect()
         } else {
-            fields_from_db(a.fields.as_ref().unwrap_or(&serde_json::json!([])))
+            // `account_field_value_format`.
+            super::formatting::field_values(
+                &urls.local_domain,
+                fields_from_db(a.fields.as_ref().unwrap_or(&serde_json::json!([]))),
+                a.domain.is_none(),
+                &[],
+            )
         },
         roles: vec![],
         moved: None,
@@ -566,30 +555,6 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
     }
 }
 
-/// Render status content from raw text, matching the Mastodon convention:
-/// - local statuses: render from plaintext (linkify mentions/hashtags/URLs)
-/// - remote statuses: sanitize the ActivityPub HTML
-fn render_status_content(
-    s: &models::Status,
-    account: &models::Account,
-    mentions: &[types::StatusMention],
-) -> String {
-    if account.domain.is_none() {
-        // Local: text is raw plaintext, render to annotated HTML
-        let domain = s
-            .uri
-            .as_deref()
-            .and_then(|uri| uri.strip_prefix("https://"))
-            .and_then(|rest| rest.split('/').next())
-            .unwrap_or("");
-        let map = mention_map_from_api(mentions, domain);
-        render_content(&s.text, domain, &map)
-    } else {
-        // Remote: text is ActivityPub HTML, sanitize before serving
-        ammonia::clean(&s.text)
-    }
-}
-
 fn build_quote_approval(
     s: &models::Status,
     viewer: Option<&StatusViewerContext>,
@@ -666,7 +631,7 @@ pub fn status_from_db_with_app(
     mentions: &[types::StatusMention],
     reblog_mentions: &[types::StatusMention],
 ) -> types::Status {
-    let content = render_status_content(s, account, mentions);
+    let content = super::formatting::status_content(&urls.local_domain, &s.text, account, mentions);
     let reblog_status = reblog.map(|(rs, ra, rm)| {
         Box::new(status_from_db(
             urls,

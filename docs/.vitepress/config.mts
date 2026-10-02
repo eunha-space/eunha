@@ -46,6 +46,7 @@ export default defineConfig({
           { text: "Tracking Mastodon", link: "/mastodon/tracking" },
           { text: "Signing keys", link: "/mastodon/signing-keys" },
           { text: "HTTP signatures", link: "/mastodon/http-signatures" },
+          { text: "Content formatting", link: "/mastodon/formatting" },
           { text: "API entity parity", link: "/mastodon/entity-parity" },
           { text: "Differential testing", link: "/mastodon/differential-testing" },
           { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },

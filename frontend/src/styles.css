@@ -271,3 +271,20 @@
     left: var(--adv-left, 1rem);
   }
 }
+
+/* `TextFormatter.shortened_link` writes a URL as three spans: the scheme in
+   an `invisible` one, then at most 30 characters, marked `ellipsis` when the
+   rest is cut, then the rest in another `invisible` one. Copying the link
+   copies all of it. These are Mastodon's own rules for them. */
+.invisible {
+  font-size: 0;
+  line-height: 0;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.ellipsis::after {
+  content: '…';
+}

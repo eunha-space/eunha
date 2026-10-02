@@ -182,11 +182,14 @@ async fn collection_entity(
         .unwrap_or_else(|| collection_uri(domain, c.id));
     let url = c.url.clone().unwrap_or_else(|| uri.clone());
 
-    // For remote collections the description is sanitized HTML; locally it is plain.
+    // `REST::CollectionSerializer#description`: a local collection's as
+    // written, a remote one's HTML through `MASTODON_STRICT`.
     let description = if c.local {
         c.description.clone()
     } else {
-        c.description_html.clone()
+        c.description_html
+            .as_deref()
+            .map(crate::formatter::sanitize::strict)
     };
 
     let tag = c

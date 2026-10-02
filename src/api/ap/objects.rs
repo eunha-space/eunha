@@ -201,38 +201,39 @@ pub async fn actor_json(
     let header_url = crate::api::mastodon::convert::account_header_url_for(&state.urls, account);
 
     // Profile metadata fields, serialized as `PropertyValue` attachments so
-    // remote servers show the account's fields (Mastodon's `virtual_attachments`).
-    let attachment: Vec<Value> = account
+    // remote servers show the account's fields (Mastodon's `virtual_attachments`),
+    // each value through `account_field_value_format`, and the bio through
+    // `account_bio_format`, mentions in both looked up as `TextFormatter` does.
+    let raw_fields: Vec<(&str, &str)> = account
         .fields
         .as_ref()
         .and_then(|f| f.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|f| {
-                    let name = f.get("name")?.as_str()?;
-                    let value = f.get("value")?.as_str()?;
-                    Some(json!({
-                        "type": "PropertyValue",
-                        "name": name,
-                        "value": crate::api::mastodon::formatting::format_field_value(value),
-                    }))
-                })
+                .filter_map(|f| Some((f.get("name")?.as_str()?, f.get("value")?.as_str()?)))
                 .collect()
         })
         .unwrap_or_default();
+    let mut texts: Vec<&str> = vec![&account.note];
+    texts.extend(raw_fields.iter().map(|(_, value)| *value));
+    let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
+    let attachment: Vec<Value> = raw_fields
+        .iter()
+        .map(|(name, value)| {
+            json!({
+                "type": "PropertyValue",
+                "name": name,
+                "value": crate::formatter::local_field_value(value, domain, &lookup),
+            })
+        })
+        .collect();
 
     // Custom emoji used in the display name / bio, serialized as `Emoji` tags so
     // remote servers can render them (Mastodon's `virtual_tags`, emojis part).
     let tag =
         crate::api::ap::note::emoji_tags_for(state, &account.display_name, &account.note).await?;
 
-    // The `note` column holds the raw bio; the AP actor `summary` must be HTML,
-    // so render it on the fly (Mastodon's `account_bio_format`).
-    let summary = crate::api::mastodon::formatting::render_content(
-        &account.note,
-        domain,
-        &std::collections::HashMap::new(),
-    );
+    let summary = crate::formatter::local_bio(&account.note, domain, &lookup);
 
     // Local accounts store an empty `url` column; the human profile URL is
     // `/@username` (matching the Mastodon API serializer and Mastodon core).

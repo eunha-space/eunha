@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are fifty-two. They cover:
+At the time of writing there are fifty-five. They cover:
 
  -  integrity proofs on outgoing activities, and Linked Data signatures
     over contexts eunha does not ship;
@@ -34,7 +34,8 @@ At the time of writing there are fifty-two. They cover:
  -  three details of delivery failures;
  -  the admin custom emoji API;
  -  the private metrics listener;
- -  two details of link preview cards;
+ -  two details of link preview cards, and the top-level domains a URL in
+    local text is linked under;
  -  the email subscription API, unsubscribe links, and where the wait
     before mailing subscribers runs;
  -  how a remote thread's replies are fetched, how async refresh ids are
@@ -57,7 +58,9 @@ At the time of writing there are fifty-two. They cover:
     sending one runs;
  -  the DeepL endpoint setting;
  -  the auxiliary service provider admin API, where their workers run, and
-    when an account search asks them.
+    when an account search asks them;
+ -  two post searches Mastodon's query transformer cannot read, and the
+    peers search falling back to the database.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

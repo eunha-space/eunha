@@ -4,7 +4,6 @@ use axum::{
     Json,
 };
 
-use super::formatting::text_to_html;
 use super::types::{Announcement, AnnouncementReaction};
 use crate::{error::AppResult, middleware::AuthenticatedUser, state::AppState};
 
@@ -113,7 +112,7 @@ pub async fn render(
         }
         result.push(Announcement {
             id: r.id.to_string(),
-            content: text_to_html(&r.text),
+            content: super::formatting::linkify(state, &r.text).await,
             all_day: r.all_day,
             starts_at: r.starts_at.map(super::convert::mastodon_date),
             ends_at: r.ends_at.map(super::convert::mastodon_date),

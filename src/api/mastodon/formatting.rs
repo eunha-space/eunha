@@ -1,9 +1,16 @@
-use once_cell::sync::Lazy;
-use regex::Regex;
+//! Formatting as the API serializers use it: Mastodon's `FormattingHelper`
+//! over [`crate::formatter`], with the database lookups `TextFormatter`
+//! makes along the way, and `StatusLengthValidator`.
+
 use std::collections::HashMap;
+
+use sqlx::Row;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::types::StatusMention;
+use super::types;
+use crate::db::models;
+use crate::formatter::{self, extractor, MentionTarget, Options};
+use crate::state::AppState;
 
 /// Number of characters a URL counts as, regardless of its real length
 /// (Mastodon `StatusLengthValidator::URL_PLACEHOLDER_CHARS`).
@@ -18,284 +25,351 @@ pub fn countable_length(text: &str, spoiler_text: &str) -> usize {
     combined.graphemes(true).count()
 }
 
-/// Rewrite `text` into the form Mastodon counts: URLs → a fixed placeholder,
-/// mentions → `@username` with the domain stripped. Overlapping entities are
-/// resolved earliest-first, mirroring `Extractor.remove_overlapping_entities`.
+/// `StatusLengthValidator#countable_text`: the URLs and mentions entity
+/// extraction finds, rewritten to a fixed placeholder and to `@username`.
 fn countable_text(text: &str) -> String {
-    if text.is_empty() {
+    if formatter::text::blank(text) {
         return String::new();
     }
-
-    struct Entity {
-        start: usize,
-        end: usize,
-        replacement: String,
-    }
-    let mut entities: Vec<Entity> = Vec::new();
-
-    for m in URL_RE.find_iter(text) {
-        entities.push(Entity {
-            start: m.start(),
-            end: m.end(),
-            replacement: "x".repeat(URL_PLACEHOLDER_CHARS),
-        });
-    }
-    for caps in MENTION_RE.captures_iter(text) {
-        // Group 2 is the username; the literal '@' sits one byte before it.
-        let user = caps.get(2).unwrap();
-        let at = user.start() - 1;
-        let end = caps.get(3).map(|g| g.end()).unwrap_or_else(|| user.end());
-        entities.push(Entity {
-            start: at,
-            end,
-            replacement: format!("@{}", user.as_str()),
-        });
-    }
-
-    entities.sort_by_key(|e| e.start);
+    let mut entities = extractor::extract_urls(text);
+    entities.extend(extractor::extract_mentions(text));
     let mut result = String::with_capacity(text.len());
     let mut last = 0usize;
-    for e in &entities {
-        if e.start < last {
-            continue; // overlaps an already-rewritten entity
+    for entity in extractor::remove_overlapping_entities(entities) {
+        result.push_str(&text[last..entity.start]);
+        match &entity.kind {
+            extractor::Kind::Mention(screen_name) => {
+                result.push('@');
+                result.push_str(screen_name.split('@').next().unwrap_or_default());
+            }
+            _ => result.push_str(&"x".repeat(URL_PLACEHOLDER_CHARS)),
         }
-        result.push_str(&text[last..e.start]);
-        result.push_str(&e.replacement);
-        last = e.end;
+        last = entity.end;
     }
     result.push_str(&text[last..]);
     result
 }
 
-pub static HASHTAG_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(^|[\s,.:;!?\(\[\{/])#([a-zA-Z][a-zA-Z0-9_]*)").unwrap());
-
-pub static MENTION_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(^|[\s,.:;!?\(\[\{/])@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9._:\-]+))?").unwrap()
-});
-
-pub static URL_RE: Lazy<Regex> = Lazy::new(|| Regex::new("https?://[^\\s<>&\"]+").unwrap());
-
-fn html_escape_attr(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn html_escape_text(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-pub fn render_content(
-    text: &str,
-    domain: &str,
-    mention_map: &HashMap<String, (String, String)>,
-) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-    text.split("\n\n")
-        .map(|para| {
-            let linked = linkify_entities(para, domain, mention_map);
-            format!("<p>{}</p>", linked.replace('\n', "<br />"))
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-fn linkify_entities(
-    text: &str,
-    domain: &str,
-    mention_map: &HashMap<String, (String, String)>,
-) -> String {
-    struct Entity {
-        start: usize,
-        end: usize,
-        html: String,
-    }
-
-    let mut entities: Vec<Entity> = Vec::new();
-
-    for cap in HASHTAG_RE.captures_iter(text) {
-        let full = cap.get(0).unwrap();
-        let prefix_len = cap.get(1).unwrap().as_str().len();
-        let tag_text = &cap[2];
-        let tag_lower = tag_text.to_lowercase();
-        let url = format!(
-            "https://{}/tags/{}",
-            domain,
-            urlencoding::encode(&tag_lower)
-        );
-        entities.push(Entity {
-            start: full.start() + prefix_len,
-            end: full.end(),
-            html: format!(
-                r#"<a href="{}" class="mention hashtag" rel="tag">#<span>{}</span></a>"#,
-                html_escape_attr(&url),
-                html_escape_text(tag_text),
-            ),
-        });
-    }
-
-    for cap in MENTION_RE.captures_iter(text) {
-        let full = cap.get(0).unwrap();
-        let prefix_len = cap.get(1).unwrap().as_str().len();
-        let username = cap[2].to_lowercase();
-        let mention_domain = cap.get(3).map(|m| m.as_str().to_lowercase());
-        let key = match &mention_domain {
-            Some(d) => format!("{}@{}", username, d),
-            None => username.clone(),
-        };
-        if let Some((url, display)) = mention_map.get(&key) {
-            entities.push(Entity {
-                start: full.start() + prefix_len,
-                end: full.end(),
-                html: format!(
-                    r#"<span class="h-card" translate="no"><a href="{}" class="u-url mention">@<span>{}</span></a></span>"#,
-                    html_escape_attr(url),
-                    html_escape_text(display),
-                ),
-            });
-        }
-    }
-
-    for m in URL_RE.find_iter(text) {
-        let url = m.as_str();
-        entities.push(Entity {
-            start: m.start(),
-            end: m.end(),
-            html: format!(
-                r#"<a href="{}" target="_blank" rel="nofollow noopener noreferrer">{}</a>"#,
-                html_escape_attr(url),
-                html_escape_text(url),
-            ),
-        });
-    }
-
-    entities.sort_by_key(|e| e.start);
-
-    let mut result = String::with_capacity(text.len() * 2);
-    let mut last_end = 0usize;
-    for entity in &entities {
-        if entity.start < last_end {
-            continue;
-        }
-        result.push_str(&html_escape_text(&text[last_end..entity.start]));
-        result.push_str(&entity.html);
-        last_end = entity.end;
-    }
-    result.push_str(&html_escape_text(&text[last_end..]));
-    result
-}
-
-/// Convert plain announcement text to HTML, wrapping paragraphs and linkifying URLs.
-/// Mirrors Mastodon's `AnnouncementSerializer#content` which calls `linkify(object.text)`.
-pub fn text_to_html(text: &str) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-    text.split("\n\n")
-        .map(|para| {
-            let linked = linkify_urls(para);
-            format!("<p>{}</p>", linked.replace('\n', "<br />"))
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-pub fn format_field_value(value: &str) -> String {
-    if value.is_empty() {
-        return String::new();
-    }
-    linkify_urls(value)
-}
-
-fn linkify_urls(text: &str) -> String {
-    struct Span {
-        start: usize,
-        end: usize,
-        html: String,
-    }
-    let mut spans: Vec<Span> = Vec::new();
-    for m in URL_RE.find_iter(text) {
-        let url = m.as_str();
-        spans.push(Span {
-            start: m.start(),
-            end: m.end(),
-            html: format!(
-                r#"<a href="{}" target="_blank" rel="nofollow noopener noreferrer">{}</a>"#,
-                html_escape_attr(url),
-                html_escape_text(url),
-            ),
-        });
-    }
-    let mut result = String::with_capacity(text.len() * 2);
-    let mut last_end = 0usize;
-    for span in &spans {
-        result.push_str(&html_escape_text(&text[last_end..span.start]));
-        result.push_str(&span.html);
-        last_end = span.end;
-    }
-    result.push_str(&html_escape_text(&text[last_end..]));
-    result
-}
-
-/// Build a mention lookup map from a `StatusMention` slice.
-/// Keys are the lowercase acct handle (`user` or `user@domain`).
-pub fn mention_map_from_api(
-    mentions: &[StatusMention],
-    local_domain: &str,
-) -> HashMap<String, (String, String)> {
-    let mut map = HashMap::new();
-    for m in mentions {
-        let key_short = m.username.to_lowercase();
-        map.entry(key_short.clone())
-            .or_insert_with(|| (m.url.clone(), m.acct.clone()));
-        if m.acct.contains('@') {
-            map.entry(m.acct.to_lowercase())
-                .or_insert_with(|| (m.url.clone(), m.acct.clone()));
-        } else if !local_domain.is_empty() {
-            // A local mention's acct is bare (`bob`), but the source text may use
-            // the fully-qualified `@bob@this.instance` form; map that key too so
-            // it still renders as a link.
-            map.entry(format!("{}@{}", key_short, local_domain.to_lowercase()))
-                .or_insert_with(|| (m.url.clone(), m.acct.clone()));
-        }
-    }
-    map
-}
-
 /// `PlainTextFormatter`, as `FormattingHelper.extract_status_plain_text` uses it
-/// for a remote post: line breaks and paragraph breaks kept, tags dropped,
-/// entities decoded.
+/// for a remote post.
 pub fn html_to_plain_text(html: &str) -> String {
-    static BR: once_cell::sync::Lazy<regex::Regex> =
-        once_cell::sync::Lazy::new(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("valid regex"));
-    static PARAGRAPH: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
-        regex::Regex::new(r"(?i)</p>\s*<p[^>]*>").expect("valid regex")
-    });
-    let html = BR.replace_all(html, "\n");
-    let html = PARAGRAPH.replace_all(&html, "\n\n");
-    scraper::Html::parse_fragment(&html)
-        .root_element()
-        .text()
-        .collect::<String>()
+    formatter::plain_text::format(html, false)
+}
+
+/// The account a local status is written by, as `preloaded_accounts` holds it.
+pub fn mention_target_for_account(local_domain: &str, account: &models::Account) -> MentionTarget {
+    MentionTarget {
+        username: account.username.clone(),
+        domain: account.domain.clone(),
+        url: account_url(
+            local_domain,
+            &account.username,
+            account.domain.as_deref(),
+            account.url.as_deref(),
+        ),
+    }
+}
+
+/// `ActivityPub::TagManager#url_for` an account.
+fn account_url(
+    local_domain: &str,
+    username: &str,
+    domain: Option<&str>,
+    url: Option<&str>,
+) -> String {
+    match domain {
+        None => format!("https://{local_domain}/@{username}"),
+        Some(_) => url.unwrap_or_default().to_owned(),
+    }
+}
+
+/// A status's mention, as `preloaded_accounts` holds the account.
+pub fn mention_target_for_mention(
+    local_domain: &str,
+    mention: &types::StatusMention,
+) -> MentionTarget {
+    let domain = mention.acct.split_once('@').map(|(_, d)| d.to_owned());
+    MentionTarget {
+        username: mention.username.clone(),
+        url: if domain.is_none() {
+            format!("https://{local_domain}/@{}", mention.username)
+        } else {
+            mention.url.clone()
+        },
+        domain,
+    }
+}
+
+/// `FormattingHelper#status_content_format` for a status that has no quote
+/// (see [`apply_quote_fallbacks`]): a local one's text through
+/// `TextFormatter`, its author and mentioned accounts preloaded, a remote
+/// one's HTML sanitized.
+pub fn status_content(
+    local_domain: &str,
+    text: &str,
+    account: &models::Account,
+    mentions: &[types::StatusMention],
+) -> String {
+    let local = account.domain.is_none();
+    if !local {
+        return formatter::html_aware(text, false, &Options::new(local_domain));
+    }
+    let mut preloaded = vec![mention_target_for_account(local_domain, account)];
+    preloaded.extend(
+        mentions
+            .iter()
+            .map(|m| mention_target_for_mention(local_domain, m)),
+    );
+    formatter::html_aware(
+        text,
+        true,
+        &Options {
+            preloaded_accounts: &preloaded,
+            ..Options::new(local_domain)
+        },
+    )
+}
+
+/// `EntityCache#mention` for every mention `TextFormatter` would look up in
+/// `texts`: the accounts it would link to.
+pub async fn mention_lookup(state: &AppState, texts: &[&str]) -> Vec<MentionTarget> {
+    let local_domain = &state.urls.local_domain;
+    let mut usernames: Vec<String> = Vec::new();
+    let mut domains: Vec<String> = Vec::new();
+    for text in texts {
+        for (username, domain) in formatter::text::mention_lookups(text, local_domain) {
+            // `Account.find_remote` refuses this one.
+            if domain.as_deref() == Some("handle.invalid") {
+                continue;
+            }
+            usernames.push(username);
+            domains.push(domain.unwrap_or_default());
+        }
+    }
+    if usernames.is_empty() {
+        return Vec::new();
+    }
+    let rows = sqlx::query(
+        r#"SELECT DISTINCT ON (lower(a.username), COALESCE(lower(a.domain), ''))
+                  a.username, a.domain, a.url
+           FROM accounts a
+           JOIN unnest($1::text[], $2::text[]) AS h(username, domain)
+             ON lower(a.username) = lower(h.username)
+            AND COALESCE(lower(a.domain), '') = lower(h.domain)
+           ORDER BY lower(a.username), COALESCE(lower(a.domain), ''), a.id"#,
+    )
+    .bind(&usernames)
+    .bind(&domains)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    rows.into_iter()
+        .map(|row| {
+            let username: String = row.get("username");
+            let domain: Option<String> = row.get("domain");
+            let url: Option<String> = row.get("url");
+            MentionTarget {
+                url: account_url(local_domain, &username, domain.as_deref(), url.as_deref()),
+                username,
+                domain,
+            }
+        })
+        .collect()
+}
+
+/// `FormattingHelper#account_bio_format`, mentions looked up.
+pub async fn account_bio(state: &AppState, note: &str, local: bool) -> String {
+    if !local {
+        return formatter::html_aware(note, false, &Options::new(&state.urls.local_domain));
+    }
+    let lookup = mention_lookup(state, &[note]).await;
+    formatter::local_bio(note, &state.urls.local_domain, &lookup)
+}
+
+/// `linkify(text)`: announcements, warnings, strikes, report notes.
+pub async fn linkify(state: &AppState, text: &str) -> String {
+    let lookup = mention_lookup(state, &[text]).await;
+    formatter::text::format(
+        text,
+        &Options {
+            lookup: &lookup,
+            ..Options::new(&state.urls.local_domain)
+        },
+    )
+}
+
+/// `FormattingHelper#account_field_value_format` for each of `fields`.
+pub fn field_values(
+    local_domain: &str,
+    fields: Vec<types::Field>,
+    local: bool,
+    lookup: &[MentionTarget],
+) -> Vec<types::Field> {
+    fields
+        .into_iter()
+        .map(|f| types::Field {
+            value: if local {
+                formatter::local_field_value(&f.value, local_domain, lookup)
+            } else {
+                formatter::remote_field_value(&f.value, f.verified_at.is_some())
+            },
+            name: f.name,
+            verified_at: f.verified_at,
+        })
+        .collect()
+}
+
+/// `TextFormatter#to_s` reads no accounts when it has to serialize one
+/// without the database to hand, so a local account's bio and fields are
+/// rendered with their mentions unlinked; this renders them again, the
+/// mentions looked up, for every local account among `accounts` that has any.
+pub async fn link_profile_mentions<'a>(
+    state: &AppState,
+    accounts: impl IntoIterator<Item = &'a mut types::Account>,
+) {
+    let mut accounts: Vec<&mut types::Account> = accounts
+        .into_iter()
+        .filter(|a| !a.acct.contains('@'))
+        .collect();
+    let ids: Vec<i64> = accounts.iter().filter_map(|a| a.id.parse().ok()).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let rows = sqlx::query(
+        r#"SELECT id, note, fields FROM accounts
+           WHERE id = ANY($1) AND domain IS NULL
+             AND (note LIKE '%@%' OR fields::text LIKE '%@%')"#,
+    )
+    .bind(&ids)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    if rows.is_empty() {
+        return;
+    }
+    let profiles: HashMap<String, (String, Option<serde_json::Value>)> = rows
+        .into_iter()
+        .map(|row| {
+            let id: i64 = row.get("id");
+            (id.to_string(), (row.get("note"), row.get("fields")))
+        })
+        .collect();
+    let mut texts: Vec<&str> = Vec::new();
+    for (note, fields) in profiles.values() {
+        texts.push(note);
+        if let Some(arr) = fields.as_ref().and_then(|f| f.as_array()) {
+            texts.extend(arr.iter().filter_map(|f| f["value"].as_str()));
+        }
+    }
+    let lookup = mention_lookup(state, &texts).await;
+    if lookup.is_empty() {
+        return;
+    }
+    let local_domain = &state.urls.local_domain;
+    for account in accounts.iter_mut() {
+        let Some((note, fields)) = profiles.get(&account.id) else {
+            continue;
+        };
+        // An unavailable account's profile is blanked; leave it so.
+        if !account.note.is_empty() {
+            account.note = formatter::local_bio(note, local_domain, &lookup);
+        }
+        if !account.fields.is_empty() {
+            let raw =
+                super::convert::fields_from_db(fields.as_ref().unwrap_or(&serde_json::json!([])));
+            account.fields = field_values(local_domain, raw, true, &lookup);
+        }
+    }
+}
+
+/// `url_for(quoted_status) || uri_for(quoted_status)` for each local status
+/// among `status_ids` that quotes one still there: what `TextFormatter`'s
+/// quote fallback links to.
+pub async fn quote_fallback_urls(state: &AppState, status_ids: &[i64]) -> HashMap<i64, String> {
+    if status_ids.is_empty() {
+        return HashMap::new();
+    }
+    sqlx::query(
+        r#"SELECT q.status_id, qs.id AS quoted_id, qs.url, qs.uri, qa.username,
+                  qa.domain IS NULL AS local
+           FROM quotes q
+           JOIN statuses s ON s.id = q.status_id
+           JOIN accounts sa ON sa.id = s.account_id AND sa.domain IS NULL
+           JOIN statuses qs ON qs.id = q.quoted_status_id AND qs.deleted_at IS NULL
+           JOIN accounts qa ON qa.id = qs.account_id
+           WHERE q.status_id = ANY($1)"#,
+    )
+    .bind(status_ids)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| {
+        let status_id: i64 = row.get("status_id");
+        let url = if row.get::<bool, _>("local") {
+            format!(
+                "https://{}/@{}/{}",
+                state.urls.local_domain,
+                row.get::<String, _>("username"),
+                row.get::<i64, _>("quoted_id")
+            )
+        } else {
+            row.get::<Option<String>, _>("url")
+                .or_else(|| row.get::<Option<String>, _>("uri"))
+                .unwrap_or_default()
+        };
+        (status_id, url)
+    })
+    .collect()
+}
+
+/// `TextFormatter`'s quote fallback over the content of every status in
+/// `statuses`, the boosts and quotes they carry included, that is local and
+/// quotes another.
+pub async fn apply_quote_fallbacks(state: &AppState, statuses: &mut [&mut types::Status]) {
+    fn collect(s: &types::Status, ids: &mut Vec<i64>) {
+        if let Ok(id) = s.id.parse() {
+            ids.push(id);
+        }
+        if let Some(rb) = s.reblog.as_deref() {
+            collect(rb, ids);
+        }
+        if let Some(q) = s.quote.as_ref().and_then(|q| q.quoted_status.as_deref()) {
+            collect(q, ids);
+        }
+    }
+    fn apply(s: &mut types::Status, urls: &HashMap<i64, String>) {
+        if let Some(url) = s.id.parse::<i64>().ok().and_then(|id| urls.get(&id)) {
+            s.content =
+                formatter::text::add_quote_fallback(std::mem::take(&mut s.content), Some(url));
+        }
+        if let Some(rb) = s.reblog.as_deref_mut() {
+            apply(rb, urls);
+        }
+        if let Some(q) = s
+            .quote
+            .as_mut()
+            .and_then(|q| q.quoted_status.as_deref_mut())
+        {
+            apply(q, urls);
+        }
+    }
+    let mut ids = Vec::new();
+    for s in statuses.iter() {
+        collect(s, &mut ids);
+    }
+    let urls = quote_fallback_urls(state, &ids).await;
+    if urls.is_empty() {
+        return;
+    }
+    for s in statuses.iter_mut() {
+        apply(s, &urls);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::countable_length;
-
-    #[test]
-    fn html_to_plain_text_keeps_breaks() {
-        assert_eq!(
-            super::html_to_plain_text("<p>a &amp; b<br>c</p><p>d</p>"),
-            "a & b\nc\n\nd"
-        );
-    }
 
     #[test]
     fn plain_text_counts_graphemes() {
@@ -323,5 +397,18 @@ mod tests {
         assert_eq!(countable_length("@alice@remote.example.org hi", ""), 9);
         // A local mention (no domain) is unchanged: "@bob" (4) + " hi" (3) = 7.
         assert_eq!(countable_length("@bob hi", ""), 7);
+    }
+
+    #[test]
+    fn blank_text_counts_nothing() {
+        assert_eq!(countable_length("   ", "cw"), 2);
+    }
+
+    #[test]
+    fn html_to_plain_text_keeps_breaks() {
+        assert_eq!(
+            super::html_to_plain_text("<p>a &amp; b<br>c</p><p>d</p>"),
+            "a & b\nc\nd"
+        );
     }
 }

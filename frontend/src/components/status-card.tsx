@@ -53,6 +53,7 @@ import { QuotedPost } from '@/components/quoted-post.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
+import { stripQuoteFallback } from '@/lib/content.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
 
 const VISIBILITY: Record<
@@ -272,7 +273,9 @@ export function StatusCard({
 
   const shown = showTranslation ? translation : null
   const spoilerText = shown?.spoiler_text || status.spoilerText
-  const content = shown?.content ?? status.content
+  const content = status.quote
+    ? stripQuoteFallback(shown?.content ?? status.content)
+    : (shown?.content ?? status.content)
   const pollTitles = shown?.poll?.options.map((o) => o.title)
   const mediaAttachments = shown
     ? status.mediaAttachments.map((m) => {

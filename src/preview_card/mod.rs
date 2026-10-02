@@ -959,46 +959,7 @@ pub fn image_path(id: i64, file_name: &str, storage_schema_version: Option<i32>)
 
 /// `Sanitize.fragment(html, Sanitize::Config::MASTODON_OEMBED)`.
 pub fn sanitize_oembed(html: &str) -> String {
-    static WHITESPACE_ELEMENTS: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(
-            r"(?i)</?(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|hgroup|hr|li|nav|ol|p|pre|section|ul)\b[^>]*>",
-        )
-        .unwrap()
-    });
-    static BR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<br\b[^>]*>").unwrap());
-    static BUILDER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
-        let mut builder = ammonia::Builder::empty();
-        builder
-            .add_tags(["audio", "iframe", "source", "video"])
-            .add_tag_attributes("audio", ["controls"])
-            .add_tag_attributes(
-                "iframe",
-                ["allowfullscreen", "frameborder", "height", "scrolling", "src", "width"],
-            )
-            .add_tag_attributes("source", ["src", "type"])
-            .add_tag_attributes("video", ["controls", "height", "loop", "width"])
-            .add_url_schemes(["http", "https"])
-            .url_relative(ammonia::UrlRelative::Deny)
-            .link_rel(None)
-            .add_clean_content_tags([
-                "math", "noembed", "noframes", "noscript", "plaintext", "script", "style", "svg",
-                "xmp",
-            ])
-            .set_tag_attribute_value(
-                "iframe",
-                "sandbox",
-                "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms",
-            );
-        builder
-    });
-    if html.is_empty() {
-        return String::new();
-    }
-    // Sanitize puts a space where it removes a block element, and a space
-    // either side of a line break.
-    let html = BR.replace_all(html, "  ");
-    let html = WHITESPACE_ELEMENTS.replace_all(&html, " ");
-    BUILDER.clean(&html).to_string()
+    crate::formatter::sanitize::oembed(html)
 }
 
 #[cfg(test)]
