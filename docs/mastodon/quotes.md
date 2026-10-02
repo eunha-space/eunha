@@ -39,9 +39,13 @@ quote names it, and answered at the requester's own inbox. An edit that
 changes the quoted post replaces the quote, and a changed stamp sends it back
 to pending.
 
-The `quotes_count` of the quoted post counts accepted quotes; see
-`quotes-count-counts-accepted` in [divergences](./divergences.md) for where
-that departs from Mastodon's arithmetic.
+The `quotes_count` of the quoted post moves as `Quote`'s callbacks move it: up
+by one when a quote is created accepted or becomes accepted, down by one when an
+accepted quote is destroyed, and down by one whenever a quote that is not
+legacy changes to any state but accepted, whatever it was before, never below
+nought. So a pending quote that is rejected, or a rejected one sent back to
+pending, takes off one it never added, as upstream's code (and its TODO) has
+it.
 
 
 Revoking

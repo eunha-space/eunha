@@ -209,7 +209,8 @@ pub(super) async fn update_quote(
                 return Ok(false);
             }
         }
-        let quote = reset_if_stamp_changed(state, quote, fields.approval_uri).await?;
+        let quote =
+            reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy).await?;
         let embedded = fields.embedded(&account_uri, context);
         let quote_id = quote.id;
         if verify(state, quote, fields.approval_uri, Some(uri), embedded, 0).await? {
@@ -238,7 +239,9 @@ pub(super) async fn update_quote(
             crate::quotes::destroy(&state.db, &quote).await?;
             insert_pending(state, status_id, account_id, &fields).await?
         }
-        Some(quote) => Some(reset_if_stamp_changed(state, quote, fields.approval_uri).await?),
+        Some(quote) => {
+            Some(reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy).await?)
+        }
         None => insert_pending(state, status_id, account_id, &fields).await?,
     };
     if let Some(quote) = quote {
@@ -282,11 +285,13 @@ async fn insert_pending(
 }
 
 /// `quote.update(approval_uri: nil, state: :pending, legacy:) if
-/// quote.approval_uri.present? && quote.approval_uri != approval_uri`
+/// quote.approval_uri.present? && quote.approval_uri != approval_uri`, and
+/// the counter the update moves.
 async fn reset_if_stamp_changed(
     state: &AppState,
     quote: Quote,
     approval_uri: Option<&str>,
+    legacy: bool,
 ) -> AppResult<Quote> {
     let Some(stored) = quote.approval_uri.as_deref() else {
         return Ok(quote);
@@ -295,20 +300,21 @@ async fn reset_if_stamp_changed(
         return Ok(quote);
     }
     sqlx::query!(
-        "UPDATE quotes SET approval_uri = NULL, state = 0, updated_at = now() WHERE id = $1",
+        "UPDATE quotes SET approval_uri = NULL, state = 0, legacy = $2, updated_at = now() \
+         WHERE id = $1",
         quote.id,
+        legacy,
     )
     .execute(&state.db)
     .await?;
-    if quote.accepted() && !quote.legacy {
-        sqlx::query!(
-            r#"UPDATE status_stats SET quotes_count = GREATEST(quotes_count - 1, 0), updated_at = now()
-               WHERE status_id = $1"#,
-            quote.quoted_status_id,
-        )
-        .execute(&state.db)
-        .await?;
-    }
+    crate::quotes::state_changed(
+        &state.db,
+        quote.quoted_status_id,
+        legacy,
+        quote.state,
+        quote_state::PENDING,
+    )
+    .await;
     Ok(crate::quotes::find(&state.db, quote.id)
         .await?
         .unwrap_or(quote))

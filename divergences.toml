@@ -1131,27 +1131,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "quotes-count-counts-accepted"
-kind = "behaviour"
-summary = "A quote's leaving any state but accepted does not lower the count"
-mastodon = """
-`Quote#update_counter_caches!` adds one to the quoted post's `quotes_count` \
-when a quote becomes accepted, and takes one off whenever its state changes to \
-anything else (the code carries a TODO saying as much), so a pending quote \
-that is rejected, or marked pending again, takes off one it never added."""
-eunha = """
-Takes one off only when the quote was accepted. A legacy quote's count moves \
-on no update, and an accepted one created or destroyed counts as Mastodon's \
-callbacks count it."""
-why = """
-The count is of accepted quotes, and is shown on the post. Following the \
-upstream arithmetic would lower it for every remote quote refused or never \
-approved, until it said nothing true."""
-evidence = "tests/integration/federation/quote.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "remote-account-images-not-downloaded"
 kind = "omission"
 summary = "Shows remote accounts' avatars, headers and custom emojis from their servers"

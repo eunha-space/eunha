@@ -993,8 +993,49 @@ async fn test_remote_quotes_wait_for_their_stamp() {
     answer("Accept", Some(format!("{dave_uri}/quote_authorizations/1"))).await;
     assert_eq!(quote_state(&ctx, ours).await, 1);
     assert_eq!(quotes_count(&ctx, dave_post).await, 1);
+
+    // A second quote, rejected while pending, takes one off the count all the
+    // same: `Quote#update_counter_caches!` subtracts on any change to a state
+    // other than accepted.
+    let second: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "alice quotes dave again", "quoted_status_id": dave_post.to_string(), "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let second: i64 = second["id"].as_str().unwrap().parse().unwrap();
+    let second_request: String =
+        sqlx::query_scalar("SELECT activity_uri FROM quotes WHERE status_id = $1")
+            .bind(second)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": format!("{dave_uri}#Reject/{}", eunha::snowflake::next_id()),
+                "type": "Reject",
+                "actor": dave_uri,
+                "object": second_request,
+            }),
+            &format!("{dave_uri}#main-key"),
+            &dave_key,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    assert_eq!(quote_state(&ctx, second).await, 2);
+    assert_eq!(quotes_count(&ctx, dave_post).await, 0);
+
     // A Reject after all: an accepted quote is revoked, and its stamp
-    // forgotten.
+    // forgotten. The count is already at its floor.
     answer("Reject", None).await;
     assert_eq!(quote_state(&ctx, ours).await, 3);
     assert_eq!(quotes_count(&ctx, dave_post).await, 0);

@@ -96,21 +96,24 @@ pub async fn created(db: &PgPool, quoted_status_id: Option<i64>, state: i32) {
 }
 
 /// `after_update_commit :update_counter_caches!`, for a quote whose state
-/// went from `old` to `new`. A legacy quote's count never moves on an update.
+/// went from `old` to `new`, `legacy` as the update left it. A legacy quote's
+/// count never moves on an update.
 ///
-/// Mastodon subtracts on every change to a state that is not accepted, so a
-/// pending quote that is rejected takes one off a count it was never in; this
-/// subtracts only for a quote that was accepted (`quotes-count-counts-accepted`
-/// in *divergences.toml*).
-async fn state_changed(db: &PgPool, quote: &Quote, old: i32, new: i32) {
-    if quote.legacy || old == new {
+/// As upstream, one is taken off on every change to a state that is not
+/// accepted, whatever the state was before (the code carries a TODO asking
+/// whether that is right): a pending quote that is rejected takes one off a
+/// count it was never in, which the floor at nought then hides.
+pub async fn state_changed(
+    db: &PgPool,
+    quoted_status_id: Option<i64>,
+    legacy: bool,
+    old: i32,
+    new: i32,
+) {
+    if legacy || old == new {
         return;
     }
-    if new == quote_state::ACCEPTED {
-        count(db, quote.quoted_status_id, true).await;
-    } else if old == quote_state::ACCEPTED {
-        count(db, quote.quoted_status_id, false).await;
-    }
+    count(db, quoted_status_id, new == quote_state::ACCEPTED).await;
 }
 
 /// `Quote#accept!`: accepted, with `approval_uri` when one is given. Says
@@ -132,7 +135,14 @@ pub async fn accept(db: &PgPool, quote: &Quote, approval_uri: Option<&str>) -> s
     let Some(old) = old else {
         return Ok(false);
     };
-    state_changed(db, quote, old, quote_state::ACCEPTED).await;
+    state_changed(
+        db,
+        quote.quoted_status_id,
+        quote.legacy,
+        old,
+        quote_state::ACCEPTED,
+    )
+    .await;
     Ok(old != quote_state::ACCEPTED)
 }
 
@@ -155,7 +165,14 @@ pub async fn reject(db: &PgPool, quote: &Quote) -> sqlx::Result<bool> {
     let Some(row) = row else {
         return Ok(false);
     };
-    state_changed(db, quote, row.old_state, row.new_state).await;
+    state_changed(
+        db,
+        quote.quoted_status_id,
+        quote.legacy,
+        row.old_state,
+        row.new_state,
+    )
+    .await;
     Ok(row.old_state != row.new_state)
 }
 
