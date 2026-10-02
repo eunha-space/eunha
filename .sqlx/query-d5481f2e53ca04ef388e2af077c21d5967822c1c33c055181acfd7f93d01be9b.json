@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_imports SET processed_items = total_items, imported_items = total_items,\n                                         updated_at = now()\n                 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d5481f2e53ca04ef388e2af077c21d5967822c1c33c055181acfd7f93d01be9b"
+}

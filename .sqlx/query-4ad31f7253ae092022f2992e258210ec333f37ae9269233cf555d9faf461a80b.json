@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bookmarks (account_id, status_id, created_at, updated_at)\n                 VALUES ($1, $2, now(), now())\n                 ON CONFLICT (account_id, status_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ad31f7253ae092022f2992e258210ec333f37ae9269233cf555d9faf461a80b"
+}

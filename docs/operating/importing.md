@@ -13,6 +13,10 @@ DATABASE_URL=postgres:///eunha eunha import-mastodon dump.custom --domain seoul.
 
 `--check` reports what the dump holds and whether it fits, writing nothing.
 
+This moves a whole instance. A member bringing their own follows, blocks and
+lists over from another server uses the data import instead; see
+[Data export and import](./import-export.md).
+
 The restore is data-only and loads through the schema's foreign keys, so it
 needs a superuser connection and a database with no Mastodon data in it. The
 dump's own `schema_migrations` and `ar_internal_metadata` are left out: eunha's

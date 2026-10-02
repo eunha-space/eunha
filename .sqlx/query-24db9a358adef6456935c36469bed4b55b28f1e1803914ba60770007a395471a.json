@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at)\n             VALUES ($1, $2, $3, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24db9a358adef6456935c36469bed4b55b28f1e1803914ba60770007a395471a"
+}

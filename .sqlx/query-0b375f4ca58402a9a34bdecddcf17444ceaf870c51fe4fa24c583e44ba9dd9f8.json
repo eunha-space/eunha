@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.bulk_import_progress SET locked_at = NULL, locked_by = NULL, updated_at = now()\n         WHERE bulk_import_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b375f4ca58402a9a34bdecddcf17444ceaf870c51fe4fa24c583e44ba9dd9f8"
+}

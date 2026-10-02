@@ -52,6 +52,16 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "media queue",
             crate::api::mastodon::media::run_media_queue(state.clone()),
         ),
+        until_stopped(
+            &state,
+            "import queue",
+            crate::portability::import::run_queue(state.clone()),
+        ),
+        until_stopped(
+            &state,
+            "import vacuum",
+            crate::portability::run_vacuum(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work
@@ -132,6 +142,8 @@ pub struct QueueWakes {
     pub delivery: tokio::sync::Notify,
     pub inbox: tokio::sync::Notify,
     pub media: tokio::sync::Notify,
+    /// A data import was confirmed.
+    pub imports: tokio::sync::Notify,
     /// A scheduled status was created or moved.
     pub scheduled_statuses: tokio::sync::Notify,
     /// A poll was created, or when it ends changed.

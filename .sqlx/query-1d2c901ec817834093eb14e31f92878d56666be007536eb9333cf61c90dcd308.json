@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bulk_import_rows (bulk_import_id, data, created_at, updated_at)\n           SELECT $1, d, now(), now() FROM UNNEST($2::jsonb[]) WITH ORDINALITY AS t(d, n)\n           ORDER BY n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d2c901ec817834093eb14e31f92878d56666be007536eb9333cf61c90dcd308"
+}

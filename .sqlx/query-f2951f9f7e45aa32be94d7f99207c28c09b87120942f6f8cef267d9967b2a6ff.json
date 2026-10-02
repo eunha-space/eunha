@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_filters (account_id, phrase, context, action, expires_at, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "VarcharArray",
+        "Int4",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f2951f9f7e45aa32be94d7f99207c28c09b87120942f6f8cef267d9967b2a6ff"
+}

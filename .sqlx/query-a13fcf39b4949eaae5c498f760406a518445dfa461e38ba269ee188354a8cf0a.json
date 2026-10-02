@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO list_accounts (list_id, account_id, follow_id, follow_request_id)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT DO NOTHING RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a13fcf39b4949eaae5c498f760406a518445dfa461e38ba269ee188354a8cf0a"
+}

@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, type, state, overwrite, original_filename, likely_mismatched,\n                  missing_status, total_items, processed_items, imported_items,\n                  account_id, created_at, finished_at\n           FROM bulk_imports WHERE account_id = $1 ORDER BY id DESC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "overwrite",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "original_filename",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "likely_mismatched",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "missing_status",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "total_items",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "processed_items",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "imported_items",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 12,
+        "name": "finished_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "eaf2079f172df064bfebaadd0807dfc9fe0a9fa90409481b08a7e4b0ce5302d4"
+}

@@ -14,8 +14,20 @@
 
 pub mod csv;
 pub mod export;
+pub mod import;
 
 use crate::state::AppState;
+
+/// `Scheduler::VacuumScheduler`'s share of this: once a day, imports past
+/// their time are cleared away.
+pub async fn run_vacuum(state: AppState) {
+    while !state.stop.is_cancelled() {
+        if let Err(error) = import::vacuum(&state).await {
+            tracing::error!(%error, "import vacuum failed");
+        }
+        crate::background::rest(&state.stop, std::time::Duration::from_secs(24 * 60 * 60)).await;
+    }
+}
 
 /// `Export#acct`: a local account as `username@local_domain`, so that the
 /// file still names it once it is read on another server, and a remote

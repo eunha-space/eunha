@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM bulk_imports\n         WHERE state = $1 AND created_at <= now() - make_interval(mins => $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfa7fb13d13f082926d074744d0b66d2f26d26365665bebbdfa8931b1e349901"
+}

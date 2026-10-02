@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM bulk_import_rows WHERE bulk_import_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a6bd5e8020da199b335fe843ae05b549267691c9be479aa2b65e91b4eb33fb0d"
+}

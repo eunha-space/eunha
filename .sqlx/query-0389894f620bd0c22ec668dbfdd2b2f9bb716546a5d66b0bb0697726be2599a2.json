@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.bulk_import_progress AS p (bulk_import_id, prepared, locked_at, locked_by)\n           SELECT b.id, b.state = 2, now(), $1\n           FROM bulk_imports b\n           LEFT JOIN eunha.bulk_import_progress q ON q.bulk_import_id = b.id\n           WHERE b.state IN (1, 2)\n             AND ($2::bigint IS NULL OR b.id = $2)\n             AND (q.locked_at IS NULL OR q.locked_at < now() - $3::text::interval)\n           ORDER BY q.updated_at NULLS FIRST, b.id\n           LIMIT 1\n           ON CONFLICT (bulk_import_id) DO UPDATE\n             SET locked_at = now(), locked_by = EXCLUDED.locked_by\n             WHERE p.locked_at IS NULL OR p.locked_at < now() - $3::text::interval\n           RETURNING p.bulk_import_id, p.prepared, p.last_row_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bulk_import_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "prepared",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_row_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0389894f620bd0c22ec668dbfdd2b2f9bb716546a5d66b0bb0697726be2599a2"
+}

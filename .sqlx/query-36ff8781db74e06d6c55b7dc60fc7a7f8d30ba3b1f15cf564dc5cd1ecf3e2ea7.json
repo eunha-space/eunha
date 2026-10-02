@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.id AS bookmark_id, s.id AS \"status_id?\", s.uri,\n                          (s.reblog_of_id IS NOT NULL) AS \"reblog?\",\n                          a.id AS \"account_id?\", a.id_scheme, a.username AS \"username?\", a.domain\n                   FROM bookmarks b\n                   LEFT JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL\n                   LEFT JOIN accounts a ON a.id = s.account_id\n                   WHERE b.account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bookmark_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "username?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "36ff8781db74e06d6c55b7dc60fc7a7f8d30ba3b1f15cf564dc5cd1ecf3e2ea7"
+}

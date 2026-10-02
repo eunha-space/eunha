@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_imports\n           SET processed_items = processed_items + 1,\n               imported_items = imported_items + (CASE WHEN $2 THEN 1 ELSE 0 END)\n           WHERE id = $1\n           RETURNING processed_items >= total_items AS \"complete!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "complete!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "95602b22a085977f43b1320064d071c1d06de9e05784f73e330bfe07da685c41"
+}
