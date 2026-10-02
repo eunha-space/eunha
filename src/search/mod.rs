@@ -6,6 +6,7 @@
 
 pub mod accounts;
 pub mod peers;
+pub mod query;
 pub mod tags;
 
 use crate::state::AppState;
