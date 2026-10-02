@@ -448,6 +448,33 @@ pub struct InstanceConfig {
     /// (`Scheduler::AutoCloseRegistrationsScheduler`).
     #[serde(default)]
     pub disable_automatic_switching_to_approved_registrations: bool,
+    /// Mastodon's `DEEPL_*` and `LIBRE_TRANSLATE_*`: the machine translation
+    /// service, if any (`[instance.translation]`).
+    #[serde(default)]
+    pub translation: TranslationConfig,
+}
+
+/// Mastodon's `config/translation.yml`. DeepL wins when both are set, as
+/// `TranslationService.configured` picks it first.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TranslationConfig {
+    /// `DEEPL_API_KEY`.
+    #[serde(default)]
+    pub deepl_api_key: Option<String>,
+    /// `DEEPL_PLAN`: `free` (the default) asks `api-free.deepl.com`, anything
+    /// else `api.deepl.com`.
+    #[serde(default)]
+    pub deepl_plan: Option<String>,
+    /// Where DeepL's API is, in place of the host the plan picks: for a proxy
+    /// in front of it. Mastodon has no such setting.
+    #[serde(default)]
+    pub deepl_endpoint: Option<String>,
+    /// `LIBRE_TRANSLATE_ENDPOINT`.
+    #[serde(default)]
+    pub libre_translate_endpoint: Option<String>,
+    /// `LIBRE_TRANSLATE_API_KEY`.
+    #[serde(default)]
+    pub libre_translate_api_key: Option<String>,
 }
 
 impl InstanceConfig {
@@ -487,7 +514,7 @@ pub struct SmtpConfig {
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         dotenvy::dotenv().ok();
-        adopt_mastodon_encryption_env();
+        adopt_mastodon_env();
         let cfg = config::Config::builder()
             .add_source(config::File::with_name("config").required(false))
             .add_source(config::Environment::default().separator("__"))
@@ -503,13 +530,14 @@ impl Config {
     }
 }
 
-/// Accept Mastodon's own spelling of the encryption secrets.
+/// Accept Mastodon's own spelling of the encryption secrets and the
+/// translation service.
 ///
 /// Eunha's environment keys nest with `__`, so its name for the primary key is
 /// `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY` — but the values themselves come
 /// from a Mastodon installation, whose `.env.production` spells them with a
 /// single underscore. Copying that file across should be enough.
-fn adopt_mastodon_encryption_env() {
+fn adopt_mastodon_env() {
     for (mastodon, eunha) in [
         (
             "ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY",
@@ -518,6 +546,16 @@ fn adopt_mastodon_encryption_env() {
         (
             "ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT",
             "ACTIVE_RECORD_ENCRYPTION__KEY_DERIVATION_SALT",
+        ),
+        ("DEEPL_API_KEY", "INSTANCE__TRANSLATION__DEEPL_API_KEY"),
+        ("DEEPL_PLAN", "INSTANCE__TRANSLATION__DEEPL_PLAN"),
+        (
+            "LIBRE_TRANSLATE_ENDPOINT",
+            "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_ENDPOINT",
+        ),
+        (
+            "LIBRE_TRANSLATE_API_KEY",
+            "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
     ] {
         if std::env::var_os(eunha).is_none() {

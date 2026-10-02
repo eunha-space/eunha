@@ -10,13 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 
-// ── GET /api/v1/instance/translation_languages ───────────────────────────
-// Returns empty object — translation is not supported.
-
-pub async fn get_translation_languages() -> Json<serde_json::Value> {
-    Json(serde_json::json!({}))
-}
-
 // ── GET /api/v1/instance/languages ───────────────────────────────────────
 
 /// `LanguagesHelper::SUPPORTED_LOCALES`, each as `REST::LanguageSerializer`.
@@ -511,7 +504,9 @@ pub async fn get_instance_v2(
                 min_expiration: 300,
                 max_expiration: 2_629_746,
             },
-            translation: TranslationConfiguration { enabled: false },
+            translation: TranslationConfiguration {
+                enabled: state.instance.translation.configured(),
+            },
             // The `*_feed_access` settings, the link feeds sharing the
             // hashtag feeds'.
             timelines_access: TimelinesAccess {

@@ -1109,3 +1109,22 @@ need an API to call. Settings Mastodon already serves through \
 evidence = "tests/integration/surfaces/preferences.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "deepl-endpoint-setting"
+kind = "addition"
+summary = "DeepL's API can be reached somewhere other than the host its plan picks"
+mastodon = """
+Sends DeepL requests to `api-free.deepl.com` when `DEEPL_PLAN` is `free` and \
+to `api.deepl.com` otherwise, with no way to name another host."""
+eunha = """
+Takes `deepl_endpoint` under `[instance.translation]`, and sends DeepL \
+requests there instead when it is set. Unset, the plan picks the host as \
+Mastodon's does."""
+why = """
+An operator may have to put DeepL behind an egress proxy, and the integration \
+tests need to stand a fake DeepL in for the real one without patching the \
+binary."""
+evidence = "tests/integration/c2s/translations.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

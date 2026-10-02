@@ -51,6 +51,7 @@ pub mod templates;
 pub mod tenants;
 pub mod terms_of_service;
 pub mod time_zones;
+pub mod translation;
 pub mod trends;
 pub mod two_factor;
 pub mod upstream;

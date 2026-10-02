@@ -223,3 +223,64 @@ pub const SUPPORTED_LOCALES: &[(&str, &str, &str)] = &[
 pub fn valid_locale(locale: Option<&str>) -> bool {
     locale.is_some_and(|l| SUPPORTED_LOCALES.iter().any(|(code, _, _)| *code == l))
 }
+
+/// `I18n.available_locales`, the languages Mastodon's interface is offered
+/// in (`config/initializers/i18n.rb`): what `Localized#requested_locale`
+/// chooses from.
+pub const AVAILABLE_LOCALES: &[&str] = &[
+    "af", "an", "ar", "ast", "be", "bg", "bn", "br", "bs", "ca", "ckb", "co", "cs", "cy", "da",
+    "de", "el", "en", "en-GB", "eo", "es", "es-AR", "es-MX", "et", "eu", "fa", "fi", "fo", "fr",
+    "fr-CA", "fy", "ga", "gd", "gl", "he", "hi", "hr", "hu", "hy", "ia", "id", "ie", "ig", "io",
+    "is", "it", "ja", "ka", "kab", "kk", "kn", "ko", "ku", "kw", "la", "lt", "lv", "mk", "ml",
+    "mr", "ms", "my", "nan-TW", "nl", "nn", "no", "oc", "pa", "pl", "pt-BR", "pt-PT", "ro", "ru",
+    "sa", "sc", "sco", "si", "sk", "sl", "sq", "sr", "sr-Latn", "sv", "szl", "ta", "te", "th",
+    "tr", "tt", "ug", "uk", "ur", "vi", "zgh", "zh-CN", "zh-HK", "zh-TW",
+];
+
+/// `Localized#available_locale_or_nil`.
+pub fn available_locale(name: &str) -> Option<&'static str> {
+    AVAILABLE_LOCALES.iter().copied().find(|l| *l == name)
+}
+
+/// `HttpAcceptLanguage::Parser#language_region_compatible_from`: the first
+/// available locale, in the header's order of preference, matching a
+/// preferred language exactly or by its language alone.
+pub fn accept_language_locale(header: &str) -> Option<&'static str> {
+    let mut preferred: Vec<(String, f32)> = header
+        .split(',')
+        .filter_map(|part| {
+            let mut pieces = part.trim().split(';');
+            let tag = pieces.next()?.trim();
+            if tag.is_empty() || tag == "*" {
+                return None;
+            }
+            let q = pieces
+                .find_map(|p| p.trim().strip_prefix("q="))
+                .map(|q| q.trim().parse::<f32>().unwrap_or(0.0))
+                .unwrap_or(1.0);
+            Some((tag.to_lowercase(), q))
+        })
+        .collect();
+    // Stable, so ties keep the header's order.
+    preferred.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    preferred.iter().find_map(|(tag, _)| {
+        let language = tag.split('-').next().unwrap_or(tag);
+        AVAILABLE_LOCALES.iter().copied().find(|available| {
+            let available = available.to_lowercase();
+            *tag == available || language == available.split('-').next().unwrap_or(&available)
+        })
+    })
+}
+
+#[cfg(test)]
+mod accept_language_tests {
+    use super::accept_language_locale;
+
+    #[test]
+    fn prefers_by_quality_then_order() {
+        assert_eq!(accept_language_locale("fr;q=0.5, de"), Some("de"));
+        assert_eq!(accept_language_locale("pt-BR,en;q=0.8"), Some("pt-BR"));
+        assert_eq!(accept_language_locale("en-US"), Some("en"));
+        assert_eq!(accept_language_locale("xx, *"), None);
+    }
+}

@@ -1656,19 +1656,6 @@ pub async fn reblogged_by(
     Ok((resp_headers, Json(result)))
 }
 
-// ── POST /api/v1/statuses/:id/translate ───────────────────────────────────
-
-pub async fn translate_status(
-    Path(_id): Path<i64>,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<()> {
-    auth.require_scope("read:statuses")?;
-    // No translation service is configured. Mastodon rescues
-    // TranslationService::NotConfiguredError with `not_found` (404); 503 is only
-    // for quota/rate-limit errors when translation *is* configured.
-    Err(crate::error::AppError::NotFound)
-}
-
 // ── GET /api/v1/statuses/:id/card ─────────────────────────────────────────
 
 pub async fn get_status_card(

@@ -144,6 +144,8 @@ blurhash = "0.2"
 csv = "1"
 img-parts = "0.4.0"
 scraper = "0.23"
+# The tree scraper parses into, for walking a fragment back out as HTML.
+ego-tree = "0.10"
 
 # Rails ActiveRecord::Encryption compatibility (keypairs.private_key)
 aes-gcm = "0.10"

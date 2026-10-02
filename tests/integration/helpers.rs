@@ -735,6 +735,7 @@ impl TestContext {
                 limited_federation_mode: false,
                 disallow_unauthenticated_api_access: false,
                 disable_automatic_switching_to_approved_registrations: false,
+                translation: Default::default(),
             },
             // Exercise the same path a Mastodon 4.7 database uses: local
             // signing keys in `keypairs`, encrypted with these secrets.

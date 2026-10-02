@@ -41,4 +41,5 @@ mod statuses;
 mod tags;
 mod terms_of_service;
 mod timelines;
+mod translations;
 mod trends;

@@ -34,6 +34,7 @@ export default defineConfig({
           { text: "Data export and import", link: "/operating/import-export" },
           { text: "Preview cards", link: "/operating/preview-cards" },
           { text: "Remote replies", link: "/operating/remote-replies" },
+          { text: "Translation", link: "/operating/translation" },
           { text: "Update notices", link: "/operating/update-notices" },
         ],
       },

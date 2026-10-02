@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button.tsx'
 export function Poll({
   poll: initial,
   token,
+  titles,
 }: {
   poll: mastodon.v1.Poll
   token: string
+  // The options as translated, shown in place of their own titles.
+  titles?: string[]
 }) {
   const [poll, setPoll] = useState(initial)
   const [choices, setChoices] = useState<number[]>([])
@@ -57,7 +60,7 @@ export function Poll({
             <div className="relative flex justify-between gap-2">
               <span>
                 {mine ? '✓ ' : ''}
-                {opt.title}
+                {titles?.[i] ?? opt.title}
               </span>
               <span className="text-muted-foreground">{pct}%</span>
             </div>
@@ -73,7 +76,7 @@ export function Poll({
               checked={choices.includes(i)}
               onChange={() => toggle(i)}
             />
-            <span>{opt.title}</span>
+            <span>{titles?.[i] ?? opt.title}</span>
           </label>
         )
       })}

@@ -185,6 +185,30 @@ before anyone signs in: `/api/v1/instance` and its subresources,
 search.
 
 
+Translation
+-----------
+
+Mastodon reads its machine translation service from `DEEPL_API_KEY`,
+`DEEPL_PLAN`, `LIBRE_TRANSLATE_ENDPOINT` and `LIBRE_TRANSLATE_API_KEY`. Eunha
+reads the same settings from each instance's `[instance.translation]` table,
+so instances sharing a process can use different services, or none:
+
+~~~~ toml
+[instance.translation]
+# DeepL, which wins when both are set. The plan is `free` unless it says
+# otherwise, and picks api-free.deepl.com or api.deepl.com.
+deepl_api_key = "…"
+deepl_plan = "free"
+# Or a LibreTranslate server. It may be on a private address.
+libre_translate_endpoint = "http://127.0.0.1:5000"
+libre_translate_api_key = "…"
+~~~~
+
+An instance configured from the environment also accepts Mastodon's own
+variable names. What is translated, and how, is in
+[translation](./translation.md).
+
+
 Private Prometheus metrics
 --------------------------
 

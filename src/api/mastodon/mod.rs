@@ -37,6 +37,7 @@ pub mod statuses;
 pub mod streaming;
 pub mod tags;
 pub mod timelines;
+pub mod translations;
 pub mod trends;
 pub mod types;
 
@@ -333,6 +334,10 @@ pub fn router() -> Router {
         .route(
             "/api/v1/statuses/{id}/unmute",
             post(statuses::unmute_status),
+        )
+        .route(
+            "/api/v1/statuses/{id}/translate",
+            post(translations::translate_status),
         )
         .route(
             "/api/v1/statuses/{id}/source",
@@ -1195,7 +1200,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/instance/translation_languages",
-            get(instance::get_translation_languages),
+            get(translations::get_translation_languages),
         )
         .route("/api/v1/instance/rules", get(instance::get_instance_rules))
         .route("/api/v1/instance/peers", get(instance::get_peers))
@@ -1295,10 +1300,6 @@ pub fn router() -> Router {
             get(statuses::get_status_history),
         )
         .route("/api/v1/statuses/{id}/card", get(statuses::get_status_card))
-        .route(
-            "/api/v1/statuses/{id}/translate",
-            post(statuses::translate_status),
-        )
         // Polls (public read)
         .route("/api/v1/polls/{id}", get(polls::get_poll))
         // Search

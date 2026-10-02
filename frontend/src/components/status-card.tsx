@@ -18,17 +18,22 @@ import {
   Reply,
   Star,
   Trash2,
+  Languages,
 } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
 import {
   deleteStatus,
   getStatusSource,
+  getTranslationLanguages,
+  translateStatus,
   setBookmark,
   setFavourite,
   setPin,
   setReblog,
   updateStatus,
+  type StatusTranslation,
+  type TranslationLanguages,
 } from '../api.ts'
 import { getMeId } from '../me.ts'
 import { Card, CardContent } from '@/components/ui/card.tsx'
@@ -103,6 +108,34 @@ function QuotedStatus({
   return <QuotedPost status={quoted} />
 }
 
+// The language the reader reads, as Mastodon's web client compares it: the
+// interface locale without its region.
+const READER_LANGUAGE = (navigator.language || 'en').split(/[_-]/)[0]
+
+function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(code) ?? code
+  } catch {
+    return code
+  }
+}
+
+// What the server will translate between, asked once and shared by every card.
+function useTranslationLanguages(enabled: boolean): TranslationLanguages {
+  const [languages, setLanguages] = useState<TranslationLanguages>({})
+  useEffect(() => {
+    if (!enabled) return
+    let live = true
+    getTranslationLanguages().then((l) => {
+      if (live) setLanguages(l)
+    })
+    return () => {
+      live = false
+    }
+  }, [enabled])
+  return languages
+}
+
 function ActionButton({
   icon,
   count,
@@ -171,6 +204,10 @@ export function StatusCard({
   const [saving, setSaving] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [showFiltered, setShowFiltered] = useState(false)
+  const [translation, setTranslation] = useState<StatusTranslation | null>(null)
+  const [showTranslation, setShowTranslation] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const translationLanguages = useTranslationLanguages(!!token)
   const navigate = useNavigate()
   const { openCompose } = useComposeModal()
 
@@ -197,6 +234,52 @@ export function StatusCard({
     setStatus(initial)
     setExpanded(!initial.spoilerText)
   }, [initial])
+
+  // A post edited since it was translated is translated afresh.
+  useEffect(() => {
+    setTranslation(null)
+    setShowTranslation(false)
+  }, [status.editedAt, status.id])
+
+  // Mastodon's web client offers a translation of a public or unlisted post
+  // with text in it, when the server translates its language into the
+  // reader's (`status_content.jsx`).
+  const canTranslate =
+    !!token &&
+    (status.visibility === 'public' || status.visibility === 'unlisted') &&
+    status.content.replace(/<[^>]*>/g, '').trim().length > 0 &&
+    (translationLanguages[status.language || 'und'] ?? []).includes(READER_LANGUAGE)
+
+  const toggleTranslation = async () => {
+    if (showTranslation) {
+      setShowTranslation(false)
+      return
+    }
+    if (translation) {
+      setShowTranslation(true)
+      return
+    }
+    setTranslating(true)
+    try {
+      setTranslation(await translateStatus(status.id, token, READER_LANGUAGE))
+      setShowTranslation(true)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  const shown = showTranslation ? translation : null
+  const spoilerText = shown?.spoiler_text || status.spoilerText
+  const content = shown?.content ?? status.content
+  const pollTitles = shown?.poll?.options.map((o) => o.title)
+  const mediaAttachments = shown
+    ? status.mediaAttachments.map((m) => {
+        const t = shown.media_attachments.find((a) => a.id === m.id)
+        return t ? { ...m, description: t.description } : m
+      })
+    : status.mediaAttachments
 
   const startEdit = async () => {
     try {
@@ -431,7 +514,7 @@ export function StatusCard({
           <>
             {status.spoilerText && (
               <div className="text-sm">
-                <span>{status.spoilerText}</span>
+                <span>{spoilerText}</span>
                 <button
                   type="button"
                   onClick={() => setExpanded((e) => !e)}
@@ -445,15 +528,44 @@ export function StatusCard({
               <>
                 <div
                   className="text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
-                  dangerouslySetInnerHTML={{ __html: status.content }}
+                  dangerouslySetInnerHTML={{ __html: content }}
                 />
-                {status.mediaAttachments.length > 0 && (
+                {canTranslate && (
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto gap-1 p-0 text-xs"
+                      disabled={translating}
+                      onClick={toggleTranslation}
+                    >
+                      <Languages className="size-3.5" />
+                      {translating
+                        ? 'Translating…'
+                        : showTranslation
+                          ? 'Show original'
+                          : 'Translate'}
+                    </Button>
+                    {shown && (
+                      <span>
+                        Translated from{' '}
+                        {languageName(
+                          shown.detected_source_language || status.language || 'und',
+                        )}
+                        {shown.provider ? ` using ${shown.provider}` : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {mediaAttachments.length > 0 && (
                   <MediaAttachments
-                    attachments={status.mediaAttachments}
+                    attachments={mediaAttachments}
                     sensitive={status.sensitive || blurred}
                   />
                 )}
-                {status.poll && <Poll poll={status.poll} token={token} />}
+                {status.poll && (
+                  <Poll poll={status.poll} token={token} titles={pollTitles} />
+                )}
                 {status.quote && <QuotedStatus quote={status.quote} />}
               </>
             )}

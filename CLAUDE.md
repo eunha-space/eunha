@@ -70,6 +70,8 @@ Running an instance:
     admin API and notification, and the privacy policy.
  -  *docs/operating/accounts.md*: two-factor authentication and security
     keys, the sign-in steps after the password, and sessions.
+ -  *docs/operating/translation.md*: DeepL and LibreTranslate, and what
+    `POST /api/v1/statuses/:id/translate` translates.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

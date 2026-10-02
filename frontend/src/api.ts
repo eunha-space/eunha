@@ -285,6 +285,74 @@ export async function getInstanceRules(): Promise<InstanceRule[]> {
   return Array.isArray(body) ? (body as InstanceRule[]) : []
 }
 
+/**
+ * `REST::TranslationSerializer`. masto's `Translation` type predates most of
+ * these fields, so this is fetched directly.
+ */
+export interface StatusTranslation {
+  content: string
+  spoiler_text: string
+  detected_source_language: string | null
+  language: string
+  provider: string | null
+  poll: { id: string; options: { title: string }[] } | null
+  media_attachments: { id: string; description: string }[]
+}
+
+/**
+ * Which languages each source language translates into, with `und` for a
+ * post whose language is unknown; `{}` when the server translates nothing.
+ */
+export type TranslationLanguages = Record<string, string[]>
+
+let translationLanguages: Promise<TranslationLanguages> | null = null
+
+// Asked once per page load, as Mastodon's web client asks once at start-up,
+// and only when `configuration.translation.enabled` says there is anything
+// to ask about.
+export function getTranslationLanguages(): Promise<TranslationLanguages> {
+  translationLanguages ??= (async () => {
+    try {
+      const instance = await getInstance()
+      if (!instance.configuration.translation.enabled) return {}
+      const res = await fetch(
+        `${window.location.origin}/api/v1/instance/translation_languages`,
+      )
+      return res.ok ? ((await res.json()) as TranslationLanguages) : {}
+    } catch {
+      return {}
+    }
+  })()
+  return translationLanguages
+}
+
+export async function translateStatus(
+  id: string,
+  token: string,
+  lang: string,
+): Promise<StatusTranslation> {
+  const res = await fetch(
+    `${window.location.origin}/api/v1/statuses/${id}/translate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ lang }),
+    },
+  )
+  const body: unknown = await res.json().catch(() => null)
+  if (!res.ok) {
+    const message =
+      body && typeof body === 'object' && 'error' in body
+        ? String((body as { error: unknown }).error)
+        : `Translation failed (${res.status})`
+    throw new Error(message)
+  }
+  return body as StatusTranslation
+}
+
 // An account's pinned posts. eunha also serves `/api/v1/accounts/:id/pins`, but
 // `?pinned=true` is the form Mastodon documents and masto types, and the one
 // every other client already asks for. It returns all of them at once — pins

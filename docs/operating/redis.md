@@ -20,8 +20,9 @@ remembered for each domain, posting idempotency, notification
 group state, async refreshes, the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
-emailed to an account's subscribers, and sign-ins waiting on a second factor
-with their attempt counts — uses that namespace.
+emailed to an account's subscribers, sign-ins waiting on a second factor
+with their attempt counts, and translated statuses with the language list of
+the translation service — uses that namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
