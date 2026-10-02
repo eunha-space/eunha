@@ -16,53 +16,36 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are fifty-six. They cover:
+At the time of writing there are thirty-four. They cover:
 
- -  integrity proofs on outgoing activities, and Linked Data signatures
-    over contexts eunha does not ship;
+ -  integrity proofs on outgoing activities;
  -  the invite tree, and the two ways eunha's invite API goes beyond
     Mastodon's;
- -  what the update check asks about, and what counts as a moderator being
-    active before registrations close themselves;
+ -  what the update check asks about;
  -  when the local-keypair migration is recorded;
- -  what a mute silences;
  -  the moderation tools API, and the server administration API;
- -  the site's identity and registrations, which default to the instance
-    configuration until they are saved;
  -  the account move API;
  -  how command-line accounts are created;
- -  three details of delivery failures, one of them the circuit breaker's
-    half-open state;
+ -  the delivery circuit breaker's half-open state;
  -  the admin custom emoji API;
  -  the private metrics listener;
- -  two details of link preview cards, and the top-level domains a URL in
-    local text is linked under;
+ -  how a link preview card reads a page's character set;
  -  the email subscription API, and unsubscribe links;
- -  how a remote thread's replies are fetched, how async refresh ids are
-    signed, and why the home timeline is never partial;
- -  the terms of service admin API and interstitial, and the configured
-    terms and privacy policy eunha still reads;
- -  how a delivery from a domain this instance does not federate with is
-    answered;
- -  the data export, import and archive takeout API, how imports are run,
-    and what the archive is built from;
- -  the two-factor authentication API, where a sign-in waits for its second
-    factor, the password grant, and which security key attestations are
-    checked;
+ -  how a remote thread's replies are fetched, and how async refresh ids are
+    signed;
+ -  the terms of service admin API and interstitial;
+ -  the data export, import and archive takeout API, and how imports are run;
+ -  the two-factor authentication API, and where a sign-in waits for its
+    second factor;
  -  the sessions, authorized apps and sign-in history API, and how a password
     reset token is stored;
  -  deleting one's own account and changing its email address over the
     API, and the preferences Mastodon sets only through web forms;
  -  how notification emails are unsubscribed from;
  -  the DeepL endpoint setting;
- -  the auxiliary service provider admin API, and when an account search
-    asks them;
- -  two post searches Mastodon's query transformer cannot read, and the
-    peers search falling back to the database;
- -  remote account images linked rather than downloaded, and how a stale
-    remote account is refreshed;
- -  how quotes are counted, and how quote request rejections are named;
- -  how home timeline updates are decided.
+ -  the auxiliary service provider admin API;
+ -  remote media linked rather than downloaded, which the operator chose, and
+    how a stale remote account is refreshed.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
