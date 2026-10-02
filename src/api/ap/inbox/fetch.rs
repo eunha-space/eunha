@@ -566,6 +566,8 @@ async fn resolve_or_fetch_remote_account_inner(
     .fetch_optional(&state.db)
     .await?
     {
+        // `Account`'s `update_index('accounts', :self)`.
+        crate::search::elasticsearch::indexing::account(state, id).await;
         return Ok(id);
     }
 
@@ -617,6 +619,7 @@ async fn resolve_or_fetch_remote_account_inner(
         .await
         .map_err(AppError::Internal)?;
     crate::fasp::events::account_created(state, id).await;
+    crate::search::elasticsearch::indexing::account(state, id).await;
 
     Ok(id)
 }

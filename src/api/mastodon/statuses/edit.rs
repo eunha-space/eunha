@@ -175,6 +175,8 @@ pub async fn edit_status(
 
     store_statuses_tags(&state, id, auth.account_id, &hashtags).await?;
     store_status_mentions(&state, id, &resolved).await?;
+    // `update_index('statuses', :proper)`.
+    crate::search::elasticsearch::indexing::status(&state, id).await;
     // `UpdateStatusService#reset_preview_card!`: a changed text gets its card
     // afresh.
     if new_text != status.text {

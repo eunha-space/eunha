@@ -360,6 +360,8 @@ pub async fn follow(
     )
     .execute(&state.db)
     .await?;
+    // `AccountStat`'s `update_index('accounts', :account)`.
+    crate::search::elasticsearch::indexing::accounts(state, &[source.id, target_id]).await;
 
     crate::counters::on_follow_created(&state.db, source.id, target_id).await?;
 
@@ -422,6 +424,8 @@ pub async fn unfollow(
     .await?;
 
     let follow_uri_opt: Option<String> = if let Some(ref d) = deleted {
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(state, &[follower_id, target_id]).await;
         crate::counters::on_follow_removed(&state.db, follower_id, target_id).await?;
         d.uri.clone()
     } else {

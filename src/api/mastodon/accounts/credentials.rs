@@ -332,6 +332,12 @@ async fn do_update_credentials(
                 )
                 .execute(&state.db)
                 .await;
+                // `AccountStat`'s `update_index('accounts', :account)`.
+                crate::search::elasticsearch::indexing::accounts(
+                    state,
+                    &[row.account_id, auth.account_id],
+                )
+                .await;
                 let _ =
                     crate::counters::on_follow_created(&state.db, row.account_id, auth.account_id)
                         .await;
@@ -374,13 +380,27 @@ async fn do_update_credentials(
             > 0;
     }
     if let Some(ix) = indexable {
-        sqlx::query!(
-            "UPDATE accounts SET indexable = $1 WHERE id = $2",
-            ix,
-            auth.account_id
+        let changed = sqlx::query(
+            "UPDATE accounts SET indexable = $1 WHERE id = $2 AND indexable IS DISTINCT FROM $1",
         )
+        .bind(ix)
+        .bind(auth.account_id)
         .execute(&state.db)
-        .await?;
+        .await?
+        .rows_affected()
+            > 0;
+        // `after_update_commit :enqueue_update_public_statuses_index, if:
+        // :saved_change_to_indexable?`.
+        if changed {
+            let state = state.clone();
+            let account_id = auth.account_id;
+            crate::tenants::spawn(async move {
+                crate::search::elasticsearch::indexing::account_indexable_changed(
+                    &state, account_id,
+                )
+                .await;
+            });
+        }
     }
     if let Some(ref filename) = avatar_url {
         sqlx::query!(
@@ -480,6 +500,8 @@ async fn do_update_credentials(
     )
     .execute(&state.db)
     .await?;
+    // `Account`'s `update_index('accounts', :self)`.
+    crate::search::elasticsearch::indexing::account(state, auth.account_id).await;
 
     let account = fetch_account(state, auth.account_id).await?;
     crate::fasp::events::account_updated(state, auth.account_id, discoverable_changed).await;

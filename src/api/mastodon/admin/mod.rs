@@ -1165,6 +1165,8 @@ pub async fn update_admin_tag(
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
+    // `Tag`'s `update_index('tags', :self)`.
+    crate::search::elasticsearch::indexing::tags(&state, &[r.id]).await;
     Ok(Json(AdminTag {
         id: r.id.to_string(),
         history: super::tags::fetch_tags_histories(&state, &[r.id])

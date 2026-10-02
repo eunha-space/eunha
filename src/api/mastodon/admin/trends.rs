@@ -139,6 +139,8 @@ async fn review_tag(
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    // `Tag`'s `update_index('tags', :self)`.
+    crate::search::elasticsearch::indexing::tags(state, &[id]).await;
     Ok(Json(admin_tag(state, domain, id).await?))
 }
 

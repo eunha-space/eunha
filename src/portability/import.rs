@@ -1544,6 +1544,8 @@ async fn import_row(
             )
             .execute(&state.db)
             .await?;
+            // `Bookmark`'s `update_index('statuses', :status)`.
+            crate::search::elasticsearch::indexing::status_interaction(state, status_id).await;
             Ok(true)
         }
         ImportType::CustomFilters => create_filter(state, account.id, data).await,

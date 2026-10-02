@@ -238,6 +238,8 @@ pub async fn save(
     }
 
     tx.commit().await?;
+    // The target was saved: `update_index('accounts', :self)`.
+    crate::search::elasticsearch::indexing::account(state, target.id).await;
 
     // `trigger_update_webhooks` for what the action changed.
     for report_id in resolved {

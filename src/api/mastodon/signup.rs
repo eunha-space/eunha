@@ -224,6 +224,9 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
     if !matches!(inserted, Ok(r) if r.rows_affected() > 0) {
         return;
     }
+    // `AccountStat`'s `update_index('accounts', :account)`.
+    crate::search::elasticsearch::indexing::accounts(state, &[follower_account_id, target_id])
+        .await;
 
     let _ = crate::counters::on_follow_created(&state.db, follower_account_id, target_id).await;
     crate::push::create_and_push(

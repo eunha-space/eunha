@@ -36,6 +36,7 @@ mod push;
 mod reports;
 mod scope;
 mod search;
+mod search_elasticsearch;
 mod server_admin;
 mod statuses;
 mod tags;

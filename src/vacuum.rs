@@ -112,6 +112,20 @@ pub async fn vacuum_statuses(state: &AppState, days: Option<i64>) -> anyhow::Res
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
+        // `remove_from_index`: queued, so the next pass deletes them from
+        // the indexes.
+        crate::search::elasticsearch::indexing::enqueue(
+            state,
+            crate::search::elasticsearch::Index::Statuses,
+            &ids,
+        )
+        .await;
+        crate::search::elasticsearch::indexing::enqueue(
+            state,
+            crate::search::elasticsearch::Index::PublicStatuses,
+            &ids,
+        )
+        .await;
         deleted += result.rows_affected();
     }
     Ok(deleted)

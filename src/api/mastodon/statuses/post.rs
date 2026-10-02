@@ -628,6 +628,9 @@ pub async fn post_status(
     {
         tracing::error!(status_id = status.id, error = %e, "failed to count a new status");
     }
+    // `update_index('statuses', :proper)` and the account's stats.
+    crate::search::elasticsearch::indexing::status(&state, status.id).await;
+    crate::search::elasticsearch::indexing::account(&state, account.id).await;
 
     // Attach media (IDs already validated above)
     for media_id in &parsed_media_ids {

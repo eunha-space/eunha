@@ -87,7 +87,7 @@ pub(super) async fn handle_delete(
             // be put back. Only a reply that was counted is subtracted, matching
             // what `Create` counted on the way in.
             let deleted_reply = sqlx::query!(
-                r#"SELECT id, account_id, in_reply_to_id, visibility FROM statuses
+                r#"SELECT id, reblog_of_id, account_id, in_reply_to_id, visibility FROM statuses
                    WHERE uri = $1 AND deleted_at IS NULL"#,
                 uri,
             )
@@ -109,6 +109,12 @@ pub(super) async fn handle_delete(
                 {
                     tracing::error!(error = %e, "failed to uncount a deleted federated status");
                 }
+                crate::search::elasticsearch::indexing::status(
+                    state,
+                    row.reblog_of_id.unwrap_or(row.id),
+                )
+                .await;
+                crate::search::elasticsearch::indexing::account(state, row.account_id).await;
             }
             // If the status isn't known yet (out-of-order delivery), remember the
             // Delete so a late Create with this URI is skipped.
@@ -252,6 +258,8 @@ pub(super) async fn handle_announce(
         {
             tracing::error!(booster_id, error = %e, "failed to count a federated boost");
         }
+        crate::search::elasticsearch::indexing::status(state, original_id).await;
+        crate::search::elasticsearch::indexing::account(state, booster_id).await;
     }
 
     // Update the original status's reblogs_count
@@ -387,6 +395,7 @@ pub(super) async fn handle_like(
     if favourited {
         crate::fasp::events::favourite_created(state, status_id);
     }
+    crate::search::elasticsearch::indexing::status_interaction(state, status_id).await;
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -704,8 +713,11 @@ pub(super) async fn handle_update(
                 ).fetch_optional(&state.db).await {
                     let _ = sqlx::query!("INSERT INTO statuses_tags (status_id, tag_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", row.id, tid)
                         .execute(&state.db).await;
+                    crate::search::elasticsearch::indexing::tags(state, &[tid]).await;
                 }
             }
+            // An edit: `update_index('statuses', :proper)`.
+            crate::search::elasticsearch::indexing::status(state, row.id).await;
 
             sync_remote_poll(state, row.id, row.account_id, object).await?;
         }

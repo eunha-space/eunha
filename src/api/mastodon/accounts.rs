@@ -1249,6 +1249,9 @@ pub async fn remove_from_followers(
     .await?;
 
     if let Some(ref row) = deleted {
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(&state, &[requester_id, auth.account_id])
+            .await;
         crate::counters::on_follow_removed(&state.db, requester_id, auth.account_id).await?;
 
         // Tell a removed remote follower they're no longer following us

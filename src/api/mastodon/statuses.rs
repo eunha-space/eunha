@@ -572,6 +572,8 @@ pub(crate) async fn remove_status(
     {
         tracing::error!(status_id = id, error = %e, "failed to uncount a deleted status");
     }
+    crate::search::elasticsearch::indexing::status(state, status.reblog_of_id.unwrap_or(id)).await;
+    crate::search::elasticsearch::indexing::account(state, account.id).await;
 
     // Decrement the quoted status's quotes_count if this was an accepted quote.
     if let Some(quoted_id) = sqlx::query_scalar!(
@@ -758,6 +760,8 @@ pub async fn favourite_status(
     if favourited {
         crate::fasp::events::favourite_created(&state, id);
     }
+    // `Favourite`'s `update_index('statuses', :status)`.
+    crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)
@@ -840,6 +844,7 @@ pub async fn unfavourite_status(
     )
     .execute(&state.db)
     .await?;
+    crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     sqlx::query!(
         r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1),
@@ -1009,6 +1014,10 @@ pub async fn reblog_status(
     {
         tracing::error!(error = %e, "failed to count a boost");
     }
+    // `update_index('statuses', :proper)`: the boosted post, which the booster
+    // may now search.
+    crate::search::elasticsearch::indexing::status(&state, original_id).await;
+    crate::search::elasticsearch::indexing::account(&state, auth.account_id).await;
 
     // `ReblogService`: `Trends.register!`.
     crate::trends::register(&state, boost.id).await;
@@ -1193,6 +1202,8 @@ pub async fn unreblog_status(
         )
         .execute(&state.db)
         .await?;
+        crate::search::elasticsearch::indexing::status(&state, original_id).await;
+        crate::search::elasticsearch::indexing::account(&state, auth.account_id).await;
         // `RemoveStatusService`: `unpush_from_home_timelines` and
         // `unpush_from_list_timelines`, which bring back a boost of the same
         // post this one held back.
@@ -1311,6 +1322,8 @@ pub async fn bookmark_status(
     )
     .execute(&state.db)
     .await?;
+    // `Bookmark`'s `update_index('statuses', :status)`.
+    crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
     Ok(Json(
@@ -1336,6 +1349,7 @@ pub async fn unbookmark_status(
     )
     .execute(&state.db)
     .await?;
+    crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
     Ok(Json(
@@ -2289,6 +2303,8 @@ pub async fn store_statuses_tags(
         )
         .execute(&state.db)
         .await?;
+        // `Tag`'s `update_index('tags', :self)`.
+        crate::search::elasticsearch::indexing::tags(state, &[tag_id]).await;
     }
     // Recalculate statuses_count and last_status_at for all featured tags of this account
     sqlx::query!(

@@ -178,6 +178,9 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     .fetch_all(&state.db)
     .await?;
     for follow in following {
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(state, &[account_id, follow.target_id])
+            .await;
         crate::counters::on_follow_removed(&state.db, account_id, follow.target_id).await?;
         let follow_uri = follow
             .uri
@@ -220,6 +223,8 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     .await?;
     let mut rejects = vec![];
     for f in followers {
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(state, &[f.follower_id, account_id]).await;
         crate::counters::on_follow_removed(&state.db, f.follower_id, account_id).await?;
         rejects.push((f.id, f.uri, f.follower_uri, f.inbox_url));
     }

@@ -941,6 +941,8 @@ pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<
 /// `User#prepare_new_user!`, the part eunha has: `BootstrapTimelineWorker`,
 /// which follows the inviter when the invite says to and tells staff.
 pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
+    // Approved and confirmed, the account joins `Account.searchable`.
+    crate::search::elasticsearch::indexing::account(state, account_id).await;
     let invite_id = sqlx::query_scalar!(
         "SELECT invite_id FROM users WHERE account_id = $1",
         account_id

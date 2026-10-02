@@ -330,6 +330,12 @@ pub(super) async fn handle_follow(
                 // follow from another instance moves the same two counts as one
                 // made here.
                 if created {
+                    // `AccountStat`'s `update_index('accounts', :account)`.
+                    crate::search::elasticsearch::indexing::accounts(
+                        state,
+                        &[follower_id, target.id],
+                    )
+                    .await;
                     if let Err(e) =
                         crate::counters::on_follow_created(&state.db, follower_id, target.id).await
                     {
@@ -428,6 +434,12 @@ pub(super) async fn handle_undo(
             .fetch_optional(&state.db)
             .await?;
             if let Some(row) = &undone_follow {
+                // `AccountStat`'s `update_index('accounts', :account)`.
+                crate::search::elasticsearch::indexing::accounts(
+                    state,
+                    &[row.account_id, row.target_account_id],
+                )
+                .await;
                 if let Err(e) = crate::counters::on_follow_removed(
                     &state.db,
                     row.account_id,
@@ -496,6 +508,7 @@ pub(super) async fn handle_undo(
                 .execute(&state.db)
                 .await?;
                 removed = deleted.rows_affected() > 0;
+                crate::search::elasticsearch::indexing::status_interaction(state, sid).await;
                 sqlx::query!(
                     r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), updated_at = now() WHERE status_id = $1"#,
                     sid
@@ -548,6 +561,12 @@ pub(super) async fn handle_undo(
                         {
                             tracing::error!(error = %e, "failed to uncount an undone boost");
                         }
+                        if let Some(original_id) = row.reblog_of_id {
+                            crate::search::elasticsearch::indexing::status(state, original_id)
+                                .await;
+                        }
+                        crate::search::elasticsearch::indexing::account(state, row.account_id)
+                            .await;
                     }
                     None => delete_later(state, actor_uri, announce_uri).await,
                 }
@@ -644,6 +663,12 @@ pub(super) async fn handle_accept_reject(
                 )
                 .execute(&state.db)
                 .await?;
+                // `AccountStat`'s `update_index('accounts', :account)`.
+                crate::search::elasticsearch::indexing::accounts(
+                    state,
+                    &[row.account_id, row.target_account_id],
+                )
+                .await;
 
                 // Update follower/following counts
                 let _ = crate::counters::on_follow_created(

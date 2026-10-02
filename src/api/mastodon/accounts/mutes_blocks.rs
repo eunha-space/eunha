@@ -137,6 +137,12 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     .fetch_all(&state.db)
     .await?;
     for row in &deleted {
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(
+            state,
+            &[row.account_id, row.target_account_id],
+        )
+        .await;
         let _ =
             crate::counters::on_follow_removed(&state.db, row.account_id, row.target_account_id)
                 .await;

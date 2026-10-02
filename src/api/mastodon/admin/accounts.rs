@@ -697,6 +697,7 @@ pub async fn unsilence_account(
     )
     .execute(&state.db)
     .await?;
+    crate::search::elasticsearch::indexing::account(&state, id).await;
     action_log::log(&state.db, auth.account_id, "unsilence", &s.account_target()).await?;
     if s.account.is_local() {
         crate::moderation::webhooks::trigger(

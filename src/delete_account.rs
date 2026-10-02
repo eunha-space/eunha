@@ -113,6 +113,9 @@ pub async fn suspend(
     origin: i32,
     block_email: bool,
 ) -> Result<()> {
+    // `Account`'s `update_index('accounts', :self)`: queued now, read once
+    // the suspension is committed.
+    crate::search::elasticsearch::indexing::account(state, account_id).await;
     let mut tx = state.db.begin().await?;
     create_deletion_request(&mut tx, account_id).await?;
     let local = sqlx::query_scalar!(
@@ -243,6 +246,7 @@ pub async fn suspend_side_effects(state: &AppState, account_id: i64) -> Result<(
 
 /// Port of `Account#unsuspend!`.
 pub async fn unsuspend(state: &AppState, account_id: i64) -> Result<()> {
+    crate::search::elasticsearch::indexing::account(state, account_id).await;
     let mut tx = state.db.begin().await?;
     sqlx::query!(
         "DELETE FROM account_deletion_requests WHERE account_id = $1",
@@ -765,6 +769,21 @@ async fn purge_statuses(
         )
         .execute(&state.db)
         .await?;
+        // `BatchedRemoveStatusService`: the callbacks were skipped, so the
+        // statuses are de-indexed by hand.
+        let removed: Vec<i64> = ids.iter().chain(&reblog_ids).copied().collect();
+        crate::search::elasticsearch::indexing::enqueue(
+            state,
+            crate::search::elasticsearch::Index::Statuses,
+            &removed,
+        )
+        .await;
+        crate::search::elasticsearch::indexing::enqueue(
+            state,
+            crate::search::elasticsearch::Index::PublicStatuses,
+            &removed,
+        )
+        .await;
     }
 
     // Recompute the featured-tag counters that pointed at the removed statuses.
@@ -948,17 +967,33 @@ async fn purge_favourites(state: &AppState, account_id: i64) -> Result<()> {
     )
     .execute(&state.db)
     .await?;
-    sqlx::query!("DELETE FROM favourites WHERE account_id = $1", account_id)
-        .execute(&state.db)
-        .await?;
+    let unfavourited: Vec<i64> =
+        sqlx::query_scalar("DELETE FROM favourites WHERE account_id = $1 RETURNING status_id")
+            .bind(account_id)
+            .fetch_all(&state.db)
+            .await?;
+    crate::search::elasticsearch::indexing::enqueue(
+        state,
+        crate::search::elasticsearch::Index::Statuses,
+        &unfavourited,
+    )
+    .await;
     Ok(())
 }
 
 /// `purge_bookmarks!`
 async fn purge_bookmarks(state: &AppState, account_id: i64) -> Result<()> {
-    sqlx::query!("DELETE FROM bookmarks WHERE account_id = $1", account_id)
-        .execute(&state.db)
-        .await?;
+    let unbookmarked: Vec<i64> =
+        sqlx::query_scalar("DELETE FROM bookmarks WHERE account_id = $1 RETURNING status_id")
+            .bind(account_id)
+            .fetch_all(&state.db)
+            .await?;
+    crate::search::elasticsearch::indexing::enqueue(
+        state,
+        crate::search::elasticsearch::Index::Statuses,
+        &unbookmarked,
+    )
+    .await;
     Ok(())
 }
 
