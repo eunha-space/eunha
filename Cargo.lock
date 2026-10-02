@@ -2051,6 +2051,7 @@ dependencies = [
  "ojak-vocab",
  "once_cell",
  "p256 0.13.2",
+ "p384",
  "pbkdf2",
  "pkcs8 0.10.2",
  "psl",

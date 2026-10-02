@@ -176,6 +176,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Push notifications (VAPID + Web Push)
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 web-push = "0.10"
+# Security key attestation certificates signed on P-384 (src/webauthn/x509.rs)
+p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
 # Redis (home timeline fan-out)
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }

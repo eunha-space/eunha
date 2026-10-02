@@ -11,10 +11,14 @@
 //! offered are webauthn-ruby's defaults: ES256, PS256 and RS256. User
 //! verification is `discouraged`, as Mastodon asks for it.
 //!
-//! Attestation is not asked for, so browsers send the `none` format; a
-//! `packed` self-attestation is checked against the new key. Other formats
-//! are accepted without their statement being checked: they say which model
-//! of authenticator made the key, which Mastodon does not act on either.
+//! Attestation is not asked for, so browsers mostly send the `none` format,
+//! but whatever statement comes is verified as webauthn-ruby verifies it
+//! under Mastodon's configuration; see [`attestation`].
+
+mod attestation;
+mod crypto;
+mod der;
+mod x509;
 
 use base64::Engine as _;
 use rand::RngCore as _;
@@ -143,6 +147,15 @@ pub fn verify_registration(
     challenge: &str,
     rp: &RelyingParty,
 ) -> Result<NewCredential> {
+    verify_registration_with(credential, challenge, rp, &attestation::Trust::mastodon())
+}
+
+fn verify_registration_with(
+    credential: &Value,
+    challenge: &str,
+    rp: &RelyingParty,
+    trust: &attestation::Trust,
+) -> Result<NewCredential> {
     let id = credential_id(credential)?;
     let response = credential
         .get("response")
@@ -176,27 +189,19 @@ pub fn verify_registration(
     let key = CoseKey::parse(&attested.public_key)?;
 
     let client_data_hash = Sha256::digest(&client_data_json);
-    match fmt {
-        "none" => {}
-        "packed" if statement.get_text("x5c").is_none() => {
-            // Self attestation: signed with the new key itself.
-            let alg = statement
-                .get_text("alg")
-                .and_then(cbor::Value::as_int)
-                .ok_or(Error::Invalid("packed attestation has no algorithm"))?;
-            if alg != key.alg {
-                return invalid("attestation algorithm does not match the key");
-            }
-            let signature = statement
-                .get_text("sig")
-                .and_then(cbor::Value::as_bytes)
-                .ok_or(Error::Invalid("packed attestation has no signature"))?;
-            let mut signed = auth_data.to_vec();
-            signed.extend_from_slice(&client_data_hash);
-            key.verify(&signed, signature)?;
-        }
-        _ => {}
-    }
+    attestation::verify(
+        fmt,
+        statement,
+        &attestation::Attested {
+            auth_data,
+            rp_id_hash: &data.rp_id_hash,
+            aaguid: &attested.aaguid,
+            credential_id: &attested.id,
+            credential_key: &key,
+            client_data_hash: &client_data_hash,
+        },
+        trust,
+    )?;
 
     Ok(NewCredential {
         external_id: id.to_owned(),
@@ -280,6 +285,7 @@ fn verify_client_data(
 }
 
 struct AttestedCredential {
+    aaguid: [u8; 16],
     id: Vec<u8>,
     public_key: Vec<u8>,
 }
@@ -313,7 +319,10 @@ impl AuthenticatorData {
             }
             let id = rest[18..id_end].to_vec();
             let (_, used) = cbor::parse(&rest[id_end..])?;
+            let mut aaguid = [0u8; 16];
+            aaguid.copy_from_slice(&rest[..16]);
             Some(AttestedCredential {
+                aaguid,
                 id,
                 public_key: rest[id_end..id_end + used].to_vec(),
             })
@@ -340,14 +349,11 @@ impl AuthenticatorData {
 }
 
 /// A credential public key in COSE form.
-struct CoseKey {
+pub(crate) struct CoseKey {
     alg: i64,
-    material: KeyMaterial,
-}
-
-enum KeyMaterial {
-    Ec2 { x: Vec<u8>, y: Vec<u8> },
-    Rsa { n: Vec<u8>, e: Vec<u8> },
+    key: crypto::PublicKey,
+    /// An EC2 key's coordinates, as fido-u2f signs them.
+    ec: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl CoseKey {
@@ -366,68 +372,50 @@ impl CoseKey {
                 .map(<[u8]>::to_vec)
                 .ok_or(Error::Invalid("key is missing a parameter"))
         };
-        let material = match (kty, alg) {
+        match (kty, alg) {
             (2, ES256) => {
                 if int(-1).and_then(cbor::Value::as_int) != Some(1) {
                     return invalid("only P-256 is supported");
                 }
-                KeyMaterial::Ec2 {
-                    x: bytes_at(-2)?,
-                    y: bytes_at(-3)?,
-                }
-            }
-            (3, PS256 | RS256) => KeyMaterial::Rsa {
-                n: bytes_at(-1)?,
-                e: bytes_at(-2)?,
-            },
-            _ => return invalid("unsupported key algorithm"),
-        };
-        Ok(Self { alg, material })
-    }
-
-    fn verify(&self, message: &[u8], signature: &[u8]) -> Result<()> {
-        match &self.material {
-            KeyMaterial::Ec2 { x, y } => {
-                use p256::ecdsa::signature::Verifier as _;
+                let (x, y) = (bytes_at(-2)?, bytes_at(-3)?);
                 if x.len() != 32 || y.len() != 32 {
                     return invalid("malformed P-256 key");
                 }
                 let mut point = vec![0x04];
-                point.extend_from_slice(x);
-                point.extend_from_slice(y);
-                let key = p256::ecdsa::VerifyingKey::from_sec1_bytes(&point)
-                    .or_else(|_| invalid("malformed P-256 key"))?;
-                let signature = p256::ecdsa::Signature::from_der(signature)
-                    .or_else(|_| invalid("malformed signature"))?;
-                key.verify(message, &signature)
-                    .or_else(|_| invalid("signature does not verify"))
+                point.extend_from_slice(&x);
+                point.extend_from_slice(&y);
+                let key = crypto::PublicKey::ec(crypto::Curve::P256, &point)
+                    .ok_or(Error::Invalid("malformed P-256 key"))?;
+                Ok(Self {
+                    alg,
+                    key,
+                    ec: Some((x, y)),
+                })
             }
-            KeyMaterial::Rsa { n, e } => {
-                use rsa::signature::Verifier as _;
-                let key = rsa::RsaPublicKey::new(
-                    rsa::BigUint::from_bytes_be(n),
-                    rsa::BigUint::from_bytes_be(e),
-                )
-                .or_else(|_| invalid("malformed RSA key"))?;
-                let verified = if self.alg == RS256 {
-                    let signature = rsa::pkcs1v15::Signature::try_from(signature)
-                        .or_else(|_| invalid("malformed signature"))?;
-                    rsa::pkcs1v15::VerifyingKey::<Sha256>::new(key)
-                        .verify(message, &signature)
-                        .is_ok()
-                } else {
-                    let signature = rsa::pss::Signature::try_from(signature)
-                        .or_else(|_| invalid("malformed signature"))?;
-                    rsa::pss::VerifyingKey::<Sha256>::new(key)
-                        .verify(message, &signature)
-                        .is_ok()
-                };
-                if verified {
-                    Ok(())
-                } else {
-                    invalid("signature does not verify")
-                }
-            }
+            (3, PS256 | RS256) => Ok(Self {
+                alg,
+                key: crypto::PublicKey::rsa(&bytes_at(-1)?, &bytes_at(-2)?),
+                ec: None,
+            }),
+            _ => invalid("unsupported key algorithm"),
+        }
+    }
+
+    fn ec_coordinates(&self) -> Option<(&[u8], &[u8])> {
+        self.ec.as_ref().map(|(x, y)| (x.as_slice(), y.as_slice()))
+    }
+
+    /// The signature check cose-ruby does for this key's algorithm.
+    fn verify(&self, message: &[u8], signature: &[u8]) -> Result<()> {
+        let alg = match self.alg {
+            ES256 => "ES256",
+            PS256 => "PS256",
+            _ => "RS256",
+        };
+        if attestation::verify_cose(alg, &self.key, message, signature)? {
+            Ok(())
+        } else {
+            invalid("signature does not verify")
         }
     }
 }

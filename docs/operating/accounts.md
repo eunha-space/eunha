@@ -29,6 +29,28 @@ can read what the other wrote:
     relying party is the instance's domain over HTTPS; ES256, PS256 and RS256
     keys are accepted.
 
+Mastodon asks for no attestation, so browsers mostly send the `none` format.
+Whatever statement does come is verified as webauthn-ruby 3.4.3 verifies it
+under Mastodon's configuration, which adds no trust roots of its own, so each
+format is checked against the roots its gem ships:
+
+ -  `none` must carry an empty statement, and `packed` self attestation must
+    be signed by the new key.
+ -  `packed` with a certificate chain, and `fido-u2f`, are checked and then
+    refused: their gems ship no roots, so no chain can be trusted.
+ -  `android-key` is checked against the Google hardware attestation root,
+    which expired in May 2026, so it is now refused too.
+ -  `android-safetynet` is checked against Google's six roots, its response
+    must be no more than a minute old, and the device must match a
+    compatible profile.
+ -  `tpm` is checked against the TPM vendors' roots, and `apple` against
+    Apple's WebAuthn root.
+ -  Any other format is refused.
+
+Certificate chains are checked as OpenSSL's store checks them (validity
+periods, CA flags, path lengths, key usage, unknown critical extensions and
+signatures), except that name constraints are not enforced.
+
 The API, each with a `read:accounts` or `write:accounts` token:
 
 | Request                                                     | Mastodon's                                         |
