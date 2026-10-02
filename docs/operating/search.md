@@ -177,12 +177,14 @@ The query syntax is Mastodon's:
 
 Any of the filtering ones can be negated with `-`. An unknown prefix
 (`foo:bar`) is searched as the words `foo bar`. An invalid date is a 422, and a
-query that does not parse finds nothing. `account_id`, `min_id` and `max_id`
-become `from:`, `after:` and `before:`; an `account_id` that names no account
-is a 404. Results are newest first, and are filtered for the searcher afterwards
-as Mastodon's `StatusFilter` does: posts they may not see, posts by accounts
-they block or mute or whose domain they block, and posts by limited accounts
-they do not follow are left out.
+query that does not parse finds nothing. A clause that is only an emoji
+shortcode (`:blobcat:`), or an empty quoted phrase (`""`), is a 500, as
+Mastodon's query transformer raises on both and nothing rescues it.
+`account_id`, `min_id` and `max_id` become `from:`, `after:` and `before:`; an
+`account_id` that names no account is a 404. Results are newest first, and are
+filtered for the searcher afterwards as Mastodon's `StatusFilter` does: posts
+they may not see, posts by accounts they block or mute or whose domain they
+block, and posts by limited accounts they do not follow are left out.
 
 **Accounts** are searched by username and display name, and from
 `/api/v2/search` also by the bio of a discoverable account, boosted by the

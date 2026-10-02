@@ -1153,25 +1153,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "post-search-queries-the-transformer-cannot-read"
-kind = "behaviour"
-summary = "Post searches Mastodon's query transformer raises on return nothing"
-mastodon = """
-`SearchQueryTransformer` raises `Unexpected clause type` for a clause that \
-is only an emoji shortcode (`:blobcat:`), and `NoMethodError` for an empty \
-quoted phrase (`""`), so `/api/v2/search` answers 500 with Elasticsearch \
-enabled."""
-eunha = """
-Treats both as a query that matches nothing, as Mastodon already does for one \
-its parser cannot read (`Parslet::ParseFailed`)."""
-why = """
-A crash on a plausible query is a bug, not behaviour a client relies on, and \
-an empty result is what Mastodon gives for the neighbouring case."""
-evidence = "src/search/query.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "quotes-count-counts-accepted"
 kind = "behaviour"
 summary = "A quote's leaving any state but accepted does not lower the count"

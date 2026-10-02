@@ -285,6 +285,14 @@ async fn test_post_search_operators() {
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     // A query that does not parse finds nothing.
     assert_eq!(count(s.status_texts(": x", token).await), 0);
+    // A clause the transformer raises on is an unrescued exception, a 500.
+    for raises in ["%3Ablobcat%3A", "%22%22"] {
+        let resp = ctx
+            .api
+            .get(&format!("/api/v2/search?q={raises}"), Some(token))
+            .await;
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR, "{raises}");
+    }
 
     // Deleted, it is gone from the index.
     let resp = ctx

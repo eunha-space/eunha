@@ -524,7 +524,10 @@ pub async fn statuses(
     let parsed = match parse(&query).and_then(Query::new) {
         Ok(parsed) => parsed,
         Err(QueryError::InvalidDate) => return Err(StatusSearchError::InvalidDate),
-        Err(QueryError::ParseFailed | QueryError::Unsupported) => return Ok(vec![]),
+        Err(QueryError::ParseFailed) => return Ok(vec![]),
+        Err(QueryError::Unsupported(e)) => {
+            return Err(StatusSearchError::App(crate::error::AppError::Unrescued(e)))
+        }
     };
 
     // `from:` handles, looked up before the request is built.

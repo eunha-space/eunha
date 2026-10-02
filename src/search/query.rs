@@ -40,9 +40,11 @@ pub enum QueryError {
     /// `Date::Error` from a `before:`, `after:` or `during:` that is not a
     /// date. Mastodon answers 422, "Invalid date supplied".
     InvalidDate,
-    /// A query Mastodon's transformer raises on (a bare `:shortcode:`, an
-    /// empty `""`), answering 500. Eunha returns nothing instead.
-    Unsupported,
+    /// A clause Mastodon's transformer raises on, with the exception's
+    /// message: a bare `:shortcode:` (`Unexpected clause type`) or an empty
+    /// `""` (a `NoMethodError`). Nothing rescues either, so the search answers
+    /// 500.
+    Unsupported(String),
 }
 
 struct Parser<'a> {
@@ -411,6 +413,14 @@ impl Query {
             };
             let prefix = prefix.map(|p| p.to_lowercase());
             let term = match &body {
+                // Parslet captures an empty phrase as an empty slice rather
+                // than a sequence, and the rule's `map` raises on it, whatever
+                // the prefix.
+                Body::Phrase(words) if words.is_empty() => {
+                    return Err(QueryError::Unsupported(
+                        "undefined method 'map' for an instance of Parslet::Slice".into(),
+                    ));
+                }
                 Body::Phrase(words) => words.join(" "),
                 Body::Term(t) => t.clone(),
                 Body::Shortcode => String::new(),
@@ -422,7 +432,7 @@ impl Query {
                 Some(prefix) => query.add_term(operator, format!("{prefix} {term}")),
                 None => match body {
                     Body::Term(_) => query.add_term(operator, term),
-                    Body::Phrase(words) if !words.is_empty() => {
+                    Body::Phrase(_) => {
                         let phrase = PhraseClause {
                             operator: Operator::from(operator),
                             phrase: term,
@@ -432,7 +442,11 @@ impl Query {
                             Operator::MustNot => query.must_not_phrases.push(phrase),
                         }
                     }
-                    _ => return Err(QueryError::Unsupported),
+                    Body::Shortcode => {
+                        return Err(QueryError::Unsupported(
+                            "Unexpected clause type: a bare emoji shortcode".into(),
+                        ));
+                    }
                 },
             }
         }
@@ -810,15 +824,16 @@ mod tests {
     }
 
     #[test]
-    fn queries_mastodon_crashes_on_return_nothing() {
-        assert_eq!(
-            Query::new(parse(":blobcat:").unwrap()),
-            Err(QueryError::Unsupported)
-        );
-        assert_eq!(
-            Query::new(parse("\"\"").unwrap()),
-            Err(QueryError::Unsupported)
-        );
+    fn queries_mastodon_raises_on() {
+        for raises in [":blobcat:", "\"\"", "has:\"\"", "hello -\"\""] {
+            assert!(
+                matches!(
+                    Query::new(parse(raises).unwrap()),
+                    Err(QueryError::Unsupported(_))
+                ),
+                "{raises}"
+            );
+        }
     }
 
     #[test]
