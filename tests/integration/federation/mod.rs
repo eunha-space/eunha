@@ -1,6 +1,7 @@
 //! Server-to-Server (S2S) ActivityPub federation tests.
 
 mod account_delete;
+mod authorized_fetch;
 mod delivery_failures;
 mod delivery_queue;
 mod forwarding;

@@ -2891,7 +2891,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -3785,7 +3785,7 @@ dependencies = [
 [[package]]
 name = "ojak"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3809,7 +3809,7 @@ dependencies = [
 [[package]]
 name = "ojak-axum"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "axum",
  "ojak",
@@ -3818,7 +3818,7 @@ dependencies = [
 [[package]]
 name = "ojak-jsonld"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "iri-string",
  "serde_json",
@@ -3827,7 +3827,7 @@ dependencies = [
 [[package]]
 name = "ojak-postgres"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "ojak",
  "serde_json",
@@ -3837,7 +3837,7 @@ dependencies = [
 [[package]]
 name = "ojak-sig"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3856,7 +3856,7 @@ dependencies = [
 [[package]]
 name = "ojak-vocab"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#96c5805623777cf468770ab4a60b60c728a88009"
+source = "git+https://github.com/eunha-space/ojak.git#b6dc5603556d5e01619ff7c6157f36ad19b33636"
 dependencies = [
  "iri-string",
  "ojak-jsonld",
@@ -4494,7 +4494,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.40",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4531,7 +4531,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]

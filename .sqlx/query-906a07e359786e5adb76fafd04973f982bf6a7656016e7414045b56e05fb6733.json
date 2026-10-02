@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS (SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = a.id)\n                   OR EXISTS (SELECT 1 FROM account_domain_blocks\n                              WHERE account_id = $1 AND domain = a.domain)) AS \"blocked!\"\n           FROM accounts a WHERE a.uri = $2 AND a.domain IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "906a07e359786e5adb76fafd04973f982bf6a7656016e7414045b56e05fb6733"
+}

@@ -22,8 +22,8 @@
 //! what its sender can vouch for.
 
 use ojak::federation::{
-    ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Software, Uris, Usage,
-    Values,
+    Access, ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Signing,
+    Software, Uris, Usage, Values,
 };
 use serde_json::{json, Value};
 use url::Url;
@@ -141,6 +141,9 @@ pub fn federation() -> Federation<AppState> {
         .webfinger_links(|ctx, _, actor| {
             // Mastodon's remote follow: where to send someone who wants to
             // interact with this account from their own server.
+            // Mastodon's avatar link (`show_avatar?`, which limited federation
+            // mode turns off) has no counterpart: eunha's WebFinger names no
+            // avatar in any mode.
             match actor.get("preferredUsername").and_then(Value::as_str) {
                 Some(username) if actor.get("type") != Some(&json!("Application")) => {
                     vec![json!({
@@ -203,15 +206,14 @@ pub fn federation() -> Federation<AppState> {
                 tracing::debug!(actor = %id, %error, "account not created from its key fetch");
             }
         })
-        // A suspended domain's activities are dropped before any key is
-        // fetched for them, as Mastodon drops them.
+        // A domain this instance does not federate with (`domain_not_allowed?`:
+        // suspended, or off the allow list in limited federation mode) has its
+        // activities dropped, and its signatures refused, before any key is
+        // fetched from it, as `SignatureVerification#keypair_from_key_id`
+        // refuses them.
         .blocked(|ctx: Ctx, host: String| async move {
             Ok::<_, AppError>(
-                crate::federation::moderation::actor_is_suspended(
-                    ctx.data(),
-                    &format!("https://{host}/"),
-                )
-                .await,
+                crate::federation::moderation::domain_not_allowed(ctx.data(), &host).await,
             )
         })
         // Activities are read as JSON, as Mastodon reads them, never
@@ -322,6 +324,38 @@ pub fn federation() -> Federation<AppState> {
                     &scheme.template("/collections/featured"),
                     featured(scheme),
                 );
+        // Every ActivityPub controller of Mastodon's runs
+        // `require_account_signature!` in authorized fetch mode; a status is
+        // also hidden from a signer its author blocks (`StatusPolicy#show?`).
+        for kind in [
+            "actor",
+            "account_collections",
+            "outbox",
+            "followers",
+            "following",
+            "featured",
+        ] {
+            builder = builder.guard(&scheme.kind(kind), |ctx: Ctx, _| async move {
+                require_signature(&ctx).await
+            });
+        }
+        for kind in ["status", "status_activity"] {
+            builder =
+                builder.guard(
+                    &scheme.kind(kind),
+                    move |ctx: Ctx, values: Values| async move {
+                        status_guard(&ctx, scheme, &values).await
+                    },
+                );
+        }
+    }
+    // The instance actor is exempt, as `InstanceActorsController` is: a peer
+    // in authorized fetch mode has to fetch its key before it can sign.
+    for kind in ["collection", "feature_authorization", "quote_authorization"] {
+        builder = builder.guard(
+            kind,
+            |ctx: Ctx, _| async move { require_signature(&ctx).await },
+        );
     }
     // A status's page, /@{username}/{id}, is where Mastodon also serves its
     // Note to whoever asks for ActivityPub (`statuses#show`). Anything else
@@ -404,6 +438,65 @@ fn found(result: AppResult<Value>) -> AppResult<Found<Value>> {
         Err(AppError::Gone(_)) => Ok(Found::Gone(None)),
         Err(error) => Err(error),
     }
+}
+
+/// `SignatureVerification#require_account_signature!`, run in authorized
+/// fetch mode: an unsigned fetch, or one whose signature does not hold, is
+/// 401; one signed with a key on a domain this instance does not federate
+/// with is 403, its key never fetched. Outside authorized fetch mode nothing
+/// is verified here.
+async fn require_signature(ctx: &Ctx) -> AppResult<Access> {
+    if !crate::settings::authorized_fetch_mode(ctx.data()).await {
+        return Ok(Access::Allow);
+    }
+    Ok(match ctx.signing().await {
+        Signing::Verified(_) => Access::Allow,
+        Signing::Blocked(_) => Access::Forbidden,
+        Signing::Unsigned | Signing::Invalid(_) => Access::Unauthorized,
+    })
+}
+
+/// A status, as `StatusesController` serves it to ActivityPub: signed in
+/// authorized fetch mode, and not there for a signer its author blocks, or
+/// whose domain the author blocks (`StatusPolicy#show?`, with the signer as
+/// the current account).
+async fn status_guard(ctx: &Ctx, scheme: Scheme, values: &Values) -> AppResult<Access> {
+    let access = require_signature(ctx).await?;
+    if access != Access::Allow {
+        return Ok(access);
+    }
+    let identifier = match scheme {
+        Scheme::Username => &values["username"],
+        Scheme::Id => &values["id"],
+    };
+    let Some(owner) = scheme.account(ctx, identifier).await? else {
+        return Ok(Access::Allow);
+    };
+    if signer_blocked(ctx, owner.id).await? {
+        return Ok(Access::NotFound);
+    }
+    Ok(Access::Allow)
+}
+
+/// Whether the verified signer of the request is an account `owner_id`
+/// blocks, or is on a domain it blocks: `AccountStatusesFilter#blocked?`, and
+/// the author half of `StatusPolicy#show?`. An unsigned request, and a signer
+/// with no account here, is blocked by nobody.
+async fn signer_blocked(ctx: &Ctx, owner_id: i64) -> AppResult<bool> {
+    let Some(signer) = ctx.signer().await else {
+        return Ok(false);
+    };
+    let blocked = sqlx::query_scalar!(
+        r#"SELECT (EXISTS (SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = a.id)
+                   OR EXISTS (SELECT 1 FROM account_domain_blocks
+                              WHERE account_id = $1 AND domain = a.domain)) AS "blocked!"
+           FROM accounts a WHERE a.uri = $2 AND a.domain IS NOT NULL"#,
+        owner_id,
+        signer.as_str(),
+    )
+    .fetch_optional(&ctx.data().db)
+    .await?;
+    Ok(blocked.unwrap_or(false))
 }
 
 /// Which of Mastodon's two URI schemes a route is under.
@@ -684,6 +777,11 @@ fn outbox(scheme: Scheme) -> Collection<AppState> {
                 OutboxCursor::Below(id) => (Some(id), None),
                 OutboxCursor::Above(id) => (None, Some(id)),
             };
+            // `AccountStatusesFilter#blocked?`: a signer the account blocks
+            // sees none of it.
+            if signer_blocked(&ctx, account.id).await? {
+                return Ok(Some(Page::default()));
+            }
             let state = ctx.data();
             let status_ids: Vec<i64> = sqlx::query_scalar!(
                 r#"SELECT s.id
@@ -864,6 +962,14 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
+            // `ActivityPub::CollectionsController#check_authorization`: in
+            // authorized fetch mode, a signer the account blocks is shown it
+            // empty.
+            if crate::settings::authorized_fetch_mode(ctx.data()).await
+                && signer_blocked(&ctx, account.id).await?
+            {
+                return Ok(Some(Page::default()));
+            }
             let rows = sqlx::query!(
                 r#"SELECT s.id, s.uri AS "uri?"
                    FROM status_pins p JOIN statuses s ON s.id = p.status_id

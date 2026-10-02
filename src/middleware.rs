@@ -327,8 +327,10 @@ fn token_not_expired(created_at: chrono::NaiveDateTime, expires_in: Option<i32>)
         .unwrap_or(true)
 }
 
-/// `Api::BaseController`'s `require_not_suspended!` and `require_user!`, for
-/// the Mastodon API routes. Layered with `route_layer`, so the route a request
+/// `Api::BaseController`'s `require_functional!` (in limited federation mode),
+/// `require_authenticated_user!` (when unauthenticated access is disallowed),
+/// `require_not_suspended!` and `require_user!`, in that order, for the
+/// Mastodon API routes. Layered with `route_layer`, so the route a request
 /// matched is known.
 pub async fn api_gates(req: Request, next: Next) -> Response {
     let Some(path) = req
@@ -341,7 +343,47 @@ pub async fn api_gates(req: Request, next: Next) -> Response {
     if !path.starts_with("/api/") {
         return next.run(req).await;
     }
-    if req.extensions().get::<UnavailableAccount>().is_some() {
+    let (limited, disallow) = req
+        .extensions()
+        .get::<AppState>()
+        .map(|state| {
+            (
+                state.instance.limited_federation_mode,
+                state.instance.disallows_unauthenticated_api_access(),
+            )
+        })
+        .unwrap_or_default();
+    let unavailable = req.extensions().get::<UnavailableAccount>().is_some();
+    let auth = req
+        .extensions()
+        .get::<AuthenticatedUser>()
+        .filter(|a| a.user_id.is_some());
+    // `ApplicationController#require_functional!`, which `Api::BaseController`
+    // skips unless in limited federation mode: a signed-in user who cannot
+    // use the account is refused everywhere, as `require_user!` refuses them.
+    if limited {
+        if unavailable {
+            return AppError::ForbiddenMsg("Your login is currently disabled".into())
+                .into_response();
+        }
+        if let Some(auth) = auth.filter(|a| a.standing != Standing::Functional) {
+            if let Err(error) = require_user(Some(auth)) {
+                return error.into_response();
+            }
+        }
+    }
+    // `require_authenticated_user!`, run when `disallow_unauthenticated_api_access?`
+    // by every controller that does not skip it. A token with no user behind
+    // it is no authenticated user.
+    if disallow
+        && auth.is_none()
+        && !unavailable
+        && !open_without_user(req.method(), &path, limited)
+    {
+        return AppError::UnauthorizedMsg("This method requires an authenticated user".into())
+            .into_response();
+    }
+    if unavailable {
         return AppError::ForbiddenMsg("Your login is currently disabled".into()).into_response();
     }
     if requires_user(req.method(), &path) {
@@ -354,6 +396,29 @@ pub async fn api_gates(req: Request, next: Next) -> Response {
         }
     }
     next.run(req).await
+}
+
+/// Whether the controller behind a route skips `require_authenticated_user!`,
+/// so that it stays open to a request with no user even when
+/// `disallow_unauthenticated_api_access?`. Some skip it only outside limited
+/// federation mode.
+pub fn open_without_user(method: &axum::http::Method, path: &str, limited: bool) -> bool {
+    use axum::http::Method;
+    match path {
+        // `Api::V2::InstancesController` and its v1 subclass.
+        "/api/v1/instance" | "/api/v2/instance" => true,
+        // `Api::OEmbedController`.
+        "/api/oembed" => true,
+        // `Api::V1::AppsController` and `Api::V1::AccountsController#create`.
+        "/api/v1/apps" | "/api/v1/accounts" => method == Method::POST,
+        // `Api::V1::Peers::SearchController`, unless in limited federation mode.
+        "/api/v1/peers/search" => !limited,
+        // Eunha's sign-in helpers for Elk, which come before any token.
+        "/api/{server}/login" | "/api/{server}/oauth/{origin}" => true,
+        // `Api::V1::Instances::BaseController`, unless in limited federation mode.
+        _ if path.starts_with("/api/v1/instance/") => !limited,
+        _ => false,
+    }
 }
 
 /// `Api::BaseController#require_user!`.

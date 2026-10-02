@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO domain_allows (domain, created_at, updated_at)\n         VALUES ('elsewhere.invalid', now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6a454377b0610db6dbba6cf0172ef275e83fc1ecd6132bac57ee936bcf1b9e50"
+}

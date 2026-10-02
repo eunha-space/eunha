@@ -426,6 +426,29 @@ pub struct InstanceConfig {
     /// as by default, an administrator still has to enable the feature.
     #[serde(default = "default_true")]
     pub email_subscriptions: bool,
+    /// Mastodon's `AUTHORIZED_FETCH`: when set, whether ActivityPub fetches
+    /// must be signed, whatever the `authorized_fetch` site setting says.
+    /// Unset, the setting decides. Limited federation mode turns it on
+    /// regardless.
+    #[serde(default)]
+    pub authorized_fetch: Option<bool>,
+    /// Mastodon's `LIMITED_FEDERATION_MODE`: federate only with the domains on
+    /// the allow list, refuse the API to anyone not signed in, and hide the
+    /// peers and activity APIs.
+    #[serde(default)]
+    pub limited_federation_mode: bool,
+    /// Mastodon's `DISALLOW_UNAUTHENTICATED_API_ACCESS`: refuse the API to
+    /// anyone not signed in, as limited federation mode does, without
+    /// limiting federation.
+    #[serde(default)]
+    pub disallow_unauthenticated_api_access: bool,
+}
+
+impl InstanceConfig {
+    /// `Api::BaseController#disallow_unauthenticated_api_access?`.
+    pub fn disallows_unauthenticated_api_access(&self) -> bool {
+        self.disallow_unauthenticated_api_access || self.limited_federation_mode
+    }
 }
 
 fn default_true() -> bool {

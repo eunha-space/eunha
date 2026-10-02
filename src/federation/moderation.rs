@@ -55,6 +55,45 @@ pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
     })
 }
 
+/// `DomainControlHelper#domain_not_allowed?`: whether this instance refuses
+/// to federate with `uri_or_domain` (a URI, or a bare domain). In limited
+/// federation mode only a domain on the allow list federates, matched exactly
+/// as `DomainAllow.allowed?` matches it; otherwise only a domain blocked at
+/// suspend severity, itself or a parent, is refused. Blank is allowed.
+pub async fn domain_not_allowed(state: &AppState, uri_or_domain: &str) -> bool {
+    if uri_or_domain.trim().is_empty() {
+        return false;
+    }
+    // A bare domain is normalised as `DomainAllow.rule_for` and
+    // `DomainBlock.rule_for` normalise it: stripped, slashes gone, lowercased
+    // and in its ASCII form.
+    let uri = if uri_or_domain.contains("://") {
+        uri_or_domain.to_owned()
+    } else {
+        format!("https://{}/", uri_or_domain.trim().replace('/', ""))
+    };
+    // No host is on no allow list, and under no block.
+    let Some(domain) = domain_of(&uri) else {
+        return state.instance.limited_federation_mode;
+    };
+    if state.instance.limited_federation_mode {
+        return !domain_allowed(state, &domain).await;
+    }
+    matches!(lookup(state, &domain).await, Some(b) if b.is_suspend())
+}
+
+/// `DomainAllow.allowed?`: whether `domain` itself, not a parent, is on the
+/// allow list. A failed lookup allows nothing.
+async fn domain_allowed(state: &AppState, domain: &str) -> bool {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM domain_allows WHERE domain = $1) AS "e!""#,
+        domain,
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false)
+}
+
 /// True when activities attributed to `actor_uri` should be dropped on arrival
 /// (the actor's domain is defederated at suspend severity).
 pub async fn actor_is_suspended(state: &AppState, actor_uri: &str) -> bool {

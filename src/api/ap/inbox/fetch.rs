@@ -84,6 +84,10 @@ async fn fetch_remote_status_depth(
     {
         return Ok(Some((id, false)));
     }
+    // `FetchRemoteStatusService`: `return if domain_not_allowed?(uri)`.
+    if crate::federation::moderation::domain_not_allowed(state, fetch_uri).await {
+        return Ok(None);
+    }
 
     let fetched: Value = match prefetched {
         Some(json) => json,
@@ -359,6 +363,10 @@ pub async fn fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResul
             .await
             .ok_or(AppError::NotFound);
     }
+    // `FetchRemoteActorService`: `return if domain_not_allowed?(uri)`.
+    if crate::federation::moderation::domain_not_allowed(state, actor_uri).await {
+        return Err(AppError::NotFound);
+    }
     let actor = crate::federation::fetch::signed_get_json(state, actor_uri)
         .await
         .map_err(AppError::Internal)?;
@@ -444,6 +452,12 @@ async fn resolve_or_fetch_remote_account_inner(
         .await?
     {
         return Ok(id);
+    }
+    // `FetchRemoteActorService` and `ProcessAccountService`: an account this
+    // instance does not know is neither fetched nor created from a domain it
+    // does not federate with.
+    if crate::federation::moderation::domain_not_allowed(state, actor_uri).await {
+        return Err(AppError::NotFound);
     }
 
     let actor: Value = match prefetched {

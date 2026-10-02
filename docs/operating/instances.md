@@ -129,6 +129,59 @@ aliases = ["garden.eunha.site"]
 ~~~~
 
 
+Authorized fetch and limited federation
+---------------------------------------
+
+Mastodon reads three deployment modes from its environment. Instances sharing
+a process share its environment too, so eunha reads them from each instance's
+`[instance]` table instead, and a `SIGHUP` reload picks up a change to them:
+
+~~~~ toml
+[instance]
+domain = "garden.eunha.space"
+# Mastodon's AUTHORIZED_FETCH. Unset, the `authorized_fetch` site setting
+# decides, and it is off until an administrator turns it on.
+authorized_fetch = true
+# Mastodon's LIMITED_FEDERATION_MODE.
+limited_federation_mode = false
+# Mastodon's DISALLOW_UNAUTHENTICATED_API_ACCESS.
+disallow_unauthenticated_api_access = false
+~~~~
+
+Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that
+is not signed: actors, statuses and every collection answer 401 to an unsigned
+request, and 403 to one signed with a key on a domain this instance does not
+federate with, whose key is never fetched. The instance actor and WebFinger stay
+open, because a peer has to fetch the instance actor's key before it can sign
+anything. A status is not there (404) for a signer its author blocks, or whose
+domain the author blocks, and an account's outbox shows such a signer nothing;
+in authorized fetch mode its pinned statuses do not either.
+
+Limited federation mode federates only with the domains on the allow list
+(`/api/v1/admin/domain_allows`):
+
+ -  an activity from any other domain is dropped, and a fetch signed with a key
+    on one is refused, without fetching its key;
+ -  accounts and statuses on other domains are never fetched or resolved, and
+    no account here can follow one;
+ -  authorized fetch is on, whatever `authorized_fetch` and the setting say;
+ -  the API needs a signed-in user, as with
+    `disallow_unauthenticated_api_access`, and one whose login is unconfirmed,
+    pending, disabled or moved is refused everywhere, `/api/v2/instance`
+    included;
+ -  `/api/v1/instance/*` needs a user too, and the peers, peer search and
+    activity APIs answer 404;
+ -  `/api/v2/instance` says `"limited_federation": true`;
+ -  taking a domain off the allow list suspends its accounts at once, then
+    deletes them.
+
+`disallow_unauthenticated_api_access` alone answers 401 to an API request with
+no signed-in user, an app's own token included, except for what a client needs
+before anyone signs in: `/api/v1/instance` and its subresources,
+`/api/v2/instance`, `/api/oembed`, registering an app, signing up, and the peer
+search.
+
+
 Private Prometheus metrics
 --------------------------
 

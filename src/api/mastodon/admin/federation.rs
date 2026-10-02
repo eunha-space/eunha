@@ -295,6 +295,22 @@ async fn spawn_block(state: &AppState, id: i64, update: bool) {
     }
 }
 
+/// `AfterUnallowDomainWorker.perform_async`, run in place under the tests'
+/// synchronous switch as [`spawn_block`] is.
+async fn spawn_after_unallow(state: &AppState, domain: String) {
+    let state = state.clone();
+    let work = async move {
+        if let Err(error) = crate::moderation::domain_block::after_unallow(&state, &domain).await {
+            tracing::warn!(domain, %error, "AfterUnallowDomainService failed");
+        }
+    };
+    if crate::feed::sync_fanout() {
+        work.await;
+    } else {
+        crate::tenants::spawn(work);
+    }
+}
+
 // ── PATCH /api/v1/admin/domain_blocks/:id ────────────────────────────────
 
 pub async fn update_admin_domain_block(
@@ -485,8 +501,9 @@ pub async fn create_domain_allow(
     Ok(Json(row.into()))
 }
 
-/// `UnallowDomainService`, outside limited federation mode, which eunha does
-/// not have: the allow just goes.
+/// `UnallowDomainService`: in limited federation mode the domain's accounts
+/// are suspended, and deleted afterwards (`AfterUnallowDomainWorker`);
+/// otherwise the allow just goes.
 pub async fn delete_domain_allow(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -495,9 +512,18 @@ pub async fn delete_domain_allow(
     auth.require_scope("admin:write:domain_allows")?;
     let row = find_allow(&state, id).await?;
     require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
+    let limited = state.instance.limited_federation_mode;
+    if limited {
+        crate::moderation::domain_block::suspend_unallowed(&state, &row.domain)
+            .await
+            .map_err(AppError::Internal)?;
+    }
     sqlx::query!("DELETE FROM domain_allows WHERE id = $1", id)
         .execute(&state.db)
         .await?;
+    if limited {
+        spawn_after_unallow(&state, row.domain.clone()).await;
+    }
     action_log::log(
         &state.db,
         auth.account_id,

@@ -376,23 +376,23 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "no-limited-federation-mode"
-kind = "omission"
-summary = "Has no limited federation mode"
+id = "refused-deliveries-accepted"
+kind = "behaviour"
+summary = "A delivery from a domain not federated with is answered 202 and dropped"
 mastodon = """
-With `LIMITED_FEDERATION_MODE`, federates only with domains on the allow list, \
-suspends a domain's accounts when it is taken off the list, and hides the peers \
-and activity APIs."""
+Refuses the signature of a delivery whose key is on a domain it does not \
+federate with (`domain_not_allowed?`: suspended, or off the allow list in \
+limited federation mode) and answers 403, without fetching the key."""
 eunha = """
-Keeps and serves the domain allow list, but federates with everyone not \
-blocked whatever it holds; `/api/v2/instance` reports `limited_federation: \
-false`."""
+Drops the delivery without fetching the key either, but answers 202, as ojak \
+answers every activity its `blocked` hook refuses."""
 why = """
-Allow-list federation is a deployment mode, set per process in Mastodon's \
-environment, and eunha's hosted instances share a process and its \
-configuration. Supporting it per instance is a design question for the \
-tenant configuration rather than a port, so it waits for a decision."""
-evidence = "tests/integration/c2s/instance.rs"
+Either answer ends the matter for the sender, which does not retry a 403 or a \
+202. ojak answers 202 so that a server that cannot tell why it was refused \
+stops sending, and an instance that does not federate with a domain has \
+nothing to tell it. A fetch signed from such a domain is refused with 403, as \
+Mastodon refuses it."""
+evidence = "tests/integration/federation/authorized_fetch.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 

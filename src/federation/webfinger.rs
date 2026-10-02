@@ -21,3 +21,16 @@ pub async fn resolve(
             anyhow::anyhow!("no ActivityPub self link in WebFinger response for {address}")
         })
 }
+
+/// [`resolve`], as `ResolveAccountService` does it: a handle on a domain this
+/// instance does not federate with (`domain_not_allowed?`) is not looked up.
+pub async fn resolve_allowed(
+    state: &crate::state::AppState,
+    user: &str,
+    domain: &str,
+) -> anyhow::Result<String> {
+    if super::moderation::domain_not_allowed(state, domain).await {
+        anyhow::bail!("{domain} is not a domain this instance federates with");
+    }
+    resolve(&state.fetcher, user, domain).await
+}

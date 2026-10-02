@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO domain_blocks (domain, severity, created_at, updated_at)\n         VALUES ('banned.invalid', 1, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "38c15028ee7f305f3c218e9791bfa68e9719a598f1096a7ebb51f6ebd3f9a704"
+}

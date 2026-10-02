@@ -78,6 +78,23 @@ pub async fn set(state: &AppState, var: &str, value: Value) -> anyhow::Result<()
     Ok(())
 }
 
+/// `AuthorizedFetchHelper#authorized_fetch_mode?`: whether ActivityPub
+/// fetches must be signed. The instance configuration's `authorized_fetch`
+/// stands where Mastodon reads `AUTHORIZED_FETCH` from its environment, and
+/// limited federation mode forces it on. `Setting.authorized_fetch` has no
+/// default in `config/settings.yml`, so it is off until an administrator
+/// turns it on.
+pub async fn authorized_fetch_mode(state: &AppState) -> bool {
+    let instance = &state.instance;
+    if instance.limited_federation_mode {
+        return true;
+    }
+    match instance.authorized_fetch {
+        Some(configured) => configured,
+        None => boolean(state, "authorized_fetch").await,
+    }
+}
+
 /// [`get`] as a boolean, Ruby-truthy: nil and false are false.
 pub async fn boolean(state: &AppState, var: &str) -> bool {
     match get(state, var).await {

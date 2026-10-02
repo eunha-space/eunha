@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO domain_allows (domain, created_at, updated_at)\n         VALUES ('friend.invalid', now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a8ffe5c4d5c3014e537505359c1219e065e5349ff7d280046943457e425f46e3"
+}

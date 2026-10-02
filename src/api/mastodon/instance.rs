@@ -237,11 +237,9 @@ pub async fn get_instance_v1(
 /// `Api::V1::Instances::PeersController`: `Instance.searchable`, the known
 /// domains (the `instances` view, computed here rather than read from the
 /// materialized copy) less the blocked ones; a 404 when `peers_api_enabled`
-/// is off.
+/// is off or the instance is in limited federation mode.
 pub async fn get_peers(state: AppState) -> AppResult<Json<Vec<String>>> {
-    if !crate::settings::boolean(&state, "peers_api_enabled").await {
-        return Err(AppError::NotFound);
-    }
+    require_enabled_api(&state, "peers_api_enabled").await?;
     let rows = sqlx::query_scalar!(
         r#"SELECT domain AS "domain!" FROM (
              SELECT domain FROM accounts WHERE domain IS NOT NULL
@@ -255,6 +253,16 @@ pub async fn get_peers(state: AppState) -> AppResult<Json<Vec<String>>> {
     Ok(Json(rows))
 }
 
+/// `require_enabled_api!` of the peers, peer search and activity controllers:
+/// a 404 unless `setting` is on and the instance is not in limited
+/// federation mode, which keeps who it federates with to itself.
+async fn require_enabled_api(state: &AppState, setting: &str) -> AppResult<()> {
+    if state.instance.limited_federation_mode || !crate::settings::boolean(state, setting).await {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
 // ── GET /api/v1/peers/search ──────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -266,6 +274,7 @@ pub async fn search_peers(
     state: AppState,
     Query(params): Query<PeersSearchParams>,
 ) -> AppResult<Json<Vec<String>>> {
+    require_enabled_api(&state, "peers_api_enabled").await?;
     let q = params.q.as_deref().unwrap_or("").trim().to_string();
     let pattern = format!("%{}%", q);
     let rows = sqlx::query_scalar!(
@@ -458,7 +467,7 @@ pub async fn get_instance_v2(
                     remote: crate::settings::string(&state, "remote_topic_feed_access").await,
                 },
             },
-            limited_federation: false,
+            limited_federation: state.instance.limited_federation_mode,
         },
         registrations: InstanceRegistrations {
             enabled: instance.registrations_open,
@@ -481,6 +490,7 @@ pub async fn get_instance_v2(
 // ── GET /api/v1/instance/activity ────────────────────────────────────────
 
 pub async fn get_instance_activity(state: AppState) -> AppResult<Json<Vec<serde_json::Value>>> {
+    require_enabled_api(&state, "activity_api_enabled").await?;
     // Return 12 weeks of activity
     let rows = sqlx::query!(
         r#"SELECT

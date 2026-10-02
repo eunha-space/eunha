@@ -158,6 +158,19 @@ already known. Once their severity is right (see
 [migrations](./migrations#domain-blocks-written-before-migration-015)),
 saving each one again with a `PATCH` applies it.
 
+A suspended domain is one this instance does not federate with, which is what
+Mastodon's `domain_not_allowed?` asks: its deliveries are dropped and its
+signatures refused before any key is fetched from it, its accounts and
+statuses are not fetched or resolved, and its accounts cannot be followed. In
+limited federation mode (see
+[instances](./instances#authorized-fetch-and-limited-federation)) the question
+is the allow list instead: only a domain on it, matched exactly and not by a
+parent domain, federates at all, and removing one suspends and then deletes its
+accounts. Outside that mode the allow list is kept but does nothing.
+`authorized_fetch`, the site setting behind Mastodon's secure mode, is read
+from the `settings` table the same way as the settings above, unless the
+instance configuration decides it.
+
 
 Sign-ups and addresses
 ----------------------

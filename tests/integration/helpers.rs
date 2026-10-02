@@ -110,6 +110,33 @@ impl ApiClient {
         req.send().await.unwrap()
     }
 
+    /// GET asking for ActivityPub with a draft-cavage HTTP Signature, as a
+    /// peer in authorized fetch mode fetches.
+    pub async fn ap_get_signed(
+        &self,
+        path: &str,
+        key_id: &str,
+        private_key_pem: &str,
+    ) -> reqwest::Response {
+        let key = ojak::sig::signature::PrivateKey::from_pem(private_key_pem).expect("a key");
+        let signed = ojak::sig::signature::sign_get_with_key(
+            &format!("https://{}{}", self.host, path),
+            key_id,
+            &key,
+            chrono::Utc::now().timestamp(),
+        )
+        .expect("sign request");
+        self.http
+            .get(self.url(path))
+            .header("host", &self.host)
+            .header("accept", "application/activity+json")
+            .header("date", signed.date)
+            .header("signature", signed.signature)
+            .send()
+            .await
+            .unwrap()
+    }
+
     pub async fn post_json(
         &self,
         path: &str,
@@ -462,6 +489,16 @@ impl TestContext {
         .await
     }
 
+    /// [`TestContext::with_instance_config`] under the name the federation
+    /// tests use: for what is read off the instance configuration rather than
+    /// the database, such as `limited_federation_mode` or `authorized_fetch`.
+    pub async fn with_instance(
+        label: &str,
+        configure: impl FnOnce(&mut eunha::config::InstanceConfig),
+    ) -> Self {
+        Self::with_instance_config(label, configure).await
+    }
+
     /// A context whose instance configuration `adjust` has changed, for what
     /// is read off it at startup.
     pub async fn with_instance_config(
@@ -605,6 +642,9 @@ impl TestContext {
                 privacy_policy: String::new(),
                 terms_of_service: String::new(),
                 email_subscriptions: true,
+                authorized_fetch: None,
+                limited_federation_mode: false,
+                disallow_unauthenticated_api_access: false,
             },
             // Exercise the same path a Mastodon 4.7 database uses: local
             // signing keys in `keypairs`, encrypted with these secrets.

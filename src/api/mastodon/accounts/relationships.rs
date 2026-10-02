@@ -131,6 +131,12 @@ pub async fn follow(
     if target.id == source.id || target.is_unavailable() {
         return Err(AppError::NotFound);
     }
+    // `following_not_allowed?`, `domain_not_allowed?` first.
+    if let Some(domain) = target.domain.as_deref() {
+        if crate::federation::moderation::domain_not_allowed(state, domain).await {
+            return Err(AppError::Forbidden);
+        }
+    }
     if target.moved_to_account_id.is_some() {
         return Err(AppError::Forbidden);
     }

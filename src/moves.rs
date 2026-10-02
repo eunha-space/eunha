@@ -117,10 +117,7 @@ pub async fn resolve_account(
     }
     let domain = domain.unwrap_or_default();
     // `return if domain_not_allowed?(@domain)`.
-    if crate::federation::moderation::lookup(state, &domain)
-        .await
-        .is_some_and(|block| block.is_suspend())
-    {
+    if crate::federation::moderation::domain_not_allowed(state, &domain).await {
         return Ok(None);
     }
     let known = sqlx::query_as!(

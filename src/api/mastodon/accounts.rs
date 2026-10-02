@@ -176,7 +176,7 @@ pub async fn lookup_account(
     if q.resolve.unwrap_or(false) {
         if let Some(ref d) = domain {
             if let Ok(uri) =
-                crate::federation::webfinger::resolve(&state.fetcher, &username, d).await
+                crate::federation::webfinger::resolve_allowed(&state, &username, d).await
             {
                 let account_id =
                     crate::api::ap::inbox::resolve_or_fetch_remote_account(&state, &uri).await?;

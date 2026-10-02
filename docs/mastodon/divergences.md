@@ -28,12 +28,13 @@ At the time of writing there are twenty-three. They cover:
  -  how command-line accounts are created;
  -  three details of delivery failures;
  -  the admin custom emoji API;
- -  the missing limited federation mode;
  -  the private metrics listener;
  -  two details of link preview cards;
  -  the terms of service admin API and interstitial, and the configured
     terms and privacy policy eunha still reads;
- -  percent signs in policy texts.
+ -  percent signs in policy texts;
+ -  how a delivery from a domain this instance does not federate with is
+    answered.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

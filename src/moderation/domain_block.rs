@@ -157,6 +157,47 @@ pub async fn unblock(state: &AppState, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// `UnallowDomainService#suspend_accounts!`, in limited federation mode: the
+/// accounts of a domain taken off the allow list are suspended at once, before
+/// [`after_unallow`] deletes them. Only the domain itself, as Mastodon's
+/// `Account.where(domain:)` has it, and every account of it, suspended before
+/// or not, from now.
+pub async fn suspend_unallowed(state: &AppState, domain: &str) -> Result<()> {
+    sqlx::query!(
+        "UPDATE accounts SET suspended_at = now(), updated_at = now() WHERE domain = $1",
+        domain
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// `AfterUnallowDomainService`: delete every account of a domain taken off
+/// the allow list in limited federation mode, without reserving its username.
+pub async fn after_unallow(state: &AppState, domain: &str) -> Result<()> {
+    if domain.is_empty() {
+        return Ok(());
+    }
+    let accounts = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE domain = $1 ORDER BY id",
+        domain
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for account_id in accounts {
+        crate::delete_account::call(
+            state,
+            account_id,
+            crate::delete_account::Options {
+                reserve_username: false,
+                ..Default::default()
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// `ClearDomainMediaService`: forget the cached images and attachments of the
 /// domain's accounts (their remote URLs stay), and its custom emoji.
 pub async fn clear_media(state: &AppState, id: i64) -> Result<()> {

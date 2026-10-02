@@ -708,6 +708,10 @@ pub(crate) async fn update_remote_actor(state: &AppState, object: &Value) -> App
     if actor_uri.is_empty() {
         return Ok(());
     }
+    // `return if domain_not_allowed?(json['id'])`.
+    if crate::federation::moderation::domain_not_allowed(state, actor_uri).await {
+        return Ok(());
+    }
 
     let display_name = object
         .get("name")

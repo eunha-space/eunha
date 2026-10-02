@@ -20,6 +20,7 @@ mod follow_requests;
 mod gates;
 mod instance;
 mod invites;
+mod limited_federation;
 mod lists;
 mod markers;
 mod media;
