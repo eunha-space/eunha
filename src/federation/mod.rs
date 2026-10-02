@@ -7,6 +7,7 @@ pub mod featured;
 pub mod fetch;
 pub mod fetch_resource;
 pub mod follow;
+pub mod forwarder;
 pub mod handle;
 pub mod instance_actor;
 pub mod keypair;

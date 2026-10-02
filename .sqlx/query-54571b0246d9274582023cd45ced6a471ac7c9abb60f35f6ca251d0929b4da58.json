@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.account_id FROM statuses s\n           JOIN statuses t ON t.id = s.in_reply_to_id\n           JOIN accounts a ON a.id = t.account_id\n           WHERE s.id = $1 AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "54571b0246d9274582023cd45ced6a471ac7c9abb60f35f6ca251d0929b4da58"
+}

@@ -1059,3 +1059,157 @@ async fn test_a_quote_request_that_may_not_quote_is_rejected() {
     assert_eq!(reject["object"]["id"], request["id"]);
     assert_eq!(reject["object"]["object"].as_str(), Some(post_uri.as_str()));
 }
+
+// ── Forwarding (`ActivityPub::Forwarder`) ────────────────────────────────────
+
+/// A signed `Delete` of a remote post is passed on to the followers of the
+/// local accounts that boosted it, signed by the booster; one without a
+/// Linked Data signature is not (`forwardable?`).
+#[tokio::test]
+async fn test_a_signed_delete_is_forwarded_to_the_boosters_followers() {
+    let ctx = TestContext::new("forward-delete").await;
+    let bob_id: i64 = ctx.bob_id.parse().unwrap();
+    give_key(&ctx, bob_id).await;
+    let (carol_id, carol_uri, carol_key) =
+        seed_remote_with_key(&ctx, "carol", "carol.invalid").await;
+    let (nina_id, nina_uri, _) = seed_remote_with_key(&ctx, "nina", "nina.invalid").await;
+    follow(&ctx, nina_id, bob_id).await;
+
+    let signed_post =
+        seed_remote_status(&ctx.db, carol_id, &format!("{carol_uri}/statuses/1")).await;
+    let unsigned_post =
+        seed_remote_status(&ctx.db, carol_id, &format!("{carol_uri}/statuses/2")).await;
+    for post in [signed_post, unsigned_post] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{post}/reblog"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let delete = |n: u32| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{carol_uri}/statuses/{n}#delete"),
+            "type": "Delete",
+            "actor": carol_uri,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "object": {"id": format!("{carol_uri}/statuses/{n}"), "type": "Tombstone"},
+        })
+    };
+    let now = chrono::Utc::now().timestamp();
+    let signed = ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        &delete(1),
+        &format!("{carol_uri}#main-key"),
+        &ojak::sig::PrivateKey::from_pem(&carol_key).unwrap(),
+        now,
+        now + 3600,
+    )
+    .unwrap();
+    for activity in [signed, delete(2)] {
+        let resp = ctx
+            .api
+            .post_signed(
+                "/inbox",
+                &activity,
+                &format!("{carol_uri}#main-key"),
+                &carol_key,
+            )
+            .await;
+        assert!(resp.status().is_success(), "{}", resp.status());
+    }
+
+    let forwarded = queued_for(&ctx, "Delete", &format!("{nina_uri}/inbox")).await;
+    assert_eq!(forwarded.len(), 1, "{forwarded:?}");
+    assert_eq!(
+        forwarded[0]["id"].as_str(),
+        Some(format!("{carol_uri}/statuses/1#delete").as_str())
+    );
+    assert_eq!(forwarded[0]["signature"]["type"], "RsaSignature2017");
+    let signer: String = sqlx::query_scalar(
+        "SELECT payload->>'sender' FROM eunha.ojak_queue
+         WHERE payload->'activity'->>'type' = 'Delete' AND payload->>'inbox' = $1",
+    )
+    .bind(format!("{nina_uri}/inbox"))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        signer,
+        format!("https://{}/users/bob#main-key", ctx.domain),
+        "signed by the booster"
+    );
+}
+
+/// A remote author's `Delete` of a quote stamp is passed on, signed or not,
+/// to the followers of local accounts that boosted the quoting post.
+#[tokio::test]
+async fn test_a_stamp_delete_is_forwarded_to_the_boosters_followers() {
+    let ctx = TestContext::new("forward-stamp").await;
+    let bob_id: i64 = ctx.bob_id.parse().unwrap();
+    give_key(&ctx, bob_id).await;
+    let (carol_id, carol_uri, _) = seed_remote_with_key(&ctx, "carol", "carol.invalid").await;
+    let (dave_id, dave_uri, dave_key) = seed_remote_with_key(&ctx, "dave", "dave.invalid").await;
+    let (nina_id, nina_uri, _) = seed_remote_with_key(&ctx, "nina", "nina.invalid").await;
+    follow(&ctx, nina_id, bob_id).await;
+
+    let daves = seed_remote_status(&ctx.db, dave_id, &format!("{dave_uri}/statuses/7")).await;
+    let carols = seed_remote_status(&ctx.db, carol_id, &format!("{carol_uri}/statuses/1")).await;
+    let stamp = format!("{dave_uri}/quote_authorizations/1");
+    sqlx::query(
+        r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, state, approval_uri, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 1, $6, now(), now())"#,
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(carols)
+    .bind(daves)
+    .bind(carol_id)
+    .bind(dave_id)
+    .bind(&stamp)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{carols}/reblog"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let delete = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{stamp}#delete"),
+        "type": "Delete",
+        "actor": dave_uri,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": {
+            "id": stamp,
+            "type": "QuoteAuthorization",
+            "attributedTo": dave_uri,
+            "interactingObject": format!("{carol_uri}/statuses/1"),
+            "interactionTarget": format!("{dave_uri}/statuses/7"),
+        },
+    });
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &delete,
+            &format!("{dave_uri}#main-key"),
+            &dave_key,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    assert_eq!(quote_state(&ctx, carols).await, 3);
+    let forwarded = queued_for(&ctx, "Delete", &format!("{nina_uri}/inbox")).await;
+    assert_eq!(forwarded.len(), 1, "{forwarded:?}");
+    assert_eq!(forwarded[0]["id"], delete["id"]);
+}

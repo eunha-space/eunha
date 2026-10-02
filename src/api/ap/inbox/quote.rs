@@ -13,8 +13,17 @@ use crate::{error::AppResult, state::AppState};
 
 use super::{
     fetch_remote_status, fetch_remote_status_prefetched, json_uri, resolve_or_fetch_remote_account,
-    same_host, value_or_id,
+    same_host,
 };
+
+/// `value_or_id`: a string IRI, or an object's `id`.
+fn value_or_id(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(s) => Some(s),
+        Value::Object(o) => o.get("id").and_then(Value::as_str),
+        _ => None,
+    }
+}
 
 /// The first of a value that may be an array (`as_array(value).first`).
 fn first(v: Option<&Value>) -> Option<&Value> {
@@ -145,7 +154,8 @@ pub(super) async fn process_quote(
         .await?
         .unwrap_or_default();
     let embedded = fields.embedded(&account_uri, context);
-    verify(
+    let quote_id = quote.id;
+    if verify(
         state,
         quote,
         fields.approval_uri,
@@ -153,7 +163,11 @@ pub(super) async fn process_quote(
         embedded,
         depth,
     )
-    .await
+    .await?
+    {
+        refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri);
+    }
+    Ok(())
 }
 
 /// `ActivityPub::ProcessStatusUpdateService`'s quote handling, for the remote
@@ -197,7 +211,10 @@ pub(super) async fn update_quote(
         }
         let quote = reset_if_stamp_changed(state, quote, fields.approval_uri).await?;
         let embedded = fields.embedded(&account_uri, context);
-        verify(state, quote, fields.approval_uri, Some(uri), embedded, 0).await?;
+        let quote_id = quote.id;
+        if verify(state, quote, fields.approval_uri, Some(uri), embedded, 0).await? {
+            refetch_and_verify_later(state, quote_id, Some(uri), fields.approval_uri);
+        }
         return state_moved(state, status_id, before).await;
     }
 
@@ -226,7 +243,10 @@ pub(super) async fn update_quote(
     };
     if let Some(quote) = quote {
         let embedded = fields.embedded(&account_uri, context);
-        verify(state, quote, fields.approval_uri, fields.uri, embedded, 0).await?;
+        let quote_id = quote.id;
+        if verify(state, quote, fields.approval_uri, fields.uri, embedded, 0).await? {
+            refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri);
+        }
     }
     state_moved(state, status_id, before).await
 }
@@ -324,8 +344,8 @@ async fn quoted_account_local(state: &AppState, quote: &Quote) -> AppResult<bool
 /// and accept the quote when its author's stamp says it may be, reject it
 /// when the stamp is gone. A local quoted post waits for its `QuoteRequest`.
 ///
-/// What Mastodon retries later (`RefetchAndVerifyQuoteWorker`) when a fetch
-/// fails for now is left pending here.
+/// Says whether the stamp could not be fetched for now, which Mastodon
+/// raises for `RefetchAndVerifyQuoteWorker` to try again.
 async fn verify(
     state: &AppState,
     mut quote: Quote,
@@ -333,7 +353,7 @@ async fn verify(
     quoted_uri: Option<&str>,
     embedded_quote: Option<Value>,
     depth: u8,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let approval_uri = approval_uri
         .map(str::to_owned)
         .or_else(|| quote.approval_uri.clone());
@@ -348,35 +368,35 @@ async fn verify(
         }
     }
     if quoted_account_local(state, &quote).await? {
-        return Ok(());
+        return Ok(false);
     }
     // `fast_track_approval!`: always allow someone to quote themselves. (It
     // returns false whatever it does, so verifying goes on.)
     fast_track(state, &quote).await?;
     let Some(approval_uri) = approval_uri.filter(|u| !u.is_empty()) else {
-        return Ok(());
+        return Ok(false);
     };
 
     let json = match crate::federation::fetch::signed_get_json(state, &approval_uri).await {
         Ok(json) if json.get("id").and_then(Value::as_str) == Some(approval_uri.as_str()) => json,
         Ok(_) => {
             crate::quotes::reject(&state.db, &quote).await?;
-            return Ok(());
+            return Ok(false);
         }
         Err(error) if temporary(&error) => {
             tracing::debug!(%approval_uri, %error, "quote stamp not fetched for now");
-            return Ok(());
+            return Ok(true);
         }
         Err(_) => {
             // `return quote.reject! if @json.nil?`
             crate::quotes::reject(&state.db, &quote).await?;
-            return Ok(());
+            return Ok(false);
         }
     };
 
     let attributed_to = first(json.get("attributedTo")).and_then(value_or_id);
     if !attributed_to.is_some_and(|a| same_host(&approval_uri, a)) {
-        return Ok(());
+        return Ok(false);
     }
     // `matching_type?`: `supported_context?` and a `QuoteAuthorization`.
     let supported_context = match json.get("@context") {
@@ -397,7 +417,7 @@ async fn verify(
         || !is_authorization
         || quoting_uri.as_deref() != first(json.get("interactingObject")).and_then(value_or_id)
     {
-        return Ok(());
+        return Ok(false);
     }
 
     // `import_quoted_post_if_needed!`: an inlined `interactionTarget` from
@@ -418,7 +438,7 @@ async fn verify(
         }
     }
     let Some(quoted_status_id) = quote.quoted_status_id else {
-        return Ok(());
+        return Ok(false);
     };
 
     // `matching_quoted_post?` and `matching_quoted_author?`
@@ -429,10 +449,87 @@ async fn verify(
         None => None,
     };
     if quoted_status_uri.as_deref() != target || quoted_account_uri.as_deref() != attributed_to {
-        return Ok(());
+        return Ok(false);
     }
     crate::quotes::accept(&state.db, &quote, Some(&approval_uri)).await?;
-    Ok(())
+    Ok(false)
+}
+
+/// `PROCESSING_DELAY`: how long after a failed verification the first retry
+/// waits, at random.
+const PROCESSING_DELAY: std::ops::RangeInclusive<u64> = 30..=600;
+
+/// `sidekiq_options retry: 5`.
+const REFETCH_RETRIES: u32 = 5;
+
+/// `ExponentialBackoff`: how long the `count`-th retry (from nought) waits,
+/// `15 + 10 * count**4` seconds and up to `10 * count**4` more.
+fn refetch_backoff(count: u32, jitter: f64) -> std::time::Duration {
+    let base = 10 * u64::from(count).pow(4);
+    std::time::Duration::from_secs(15 + base + (base as f64 * jitter) as u64)
+}
+
+/// `ActivityPub::RefetchAndVerifyQuoteWorker.perform_in(rand(PROCESSING_DELAY),
+/// quote.id, quote_uri, { 'approval_uri' => approval_uri })`: verify the
+/// quote again later, retried as Sidekiq retries the worker, and refresh the
+/// quoting post in local timelines if its state moved. It runs in the
+/// instance's process (`quote-verification-retries-in-process`).
+fn refetch_and_verify_later(
+    state: &AppState,
+    quote_id: i64,
+    quoted_uri: Option<&str>,
+    approval_uri: Option<&str>,
+) {
+    let state = state.clone();
+    let quoted_uri = quoted_uri.map(str::to_owned);
+    let approval_uri = approval_uri.map(str::to_owned);
+    crate::tenants::spawn(async move {
+        let first = std::time::Duration::from_secs(rand::random_range(PROCESSING_DELAY));
+        crate::background::rest(&state.stop, first).await;
+        for attempt in 0..=REFETCH_RETRIES {
+            if state.stop.is_cancelled() {
+                return;
+            }
+            // `Quote.find(quote_id)`, else nothing to do.
+            let Ok(Some(quote)) = crate::quotes::find(&state.db, quote_id).await else {
+                return;
+            };
+            let before = quote.state;
+            let status_id = quote.status_id;
+            match verify(
+                &state,
+                quote,
+                approval_uri.as_deref(),
+                quoted_uri.as_deref(),
+                None,
+                0,
+            )
+            .await
+            {
+                Ok(false) => {
+                    let after = crate::quotes::find(&state.db, quote_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|q| q.state);
+                    if after.is_some_and(|after| after != before) {
+                        crate::quotes::distribute_update(&state, status_id, false).await;
+                    }
+                    return;
+                }
+                Ok(true) => {}
+                Err(error) => {
+                    tracing::debug!(quote_id, %error, "verifying a quote again failed");
+                }
+            }
+            if attempt == REFETCH_RETRIES {
+                tracing::debug!(quote_id, "gave up verifying a quote");
+                return;
+            }
+            let wait = refetch_backoff(attempt, rand::random::<f64>());
+            crate::background::rest(&state.stop, wait).await;
+        }
+    });
 }
 
 /// A fetch that failed for now, which Mastodon retries (`raise_on_error:
@@ -845,6 +942,7 @@ pub(super) async fn handle_quote_answer(
 /// there was such a quote.
 pub(super) async fn revoke_by_stamp(
     state: &AppState,
+    activity: &Value,
     actor_uri: &str,
     approval_uri: &str,
 ) -> AppResult<bool> {
@@ -862,6 +960,20 @@ pub(super) async fn revoke_by_stamp(
     let Some(quote) = crate::quotes::find(&state.db, quote_id).await? else {
         return Ok(false);
     };
+    // `ActivityPub::Forwarder.new(@account, @json, @quote.status).forward!
+    // if @quote.status.present?`, whether or not the Delete is signed.
+    let quoting_live = sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        quote.status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .is_some();
+    if quoting_live {
+        if let Some(sender) = quote.quoted_account_id {
+            crate::federation::forwarder::forward(state, sender, activity, quote.status_id).await;
+        }
+    }
     crate::quotes::reject(&state.db, &quote).await?;
     crate::quotes::distribute_update(state, quote.status_id, false).await;
     Ok(true)
@@ -1037,4 +1149,19 @@ pub(super) async fn handle_feature_request(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refetch_backs_off_as_sidekiq_does() {
+        let secs = |count, jitter| refetch_backoff(count, jitter).as_secs();
+        assert_eq!(secs(0, 0.0), 15);
+        assert_eq!(secs(1, 0.0), 25);
+        assert_eq!(secs(1, 0.99), 34);
+        assert_eq!(secs(4, 0.0), 2575);
+        assert_eq!(secs(4, 0.5), 3855);
+    }
 }

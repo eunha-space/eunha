@@ -298,6 +298,33 @@ pub async fn forward_to_followers(
     .await
 }
 
+/// Pass another server's `activity` on to `inboxes`, signed by `key_id`'s
+/// account, as it arrived (`ActivityPub::Forwarder`): no proof or Linked
+/// Data Signature of ours goes on someone else's activity. Unavailable
+/// domains are left out, as for any delivery.
+pub async fn forward_to_inboxes(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+) -> anyhow::Result<u64> {
+    let unavailable = unavailable_domains(state).await;
+    let inboxes = inboxes
+        .into_iter()
+        .filter(|inbox| !inbox_unavailable(inbox, &unavailable))
+        .collect();
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        false,
+        LinkedData::Unsigned,
+        None,
+    )
+    .await
+}
+
 /// Send `activity` to the remote followers of `account_id`, signed with
 /// `key_id`, without an integrity proof: for an activity signed as an
 /// identity whose actor is no longer served, where a proof would name a key

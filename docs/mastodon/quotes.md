@@ -64,14 +64,35 @@ refreshes it in local timelines, without notifications, and sends it as an
 `Update`.
 
 
+Retries and forwarding
+----------------------
+
+A stamp that cannot be fetched for now (no answer, or a status that may
+change) leaves the quote pending and is tried again as
+`RefetchAndVerifyQuoteWorker` tries it: between 30 seconds and ten minutes
+later, then up to five more times on Sidekiq's exponential backoff, the
+quoting post refreshed in local timelines if the quote's state moves. The
+retries run in the instance's process
+(`quote-verification-retries-in-process` in
+[divergences](./divergences.md)).
+
+Mastodon 4.7.1 also has a `QuoteRefreshWorker`, to verify a stamp again a
+week after it was last checked, but nothing schedules it
+(`Quote#schedule_refresh_if_stale!` has no caller), so it has no counterpart
+here.
+
+A remote author's `Delete` of a stamp is passed on, as
+`ActivityPub::Forwarder` passes it, to the followers of the local accounts
+that boosted or quoted the quoting post, and of the local author it replies
+to, signed by that author or else by the first of those accounts. The same
+forwarder passes on a remote status's `Delete`, and an edit's `Update`, when
+the activity carries a Linked Data signature and the status is public or
+unlisted.
+
+
 What still differs
 ------------------
 
- -  Mastodon retries a stamp it could not fetch for now
-    (`RefetchAndVerifyQuoteWorker`) and refreshes stale stamps weekly
-    (`QuoteRefreshWorker`); eunha leaves such a quote pending.
- -  A remote `Delete` of a stamp is not forwarded to the followers of local
-    accounts that boosted or quoted the quoting post (`ActivityPub::Forwarder`).
  -  Statuses are soft-deleted, and their quotes kept: a deleted quoted post is
     shown as `deleted` from its row, where Mastodon nullifies
     `quoted_status_id`.

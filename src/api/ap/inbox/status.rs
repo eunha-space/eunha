@@ -80,14 +80,16 @@ pub(super) async fn handle_delete(
                 if same_host(actor_uri, uri) {
                     delete_later(state, actor_uri, uri).await;
                 }
-                super::quote::revoke_by_stamp(state, actor_uri, uri).await?;
+                super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
                 return Ok(());
             }
 
             // Reject if the actor's domain doesn't match the object's domain —
             // prevents one server from deleting another server's content.
             if !same_host(actor_uri, uri) {
-                if may_be_stamp && super::quote::revoke_by_stamp(state, actor_uri, uri).await? {
+                if may_be_stamp
+                    && super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?
+                {
                     return Ok(());
                 }
                 tracing::warn!(
@@ -112,6 +114,23 @@ pub(super) async fn handle_delete(
             )
             .fetch_optional(&state.db)
             .await?;
+            // `forwarder.forward! if forwarder.forwardable?`, before the
+            // status goes, to the followers of the local accounts that shared
+            // it.
+            if let Some(row) = &deleted_reply {
+                let sender: Option<i64> = sqlx::query_scalar!(
+                    "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
+                    actor_uri,
+                )
+                .fetch_optional(&state.db)
+                .await?;
+                if sender == Some(row.account_id)
+                    && crate::federation::forwarder::forwardable(state, activity, row.id).await
+                {
+                    crate::federation::forwarder::forward(state, row.account_id, activity, row.id)
+                        .await;
+                }
+            }
             let deleted =
                 sqlx::query!("UPDATE statuses SET deleted_at = now() WHERE uri = $1", uri,)
                     .execute(&state.db)
@@ -143,7 +162,7 @@ pub(super) async fn handle_delete(
                 delete_later(state, actor_uri, uri).await;
                 // `delete_status || revoke_quote`
                 if may_be_stamp {
-                    super::quote::revoke_by_stamp(state, actor_uri, uri).await?;
+                    super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
                 }
             }
 
@@ -794,6 +813,15 @@ pub(super) async fn handle_update(
             .await?;
             if quote_moved || (explicit && text_changed) {
                 crate::quotes::distribute_update(state, row.id, false).await;
+            }
+            // `forward_activity! if significant_changes? &&
+            // @status_parser.edited_at > last_edit_date`.
+            if explicit
+                && (text_changed || quote_moved)
+                && crate::federation::forwarder::forwardable(state, activity, row.id).await
+            {
+                crate::federation::forwarder::forward(state, row.account_id, activity, row.id)
+                    .await;
             }
         }
         _ => {}

@@ -1382,3 +1382,41 @@ would ever be heard."""
 evidence = "tests/integration/federation/quote.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "quote-verification-retries-in-process"
+kind = "behaviour"
+summary = "Retries a quote stamp that could not be fetched in the process"
+mastodon = """
+Queues `ActivityPub::RefetchAndVerifyQuoteWorker` between 30 seconds and ten \
+minutes after verifying a quote failed for now, retried five times with \
+`ExponentialBackoff`."""
+eunha = """
+Runs the same schedule as a task in the instance's process. A retry waiting \
+to run is lost if the process stops, and the quote stays pending."""
+why = """
+A lost retry costs one quote shown pending rather than accepted, which the \
+author's next edit or a refetch of the post sets right; a durable queue would \
+add a table and a worker for work that is safe to lose."""
+evidence = "src/api/ap/inbox/quote.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "forwarded-activities-retry-as-deliveries"
+kind = "behaviour"
+summary = "Forwarded activities are retried as eunha's own deliveries are"
+mastodon = """
+Sends what `ActivityPub::Forwarder` passes on through \
+`ActivityPub::LowPriorityDeliveryWorker`: the `pull` queue, eight retries, \
+and no dead set."""
+eunha = """
+Queues them with every other delivery, on the delivery queue's seventeen \
+attempts, ahead of a fan-out when they go to at most eight inboxes."""
+why = """
+Eunha's delivery queue has no lower tier, and a forwarded Delete or edit \
+that arrives a day late is still the right one to arrive; giving up sooner \
+would only lose more of them."""
+evidence = "tests/integration/federation/quote.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

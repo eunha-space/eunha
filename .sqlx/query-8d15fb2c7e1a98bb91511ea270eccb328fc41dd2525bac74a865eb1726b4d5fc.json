@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.account_id FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.reblog_of_id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL\n           ORDER BY s.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d15fb2c7e1a98bb91511ea270eccb328fc41dd2525bac74a865eb1726b4d5fc"
+}
