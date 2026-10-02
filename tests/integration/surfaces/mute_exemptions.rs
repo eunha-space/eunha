@@ -85,6 +85,15 @@ async fn test_a_muted_post_mentioning_me_stays_in_home() {
 #[tokio::test]
 async fn test_a_muted_boost_of_my_post_stays_in_home() {
     let ctx = TestContext::new("mute-exempt-boost-home").await;
+    // A boost of a post already among the newest in the feed is grouped
+    // away (`aggregate_reblogs`); this is about the mute, so see every boost.
+    ctx.api
+        .patch_json(
+            "/api/eunha/v1/preferences",
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "aggregate_reblogs": false }),
+        )
+        .await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
     alice_mutes_bob(&ctx).await;
