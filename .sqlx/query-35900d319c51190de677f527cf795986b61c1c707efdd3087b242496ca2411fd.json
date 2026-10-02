@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO session_activations\n             (session_id, user_id, access_token_id, ip, user_agent, created_at, updated_at)\n           VALUES ($1, $2, $3, $4::text::inet, $5, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int8",
+        "Int8",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35900d319c51190de677f527cf795986b61c1c707efdd3087b242496ca2411fd"
+}

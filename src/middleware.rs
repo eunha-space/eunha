@@ -128,7 +128,7 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
                FROM oauth_access_tokens t
                LEFT JOIN users u ON u.id = t.resource_owner_id
                LEFT JOIN accounts a ON a.id = u.account_id
-               LEFT JOIN user_roles r ON r.id = u.role_id
+               LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)
                WHERE t.token = $1"#,
             token
         )

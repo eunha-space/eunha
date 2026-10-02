@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webauthn_credentials\n             (external_id, public_key, nickname, sign_count, user_id, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), now())\n           ON CONFLICT DO NOTHING\n           RETURNING id, nickname, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "nickname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "95a853858b5e8358a3abeee5d09f6bb86091c77dcaece78d1fbe5a71488e6823"
+}

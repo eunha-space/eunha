@@ -26,6 +26,7 @@ export default defineConfig({
           { text: "Several instances in one process", link: "/operating/instances" },
           { text: "Invites", link: "/operating/invites" },
           { text: "Moderation", link: "/operating/moderation" },
+          { text: "Account security", link: "/operating/accounts" },
           { text: "Email subscriptions", link: "/operating/email-subscriptions" },
           { text: "Terms of service and privacy policy", link: "/operating/terms-of-service" },
           { text: "Account moves", link: "/operating/account-moves" },

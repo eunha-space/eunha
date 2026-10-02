@@ -87,6 +87,9 @@ serde_qs = "0.13"
 hex = "0.4"
 sha2 = "0.10"
 hmac = "0.12"
+# Base32 TOTP secrets and the QR code that carries them (src/two_factor.rs)
+data-encoding = "2"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rsa = { version = "0.9", features = ["sha2", "pem"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
 

@@ -7,8 +7,10 @@ use axum::{
 };
 use serde::Deserialize;
 
+pub mod sign_in;
+
 use crate::{
-    crypto::{generate_token, hash_password, verify_password},
+    crypto::{hash_password, verify_password},
     locale::Locale,
     middleware::ResolvedInstance,
     state::AppState,
@@ -16,7 +18,8 @@ use crate::{
 };
 
 const COOKIE_NAME: &str = "account_session";
-const COOKIE_MAX_AGE: u32 = 2_592_000; // 30 days
+/// A year, as Mastodon's `_session_id` cookie lasts.
+const COOKIE_MAX_AGE: u32 = 31_536_000;
 
 pub fn router() -> Router {
     Router::new()
@@ -26,6 +29,10 @@ pub fn router() -> Router {
         .route("/account/sso", post(sso_post))
         .route("/account/password", get(password_page).post(password_post))
         .route("/account/delete", get(delete_page).post(delete_post))
+        .route(
+            "/auth/sessions/security_key_options",
+            post(sign_in::security_key_options),
+        )
 }
 
 // ── Session lookup ─────────────────────────────────────────────────────────────
@@ -33,6 +40,8 @@ pub fn router() -> Router {
 struct AccountSession {
     user_id: i64,
     username: String,
+    /// `session_activations.id`, Mastodon's `current_session`.
+    activation_id: i64,
 }
 
 fn extract_session_token(headers: &HeaderMap) -> Option<String> {
@@ -46,20 +55,30 @@ fn extract_session_token(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-async fn get_session(headers: &HeaderMap, state: &AppState) -> Option<AccountSession> {
-    let token = extract_session_token(headers)?;
+type ClientIpExt = Option<axum::extract::Extension<crate::remote_ip::ClientIp>>;
+
+fn client_addr(client_ip: ClientIpExt) -> Option<std::net::IpAddr> {
+    client_ip.and_then(|axum::extract::Extension(c)| c.0)
+}
+
+/// The signed-in user behind the session cookie: Mastodon's
+/// `SessionActivationRememberable` strategy and `after_fetch` hook.
+async fn get_session(
+    headers: &HeaderMap,
+    state: &AppState,
+    ip: Option<std::net::IpAddr>,
+) -> Option<AccountSession> {
+    let session_id = extract_session_token(headers)?;
+    let session = crate::sessions::fetch(&state.db, &session_id, ip).await?;
     let row = sqlx::query!(
         r#"SELECT u.id as user_id, a.username
-           FROM oauth_access_tokens t
-           JOIN users u ON u.id = t.resource_owner_id
+           FROM users u
            JOIN accounts a ON a.id = u.account_id
-           WHERE t.token = $1
-             AND t.revoked_at IS NULL
-             AND (t.expires_in IS NULL OR t.created_at + t.expires_in * interval '1 second' > now())
+           WHERE u.id = $1
              AND u.disabled = false
              AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
              AND a.domain IS NULL"#,
-        token,
+        session.user_id,
     )
     .fetch_optional(&state.db)
     .await
@@ -68,6 +87,7 @@ async fn get_session(headers: &HeaderMap, state: &AppState) -> Option<AccountSes
     Some(AccountSession {
         user_id: row.user_id,
         username: row.username,
+        activation_id: session.id,
     })
 }
 
@@ -96,11 +116,12 @@ pub async fn account_home(
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
 
-    let Some(session) = get_session(&headers, &state).await else {
+    let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
 
@@ -173,22 +194,30 @@ pub async fn login_page(
 
 #[derive(Debug, Deserialize)]
 pub struct LoginForm {
-    pub email: String,
-    pub password: String,
+    pub email: Option<String>,
+    pub password: Option<String>,
+    #[serde(flatten)]
+    pub step: sign_in::Submitted,
 }
 
+/// `Auth::SessionsController#create`: the password, then whatever
+/// [`sign_in`] asks for, then a session.
 pub async fn login_post(
     state: AppState,
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
-    client_ip: Option<axum::extract::Extension<crate::remote_ip::ClientIp>>,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
     let domain = instance.domain.clone();
     let htmx = is_htmx(&headers);
+    let ip = client_addr(client_ip);
+    let user_agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
 
     let render_error = |error: &'static str| -> Response {
         if htmx {
@@ -209,71 +238,98 @@ pub async fn login_post(
         Html(html).into_response()
     };
 
-    let row = match sqlx::query!(
-        r#"SELECT u.id, u.encrypted_password, a.id as account_id, a.username
-           FROM users u
-           JOIN accounts a ON a.id = u.account_id
-           WHERE lower(u.email) = lower($1)
-             AND u.confirmed_at IS NOT NULL
-             AND u.disabled = false
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             AND a.domain IS NULL"#,
-        form.email.trim(),
-    )
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(Some(r)) => r,
-        _ => return render_error(locale.t("invalid_credentials")),
-    };
-
-    let ip = client_ip.and_then(|axum::extract::Extension(c)| c.0);
-    let user_agent = headers
-        .get(axum::http::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok());
-    if verify_password(&form.password, &row.encrypted_password)
+    let step = if form.step.is_attempt() {
+        sign_in::continue_attempt(
+            &state,
+            &form.step,
+            sign_in::Continuation::Account,
+            ip,
+            user_agent,
+        )
+        .await
+    } else {
+        let email = form.email.as_deref().unwrap_or("").trim();
+        let row = match sqlx::query!(
+            r#"SELECT u.id, u.encrypted_password
+               FROM users u
+               JOIN accounts a ON a.id = u.account_id
+               WHERE lower(u.email) = lower($1)
+                 AND u.confirmed_at IS NOT NULL
+                 AND u.disabled = false
+                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+                 AND a.domain IS NULL"#,
+            email,
+        )
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(r)) if !r.encrypted_password.is_empty() => r,
+            _ => return render_error(locale.t("invalid_credentials")),
+        };
+        if verify_password(
+            form.password.as_deref().unwrap_or(""),
+            &row.encrypted_password,
+        )
         .await
         .is_err()
-    {
-        crate::accounts::record_login(&state.db, row.id, ip, user_agent, false, Some("invalid"))
-            .await;
-        return render_error(locale.t("invalid_credentials"));
-    }
-    crate::accounts::record_login(&state.db, row.id, ip, user_agent, true, None).await;
-
-    // Reuse an existing non-revoked OAuth token, or mint a new one.
-    let token = match sqlx::query_scalar!(
-        r#"SELECT token FROM oauth_access_tokens
-           WHERE resource_owner_id = $1
-             AND revoked_at IS NULL
-             AND (expires_in IS NULL OR created_at + expires_in * interval '1 second' > now())
-           LIMIT 1"#,
-        row.id,
-    )
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(Some(t)) => t,
-        _ => {
-            let t = generate_token(64);
-            if sqlx::query!(
-                "INSERT INTO oauth_access_tokens (resource_owner_id, token, scopes, created_at) VALUES ($1, $2, 'read write follow push', now())",
+        {
+            crate::accounts::record_login(
+                &state.db,
                 row.id,
-                t,
+                ip,
+                user_agent,
+                "password",
+                false,
+                Some("invalid"),
             )
-            .execute(&state.db)
-            .await
-            .is_err()
-            {
-                return render_error(locale.t("err_server"));
+            .await;
+            return render_error(locale.t("invalid_credentials"));
+        }
+        sign_in::after_password(
+            &state,
+            row.id,
+            sign_in::Continuation::Account,
+            ip,
+            user_agent,
+        )
+        .await
+    };
+
+    let user_id = match step {
+        sign_in::Step::SignedIn(user_id, _) => user_id,
+        sign_in::Step::Render(page) => {
+            let page = sign_in::render(&state, locale, &page);
+            if htmx {
+                // The form swaps into a message box; the next step is a page.
+                let mut h = HeaderMap::new();
+                h.insert(
+                    HeaderName::from_static("hx-retarget"),
+                    HeaderValue::from_static("body"),
+                );
+                h.insert(
+                    HeaderName::from_static("hx-reswap"),
+                    HeaderValue::from_static("innerHTML"),
+                );
+                return (h, page).into_response();
             }
-            t
+            return page;
+        }
+        sign_in::Step::Restart(_) => return render_error(locale.t("session_timeout")),
+        sign_in::Step::Failed(_) => return render_error(locale.t("err_server")),
+    };
+
+    // `sign_in(user)`, and the session it activates.
+    let session_id = match crate::sessions::activate(&state.db, user_id, ip, user_agent).await {
+        Ok(id) => id,
+        Err(error) => {
+            tracing::error!(%error, "could not activate a session");
+            return render_error(locale.t("err_server"));
         }
     };
 
     if htmx {
         let mut h = HeaderMap::new();
-        h.insert(header::SET_COOKIE, set_cookie(&token).parse().unwrap());
+        h.insert(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
         h.insert(
             HeaderName::from_static("hx-redirect"),
             HeaderValue::from_static("/account"),
@@ -281,7 +337,7 @@ pub async fn login_post(
         return (h, "").into_response();
     }
     (
-        [(header::SET_COOKIE, set_cookie(&token))],
+        [(header::SET_COOKIE, set_cookie(&session_id))],
         Redirect::to("/account"),
     )
         .into_response()
@@ -294,15 +350,15 @@ pub struct SsoForm {
     pub token: String,
 }
 
+/// Turn the web client's token into a session on these pages.
 pub async fn sso_post(
     state: AppState,
-    axum::extract::Extension(ResolvedInstance(_instance)): axum::extract::Extension<
-        ResolvedInstance,
-    >,
+    client_ip: ClientIpExt,
+    headers: HeaderMap,
     Form(form): Form<SsoForm>,
 ) -> Response {
-    let valid = sqlx::query!(
-        r#"SELECT 1 as "exists!"
+    let token = sqlx::query!(
+        r#"SELECT t.id, t.resource_owner_id AS "user_id!"
            FROM oauth_access_tokens t
            JOIN users u ON u.id = t.resource_owner_id
            JOIN accounts a ON a.id = u.account_id
@@ -315,15 +371,29 @@ pub async fn sso_post(
     .fetch_optional(&state.db)
     .await
     .ok()
-    .flatten()
-    .is_some();
+    .flatten();
 
-    if !valid {
+    let Some(token) = token else {
         return Redirect::to("/account/login").into_response();
-    }
+    };
+    let user_agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
+    let session_id = match crate::sessions::activate_with_token(
+        &state.db,
+        token.user_id,
+        token.id,
+        client_addr(client_ip),
+        user_agent,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(_) => return Redirect::to("/account/login").into_response(),
+    };
 
     (
-        [(header::SET_COOKIE, set_cookie(&form.token))],
+        [(header::SET_COOKIE, set_cookie(&session_id))],
         Redirect::to("/account"),
     )
         .into_response()
@@ -331,14 +401,10 @@ pub async fn sso_post(
 
 // ── POST /account/logout ───────────────────────────────────────────────────────
 
+/// `Warden::Manager.before_logout`: the session deactivated.
 pub async fn logout_post(state: AppState, headers: HeaderMap) -> Response {
-    if let Some(token) = extract_session_token(&headers) {
-        let _ = sqlx::query!(
-            "UPDATE oauth_access_tokens SET revoked_at = now() WHERE token = $1",
-            token,
-        )
-        .execute(&state.db)
-        .await;
+    if let Some(session_id) = extract_session_token(&headers) {
+        let _ = crate::sessions::deactivate(&state.db, &session_id).await;
     }
 
     if is_htmx(&headers) {
@@ -372,12 +438,13 @@ pub async fn password_page(
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
     Query(query): Query<PasswordQuery>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
 
-    let Some(_session) = get_session(&headers, &state).await else {
+    let Some(_session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
 
@@ -423,6 +490,7 @@ pub async fn password_post(
     axum::extract::Extension(ResolvedInstance(_instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
     Form(form): Form<PasswordForm>,
 ) -> Response {
@@ -438,7 +506,7 @@ pub async fn password_post(
         }};
     }
 
-    let Some(session) = get_session(&headers, &state).await else {
+    let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
 
@@ -485,6 +553,18 @@ pub async fn password_post(
     .await
     {
         Ok(_) => {
+            // `Auth::RegistrationsController#update`: every other session
+            // ends, and Devise's `password_change` mail goes out.
+            if let Err(error) = crate::sessions::destroy_others(
+                &state.db,
+                session.user_id,
+                Some(session.activation_id),
+            )
+            .await
+            {
+                tracing::warn!(%error, "could not end the other sessions");
+            }
+            crate::accounts::notify_password_change(&state, session.user_id).await;
             if htmx {
                 return Html(format!(
                     "<div class=\"success\">{}</div>",
@@ -511,12 +591,13 @@ pub async fn delete_page(
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
         ResolvedInstance,
     >,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
     Query(query): Query<DeleteQuery>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
 
-    let Some(session) = get_session(&headers, &state).await else {
+    let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
 
@@ -588,13 +669,14 @@ pub struct DeleteForm {
 /// the account, purge it, and sign out.
 pub async fn delete_post(
     state: AppState,
+    client_ip: ClientIpExt,
     headers: HeaderMap,
     Form(form): Form<DeleteForm>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
     let htmx = is_htmx(&headers);
 
-    let Some(session) = get_session(&headers, &state).await else {
+    let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
     let Some(account) = load_deletion_subject(&state, session.user_id).await else {

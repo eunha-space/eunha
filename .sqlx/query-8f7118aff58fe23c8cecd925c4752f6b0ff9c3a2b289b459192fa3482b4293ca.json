@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id as user_id, a.username\n           FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           WHERE u.id = $1\n             AND u.disabled = false\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8f7118aff58fe23c8cecd925c4752f6b0ff9c3a2b289b459192fa3482b4293ca"
+}

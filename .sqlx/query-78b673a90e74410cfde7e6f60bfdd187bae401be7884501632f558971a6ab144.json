@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM session_activations WHERE id = ANY($1)\n           RETURNING access_token_id, web_push_subscription_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "access_token_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "web_push_subscription_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "78b673a90e74410cfde7e6f60bfdd187bae401be7884501632f558971a6ab144"
+}

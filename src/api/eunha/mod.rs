@@ -8,6 +8,7 @@ pub mod invite_grants;
 pub mod invite_tree;
 pub mod portability;
 pub mod terms_of_service;
+pub mod two_factor;
 
 pub fn router() -> Router {
     Router::new()
@@ -20,4 +21,5 @@ pub fn router() -> Router {
         .merge(invite_grants::routes())
         .merge(email_subscriptions::routes())
         .merge(portability::routes())
+        .merge(two_factor::routes())
 }

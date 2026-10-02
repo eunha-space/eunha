@@ -881,6 +881,17 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
     }
 }
 
+/// Devise's `send_password_change_notification`: `UserMailer#password_change`.
+pub async fn notify_password_change(state: &crate::state::AppState, user_id: i64) {
+    if let Ok(Some(user)) = crate::two_factor::load(&state.db, user_id).await {
+        crate::two_factor::notify(
+            state,
+            &user,
+            crate::two_factor::NoticeKind::Security(crate::two_factor::OwnedNotice::PasswordChange),
+        );
+    }
+}
+
 /// `user.login_activities.create(...)`, as `Auth::SessionsController`
 /// records each password sign-in to the web, successful or not.
 pub async fn record_login(
@@ -888,14 +899,16 @@ pub async fn record_login(
     user_id: i64,
     ip: Option<std::net::IpAddr>,
     user_agent: Option<&str>,
+    method: &str,
     success: bool,
     failure_reason: Option<&str>,
 ) {
     let result = sqlx::query!(
         r#"INSERT INTO login_activities
              (user_id, authentication_method, provider, success, failure_reason, ip, user_agent, created_at)
-           VALUES ($1, 'password', NULL, $2, $3, $4::text::inet, $5, now())"#,
+           VALUES ($1, $2, NULL, $3, $4, $5::text::inet, $6, now())"#,
         user_id,
+        method,
         success,
         failure_reason,
         ip.map(|ip| ip.to_string()),

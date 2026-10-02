@@ -896,6 +896,34 @@ pub async fn grant_admin_scopes(db: &PgPool, account_id: i64) {
     .unwrap();
 }
 
+/// Sign in on the account pages and return the `Cookie` header value of the
+/// session it starts. Seeded users' password is `testpassword123`.
+pub async fn account_session_cookie(api: &ApiClient, email: &str, password: &str) -> String {
+    let resp = api
+        .post_form(
+            "/account/login",
+            None,
+            &[("email", email), ("password", password)],
+        )
+        .await;
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::SEE_OTHER,
+        "the sign-in should redirect to the account page"
+    );
+    let cookie = resp
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .expect("a session cookie")
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(cookie.starts_with("account_session="));
+    cookie
+}
+
 /// Look up the `users.id` for a given account.
 pub async fn user_id_for(db: &PgPool, account_id: i64) -> i64 {
     sqlx::query_scalar!("SELECT id FROM users WHERE account_id = $1", account_id)

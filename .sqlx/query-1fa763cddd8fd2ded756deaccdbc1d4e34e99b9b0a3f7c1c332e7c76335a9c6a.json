@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET webauthn_id = COALESCE(webauthn_id, $1)\n           WHERE id = $2 RETURNING webauthn_id AS \"webauthn_id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "webauthn_id!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1fa763cddd8fd2ded756deaccdbc1d4e34e99b9b0a3f7c1c332e7c76335a9c6a"
+}

@@ -210,8 +210,7 @@ pub async fn change_user_role(
 // ── DELETE /api/v1/admin/accounts/:id/two_factor_authentication ───────────
 
 /// `Admin::Users::TwoFactorAuthenticationsController#destroy`:
-/// `User#disable_two_factor!`, logged, and the user told by mail. Eunha has no
-/// two-factor sign-in of its own; this clears what a Mastodon database holds.
+/// `User#disable_two_factor!`, logged, and the user told by mail.
 pub async fn disable_user_two_factor(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -222,21 +221,7 @@ pub async fn disable_user_two_factor(
     // `UserPolicy#disable_2fa?`
     authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
     let mut tx = state.db.begin().await?;
-    sqlx::query!(
-        r#"UPDATE users SET otp_required_for_login = false, otp_secret = NULL,
-                  otp_backup_codes = CASE WHEN otp_backup_codes IS NULL THEN NULL ELSE '{}'::varchar[] END,
-                  updated_at = now()
-           WHERE id = $1"#,
-        s.user.id
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        "DELETE FROM webauthn_credentials WHERE user_id = $1",
-        s.user.id
-    )
-    .execute(&mut *tx)
-    .await?;
+    crate::two_factor::disable(&mut tx, s.user.id).await?;
     action_log::log(&mut *tx, auth.account_id, "disable_2fa", &s.target).await?;
     tx.commit().await?;
     // `UserMailer.two_factor_disabled`, which `active_for_authentication?`

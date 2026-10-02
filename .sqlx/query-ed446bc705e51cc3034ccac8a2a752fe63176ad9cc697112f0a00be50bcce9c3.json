@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, session_id, user_id, access_token_id, host(ip) AS ip\n           FROM session_activations WHERE session_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "access_token_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "ip",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "ed446bc705e51cc3034ccac8a2a752fe63176ad9cc697112f0a00be50bcce9c3"
+}

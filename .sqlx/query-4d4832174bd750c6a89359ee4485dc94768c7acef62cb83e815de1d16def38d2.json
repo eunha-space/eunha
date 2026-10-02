@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET otp_backup_codes = $1, updated_at = now() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "VarcharArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d4832174bd750c6a89359ee4485dc94768c7acef62cb83e815de1d16def38d2"
+}

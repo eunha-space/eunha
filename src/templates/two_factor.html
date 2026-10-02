@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ t_two_factor_title }} · {{ domain }}</title>
+<script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
+<link rel="stylesheet" href="/auth.css">
+<style>
+.qr svg{width:200px;height:200px;background:#fff;padding:8px;border-radius:8px}
+.secret,.codes{font-family:ui-monospace,monospace;word-break:break-all}
+.codes{columns:2;padding-left:1.2em}
+.hidden{display:none}
+.link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;width:auto;margin-top:12px}
+</style>
+</head>
+<body class="centered">
+<div class="card">
+  <h1>{{ t_two_factor_title }}</h1>
+  <p class="sub">{{ domain }}</p>
+  {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="error" id="error">{{ error }}</div>{% endif %}
+
+  {% macro continuation(attempt, oauth) %}
+    <input type="hidden" name="attempt" value="{{ attempt }}">
+    {% if oauth %}
+    <input type="hidden" name="client_id" value="{{ oauth.client_id }}">
+    <input type="hidden" name="redirect_uri" value="{{ oauth.redirect_uri }}">
+    <input type="hidden" name="scope" value="{{ oauth.scope }}">
+    <input type="hidden" name="lang" value="{{ oauth.lang }}">
+    {% endif %}
+  {% endmacro %}
+
+  {% if mode == "challenge" %}
+    <form method="POST" action="{{ action }}" id="otp-authentication-form"{% if webauthn_enabled %} class="hidden"{% endif %}>
+      {{ continuation(attempt, oauth) }}
+      <p class="hint">{{ t_otp_hint }}</p>
+      <label for="otp_attempt">{{ t_otp_attempt }}</label>
+      <input type="text" id="otp_attempt" name="otp_attempt" inputmode="numeric" autocomplete="one-time-code" autofocus required>
+      <button type="submit">{{ t_sign_in }}</button>
+      {% if webauthn_enabled %}
+      <button type="button" class="link" id="link-to-webauthn">{{ t_link_to_webauthn }}</button>
+      {% endif %}
+    </form>
+    {% if webauthn_enabled %}
+    <form method="POST" action="{{ action }}" id="webauthn-form">
+      {{ continuation(attempt, oauth) }}
+      <input type="hidden" name="credential" id="credential">
+      <p class="hint"><strong>{{ t_webauthn_title }}</strong></p>
+      <p class="hint">{{ t_webauthn_hint }}</p>
+      <p class="error hidden" id="unsupported-browser-message">{{ t_webauthn_not_supported }}</p>
+      <p class="error hidden" id="security-key-error-message">{{ t_invalid_security_key }}</p>
+      <button type="submit" class="js-webauthn">{{ t_use_security_key }}</button>
+      <button type="button" class="link" id="link-to-otp">{{ t_link_to_otp }}</button>
+    </form>
+    <script>
+    (function(){
+      var otp=document.getElementById('otp-authentication-form');
+      var key=document.getElementById('webauthn-form');
+      document.getElementById('link-to-webauthn').onclick=function(){otp.classList.add('hidden');key.classList.remove('hidden')};
+      document.getElementById('link-to-otp').onclick=function(){key.classList.add('hidden');otp.classList.remove('hidden')};
+      function b64d(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a.buffer}
+      function b64e(buf){var a=new Uint8Array(buf),s='';for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+      if(!window.PublicKeyCredential){document.getElementById('unsupported-browser-message').classList.remove('hidden');key.querySelector('.js-webauthn').disabled=true}
+      key.addEventListener('submit',function(e){
+        e.preventDefault();
+        var body=new URLSearchParams({attempt:key.querySelector('[name=attempt]').value});
+        fetch('/auth/sessions/security_key_options',{method:'POST',body:body}).then(function(r){return r.json()}).then(function(o){
+          o.challenge=b64d(o.challenge);(o.allowCredentials||[]).forEach(function(c){c.id=b64d(c.id)});
+          return navigator.credentials.get({publicKey:o});
+        }).then(function(c){
+          var r=c.response;
+          document.getElementById('credential').value=JSON.stringify({id:c.id,rawId:b64e(c.rawId),type:c.type,response:{clientDataJSON:b64e(r.clientDataJSON),authenticatorData:b64e(r.authenticatorData),signature:b64e(r.signature),userHandle:r.userHandle?b64e(r.userHandle):null}});
+          key.submit();
+        }).catch(function(err){console.error(err);document.getElementById('security-key-error-message').classList.remove('hidden')});
+      });
+    })();
+    </script>
+    {% endif %}
+  {% elif mode == "setup" %}
+    <p class="hint">{{ role_requirement }}</p>
+    <p class="hint">{{ t_otp_instructions }}</p>
+    <div class="qr">{{ qr_code | safe }}</div>
+    <p class="hint">{{ t_otp_manual_instructions }}</p>
+    <p class="secret">{{ secret }}</p>
+    <form method="POST" action="{{ action }}">
+      {{ continuation(attempt, oauth) }}
+      <label for="setup_otp_attempt">{{ t_otp_code_hint }}</label>
+      <input type="text" id="setup_otp_attempt" name="setup_otp_attempt" inputmode="numeric" autocomplete="one-time-code" autofocus required>
+      <button type="submit">{{ t_otp_enable }}</button>
+    </form>
+  {% elif mode == "recovery_codes" %}
+    <p class="hint">{{ t_recovery_instructions }}</p>
+    <ol class="codes">
+      {% for code in recovery_codes %}<li>{{ code }}</li>{% endfor %}
+    </ol>
+    <form method="POST" action="{{ action }}">
+      {{ continuation(attempt, oauth) }}
+      <input type="hidden" name="resume" value="1">
+      <button type="submit">{% if oauth %}{{ t_resume_app_authorization }}{% else %}{{ t_continue }}{% endif %}</button>
+    </form>
+  {% endif %}
+</div>
+</body>
+</html>

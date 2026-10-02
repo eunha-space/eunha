@@ -6,7 +6,9 @@ use crate::helpers::TestContext;
 #[tokio::test]
 async fn test_account_delete_page_and_challenge() {
     let ctx = TestContext::new("acct-delete-page").await;
-    let cookie = format!("account_session={}", ctx.alice_token);
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", "testpassword123")
+            .await;
     let alice_account_id: i64 = ctx.alice_id.parse().unwrap();
 
     // Signed out, the page sends you to the login form.

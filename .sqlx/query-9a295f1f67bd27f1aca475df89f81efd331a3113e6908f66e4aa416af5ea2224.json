@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.current_sign_in_at IS NOT NULL\n                  AND NOT EXISTS (SELECT 1 FROM user_ips i\n                                  WHERE i.user_id = u.id AND i.ip <<= $2::text::inet)\n           AS \"suspicious!\"\n           FROM users u WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "suspicious!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9a295f1f67bd27f1aca475df89f81efd331a3113e6908f66e4aa416af5ea2224"
+}

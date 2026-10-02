@@ -66,6 +66,8 @@ Running an instance:
     and async refreshes (`Mastodon-Async-Refresh`).
  -  *docs/operating/terms-of-service.md*: terms of service versions, their
     admin API and notification, and the privacy policy.
+ -  *docs/operating/accounts.md*: two-factor authentication and security
+    keys, the sign-in steps after the password, and sessions.
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

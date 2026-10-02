@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM web_push_subscriptions WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8afc8c8b8c45bce9a68c2203c1281411de66d5f1ec8504074c811b9d2da8bf3"
+}

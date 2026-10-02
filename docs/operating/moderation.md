@@ -406,9 +406,8 @@ For a local account:
  -  `POST …/reset` signs the user out everywhere with a random password, and
     mails a link to choose a new one.
  -  `DELETE …/two_factor_authentication` clears the user's two-factor
-    authentication and security keys, and tells the user by mail. Eunha has no
-    two-factor sign-in of its own, so this matters only for a database that
-    came from Mastodon.
+    authentication and security keys, and tells the user by mail, for a member
+    locked out of their second factor (see [Account security](accounts.md)).
  -  `POST …/change_email` mails a confirmation link to a new address, which
     takes over once followed.
  -  `POST …/confirmation` confirms an unconfirmed user, and

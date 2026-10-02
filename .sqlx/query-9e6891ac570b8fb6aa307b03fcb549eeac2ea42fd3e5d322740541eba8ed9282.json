@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.resource_owner_id AS \"user_id!\"\n           FROM oauth_access_tokens t\n           JOIN users u ON u.id = t.resource_owner_id\n           JOIN accounts a ON a.id = u.account_id\n           WHERE t.token = $1\n             AND t.revoked_at IS NULL\n             AND (t.expires_in IS NULL OR t.created_at + t.expires_in * interval '1 second' > now())\n             AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "9e6891ac570b8fb6aa307b03fcb549eeac2ea42fd3e5d322740541eba8ed9282"
+}

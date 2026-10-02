@@ -236,6 +236,20 @@ pub async fn issue_token(
 
             crate::crypto::verify_password(password, &user.encrypted_password).await?;
 
+            // The grant has nowhere to carry a second factor, so an account
+            // that has one, or whose role requires one, cannot use it: the
+            // password alone must not be enough.
+            let two_factor = crate::two_factor::load(&state.db, user.id)
+                .await?
+                .ok_or(AppError::Unauthorized)?;
+            if two_factor.enabled() || two_factor.missing() {
+                return Err(AppError::UnauthorizedMsg(
+                    "This account signs in with two-factor authentication, which the password \
+                     grant cannot carry. Use the authorization code flow."
+                        .into(),
+                ));
+            }
+
             sqlx::query!(
                 r#"UPDATE users SET
                      last_sign_in_at    = current_sign_in_at,
@@ -643,18 +657,38 @@ pub async fn authorize_form(
         )
             .into_response();
     }
-    let (toggle_en_url, toggle_ko_url) =
-        authorize_toggle_urls(&params.client_id, &params.redirect_uri, scope);
+    render_authorize(
+        &instance,
+        &app.name,
+        &params.client_id,
+        &params.redirect_uri,
+        scope,
+        locale,
+        "",
+    )
+}
+
+/// The sign-in form of the authorization page.
+fn render_authorize(
+    instance: &crate::config::InstanceConfig,
+    app_name: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    scope: &str,
+    locale: crate::locale::Locale,
+    error: &str,
+) -> Response {
+    let (toggle_en_url, toggle_ko_url) = authorize_toggle_urls(client_id, redirect_uri, scope);
     let signup_url = format!("/auth/signup?lang={}", locale.as_str());
     let html = crate::templates::render(
         "authorize.html",
         minijinja::context! {
             domain => instance.domain,
-            app_name => app.name,
-            client_id => params.client_id,
-            redirect_uri => params.redirect_uri,
+            app_name => app_name,
+            client_id => client_id,
+            redirect_uri => redirect_uri,
             scope => scope,
-            error => "",
+            error => error,
             lang => locale.as_str(),
             toggle_en_url => toggle_en_url,
             toggle_ko_url => toggle_ko_url,
@@ -689,11 +723,18 @@ pub struct AuthorizeForm {
     pub client_id: String,
     pub redirect_uri: String,
     pub scope: Option<String>,
-    pub email: String,
-    pub password: String,
+    pub email: Option<String>,
+    pub password: Option<String>,
     pub lang: Option<String>,
+    /// A step after the password: the second factor, or the setup the
+    /// user's role requires.
+    #[serde(flatten)]
+    pub step: crate::api::account::sign_in::Submitted,
 }
 
+/// Sign in on the authorization page, then grant the code. The password,
+/// then whatever [`crate::api::account::sign_in`] asks for, as Mastodon's
+/// session sign-in would before `Oauth::AuthorizationsController` answers.
 pub async fn authorize_submit(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -701,6 +742,8 @@ pub async fn authorize_submit(
     headers: axum::http::HeaderMap,
     Form(form): Form<AuthorizeForm>,
 ) -> Response {
+    use crate::api::account::sign_in::{self, Continuation, Step};
+
     let ip = client_ip.and_then(|Extension(c)| c.0);
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
@@ -716,86 +759,133 @@ pub async fn authorize_submit(
     .ok()
     .flatten()
     .unwrap_or_else(|| form.client_id.clone());
-    let result = do_authorize(&state, &form, ip, user_agent.as_deref()).await;
-    match result {
-        Ok(redirect_url) => Redirect::to(&redirect_url).into_response(),
-        Err(_) => {
-            let scope = form.scope.as_deref().unwrap_or("read");
-            let (toggle_en_url, toggle_ko_url) =
-                authorize_toggle_urls(&form.client_id, &form.redirect_uri, scope);
-            let signup_url = format!("/auth/signup?lang={}", locale.as_str());
-            let html = crate::templates::render(
-                "authorize.html",
-                minijinja::context! {
-                    domain => instance.domain,
-                    app_name => app_name,
-                    client_id => form.client_id,
-                    redirect_uri => form.redirect_uri,
-                    scope => scope,
-                    error => locale.t("invalid_credentials"),
-                    lang => locale.as_str(),
-                    toggle_en_url => toggle_en_url,
-                    toggle_ko_url => toggle_ko_url,
-                    registrations_open => instance.registrations_open,
-                    signup_url => signup_url,
-                    t_sign_in_to => locale.t("sign_in_to"),
-                    t_authorize => locale.t("authorize"),
-                    t_email => locale.t("email"),
-                    t_password => locale.t("password"),
-                    t_sign_in => locale.t("sign_in"),
-                    t_no_account => locale.t("no_account"),
-                    t_sign_up => locale.t("sign_up"),
-                },
-            );
-            Html(html).into_response()
+    let scope = form.scope.clone().unwrap_or_else(|| "read".to_string());
+    let form_error = |error: &str| {
+        render_authorize(
+            &instance,
+            &app_name,
+            &form.client_id,
+            &form.redirect_uri,
+            &scope,
+            locale,
+            error,
+        )
+    };
+
+    let continuation = Continuation::Oauth {
+        client_id: form.client_id.clone(),
+        redirect_uri: form.redirect_uri.clone(),
+        scope: form.scope.clone().unwrap_or_default(),
+        lang: locale.as_str().to_string(),
+    };
+    let step = if form.step.is_attempt() {
+        sign_in::continue_attempt(&state, &form.step, continuation, ip, user_agent.as_deref()).await
+    } else {
+        match check_password(
+            &state,
+            form.email.as_deref().unwrap_or(""),
+            form.password.as_deref().unwrap_or(""),
+            ip,
+            user_agent.as_deref(),
+        )
+        .await
+        {
+            Some(user_id) => {
+                sign_in::after_password(&state, user_id, continuation, ip, user_agent.as_deref())
+                    .await
+            }
+            None => return form_error(locale.t("invalid_credentials")),
         }
+    };
+
+    match step {
+        Step::SignedIn(
+            user_id,
+            Continuation::Oauth {
+                client_id,
+                redirect_uri,
+                scope,
+                ..
+            },
+        ) => {
+            let scope = (!scope.is_empty()).then_some(scope);
+            match issue_grant(&state, &client_id, &redirect_uri, scope, user_id).await {
+                Ok(redirect_url) => Redirect::to(&redirect_url).into_response(),
+                Err(_) => form_error(locale.t("invalid_credentials")),
+            }
+        }
+        Step::SignedIn(_, Continuation::Account) | Step::Restart(_) => {
+            form_error(locale.t("session_timeout"))
+        }
+        Step::Render(page) => sign_in::render(&state, locale, &page),
+        Step::Failed(_) => form_error(locale.t("err_server")),
     }
 }
 
-async fn do_authorize(
+/// The password half of a sign-in: the user it belongs to, or `None`, with
+/// the failure recorded.
+async fn check_password(
     state: &AppState,
-    form: &AuthorizeForm,
+    email: &str,
+    password: &str,
     ip: Option<std::net::IpAddr>,
     user_agent: Option<&str>,
+) -> Option<i64> {
+    let user = sqlx::query!(
+        r#"SELECT u.id, u.encrypted_password
+           FROM users u
+           JOIN accounts a ON a.id = u.account_id
+           WHERE lower(u.email) = lower($1)
+             AND u.confirmed_at IS NOT NULL
+             AND u.disabled = false"#,
+        email.trim(),
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()??;
+    // `find_user_from_params`: an account with no password cannot use one.
+    if user.encrypted_password.is_empty() {
+        return None;
+    }
+    if crate::crypto::verify_password(password, &user.encrypted_password)
+        .await
+        .is_err()
+    {
+        crate::accounts::record_login(
+            &state.db,
+            user.id,
+            ip,
+            user_agent,
+            "password",
+            false,
+            Some("invalid"),
+        )
+        .await;
+        return None;
+    }
+    Some(user.id)
+}
+
+/// `Oauth::AuthorizationsController#create`: an authorization code for the
+/// signed-in user, and where to send them with it.
+async fn issue_grant(
+    state: &AppState,
+    client_id: &str,
+    redirect_uri: &str,
+    scope: Option<String>,
+    user_id: i64,
 ) -> Result<String, String> {
     let app = sqlx::query_as!(
         OauthApplication,
         "SELECT * FROM oauth_applications WHERE uid = $1",
-        form.client_id,
+        client_id,
     )
     .fetch_optional(&state.db)
     .await
     .map_err(|_| "Database error".to_string())?
     .ok_or_else(|| "Unknown application".to_string())?;
 
-    let user = sqlx::query!(
-        r#"SELECT u.id, u.encrypted_password, u.account_id
-           FROM users u
-           JOIN accounts a ON a.id = u.account_id
-           WHERE lower(u.email) = lower($1)
-             AND u.confirmed_at IS NOT NULL
-             AND u.disabled = false"#,
-        form.email,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|_| "Database error".to_string())?
-    .ok_or_else(|| "Invalid email or password".to_string())?;
-
-    if crate::crypto::verify_password(&form.password, &user.encrypted_password)
-        .await
-        .is_err()
-    {
-        crate::accounts::record_login(&state.db, user.id, ip, user_agent, false, Some("invalid"))
-            .await;
-        return Err("Invalid email or password".to_string());
-    }
-    crate::accounts::record_login(&state.db, user.id, ip, user_agent, true, None).await;
-
-    let scopes = form
-        .scope
-        .clone()
-        .unwrap_or_else(|| app.scopes.clone().unwrap_or_else(|| "read".to_string()));
+    let scopes = scope.unwrap_or_else(|| app.scopes.clone().unwrap_or_else(|| "read".to_string()));
     // The granted scope must stay within the app's registered scopes.
     if !scope_is_subset(&scopes, app.scopes.as_deref().unwrap_or("read")) {
         return Err("invalid_scope".to_string());
@@ -807,19 +897,15 @@ async fn do_authorize(
              (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
            VALUES ($1, $2, $3, $4, $5, 600, now())"#,
         app.id,
-        user.id,
+        user_id,
         code,
-        form.redirect_uri,
+        redirect_uri,
         scopes,
     )
     .execute(&state.db)
     .await
     .map_err(|_| "Database error".to_string())?;
 
-    let sep = if form.redirect_uri.contains('?') {
-        '&'
-    } else {
-        '?'
-    };
-    Ok(format!("{}{}code={}", form.redirect_uri, sep, code))
+    let sep = if redirect_uri.contains('?') { '&' } else { '?' };
+    Ok(format!("{}{}code={}", redirect_uri, sep, code))
 }
