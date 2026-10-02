@@ -1,4 +1,8 @@
-use axum::{extract::Request, middleware::Next, response::Response};
+use axum::{
+    extract::Request,
+    middleware::Next,
+    response::{IntoResponse as _, Response},
+};
 use tracing::Instrument as _;
 
 use crate::{config::InstanceConfig, error::AppError, state::AppState};
@@ -29,7 +33,35 @@ pub struct AuthenticatedUser {
     pub token_id: i64,
     pub scopes: Vec<String>,
     pub application_id: Option<i64>,
+    /// Where the user stands, for `require_user!`.
+    pub standing: Standing,
+    /// `users.disabled`, which the streaming server refuses outright.
+    pub user_disabled: bool,
 }
+
+/// What `Api::BaseController#require_user!` asks of the user behind a token,
+/// in the order it asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// `User#functional?`.
+    Functional,
+    /// No confirmed e-mail address.
+    Unconfirmed,
+    /// Awaiting approval.
+    Pending,
+    /// Confirmed and approved, but disabled, a memorial, moved, or missing
+    /// the two-factor authentication its role requires.
+    Disabled,
+}
+
+/// A valid token with no user behind it, from the client-credentials grant.
+#[derive(Clone, Copy)]
+pub struct AppToken;
+
+/// A token whose account is suspended or deleting: `require_not_suspended!`
+/// refuses every API request made with it.
+#[derive(Clone, Copy)]
+pub struct UnavailableAccount;
 
 impl AuthenticatedUser {
     /// Returns `Err(AppError::Forbidden)` if the token does not cover `required`.
@@ -84,13 +116,19 @@ impl AuthenticatedUser {
 pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Response {
     if let Some(token) = extract_bearer(&req) {
         if let Some(tok) = sqlx::query!(
-            r#"SELECT t.id, u.account_id, t.application_id, t.scopes,
+            r#"SELECT t.id, u.account_id AS "account_id?", t.application_id, t.scopes,
                       t.expires_in, t.created_at, t.revoked_at, u.id as "user_id?",
                       u.disabled as "disabled?", a.suspended_at AS "suspended_at?",
-                      a.requested_deletion_at AS "requested_deletion_at?"
+                      a.requested_deletion_at AS "requested_deletion_at?",
+                      (u.confirmed_at IS NOT NULL) AS "confirmed?", u.approved AS "approved?",
+                      (a.memorial OR a.moved_to_account_id IS NOT NULL
+                       OR (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login
+                           AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w WHERE w.user_id = u.id))
+                      ) AS "restricted?"
                FROM oauth_access_tokens t
                LEFT JOIN users u ON u.id = t.resource_owner_id
                LEFT JOIN accounts a ON a.id = u.account_id
+               LEFT JOIN user_roles r ON r.id = u.role_id
                WHERE t.token = $1"#,
             token
         )
@@ -99,22 +137,34 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
         .ok()
         .flatten()
         {
-            // App-only tokens (client_credentials) have no user, so `disabled` is
-            // NULL there and must stay valid; a disabled user's tokens are rejected.
-            let user_disabled = tok.disabled.unwrap_or(false);
+            let valid =
+                tok.revoked_at.is_none() && token_not_expired(tok.created_at, tok.expires_in);
             // Mastodon's `Api::BaseController#require_not_suspended!`: an
             // unavailable account cannot act, but its tokens stay intact so
             // unsuspending restores access without a new sign-in.
-            let account_suspended =
+            let account_unavailable =
                 tok.suspended_at.is_some() || tok.requested_deletion_at.is_some();
-            let valid = tok.revoked_at.is_none()
-                && token_not_expired(tok.created_at, tok.expires_in)
-                && !user_disabled
-                && !account_suspended;
+            // A disabled user's tokens stay valid too: Mastodon refuses them
+            // only where `require_user!` runs (see `require_user`).
+            let standing = if tok.user_id.is_none() {
+                Standing::Functional
+            } else if !tok.confirmed.unwrap_or(false) {
+                Standing::Unconfirmed
+            } else if !tok.approved.unwrap_or(false) {
+                Standing::Pending
+            } else if tok.disabled.unwrap_or(false) || tok.restricted.unwrap_or(false) {
+                Standing::Disabled
+            } else {
+                Standing::Functional
+            };
 
-            if valid {
+            if valid && account_unavailable {
+                req.extensions_mut().insert(UnavailableAccount);
+            } else if let (true, None) = (valid, tok.account_id) {
+                req.extensions_mut().insert(AppToken);
+            } else if let (true, Some(account_id)) = (valid, tok.account_id) {
                 let user = AuthenticatedUser {
-                    account_id: tok.account_id,
+                    account_id,
                     user_id: tok.user_id,
                     token_id: tok.id,
                     scopes: tok
@@ -126,6 +176,8 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
                         .map(str::to_owned)
                         .collect(),
                     application_id: tok.application_id,
+                    standing,
+                    user_disabled: tok.disabled.unwrap_or(false),
                 };
                 req.extensions_mut().insert(user);
             }
@@ -273,6 +325,163 @@ fn token_not_expired(created_at: chrono::NaiveDateTime, expires_in: Option<i32>)
             created_at + chrono::Duration::seconds(seconds as i64) > chrono::Utc::now().naive_utc()
         })
         .unwrap_or(true)
+}
+
+/// `Api::BaseController`'s `require_not_suspended!` and `require_user!`, for
+/// the Mastodon API routes. Layered with `route_layer`, so the route a request
+/// matched is known.
+pub async fn api_gates(req: Request, next: Next) -> Response {
+    let Some(path) = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|p| p.as_str().to_owned())
+    else {
+        return next.run(req).await;
+    };
+    if !path.starts_with("/api/") {
+        return next.run(req).await;
+    }
+    if req.extensions().get::<UnavailableAccount>().is_some() {
+        return AppError::ForbiddenMsg("Your login is currently disabled".into()).into_response();
+    }
+    if requires_user(req.method(), &path) {
+        // Without a token, the route's own `doorkeeper_authorize!` answers.
+        let auth = req.extensions().get::<AuthenticatedUser>();
+        if auth.is_some() || req.extensions().get::<AppToken>().is_some() {
+            if let Err(error) = require_user(auth) {
+                return error.into_response();
+            }
+        }
+    }
+    next.run(req).await
+}
+
+/// `Api::BaseController#require_user!`.
+pub fn require_user(auth: Option<&AuthenticatedUser>) -> crate::error::AppResult<()> {
+    let Some(auth) = auth.filter(|a| a.user_id.is_some()) else {
+        return Err(AppError::Unprocessable(
+            "This method requires an authenticated user".into(),
+        ));
+    };
+    let refusal = match auth.standing {
+        Standing::Functional => return Ok(()),
+        Standing::Unconfirmed => "Your login is missing a confirmed e-mail address",
+        Standing::Pending => "Your login is currently pending approval",
+        Standing::Disabled => "Your login is currently disabled",
+    };
+    Err(AppError::ForbiddenMsg(refusal.into()))
+}
+
+/// Whether the Mastodon controller action behind a route runs
+/// `require_user!`. The public and hashtag timelines run it only when their
+/// feed is not public, which their handlers decide.
+pub fn requires_user(method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    let Some(rest) = path
+        .strip_prefix("/api/v1/")
+        .or_else(|| path.strip_prefix("/api/v2/"))
+        .or_else(|| path.strip_prefix("/api/v1_alpha/"))
+    else {
+        return false;
+    };
+    let first = rest.split('/').next().unwrap_or("");
+    // Controllers that run it for every action.
+    if matches!(
+        first,
+        "announcements"
+            | "annual_reports"
+            | "async_refreshes"
+            | "blocks"
+            | "bookmarks"
+            | "conversations"
+            | "domain_blocks"
+            | "donation_campaigns"
+            | "endorsements"
+            | "favourites"
+            | "featured_tags"
+            | "filters"
+            | "filter_keywords"
+            | "filter_statuses"
+            | "follow_requests"
+            | "followed_tags"
+            | "lists"
+            | "markers"
+            | "media"
+            | "mutes"
+            | "notifications"
+            | "preferences"
+            | "push"
+            | "reports"
+            | "scheduled_statuses"
+            | "suggestions"
+    ) {
+        return true;
+    }
+    match rest {
+        "accounts/verify_credentials"
+        | "accounts/update_credentials"
+        | "accounts/search"
+        | "accounts/relationships"
+        | "accounts/familiar_followers"
+        | "profile"
+        | "profile/avatar"
+        | "profile/header"
+        | "timelines/home"
+        | "timelines/list/{id}"
+        | "polls/{id}/votes" => return true,
+        // `Api::V1::StatusesController`: all but index and show.
+        "statuses" => return method == Method::POST,
+        "statuses/{id}" => return method != Method::GET,
+        // `Api::V1::CollectionsController`: create, update and destroy.
+        "collections" => return method == Method::POST,
+        "collections/{id}" => return method != Method::GET,
+        _ => {}
+    }
+    if rest.starts_with("collections/") {
+        // `Api::V1::CollectionItemsController`.
+        return true;
+    }
+    if let Some(action) = rest.strip_prefix("statuses/{id}/") {
+        return matches!(
+            action,
+            "favourite"
+                | "unfavourite"
+                | "reblog"
+                | "unreblog"
+                | "bookmark"
+                | "unbookmark"
+                | "pin"
+                | "unpin"
+                | "mute"
+                | "unmute"
+                | "translate"
+        );
+    }
+    if let Some(action) = rest.strip_prefix("accounts/{id}/") {
+        // `Api::V1::AccountsController` but index, show and create, and the
+        // per-account controllers that run it.
+        return matches!(
+            action,
+            "follow"
+                | "unfollow"
+                | "remove_from_followers"
+                | "block"
+                | "unblock"
+                | "mute"
+                | "unmute"
+                | "note"
+                | "lists"
+                | "identity_proofs"
+                | "in_collections"
+                | "endorse"
+                | "unendorse"
+        );
+    }
+    // `Api::V1::TagsController` but show.
+    if let Some(action) = rest.strip_prefix("tags/{name}/") {
+        return matches!(action, "follow" | "unfollow" | "feature" | "unfeature");
+    }
+    false
 }
 
 #[cfg(test)]

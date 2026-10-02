@@ -33,6 +33,78 @@ pub struct PublicTimelineQuery {
     pub only_media: Option<bool>,
 }
 
+/// Which feed's access settings apply: the live feeds (`PublicFeed`) or the
+/// hashtag and link feeds (`TagFeed`, `LinkFeed`).
+#[derive(Clone, Copy)]
+pub(crate) enum FeedKind {
+    Live,
+    Topic,
+}
+
+/// What a public, hashtag or link feed may show the viewer.
+pub(crate) struct FeedReach {
+    /// `incompatible_feed_settings?`: nothing at all.
+    pub nothing: bool,
+    pub local_only: bool,
+    pub remote_only: bool,
+}
+
+/// The `require_user!, if: :require_auth?` of the timeline controllers, then
+/// `PublicFeed`'s reading of the `*_feed_access` settings: `public` for
+/// anyone, `authenticated` for functional users, `disabled` for those whose
+/// role may `view_feeds`.
+pub(crate) async fn feed_reach(
+    state: &AppState,
+    auth: Option<&AuthenticatedUser>,
+    kind: FeedKind,
+    local: bool,
+    remote: bool,
+) -> AppResult<FeedReach> {
+    let (local_var, remote_var) = match kind {
+        FeedKind::Live => ("local_live_feed_access", "remote_live_feed_access"),
+        FeedKind::Topic => ("local_topic_feed_access", "remote_topic_feed_access"),
+    };
+    let local_setting = crate::settings::string(state, local_var).await;
+    let remote_setting = crate::settings::string(state, remote_var).await;
+    let require_auth = if local {
+        local_setting != "public"
+    } else if remote {
+        remote_setting != "public"
+    } else {
+        local_setting != "public" || remote_setting != "public"
+    };
+    if require_auth {
+        crate::middleware::require_user(auth)?;
+    }
+    let local_access = feed_access(state, auth, &local_setting).await;
+    let remote_access = feed_access(state, auth, &remote_setting).await;
+    let local_only = (local && !remote) || !remote_access;
+    let remote_only = (remote && !local) || !local_access;
+    Ok(FeedReach {
+        nothing: (local_only && !local_access) || (remote_only && !remote_access),
+        local_only,
+        remote_only,
+    })
+}
+
+/// `PublicFeed#user_has_access_to_feed?`.
+async fn feed_access(state: &AppState, auth: Option<&AuthenticatedUser>, setting: &str) -> bool {
+    let user = auth.filter(|a| a.user_id.is_some());
+    match setting {
+        "public" => true,
+        "authenticated" => {
+            user.is_some_and(|a| a.standing == crate::middleware::Standing::Functional)
+        }
+        "disabled" => match user {
+            Some(a) => crate::moderation::role::acting(&state.db, a.account_id)
+                .await
+                .is_ok_and(|role| role.can(&[crate::moderation::role::flag::VIEW_FEEDS])),
+            None => false,
+        },
+        _ => false,
+    }
+}
+
 // ── GET /api/v1/timelines/public ──────────────────────────────────────────
 
 pub async fn public_timeline(
@@ -58,8 +130,18 @@ pub async fn public_timeline(
         .min_id
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
-    let local_only = q.local.unwrap_or(false);
-    let remote_only = q.remote.unwrap_or(false);
+    let reach = feed_reach(
+        &state,
+        auth.as_ref().map(|Extension(a)| a),
+        FeedKind::Live,
+        q.local.unwrap_or(false),
+        q.remote.unwrap_or(false),
+    )
+    .await?;
+    if reach.nothing {
+        return Ok(with_pagination_link(&req_headers, &uri, vec![]));
+    }
+    let (local_only, remote_only) = (reach.local_only, reach.remote_only);
     let only_media = q.only_media.unwrap_or(false);
     let viewer_id: Option<i64> = auth.as_ref().map(|Extension(a)| a.account_id);
 
@@ -80,6 +162,12 @@ pub async fn public_timeline(
                  AND a.silenced_at IS NULL
                  AND ($6::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (
                      SELECT 1 FROM account_domain_blocks udb WHERE udb.account_id = $6 AND udb.domain = a.domain
+                 ))
+                 -- `language_scope`: the viewer's chosen languages, if any.
+                 AND ($6::bigint IS NULL OR NOT EXISTS (
+                     SELECT 1 FROM users vu WHERE vu.account_id = $6
+                       AND cardinality(vu.chosen_languages) > 0
+                       AND (s.language IS NULL OR NOT (s.language = ANY(vu.chosen_languages)))
                  ))
                  AND ($2::bigint IS NULL OR s.id > $2)
                  AND (NOT $5::bool OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))
@@ -131,6 +219,12 @@ pub async fn public_timeline(
                  AND a.silenced_at IS NULL
                  AND ($7::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (
                      SELECT 1 FROM account_domain_blocks udb WHERE udb.account_id = $7 AND udb.domain = a.domain
+                 ))
+                 -- `language_scope`: the viewer's chosen languages, if any.
+                 AND ($7::bigint IS NULL OR NOT EXISTS (
+                     SELECT 1 FROM users vu WHERE vu.account_id = $7
+                       AND cardinality(vu.chosen_languages) > 0
+                       AND (s.language IS NULL OR NOT (s.language = ANY(vu.chosen_languages)))
                  ))
                  AND ($2::bigint IS NULL OR s.id < $2)
                  AND ($4::bigint IS NULL OR s.id > $4)
@@ -945,6 +1039,7 @@ pub struct TagTimelineQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
     pub local: Option<bool>,
+    pub remote: Option<bool>,
     pub only_media: Option<bool>,
 }
 
@@ -972,7 +1067,18 @@ pub async fn tag_timeline(
         .min_id
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
-    let local_only = q.local.unwrap_or(false);
+    let reach = feed_reach(
+        &state,
+        auth.as_ref().map(|Extension(a)| a),
+        FeedKind::Topic,
+        q.local.unwrap_or(false),
+        q.remote.unwrap_or(false),
+    )
+    .await?;
+    if reach.nothing {
+        return Ok(with_pagination_link(&req_headers, &uri, vec![]));
+    }
+    let (local_only, remote_only) = (reach.local_only, reach.remote_only);
     let only_media = q.only_media.unwrap_or(false);
     let tag_name = hashtag.to_lowercase();
 
@@ -991,7 +1097,8 @@ pub async fn tag_timeline(
     let all_tags = collect_tag_filter("all", "all[]");
     let none_tags = collect_tag_filter("none", "none[]");
 
-    // $1=tag_name $4=any $5=all $6=none $7=local_only $8=only_media $9=viewer_id
+    // $1=tag_name $2=max_id $3=since_id $4=any $5=all $6=none $7=local_only
+    // $8=only_media $9=viewer_id $10=limit $11=remote_only $12=min_id
     let base_conditions = r#"
                JOIN accounts a ON a.id = s.account_id
                WHERE lower(t.name) = $1
@@ -1000,6 +1107,7 @@ pub async fn tag_timeline(
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.silenced_at IS NULL
                  AND (NOT $7::bool OR a.domain IS NULL)
+                 AND (NOT $11::bool OR a.domain IS NOT NULL)
                  AND (NOT $8::bool OR EXISTS (
                      SELECT 1 FROM media_attachments WHERE status_id = s.id
                  ))
@@ -1043,53 +1151,38 @@ pub async fn tag_timeline(
 
     let viewer_id: Option<i64> = auth.as_ref().map(|Extension(a)| a.account_id);
 
-    let statuses: Vec<DbStatus> = if min_id.is_some() {
-        let sql = format!(
-            r#"SELECT s.* FROM statuses s
-               JOIN statuses_tags st ON st.status_id = s.id
-               JOIN tags t ON t.id = st.tag_id
-               {base_conditions}
-                 AND ($2::bigint IS NULL OR s.id > $2)
-               ORDER BY s.id ASC
-               LIMIT $3"#
-        );
-        sqlx::query_as(&sql)
-            .bind(&tag_name)
-            .bind(min_id)
-            .bind(limit)
-            .bind(&any_tags)
-            .bind(&all_tags)
-            .bind(&none_tags)
-            .bind(local_only)
-            .bind(only_media)
-            .bind(viewer_id)
-            .fetch_all(&state.db)
-            .await?
-    } else {
-        let sql = format!(
-            r#"SELECT s.* FROM statuses s
-               JOIN statuses_tags st ON st.status_id = s.id
-               JOIN tags t ON t.id = st.tag_id
-               {base_conditions}
-                 AND ($2::bigint IS NULL OR s.id < $2)
-                 AND ($3::bigint IS NULL OR s.id > $3)
-               ORDER BY s.id DESC
-               LIMIT $10"#
-        );
-        sqlx::query_as(&sql)
-            .bind(&tag_name)
-            .bind(max_id)
-            .bind(since_id)
-            .bind(&any_tags)
-            .bind(&all_tags)
-            .bind(&none_tags)
-            .bind(local_only)
-            .bind(only_media)
-            .bind(viewer_id)
-            .bind(limit)
-            .fetch_all(&state.db)
-            .await?
-    };
+    // With `min_id`, the page just after it, oldest first, as
+    // `paginate_by_min_id` takes it.
+    let order = if min_id.is_some() { "ASC" } else { "DESC" };
+    let sql = format!(
+        r#"SELECT s.* FROM statuses s
+           JOIN statuses_tags st ON st.status_id = s.id
+           JOIN tags t ON t.id = st.tag_id
+           {base_conditions}
+             AND ($2::bigint IS NULL OR s.id < $2)
+             AND ($3::bigint IS NULL OR s.id > $3)
+             AND ($12::bigint IS NULL OR s.id > $12)
+           ORDER BY s.id {order}
+           LIMIT $10"#
+    );
+    let mut statuses: Vec<DbStatus> = sqlx::query_as(&sql)
+        .bind(&tag_name)
+        .bind(max_id)
+        .bind(since_id)
+        .bind(&any_tags)
+        .bind(&all_tags)
+        .bind(&none_tags)
+        .bind(local_only)
+        .bind(only_media)
+        .bind(viewer_id)
+        .bind(limit)
+        .bind(remote_only)
+        .bind(min_id)
+        .fetch_all(&state.db)
+        .await?;
+    if min_id.is_some() {
+        statuses.reverse();
+    }
     let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
@@ -1449,6 +1542,8 @@ pub struct LinkTimelineQuery {
     pub pagination: PaginationParams,
 }
 
+/// `Api::V1::Timelines::LinkController` and `LinkFeed`: public posts by
+/// discoverable accounts that carry a trending, allowed link.
 pub async fn link_timeline(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
@@ -1456,20 +1551,32 @@ pub async fn link_timeline(
     uri: Uri,
     Query(params): Query<LinkTimelineQuery>,
 ) -> AppResult<impl IntoResponse> {
-    let url = match params.url {
-        Some(u) if !u.is_empty() => u,
-        _ => return Err(AppError::Unprocessable("url parameter is required".into())),
-    };
+    let reach = feed_reach(
+        &state,
+        auth.as_ref().map(|Extension(a)| a),
+        FeedKind::Topic,
+        false,
+        false,
+    )
+    .await?;
 
-    let card_id: Option<i64> =
-        sqlx::query_scalar!("SELECT id FROM preview_cards WHERE url = $1", url,)
-            .fetch_optional(&state.db)
-            .await?;
-
-    let card_id = card_id.ok_or(AppError::NotFound)?;
+    // `PreviewCard.joins(:trend).merge(PreviewCardTrend.allowed).find_by!(url:)`
+    let card_id: i64 = sqlx::query_scalar!(
+        r#"SELECT pc.id FROM preview_cards pc
+           JOIN preview_card_trends t ON t.preview_card_id = pc.id
+           WHERE pc.url = $1 AND t.allowed"#,
+        params.url.unwrap_or_default(),
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if reach.nothing {
+        return Ok(with_pagination_link(&headers, &uri, vec![]));
+    }
 
     let viewer_id = auth.map(|Extension(u)| u.account_id);
-    let limit: i64 = 20;
+    // `limit_param(DEFAULT_STATUSES_LIMIT)`
+    let limit = params.pagination.limit_clamped(20, 40);
     let max_id: Option<i64> = params
         .pagination
         .max_id
@@ -1486,26 +1593,65 @@ pub async fn link_timeline(
         .as_deref()
         .and_then(|s| s.parse().ok());
 
-    let statuses = sqlx::query_as!(
+    let mut statuses = sqlx::query_as!(
         crate::db::models::Status,
         r#"SELECT s.* FROM statuses s
            JOIN preview_cards_statuses spc ON spc.status_id = s.id
+           JOIN accounts a ON a.id = s.account_id
+           LEFT JOIN users au ON au.account_id = a.id
            WHERE spc.preview_card_id = $1
              AND s.visibility = 0
              AND s.deleted_at IS NULL
+             -- `public_scope` and `Account.discoverable`.
+             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+             AND a.silenced_at IS NULL AND a.moved_to_account_id IS NULL
+             AND a.discoverable IS TRUE
+             AND (a.domain IS NOT NULL OR (au.approved AND au.confirmed_at IS NOT NULL))
+             AND EXISTS (SELECT 1 FROM account_stats ast WHERE ast.account_id = a.id)
+             AND (NOT $6::bool OR a.domain IS NULL)
+             AND (NOT $7::bool OR a.domain IS NOT NULL)
+             -- `account_filters_scope`
+             AND ($8::bigint IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM blocks b
+                 WHERE (b.account_id = $8 AND b.target_account_id = s.account_id)
+                    OR (b.account_id = s.account_id AND b.target_account_id = $8)
+             ))
+             AND ($8::bigint IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM mutes mu
+                 WHERE mu.account_id = $8 AND mu.target_account_id = s.account_id
+                   AND (mu.expires_at IS NULL OR mu.expires_at > now())
+             ))
+             AND ($8::bigint IS NULL OR $6 OR a.domain IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM account_domain_blocks udb
+                 WHERE udb.account_id = $8 AND udb.domain = a.domain
+             ))
+             -- `language_scope`
+             AND ($8::bigint IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM users vu WHERE vu.account_id = $8
+                   AND cardinality(vu.chosen_languages) > 0
+                   AND (s.language IS NULL OR NOT (s.language = ANY(vu.chosen_languages)))
+             ))
              AND ($2::bigint IS NULL OR s.id < $2)
              AND ($3::bigint IS NULL OR s.id > $3)
              AND ($4::bigint IS NULL OR s.id > $4)
-           ORDER BY s.id DESC
+           ORDER BY CASE WHEN $4::bigint IS NULL THEN -s.id ELSE s.id END
            LIMIT $5"#,
         card_id,
         max_id,
         since_id,
         min_id,
         limit,
+        reach.local_only,
+        reach.remote_only,
+        viewer_id,
     )
     .fetch_all(&state.db)
     .await?;
+    // `to_a_paginated_by_id`: a `min_id` page is taken oldest first, then
+    // turned around.
+    if min_id.is_some() {
+        statuses.reverse();
+    }
 
     let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     Ok(with_pagination_link(&headers, &uri, result))

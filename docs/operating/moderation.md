@@ -70,6 +70,51 @@ own. They are gone: Mastodon has no such routes, and clients use the action
 endpoint.
 
 
+What a held-back login can still do
+-----------------------------------
+
+A token keeps working whatever happens to its user, as in Mastodon; what
+changes is what it may be used for.
+
+ -  A suspended or deleting account's token is refused on every API
+    endpoint with 403 `Your login is currently disabled`, even one that
+    needs no token. Lifting the suspension restores it without a new
+    sign-in.
+ -  Where Mastodon's controllers run `require_user!`, which is most
+    endpoints that act or read on the user's behalf (posting, following,
+    the home timeline, notifications, settings), a user who is not fully
+    functional gets a 403 that says why:
+     -  `Your login is missing a confirmed e-mail address`;
+     -  `Your login is currently pending approval`;
+     -  `Your login is currently disabled`, for a disabled login, a
+        memorial, a moved account, or a role requiring two-factor
+        authentication the user has not set up.
+ -  Reading public posts, profiles and threads needs no such check, so a
+    disabled user's token still reads them.
+ -  An application's own token, with no user, gets 422
+    `This method requires an authenticated user` where a user is needed.
+ -  The streaming API refuses a disabled user's token outright.
+
+A moved account may still undo its redirect and manage its aliases; see
+[account moves](./account-moves).
+
+
+Who may read the public feeds
+-----------------------------
+
+The `local_live_feed_access` and `remote_live_feed_access` settings govern
+the public timeline, and `local_topic_feed_access` and
+`remote_topic_feed_access` the hashtag and link timelines. Each is
+`public`, `authenticated` (functional users only) or `disabled` (users whose
+role may `view_feeds` only). A feed that is not `public` asks for a
+functional user as above; one the viewer may not see is left out, so asking
+for both local and remote posts returns only the half the viewer may read.
+`/api/v2/instance` reports the settings under `timelines_access`.
+
+The link timeline answers only for a link that is trending and allowed,
+and shows only posts by discoverable accounts.
+
+
 Domain blocks
 -------------
 

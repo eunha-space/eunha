@@ -991,6 +991,7 @@ pub fn router() -> Router {
         .merge(auth_required)
         .merge(uploads)
         .merge(public)
+        .route_layer(middleware::from_fn(mw::api_gates))
 }
 
 /// Routes that must NOT be wrapped by CompressionLayer (WebSocket upgrades).

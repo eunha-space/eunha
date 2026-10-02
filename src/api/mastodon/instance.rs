@@ -471,18 +471,20 @@ pub async fn get_instance_v2(
                 max_expiration: 2_629_746,
             },
             translation: TranslationConfiguration { enabled: false },
+            // The `*_feed_access` settings, the link feeds sharing the
+            // hashtag feeds'.
             timelines_access: TimelinesAccess {
                 live_feeds: TimelineAccessControl {
-                    local: "public".into(),
-                    remote: "public".into(),
+                    local: crate::settings::string(&state, "local_live_feed_access").await,
+                    remote: crate::settings::string(&state, "remote_live_feed_access").await,
                 },
                 hashtag_feeds: TimelineAccessControl {
-                    local: "public".into(),
-                    remote: "public".into(),
+                    local: crate::settings::string(&state, "local_topic_feed_access").await,
+                    remote: crate::settings::string(&state, "remote_topic_feed_access").await,
                 },
                 trending_link_feeds: TimelineAccessControl {
-                    local: "public".into(),
-                    remote: "public".into(),
+                    local: crate::settings::string(&state, "local_topic_feed_access").await,
+                    remote: crate::settings::string(&state, "remote_topic_feed_access").await,
                 },
             },
             limited_federation: false,

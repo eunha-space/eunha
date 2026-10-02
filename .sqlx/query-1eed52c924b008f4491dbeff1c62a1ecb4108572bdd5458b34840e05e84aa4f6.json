@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM preview_cards WHERE url = $1",
+  "query": "SELECT pc.id FROM preview_cards pc\n           JOIN preview_card_trends t ON t.preview_card_id = pc.id\n           WHERE pc.url = $1 AND t.allowed",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "8b5df715fabb15bfca4bd02396241850a86ac7990b547d43b70fee24d59e8212"
+  "hash": "1eed52c924b008f4491dbeff1c62a1ecb4108572bdd5458b34840e05e84aa4f6"
 }

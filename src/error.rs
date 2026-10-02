@@ -22,6 +22,9 @@ pub enum AppError {
     /// lacks, the other an authorisation the app never asked for.
     #[error("outside the authorized scopes")]
     ForbiddenScope,
+    /// A 403 that says why, as `require_user!` and its kin do.
+    #[error("forbidden: {0}")]
+    ForbiddenMsg(String),
     #[error("unprocessable entity: {0}")]
     Unprocessable(String),
     /// `Mastodon::InvalidParameterError` and `ActionController::ParameterMissing`.
@@ -53,6 +56,7 @@ impl IntoResponse for AppError {
                 StatusCode::FORBIDDEN,
                 "This action is outside the authorized scopes".to_string(),
             ),
+            AppError::ForbiddenMsg(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict => (StatusCode::CONFLICT, "Duplicate record".to_string()),

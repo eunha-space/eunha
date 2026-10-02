@@ -30,7 +30,8 @@ pub async fn handler(
     auth: Option<Extension<AuthenticatedUser>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let account_id: Option<i64> = auth.map(|a| a.0.account_id);
+    // The streaming server refuses a disabled user's token, as Mastodon's does.
+    let account_id: Option<i64> = auth.filter(|a| !a.0.user_disabled).map(|a| a.0.account_id);
 
     // The masto library passes the access token as the WebSocket subprotocol rather
     // than as a query param. Browsers require the server to echo back the requested
@@ -79,7 +80,9 @@ async fn resolve_token(state: &AppState, token: &str) -> Option<i64> {
         r#"SELECT u.account_id
            FROM oauth_access_tokens t
            JOIN users u ON u.id = t.resource_owner_id
+           JOIN accounts a ON a.id = u.account_id
            WHERE t.token = $1 AND t.revoked_at IS NULL
+             AND NOT u.disabled AND a.suspended_at IS NULL
              AND (t.expires_in IS NULL OR t.created_at + t.expires_in * interval '1 second' > now())"#,
         token,
     )

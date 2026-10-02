@@ -1291,10 +1291,8 @@ async fn test_tag_timeline_min_id_pagination() {
         .iter()
         .position(|&id| id == s3["id"].as_str().unwrap())
         .unwrap();
-    assert!(
-        s2_pos < s3_pos,
-        "tag min_id results should be in ascending order"
-    );
+    // `to_a_paginated_by_id` turns a `min_id` page around: newest first.
+    assert!(s3_pos < s2_pos, "tag min_id results should be newest first");
 }
 
 /// Home timeline hides reblogs from accounts followed with show_reblogs=false.
