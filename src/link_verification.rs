@@ -17,7 +17,6 @@
 //! that is nothing but a link to itself is the candidate there. Its server
 //! sends the fields without `verified_at`, so each refresh verifies afresh.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use scraper::{Html, Selector};
@@ -106,50 +105,39 @@ async fn links_back(http: &reqwest::Client, url: &str, link_back: &str) -> bool 
         .any(|href| href.to_lowercase() == link_back_lc)
 }
 
-/// Spawn a background task that verifies the unverified `rel="me"` links on a
-/// local account's profile fields, stamping `verified_at` on success.
-pub fn spawn(state: &AppState, account_id: i64) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(e) = verify_account_links(&state, account_id).await {
-            tracing::warn!(error = %e, account_id, "link verification failed");
-        }
-    });
+/// `VerifyAccountLinksWorker.perform_async(account_id)`: verify the
+/// unverified `rel="me"` links on a local account's profile fields, stamping
+/// `verified_at` on success.
+pub async fn verify(state: &AppState, account_id: i64) {
+    crate::jobs::push(state, VerifyAccountLinksWorker { account_id }).await;
 }
 
 /// The longest `VerifyAccountLinksWorker` waits after a remote account is
-/// stored (`ProcessAccountService::VERIFY_DELAY`), in seconds.
-static VERIFY_DELAY_SECS: AtomicU64 = AtomicU64::new(10 * 60);
-
-/// Verify remote accounts' links at once, for tests.
-pub fn verify_without_delay_for_tests() {
-    VERIFY_DELAY_SECS.store(0, Ordering::SeqCst);
-}
+/// stored (`ProcessAccountService::VERIFY_DELAY`).
+const VERIFY_DELAY: Duration = Duration::from_secs(10 * 60);
 
 /// `VerifyAccountLinksWorker.perform_in(rand(VERIFY_DELAY), id)`, for a
-/// remote account `ProcessAccountService` just stored. Once at a time per
-/// account (`lock: :until_executed, lock_ttl: 1.hour`).
-pub fn spawn_later(state: &AppState, account_id: i64) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        let Some(lock) = crate::redis_lock::try_acquire(
-            &state,
-            &format!("verify_account_links:{account_id}"),
-            60 * 60 * 1000,
-        )
-        .await
-        else {
-            return;
-        };
-        let most = VERIFY_DELAY_SECS.load(Ordering::SeqCst);
-        if most > 0 {
-            tokio::time::sleep(Duration::from_secs(rand::random_range(0..most))).await;
-        }
-        if let Err(e) = verify_account_links(&state, account_id).await {
-            tracing::warn!(error = %e, account_id, "link verification failed");
-        }
-        drop(lock);
-    });
+/// remote account `ProcessAccountService` just stored.
+pub async fn verify_later(state: &AppState, account_id: i64) {
+    let delay = Duration::from_secs(rand::random_range(0..VERIFY_DELAY.as_secs()));
+    crate::jobs::push_in(state, delay, VerifyAccountLinksWorker { account_id }).await;
+}
+
+/// `VerifyAccountLinksWorker`, once at a time per account.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct VerifyAccountLinksWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for VerifyAccountLinksWorker {
+    const KIND: &'static str = "VerifyAccountLinksWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .no_retry()
+        .lock(crate::jobs::Lock::UntilExecuted(Duration::from_secs(3600)));
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        verify_account_links(state, self.account_id).await
+    }
 }
 
 /// `Account::Field#value_for_verification` for a remote account: the URL of

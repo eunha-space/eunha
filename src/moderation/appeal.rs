@@ -299,7 +299,8 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
                 state,
                 "account.updated",
                 super::webhooks::Object::Account(target_id),
-            );
+            )
+            .await;
         }
     }
 

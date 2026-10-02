@@ -581,7 +581,8 @@ async fn publish_one(
         state,
         "status.created",
         crate::moderation::webhooks::Object::Status(status.id),
-    );
+    )
+    .await;
     crate::fasp::events::status_created(state, status.id).await;
 
     if let Err(e) = crate::counters::on_status_created(

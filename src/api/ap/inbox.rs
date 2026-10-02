@@ -8,7 +8,7 @@ mod create;
 mod fetch;
 mod follow;
 mod moderation;
-mod quote;
+pub(crate) mod quote;
 mod status;
 use collection::{handle_add, handle_remove};
 use create::handle_create;

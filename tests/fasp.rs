@@ -1017,3 +1017,47 @@ async fn test_fasp_account_search() {
         .await;
     assert!(response.headers().get("mastodon-async-refresh").is_none());
 }
+
+/// Each announcement is a `Fasp::*Worker` job on the `fasp` queue, which a
+/// restart does not lose.
+#[tokio::test]
+async fn test_fasp_announcements_wait_on_the_fasp_queue() {
+    let ctx = fasp_ctx("fasp-queue").await;
+    let fake = spawn_fake().await;
+    let fasp_id = register_and_confirm(&ctx, &fake).await;
+    sqlx::query("UPDATE accounts SET indexable = true WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let response = provider_call(
+        &ctx,
+        &fake,
+        "POST",
+        "/api/fasp/data_sharing/v0/event_subscriptions",
+        Some(json!({"category": "content", "subscriptionType": "lifecycle", "maxBatchSize": 10})),
+        &fasp_id,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "queued for providers", "public")
+        .await;
+    let uri = status["uri"].as_str().unwrap().to_owned();
+    let queued = eunha::jobs::queued(&ctx.state, "Fasp::AnnounceContentLifecycleEventWorker")
+        .await
+        .unwrap();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].queue, "fasp");
+    assert_eq!(queued[0].args, json!({"uri": uri, "event_type": "new"}));
+    assert!(fake.announcements().is_empty());
+
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    fake.wait_for_announcement("the queued announcement", |b| {
+        b["objectUris"] == json!([uri])
+    })
+    .await;
+}

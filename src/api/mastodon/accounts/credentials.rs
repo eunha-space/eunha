@@ -525,12 +525,13 @@ pub async fn update_credentials(
     auth.require_scope("write:accounts")?;
     let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
-    crate::link_verification::spawn(&state, auth.account_id);
+    crate::link_verification::verify(&state, auth.account_id).await;
     crate::moderation::webhooks::trigger(
         &state,
         "account.updated",
         crate::moderation::webhooks::Object::Account(auth.account_id),
-    );
+    )
+    .await;
     build_credential_account_response(&state, &auth, account).await
 }
 
@@ -547,7 +548,7 @@ pub async fn patch_profile(
     auth.require_scope("write:accounts")?;
     let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
-    crate::link_verification::spawn(&state, auth.account_id);
+    crate::link_verification::verify(&state, auth.account_id).await;
 
     let domain = &instance.domain;
     let featured_tag_rows = sqlx::query!(

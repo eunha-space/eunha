@@ -37,11 +37,6 @@ use crate::state::AppState;
 pub const DISTRIBUTION_DELAY: Duration = Duration::from_secs(5 * 60);
 /// `PostStatusService::EMAIL_DISTRIBUTION_TTL`, in seconds.
 pub const DISTRIBUTION_TTL: i64 = 60 * 60;
-/// How long the lock that stands for Sidekiq's `lock: :until_executed` lives,
-/// in seconds. Mastodon gives the job's lock a day; eunha's job lives in this
-/// process, so a crash would otherwise hold every later batch back for that
-/// long. Twice the delay is enough for the job to run.
-const DISTRIBUTION_LOCK_TTL: u64 = 2 * 5 * 60 + 60;
 /// `Scheduler::UserCleanupScheduler::UNCONFIRMED_ACCOUNTS_MAX_AGE_DAYS`.
 pub const UNCONFIRMED_MAX_AGE_DAYS: i64 = 7;
 /// How often the unconfirmed subscriptions are cleaned: the scheduler is daily.
@@ -640,13 +635,6 @@ fn batch_key(state: &AppState, account_id: i64) -> String {
         .key(format!("email_subscriptions:{account_id}:next_batch"))
 }
 
-/// What stands for the unique `EmailDistributionWorker` job of an account.
-fn job_key(state: &AppState, account_id: i64) -> String {
-    state
-        .redis_keys
-        .key(format!("email_subscriptions:{account_id}:distribution"))
-}
-
 /// What `PostStatusService#process_email_subscriptions!` asks of a post.
 pub struct PostedStatus {
     pub id: i64,
@@ -689,41 +677,31 @@ pub async fn status_posted(state: &AppState, status: &PostedStatus) {
     schedule(state, status.account_id).await;
 }
 
-/// `EmailDistributionWorker.perform_in(EMAIL_DISTRIBUTION_DELAY, account_id)`,
-/// unique per account until it has run, as `lock: :until_executed` makes it.
+/// `EmailDistributionWorker.perform_in(EMAIL_DISTRIBUTION_DELAY, account_id)`.
 async fn schedule(state: &AppState, account_id: i64) {
-    let mut redis = state.redis_coordination.clone();
-    let key = job_key(state, account_id);
-    let acquired: redis::RedisResult<Option<String>> = redis::cmd("SET")
-        .arg(&key)
-        .arg("1")
-        .arg("NX")
-        .arg("EX")
-        .arg(DISTRIBUTION_LOCK_TTL)
-        .query_async(&mut redis)
-        .await;
-    if !matches!(acquired, Ok(Some(_))) {
-        return;
+    crate::jobs::push_in(
+        state,
+        DISTRIBUTION_DELAY,
+        EmailDistributionWorker { account_id },
+    )
+    .await;
+}
+
+/// `EmailDistributionWorker`: one per account until it has run.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct EmailDistributionWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for EmailDistributionWorker {
+    const KIND: &'static str = "EmailDistributionWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT.lock(
+        crate::jobs::Lock::UntilExecuted(Duration::from_secs(24 * 3600)),
+    );
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        distribute(state, self.account_id).await.map(drop)
     }
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        let stopped = tokio::select! {
-            () = state.stop.cancelled() => true,
-            () = tokio::time::sleep(DISTRIBUTION_DELAY) => false,
-        };
-        if !stopped {
-            if let Err(error) = distribute(&state, account_id).await {
-                tracing::warn!(account_id, %error, "email distribution failed");
-            }
-        }
-        // A stopped instance leaves the batch where it is, for the next post
-        // to send along with its own.
-        let mut redis = state.redis_coordination.clone();
-        let _: redis::RedisResult<()> = redis::cmd("DEL")
-            .arg(job_key(&state, account_id))
-            .query_async(&mut redis)
-            .await;
-    });
 }
 
 /// The posts waiting in an account's next batch, for tests and diagnosis.

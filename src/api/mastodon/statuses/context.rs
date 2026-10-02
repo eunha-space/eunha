@@ -356,6 +356,6 @@ async fn context_refresh(state: &AppState, root: &DbStatus, signed_in: bool) -> 
         return None;
     }
     let refresh = AsyncRefresh::create(state, &key, true).await;
-    crate::tenants::spawn(replies::fetch_all_replies(state.clone(), root.id, key));
+    replies::fetch_all_replies(state, root.id, key).await;
     refresh.header_value(state, 3)
 }

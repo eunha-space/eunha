@@ -17,79 +17,124 @@ const FEATURED_TAG_LIMIT: usize = 10;
 const COLLECTIONS_MAX_PAGES: usize = 10;
 /// `FetchFeaturedCollectionsCollectionService::MAX_ITEMS`.
 const COLLECTIONS_MAX_ITEMS: usize = 50;
+/// What the three synchronizing workers share: the `pull` queue and
 /// `lock: :until_executed, lock_ttl: 1.day`.
-const LOCK_TTL_MS: usize = 24 * 60 * 60 * 1000;
+const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+    .queue(crate::jobs::Queue::Pull)
+    .lock(crate::jobs::Lock::UntilExecuted(
+        std::time::Duration::from_secs(24 * 3600),
+    ));
 
-/// Run `work` in the background unless the same job is already queued or
-/// running, as sidekiq-unique-jobs' `until_executed` lock has it.
-fn spawn_unique<F>(state: &AppState, lock: String, work: F)
-where
-    F: FnOnce(AppState) -> futures::future::BoxFuture<'static, Result<()>> + Send + 'static,
-{
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        let Some(held) = crate::redis_lock::try_acquire(&state, &lock, LOCK_TTL_MS).await else {
-            return;
-        };
-        if let Err(error) = work(state.clone()).await {
-            tracing::debug!(lock, %error, "featured synchronization failed");
-        }
-        drop(held);
-    });
-}
-
-/// `ActivityPub::SynchronizeFeaturedCollectionWorker`, with `note: true`
-/// and `hashtag` when the actor has no `featuredTags` of its own.
-pub fn synchronize_featured_collection_later(
+/// `ActivityPub::SynchronizeFeaturedCollectionWorker.perform_async(id,
+/// { hashtag:, collection:, request_id: })`: `note: true`, and `hashtag`
+/// when the actor has no `featuredTags` of its own.
+pub async fn synchronize_featured_collection_later(
     state: &AppState,
     account_id: i64,
     collection: Option<String>,
     hashtag: bool,
     request_id: &str,
 ) {
-    let _ = request_id;
-    spawn_unique(
+    crate::jobs::push(
         state,
-        format!("synchronize_featured_collection:{account_id}"),
-        move |state| {
-            Box::pin(async move {
-                fetch_featured_collection(&state, account_id, collection.as_deref(), hashtag).await
-            })
+        SynchronizeFeaturedCollectionWorker {
+            account_id,
+            collection,
+            hashtag,
+            request_id: Some(request_id.to_owned()),
         },
-    );
+    )
+    .await;
 }
 
-/// `ActivityPub::SynchronizeFeaturedTagsCollectionWorker`.
-pub fn synchronize_featured_tags_collection_later(
+/// `ActivityPub::SynchronizeFeaturedCollectionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SynchronizeFeaturedCollectionWorker {
+    pub account_id: i64,
+    #[serde(default)]
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub hashtag: bool,
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+impl crate::jobs::Job for SynchronizeFeaturedCollectionWorker {
+    const KIND: &'static str = "ActivityPub::SynchronizeFeaturedCollectionWorker";
+    const OPTIONS: crate::jobs::Options = OPTIONS;
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        fetch_featured_collection(
+            state,
+            self.account_id,
+            self.collection.as_deref(),
+            self.hashtag,
+        )
+        .await
+    }
+}
+
+/// `ActivityPub::SynchronizeFeaturedTagsCollectionWorker.perform_async(id, url)`.
+pub async fn synchronize_featured_tags_collection_later(
     state: &AppState,
     account_id: i64,
     url: Option<String>,
 ) {
-    spawn_unique(
+    crate::jobs::push(
         state,
-        format!("synchronize_featured_tags_collection:{account_id}"),
-        move |state| {
-            Box::pin(async move {
-                fetch_featured_tags_collection(&state, account_id, url.as_deref()).await
-            })
-        },
-    );
+        SynchronizeFeaturedTagsCollectionWorker { account_id, url },
+    )
+    .await;
 }
 
-/// `ActivityPub::SynchronizeFeaturedCollectionsCollectionWorker`.
-pub fn synchronize_featured_collections_collection_later(
+/// `ActivityPub::SynchronizeFeaturedTagsCollectionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SynchronizeFeaturedTagsCollectionWorker {
+    pub account_id: i64,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+impl crate::jobs::Job for SynchronizeFeaturedTagsCollectionWorker {
+    const KIND: &'static str = "ActivityPub::SynchronizeFeaturedTagsCollectionWorker";
+    const OPTIONS: crate::jobs::Options = OPTIONS;
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        fetch_featured_tags_collection(state, self.account_id, self.url.as_deref()).await
+    }
+}
+
+/// `ActivityPub::SynchronizeFeaturedCollectionsCollectionWorker.perform_async(id, request_id)`.
+pub async fn synchronize_featured_collections_collection_later(
     state: &AppState,
     account_id: i64,
     request_id: &str,
 ) {
-    let _ = request_id;
-    spawn_unique(
+    crate::jobs::push(
         state,
-        format!("synchronize_featured_collections_collection:{account_id}"),
-        move |state| {
-            Box::pin(async move { fetch_featured_collections_collection(&state, account_id).await })
+        SynchronizeFeaturedCollectionsCollectionWorker {
+            account_id,
+            request_id: Some(request_id.to_owned()),
         },
-    );
+    )
+    .await;
+}
+
+/// `ActivityPub::SynchronizeFeaturedCollectionsCollectionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SynchronizeFeaturedCollectionsCollectionWorker {
+    pub account_id: i64,
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+impl crate::jobs::Job for SynchronizeFeaturedCollectionsCollectionWorker {
+    const KIND: &'static str = "ActivityPub::SynchronizeFeaturedCollectionsCollectionWorker";
+    const OPTIONS: crate::jobs::Options = OPTIONS;
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        fetch_featured_collections_collection(state, self.account_id).await
+    }
 }
 
 async fn remote_account(state: &AppState, account_id: i64) -> Result<Option<Account>> {

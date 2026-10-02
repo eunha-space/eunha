@@ -8,7 +8,7 @@ use crate::state::AppState;
 
 /// What an event is about, as `REST::Admin::WebhookEventSerializer` picks
 /// the object's serializer.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum Object {
     /// `REST::Admin::AccountSerializer`.
     Account(i64),
@@ -18,15 +18,69 @@ pub enum Object {
     Status(i64),
 }
 
-/// `TriggerWebhookWorker.perform_async(event, class_name, id)`: deliver in the
-/// background, to whichever enabled webhooks subscribe to `event`.
-pub fn trigger(state: &AppState, event: &'static str, object: Object) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(error) = call(&state, event, object).await {
-            tracing::warn!(event, %error, "could not trigger webhooks");
-        }
-    });
+/// `TriggerWebhookWorker.perform_async(event, class_name, id)`: deliver, from
+/// the job queue, to whichever enabled webhooks subscribe to `event`.
+pub async fn trigger(state: &AppState, event: &'static str, object: Object) {
+    crate::jobs::push(
+        state,
+        TriggerWebhookWorker {
+            event: event.to_owned(),
+            object,
+        },
+    )
+    .await;
+}
+
+/// `TriggerWebhookWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct TriggerWebhookWorker {
+    pub event: String,
+    pub object: Object,
+}
+
+impl crate::jobs::Job for TriggerWebhookWorker {
+    const KIND: &'static str = "TriggerWebhookWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        call(state, &self.event, self.object).await
+    }
+}
+
+/// `Webhooks::DeliveryWorker`: one signed POST, the template applied.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DeliveryWorker {
+    pub webhook_id: i64,
+    pub body: String,
+}
+
+impl crate::jobs::Job for DeliveryWorker {
+    const KIND: &'static str = "Webhooks::DeliveryWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Push)
+        .retry(16)
+        .dead(false);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `Webhook.find(webhook_id)`, else nothing to do.
+        let Some(hook) = sqlx::query!(
+            "SELECT url, secret, template FROM webhooks WHERE id = $1",
+            self.webhook_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        else {
+            return Ok(());
+        };
+        let body = match hook.template.as_deref().filter(|t| !t.is_empty()) {
+            Some(template) => match serde_json::from_str::<Value>(&self.body) {
+                Ok(parsed) => render(&parsed, template),
+                Err(_) => self.body,
+            },
+            None => self.body,
+        };
+        deliver(state, &hook.url, &hook.secret, body).await
+    }
 }
 
 /// `WebhookService#call`.
@@ -50,17 +104,14 @@ async fn call(state: &AppState, event: &str, object: Object) -> anyhow::Result<(
     });
     let body_text = body.to_string();
     for hook in hooks {
-        let payload = match hook.template.as_deref().filter(|t| !t.is_empty()) {
-            Some(template) => render(&body, template),
-            None => body_text.clone(),
-        };
-        let state = state.clone();
-        let url = hook.url.clone();
-        let secret = hook.secret.clone();
-        let id = hook.id;
-        crate::tenants::spawn(async move {
-            deliver(&state, id, &url, &secret, payload).await;
-        });
+        crate::jobs::perform_async(
+            state,
+            DeliveryWorker {
+                webhook_id: hook.id,
+                body: body_text.clone(),
+            },
+        )
+        .await?;
     }
     Ok(())
 }
@@ -138,45 +189,26 @@ pub fn render(document: &Value, template: &str) -> String {
 /// `Webhooks::DeliveryWorker`: POST with `X-Hub-Signature`, retried on
 /// Sidekiq's schedule (16 retries) unless the answer says retrying is
 /// pointless.
-async fn deliver(state: &AppState, id: i64, url: &str, secret: &str, body: String) {
+async fn deliver(state: &AppState, url: &str, secret: &str, body: String) -> anyhow::Result<()> {
     use hmac::{Hmac, Mac};
-    let signature = {
-        let Ok(mut mac) = Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()) else {
-            return;
-        };
-        mac.update(body.as_bytes());
-        hex::encode(mac.finalize().into_bytes())
-    };
-    for attempt in 0..=16u32 {
-        let result = state
-            .http
-            .post(url)
-            .header("Content-Type", "application/json")
-            .header("X-Hub-Signature", format!("sha256={signature}"))
-            .body(body.clone())
-            .send()
-            .await;
-        match result {
-            Ok(response)
-                if response.status().is_success()
-                    || crate::federation::delivery::unsalvageable(response.status().as_u16()) =>
-            {
-                return;
-            }
-            Ok(response) => {
-                tracing::debug!(webhook = id, status = %response.status(), "webhook delivery failed");
-            }
-            Err(error) => tracing::debug!(webhook = id, %error, "webhook delivery failed"),
-        }
-        if attempt == 16 {
-            break;
-        }
-        // Sidekiq's default backoff: count⁴ + 15 + rand(10)·(count + 1) seconds.
-        let jitter = u64::from(rand::random::<u8>() % 10) * u64::from(attempt + 1);
-        let wait = u64::from(attempt).pow(4) + 15 + jitter;
-        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-    }
-    tracing::warn!(webhook = id, url, "webhook delivery gave up");
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|e| crate::jobs::Discard(e.to_string()))?;
+    mac.update(body.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+    let response = state
+        .http
+        .post(url)
+        .header("Content-Type", "application/json")
+        .header("X-Hub-Signature", format!("sha256={signature}"))
+        .body(body)
+        .send()
+        .await?;
+    let status = response.status();
+    anyhow::ensure!(
+        status.is_success() || crate::federation::delivery::unsalvageable(status.as_u16()),
+        "webhook answered {status}"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

@@ -442,7 +442,7 @@ pub(super) async fn handle_like(
     .rows_affected()
         > 0;
     if favourited {
-        crate::fasp::events::favourite_created(state, status_id);
+        crate::fasp::events::favourite_created(state, status_id).await;
     }
     crate::search::elasticsearch::indexing::status_interaction(state, status_id).await;
 

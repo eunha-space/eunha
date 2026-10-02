@@ -949,7 +949,8 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
         state,
         "account.approved",
         crate::moderation::webhooks::Object::Account(account_id),
-    );
+    )
+    .await;
     let state = state.clone();
     crate::tenants::spawn(async move {
         // `autofollow_inviter!`

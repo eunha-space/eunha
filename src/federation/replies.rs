@@ -14,10 +14,13 @@
 //!     it answers with an async refresh the client polls; its `result_count`
 //!     counts the statuses that were new to us.
 //!
-//! Mastodon splits the second into a worker that walks the tree and one
-//! `FetchReplyWorker` job per reply, which fetches the reply again to store
-//! it. Here one task does both with the same request: the reply's document is
-//! what is stored and also where its own `replies` collection is read from.
+//! Both run as jobs (crate::jobs): `ActivityPub::FetchRepliesWorker` and
+//! `ActivityPub::FetchAllRepliesWorker`, on the `pull` queue, retried three
+//! times on `ExponentialBackoff`. Mastodon splits the walk into the worker
+//! and one `FetchReplyWorker` job per reply, which fetches the reply again to
+//! store it. Here the walk does both with the same request: the reply's
+//! document is what is stored and also where its own `replies` collection is
+//! read from (`reply-walk-fetches-each-reply-once`).
 
 use std::collections::HashSet;
 
@@ -313,15 +316,76 @@ async fn get_replies(
     Some((filter_all_replies(state, status_uri, &items).await, n_pages))
 }
 
-/// `ActivityPub::FetchAllRepliesWorker#perform`, finishing the async refresh
-/// named `refresh_key` when it is done.
-pub async fn fetch_all_replies(state: AppState, root_status_id: i64, refresh_key: String) {
-    let guard = crate::async_refresh::FinishOnDrop::new(&state, &refresh_key);
-    walk_replies(&state, root_status_id, &refresh_key).await;
-    guard.finish().await;
+/// `ActivityPub::FetchAllRepliesWorker.perform_async(root_status_id)`, whose
+/// walk finishes the async refresh named `refresh_key`.
+pub async fn fetch_all_replies(state: &AppState, root_status_id: i64, refresh_key: String) {
+    crate::jobs::push(
+        state,
+        FetchAllRepliesWorker {
+            root_status_id,
+            refresh_key,
+        },
+    )
+    .await;
 }
 
-async fn walk_replies(state: &AppState, root_status_id: i64, refresh_key: &str) {
+/// The options both reply workers share: `queue: 'pull', retry: 3`.
+const REPLIES_OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+    .queue(crate::jobs::Queue::Pull)
+    .retry(3);
+
+/// `ActivityPub::FetchAllRepliesWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FetchAllRepliesWorker {
+    pub root_status_id: i64,
+    pub refresh_key: String,
+}
+
+impl crate::jobs::Job for FetchAllRepliesWorker {
+    const KIND: &'static str = "ActivityPub::FetchAllRepliesWorker";
+    const OPTIONS: crate::jobs::Options = REPLIES_OPTIONS;
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let guard = crate::async_refresh::FinishOnDrop::new(state, &self.refresh_key);
+        let walked = walk_replies(state, self.root_status_id, &self.refresh_key).await;
+        guard.finish().await;
+        walked
+    }
+}
+
+/// `ActivityPub::FetchRepliesWorker`: the first page of a new status's
+/// replies.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FetchRepliesWorker {
+    pub account_uri: String,
+    pub collection: Value,
+}
+
+impl crate::jobs::Job for FetchRepliesWorker {
+    const KIND: &'static str = "ActivityPub::FetchRepliesWorker";
+    const OPTIONS: crate::jobs::Options = REPLIES_OPTIONS;
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        fetch_replies_now(state, &self.account_uri, &self.collection).await;
+        Ok(())
+    }
+}
+
+/// The walk. Fails, to be retried, only when the root status cannot be
+/// fetched, as `get_replies_uri` raises for the root alone.
+async fn walk_replies(
+    state: &AppState,
+    root_status_id: i64,
+    refresh_key: &str,
+) -> anyhow::Result<()> {
     // `@root_status&.should_fetch_replies?` and `touch(:fetched_replies_at)`,
     // in one statement so that two requests cannot both start the walk.
     let root_uri = sqlx::query_scalar!(
@@ -342,17 +406,17 @@ async fn walk_replies(state: &AppState, root_status_id: i64, refresh_key: &str) 
     .ok()
     .flatten();
     let Some(root_uri) = root_uri else {
-        return;
+        return Ok(());
     };
 
     // `get_root_replies`.
     let Some(root_json) = fetch_object(state, &root_uri).await else {
-        return;
+        anyhow::bail!("could not fetch {root_uri} to walk its replies");
     };
     let Some((mut to_fetch, mut n_pages)) =
         get_replies(state, &root_uri, &root_json, MAX_PAGES).await
     else {
-        return;
+        return Ok(());
     };
     let mut discovered: HashSet<String> = to_fetch.iter().cloned().collect();
 
@@ -387,21 +451,33 @@ async fn walk_replies(state: &AppState, root_status_id: i64, refresh_key: &str) 
         replies = discovered.len(),
         "fetched replies"
     );
+    Ok(())
 }
 
 /// `ActivityPub::Activity::Create#fetch_replies` and `ActivityPub::
 /// FetchRepliesService`: on a new remote status, fetch up to five replies
 /// from the first page of its `replies`, from the author's server.
-pub async fn fetch_replies_on_create(state: AppState, account_uri: String, collection: Value) {
+pub async fn fetch_replies_on_create(state: &AppState, account_uri: String, collection: Value) {
     if !is_present(&collection) {
         return;
     }
+    crate::jobs::push(
+        state,
+        FetchRepliesWorker {
+            account_uri,
+            collection,
+        },
+    )
+    .await;
+}
+
+async fn fetch_replies_now(state: &AppState, account_uri: &str, collection: &Value) {
     let Some((items, _)) = collection_items(
-        &state,
-        &collection,
+        state,
+        collection,
         1,
         COLLECTION_MAX_ITEMS,
-        Some(&account_uri),
+        Some(account_uri),
     )
     .await
     else {
@@ -410,7 +486,7 @@ pub async fn fetch_replies_on_create(state: AppState, account_uri: String, colle
     let uris: Vec<String> = items
         .iter()
         .filter_map(value_or_id)
-        .filter(|uri| !non_matching_uri_hosts(&account_uri, uri))
+        .filter(|uri| !non_matching_uri_hosts(account_uri, uri))
         .take(COLLECTION_MAX_ITEMS)
         .map(str::to_owned)
         .collect();
@@ -426,13 +502,13 @@ pub async fn fetch_replies_on_create(state: AppState, account_uri: String, colle
         .ok()
         .flatten();
         if known.is_some()
-            || crate::federation::local_uri::status(&state, &uri)
+            || crate::federation::local_uri::status(state, &uri)
                 .await
                 .is_some()
         {
             continue;
         }
-        fetch_reply(&state, &uri, None).await;
+        fetch_reply(state, &uri, None).await;
     }
 }
 

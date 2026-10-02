@@ -143,7 +143,8 @@ pub async fn call(
         state,
         "report.created",
         super::webhooks::Object::Report(report_id),
-    );
+    )
+    .await;
 
     if forward {
         if let Err(error) = forward_report(

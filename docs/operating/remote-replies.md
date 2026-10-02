@@ -45,10 +45,13 @@ has discovered by then are still fetched. Each reply is fetched once, with a
 single request that serves both for storing it and for reading its
 collection.
 
-The walk is a task in the instance's process, not a queued job. A failed
-fetch is not retried, as Mastodon's `FetchReplyWorker` retries it three
-times; the post's next walk, fifteen minutes on, picks up what was missed.
-A post that is already held is not refreshed by being fetched again.
+The walk is an `ActivityPub::FetchAllRepliesWorker` in the
+[job queue](./jobs.md), retried three times when the post itself cannot be
+fetched; the first page read when a post arrives is an
+`ActivityPub::FetchRepliesWorker`. A reply that cannot be fetched is not
+retried on its own, as Mastodon's `FetchReplyWorker` retries it three times;
+the post's next walk, fifteen minutes on, picks up what was missed. A post
+that is already held is not refreshed by being fetched again.
 
 
 Async refreshes

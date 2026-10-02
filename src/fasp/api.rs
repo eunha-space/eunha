@@ -398,7 +398,7 @@ async fn create_backfill_request(
         Err(error) => return internal(error),
     };
     // `after_commit :queue_fulfillment_job, on: :create`.
-    super::workers::backfill_async(&state, id);
+    super::workers::backfill_async(&state, id).await;
     signed(
         &provider,
         StatusCode::CREATED,
@@ -443,7 +443,7 @@ async fn create_continuation(
     .await;
     match found {
         Ok(Some(id)) => {
-            super::workers::backfill_async(&state, id);
+            super::workers::backfill_async(&state, id).await;
             signed(&provider, StatusCode::NO_CONTENT, None)
         }
         Ok(None) => not_found(),

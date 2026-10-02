@@ -154,10 +154,9 @@ after a day.
 Background work
 ---------------
 
-Mastodon runs these on Sidekiq's `fasp` queue. Eunha runs each in the
-background as soon as it is asked for, in the instance's tenant span, retried
-on Sidekiq's schedule as often as Mastodon's worker allows: five times for
-announcements and backfills, never for searches and recommendations. A
-provider is only called while it is confirmed and available, and a request
-that cannot reach it is retried only while it stays available. A retry waiting
-when the process stops is not taken up again.
+Each of these is a job on the `fasp` queue of the
+[job queue](./jobs.md), as in Mastodon, retried on Sidekiq's schedule as often
+as Mastodon's worker allows: five times for announcements and backfills, never
+for searches and recommendations. A provider is only called while it is
+confirmed and available, and a request that cannot reach it is retried only
+while it stays available.

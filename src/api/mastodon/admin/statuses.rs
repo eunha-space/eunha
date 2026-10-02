@@ -314,7 +314,8 @@ pub async fn batch_admin_account_statuses(
                         &state,
                         "report.updated",
                         crate::moderation::webhooks::Object::Report(id),
-                    );
+                    )
+                    .await;
                     Some(id)
                 }
                 None => {
@@ -342,7 +343,8 @@ pub async fn batch_admin_account_statuses(
                         &state,
                         "report.created",
                         crate::moderation::webhooks::Object::Report(id),
-                    );
+                    )
+                    .await;
                     Some(id)
                 }
             }
@@ -367,7 +369,8 @@ pub async fn batch_admin_account_statuses(
                     &state,
                     "report.updated",
                     crate::moderation::webhooks::Object::Report(r.id),
-                );
+                )
+                .await;
                 Some(r.id)
             }
             None => None,

@@ -313,7 +313,8 @@ pub async fn update_admin_report(
         &state,
         "report.updated",
         crate::moderation::webhooks::Object::Report(id),
-    );
+    )
+    .await;
     render(&state, id).await
 }
 
@@ -337,7 +338,8 @@ async fn act(
         state,
         "report.updated",
         crate::moderation::webhooks::Object::Report(id),
-    );
+    )
+    .await;
     render(state, id).await
 }
 

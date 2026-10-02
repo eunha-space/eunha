@@ -102,8 +102,9 @@ model's callbacks do, and tells subscribed [FASP](../operating/fasp)s about a
 new account, or about a changed one while it is discoverable or when it
 stopped being.
 
-Unless only the keys were refreshed or the account is suspended, the work
-upstream queues runs in the background, once at a time per account:
+Unless only the keys were refreshed or the account is suspended, the workers
+upstream queues are queued in the [job queue](../operating/jobs.md), with
+their own retries and unique locks:
 
  -  the posts of `featured` are fetched and become the account's pins, and, when
     the actor has no `featuredTags`, the hashtags there its featured hashtags;
@@ -129,7 +130,5 @@ Differences
  -  An RSA key published as a `Multikey` is not read.
  -  A refresh fetches the actor by its `id` rather than looking its handle up
     first; `ProcessAccountService` asks WebFinger either way.
- -  The background work runs in the process, and a refresh or verification
-    scheduled for later is lost if the process restarts before it runs.
  -  Hashtags are compared in lower case without the Unicode compatibility
     folding `HashtagNormalizer` applies.

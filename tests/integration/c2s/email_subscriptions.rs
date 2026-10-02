@@ -385,6 +385,8 @@ async fn test_unsubscribing_with_a_signed_global_id() {
 #[tokio::test]
 async fn test_distribution_batches_public_posts_for_confirmed_subscribers() {
     let ctx = TestContext::new("emailsub-distribute").await;
+    // Leave the worker queued, to look at the batch before it runs.
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
     let alice = offer(&ctx).await;
     subscribe(&ctx, alice, "confirmed@example.com").await;
     subscribe(&ctx, alice, "pending@example.com").await;
@@ -440,6 +442,14 @@ async fn test_distribution_batches_public_posts_for_confirmed_subscribers() {
         eunha::email_subscriptions::pending_batch(state, alice).await,
         vec![public_id, self_reply_id]
     );
+    // One worker for the batch, five minutes after its first post, however
+    // many posts joined it (`lock: :until_executed`).
+    let queued = eunha::jobs::queued(state, "EmailDistributionWorker")
+        .await
+        .unwrap();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].args, json!({"account_id": alice}));
+    assert!(queued[0].seconds_until_due > 280.0 && queued[0].seconds_until_due <= 300.0);
     // Bob offers nothing, so nothing of his is batched.
     let bob: i64 = ctx.bob_id.parse().unwrap();
     assert!(eunha::email_subscriptions::pending_batch(state, bob)
@@ -466,6 +476,71 @@ async fn test_distribution_batches_public_posts_for_confirmed_subscribers() {
         .await
         .unwrap();
 
+    // The worker runs when it is due, and mails the batch from the queue.
+    eunha::jobs::make_due(state).await.unwrap();
+    eunha::jobs::drain(state).await.unwrap();
+    let posts = |to: &str| {
+        ctx.sent_to(to)
+            .into_iter()
+            .filter(|m| m.subject.starts_with("New posts"))
+            .count()
+    };
+    assert_eq!(posts("confirmed@example.com"), 1);
+    assert_eq!(posts("pending@example.com"), 0);
+    assert!(eunha::jobs::queued(state, "EmailDistributionWorker")
+        .await
+        .unwrap()
+        .is_empty());
+    // A post after it starts the next batch.
+    let next = ctx
+        .api
+        .post_status(&ctx.alice_token, "Later", "public")
+        .await;
+    let next_id: i64 = next["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        eunha::email_subscriptions::pending_batch(state, alice).await,
+        vec![next_id]
+    );
+    let _: () = redis::cmd("SADD")
+        .arg(
+            state
+                .redis_keys
+                .key(format!("email_subscriptions:{alice}:next_batch")),
+        )
+        .arg(unlisted)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("SREM")
+        .arg(
+            state
+                .redis_keys
+                .key(format!("email_subscriptions:{alice}:next_batch")),
+        )
+        .arg(next_id)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    for (id,) in sqlx::query_as::<_, (i64,)>(
+        "SELECT id FROM statuses WHERE account_id = $1 AND visibility = 0 AND id <> $2",
+    )
+    .bind(alice)
+    .bind(next_id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap()
+    {
+        let _: () = redis::cmd("SADD")
+            .arg(
+                state
+                    .redis_keys
+                    .key(format!("email_subscriptions:{alice}:next_batch")),
+            )
+            .arg(id)
+            .query_async(&mut redis)
+            .await
+            .unwrap();
+    }
     let sent = eunha::email_subscriptions::distribute(state, alice)
         .await
         .unwrap();

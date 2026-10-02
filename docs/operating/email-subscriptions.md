@@ -91,16 +91,12 @@ A post goes into its account's next batch when it is public and not a reply to
 somebody else (a self-reply counts), and the account offers subscriptions. The
 first post in a batch starts a five-minute wait, Mastodon's
 `EMAIL_DISTRIBUTION_DELAY`; posts made during it join the same email. The batch
-is the Redis set `email_subscriptions:<account id>:next_batch`, kept an hour,
-and the wait is held by `email_subscriptions:<account id>:distribution`, both
-on the coordination Redis (see [Shared Redis](./redis.md)). When the wait is
-over, the batch's posts that are still public, not replies to others and not
-boosts are mailed, newest first, to each confirmed subscriber.
-
-The wait runs inside the eunha process rather than in a durable queue (the
-`email-distribution-in-process` divergence). An instance stopped during it
-leaves the batch in Redis for its next post to send along; a process that dies
-outright holds the next batch back for at most eleven minutes.
+is the Redis set `email_subscriptions:<account id>:next_batch`, kept an hour
+on the coordination Redis (see [Shared Redis](./redis.md)), and the wait is an
+`EmailDistributionWorker` in the [job queue](./jobs.md), queued once per
+account until it has run. When the wait is over, the batch's posts that are
+still public, not replies to others and not boosts are mailed, newest first,
+to each confirmed subscriber.
 
 The emails go out through the instance's `[smtp]` settings, from its `from`
 address, in English or, for a subscriber who signed up in Korean, with

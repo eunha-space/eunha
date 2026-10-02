@@ -72,9 +72,8 @@ change) leaves the quote pending and is tried again as
 `RefetchAndVerifyQuoteWorker` tries it: between 30 seconds and ten minutes
 later, then up to five more times on Sidekiq's exponential backoff, the
 quoting post refreshed in local timelines if the quote's state moves. The
-retries run in the instance's process
-(`quote-verification-retries-in-process` in
-[divergences](./divergences.md)).
+retries wait in the [job queue](../operating/jobs.md), so a restart does not
+lose them.
 
 Mastodon 4.7.1 also has a `QuoteRefreshWorker`, to verify a stamp again a
 week after it was last checked, but nothing schedules it

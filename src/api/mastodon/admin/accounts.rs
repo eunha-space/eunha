@@ -676,7 +676,8 @@ pub async fn unsensitive_account(
             &state,
             "account.updated",
             crate::moderation::webhooks::Object::Account(id),
-        );
+        )
+        .await;
     }
     render(&state, id).await
 }
@@ -704,7 +705,8 @@ pub async fn unsilence_account(
             &state,
             "account.updated",
             crate::moderation::webhooks::Object::Account(id),
-        );
+        )
+        .await;
     }
     render(&state, id).await
 }
@@ -739,7 +741,8 @@ pub async fn unsuspend_account(
             &state,
             "account.updated",
             crate::moderation::webhooks::Object::Account(id),
-        );
+        )
+        .await;
     }
     render(&state, id).await
 }

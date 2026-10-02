@@ -247,14 +247,16 @@ pub async fn save(
             state,
             "report.updated",
             super::webhooks::Object::Report(report_id),
-        );
+        )
+        .await;
     }
     if target.is_local() && kind != "none" && kind != "disable" {
         super::webhooks::trigger(
             state,
             "account.updated",
             super::webhooks::Object::Account(target.id),
-        );
+        )
+        .await;
     }
 
     // After the transaction, as Mastodon's `suspend!` and `disable!` run inside

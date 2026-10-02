@@ -274,7 +274,8 @@ pub async fn save(
         state,
         "report.updated",
         super::webhooks::Object::Report(report_id),
-    );
+    )
+    .await;
 
     // `process_notification!`.
     if send_email_notification && target.is_local() {

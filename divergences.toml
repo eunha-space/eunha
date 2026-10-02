@@ -678,27 +678,26 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "reply-fetches-run-in-process"
+id = "reply-walk-fetches-each-reply-once"
 kind = "behaviour"
-summary = "Walks a remote thread's replies in one task, fetching each reply once"
+summary = "Walks a remote thread's replies in one job, fetching each reply once"
 mastodon = """
-Queues `ActivityPub::FetchAllRepliesWorker`, which fetches each reply to read \
-its `replies` collection and queues a `FetchReplyWorker` that fetches it again \
+`ActivityPub::FetchAllRepliesWorker` fetches each reply to read its \
+`replies` collection and queues a `FetchReplyWorker` that fetches it again \
 to store it, retried three times. Each stored reply goes through `Create` \
 processing, which reads the first page of its own replies, and a reply \
 already held is processed again as an `Update`."""
 eunha = """
-Runs the walk as one task in the instance's process, storing each reply from \
-the same request its collection is read from, without retries. Replies \
-already held are not refreshed, and fetched replies do not have their own \
-first page read. An instance that stops mid-walk marks its async refresh \
-finished."""
+Runs the walk as one `ActivityPub::FetchAllRepliesWorker` job, retried as \
+Mastodon retries it, storing each reply from the same request its \
+collection is read from. A reply that cannot be fetched is not retried on \
+its own. Replies already held are not refreshed, and fetched replies do not \
+have their own first page read."""
 why = """
 The walk is bounded (1,000 replies, 500 pages) and repeated at most every \
 fifteen minutes per post, so the post's next walk recovers what a failed \
-fetch missed; a durable queue would add a table and a worker for work that \
-is safe to lose. Fetching each reply once halves the requests a walk makes \
-of the remote server. Eunha stores fetched posts through its lighter remote \
+fetch missed. Fetching each reply once halves the requests a walk makes of \
+the remote server. Eunha stores fetched posts through its lighter remote \
 status path, which neither refreshes known posts nor recurses."""
 evidence = "tests/remote_replies.rs"
 since = "4.7.1"
@@ -725,27 +724,6 @@ startup, which eunha does not do. Publishing once — the draft already holds \
 the text — moves it into the table, after which the configuration is not \
 read."""
 evidence = "tests/integration/c2s/terms_of_service.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "email-distribution-in-process"
-kind = "behaviour"
-summary = "The five-minute wait before mailing subscribers runs in the process"
-mastodon = """
-Schedules `EmailDistributionWorker` in Sidekiq five minutes after the first \
-post of a batch, unique per account for up to a day."""
-eunha = """
-Waits in a task of the eunha process, held unique by a Redis key that lives \
-eleven minutes. A stopped instance leaves the batch in Redis for the next \
-post to send; one that dies outright holds the next batch back until the key \
-expires."""
-why = """
-Eunha has no durable queue for work due at a time, and a five-minute wait \
-does not justify one: the batch itself is in Redis for an hour, as upstream \
-keeps it, so what a restart can lose is only the timing. The short key keeps \
-a crash from silencing an account's emails for a day."""
-evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 
@@ -1213,29 +1191,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "fasp-workers-run-in-process"
-kind = "behaviour"
-summary = "Runs FASP workers in the background of the process, not on a queue"
-mastodon = """
-Enqueues `Fasp::AnnounceAccountLifecycleEventWorker`, \
-`AnnounceContentLifecycleEventWorker`, `AnnounceTrendWorker`, `BackfillWorker`, \
-`AccountSearchWorker` and `FollowRecommendationWorker` on Sidekiq's `fasp` \
-queue, where a job and its retries survive a restart."""
-eunha = """
-Runs each as a background task of the instance as soon as it is asked for, \
-retried on Sidekiq's schedule as many times as the worker allows (five, or \
-none for searches and recommendations). A retry still waiting when the \
-process stops is dropped."""
-why = """
-The feature is experimental upstream, and like webhooks and reply fetches its \
-jobs are small HTTP calls whose loss costs a provider one announcement it can \
-recover with a backfill. A durable queue for them is worth adding once the \
-feature settles."""
-evidence = "tests/fasp.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "fasp-account-search-refresh"
 kind = "behaviour"
 summary = "Starts a FASP account search's refresh only for account searches"
@@ -1338,28 +1293,22 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "remote-account-work-in-process"
+id = "account-refresh-fetches-by-id"
 kind = "behaviour"
-summary = "Runs the work queued after storing a remote account in the process"
+summary = "Refreshes a stale remote account by fetching its actor, not its handle"
 mastodon = """
-Queues `SynchronizeFeaturedCollectionWorker`, \
-`SynchronizeFeaturedTagsCollectionWorker`, \
-`SynchronizeFeaturedCollectionsCollectionWorker`, `VerifyAccountLinksWorker` \
-(within ten minutes), `RefollowWorker`, `AccountMergingWorker` and, for a \
-stale account that sends a `Create` or `Update`, `AccountRefreshWorker` \
-(within six hours), which resolves the account's handle through WebFinger \
-before fetching it."""
+`AccountRefreshWorker` refreshes a stale account that sends a `Create` or \
+`Update` with `ResolveAccountService`, which resolves the account's handle \
+through WebFinger before fetching the actor it names."""
 eunha = """
-Runs each as a task in the instance's process, once at a time per account \
-under a Redis lock with the worker's lock TTL. A task waiting to run is lost \
-if the process stops. A refresh fetches the actor by its `id`; \
-`ProcessAccountService` then asks WebFinger about its handle either way. An \
-actor whose `movedTo` is its own `id` is not marked as moved."""
+The same worker, queued as Mastodon queues it, fetches the actor by its \
+`id`; `ProcessAccountService` then asks WebFinger about its handle either \
+way. An actor whose `movedTo` is its own `id` is not marked as moved."""
 why = """
-Each of these is repeated by the account's next refresh, so losing one to a \
-restart loses nothing a week does not restore, and a durable queue would add \
-a table and a worker for work that is safe to lose. An account redirecting to \
-itself is not a redirect, and following it would loop."""
+Asking WebFinger first and then fetching the actor it names reaches the same \
+document by a longer road; the handle is confirmed by the processing that \
+follows. An account redirecting to itself is not a redirect, and following \
+it would loop."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -1405,25 +1354,6 @@ the same names and messages so the port can be read against upstream line \
 by line. A client that is 256 messages behind is not reading, and the close \
 frame sends a client to whatever serves its host after a reload."""
 evidence = "tests/integration/surfaces/streaming.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "quote-verification-retries-in-process"
-kind = "behaviour"
-summary = "Retries a quote stamp that could not be fetched in the process"
-mastodon = """
-Queues `ActivityPub::RefetchAndVerifyQuoteWorker` between 30 seconds and ten \
-minutes after verifying a quote failed for now, retried five times with \
-`ExponentialBackoff`."""
-eunha = """
-Runs the same schedule as a task in the instance's process. A retry waiting \
-to run is lost if the process stops, and the quote stays pending."""
-why = """
-A lost retry costs one quote shown pending rather than accepted, which the \
-author's next edit or a refetch of the post sets right; a durable queue would \
-add a table and a worker for work that is safe to lose."""
-evidence = "src/api/ap/inbox/quote.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 

@@ -1,10 +1,10 @@
 //! Mastodon's `Fasp::*Worker`s: announcing to providers what changed, and
 //! asking them for what they know.
 //!
-//! Each runs in the background as soon as it is asked for, in the instance's
-//! tenant span, and is retried on Sidekiq's schedule as many times as its
-//! worker allows — five for announcements and backfills, none for searches
-//! and recommendations. A provider is only called while it is confirmed and
+//! Each is a job on the `fasp` queue (crate::jobs), retried on Sidekiq's
+//! schedule as many times as its worker allows — five for announcements and
+//! backfills, none for searches and recommendations. A provider is only
+//! called while it is confirmed and
 //! available (`Fasp::BaseWorker#with_provider`); a request that cannot reach
 //! it is retried only while it stays available, and its availability is
 //! recorded after every attempt.
@@ -17,39 +17,19 @@ use serde_json::{json, Value};
 use super::{request, Provider};
 use crate::state::AppState;
 
-/// `sidekiq_options retry: 5`.
-const ANNOUNCEMENT_RETRIES: u32 = 5;
+/// `Fasp::BaseWorker`'s `sidekiq_options queue: 'fasp'`, with the worker's
+/// own `retry`.
+const fn options(retries: u32) -> crate::jobs::Options {
+    crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Fasp)
+        .retry(retries)
+}
 
 /// `Fasp::FollowRecommendation::MAX_AGE`.
 const FOLLOW_RECOMMENDATION_MAX_AGE_SECONDS: f64 = 24.0 * 60.0 * 60.0;
 
-/// Run `job` in the background, retried up to `retries` times on Sidekiq's
-/// default backoff while it fails and the instance runs.
-fn perform_async<F, Fut>(state: &AppState, worker: &'static str, retries: u32, job: F)
-where
-    F: Fn(AppState) -> Fut + Send + 'static,
-    Fut: Future<Output = Result<(), request::Error>> + Send + 'static,
-{
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        for attempt in 0..=retries {
-            match job(state.clone()).await {
-                Ok(()) => return,
-                Err(error) if attempt == retries => {
-                    tracing::warn!(worker, %error, "FASP job failed; giving up");
-                    return;
-                }
-                Err(error) => tracing::debug!(worker, attempt, %error, "FASP job failed"),
-            }
-            // Sidekiq's default: count⁴ + 15 + rand(10)·(count + 1) seconds.
-            let jitter = u64::from(rand::random::<u8>() % 10) * u64::from(attempt + 1);
-            let wait = u64::from(attempt).pow(4) + 15 + jitter;
-            tokio::select! {
-                () = state.stop.cancelled() => return,
-                () = tokio::time::sleep(Duration::from_secs(wait)) => {}
-            }
-        }
-    });
+fn failed(error: request::Error) -> anyhow::Error {
+    anyhow::anyhow!("{error}")
 }
 
 /// `Fasp::BaseWorker#with_provider`.
@@ -137,51 +117,86 @@ fn subscription_announcement(
 // ── Lifecycle events ─────────────────────────────────────────────────────
 
 /// `Fasp::AnnounceAccountLifecycleEventWorker.perform_async(uri, event_type)`.
-pub fn announce_account_lifecycle_event(state: &AppState, uri: String, event_type: &'static str) {
-    announce_lifecycle_event(state, "account", uri, event_type);
+pub async fn announce_account_lifecycle_event(state: &AppState, uri: String, event_type: &str) {
+    crate::jobs::push(
+        state,
+        AnnounceAccountLifecycleEventWorker {
+            uri,
+            event_type: event_type.to_owned(),
+        },
+    )
+    .await;
 }
 
 /// `Fasp::AnnounceContentLifecycleEventWorker.perform_async(uri, event_type)`.
-pub fn announce_content_lifecycle_event(state: &AppState, uri: String, event_type: &'static str) {
-    announce_lifecycle_event(state, "content", uri, event_type);
+pub async fn announce_content_lifecycle_event(state: &AppState, uri: String, event_type: &str) {
+    crate::jobs::push(
+        state,
+        AnnounceContentLifecycleEventWorker {
+            uri,
+            event_type: event_type.to_owned(),
+        },
+    )
+    .await;
 }
 
-fn announce_lifecycle_event(
+/// `Fasp::AnnounceAccountLifecycleEventWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AnnounceAccountLifecycleEventWorker {
+    pub uri: String,
+    pub event_type: String,
+}
+
+impl crate::jobs::Job for AnnounceAccountLifecycleEventWorker {
+    const KIND: &'static str = "Fasp::AnnounceAccountLifecycleEventWorker";
+    const OPTIONS: crate::jobs::Options = options(5);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        announce_lifecycle_event(state, "account", &self.uri, &self.event_type)
+            .await
+            .map_err(failed)
+    }
+}
+
+/// `Fasp::AnnounceContentLifecycleEventWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AnnounceContentLifecycleEventWorker {
+    pub uri: String,
+    pub event_type: String,
+}
+
+impl crate::jobs::Job for AnnounceContentLifecycleEventWorker {
+    const KIND: &'static str = "Fasp::AnnounceContentLifecycleEventWorker";
+    const OPTIONS: crate::jobs::Options = options(5);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        announce_lifecycle_event(state, "content", &self.uri, &self.event_type)
+            .await
+            .map_err(failed)
+    }
+}
+
+async fn announce_lifecycle_event(
     state: &AppState,
-    category: &'static str,
-    uri: String,
-    event_type: &'static str,
-) {
-    perform_async(
-        state,
-        "announce lifecycle event",
-        ANNOUNCEMENT_RETRIES,
-        move |state| {
-            let uri = uri.clone();
-            async move {
-                for subscribed in subscriptions(&state, category, "lifecycle").await? {
-                    let body = subscription_announcement(
-                        subscribed.subscription_id,
-                        category,
-                        event_type,
-                        &uri,
-                    );
-                    with_provider(&state, &subscribed.provider, async {
-                        request::post(
-                            &state,
-                            &subscribed.provider,
-                            "/data_sharing/v0/announcements",
-                            Some(&body),
-                        )
-                        .await
-                        .map(drop)
-                    })
-                    .await?;
-                }
-                Ok(())
-            }
-        },
-    );
+    category: &str,
+    uri: &str,
+    event_type: &str,
+) -> Result<(), request::Error> {
+    for subscribed in subscriptions(state, category, "lifecycle").await? {
+        let body = subscription_announcement(subscribed.subscription_id, category, event_type, uri);
+        with_provider(state, &subscribed.provider, async {
+            request::post(
+                state,
+                &subscribed.provider,
+                "/data_sharing/v0/announcements",
+                Some(&body),
+            )
+            .await
+            .map(drop)
+        })
+        .await?;
+    }
+    Ok(())
 }
 
 // ── Trends ───────────────────────────────────────────────────────────────
@@ -194,56 +209,104 @@ pub enum TrendSource {
     Reply,
 }
 
+impl TrendSource {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Favourite => "favourite",
+            Self::Reblog => "reblog",
+            Self::Reply => "reply",
+        }
+    }
+
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "favourite" => Some(Self::Favourite),
+            "reblog" => Some(Self::Reblog),
+            "reply" => Some(Self::Reply),
+            _ => None,
+        }
+    }
+}
+
 /// `Fasp::AnnounceTrendWorker.perform_async(status_id, trend_source)`.
-pub fn announce_trend(state: &AppState, status_id: i64, source: TrendSource) {
-    perform_async(
+pub async fn announce_trend(state: &AppState, status_id: i64, source: TrendSource) {
+    crate::jobs::push(
         state,
-        "announce trend",
-        ANNOUNCEMENT_RETRIES,
-        move |state| async move {
-            // A status that is gone has nothing to announce.
-            let Some(status) = sqlx::query!(
-                r#"SELECT a.indexable FROM statuses s JOIN accounts a ON a.id = s.account_id
-                WHERE s.id = $1 AND s.deleted_at IS NULL"#,
-                status_id
-            )
-            .fetch_optional(&state.db)
+        AnnounceTrendWorker {
+            status_id,
+            trend_source: source.name().to_owned(),
+        },
+    )
+    .await;
+}
+
+/// `Fasp::AnnounceTrendWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AnnounceTrendWorker {
+    pub status_id: i64,
+    pub trend_source: String,
+}
+
+impl crate::jobs::Job for AnnounceTrendWorker {
+    const KIND: &'static str = "Fasp::AnnounceTrendWorker";
+    const OPTIONS: crate::jobs::Options = options(5);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let Some(source) = TrendSource::parse(&self.trend_source) else {
+            return Ok(());
+        };
+        announce_trend_now(state, self.status_id, source)
             .await
-            .map_err(anyhow::Error::from)?
-            else {
-                return Ok(());
-            };
-            if !status.indexable {
-                return Ok(());
-            }
-            let uri = super::status_uri(&state, status_id)
-                .await
-                .map_err(anyhow::Error::from)?
-                .unwrap_or_default();
-            for subscribed in subscriptions(&state, "content", "trends").await? {
-                with_provider(&state, &subscribed.provider, async {
-                    if trending(&state, &subscribed, status_id, source).await? {
-                        let body = subscription_announcement(
-                            subscribed.subscription_id,
-                            "content",
-                            "trending",
-                            &uri,
-                        );
-                        request::post(
-                            &state,
-                            &subscribed.provider,
-                            "/data_sharing/v0/announcements",
-                            Some(&body),
-                        )
-                        .await?;
-                    }
-                    Ok(())
-                })
+            .map_err(failed)
+    }
+}
+
+async fn announce_trend_now(
+    state: &AppState,
+    status_id: i64,
+    source: TrendSource,
+) -> Result<(), request::Error> {
+    // A status that is gone has nothing to announce.
+    let Some(status) = sqlx::query!(
+        r#"SELECT a.indexable FROM statuses s JOIN accounts a ON a.id = s.account_id
+        WHERE s.id = $1 AND s.deleted_at IS NULL"#,
+        status_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(anyhow::Error::from)?
+    else {
+        return Ok(());
+    };
+    if !status.indexable {
+        return Ok(());
+    }
+    let uri = super::status_uri(state, status_id)
+        .await
+        .map_err(anyhow::Error::from)?
+        .unwrap_or_default();
+    for subscribed in subscriptions(state, "content", "trends").await? {
+        with_provider(state, &subscribed.provider, async {
+            if trending(state, &subscribed, status_id, source).await? {
+                let body = subscription_announcement(
+                    subscribed.subscription_id,
+                    "content",
+                    "trending",
+                    &uri,
+                );
+                request::post(
+                    state,
+                    &subscribed.provider,
+                    "/data_sharing/v0/announcements",
+                    Some(&body),
+                )
                 .await?;
             }
             Ok(())
-        },
-    );
+        })
+        .await?;
+    }
+    Ok(())
 }
 
 /// `#trending?`: whether the status has had at least the subscription's
@@ -305,13 +368,31 @@ async fn trending(
 // ── Backfill ─────────────────────────────────────────────────────────────
 
 /// `Fasp::BackfillWorker.perform_async(backfill_request_id)`.
-pub fn backfill_async(state: &AppState, backfill_request_id: i64) {
-    perform_async(
+pub async fn backfill_async(state: &AppState, backfill_request_id: i64) {
+    crate::jobs::push(
         state,
-        "backfill",
-        ANNOUNCEMENT_RETRIES,
-        move |state| async move { backfill(&state, backfill_request_id).await },
-    );
+        BackfillWorker {
+            backfill_request_id,
+        },
+    )
+    .await;
+}
+
+/// `Fasp::BackfillWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BackfillWorker {
+    pub backfill_request_id: i64,
+}
+
+impl crate::jobs::Job for BackfillWorker {
+    const KIND: &'static str = "Fasp::BackfillWorker";
+    const OPTIONS: crate::jobs::Options = options(5);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        backfill(state, self.backfill_request_id)
+            .await
+            .map_err(failed)
+    }
 }
 
 /// `Fasp::BackfillWorker#perform`: announce the request's next batch, then
@@ -483,17 +564,29 @@ pub fn account_search_refresh_key(query: &str) -> String {
 /// `Fasp::AccountSearchWorker.perform_async(query)`: ask every provider that
 /// searches accounts for `query`, and fetch each account it names that this
 /// server does not know, counting them in the refresh under `refresh_key`.
-pub fn account_search_async(state: &AppState, query: String, refresh_key: String) {
-    perform_async(state, "account search", 0, move |state| {
-        let query = query.clone();
-        let refresh_key = refresh_key.clone();
-        async move {
-            let refresh = crate::async_refresh::FinishOnDrop::new(&state, &refresh_key);
-            let result = account_search(&state, &query, &refresh_key).await;
-            refresh.finish().await;
-            result
-        }
-    });
+pub async fn account_search_async(state: &AppState, query: String, refresh_key: String) {
+    crate::jobs::push(state, AccountSearchWorker { query, refresh_key }).await;
+}
+
+/// `Fasp::AccountSearchWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AccountSearchWorker {
+    pub query: String,
+    /// The `AsyncRefresh` the search counts its results in, keyed from the
+    /// query as it was sent.
+    pub refresh_key: String,
+}
+
+impl crate::jobs::Job for AccountSearchWorker {
+    const KIND: &'static str = "Fasp::AccountSearchWorker";
+    const OPTIONS: crate::jobs::Options = options(0);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let refresh = crate::async_refresh::FinishOnDrop::new(state, &self.refresh_key);
+        let result = account_search(state, &self.query, &self.refresh_key).await;
+        refresh.finish().await;
+        result.map_err(failed)
+    }
 }
 
 async fn account_search(
@@ -578,14 +671,27 @@ pub fn follow_recommendation_refresh_key(account_id: i64) -> String {
 /// provider that recommends follows whom `account_id` might follow, fetch
 /// each account it names that this server does not know, and keep those as
 /// the account's recommendations.
-pub fn follow_recommendation_async(state: &AppState, account_id: i64) {
-    perform_async(state, "follow recommendation", 0, move |state| async move {
-        let refresh_key = follow_recommendation_refresh_key(account_id);
-        let refresh = crate::async_refresh::FinishOnDrop::new(&state, &refresh_key);
-        let result = follow_recommendation(&state, account_id, &refresh_key).await;
+pub async fn follow_recommendation_async(state: &AppState, account_id: i64) {
+    crate::jobs::push(state, FollowRecommendationWorker { account_id }).await;
+}
+
+/// `Fasp::FollowRecommendationWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FollowRecommendationWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for FollowRecommendationWorker {
+    const KIND: &'static str = "Fasp::FollowRecommendationWorker";
+    const OPTIONS: crate::jobs::Options = options(0);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let refresh_key = follow_recommendation_refresh_key(self.account_id);
+        let refresh = crate::async_refresh::FinishOnDrop::new(state, &refresh_key);
+        let result = follow_recommendation(state, self.account_id, &refresh_key).await;
         refresh.finish().await;
-        result
-    });
+        result.map_err(failed)
+    }
 }
 
 async fn follow_recommendation(

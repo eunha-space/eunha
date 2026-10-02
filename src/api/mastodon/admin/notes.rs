@@ -219,7 +219,8 @@ pub async fn create_report_note(
         &state,
         "report.updated",
         crate::moderation::webhooks::Object::Report(report_id),
-    );
+    )
+    .await;
     Ok(Json(build(&state, row, Some(report_id), None).await?))
 }
 

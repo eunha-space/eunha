@@ -747,7 +747,7 @@ pub async fn favourite_status(
     .rows_affected()
         > 0;
     if favourited {
-        crate::fasp::events::favourite_created(&state, id);
+        crate::fasp::events::favourite_created(&state, id).await;
     }
     // `Favourite`'s `update_index('statuses', :status)`.
     crate::search::elasticsearch::indexing::status_interaction(&state, id).await;

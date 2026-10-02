@@ -320,7 +320,7 @@ pub async fn schedule_follow_recommendations(
         return None;
     }
     let refresh = crate::async_refresh::AsyncRefresh::create(state, &key, false).await;
-    workers::follow_recommendation_async(state, account_id);
+    workers::follow_recommendation_async(state, account_id).await;
     refresh.header_value(state, 3)
 }
 
@@ -381,7 +381,7 @@ pub async fn schedule_account_search(
         .strip_prefix('@')
         .unwrap_or(normalized)
         .to_owned();
-    workers::account_search_async(state, term, key);
+    workers::account_search_async(state, term, key).await;
     refresh.header_value(state, 3)
 }
 

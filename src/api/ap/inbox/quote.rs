@@ -165,7 +165,7 @@ pub(super) async fn process_quote(
     )
     .await?
     {
-        refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri);
+        refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri).await;
     }
     Ok(())
 }
@@ -213,7 +213,7 @@ pub(super) async fn update_quote(
         let embedded = fields.embedded(&account_uri, context);
         let quote_id = quote.id;
         if verify(state, quote, fields.approval_uri, Some(uri), embedded, 0).await? {
-            refetch_and_verify_later(state, quote_id, Some(uri), fields.approval_uri);
+            refetch_and_verify_later(state, quote_id, Some(uri), fields.approval_uri).await;
         }
         return state_moved(state, status_id, before).await;
     }
@@ -245,7 +245,7 @@ pub(super) async fn update_quote(
         let embedded = fields.embedded(&account_uri, context);
         let quote_id = quote.id;
         if verify(state, quote, fields.approval_uri, fields.uri, embedded, 0).await? {
-            refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri);
+            refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri).await;
         }
     }
     state_moved(state, status_id, before).await
@@ -459,77 +459,75 @@ async fn verify(
 /// waits, at random.
 const PROCESSING_DELAY: std::ops::RangeInclusive<u64> = 30..=600;
 
-/// `sidekiq_options retry: 5`.
-const REFETCH_RETRIES: u32 = 5;
-
-/// `ExponentialBackoff`: how long the `count`-th retry (from nought) waits,
-/// `15 + 10 * count**4` seconds and up to `10 * count**4` more.
-fn refetch_backoff(count: u32, jitter: f64) -> std::time::Duration {
-    let base = 10 * u64::from(count).pow(4);
-    std::time::Duration::from_secs(15 + base + (base as f64 * jitter) as u64)
-}
-
 /// `ActivityPub::RefetchAndVerifyQuoteWorker.perform_in(rand(PROCESSING_DELAY),
-/// quote.id, quote_uri, { 'approval_uri' => approval_uri })`: verify the
-/// quote again later, retried as Sidekiq retries the worker, and refresh the
-/// quoting post in local timelines if its state moved. It runs in the
-/// instance's process (`quote-verification-retries-in-process`).
-fn refetch_and_verify_later(
+/// quote.id, quote_uri, { 'approval_uri' => approval_uri })`.
+async fn refetch_and_verify_later(
     state: &AppState,
     quote_id: i64,
     quoted_uri: Option<&str>,
     approval_uri: Option<&str>,
 ) {
-    let state = state.clone();
-    let quoted_uri = quoted_uri.map(str::to_owned);
-    let approval_uri = approval_uri.map(str::to_owned);
-    crate::tenants::spawn(async move {
-        let first = std::time::Duration::from_secs(rand::random_range(PROCESSING_DELAY));
-        crate::background::rest(&state.stop, first).await;
-        for attempt in 0..=REFETCH_RETRIES {
-            if state.stop.is_cancelled() {
-                return;
-            }
-            // `Quote.find(quote_id)`, else nothing to do.
-            let Ok(Some(quote)) = crate::quotes::find(&state.db, quote_id).await else {
-                return;
-            };
-            let before = quote.state;
-            let status_id = quote.status_id;
-            match verify(
-                &state,
-                quote,
-                approval_uri.as_deref(),
-                quoted_uri.as_deref(),
-                None,
-                0,
-            )
-            .await
-            {
-                Ok(false) => {
-                    let after = crate::quotes::find(&state.db, quote_id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|q| q.state);
-                    if after.is_some_and(|after| after != before) {
-                        crate::quotes::distribute_update(&state, status_id, false).await;
-                    }
-                    return;
-                }
-                Ok(true) => {}
-                Err(error) => {
-                    tracing::debug!(quote_id, %error, "verifying a quote again failed");
-                }
-            }
-            if attempt == REFETCH_RETRIES {
-                tracing::debug!(quote_id, "gave up verifying a quote");
-                return;
-            }
-            let wait = refetch_backoff(attempt, rand::random::<f64>());
-            crate::background::rest(&state.stop, wait).await;
+    let delay = std::time::Duration::from_secs(rand::random_range(PROCESSING_DELAY));
+    crate::jobs::push_in(
+        state,
+        delay,
+        RefetchAndVerifyQuoteWorker {
+            quote_id,
+            quoted_uri: quoted_uri.map(str::to_owned),
+            approval_uri: approval_uri.map(str::to_owned),
+        },
+    )
+    .await;
+}
+
+/// `ActivityPub::RefetchAndVerifyQuoteWorker`: verify the quote again, retried
+/// while its stamp cannot be fetched for now, and refresh the quoting post in
+/// local timelines if its state moved.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RefetchAndVerifyQuoteWorker {
+    pub quote_id: i64,
+    #[serde(default)]
+    pub quoted_uri: Option<String>,
+    #[serde(default)]
+    pub approval_uri: Option<String>,
+}
+
+impl crate::jobs::Job for RefetchAndVerifyQuoteWorker {
+    const KIND: &'static str = "ActivityPub::RefetchAndVerifyQuoteWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(5);
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `Quote.find(quote_id)`, else nothing to do.
+        let Some(quote) = crate::quotes::find(&state.db, self.quote_id).await? else {
+            return Ok(());
+        };
+        let before = quote.state;
+        let status_id = quote.status_id;
+        let retry = verify(
+            state,
+            quote,
+            self.approval_uri.as_deref(),
+            self.quoted_uri.as_deref(),
+            None,
+            0,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        let after = crate::quotes::find(&state.db, self.quote_id)
+            .await?
+            .map(|q| q.state);
+        if after.is_some_and(|after| after != before) {
+            crate::quotes::distribute_update(state, status_id, false).await;
         }
-    });
+        anyhow::ensure!(!retry, "the quote's stamp could not be fetched for now");
+        Ok(())
+    }
 }
 
 /// A fetch that failed for now, which Mastodon retries (`raise_on_error:
@@ -1149,19 +1147,4 @@ pub(super) async fn handle_feature_request(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn refetch_backs_off_as_sidekiq_does() {
-        let secs = |count, jitter| refetch_backoff(count, jitter).as_secs();
-        assert_eq!(secs(0, 0.0), 15);
-        assert_eq!(secs(1, 0.0), 25);
-        assert_eq!(secs(1, 0.99), 34);
-        assert_eq!(secs(4, 0.0), 2575);
-        assert_eq!(secs(4, 0.5), 3855);
-    }
 }

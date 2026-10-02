@@ -48,7 +48,7 @@ async fn announce_status(
     let facts = status_facts(state, status_id).await?;
     if facts.indexable && facts.public {
         if let Ok(Some(uri)) = super::status_uri(state, status_id).await {
-            workers::announce_content_lifecycle_event(state, uri, event_type);
+            workers::announce_content_lifecycle_event(state, uri, event_type).await;
         }
     }
     Some(facts)
@@ -67,9 +67,9 @@ pub async fn status_created(state: &AppState, status_id: i64) {
         return;
     }
     if let Some(original) = facts.reblog_of_id {
-        workers::announce_trend(state, original, TrendSource::Reblog);
+        workers::announce_trend(state, original, TrendSource::Reblog).await;
     } else if let Some(parent) = facts.in_reply_to_id {
-        workers::announce_trend(state, parent, TrendSource::Reply);
+        workers::announce_trend(state, parent, TrendSource::Reply).await;
     }
 }
 
@@ -90,11 +90,11 @@ pub async fn status_deleted(state: &AppState, status_id: i64) {
 }
 
 /// `Favourite::FaspConcern`: every favourite makes its status a candidate.
-pub fn favourite_created(state: &AppState, status_id: i64) {
+pub async fn favourite_created(state: &AppState, status_id: i64) {
     if !super::enabled(state) {
         return;
     }
-    workers::announce_trend(state, status_id, TrendSource::Favourite);
+    workers::announce_trend(state, status_id, TrendSource::Favourite).await;
 }
 
 async fn announce_account(
@@ -117,7 +117,7 @@ async fn announce_account(
         return;
     }
     if let Ok(Some(uri)) = super::account_uri(state, account_id).await {
-        workers::announce_account_lifecycle_event(state, uri, event_type);
+        workers::announce_account_lifecycle_event(state, uri, event_type).await;
     }
 }
 

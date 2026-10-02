@@ -270,7 +270,7 @@ async fn process_inner(
     let all_public_keys_changed =
         all_public_keys_changed(state, account_id, &old_public_keys).await?;
     if uri_changed || (!options.signed_with_known_key && all_public_keys_changed) {
-        refollow_later(state, account_id);
+        refollow_later(state, account_id).await;
     }
     // `clear_tombstones!`.
     if all_public_keys_changed {
@@ -288,28 +288,31 @@ async fn process_inner(
                 value_or_id_owned(featured),
                 featured_tags.is_none(),
                 &request_id,
-            );
+            )
+            .await;
         }
         if let Some(featured_tags) = featured_tags {
             crate::federation::featured::synchronize_featured_tags_collection_later(
                 state,
                 account_id,
                 value_or_id_owned(featured_tags),
-            );
+            )
+            .await;
         }
         if json.get("featuredCollections").is_some_and(is_present) {
             crate::federation::featured::synchronize_featured_collections_collection_later(
                 state,
                 account_id,
                 &request_id,
-            );
+            )
+            .await;
         }
         if account
             .fields
             .as_ref()
             .is_some_and(crate::link_verification::any_requires_verification_remote)
         {
-            crate::link_verification::spawn_later(state, account_id);
+            crate::link_verification::verify_later(state, account_id).await;
         }
     }
 
@@ -1090,38 +1093,51 @@ pub async fn schedule_refresh_if_stale(state: &AppState, account_id: i64) {
     if !needs_background_refresh(&account) {
         return;
     }
-    // `lock: :until_executed, lock_ttl: 1.day`.
-    let Some(lock) = crate::redis_lock::try_acquire(
-        state,
-        &format!("account_refresh:{account_id}"),
-        24 * 60 * 60 * 1000,
-    )
-    .await
-    else {
-        return;
-    };
-    let state = state.clone();
+    // `AccountRefreshWorker.perform_in(rand(REFRESH_DEADLINE), id)`.
     let delay = Duration::from_secs(rand::random_range(0..REFRESH_DEADLINE.as_secs()));
-    crate::tenants::spawn(async move {
-        tokio::time::sleep(delay).await;
-        refresh(&state, account_id).await;
-        drop(lock);
-    });
+    crate::jobs::push_in(
+        state,
+        delay,
+        AccountRefreshWorker {
+            account_id,
+            request_id: None,
+        },
+    )
+    .await;
 }
 
 /// `AccountRefreshWorker`: fetch a remote account again, if it is still due.
-async fn refresh(state: &AppState, account_id: i64) {
-    let Ok(Some(account)) = find_by_id(state, account_id).await else {
-        return;
-    };
-    if !needs_background_refresh(&account) {
-        return;
-    }
-    let Some(uri) = account.stored_uri() else {
-        return;
-    };
-    if let Err(error) = fetch_remote_actor(state, uri, false, None).await {
-        tracing::debug!(account_id, %error, "could not refresh a remote account");
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AccountRefreshWorker {
+    pub account_id: i64,
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+impl crate::jobs::Job for AccountRefreshWorker {
+    const KIND: &'static str = "AccountRefreshWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(3)
+        .dead(false)
+        .lock(crate::jobs::Lock::UntilExecuted(Duration::from_secs(
+            24 * 3600,
+        )));
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let Some(account) = find_by_id(state, self.account_id).await? else {
+            return Ok(());
+        };
+        if !needs_background_refresh(&account) {
+            return Ok(());
+        }
+        let Some(uri) = account.stored_uri() else {
+            return Ok(());
+        };
+        fetch_remote_actor(state, uri, false, self.request_id.as_deref())
+            .await
+            .map(drop)
+            .map_err(|error| anyhow!("could not refresh account {}: {error:?}", self.account_id))
     }
 }
 
@@ -1191,17 +1207,14 @@ async fn rename_account(
             )
             .await
             .map_err(|error| anyhow!("{error:?}"))?;
-            let state = state.clone();
-            let request_id = request_id.to_owned();
-            crate::tenants::spawn(async move {
-                if let Some(uri) = conflicting.stored_uri() {
-                    if let Err(error) =
-                        fetch_remote_actor(&state, uri, false, Some(&request_id)).await
-                    {
-                        tracing::debug!(%error, "could not refresh an account whose handle was taken");
-                    }
-                }
-            });
+            crate::jobs::push(
+                state,
+                AccountRefreshWorker {
+                    account_id: conflicting.id,
+                    request_id: Some(request_id.to_owned()),
+                },
+            )
+            .await;
         }
     }
     rename().await?;
@@ -1245,15 +1258,33 @@ async fn all_public_keys_changed(
     Ok(!current.iter().any(|key| old.contains(key)))
 }
 
+/// `RefollowWorker.perform_async(account_id)`.
+async fn refollow_later(state: &AppState, account_id: i64) {
+    crate::jobs::push(
+        state,
+        RefollowWorker {
+            target_account_id: account_id,
+        },
+    )
+    .await;
+}
+
 /// `RefollowWorker`: an account whose identity changed is followed again by
 /// the local accounts that followed it, keeping their settings.
-fn refollow_later(state: &AppState, account_id: i64) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(error) = refollow(&state, account_id).await {
-            tracing::warn!(account_id, %error, "RefollowWorker failed");
-        }
-    });
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RefollowWorker {
+    pub target_account_id: i64,
+}
+
+impl crate::jobs::Job for RefollowWorker {
+    const KIND: &'static str = "RefollowWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .no_retry();
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        refollow(state, self.target_account_id).await
+    }
 }
 
 async fn refollow(state: &AppState, account_id: i64) -> Result<()> {
@@ -1359,16 +1390,47 @@ async fn process_duplicate_accounts(state: &AppState, account: &Account) -> Resu
     if duplicates.is_empty() {
         return Ok(());
     }
-    let state = state.clone();
-    let id = account.id;
-    crate::tenants::spawn(async move {
-        for duplicate in duplicates {
-            if let Err(error) = merge_with(&state, id, duplicate).await {
-                tracing::warn!(account_id = id, duplicate, %error, "AccountMergingWorker failed");
-            }
-        }
-    });
+    crate::jobs::push(
+        state,
+        AccountMergingWorker {
+            account_id: account.id,
+        },
+    )
+    .await;
     Ok(())
+}
+
+/// `AccountMergingWorker`: merge every other account with this one's `uri`
+/// into it.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AccountMergingWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for AccountMergingWorker {
+    const KIND: &'static str = "AccountMergingWorker";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Pull);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let Some(account) = find_by_id(state, self.account_id).await? else {
+            return Ok(());
+        };
+        if account.is_local() {
+            return Ok(());
+        }
+        let duplicates: Vec<i64> = sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE uri = $1 AND id <> $2 AND domain IS NOT NULL ORDER BY id",
+            account.uri,
+            account.id,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        for duplicate in duplicates {
+            merge_with(state, account.id, duplicate).await?;
+        }
+        Ok(())
+    }
 }
 
 /// `Account#merge_with!`, then `duplicate.destroy`. A row that would collide
