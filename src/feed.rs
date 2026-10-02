@@ -555,7 +555,7 @@ pub async fn fanout_to_lists(
 
     let lists = sqlx::query!(
         r#"SELECT l.id, l.account_id,
-                  CASE l.replies_policy WHEN 0 THEN 'followed' WHEN 1 THEN 'list' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
+                  CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
            FROM lists l
            JOIN list_accounts la ON la.list_id = l.id
            WHERE la.account_id = $1"#,

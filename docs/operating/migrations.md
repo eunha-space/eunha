@@ -65,3 +65,24 @@ Eunha's public, 0, is also Mastodon's nobody, so migration 017 cannot tell
 the two apart. Local posts eunha wrote with “anyone may quote” before the
 migration now let no one quote them. Their authors can open them up again
 through the interaction policy endpoint.
+
+
+List reply policies written before migration 020
+------------------------------------------------
+
+Until the release that added migration 020, eunha stored a list's
+`replies_policy` as followed 0, list 1, none 2. Mastodon stores list 0,
+followed 1, none 2, and eunha now does too. No migration converts the
+column: lists belong to local accounts whether eunha or Mastodon created
+them, so a row does not say which numbering wrote it.
+
+On an instance that eunha has run from the start, every list whose policy was
+set to “followed” or “list” now reads as the other. Swap them back once:
+
+~~~~ sql
+UPDATE lists SET replies_policy = CASE replies_policy WHEN 0 THEN 1 WHEN 1 THEN 0 END
+WHERE replies_policy IN (0, 1);
+~~~~
+
+On a database that Mastodon ran before eunha, run it only for lists created
+after the switch to eunha (filter on `created_at`).

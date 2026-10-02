@@ -441,10 +441,11 @@ pub mod vis {
     }
 }
 
-/// Integer-to-text helpers for lists.replies_policy (followed=0 list=1 none=2).
+/// Integer-to-text helpers for lists.replies_policy, Mastodon's
+/// `enum :replies_policy, { list: 0, followed: 1, none: 2 }`.
 pub mod replies {
-    pub const FOLLOWED: i32 = 0;
-    pub const LIST: i32 = 1;
+    pub const LIST: i32 = 0;
+    pub const FOLLOWED: i32 = 1;
     pub const NONE: i32 = 2;
 
     pub fn from_str(s: &str) -> i32 {

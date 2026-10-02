@@ -2118,3 +2118,28 @@ async fn test_db_and_redis_list_timelines_agree_with_muted_member() {
         "muted carol's status should be absent from list timeline",
     );
 }
+
+/// `replies_policy` is stored as Mastodon's enum: list 0, followed 1, none 2.
+#[tokio::test]
+async fn test_replies_policy_stored_as_mastodon_enum() {
+    let ctx = TestContext::new("list-policy-enum").await;
+    for (policy, stored) in [("list", 0), ("followed", 1), ("none", 2)] {
+        let list: Value = ctx
+            .api
+            .post_json(
+                "/api/v1/lists",
+                Some(&ctx.alice_token),
+                &json!({"title": policy, "replies_policy": policy}),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        let value: i32 = sqlx::query_scalar("SELECT replies_policy FROM lists WHERE id = $1")
+            .bind(list["id"].as_str().unwrap().parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+        assert_eq!(value, stored, "{policy}");
+    }
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l.id, l.title, l.exclusive,\n                  CASE l.replies_policy WHEN 0 THEN 'followed' WHEN 1 THEN 'list' WHEN 2 THEN 'none' ELSE 'list' END AS \"replies_policy!\"\n           FROM lists l\n           JOIN list_accounts la ON la.list_id = l.id\n           WHERE l.account_id = $1 AND la.account_id = $2\n           ORDER BY l.id",
+  "query": "SELECT l.id, l.title, l.exclusive,\n                  CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS \"replies_policy!\"\n           FROM lists l\n           JOIN list_accounts la ON la.list_id = l.id\n           WHERE l.account_id = $1 AND la.account_id = $2\n           ORDER BY l.id",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       null
     ]
   },
-  "hash": "b12c7021736f0c57f90d634e27c45bd1badeb844f1d54d59f087fe2be7836f8a"
+  "hash": "cc3bea98f329224dc75e9fb0ae435822cbbc2f46f60f9456a72a364b9fc841b0"
 }

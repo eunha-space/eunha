@@ -1503,7 +1503,7 @@ pub async fn get_account_lists(
     auth.require_scope("read:lists")?;
     let rows = sqlx::query!(
         r#"SELECT l.id, l.title, l.exclusive,
-                  CASE l.replies_policy WHEN 0 THEN 'followed' WHEN 1 THEN 'list' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
+                  CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
            FROM lists l
            JOIN list_accounts la ON la.list_id = l.id
            WHERE l.account_id = $1 AND la.account_id = $2
