@@ -111,6 +111,11 @@ instance's web app with `read write follow`. Signing out ends it; at most ten
 are kept, the oldest purged first. Changing the password ends every other
 session.
 
+A page that needs a session, such as an archive's download link, sends a
+signed-out browser to `/account/login` with a `302` and remembers where it
+was going in the `account_return_to` cookie, Devise's `user_return_to`;
+signing in then lands there rather than on `/account`.
+
 `GET /api/eunha/v1/sessions` lists them, newest activity first, with the
 browser and platform Mastodon would name and which one the asking token
 belongs to; `DELETE /api/eunha/v1/sessions/:id` ends one. Eunha's own web

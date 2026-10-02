@@ -5,7 +5,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-use crate::helpers::{seed_user, tiny_png, TestContext};
+use crate::helpers::{account_session_cookie, seed_user, tiny_png, TestContext};
 
 async fn remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
     let uri = format!("https://{domain}/users/{username}");
@@ -1004,6 +1004,154 @@ fn zip_json(archive: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, name: &str)
     serde_json::from_reader(file).unwrap()
 }
 
+/// An object's keys, sorted.
+fn keys(value: &Value) -> Vec<String> {
+    let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    keys
+}
+
+/// A timestamp as `Time#iso8601` writes one: whole seconds, `Z`.
+fn assert_iso8601(value: &Value) {
+    let text = value.as_str().unwrap();
+    assert!(
+        chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%SZ").is_ok(),
+        "{text}"
+    );
+}
+
+/// `ContextHelper#full_context` as Mastodon 4.7 serializes it.
+fn mastodon_full_context() -> Value {
+    serde_json::from_str(
+        r#"
+    [
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1",
+        "https://www.w3.org/ns/cid/v1",
+        "https://purl.archive.org/socialweb/webfinger",
+        {
+            "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+            "sensitive": "as:sensitive",
+            "Hashtag": "as:Hashtag",
+            "movedTo": {
+                "@id": "as:movedTo",
+                "@type": "@id"
+            },
+            "alsoKnownAs": {
+                "@id": "as:alsoKnownAs",
+                "@type": "@id"
+            },
+            "toot": "http://joinmastodon.org/ns#",
+            "Emoji": "toot:Emoji",
+            "featured": {
+                "@id": "toot:featured",
+                "@type": "@id"
+            },
+            "featuredTags": {
+                "@id": "toot:featuredTags",
+                "@type": "@id"
+            },
+            "schema": "http://schema.org#",
+            "PropertyValue": "schema:PropertyValue",
+            "value": "schema:value",
+            "ostatus": "http://ostatus.org#",
+            "atomUri": "ostatus:atomUri",
+            "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+            "conversation": "ostatus:conversation",
+            "focalPoint": {
+                "@container": "@list",
+                "@id": "toot:focalPoint"
+            },
+            "blurhash": "toot:blurhash",
+            "discoverable": "toot:discoverable",
+            "indexable": "toot:indexable",
+            "memorial": "toot:memorial",
+            "votersCount": "toot:votersCount",
+            "suspended": "toot:suspended",
+            "attributionDomains": {
+                "@id": "toot:attributionDomains",
+                "@container": "@set"
+            },
+            "showFeatured": "toot:showFeatured",
+            "showMedia": "toot:showMedia",
+            "showRepliesInMedia": "toot:showRepliesInMedia",
+            "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+            "quote": {
+                "@id": "https://w3id.org/fep/044f#quote",
+                "@type": "@id"
+            },
+            "quoteUri": "http://fedibird.com/ns#quoteUri",
+            "_misskey_quote": "https://misskey-hub.net/ns#_misskey_quote",
+            "quoteAuthorization": {
+                "@id": "https://w3id.org/fep/044f#quoteAuthorization",
+                "@type": "@id"
+            },
+            "gts": "https://gotosocial.org/ns#",
+            "interactionPolicy": {
+                "@id": "gts:interactionPolicy",
+                "@type": "@id"
+            },
+            "canFeature": {
+                "@id": "https://w3id.org/fep/7aa9#canFeature",
+                "@type": "@id"
+            },
+            "canQuote": {
+                "@id": "gts:canQuote",
+                "@type": "@id"
+            },
+            "automaticApproval": {
+                "@id": "gts:automaticApproval",
+                "@type": "@id"
+            },
+            "manualApproval": {
+                "@id": "gts:manualApproval",
+                "@type": "@id"
+            },
+            "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+            "interactingObject": {
+                "@id": "gts:interactingObject",
+                "@type": "@id"
+            },
+            "interactionTarget": {
+                "@id": "gts:interactionTarget",
+                "@type": "@id"
+            },
+            "FeatureRequest": "https://w3id.org/fep/7aa9#FeatureRequest",
+            "FeaturedCollection": "https://w3id.org/fep/7aa9#FeaturedCollection",
+            "FeaturedItem": "https://w3id.org/fep/7aa9#FeaturedItem",
+            "FeatureAuthorization": "https://w3id.org/fep/7aa9#FeatureAuthorization",
+            "topic": {
+                "@id": "https://w3id.org/fep/7aa9#topic",
+                "@type": "@id"
+            },
+            "featuredObject": {
+                "@id": "https://w3id.org/fep/7aa9#featuredObject",
+                "@type": "@id"
+            },
+            "featureAuthorization": {
+                "@id": "https://w3id.org/fep/7aa9#featureAuthorization",
+                "@type": "@id"
+            }
+        }
+    ]
+"#,
+    )
+    .unwrap()
+}
+
+/// `GET /backups/{id}/download` with `cookie`, if any.
+async fn download(ctx: &TestContext, backup_id: &str, cookie: Option<&str>) -> reqwest::Response {
+    let mut request = ctx
+        .api
+        .http
+        .get(ctx.api.url(&format!("/backups/{backup_id}/download")))
+        .header("host", &ctx.api.host);
+    if let Some(cookie) = cookie {
+        request = request.header("cookie", cookie);
+    }
+    request.send().await.unwrap()
+}
+
 #[tokio::test]
 async fn archive_takeout_zips_posts_media_and_actor() {
     let ctx = TestContext::new("backup").await;
@@ -1051,6 +1199,21 @@ async fn archive_takeout_zips_posts_media_and_actor() {
             .await;
         assert_eq!(resp.status(), StatusCode::OK, "{action}");
     }
+    // A followers-only post of her own, boosted: the `Announce` carries it.
+    let private = ctx
+        .api
+        .post_status(&ctx.alice_token, "for my followers", "private")
+        .await;
+    let private_id = private["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{private_id}/reblog"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK, "self-boost");
     // An avatar, stored where Paperclip keeps one.
     let avatar_key = format!(
         "accounts/avatars/{}/original/face.png",
@@ -1134,23 +1297,155 @@ async fn archive_takeout_zips_posts_media_and_actor() {
     let bookmarks = zip_json(&mut archive, "bookmarks.json");
     assert_eq!(bookmarks["orderedItems"], json!([bob_uri]));
     let outbox = zip_json(&mut archive, "outbox.json");
-    assert_eq!(outbox["id"], "outbox.json");
-    assert_eq!(outbox["totalItems"], 2);
-    let items = outbox["orderedItems"].as_array().unwrap();
-    assert_eq!(items[0]["type"], "Create");
-    assert!(items[0].get("@context").is_none());
-    assert_eq!(items[0]["object"]["id"], post["uri"]);
     assert_eq!(
-        items[0]["object"]["attachment"][0]["url"],
-        media_path.as_str()
+        keys(&outbox),
+        keys(&json!({"@context": 0, "id": 0, "type": 0, "totalItems": 0, "orderedItems": 0}))
     );
+    assert_eq!(outbox["id"], "outbox.json");
+    assert_eq!(outbox["type"], "OrderedCollection");
+    assert_eq!(outbox["totalItems"], 4);
+    assert_eq!(outbox["@context"], mastodon_full_context());
+    let items = outbox["orderedItems"].as_array().unwrap();
+    assert_eq!(items.len(), 4);
+    let alice_uri = format!("https://{d}/users/alice");
+    // `ActivityPub::CreateNoteSerializer`, unsigned and without a context.
+    let activity_keys = keys(&json!({
+        "id": 0, "type": 0, "actor": 0, "published": 0, "to": 0, "cc": 0, "object": 0,
+    }));
+    assert_eq!(items[0]["type"], "Create");
+    assert_eq!(keys(&items[0]), activity_keys);
+    assert_eq!(
+        items[0]["id"],
+        format!("{}/activity", post["uri"].as_str().unwrap())
+    );
+    assert_eq!(items[0]["actor"], alice_uri.as_str());
+    assert_iso8601(&items[0]["published"]);
+    let note = &items[0]["object"];
+    assert_eq!(note["id"], post["uri"]);
+    // `ActivityPub::NoteSerializer`'s members on a local post.
+    let mut note_keys = keys(&json!({
+        "id": 0, "type": 0, "summary": 0, "inReplyTo": 0, "published": 0, "url": 0,
+        "attributedTo": 0, "to": 0, "cc": 0, "sensitive": 0, "atomUri": 0,
+        "inReplyToAtomUri": 0, "conversation": 0, "context": 0, "content": 0,
+        "attachment": 0, "tag": 0, "replies": 0, "likes": 0, "shares": 0,
+        "interactionPolicy": 0,
+    }));
+    if note.get("contentMap").is_some() {
+        note_keys.push("contentMap".into());
+        note_keys.sort();
+    }
+    assert_eq!(keys(note), note_keys);
+    assert_iso8601(&note["published"]);
+    assert_eq!(
+        note["url"],
+        format!("https://{d}/@alice/{}", post["id"].as_str().unwrap())
+    );
+    assert_eq!(note["atomUri"], post["uri"]);
+    assert!(note["inReplyToAtomUri"].is_null());
+    let replies = format!("{}/replies", post["uri"].as_str().unwrap());
+    assert_eq!(
+        note["replies"],
+        json!({
+            "id": replies,
+            "type": "Collection",
+            "first": {
+                "type": "CollectionPage",
+                "next": format!("{replies}?only_other_accounts=true&page=true"),
+                "partOf": replies,
+                "items": [],
+            },
+        })
+    );
+    assert_eq!(
+        note["likes"],
+        json!({ "id": format!("{}/likes", post["uri"].as_str().unwrap()), "type": "Collection", "totalItems": 0 })
+    );
+    assert_eq!(note["shares"]["totalItems"], 0);
+    // An attachment's URL becomes its path after `/system/`.
+    let attachment = &note["attachment"][0];
+    for key in ["type", "mediaType", "url", "name", "blurhash"] {
+        assert!(attachment.get(key).is_some(), "{key} in {attachment}");
+    }
+    let media_url = url::Url::parse(media["url"].as_str().unwrap()).unwrap();
+    let rewritten = media_url.path();
+    assert_eq!(
+        attachment["url"],
+        rewritten.strip_prefix("/system/").unwrap_or(rewritten)
+    );
+    // `ActivityPub::AnnounceNoteSerializer`: the boosted author first in `cc`.
     assert_eq!(items[1]["type"], "Announce");
+    assert_eq!(keys(&items[1]), activity_keys);
     assert_eq!(items[1]["object"], bob_uri.as_str());
+    assert_eq!(
+        items[1]["to"],
+        json!(["https://www.w3.org/ns/activitystreams#Public"])
+    );
+    assert_eq!(
+        items[1]["cc"],
+        json!([
+            format!("https://{d}/users/bob"),
+            format!("{alice_uri}/followers")
+        ])
+    );
+    assert_iso8601(&items[1]["published"]);
+    // Her own followers-only post goes inline in her boost of it.
+    assert_eq!(items[2]["type"], "Create");
+    assert_eq!(items[3]["type"], "Announce");
+    assert_eq!(items[3]["to"], json!([format!("{alice_uri}/followers")]));
+    assert_eq!(items[3]["cc"], json!([alice_uri]));
+    assert_eq!(items[3]["object"]["id"], private["uri"]);
+    assert_eq!(items[3]["object"]["type"], "Note");
+    assert!(items[3]["object"].get("@context").is_none());
+
     let actor = zip_json(&mut archive, "actor.json");
+    // `ActivityPub::ActorSerializer`'s members, for an account with an
+    // avatar and no header, moves or emoji, and the archive's three.
+    assert_eq!(
+        keys(&actor),
+        keys(&json!({
+            "@context": 0, "id": 0, "webfinger": 0, "type": 0, "following": 0,
+            "followers": 0, "inbox": 0, "outbox": 0, "featured": 0, "featuredTags": 0,
+            "preferredUsername": 0, "name": 0, "summary": 0, "url": 0,
+            "manuallyApprovesFollowers": 0, "discoverable": 0, "indexable": 0,
+            "published": 0, "memorial": 0, "showFeatured": 0, "showMedia": 0,
+            "showRepliesInMedia": 0, "interactionPolicy": 0, "featuredCollections": 0,
+            "publicKey": 0, "tag": 0, "attachment": 0, "endpoints": 0, "icon": 0,
+            "likes": 0, "bookmarks": 0,
+        }))
+    );
+    let context = actor["@context"].as_array().unwrap();
+    assert_eq!(
+        context[..3],
+        [
+            json!("https://www.w3.org/ns/activitystreams"),
+            json!("https://w3id.org/security/v1"),
+            json!("https://purl.archive.org/socialweb/webfinger"),
+        ]
+    );
+    assert_eq!(
+        keys(&context[3]),
+        keys(&json!({
+            "manuallyApprovesFollowers": 0, "toot": 0, "featured": 0, "featuredTags": 0,
+            "alsoKnownAs": 0, "movedTo": 0, "schema": 0, "PropertyValue": 0, "value": 0,
+            "discoverable": 0, "suspended": 0, "memorial": 0, "indexable": 0,
+            "attributionDomains": 0, "showFeatured": 0, "showMedia": 0,
+            "showRepliesInMedia": 0, "gts": 0, "interactionPolicy": 0, "canFeature": 0,
+            "canQuote": 0, "automaticApproval": 0, "manualApproval": 0, "focalPoint": 0,
+        }))
+    );
+    assert_eq!(actor["webfinger"], format!("alice@{d}"));
+    assert_eq!(
+        actor["featuredTags"],
+        format!("{alice_uri}/collections/tags")
+    );
+    assert!(actor["published"].as_str().unwrap().ends_with("T00:00:00Z"));
     assert_eq!(actor["outbox"], "outbox.json");
     assert_eq!(actor["likes"], "likes.json");
     assert_eq!(actor["bookmarks"], "bookmarks.json");
-    assert_eq!(actor["icon"]["url"], "avatar.png");
+    assert_eq!(
+        actor["icon"],
+        json!({ "type": "Image", "mediaType": "image/png", "url": "avatar.png" })
+    );
     let mut picture = Vec::new();
     std::io::Read::read_to_end(&mut archive.by_name(&media_path).unwrap(), &mut picture).unwrap();
     assert_eq!(picture, ctx.state.storage.get(&media_path).await.unwrap());
@@ -1183,6 +1478,63 @@ async fn archive_takeout_zips_posts_media_and_actor() {
         )
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // `UserMailer#backup_ready`'s link, `BackupsController#download`: a
+    // signed-in browser is sent to a link to the file.
+    let alice_cookie =
+        account_session_cookie(&ctx.api, "alice@test.invalid", "testpassword123").await;
+    let resp = download(&ctx, backup_id, Some(&alice_cookie)).await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(resp.headers()["location"].to_str().unwrap().contains(&key));
+    // Someone else's is not found among theirs.
+    let bob_cookie = account_session_cookie(&ctx.api, "bob@test.invalid", "testpassword123").await;
+    let resp = download(&ctx, backup_id, Some(&bob_cookie)).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    // A suspended member may still take theirs away.
+    exec(
+        &ctx,
+        "UPDATE accounts SET suspended_at = now() WHERE id = $1",
+        &[alice],
+    )
+    .await;
+    let resp = download(&ctx, backup_id, Some(&alice_cookie)).await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    exec(
+        &ctx,
+        "UPDATE accounts SET suspended_at = NULL WHERE id = $1",
+        &[alice],
+    )
+    .await;
+    // Signed out: to the sign-in page, which sends the browser back here.
+    let resp = download(&ctx, backup_id, None).await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert_eq!(resp.headers()["location"], "/account/login");
+    let return_to = resp.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(return_to.starts_with("account_return_to="), "{return_to}");
+    let resp = ctx
+        .api
+        .http
+        .post(ctx.api.url("/account/login"))
+        .header("host", &ctx.api.host)
+        .header("cookie", &return_to)
+        .form(&[
+            ("email", "alice@test.invalid"),
+            ("password", "testpassword123"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        resp.headers()["location"],
+        format!("/backups/{backup_id}/download").as_str()
+    );
 
     // Six days on, another may be made, and it replaces the first.
     exec(

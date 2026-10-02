@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.name FROM accounts_tags at JOIN tags t ON t.id = at.tag_id\n             WHERE at.account_id = $1 ORDER BY t.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f7ce84d17e8dd48b819e1a312b546e1d4f1614555bb56c2a33386312264b5fe5"
+}

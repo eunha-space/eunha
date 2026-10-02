@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.uri, a.id AS account_id, a.id_scheme, a.username, a.domain, a.uri AS account_uri\n           FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
+  "query": "SELECT s.id, s.uri, s.visibility, a.id AS account_id, a.id_scheme, a.username,\n                  a.domain, a.uri AS account_uri\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND s.deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -15,26 +15,31 @@
       },
       {
         "ordinal": 2,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
         "name": "account_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "id_scheme",
         "type_info": "Int4"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "username",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "domain",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "account_uri",
         "type_info": "Varchar"
       }
@@ -48,11 +53,12 @@
       false,
       true,
       false,
+      false,
       true,
       false,
       true,
       true
     ]
   },
-  "hash": "98fc7a11653292c46c3453d32a3dec9b21d38dc64aa2d0d88ca2f92cc5768a3e"
+  "hash": "2eee9986fcc9e94477986518891def9ef8275e92cc438a7a90e4978a8aad04b1"
 }

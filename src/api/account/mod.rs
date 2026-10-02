@@ -28,6 +28,7 @@ pub fn router() -> Router {
         .route("/account/login", get(login_page).post(login_post))
         .route("/account/logout", post(logout_post))
         .route("/account/sso", post(sso_post))
+        .route("/backups/{id}/download", get(backup_download))
         .route("/account/password", get(password_page).post(password_post))
         .route("/account/delete", get(delete_page).post(delete_post))
         .route(
@@ -343,20 +344,103 @@ pub async fn login_post(
         }
     };
 
-    if htmx {
-        let mut h = HeaderMap::new();
-        h.insert(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
-        h.insert(
-            HeaderName::from_static("hx-redirect"),
-            HeaderValue::from_static("/account"),
+    // `after_sign_in_path_for`: where the browser was sent here from, when
+    // it was, and the account page otherwise.
+    let stored = stored_location(&headers);
+    let target = stored.clone().unwrap_or_else(|| "/account".to_owned());
+    let mut h = HeaderMap::new();
+    h.append(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
+    if stored.is_some() {
+        h.append(
+            header::SET_COOKIE,
+            HeaderValue::from_static(CLEAR_RETURN_TO),
         );
+    }
+    if htmx {
+        if let Ok(value) = HeaderValue::from_str(&target) {
+            h.insert(HeaderName::from_static("hx-redirect"), value);
+        }
         return (h, "").into_response();
     }
+    (h, Redirect::to(&target)).into_response()
+}
+
+// ── Stored location ───────────────────────────────────────────────────────────
+
+/// Devise's `user_return_to`: the page a signed-out browser asked for, kept
+/// until it has signed in.
+const RETURN_TO_COOKIE: &str = "account_return_to";
+const CLEAR_RETURN_TO: &str = "account_return_to=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
+
+/// The stored location, if it is a path on this site.
+fn stored_location(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    let value = cookie_header
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix(&format!("{RETURN_TO_COOKIE}=")))?;
+    let path = urlencoding::decode(value).ok()?.into_owned();
+    (path.starts_with('/') && !path.starts_with("//") && !path.contains('\\')).then_some(path)
+}
+
+/// `authenticate_user!` failing: Devise's failure app remembers the page
+/// (`store_location_for`) and redirects to the sign-in page with a `302`.
+fn redirect_to_sign_in(path: &str) -> Response {
+    let cookie = format!(
+        "{RETURN_TO_COOKIE}={}; HttpOnly; SameSite=Lax; Path=/",
+        urlencoding::encode(path)
+    );
     (
-        [(header::SET_COOKIE, set_cookie(&session_id))],
-        Redirect::to("/account"),
+        axum::http::StatusCode::FOUND,
+        [
+            (header::LOCATION, "/account/login".to_owned()),
+            (header::SET_COOKIE, cookie),
+        ],
     )
         .into_response()
+}
+
+// ── GET /backups/{id}/download ────────────────────────────────────────────────
+
+/// `BackupsController#download`. `authenticate_user!` lets in any signed-in
+/// user whose account is not a memorial (`active_for_authentication?`),
+/// functional or not, so a suspended member can still take their archive
+/// away. The archive is looked up among the user's own
+/// (`current_user.backups.find`), and the browser is redirected to a link
+/// to the file that works for `BACKUP_LINK_TIMEOUT`.
+pub async fn backup_download(
+    state: AppState,
+    client_ip: ClientIpExt,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let session = match extract_session_token(&headers) {
+        Some(session_id) => {
+            crate::sessions::fetch(&state.db, &session_id, client_addr(client_ip)).await
+        }
+        None => None,
+    };
+    let account_id = match session {
+        Some(session) => sqlx::query_scalar!(
+            r#"SELECT u.account_id FROM users u JOIN accounts a ON a.id = u.account_id
+               WHERE u.id = $1 AND a.domain IS NULL AND NOT a.memorial"#,
+            session.user_id,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten(),
+        None => None,
+    };
+    let Some(account_id) = account_id else {
+        return redirect_to_sign_in(&format!("/backups/{id}/download"));
+    };
+    let Ok(backup_id) = id.parse::<i64>() else {
+        return crate::error::AppError::NotFound.into_response();
+    };
+    match crate::portability::backup::download_url(&state, account_id, backup_id).await {
+        Ok(url) => (axum::http::StatusCode::FOUND, [(header::LOCATION, url)]).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
 // ── POST /account/sso ─────────────────────────────────────────────────────────

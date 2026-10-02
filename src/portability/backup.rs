@@ -15,7 +15,6 @@
 //! where Paperclip stores a backup's dump:
 //! `backups/dumps/{id partition}/original/archive-{time}-{hex}.zip`.
 
-use std::collections::HashMap;
 use std::io::Write as _;
 use std::time::Duration;
 
@@ -318,7 +317,7 @@ async fn perform(state: &AppState, backup_id: i64) -> AppResult<()> {
             let sender = state.mailer();
             let domain = state.instance.domain.clone();
             {
-                if let Err(error) = sender.send_backup_ready(&email, &domain).await {
+                if let Err(error) = sender.send_backup_ready(&email, &domain, backup_id).await {
                     tracing::warn!(%error, "could not send an archive-ready email");
                 }
             }
@@ -388,13 +387,11 @@ impl Drop for Archive {
 /// `BackupService#build_archive!`.
 async fn build_archive(state: &AppState, backup_id: i64, account: &Account) -> AppResult<()> {
     let mut archive = Archive::create()?;
-    let media = attached_media(state, account.id).await?;
 
-    dump_outbox(state, &mut archive, account, &media).await?;
-    // `dump_media_attachments!`: each attached file, at its storage path.
-    for item in &media {
-        download_to_zip(state, &mut archive, &item.key, &item.key).await?;
-    }
+    dump_outbox(state, &mut archive, account).await?;
+    dump_media_attachments(state, &mut archive, account.id).await?;
+    // `favourite_statuses` and `bookmark_statuses`, which `find_in_batches`
+    // walks in the order of the posts' ids.
     let likes = collection_uris(
         state,
         r#"SELECT s.id, s.uri, (s.reblog_of_id IS NOT NULL) AS reblog,
@@ -402,7 +399,7 @@ async fn build_archive(state: &AppState, backup_id: i64, account: &Account) -> A
            FROM favourites f
            JOIN statuses s ON s.id = f.status_id AND s.deleted_at IS NULL
            JOIN accounts a ON a.id = s.account_id
-           WHERE f.account_id = $1 ORDER BY f.id"#,
+           WHERE f.account_id = $1 ORDER BY s.id"#,
         account.id,
     )
     .await?;
@@ -414,7 +411,7 @@ async fn build_archive(state: &AppState, backup_id: i64, account: &Account) -> A
            FROM bookmarks b
            JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL
            JOIN accounts a ON a.id = s.account_id
-           WHERE b.account_id = $1 ORDER BY b.id"#,
+           WHERE b.account_id = $1 ORDER BY s.id"#,
         account.id,
     )
     .await?;
@@ -468,51 +465,78 @@ async fn download_to_zip(
     }
 }
 
-struct AttachedMedia {
-    /// Where the original is stored, and its path in the zip.
-    key: String,
-    /// The URL a note's attachment gives for it.
-    url: Option<String>,
+/// `dump_media_attachments!`'s name for a file: its Paperclip `path`, from
+/// after the last `/system/` and without leading slashes.
+fn zip_path(path: &str) -> &str {
+    let path = match path.rfind("/system/") {
+        Some(at) => &path[at + "/system/".len()..],
+        None => path,
+    };
+    path.trim_start_matches('/')
 }
 
-/// `MediaAttachment.attached.where(account:)`, with files of their own.
-async fn attached_media(state: &AppState, account_id: i64) -> AppResult<Vec<AttachedMedia>> {
-    let media = sqlx::query_as!(
-        crate::db::models::MediaAttachment,
-        "SELECT * FROM media_attachments
+/// `build_outbox_json!`'s rewrite of an attachment's URL: its path, without
+/// a leading `/system/`.
+fn attachment_path(url: &str) -> Option<String> {
+    let url = url::Url::parse(url).ok()?;
+    let path = url.path();
+    Some(path.strip_prefix("/system/").unwrap_or(path).to_owned())
+}
+
+/// `dump_media_attachments!`: the original of each of the account's
+/// attached media (`MediaAttachment.attached.where(account:)`), in the
+/// order of their ids.
+async fn dump_media_attachments(
+    state: &AppState,
+    archive: &mut Archive,
+    account_id: i64,
+) -> AppResult<()> {
+    let media = sqlx::query!(
+        "SELECT id, file_file_name FROM media_attachments
          WHERE account_id = $1 AND (status_id IS NOT NULL OR scheduled_status_id IS NOT NULL)
          ORDER BY id",
         account_id,
     )
     .fetch_all(&state.db)
     .await?;
-    Ok(media
-        .iter()
-        .filter_map(|m| {
-            let file_name = m.file_file_name.as_deref().filter(|f| !f.is_empty())?;
-            Some(AttachedMedia {
-                key: format!(
-                    "media_attachments/files/{}/original/{file_name}",
-                    crate::media::int_to_path(m.id)
-                ),
-                url: crate::api::mastodon::convert::media_url(&state.urls, m),
-            })
-        })
-        .collect())
+    for m in media {
+        let Some(file_name) = m.file_file_name.filter(|f| !f.is_empty()) else {
+            continue;
+        };
+        let key = format!(
+            "media_attachments/files/{}/original/{file_name}",
+            crate::media::int_to_path(m.id)
+        );
+        let path = state.storage.object_key(&key);
+        download_to_zip(state, archive, &key, zip_path(&path)).await?;
+    }
+    Ok(())
 }
 
-/// `BackupService#build_outbox_json!`: every post, newest last, as the
-/// `Create` or `Announce` that made it, attachments pointing into the zip.
-async fn dump_outbox(
+/// `ActivityPub::NoteSerializer` on a local post: the note eunha federates,
+/// with the members upstream's serializer adds besides.
+async fn archived_note(
     state: &AppState,
-    archive: &mut Archive,
-    account: &Account,
-    media: &[AttachedMedia],
-) -> AppResult<()> {
-    let paths: HashMap<&str, &str> = media
-        .iter()
-        .filter_map(|m| m.url.as_deref().map(|url| (url, m.key.as_str())))
-        .collect();
+    domain: &str,
+    status_id: i64,
+) -> AppResult<Option<crate::api::ap::note::NoteBundle>> {
+    let Some(mut bundle) = crate::api::ap::note::build_note(state, domain, status_id).await? else {
+        return Ok(None);
+    };
+    let extras = crate::api::ap::note::serializer_extras(state, domain, status_id).await?;
+    if let Some(note) = bundle.note.as_object_mut() {
+        note.extend(extras);
+    }
+    Ok(Some(bundle))
+}
+
+/// `BackupService#build_outbox_json!`: every post, oldest first, as the
+/// `Create` (`ActivityPub::CreateNoteSerializer`) or `Announce`
+/// (`ActivityPub::AnnounceNoteSerializer`) that made it, each through
+/// `serialize_payload` without a signer, so unsigned, and without its
+/// `@context`; the collection carries `full_context`. A `Create`'s
+/// attachments point at their paths after `/system/`.
+async fn dump_outbox(state: &AppState, archive: &mut Archive, account: &Account) -> AppResult<()> {
     let statuses = sqlx::query!(
         r#"SELECT s.id, s.reblog_of_id, s.visibility, s.created_at
            FROM statuses s WHERE s.account_id = $1 AND s.deleted_at IS NULL ORDER BY s.id"#,
@@ -521,7 +545,6 @@ async fn dump_outbox(
     .fetch_all(&state.db)
     .await?;
     let domain = state.instance.domain.as_str();
-    let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let mut items = Vec::with_capacity(statuses.len());
     for status in &statuses {
         let item = match status.reblog_of_id {
@@ -529,7 +552,6 @@ async fn dump_outbox(
                 announce_item(
                     state,
                     account,
-                    &actor_url,
                     status.id,
                     reblog_of_id,
                     status.visibility,
@@ -537,7 +559,7 @@ async fn dump_outbox(
                 )
                 .await?
             }
-            None => crate::api::ap::note::build_note(state, domain, status.id)
+            None => archived_note(state, domain, status.id)
                 .await?
                 .map(|bundle| {
                     let mut item = bundle.into_create();
@@ -546,9 +568,7 @@ async fn dump_outbox(
                     }
                     if let Some(attachments) = item["object"]["attachment"].as_array_mut() {
                         for attachment in attachments {
-                            let path = attachment["url"]
-                                .as_str()
-                                .and_then(|url| paths.get(url).copied());
+                            let path = attachment["url"].as_str().and_then(attachment_path);
                             if let Some(path) = path {
                                 attachment["url"] = json!(path);
                             }
@@ -562,7 +582,7 @@ async fn dump_outbox(
         }
     }
     let outbox = json!({
-        "@context": crate::api::ap::note::note_context(),
+        "@context": crate::api::ap::context_helper::full_context(),
         "id": "outbox.json",
         "type": "OrderedCollection",
         "totalItems": statuses.len(),
@@ -574,19 +594,25 @@ async fn dump_outbox(
     )
 }
 
-/// `ActivityPub::ActivityPresenter.from_status` on a boost.
+/// `ActivityPub::AnnounceNoteSerializer` on a boost: addressed by
+/// `TagManager#to` and `#cc` (the boosted author first in `cc`), and
+/// carrying the boosted post inline when it is one of the account's own
+/// followers-only posts, its URI otherwise.
 async fn announce_item(
     state: &AppState,
     account: &Account,
-    actor_url: &str,
     status_id: i64,
     reblog_of_id: i64,
     visibility: i32,
     created_at: chrono::NaiveDateTime,
 ) -> AppResult<Option<Value>> {
+    use crate::db::models::vis;
+    const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
     let original = sqlx::query!(
-        r#"SELECT s.id, s.uri, a.id AS account_id, a.id_scheme, a.username, a.domain, a.uri AS account_uri
-           FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
+        r#"SELECT s.id, s.uri, s.visibility, a.id AS account_id, a.id_scheme, a.username,
+                  a.domain, a.uri AS account_uri
+           FROM statuses s JOIN accounts a ON a.id = s.account_id
+           WHERE s.id = $1 AND s.deleted_at IS NULL"#,
         reblog_of_id,
     )
     .fetch_optional(&state.db)
@@ -595,35 +621,49 @@ async fn announce_item(
         return Ok(None);
     };
     let domain = state.instance.domain.as_str();
-    let object = super::status_uri(
-        state,
-        super::StatusUriParts {
-            status_id: original.id,
-            uri: original.uri.as_deref(),
-            reblog: false,
-            account_id: original.account_id,
-            account_id_scheme: original.id_scheme,
-            account_username: &original.username,
-            account_domain: original.domain.as_deref(),
-        },
-    );
+    let actor_url = crate::federation::tag::account_uri_of(domain, account);
+    let followers_url = format!("{actor_url}/followers");
     let original_author = if original.domain.is_none() {
-        crate::federation::tag::account_uri(
+        Some(crate::federation::tag::account_uri(
             domain,
             original.account_id,
             original.id_scheme,
             &original.username,
-        )
+        ))
     } else {
-        original.account_uri.unwrap_or_default()
+        original.account_uri.clone()
     };
-    let followers_url = format!("{actor_url}/followers");
-    let (to, mut cc) = crate::db::models::vis::audience(visibility, &followers_url, &[]);
-    if !original_author.is_empty() {
-        cc.push(original_author);
+    let to: Vec<String> = match visibility {
+        vis::PUBLIC => vec![PUBLIC.to_owned()],
+        vis::UNLISTED | vis::PRIVATE => vec![followers_url.clone()],
+        _ => Vec::new(),
+    };
+    let mut cc: Vec<Value> = vec![json!(original_author)];
+    match visibility {
+        vis::PUBLIC => cc.push(json!(followers_url)),
+        vis::UNLISTED => cc.push(json!(PUBLIC)),
+        _ => {}
     }
-    let to: Vec<&str> = to.iter().map(String::as_str).collect();
-    let cc: Vec<&str> = cc.iter().map(String::as_str).collect();
+    let inline = original.account_id == account.id && original.visibility == vis::PRIVATE;
+    let object = if inline {
+        match archived_note(state, domain, original.id).await? {
+            Some(bundle) => bundle.note,
+            None => return Ok(None),
+        }
+    } else {
+        json!(super::status_uri(
+            state,
+            super::StatusUriParts {
+                status_id: original.id,
+                uri: original.uri.as_deref(),
+                reblog: false,
+                account_id: original.account_id,
+                account_id_scheme: original.id_scheme,
+                account_username: &original.username,
+                account_domain: original.domain.as_deref(),
+            },
+        ))
+    };
     let id = format!(
         "{}/activity",
         crate::federation::tag::status_uri(
@@ -634,18 +674,15 @@ async fn announce_item(
             status_id
         )
     );
-    let mut item = crate::federation::activity::announce(
-        &id,
-        actor_url,
-        &object,
-        &to,
-        &cc,
-        &created_at.and_utc().to_rfc3339(),
-    )?;
-    if let Some(object) = item.as_object_mut() {
-        object.remove("@context");
-    }
-    Ok(Some(item))
+    Ok(Some(json!({
+        "id": id,
+        "type": "Announce",
+        "actor": actor_url,
+        "published": crate::api::ap::note::iso8601(created_at.and_utc()),
+        "to": to,
+        "cc": cc,
+        "object": object,
+    })))
 }
 
 /// The URIs a likes or bookmarks query names.
@@ -697,19 +734,163 @@ fn extname(path: &str) -> &str {
     }
 }
 
+/// `ActivityPub::ActorSerializer` through `ActivityPub::Adapter`: the
+/// members and the `@context` upstream's serializer gives a local account.
+/// What the two share is taken from the actor eunha federates.
+async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value> {
+    use crate::api::ap::context_helper::serialized_context;
+    let domain = state.instance.domain.as_str();
+    let base = crate::api::ap::objects::actor_json(state, domain, account).await?;
+    let unavailable = account.is_unavailable();
+    let actor_url = base["id"].as_str().unwrap_or_default().to_owned();
+
+    // `virtual_tags`: the emoji of the profile, then its hashtags.
+    let emojis: Vec<Value> = base["tag"].as_array().cloned().unwrap_or_default();
+    let hashtags: Vec<Value> = if unavailable {
+        Vec::new()
+    } else {
+        sqlx::query_scalar!(
+            "SELECT t.name FROM accounts_tags at JOIN tags t ON t.id = at.tag_id
+             WHERE at.account_id = $1 ORDER BY t.id",
+            account.id,
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|name| {
+            json!({
+                "type": "Hashtag",
+                "href": format!("https://{domain}/tags/{name}"),
+                "name": format!("#{name}"),
+            })
+        })
+        .collect()
+    };
+    let mut tag = emojis.clone();
+    tag.extend(hashtags.iter().cloned());
+
+    // `icon` and `image`, through `ImageSerializer` with the description.
+    let image =
+        |file_name: Option<&str>, content_type: &Option<String>, url: &Value, description: &str| {
+            file_name.filter(|f| !f.is_empty() && !unavailable)?;
+            let mut image = json!({ "type": "Image", "mediaType": content_type, "url": url });
+            if !description.is_empty() {
+                image["summary"] = json!(description);
+            }
+            Some(image)
+        };
+    let icon = image(
+        account.avatar_file_name.as_deref(),
+        &account.avatar_content_type,
+        &base["icon"]["url"],
+        &account.avatar_description,
+    );
+    let header = image(
+        account.header_file_name.as_deref(),
+        &account.header_content_type,
+        &base["image"]["url"],
+        &account.header_description,
+    );
+
+    let discoverable = account.discoverable.unwrap_or(false);
+    let can_feature = if !discoverable {
+        actor_url.clone()
+    } else if account.locked {
+        format!("{actor_url}/followers")
+    } else {
+        "https://www.w3.org/ns/activitystreams#Public".to_owned()
+    };
+    let name = if unavailable || account.display_name.is_empty() {
+        account.username.clone()
+    } else {
+        account.display_name.clone()
+    };
+
+    let mut actor = json!({
+        "id": actor_url,
+        "webfinger": format!("{}@{domain}", account.username),
+        "type": base["type"],
+        "following": base["following"],
+        "followers": base["followers"],
+        "inbox": base["inbox"],
+        "outbox": base["outbox"],
+        "featured": base["featured"],
+        "featuredTags": format!("{actor_url}/collections/tags"),
+        "preferredUsername": account.username,
+        "name": name,
+        "summary": base["summary"],
+        "url": base["url"],
+        "manuallyApprovesFollowers": !unavailable && account.locked,
+        "discoverable": !unavailable && discoverable,
+        "indexable": !unavailable && account.indexable,
+        // `created_at.midnight.iso8601`.
+        "published": format!("{}T00:00:00Z", account.created_at.format("%Y-%m-%d")),
+        "memorial": account.memorial,
+        "showFeatured": account.show_featured,
+        "showMedia": account.show_media,
+        "showRepliesInMedia": account.show_media_replies,
+        "interactionPolicy": { "canFeature": { "automaticApproval": [can_feature] } },
+        "featuredCollections": format!("https://{domain}/ap/users/{}/featured_collections", account.id),
+        "publicKey": base["publicKey"],
+        "tag": tag,
+        "attachment": base["attachment"],
+        "endpoints": base["endpoints"],
+    });
+    if !unavailable && !base["movedTo"].is_null() {
+        actor["movedTo"] = base["movedTo"].clone();
+    }
+    let also_known_as = account.also_known_as.clone().unwrap_or_default();
+    if !unavailable && !also_known_as.is_empty() {
+        actor["alsoKnownAs"] = json!(also_known_as);
+    }
+    if account.suspended_at.is_some() {
+        actor["suspended"] = json!(true);
+    }
+    let attribution_domains = account.attribution_domains.clone().unwrap_or_default();
+    if !attribution_domains.is_empty() {
+        actor["attributionDomains"] = json!(attribution_domains);
+    }
+    if let Some(icon) = &icon {
+        actor["icon"] = icon.clone();
+    }
+    if let Some(header) = &header {
+        actor["image"] = header.clone();
+    }
+
+    // The contexts the serializer and the ones it nests declared, in the
+    // order the adapter met them.
+    let mut extensions = vec![
+        "manually_approves_followers",
+        "featured",
+        "also_known_as",
+        "moved_to",
+        "property_value",
+        "discoverable",
+        "suspended",
+        "memorial",
+        "indexable",
+        "attribution_domains",
+        "profile_settings",
+        "interaction_policies",
+    ];
+    if !emojis.is_empty() {
+        extensions.extend(["emoji", "focal_point"]);
+    }
+    if !hashtags.is_empty() {
+        extensions.push("hashtag");
+    }
+    if icon.is_some() || header.is_some() {
+        extensions.push("focal_point");
+    }
+    actor["@context"] =
+        serialized_context(&["activitystreams", "security", "webfinger"], &extensions);
+    Ok(actor)
+}
+
 /// `dump_actor!`: the actor, its images in the zip beside it as `avatar.*`
 /// and `header.*`, and its collections the zip's own files.
 async fn dump_actor(state: &AppState, archive: &mut Archive, account: &Account) -> AppResult<()> {
-    let mut actor =
-        crate::api::ap::objects::actor_json(state, &state.instance.domain, account).await?;
-    let avatar = account
-        .avatar_file_name
-        .as_deref()
-        .filter(|f| !f.is_empty() && !account.is_unavailable());
-    let header = account
-        .header_file_name
-        .as_deref()
-        .filter(|f| !f.is_empty() && !account.is_unavailable());
+    let mut actor = mastodon_actor(state, account).await?;
     if let Some(icon_url) = actor["icon"]["url"].as_str().map(str::to_owned) {
         actor["icon"]["url"] = json!(format!("avatar{}", extname(&icon_url)));
     }
@@ -720,8 +901,14 @@ async fn dump_actor(state: &AppState, archive: &mut Archive, account: &Account) 
     actor["likes"] = json!("likes.json");
     actor["bookmarks"] = json!("bookmarks.json");
 
+    // `account.avatar.exists?` and `account.header.exists?`: the account's
+    // own files, whether or not the actor shows them.
     let partition = crate::media::int_to_path(account.id);
-    if let Some(file_name) = avatar {
+    if let Some(file_name) = account
+        .avatar_file_name
+        .as_deref()
+        .filter(|f| !f.is_empty())
+    {
         let key = format!("accounts/avatars/{partition}/original/{file_name}");
         download_to_zip(
             state,
@@ -731,7 +918,11 @@ async fn dump_actor(state: &AppState, archive: &mut Archive, account: &Account) 
         )
         .await?;
     }
-    if let Some(file_name) = header {
+    if let Some(file_name) = account
+        .header_file_name
+        .as_deref()
+        .filter(|f| !f.is_empty())
+    {
         let key = format!("accounts/headers/{partition}/original/{file_name}");
         download_to_zip(
             state,
@@ -782,6 +973,26 @@ mod tests {
         assert_eq!(extname("https://cdn.example/a/b/c.png"), ".png");
         assert_eq!(extname("abc"), "");
         assert_eq!(extname(".hidden"), "");
+    }
+
+    #[test]
+    fn media_paths_are_cut_where_upstream_cuts_them() {
+        assert_eq!(
+            zip_path("public/system/media_attachments/files/1/original/a.png"),
+            "media_attachments/files/1/original/a.png"
+        );
+        assert_eq!(
+            zip_path("prefix/media_attachments/files/1/original/a.png"),
+            "prefix/media_attachments/files/1/original/a.png"
+        );
+        assert_eq!(
+            attachment_path("https://example.com/system/media_attachments/a.png").as_deref(),
+            Some("media_attachments/a.png")
+        );
+        assert_eq!(
+            attachment_path("https://files.example.com/media_attachments/a.png").as_deref(),
+            Some("/media_attachments/a.png")
+        );
     }
 
     #[test]

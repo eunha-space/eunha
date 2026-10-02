@@ -119,6 +119,20 @@ pub fn media_url(urls: &InstanceUrls, m: &models::MediaAttachment) -> Option<Str
         .map(str::to_string)
 }
 
+/// `thumbnail.url(:original)`: a custom thumbnail's own file, which
+/// `ActivityPub::NoteSerializer` gives as an attachment's `icon`.
+pub fn media_thumbnail_original_url(
+    urls: &InstanceUrls,
+    m: &models::MediaAttachment,
+) -> Option<String> {
+    let filename = m.thumbnail_file_name.as_deref().filter(|f| !f.is_empty())?;
+    Some(format!(
+        "{}/media_attachments/thumbnails/{}/original/{filename}",
+        urls.media_base,
+        crate::media::int_to_path(m.id)
+    ))
+}
+
 pub fn media_preview_url(urls: &InstanceUrls, m: &models::MediaAttachment) -> Option<String> {
     if let Some(filename) = &m.thumbnail_file_name {
         if !filename.is_empty() {

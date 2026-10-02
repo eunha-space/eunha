@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, file_file_name FROM media_attachments\n         WHERE account_id = $1 AND (status_id IS NOT NULL OR scheduled_status_id IS NOT NULL)\n         ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_file_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "ab48b27a1948119ba1f8b90f88d0b9adc4c16e709fa18d94d9a22ba9d5dcc293"
+}

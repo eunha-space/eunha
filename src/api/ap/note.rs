@@ -42,6 +42,33 @@ pub fn note_context() -> Value {
     ])
 }
 
+/// `Time#iso8601`, as Mastodon's serializers write a timestamp: whole
+/// seconds, in UTC, with a `Z`.
+#[must_use]
+pub fn iso8601(time: chrono::DateTime<chrono::Utc>) -> String {
+    time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// `ActiveSupport::Duration#iso8601` of `n.seconds`, as
+/// `MediaAttachmentSerializer#duration` writes a length: the seconds as
+/// Ruby prints the number (`12.0`, `75.5`, `12`), never carried into
+/// minutes.
+fn iso8601_seconds(seconds: &Value) -> Option<String> {
+    let text = if let Some(n) = seconds.as_i64() {
+        if n == 0 {
+            return Some("PT0S".into());
+        }
+        n.to_string()
+    } else {
+        let n = seconds.as_f64()?;
+        if n == 0.0 {
+            return Some("PT0S".into());
+        }
+        format!("{n:?}")
+    };
+    Some(format!("PT{text}S"))
+}
+
 /// A built `Note` plus the addressing needed to wrap it in a `Create`.
 pub struct NoteBundle {
     /// The `Note` object, without an `@context` (suitable for embedding).
@@ -65,7 +92,7 @@ impl NoteBundle {
             "id": activity_id,
             "type": "Create",
             "actor": self.actor_url,
-            "published": self.created_at.to_rfc3339(),
+            "published": iso8601(self.created_at),
             "to": self.to,
             "cc": self.cc,
             "object": self.note,
@@ -91,7 +118,7 @@ pub async fn build_note(
         r#"SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility,
                   -- `object.account.sensitized? || object.sensitive`
                   (s.sensitive OR a.sensitized_at IS NOT NULL) AS "sensitive!",
-                  s.created_at, s.edited_at, s.uri, s.url, s.in_reply_to_id, s.language,
+                  s.created_at, s.edited_at, s.uri, s.in_reply_to_id, s.language,
                   s.quote_approval_policy,
                   a.username, a.uri AS account_uri, a.id_scheme,
                   qr.id AS "quote_id?",
@@ -120,11 +147,9 @@ pub async fn build_note(
         .clone()
         .filter(|u| !u.is_empty())
         .unwrap_or_else(|| format!("{actor_url}/statuses/{}", s.id));
-    let note_url = s
-        .url
-        .clone()
-        .filter(|u| !u.is_empty())
-        .unwrap_or_else(|| note_uri.clone());
+    // `TagManager#url_for` on a local status: `short_account_status_url`,
+    // whatever the `url` column holds.
+    let note_url = format!("https://{domain}/@{}/{}", s.username, s.id);
     let followers_url = format!("{actor_url}/followers");
 
     // ── inReplyTo ───────────────────────────────────────────────────────────
@@ -317,7 +342,7 @@ pub async fn build_note(
         "type": "Note",
         "summary": if s.spoiler_text.is_empty() { None } else { Some(s.spoiler_text.clone()) },
         "inReplyTo": in_reply_to,
-        "published": s.created_at.and_utc().to_rfc3339(),
+        "published": iso8601(s.created_at.and_utc()),
         "url": note_url,
         "attributedTo": actor_url,
         "to": to.clone(),
@@ -377,7 +402,7 @@ pub async fn build_note(
             note["oneOf"] = json!(options);
         }
         if let Some(expires_at) = poll.expires_at {
-            let timestamp = expires_at.and_utc().to_rfc3339();
+            let timestamp = iso8601(expires_at.and_utc());
             note["endTime"] = json!(timestamp);
             if expired {
                 note["closed"] = json!(timestamp);
@@ -392,7 +417,7 @@ pub async fn build_note(
         note["contentMap"] = json!({ lang: note["content"].clone() });
     }
     if let Some(edited) = s.edited_at {
-        note["updated"] = json!(edited.and_utc().to_rfc3339());
+        note["updated"] = json!(iso8601(edited.and_utc()));
     }
 
     // FEP-044f quote linkage, as `ActivityPub::NoteSerializer` writes it:
@@ -433,6 +458,165 @@ pub async fn build_note(
         cc,
         created_at: s.created_at.and_utc(),
     }))
+}
+
+/// `OStatus::TagManager#unique_tag`.
+fn unique_tag(domain: &str, date: chrono::NaiveDateTime, id: i64, kind: &str) -> String {
+    format!(
+        "tag:{domain},{}:objectId={id}:objectType={kind}",
+        date.format("%Y-%m-%d")
+    )
+}
+
+/// The members of `ActivityPub::NoteSerializer` that eunha does not put in
+/// the notes it federates, because it does not serve what they point at:
+/// `atomUri`, `inReplyToAtomUri`, `conversation`, `context`, and a local
+/// post's `replies`, `likes` and `shares` collections. The archive takeout
+/// writes notes as upstream's serializer does, so it adds these.
+pub async fn serializer_extras(
+    state: &AppState,
+    domain: &str,
+    status_id: i64,
+) -> AppResult<serde_json::Map<String, Value>> {
+    let mut extras = serde_json::Map::new();
+    let Some(s) = sqlx::query!(
+        r#"SELECT s.id, s.uri, s.created_at, s.account_id, a.id_scheme, a.username,
+                  t.id AS "thread_id?", t.uri AS thread_uri, t.created_at AS "thread_created_at?",
+                  c.id AS "conversation_id?", c.uri AS conversation_uri,
+                  c.created_at AS "conversation_created_at?",
+                  c.parent_account_id, c.parent_status_id,
+                  COALESCE(GREATEST(st.favourites_count, 0), 0) AS "favourites_count!",
+                  COALESCE(GREATEST(st.reblogs_count, 0), 0) AS "reblogs_count!"
+           FROM statuses s
+           JOIN accounts a ON a.id = s.account_id
+           LEFT JOIN statuses t ON t.id = s.in_reply_to_id AND t.deleted_at IS NULL
+           LEFT JOIN conversations c ON c.id = s.conversation_id
+           LEFT JOIN status_stats st ON st.status_id = s.id
+           WHERE s.id = $1"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(extras);
+    };
+
+    // `atom_uri`: `OStatus::TagManager#uri_for` on a local post.
+    let atom_uri = s
+        .uri
+        .clone()
+        .unwrap_or_else(|| unique_tag(domain, s.created_at, s.id, "Status"));
+    extras.insert("atomUri".into(), json!(atom_uri));
+    // A post without a `uri` is a local one, named by its tag.
+    let in_reply_to_atom_uri = s.thread_id.map(|thread_id| {
+        s.thread_uri.clone().unwrap_or_else(|| {
+            unique_tag(
+                domain,
+                s.thread_created_at.unwrap_or_default(),
+                thread_id,
+                "Status",
+            )
+        })
+    });
+    extras.insert("inReplyToAtomUri".into(), json!(in_reply_to_atom_uri));
+
+    // `conversation` and `context`. A conversation of our own (no `uri`) is
+    // named by its context URL once it knows its parent post.
+    let context_url = match (s.parent_account_id, s.parent_status_id) {
+        (Some(account), Some(status)) => {
+            Some(format!("https://{domain}/contexts/{account}-{status}"))
+        }
+        _ => None,
+    };
+    let conversation_uri = s.conversation_uri.clone().filter(|u| !u.trim().is_empty());
+    let (conversation, context) = match s.conversation_id {
+        None => (None, None),
+        Some(id) => {
+            let conversation = conversation_uri
+                .clone()
+                .or_else(|| context_url.clone())
+                .or_else(|| {
+                    s.conversation_created_at
+                        .map(|at| unique_tag(domain, at, id, "Conversation"))
+                });
+            // `uri_for(conversation)`: a remote one's `uri`, a local one's
+            // context URL; `unsupported_uri_scheme?` keeps out anything
+            // that is not HTTP.
+            let context = match s.conversation_uri.clone() {
+                Some(uri) => Some(uri),
+                None => context_url,
+            }
+            .filter(|uri| uri.starts_with("http://") || uri.starts_with("https://"));
+            (conversation, context)
+        }
+    };
+    extras.insert("conversation".into(), json!(conversation));
+    extras.insert("context".into(), json!(context));
+
+    // `replies`, `likes` and `shares`, the collections of a local post.
+    let note_uri =
+        crate::federation::tag::status_uri(domain, s.account_id, s.id_scheme, &s.username, s.id);
+    let replies_uri = format!("{note_uri}/replies");
+    // `self_replies(5)`: the author's own public and unlisted answers.
+    let replies = sqlx::query!(
+        r#"SELECT r.id, r.uri FROM statuses r
+           WHERE r.account_id = $1 AND r.in_reply_to_id = $2 AND r.deleted_at IS NULL
+             AND r.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
+           ORDER BY r.id LIMIT 5"#,
+        s.account_id,
+        s.id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let next = match replies.last() {
+        Some(last) => format!("{replies_uri}?min_id={}&page=true", last.id),
+        None => format!("{replies_uri}?only_other_accounts=true&page=true"),
+    };
+    let items: Vec<Value> = replies
+        .iter()
+        .map(|r| {
+            json!(r
+                .uri
+                .clone()
+                .unwrap_or_else(|| crate::federation::tag::status_uri(
+                    domain,
+                    s.account_id,
+                    s.id_scheme,
+                    &s.username,
+                    r.id
+                )))
+        })
+        .collect();
+    extras.insert(
+        "replies".into(),
+        json!({
+            "id": replies_uri,
+            "type": "Collection",
+            "first": {
+                "type": "CollectionPage",
+                "next": next,
+                "partOf": replies_uri,
+                "items": items,
+            },
+        }),
+    );
+    extras.insert(
+        "likes".into(),
+        json!({
+            "id": format!("{note_uri}/likes"),
+            "type": "Collection",
+            "totalItems": s.favourites_count,
+        }),
+    );
+    extras.insert(
+        "shares".into(),
+        json!({
+            "id": format!("{note_uri}/shares"),
+            "type": "Collection",
+            "totalItems": s.reblogs_count,
+        }),
+    );
+    Ok(extras)
 }
 
 /// `ActivityPub::NoteSerializer#interaction_policy`: outgoing posts carry the
@@ -483,7 +667,7 @@ fn media_attachment_ap(urls: &convert::InstanceUrls, m: &models::MediaAttachment
         if let Some(h) = orig.get("height").and_then(Value::as_i64) {
             obj["height"] = json!(h);
         }
-        if let Some(d) = orig.get("duration").and_then(Value::as_f64) {
+        if let Some(d) = orig.get("duration").and_then(iso8601_seconds) {
             obj["duration"] = json!(d);
         }
     }
@@ -495,6 +679,15 @@ fn media_attachment_ap(urls: &convert::InstanceUrls, m: &models::MediaAttachment
         ) {
             obj["focalPoint"] = json!([x, y]);
         }
+    }
+    // `has_one :icon, if: :thumbnail?`: a custom thumbnail, through
+    // `ImageSerializer`.
+    if let Some(icon_url) = convert::media_thumbnail_original_url(urls, m) {
+        obj["icon"] = json!({
+            "type": "Image",
+            "mediaType": m.thumbnail_content_type,
+            "url": icon_url,
+        });
     }
     Some(obj)
 }
@@ -537,7 +730,7 @@ pub(crate) async fn emoji_tags_for(
                 "type": "Emoji",
                 "id": r.uri,
                 "name": format!(":{}:", r.shortcode),
-                "updated": r.updated_at.and_utc().to_rfc3339(),
+                "updated": iso8601(r.updated_at.and_utc()),
                 "icon": { "type": "Image", "url": image },
             }))
         })
@@ -546,3 +739,17 @@ pub(crate) async fn emoji_tags_for(
 
 static EMOJI_RE: once_cell::sync::Lazy<regex::Regex> =
     once_cell::sync::Lazy::new(|| regex::Regex::new(r":([a-zA-Z0-9_]+):").unwrap());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lengths_are_written_as_active_support_writes_them() {
+        assert_eq!(iso8601_seconds(&json!(12.0)).as_deref(), Some("PT12.0S"));
+        assert_eq!(iso8601_seconds(&json!(75.5)).as_deref(), Some("PT75.5S"));
+        assert_eq!(iso8601_seconds(&json!(12)).as_deref(), Some("PT12S"));
+        assert_eq!(iso8601_seconds(&json!(0.0)).as_deref(), Some("PT0S"));
+        assert_eq!(iso8601_seconds(&json!("x")), None);
+    }
+}

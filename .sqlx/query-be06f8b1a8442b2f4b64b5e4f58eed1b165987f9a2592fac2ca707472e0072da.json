@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.uri, s.created_at, s.account_id, a.id_scheme, a.username,\n                  t.id AS \"thread_id?\", t.uri AS thread_uri, t.created_at AS \"thread_created_at?\",\n                  c.id AS \"conversation_id?\", c.uri AS conversation_uri,\n                  c.created_at AS \"conversation_created_at?\",\n                  c.parent_account_id, c.parent_status_id,\n                  COALESCE(GREATEST(st.favourites_count, 0), 0) AS \"favourites_count!\",\n                  COALESCE(GREATEST(st.reblogs_count, 0), 0) AS \"reblogs_count!\"\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           LEFT JOIN statuses t ON t.id = s.in_reply_to_id AND t.deleted_at IS NULL\n           LEFT JOIN conversations c ON c.id = s.conversation_id\n           LEFT JOIN status_stats st ON st.status_id = s.id\n           WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "thread_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "thread_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "thread_created_at?",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "conversation_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "conversation_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "conversation_created_at?",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 12,
+        "name": "parent_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "parent_status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "favourites_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
+        "name": "reblogs_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "be06f8b1a8442b2f4b64b5e4f58eed1b165987f9a2592fac2ca707472e0072da"
+}

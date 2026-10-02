@@ -136,23 +136,44 @@ days (upstream's `BackupPolicy`; the page says seven), under the Redis lock
 `lock:backup:{user id}`. It is upstream's `BackupService`. The zip holds, in
 this order:
 
- -  `outbox.json`, an `OrderedCollection` of every post as the `Create` or
-    `Announce` that made it, attachments pointing at their files in the zip;
- -  each attached media file at its storage path,
-    `media_attachments/files/{id partition}/original/{file}`;
- -  `likes.json` and `bookmarks.json`, collections of post URIs;
+ -  `outbox.json`, an `OrderedCollection` of every post, oldest first, as
+    the `Create` or `Announce` that made it;
+ -  the original of each attached media file, named by its storage path
+    from after the last `/system/` (with an `S3_KEY_PREFIX`-style key
+    prefix, under it): `media_attachments/files/{id partition}/original/{file}`;
+ -  `likes.json` and `bookmarks.json`, collections of post URIs in the order
+    of the posts' ids;
  -  `avatar.*` and `header.*`;
  -  `actor.json`, whose `outbox`, `likes`, `bookmarks`, `icon` and `image`
     name those files.
 
-The activities and actor are the ones eunha federates (the
-`archive-takeout-details` divergence). The zip is stored where Paperclip
-stores a backup's dump,
+The JSON is what upstream's serializers write, not what eunha federates.
+The outbox carries Mastodon's full JSON-LD context (every named context and
+every extension of `ContextHelper`), and its items are unsigned and carry
+none. Each note has the members of `ActivityPub::NoteSerializer`, including
+the ones eunha leaves out of the notes it federates because it does not
+serve what they point at: `atomUri`, `inReplyToAtomUri`, `conversation`,
+`context`, and the `replies`, `likes` and `shares` collections. A boost of
+one's own followers-only post carries the post inline. An attachment's
+`url` is rewritten to the path of its URL without a leading `/system/`, as
+upstream does, so with media served from their own host (no `/system/`) it
+keeps a leading slash and does not name the file in the zip. `actor.json`
+has the members and the context of `ActivityPub::ActorSerializer`.
+
+The zip is stored where Paperclip stores a backup's dump,
 `backups/dumps/{id partition}/original/archive-{time}-{hex}.zip`, in the media
 bucket, and `backups` records it. The account's older archives are then
-deleted, and the member is mailed a link to `/settings/export`.
-`GET /api/eunha/v1/backups/{id}/download` answers `{"url": ...}`, a link to the
-file signed for an hour.
+deleted, and the member is mailed upstream's link to
+`/backups/{id}/download`. That page needs a signed-in web session (the
+`account_session` cookie of the account pages, see
+[accounts](./accounts.md)): a signed-out browser is sent to `/account/login`
+with a `302`, and back to the link once it has signed in. Like upstream's
+`authenticate_user!`, it lets in a member whose account is suspended or
+disabled, so that they can still take their archive away, but not a
+memorial. Someone else's archive, or one not built yet, is a `404`; one's
+own is a `302` to a link to the file signed for an hour.
+`GET /api/eunha/v1/backups/{id}/download` answers `{"url": ...}` with the same
+link, for the settings app.
 
 Archives are built by each instance's archive queue, from
 `eunha.backup_jobs`, so a restart loses no request. A build that fails is

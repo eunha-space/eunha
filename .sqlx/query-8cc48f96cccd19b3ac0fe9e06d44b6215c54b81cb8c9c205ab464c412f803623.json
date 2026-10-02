@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.uri FROM statuses r\n           WHERE r.account_id = $1 AND r.in_reply_to_id = $2 AND r.deleted_at IS NULL\n             AND r.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */\n           ORDER BY r.id LIMIT 5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "8cc48f96cccd19b3ac0fe9e06d44b6215c54b81cb8c9c205ab464c412f803623"
+}

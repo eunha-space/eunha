@@ -40,7 +40,9 @@ impl Storage {
         }
     }
 
-    fn object_key(&self, key: &str) -> String {
+    /// Where `key` is kept in the bucket: Paperclip's `path`, under
+    /// `S3_KEY_PREFIX` when one is set.
+    pub fn object_key(&self, key: &str) -> String {
         prefixed_key(&self.key_prefix, key)
     }
 

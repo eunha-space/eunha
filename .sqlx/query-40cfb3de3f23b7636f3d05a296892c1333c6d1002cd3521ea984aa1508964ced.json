@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility,\n                  -- `object.account.sensitized? || object.sensitive`\n                  (s.sensitive OR a.sensitized_at IS NOT NULL) AS \"sensitive!\",\n                  s.created_at, s.edited_at, s.uri, s.url, s.in_reply_to_id, s.language,\n                  s.quote_approval_policy,\n                  a.username, a.uri AS account_uri, a.id_scheme,\n                  qr.id AS \"quote_id?\",\n                  quoted_s.uri AS \"quote_uri?\"\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           -- `quote?`: a quote in whatever state. A quoted post that is gone\n           -- is a Tombstone, and the stamp is named as\n           -- `TagManager#approval_uri_for` names it.\n           LEFT JOIN quotes qr ON qr.status_id = s.id\n           LEFT JOIN statuses quoted_s ON quoted_s.id = qr.quoted_status_id AND quoted_s.deleted_at IS NULL\n           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL\n             AND s.reblog_of_id IS NULL",
+  "query": "SELECT s.id, s.account_id, s.text, s.spoiler_text, s.visibility,\n                  -- `object.account.sensitized? || object.sensitive`\n                  (s.sensitive OR a.sensitized_at IS NOT NULL) AS \"sensitive!\",\n                  s.created_at, s.edited_at, s.uri, s.in_reply_to_id, s.language,\n                  s.quote_approval_policy,\n                  a.username, a.uri AS account_uri, a.id_scheme,\n                  qr.id AS \"quote_id?\",\n                  quoted_s.uri AS \"quote_uri?\"\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           -- `quote?`: a quote in whatever state. A quoted post that is gone\n           -- is a Tombstone, and the stamp is named as\n           -- `TagManager#approval_uri_for` names it.\n           LEFT JOIN quotes qr ON qr.status_id = s.id\n           LEFT JOIN statuses quoted_s ON quoted_s.id = qr.quoted_status_id AND quoted_s.deleted_at IS NULL\n           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL\n             AND s.reblog_of_id IS NULL",
   "describe": {
     "columns": [
       {
@@ -50,46 +50,41 @@
       },
       {
         "ordinal": 9,
-        "name": "url",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 10,
         "name": "in_reply_to_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "language",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "quote_approval_policy",
         "type_info": "Int4"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "username",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "account_uri",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "id_scheme",
         "type_info": "Int4"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "quote_id?",
         "type_info": "Int8"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "quote_uri?",
         "type_info": "Varchar"
       }
@@ -111,7 +106,6 @@
       true,
       true,
       true,
-      true,
       false,
       false,
       true,
@@ -120,5 +114,5 @@
       true
     ]
   },
-  "hash": "f8264111e7956ac818634c4659a39d118f88b930262d47c987353cb286d3ab67"
+  "hash": "40cfb3de3f23b7636f3d05a296892c1333c6d1002cd3521ea984aa1508964ced"
 }

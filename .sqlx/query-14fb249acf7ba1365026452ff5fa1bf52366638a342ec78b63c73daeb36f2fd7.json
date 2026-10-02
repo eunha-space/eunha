@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.account_id FROM users u JOIN accounts a ON a.id = u.account_id\n               WHERE u.id = $1 AND a.domain IS NULL AND NOT a.memorial",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "14fb249acf7ba1365026452ff5fa1bf52366638a342ec78b63c73daeb36f2fd7"
+}
