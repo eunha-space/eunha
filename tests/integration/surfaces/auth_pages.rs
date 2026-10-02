@@ -84,6 +84,45 @@ async fn test_account_delete_page_and_challenge() {
             .await
             .unwrap();
     assert!(deleted, "account should be marked deleted");
+    // `sign_out` deactivates the session.
+    let sessions: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM session_activations s JOIN users u ON u.id = s.user_id
+         WHERE u.account_id = $1",
+    )
+    .bind(alice_account_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(sessions, 0);
+}
+
+/// `Settings::DeletesController#show` warns a user who is not yet confirmed
+/// and approved differently: nothing they have is lost yet.
+#[tokio::test]
+async fn test_account_delete_page_for_a_pending_user() {
+    let ctx = TestContext::new("acct-delete-pending").await;
+    sqlx::query("UPDATE users SET approved = false WHERE email = 'alice@test.invalid'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", "testpassword123")
+            .await;
+    let body = ctx
+        .api
+        .http
+        .get(ctx.api.url("/account/delete"))
+        .header("host", &ctx.api.host)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(body.contains("Your username will become available again"));
+    assert!(!body.contains("Your username will remain unavailable"));
+    assert!(body.contains("/privacy-policy"));
 }
 
 /// The server-rendered auth pages link the shared SPA-matching stylesheet.

@@ -32,11 +32,19 @@ function clearElkAndGo(){
   <h1>{{ t_delete_account }}</h1>
   <p class="hint">{{ t_warning_before }}</p>
   <ul class="hint">
+    {% if confirmed_and_approved %}
     <li>{{ t_warning_irreversible }}</li>
     <li>{{ t_warning_username_unavailable }}</li>
     <li>{{ t_warning_data_removal }}</li>
     <li>{{ t_warning_caches }}</li>
+    {% else %}
+    <li>{{ t_warning_email_change }}</li>
+    <li>{{ t_warning_email_reconfirmation }}</li>
+    {% if contact_email %}<li>{{ t_warning_email_contact }} <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></li>{% endif %}
+    <li>{{ t_warning_username_available }}</li>
+    {% endif %}
   </ul>
+  <p class="hint">{{ t_warning_more_details }} <a href="/privacy-policy">{{ t_privacy_policy }}</a>.</p>
   <div id="msg">
     {% if err %}<div class="error">{{ t_challenge_not_passed }}</div>{% endif %}
   </div>

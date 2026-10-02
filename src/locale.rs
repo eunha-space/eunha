@@ -278,6 +278,33 @@ impl Locale {
                 "Two-factor authentication is not available on this server."
             }
             (Self::Ko, "two_factor_unavailable") => "이 서버에서는 2단계 인증을 사용할 수 없습니다.",
+            // ── account deletion, for a user not yet confirmed or approved ───
+            (Self::En, "delete_warning_email_change") => {
+                "You can change your email address on the account page without deleting your account"
+            }
+            (Self::Ko, "delete_warning_email_change") => {
+                "계정을 삭제하지 않고도 계정 페이지에서 이메일 주소를 바꿀 수 있습니다"
+            }
+            (Self::En, "delete_warning_email_reconfirmation") => {
+                "If you are not receiving the confirmation email, you can request it again"
+            }
+            (Self::Ko, "delete_warning_email_reconfirmation") => {
+                "확인 메일을 받지 못했다면 다시 요청할 수 있습니다"
+            }
+            (Self::En, "delete_warning_email_contact") => {
+                "If it still doesn't arrive, you can email for help:"
+            }
+            (Self::Ko, "delete_warning_email_contact") => {
+                "그래도 오지 않는다면 이메일로 도움을 요청할 수 있습니다:"
+            }
+            (Self::En, "delete_warning_username_available") => {
+                "Your username will become available again"
+            }
+            (Self::Ko, "delete_warning_username_available") => {
+                "사용자 이름은 다시 사용할 수 있게 됩니다"
+            }
+            (Self::En, "delete_warning_more_details") => "For more details, see the",
+            (Self::Ko, "delete_warning_more_details") => "자세한 내용은 다음을 참고하세요:",
             // ── password reset ───────────────────────────────────────────────
             (Self::En, "reset_password") => "Reset password",
             (Self::Ko, "reset_password") => "비밀번호 재설정",

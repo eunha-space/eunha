@@ -908,3 +908,22 @@ which matters only for a reset in flight when an instance switches."""
 evidence = "tests/integration/surfaces/password_reset.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "account-deletion-rest-api"
+kind = "addition"
+summary = "Deletes one's own account over the REST API"
+mastodon = """
+Deletes an account only through the `/settings/delete` web form \
+(`Settings::DeletesController`), behind a session."""
+eunha = """
+Serves the same challenge and the same effects at `DELETE /api/v1/accounts`, \
+to a token with `write:accounts`: the password, or the username for an \
+account without one, then `Account#mark_deleted!` and the purge."""
+why = """
+Eunha's settings page is a single-page app holding a token. The path is the \
+one upstream would use for it, and the challenge keeps a token alone from \
+being enough."""
+evidence = "tests/integration/c2s/accounts.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

@@ -46,7 +46,8 @@ At the time of writing there are forty-one. They cover:
     factor, the password grant, and which security key attestations are
     checked;
  -  the sessions, authorized apps and sign-in history API, and how a password
-    reset token is stored.
+    reset token is stored;
+ -  deleting one's own account over the API.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

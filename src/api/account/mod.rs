@@ -635,6 +635,14 @@ pub async fn delete_page(
             domain => instance.domain.clone(),
             err => query.err.as_deref() == Some("1"),
             has_password => !account.encrypted_password.is_empty(),
+            confirmed_and_approved => account.confirmed_and_approved,
+            contact_email => instance.contact_email.clone().unwrap_or_default(),
+            t_warning_email_change => locale.t("delete_warning_email_change"),
+            t_warning_email_reconfirmation => locale.t("delete_warning_email_reconfirmation"),
+            t_warning_email_contact => locale.t("delete_warning_email_contact"),
+            t_warning_username_available => locale.t("delete_warning_username_available"),
+            t_warning_more_details => locale.t("delete_warning_more_details"),
+            t_privacy_policy => locale.t("privacy_policy"),
             t_delete_account => locale.t("delete_account"),
             t_warning_before => locale.t("delete_warning_before"),
             t_warning_irreversible => locale.t("delete_warning_irreversible"),
@@ -656,12 +664,16 @@ struct DeletionSubject {
     username: String,
     encrypted_password: String,
     suspended: bool,
+    /// `current_user.confirmed? && current_user.approved?`, which decides
+    /// which warnings the page shows.
+    confirmed_and_approved: bool,
 }
 
 async fn load_deletion_subject(state: &AppState, user_id: i64) -> Option<DeletionSubject> {
     let row = sqlx::query!(
         r#"SELECT u.account_id, u.encrypted_password, a.username,
-                  a.suspended_at, a.requested_deletion_at
+                  a.suspended_at, a.requested_deletion_at,
+                  (u.confirmed_at IS NOT NULL AND u.approved) AS "confirmed_and_approved!"
            FROM users u JOIN accounts a ON a.id = u.account_id
            WHERE u.id = $1"#,
         user_id,
@@ -674,6 +686,7 @@ async fn load_deletion_subject(state: &AppState, user_id: i64) -> Option<Deletio
         username: row.username,
         encrypted_password: row.encrypted_password,
         suspended: row.suspended_at.is_some() || row.requested_deletion_at.is_some(),
+        confirmed_and_approved: row.confirmed_and_approved,
     })
 }
 
@@ -755,6 +768,11 @@ pub async fn delete_post(
     });
 
     // `sign_out`
+    if let Some(session_id) = extract_session_token(&headers) {
+        if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
+            crate::sessions::kill_streams(&state, tokens);
+        }
+    }
     let mut h = HeaderMap::new();
     h.insert(
         header::SET_COOKIE,
