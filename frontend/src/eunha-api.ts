@@ -253,3 +253,127 @@ export async function setOwnEmailSubscriptions(
   })
   return res.json() as Promise<OwnEmailSubscriptions>
 }
+
+// ── Data export and import ─────────────────────────────────────────────────
+// Mastodon's "Import and export" settings pages, which have no REST API
+// upstream; eunha serves them under /api/eunha/v1/ (docs/operating/import-export.md).
+
+export interface Backup {
+  id: string
+  processed: boolean
+  dump_file_size: number | null
+  created_at: string
+}
+
+export interface ExportSummary {
+  storage: number
+  statuses: number
+  follows: number
+  followers: number
+  lists: number
+  mutes: number
+  blocks: number
+  domain_blocks: number
+  bookmarks: number
+  custom_filters: number
+  backups: Backup[]
+  can_request_backup: boolean
+}
+
+export type ImportType =
+  | 'following'
+  | 'blocking'
+  | 'muting'
+  | 'domain_blocking'
+  | 'bookmarks'
+  | 'lists'
+  | 'custom_filters'
+
+export interface BulkImport {
+  id: string
+  type: ImportType
+  state: 'unconfirmed' | 'scheduled' | 'in_progress' | 'finished'
+  overwrite: boolean
+  original_filename: string
+  likely_mismatched: boolean
+  missing_status: boolean
+  total_items: number
+  processed_items: number
+  imported_items: number
+  failure_count: number
+  created_at: string
+  finished_at: string | null
+}
+
+export async function getExportSummary(token: string): Promise<ExportSummary> {
+  const res = await eunhaFetch('/api/eunha/v1/exports', token)
+  return res.json() as Promise<ExportSummary>
+}
+
+/** Fetch a file the API serves as an attachment, and hand it to the browser to save. */
+export async function downloadFile(token: string, path: string): Promise<void> {
+  const res = await eunhaFetch(path, token)
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'download'
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function requestBackup(token: string): Promise<Backup> {
+  const res = await eunhaFetch('/api/eunha/v1/backups', token, { method: 'POST' })
+  return res.json() as Promise<Backup>
+}
+
+export async function getBackupDownloadUrl(token: string, id: string): Promise<string> {
+  const res = await eunhaFetch(`/api/eunha/v1/backups/${id}/download`, token)
+  const body = (await res.json()) as { url: string }
+  return body.url
+}
+
+export async function getRecentImports(token: string): Promise<BulkImport[]> {
+  const res = await eunhaFetch('/api/eunha/v1/imports', token)
+  return res.json() as Promise<BulkImport[]>
+}
+
+/** Upload a file to import; a refusal throws with Mastodon's message. */
+export async function uploadImport(
+  token: string,
+  type: ImportType,
+  mode: 'merge' | 'overwrite',
+  file: File,
+): Promise<BulkImport> {
+  const form = new FormData()
+  form.append('type', type)
+  form.append('mode', mode)
+  form.append('data', file)
+  const res = await fetch(`${window.location.origin}/api/eunha/v1/imports`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  if (!res.ok) {
+    let message = `Upload failed: ${res.status}`
+    try {
+      message = ((await res.json()) as { error?: string }).error ?? message
+    } catch {
+      // No JSON body: keep the status.
+    }
+    throw new ApiError(res.status, message)
+  }
+  return res.json() as Promise<BulkImport>
+}
+
+export async function confirmImport(token: string, id: string): Promise<BulkImport> {
+  const res = await eunhaFetch(`/api/eunha/v1/imports/${id}/confirm`, token, {
+    method: 'POST',
+  })
+  return res.json() as Promise<BulkImport>
+}
+
+export async function cancelImport(token: string, id: string): Promise<void> {
+  await eunhaFetch(`/api/eunha/v1/imports/${id}`, token, { method: 'DELETE' })
+}

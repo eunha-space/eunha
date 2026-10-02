@@ -24,6 +24,7 @@ import InviteTree from './pages/InviteTree.tsx'
 import Invites from './pages/Invites.tsx'
 import Signup from './pages/Signup.tsx'
 import Settings from './pages/Settings.tsx'
+import ImportExport from './pages/ImportExport.tsx'
 import AdminIndex from './pages/admin/AdminIndex.tsx'
 import AdminDashboard from './pages/admin/Dashboard.tsx'
 import AdminReports from './pages/admin/Reports.tsx'
@@ -92,6 +93,9 @@ const router = createBrowserRouter([
   { path: '/invites', element: <Invites /> },
   { path: '/signup', element: <Signup /> },
   { path: '/settings', element: <Settings /> },
+  // Mastodon's import and export pages, at its paths.
+  { path: '/settings/export', element: <ImportExport /> },
+  { path: '/settings/imports', element: <ImportExport /> },
   { path: '/bookmarks', element: <Bookmarks /> },
   { path: '/messages', element: <Messages /> },
   { path: '/explore', element: <Explore /> },

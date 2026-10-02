@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Ban, KeyRound } from 'lucide-react'
+import { ArrowLeftRight, Ban, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -241,6 +241,17 @@ export default function Settings() {
             </p>
             <Button variant="secondary" size="sm" render={<Link to="/blocked" />}>
               <Ban /> Blocked and muted
+            </Button>
+          </section>
+
+          <section className="space-y-2 rounded-lg border p-4">
+            <h2 className="font-semibold">Import and export</h2>
+            <p className="text-muted-foreground text-sm">
+              Download your follows, lists, blocks and the rest, or an archive of your
+              posts and media; bring lists in from another server.
+            </p>
+            <Button variant="secondary" size="sm" render={<Link to="/settings/export" />}>
+              <ArrowLeftRight /> Import and export
             </Button>
           </section>
 
