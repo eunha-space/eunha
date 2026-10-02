@@ -465,18 +465,16 @@ pub(super) async fn handle_create(
     };
     let mut tag_ids: Vec<i64> = Vec::new();
     for name in &hashtag_names {
-        let tag_id = crate::snowflake::next_id();
-        match sqlx::query_scalar!(
-            r#"INSERT INTO tags (id, name, last_status_at, created_at, updated_at)
-               VALUES ($1, $2, now(), now(), now())
-               ON CONFLICT (lower(name)) DO UPDATE SET last_status_at = now(), updated_at = now()
-               RETURNING id"#,
-            tag_id,
-            name,
-        )
-        .fetch_optional(&state.db)
-        .await
-        {
+        let found = match crate::tags::find_or_create(&state.db, name).await {
+            Ok(Some(id)) => sqlx::query_scalar!(
+                "UPDATE tags SET last_status_at = now(), updated_at = now() WHERE id = $1 RETURNING id",
+                id
+            )
+            .fetch_optional(&state.db)
+            .await,
+            other => other,
+        };
+        match found {
             Ok(Some(id)) => {
                 tag_ids.push(id);
                 crate::search::elasticsearch::indexing::tags(state, &[id]).await;

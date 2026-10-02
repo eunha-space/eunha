@@ -2169,10 +2169,12 @@ pub fn extract_hashtags(text: &str) -> Vec<String> {
     crate::formatter::extractor::extract_hashtags(text)
         .into_iter()
         .filter_map(|e| match e.kind {
-            crate::formatter::extractor::Kind::Hashtag(tag) => {
-                let tag = tag.to_lowercase();
-                seen.insert(tag.clone()).then_some(tag)
-            }
+            // As written, one per normalized name (`find_or_create_by_names`'s
+            // `uniq(&:first)`), so the first spelling becomes the tag's
+            // `display_name` when it is new.
+            crate::formatter::extractor::Kind::Hashtag(tag) => seen
+                .insert(crate::search::tags::normalize(&tag))
+                .then_some(tag),
             _ => None,
         })
         .collect()
@@ -2282,14 +2284,9 @@ pub async fn store_statuses_tags(
         .execute(&state.db)
         .await?;
     for tag_name in hashtags {
-        let tag_id = sqlx::query_scalar!(
-            "INSERT INTO tags (name, created_at, updated_at) VALUES ($1, now(), now())
-             ON CONFLICT ((lower(name))) DO UPDATE SET updated_at = now()
-             RETURNING id",
-            tag_name,
-        )
-        .fetch_one(&state.db)
-        .await?;
+        let Some(tag_id) = crate::tags::find_or_create(&state.db, tag_name).await? else {
+            continue;
+        };
         sqlx::query!(
             "INSERT INTO statuses_tags (status_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
             status_id,

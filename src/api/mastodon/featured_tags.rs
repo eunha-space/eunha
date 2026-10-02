@@ -76,6 +76,7 @@ pub async fn feature_tag(
 ) -> AppResult<Json<FeaturedTag>> {
     auth.require_scope("write:accounts")?;
     let domain = &instance.domain;
+    let written = form.name.clone();
     let name = form.name.to_lowercase();
     let name = name.trim_start_matches('#');
 
@@ -98,14 +99,9 @@ pub async fn feature_tag(
     .fetch_one(&state.db)
     .await?;
 
-    let tag_id = sqlx::query_scalar!(
-        r#"INSERT INTO tags (name, created_at, updated_at) VALUES ($1, now(), now())
-           ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name
-           RETURNING id"#,
-        name,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let tag_id = crate::tags::find_or_create(&state.db, &written)
+        .await?
+        .ok_or_else(|| AppError::Unprocessable("Validation failed: Tag is invalid".into()))?;
 
     // Cap at 10 featured tags (Mastodon FeaturedTag::LIMIT), but only when
     // featuring a new tag — re-featuring an existing one is idempotent.
@@ -187,17 +183,13 @@ pub async fn feature_tag_by_name(
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:accounts")?;
     let domain = &instance.domain;
+    let written = name.clone();
     let name = name.to_lowercase();
     let name = name.trim_start_matches('#');
 
-    let tag_id = sqlx::query_scalar!(
-        r#"INSERT INTO tags (name, created_at, updated_at) VALUES ($1, now(), now())
-           ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name
-           RETURNING id"#,
-        name,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let tag_id = crate::tags::find_or_create(&state.db, &written)
+        .await?
+        .ok_or_else(|| AppError::Unprocessable("Validation failed: Tag is invalid".into()))?;
 
     // Cap at 10 featured tags (Mastodon FeaturedTag::LIMIT), unless already featured.
     let already_featured = sqlx::query_scalar!(

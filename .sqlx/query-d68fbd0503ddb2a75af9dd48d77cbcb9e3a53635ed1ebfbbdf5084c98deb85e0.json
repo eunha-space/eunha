@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH created AS (\n             INSERT INTO tags (name, display_name, created_at, updated_at)\n             VALUES ($1, $2, now(), now())\n             ON CONFLICT ((lower(name))) DO NOTHING\n             RETURNING id\n           )\n           SELECT id AS \"id!\" FROM created\n           UNION ALL\n           SELECT id FROM tags WHERE lower(name) = lower($1)\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d68fbd0503ddb2a75af9dd48d77cbcb9e3a53635ed1ebfbbdf5084c98deb85e0"
+}

@@ -706,11 +706,13 @@ pub(super) async fn handle_update(
                     Some(n) => n,
                     None => continue,
                 };
-                let tag_id = crate::snowflake::next_id();
-                if let Ok(Some(tid)) = sqlx::query_scalar!(
-                    r#"INSERT INTO tags (id, name, last_status_at, created_at, updated_at) VALUES ($1,$2,now(),now(),now()) ON CONFLICT (lower(name)) DO UPDATE SET last_status_at = now(), updated_at = now() RETURNING id"#,
-                    tag_id, name,
-                ).fetch_optional(&state.db).await {
+                if let Ok(Some(tid)) = crate::tags::find_or_create(&state.db, &name).await {
+                    let _ = sqlx::query!(
+                        "UPDATE tags SET last_status_at = now(), updated_at = now() WHERE id = $1",
+                        tid
+                    )
+                    .execute(&state.db)
+                    .await;
                     let _ = sqlx::query!("INSERT INTO statuses_tags (status_id, tag_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", row.id, tid)
                         .execute(&state.db).await;
                     crate::search::elasticsearch::indexing::tags(state, &[tid]).await;

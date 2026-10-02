@@ -185,17 +185,13 @@ pub async fn follow_tag(
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:follows")?;
     let domain = &instance.domain;
+    let written = name.clone();
     let name = name.to_lowercase();
 
-    // Create the tag if it doesn't already exist (matches Mastodon behaviour).
-    let tag_id = sqlx::query_scalar!(
-        r#"INSERT INTO tags (name, created_at, updated_at) VALUES ($1, now(), now())
-           ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name
-           RETURNING id"#,
-        name,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    // `Tag.find_or_create_by_names(params[:id])`.
+    let tag_id = crate::tags::find_or_create(&state.db, &written)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
     sqlx::query!(
         "INSERT INTO tag_follows (account_id, tag_id, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT DO NOTHING",

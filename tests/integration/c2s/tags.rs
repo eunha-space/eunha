@@ -440,3 +440,26 @@ async fn test_followed_tags_pagination_link_header_is_parseable() {
         "link header max_id must be a parseable integer, got: {max_id_val:?}"
     );
 }
+
+/// `Tag.find_or_create_by_names`: a tag is stored under its normalized name,
+/// with the spelling it was first written with as its `display_name`.
+#[tokio::test]
+async fn test_tags_store_the_normalized_name_and_the_spelling() {
+    let ctx = TestContext::new("tag-display-name").await;
+    ctx.api
+        .post_status(&ctx.alice_token, "Hello #RustLang and #Café", "public")
+        .await;
+    let rows: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT name, display_name FROM tags ORDER BY name")
+            .fetch_all(&ctx.db)
+            .await
+            .unwrap();
+    assert!(
+        rows.contains(&("rustlang".into(), Some("RustLang".into()))),
+        "{rows:?}"
+    );
+    assert!(
+        rows.contains(&("cafe".into(), Some("Café".into()))),
+        "{rows:?}"
+    );
+}
