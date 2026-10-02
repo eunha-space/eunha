@@ -711,6 +711,7 @@ fn render_authorize(
             t_sign_in => locale.t("sign_in"),
             t_no_account => locale.t("no_account"),
             t_sign_up => locale.t("sign_up"),
+            t_forgot_password => locale.t("forgot_password"),
         },
     );
     Html(html).into_response()

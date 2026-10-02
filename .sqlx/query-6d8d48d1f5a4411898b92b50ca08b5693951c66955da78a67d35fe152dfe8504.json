@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.email, u.encrypted_password, u.locale, a.username\n           FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1",
+  "query": "SELECT u.email, u.encrypted_password, u.locale, a.username, a.memorial\n           FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "username",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "memorial",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "ba818782eecb974eeac3097e7851ee87b3c9a074a1dae71a13019214f287db35"
+  "hash": "6d8d48d1f5a4411898b92b50ca08b5693951c66955da78a67d35fe152dfe8504"
 }

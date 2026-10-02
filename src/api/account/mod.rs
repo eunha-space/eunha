@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
+pub mod password_reset;
 pub mod sign_in;
 
 use crate::{
@@ -32,6 +33,19 @@ pub fn router() -> Router {
         .route(
             "/auth/sessions/security_key_options",
             post(sign_in::security_key_options),
+        )
+        .route("/auth/password/new", get(password_reset::new_page))
+        .route(
+            "/auth/password",
+            post(password_reset::request).put(password_reset::update),
+        )
+        .route(
+            "/auth/password/edit",
+            get(password_reset::edit_page).post(password_reset::update),
+        )
+        .route(
+            "/auth/password/reset",
+            axum::routing::put(password_reset::update),
         )
 }
 
@@ -185,6 +199,7 @@ pub async fn login_page(
             t_password => locale.t("password"),
             t_sign_in => locale.t("sign_in"),
             t_account => locale.t("account"),
+            t_forgot_password => locale.t("forgot_password"),
         },
     );
     Html(html).into_response()
@@ -233,6 +248,7 @@ pub async fn login_post(
                 t_password => locale.t("password"),
                 t_sign_in => locale.t("sign_in"),
                 t_account => locale.t("account"),
+                t_forgot_password => locale.t("forgot_password"),
             },
         );
         Html(html).into_response()
@@ -519,7 +535,8 @@ pub async fn password_post(
         );
     }
 
-    if form.new_password.len() < 8 {
+    // Devise's `password_length`, 8 to 72 characters.
+    if crate::accounts::password_problem(&form.new_password, None).is_some() {
         err!(locale.t("password_error"), "/account/password?err=1");
     }
 

@@ -86,6 +86,7 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// Devise's `reset_password_instructions`, in Mastodon's words.
     pub async fn send_password_reset(
         &self,
         to: &str,
@@ -93,24 +94,29 @@ impl EmailSender {
         reset_url: &str,
         locale: &str,
     ) -> anyhow::Result<()> {
+        let name = html_escape(name);
         let (subject, body) = if locale == "ko" {
             (
-                "비밀번호 재설정".to_string(),
+                "Mastodon: 비밀번호 재설정 안내".to_string(),
                 format!(
-                    "<p>안녕하세요 {name},</p>\
-                     <p>아래 링크를 클릭하여 비밀번호를 재설정하세요. 이 링크는 1시간 동안 유효합니다.</p>\
-                     <p><a href=\"{reset_url}\">{reset_url}</a></p>\
-                     <p>비밀번호 재설정을 요청하지 않으셨다면 이 메일을 무시하세요.</p>"
+                    "<h1>비밀번호 재설정</h1>\
+                     <p>안녕하세요 {name},</p>\
+                     <p>계정의 새 비밀번호를 요청하셨습니다.</p>\
+                     <p><a href=\"{reset_url}\">비밀번호 변경</a></p>\
+                     <p>요청하지 않으셨다면 이 메일을 무시하세요. 위 링크로 들어가 새 비밀번호를 \
+                     만들기 전까지 비밀번호는 바뀌지 않습니다.</p>"
                 ),
             )
         } else {
             (
-                "Reset your password".to_string(),
+                "Mastodon: Reset password instructions".to_string(),
                 format!(
-                    "<p>Hi {name},</p>\
-                     <p>Click the link below to reset your password. This link expires in 1 hour.</p>\
-                     <p><a href=\"{reset_url}\">{reset_url}</a></p>\
-                     <p>If you did not request a password reset, ignore this email.</p>"
+                    "<h1>Password reset</h1>\
+                     <p>Hi {name},</p>\
+                     <p>You requested a new password for your account.</p>\
+                     <p><a href=\"{reset_url}\">Change password</a></p>\
+                     <p>If you didn't request this, please ignore this email. Your password won't \
+                     change until you access the link above and create a new one.</p>"
                 ),
             )
         };

@@ -278,6 +278,13 @@ impl Locale {
                 "Two-factor authentication is not available on this server."
             }
             (Self::Ko, "two_factor_unavailable") => "이 서버에서는 2단계 인증을 사용할 수 없습니다.",
+            // ── password reset ───────────────────────────────────────────────
+            (Self::En, "reset_password") => "Reset password",
+            (Self::Ko, "reset_password") => "비밀번호 재설정",
+            (Self::En, "set_new_password") => "Set new password",
+            (Self::Ko, "set_new_password") => "새 비밀번호 설정",
+            (Self::En, "forgot_password") => "Forgot your password?",
+            (Self::Ko, "forgot_password") => "비밀번호를 잊으셨나요?",
             // ── sign-up agreement and age ────────────────────────────────────
             (Self::En, "date_of_birth") => "Date of birth",
             (Self::Ko, "date_of_birth") => "생년월일",

@@ -28,6 +28,7 @@
     <input type="password" id="password" name="password" required autocomplete="current-password">
     <button type="submit">{{ t_sign_in }}</button>
   </form>
+  <p class="footer"><a href="/auth/password/new">{{ t_forgot_password }}</a></p>
   {% if registrations_open %}
   <div class="signup">
     {{ t_no_account }}

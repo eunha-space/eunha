@@ -1148,15 +1148,6 @@ pub fn router() -> Router {
         .route("/auth/signup", get(signup::signup_get))
         // Email confirmation
         .route("/auth/confirm", get(signup::confirm_email))
-        // Password reset
-        .route(
-            "/auth/password",
-            axum::routing::post(signup::request_password_reset),
-        )
-        .route(
-            "/auth/password/reset",
-            axum::routing::put(signup::apply_password_reset),
-        )
         // Tags (public)
         .route("/api/v1/tags/{name}", get(tags::get_tag))
         // Trends — tags by uses over seven days, statuses by favourites and

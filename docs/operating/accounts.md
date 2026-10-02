@@ -138,3 +138,29 @@ Mastodon 4.7's `User` validates, and answer a refusal as
 Eunha writes the account when its email address is confirmed rather than when
 the form is sent, so `age_verified_at` follows `Setting.min_age` as it stands
 at confirmation.
+
+
+Passwords
+---------
+
+Changing the password on the account pages asks for the current one, ends every
+other session and mails Devise's `password_change`. Passwords are 8 to 72
+characters everywhere they are set.
+
+A forgotten password is Devise's recoverable module, as Mastodon's
+`Auth::PasswordsController` serves it:
+
+ -  `/auth/password/new` asks for the address, linked from both sign-in forms.
+    `POST /auth/password` answers the same whether or not the address has an
+    account (`config.paranoid`), and mails a link only to a confirmed user
+    with a password whose account is not a memorial.
+ -  The link, `/auth/password/edit?reset_password_token=…`, works for six hours
+    (`reset_password_within`). `users.reset_password_token` holds the token's
+    SHA-256, not the token; Devise keys its digest with `SECRET_KEY_BASE`,
+    which eunha does not have, so a link one of them mailed does not work on
+    the other.
+ -  Setting the new password there, or with `PUT /auth/password`
+    (`reset_password_token`, `password`, `password_confirmation`), ends every
+    session, revokes every token and grant with their push subscriptions and
+    streams (`User#revoke_access!`), and mails `password_change`. The person is
+    not signed in afterwards (`sign_in_after_reset_password = false`).

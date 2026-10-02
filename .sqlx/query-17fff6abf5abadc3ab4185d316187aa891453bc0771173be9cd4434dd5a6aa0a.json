@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, reset_password_sent_at > now() - make_interval(hours => $2) AS \"fresh!\"\n           FROM users\n           WHERE reset_password_token = $1 AND encrypted_password <> ''",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "fresh!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "17fff6abf5abadc3ab4185d316187aa891453bc0771173be9cd4434dd5a6aa0a"
+}

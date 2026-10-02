@@ -888,3 +888,23 @@ of its own."""
 evidence = "tests/integration/surfaces/sessions.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "reset-password-token-digest"
+kind = "behaviour"
+summary = "Stores a password reset token's SHA-256 rather than Devise's keyed digest"
+mastodon = """
+Mails a random token and stores `Devise.token_generator.digest`, an \
+HMAC-SHA256 keyed by a key derived from `SECRET_KEY_BASE`, in \
+`users.reset_password_token`."""
+eunha = """
+Mails a random token and stores its plain SHA-256 there. The link, its six \
+hours, and what following it does are Mastodon's."""
+why = """
+Eunha has no `SECRET_KEY_BASE` to derive Devise's key from. Storing a digest \
+still keeps the column from being enough to reset a password; the cost is \
+that a link mailed by one of eunha and Mastodon does not work on the other, \
+which matters only for a reset in flight when an instance switches."""
+evidence = "tests/integration/surfaces/password_reset.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

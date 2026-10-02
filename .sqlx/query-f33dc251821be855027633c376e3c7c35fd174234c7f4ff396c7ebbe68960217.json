@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM users\n           WHERE reset_password_token = $1\n             AND reset_password_sent_at > now() - interval '1 hour'",
+  "query": "SELECT id FROM users WHERE lower(email) = lower($1) AND confirmed_at IS NOT NULL",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "f417cda3d07b350a0fbcb16b295f01dc191a0f5cf2c94ebea915543492c249ed"
+  "hash": "f33dc251821be855027633c376e3c7c35fd174234c7f4ff396c7ebbe68960217"
 }

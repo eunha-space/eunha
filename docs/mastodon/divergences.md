@@ -44,7 +44,9 @@ At the time of writing there are forty-one. They cover:
     and what the archive is built from;
  -  the two-factor authentication API, where a sign-in waits for its second
     factor, the password grant, and which security key attestations are
-    checked.
+    checked;
+ -  the sessions, authorized apps and sign-in history API, and how a password
+    reset token is stored.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

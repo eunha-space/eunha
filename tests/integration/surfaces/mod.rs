@@ -12,6 +12,7 @@ mod invite_tree;
 mod mute_exemptions;
 mod notification_rules;
 mod oembed;
+mod password_reset;
 mod poll_semantics;
 mod portability;
 mod preview_cards;

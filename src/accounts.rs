@@ -332,15 +332,27 @@ pub async fn change_password(db: &PgPool, user_id: i64) -> Result<String> {
     Ok(password)
 }
 
+/// Devise's `reset_password_within`.
+const RESET_PASSWORD_WITHIN_HOURS: i32 = 6;
+
+/// What `users.reset_password_token` holds for a token mailed out: its
+/// SHA-256, so the column alone cannot reset anyone's password. Devise keeps
+/// an HMAC keyed by `secret_key_base`, which eunha does not have.
+fn reset_password_digest(token: &str) -> String {
+    use sha2::Digest as _;
+    hex::encode(sha2::Sha256::digest(token.as_bytes()))
+}
+
 /// `User#send_reset_password_instructions`: a reset token, and a mail with the
-/// link that uses it, as eunha's password reset form sends. Nothing for a user
-/// without a password (`encrypted_password.blank?`).
+/// link that uses it. Nothing for a user without a password
+/// (`encrypted_password.blank?`), nor, as `UserMailer` holds back, for a
+/// memorial account.
 pub async fn send_reset_password_instructions(
     state: &crate::state::AppState,
     user_id: i64,
 ) -> Result<()> {
     let Some(user) = sqlx::query!(
-        r#"SELECT u.email, u.encrypted_password, u.locale, a.username
+        r#"SELECT u.email, u.encrypted_password, u.locale, a.username, a.memorial
            FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1"#,
         user_id,
     )
@@ -355,13 +367,17 @@ pub async fn send_reset_password_instructions(
     let token = crate::crypto::generate_token(32);
     sqlx::query!(
         "UPDATE users SET reset_password_token = $1, reset_password_sent_at = now() WHERE id = $2",
-        token,
+        reset_password_digest(&token),
         user_id,
     )
     .execute(&state.db)
     .await?;
+    if user.memorial {
+        return Ok(());
+    }
+    // `edit_password_url(reset_password_token:)`.
     let url = format!(
-        "https://{}/auth/password/reset?token={token}",
+        "https://{}/auth/password/edit?reset_password_token={token}",
         state.instance.domain
     );
     let email = state.email.clone();
@@ -375,6 +391,82 @@ pub async fn send_reset_password_instructions(
         }
     });
     Ok(())
+}
+
+/// The user a mailed reset token belongs to, if it is still good:
+/// `with_reset_password_token` and `reset_password_period_valid?`.
+pub async fn reset_password_user(db: &PgPool, token: &str) -> Result<i64, &'static str> {
+    if token.is_empty() {
+        return Err("Reset password token can't be blank");
+    }
+    let row = sqlx::query!(
+        r#"SELECT id, reset_password_sent_at > now() - make_interval(hours => $2) AS "fresh!"
+           FROM users
+           WHERE reset_password_token = $1 AND encrypted_password <> ''"#,
+        reset_password_digest(token),
+        RESET_PASSWORD_WITHIN_HOURS,
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(|_| "Reset password token is invalid")?;
+    match row {
+        None => Err("Reset password token is invalid"),
+        Some(r) if !r.fresh => Err("Reset password token has expired, please request a new one"),
+        Some(r) => Ok(r.id),
+    }
+}
+
+/// Devise's `password_length` and `validates_confirmation_of :password`, as
+/// the full messages a form shows.
+pub fn password_problem(password: &str, confirmation: Option<&str>) -> Option<&'static str> {
+    let length = password.chars().count();
+    if password.is_empty() {
+        Some("Password can't be blank")
+    } else if length < 8 {
+        Some("Password is too short (minimum is 8 characters)")
+    } else if length > 72 {
+        Some("Password is too long (maximum is 72 characters)")
+    } else if confirmation.is_some_and(|c| c != password) {
+        Some("Password confirmation doesn't match Password")
+    } else {
+        None
+    }
+}
+
+/// `Auth::PasswordsController#update`: Devise's `reset_password_by_token`,
+/// then every session and authorization of the user ended, and the
+/// `password_change` mail.
+pub async fn reset_password_by_token(
+    state: &crate::state::AppState,
+    token: &str,
+    password: &str,
+    confirmation: Option<&str>,
+) -> Result<i64, &'static str> {
+    let user_id = reset_password_user(&state.db, token).await?;
+    if let Some(problem) = password_problem(password, confirmation) {
+        return Err(problem);
+    }
+    let hash = crate::crypto::hash_password(password)
+        .await
+        .map_err(|_| "Could not set the password")?;
+    sqlx::query!(
+        r#"UPDATE users SET encrypted_password = $1, reset_password_token = NULL,
+                  reset_password_sent_at = NULL, updated_at = now()
+           WHERE id = $2"#,
+        hash,
+        user_id,
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|_| "Could not set the password")?;
+    if let Ok(tokens) = crate::sessions::destroy_all(&state.db, user_id).await {
+        crate::sessions::kill_streams(state, tokens);
+    }
+    if let Err(error) = crate::sessions::revoke_access(state, user_id).await {
+        tracing::warn!(%error, "could not revoke access after a password reset");
+    }
+    notify_password_change(state, user_id).await;
+    Ok(user_id)
 }
 
 /// `send_confirmation_instructions`: a fresh confirmation token, mailed to the

@@ -6,7 +6,7 @@ use crate::{
     templates,
 };
 use axum::{
-    extract::{Extension, Form, Query},
+    extract::{Extension, Query},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json, Redirect, Response},
 };
@@ -731,120 +731,6 @@ pub async fn check_email_confirmation(
     .flatten()
     .unwrap_or(false);
     Ok(Json(confirmed))
-}
-
-// ── POST /auth/password  (request reset) ──────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct PasswordResetRequestForm {
-    pub email: Option<String>,
-}
-
-pub async fn request_password_reset(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Form(form): Form<PasswordResetRequestForm>,
-) -> impl IntoResponse {
-    // Always return 200 to avoid email enumeration
-    let email = match form.email {
-        Some(e) if !e.is_empty() => e.trim().to_lowercase(),
-        _ => return StatusCode::OK.into_response(),
-    };
-
-    let row = sqlx::query!(
-        "SELECT u.id, u.email, a.username FROM users u
-         JOIN accounts a ON a.id = u.account_id
-         WHERE lower(u.email) = lower($1) AND u.confirmed_at IS NOT NULL",
-        email,
-    )
-    .fetch_optional(&state.db)
-    .await;
-
-    let Ok(Some(row)) = row else {
-        return StatusCode::OK.into_response();
-    };
-
-    let token = crypto::generate_token(32);
-    let _ = sqlx::query!(
-        "UPDATE users SET reset_password_token = $1, reset_password_sent_at = now() WHERE id = $2",
-        token,
-        row.id,
-    )
-    .execute(&state.db)
-    .await;
-
-    let reset_url = format!(
-        "https://{}/auth/password/reset?token={}",
-        instance.domain, token
-    );
-    let email = state.email.clone();
-    let to = row.email.clone();
-    let name = row.username.clone();
-    crate::tenants::spawn(async move {
-        if let Err(e) = email
-            .send_password_reset(&to, &name, &reset_url, "en")
-            .await
-        {
-            tracing::error!(error = %e, "failed to send password reset email");
-        }
-    });
-
-    StatusCode::OK.into_response()
-}
-
-// ── PUT /auth/password  (apply reset) ─────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct PasswordResetForm {
-    pub token: Option<String>,
-    pub password: Option<String>,
-}
-
-pub async fn apply_password_reset(
-    state: AppState,
-    Form(form): Form<PasswordResetForm>,
-) -> impl IntoResponse {
-    let token = match form.token {
-        Some(t) if !t.is_empty() => t,
-        _ => return (StatusCode::UNPROCESSABLE_ENTITY, "Missing token").into_response(),
-    };
-    let password = match form.password {
-        Some(p) if p.len() >= 8 => p,
-        _ => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "Password must be at least 8 characters",
-            )
-                .into_response()
-        }
-    };
-
-    let row = sqlx::query!(
-        r#"SELECT id FROM users
-           WHERE reset_password_token = $1
-             AND reset_password_sent_at > now() - interval '1 hour'"#,
-        token,
-    )
-    .fetch_optional(&state.db)
-    .await;
-
-    let Ok(Some(row)) = row else {
-        return (StatusCode::UNPROCESSABLE_ENTITY, "Invalid or expired token").into_response();
-    };
-
-    let hash = match crypto::hash_password(&password).await {
-        Ok(h) => h,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Server error").into_response(),
-    };
-
-    let _ = sqlx::query!(
-        "UPDATE users SET encrypted_password = $1, reset_password_token = NULL, reset_password_sent_at = NULL WHERE id = $2",
-        hash, row.id,
-    )
-    .execute(&state.db)
-    .await;
-
-    StatusCode::OK.into_response()
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
