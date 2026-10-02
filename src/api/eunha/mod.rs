@@ -6,6 +6,7 @@ pub mod email_subscriptions;
 pub mod health;
 pub mod invite_grants;
 pub mod invite_tree;
+pub mod portability;
 pub mod terms_of_service;
 
 pub fn router() -> Router {
@@ -18,4 +19,5 @@ pub fn router() -> Router {
         )
         .merge(invite_grants::routes())
         .merge(email_subscriptions::routes())
+        .merge(portability::routes())
 }

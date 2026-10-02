@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.username, a.domain, f.show_reblogs, f.notify, f.languages\n           FROM follows f JOIN accounts a ON a.id = f.target_account_id\n           WHERE f.account_id = $1\n           ORDER BY f.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "show_reblogs",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "notify",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "languages",
+        "type_info": "VarcharArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "9f87ec81be8fb1d3d75d5f28bf417b341e8d37167fdcee45e6dd4b556c06980a"
+}

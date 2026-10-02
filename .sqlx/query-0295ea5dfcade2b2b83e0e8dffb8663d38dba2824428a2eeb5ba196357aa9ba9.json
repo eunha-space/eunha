@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.username, a.domain\n           FROM blocks b JOIN accounts a ON a.id = b.target_account_id\n           WHERE b.account_id = $1\n           ORDER BY b.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "0295ea5dfcade2b2b83e0e8dffb8663d38dba2824428a2eeb5ba196357aa9ba9"
+}

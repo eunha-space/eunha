@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.username, a.domain, m.hide_notifications\n           FROM mutes m JOIN accounts a ON a.id = m.target_account_id\n           WHERE m.account_id = $1\n           ORDER BY m.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "hide_notifications",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "76208533d75b9e3fc28576e1322bc159f8f40fe33f449521352eff6cb6fb8720"
+}

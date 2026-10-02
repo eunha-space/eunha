@@ -58,6 +58,8 @@ Running an instance:
     switches, distribution, and the admin API.
  -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,
     and inbound `Move`s.
+ -  *docs/operating/import-export.md*: a member's CSV and JSON exports (not
+    `eunha import-mastodon`).
  -  *docs/operating/preview-cards.md*: link preview cards, how they are
     fetched, their images and authors.
  -  *docs/operating/remote-replies.md*: fetching remote threads' replies,

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.uri, (s.reblog_of_id IS NOT NULL) AS \"reblog!\",\n                  a.id AS account_id, a.id_scheme, a.username, a.domain\n           FROM bookmarks b\n           JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL\n           JOIN accounts a ON a.id = s.account_id\n           WHERE b.account_id = $1\n           ORDER BY b.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "reblog!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "41e4793be07c49decf9e207be363c83b5b4b4cb08e6952ddf8d322d1b89c9121"
+}

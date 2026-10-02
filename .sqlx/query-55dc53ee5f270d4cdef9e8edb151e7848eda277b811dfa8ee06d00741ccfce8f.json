@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cfs.custom_filter_id, s.id, s.uri, (s.reblog_of_id IS NOT NULL) AS \"reblog!\",\n                  a.id AS account_id, a.id_scheme, a.username, a.domain\n           FROM custom_filter_statuses cfs\n           JOIN statuses s ON s.id = cfs.status_id AND s.deleted_at IS NULL\n           JOIN accounts a ON a.id = s.account_id\n           WHERE cfs.custom_filter_id = ANY($1) ORDER BY cfs.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "custom_filter_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "55dc53ee5f270d4cdef9e8edb151e7848eda277b811dfa8ee06d00741ccfce8f"
+}

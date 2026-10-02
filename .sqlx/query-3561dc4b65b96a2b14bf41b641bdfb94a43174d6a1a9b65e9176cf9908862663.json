@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT custom_filter_id, keyword, whole_word FROM custom_filter_keywords\n           WHERE custom_filter_id = ANY($1) ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "custom_filter_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "keyword",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "whole_word",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3561dc4b65b96a2b14bf41b641bdfb94a43174d6a1a9b65e9176cf9908862663"
+}

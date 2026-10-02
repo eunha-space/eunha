@@ -24,6 +24,7 @@ pub mod migrate;
 pub mod moderation;
 pub mod moves;
 pub mod open_files;
+pub mod portability;
 pub mod preview_card;
 pub mod privacy_policy;
 pub mod push;

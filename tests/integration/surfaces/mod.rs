@@ -13,6 +13,7 @@ mod mute_exemptions;
 mod notification_rules;
 mod oembed;
 mod poll_semantics;
+mod portability;
 mod preview_cards;
 mod schema_compatibility;
 mod signup_approval;

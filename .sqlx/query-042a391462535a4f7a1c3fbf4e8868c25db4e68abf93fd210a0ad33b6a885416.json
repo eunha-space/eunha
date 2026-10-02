@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT COALESCE(SUM(file_file_size), 0)::bigint FROM media_attachments WHERE account_id = $1) AS \"storage!\",\n             (SELECT COALESCE(statuses_count, 0) FROM account_stats WHERE account_id = $1) AS \"statuses\",\n             (SELECT COALESCE(following_count, 0) FROM account_stats WHERE account_id = $1) AS \"follows\",\n             (SELECT COALESCE(followers_count, 0) FROM account_stats WHERE account_id = $1) AS \"followers\",\n             (SELECT count(*) FROM lists WHERE account_id = $1) AS \"lists!\",\n             (SELECT count(*) FROM mutes m JOIN accounts a ON a.id = m.target_account_id WHERE m.account_id = $1) AS \"mutes!\",\n             (SELECT count(*) FROM blocks b JOIN accounts a ON a.id = b.target_account_id WHERE b.account_id = $1) AS \"blocks!\",\n             (SELECT count(*) FROM account_domain_blocks WHERE account_id = $1) AS \"domain_blocks!\",\n             (SELECT count(*) FROM bookmarks WHERE account_id = $1) AS \"bookmarks!\",\n             (SELECT count(*) FROM custom_filters WHERE account_id = $1) AS \"custom_filters!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "storage!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "statuses",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "follows",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "followers",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "lists!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "mutes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "blocks!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "domain_blocks!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "bookmarks!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "custom_filters!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "042a391462535a4f7a1c3fbf4e8868c25db4e68abf93fd210a0ad33b6a885416"
+}

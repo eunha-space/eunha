@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.title, a.username, a.domain\n           FROM lists l\n           JOIN list_accounts la ON la.list_id = l.id\n           JOIN accounts a ON a.id = la.account_id\n           WHERE l.account_id = $1\n           ORDER BY l.id, la.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "cef120066818a78ae1bf9ba348858ed8788e250932b6831de8a5a46b61548f97"
+}
