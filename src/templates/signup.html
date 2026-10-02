@@ -47,10 +47,15 @@
       <label for="password_confirmation">{{ t_confirm_password }}</label>
       <input type="password" id="password_confirmation"
              required minlength="8" autocomplete="new-password">
+      {% if min_age is not none %}
+      <label for="date_of_birth">{{ t_date_of_birth }}</label>
+      <input type="date" id="date_of_birth" name="date_of_birth" required autocomplete="bday">
+      {% endif %}
       {% if approval_required and not invite %}
       <label for="reason">{{ t_reason }}</label>
-      <textarea id="reason" name="reason" required placeholder="{{ t_reason_hint }}"></textarea>
+      <textarea id="reason" name="reason" maxlength="420"{% if reason_required %} required{% endif %} placeholder="{{ t_reason_hint }}"></textarea>
       {% endif %}
+      <label class="agreement"><input type="checkbox" name="agreement" value="1" required> {{ agreement_html | safe }}</label>
       <button type="submit" id="signup-btn">{% if approval_required and not invite %}{{ t_apply_for_account }}{% else %}{{ t_create_account }}{% endif %}</button>
     </form>
   </div>

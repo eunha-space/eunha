@@ -278,6 +278,17 @@ impl Locale {
                 "Two-factor authentication is not available on this server."
             }
             (Self::Ko, "two_factor_unavailable") => "이 서버에서는 2단계 인증을 사용할 수 없습니다.",
+            // ── sign-up agreement and age ────────────────────────────────────
+            (Self::En, "date_of_birth") => "Date of birth",
+            (Self::Ko, "date_of_birth") => "생년월일",
+            (Self::En, "terms_of_service") => "terms of service",
+            (Self::Ko, "terms_of_service") => "이용 약관",
+            (Self::En, "privacy_policy") => "privacy policy",
+            (Self::Ko, "privacy_policy") => "개인정보 처리방침",
+            (Self::En, "agree_terms") => "I have read and agree to the %{terms} and %{privacy}",
+            (Self::Ko, "agree_terms") => "%{terms} 및 %{privacy}을 읽었으며 이에 동의합니다",
+            (Self::En, "agree_privacy") => "I have read and agree to the %{privacy}",
+            (Self::Ko, "agree_privacy") => "%{privacy}을 읽었으며 이에 동의합니다",
             // fallback
             _ => "",
         }

@@ -30,9 +30,24 @@ pub async fn signup_get(
     let accept_lang = headers.get("accept-language").and_then(|v| v.to_str().ok());
     let locale = crate::locale::Locale::detect(q.lang.as_deref(), accept_lang);
 
+    let invite_id = if invite.is_empty() {
+        None
+    } else {
+        validate_invite(&state, &invite).await.ok()
+    };
+    let form = FormRequirements {
+        min_age: crate::settings::min_age(&state.db).await,
+        reason_required: reason_required(&state, &instance, invite_id).await,
+        terms_of_service: crate::terms_of_service::live_first(&state)
+            .await
+            .ok()
+            .flatten()
+            .is_some(),
+    };
+
     if !instance.registrations_open {
         if invite.is_empty() {
-            return render(&instance, &invite, false, false, None, locale);
+            return render(&instance, &invite, false, false, None, locale, &form);
         }
         if let Err(msg) = validate_invite(&state, &invite).await {
             return render(
@@ -42,11 +57,23 @@ pub async fn signup_get(
                 false,
                 Some(locale.t(msg)),
                 locale,
+                &form,
             );
         }
     }
 
-    render(&instance, &invite, true, false, None, locale)
+    render(&instance, &invite, true, false, None, locale, &form)
+}
+
+/// What the sign-up form asks for beyond the basics.
+struct FormRequirements {
+    /// `Setting.min_age`: a date of birth, checked against it.
+    min_age: Option<u32>,
+    /// `User#invite_text_required?`.
+    reason_required: bool,
+    /// Whether there are terms of service to agree to besides the privacy
+    /// policy (`auth.user_agreement_html` or `user_privacy_agreement_html`).
+    terms_of_service: bool,
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -224,11 +251,145 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
 pub struct ApiCreateAccountForm {
     pub username: String,
     pub email: String,
+    #[serde(default)]
     pub password: String,
-    pub agreement: Option<bool>,
+    #[serde(default)]
+    pub agreement: Acceptance,
     pub locale: Option<String>,
     pub reason: Option<String>,
     pub invite_code: Option<String>,
+    /// Asked for when the instance sets a minimum age (`Setting.min_age`).
+    pub date_of_birth: Option<String>,
+}
+
+/// `validates :agreement, acceptance: { accept: [true, 'true', '1'] }`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Acceptance(pub bool);
+
+impl<'de> Deserialize<'de> for Acceptance {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Acceptance(match serde_json::Value::deserialize(d)? {
+            serde_json::Value::Bool(b) => b,
+            serde_json::Value::String(s) => s == "true" || s == "1",
+            _ => false,
+        }))
+    }
+}
+
+/// Why a sign-up was refused: as before, or the model's validations as
+/// `ValidationErrorFormatter` renders them.
+pub enum SignupError {
+    App(AppError),
+    Invalid(crate::email_subscriptions::ValidationErrors),
+}
+
+impl From<AppError> for SignupError {
+    fn from(error: AppError) -> Self {
+        Self::App(error)
+    }
+}
+
+impl From<sqlx::Error> for SignupError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::App(error.into())
+    }
+}
+
+impl IntoResponse for SignupError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::App(error) => error.into_response(),
+            Self::Invalid(errors) => errors.into_response(),
+        }
+    }
+}
+
+/// `UserInviteRequest::TEXT_SIZE_LIMIT`.
+const REASON_SIZE_LIMIT: usize = 420;
+/// Devise's `password_length`.
+const PASSWORD_LENGTH: std::ops::RangeInclusive<usize> = 8..=72;
+
+/// The validations of `User` that a sign-up can fail and eunha checks here:
+/// Devise's password length, `agreement`, `date_of_birth` against
+/// `Setting.min_age`, and the invite request's text.
+async fn validate_registration(
+    state: &AppState,
+    form: &ApiCreateAccountForm,
+    reason_required: bool,
+) -> crate::email_subscriptions::ValidationErrors {
+    let mut errors = crate::email_subscriptions::ValidationErrors::default();
+    let password_length = form.password.chars().count();
+    if form.password.is_empty() {
+        errors.add("password", "blank", "can't be blank");
+    } else if password_length < *PASSWORD_LENGTH.start() {
+        errors.add(
+            "password",
+            "too_short",
+            "is too short (minimum is 8 characters)",
+        );
+    } else if password_length > *PASSWORD_LENGTH.end() {
+        errors.add(
+            "password",
+            "too_long",
+            "is too long (maximum is 72 characters)",
+        );
+    }
+    if !form.agreement.0 {
+        errors.add("agreement", "accepted", "must be accepted");
+    }
+    if let Some(min_age) = crate::settings::min_age(&state.db).await {
+        match form.date_of_birth.as_deref().and_then(parse_date_of_birth) {
+            None => errors.add("date_of_birth", "blank", "can't be blank"),
+            Some(born) if !old_enough(born, min_age, chrono::Utc::now().date_naive()) => {
+                errors.add("date_of_birth", "below_limit", "is below the age limit");
+            }
+            Some(_) => {}
+        }
+    }
+    let reason = form.reason.as_deref().map(str::trim).unwrap_or("");
+    if reason.is_empty() {
+        if reason_required {
+            errors.add_as("reason", "Invite request text", "blank", "can't be blank");
+        }
+    } else if reason.chars().count() > REASON_SIZE_LIMIT {
+        errors.add_as(
+            "reason",
+            "Invite request text",
+            "too_long",
+            "is too long (maximum is 420 characters)",
+        );
+    }
+    errors
+}
+
+/// `attribute :date_of_birth, :date`: an ISO 8601 date.
+fn parse_date_of_birth(value: &str) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
+}
+
+/// `DateOfBirthValidator`: born no later than `min_age` years before today.
+fn old_enough(born: chrono::NaiveDate, min_age: u32, today: chrono::NaiveDate) -> bool {
+    match today.checked_sub_months(chrono::Months::new(min_age.saturating_mul(12))) {
+        Some(limit) => born <= limit,
+        None => false,
+    }
+}
+
+/// `User#invite_text_required?`: `Setting.require_invite_text` while
+/// registrations are not open to all, unless the invite bypasses approval.
+async fn reason_required(
+    state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    invite_id: Option<i64>,
+) -> bool {
+    let open = instance.registrations_open && !instance.approval_required;
+    if open || !crate::settings::boolean(state, "require_invite_text").await {
+        return false;
+    }
+    match invite_id {
+        Some(id) => !invite_bypasses_approval(state, id).await,
+        None => true,
+    }
 }
 
 pub async fn api_create_account(
@@ -237,7 +398,7 @@ pub async fn api_create_account(
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
     req_headers: HeaderMap,
     super::extractors::FormOrJson(form): super::extractors::FormOrJson<ApiCreateAccountForm>,
-) -> AppResult<Json<super::types::Token>> {
+) -> Result<Json<super::types::Token>, SignupError> {
     let sign_up_ip = client_ip.and_then(|Extension(c)| c.0);
     let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
     let invite_id: Option<i64> = if !invite_code.is_empty() {
@@ -247,16 +408,16 @@ pub async fn api_create_account(
                 .map_err(|_| AppError::Unprocessable("Invalid or expired invite code".into()))?,
         )
     } else if !instance.registrations_open {
-        return Err(AppError::Unprocessable(
-            "This instance is not open for registration".into(),
-        ));
+        return Err(
+            AppError::Unprocessable("This instance is not open for registration".into()).into(),
+        );
     } else {
         None
     };
     // `allowed_registration?`: an address under a sign-up block may not
     // register at all.
     if crate::remote_ip::sign_up_blocked(&state, sign_up_ip).await {
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden.into());
     }
 
     let username = form.username.trim().to_lowercase();
@@ -271,15 +432,20 @@ pub async fn api_create_account(
     {
         return Err(AppError::Unprocessable(
             "Username can only contain letters, numbers, and underscores".into(),
-        ));
+        )
+        .into());
     }
     if !email.contains('@') {
-        return Err(AppError::Unprocessable("Invalid email address".into()));
+        return Err(AppError::Unprocessable("Invalid email address".into()).into());
     }
-    if password.len() < 8 {
-        return Err(AppError::Unprocessable(
-            "Password must be at least 8 characters".into(),
-        ));
+    let errors = validate_registration(
+        &state,
+        &form,
+        reason_required(&state, &instance, invite_id).await,
+    )
+    .await;
+    if !errors.is_empty() {
+        return Err(SignupError::Invalid(errors));
     }
 
     // Reject if email already belongs to a confirmed account.
@@ -291,7 +457,7 @@ pub async fn api_create_account(
     .await?
     .is_some();
     if email_confirmed {
-        return Err(AppError::Unprocessable("Email is already taken".into()));
+        return Err(AppError::Unprocessable("Email is already taken".into()).into());
     }
 
     // Reject if username is taken by a confirmed account or a pending signup for a different email.
@@ -310,7 +476,7 @@ pub async fn api_create_account(
     .await?
     .is_some();
     if username_taken {
-        return Err(AppError::Unprocessable("Username is already taken".into()));
+        return Err(AppError::Unprocessable("Username is already taken".into()).into());
     }
 
     // The moderation validations: reserved usernames, blocked email
@@ -712,6 +878,7 @@ fn render(
     pending: bool,
     error: Option<&'static str>,
     locale: crate::locale::Locale,
+    form: &FormRequirements,
 ) -> Response {
     let enc_invite = urlencoding::encode(invite);
     let toggle_en_url = if invite.is_empty() {
@@ -723,6 +890,21 @@ fn render(
         "/auth/signup?lang=ko".to_string()
     } else {
         format!("/auth/signup?invite={}&lang=ko", enc_invite)
+    };
+    // `auth.user_agreement_html`, or `user_privacy_agreement_html` when there
+    // are no terms of service.
+    let link = |href: &str, text: &str| format!("<a href=\"{href}\" target=\"_blank\">{text}</a>");
+    let privacy = link("/privacy-policy", locale.t("privacy_policy"));
+    let agreement_html = if form.terms_of_service {
+        locale
+            .t("agree_terms")
+            .replace(
+                "%{terms}",
+                &link("/terms-of-service", locale.t("terms_of_service")),
+            )
+            .replace("%{privacy}", &privacy)
+    } else {
+        locale.t("agree_privacy").replace("%{privacy}", &privacy)
     };
     let html = templates::render(
         "signup.html",
@@ -754,6 +936,11 @@ fn render(
             t_check_email => locale.t("check_email"),
             t_err_password_mismatch => locale.t("err_password_mismatch"),
             t_err_server => locale.t("err_server"),
+            min_age => form.min_age,
+            reason_required => form.reason_required,
+            terms_of_service => form.terms_of_service,
+            t_date_of_birth => locale.t("date_of_birth"),
+            agreement_html,
         },
     );
     Html(html).into_response()

@@ -9,6 +9,14 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { Checkbox } from '@/components/ui/checkbox.tsx'
+
+// What masto does not type of `registrations`: Mastodon 4.4's minimum age and
+// whether the reason for joining is required.
+interface RegistrationExtras {
+  minAge?: number | null
+  reasonRequired?: boolean
+}
 
 export default function Signup() {
   const [params] = useSearchParams()
@@ -16,6 +24,8 @@ export default function Signup() {
 
   const [registrationsOpen, setRegistrationsOpen] = useState<boolean | null>(null)
   const [approvalRequired, setApprovalRequired] = useState(false)
+  const [minAge, setMinAge] = useState<number | null>(null)
+  const [reasonRequired, setReasonRequired] = useState(false)
 
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -23,6 +33,8 @@ export default function Signup() {
   const [confirm, setConfirm] = useState('')
   const [invite, setInvite] = useState(inviteFromUrl)
   const [reason, setReason] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState('')
+  const [agreement, setAgreement] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +45,9 @@ export default function Signup() {
       .then((instance) => {
         setRegistrationsOpen(instance.registrations.enabled)
         setApprovalRequired(instance.registrations.approvalRequired)
+        const extras = instance.registrations as RegistrationExtras
+        setMinAge(extras.minAge ?? null)
+        setReasonRequired(extras.reasonRequired ?? false)
       })
       .catch(() => setRegistrationsOpen(false))
   }, [])
@@ -59,6 +74,8 @@ export default function Signup() {
         locale: navigator.language.split('-')[0] || 'en',
         invite_code: invite.trim() || undefined,
         reason: reason.trim() || undefined,
+        agreement,
+        date_of_birth: minAge !== null ? dateOfBirth : undefined,
       })
       setDone(true)
     } catch (err) {
@@ -175,19 +192,54 @@ export default function Signup() {
               />
             </div>
 
+            {minAge !== null && (
+              <div className="space-y-1">
+                <Label htmlFor="date_of_birth">Date of birth</Label>
+                <Input
+                  id="date_of_birth"
+                  type="date"
+                  value={dateOfBirth}
+                  required
+                  autoComplete="bday"
+                  onChange={(e) => setDateOfBirth(e.target.value)}
+                />
+                <p className="text-muted-foreground text-xs">
+                  You must be at least {minAge} years old to sign up.
+                </p>
+              </div>
+            )}
+
             {needsReason && (
               <div className="space-y-1">
                 <Label htmlFor="reason">Why do you want to join?</Label>
                 <Textarea
                   id="reason"
                   value={reason}
-                  required
+                  required={reasonRequired}
+                  maxLength={420}
                   onChange={(e) => setReason(e.target.value)}
                 />
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Label className="items-start text-sm font-normal">
+              <Checkbox
+                checked={agreement}
+                onCheckedChange={(checked) => setAgreement(checked === true)}
+              />
+              <span>
+                I have read and agree to the{' '}
+                <Link to="/terms-of-service" target="_blank" className="underline">
+                  terms of service
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy-policy" target="_blank" className="underline">
+                  privacy policy
+                </Link>
+              </span>
+            </Label>
+
+            <Button type="submit" className="w-full" disabled={submitting || !agreement}>
               {submitting
                 ? 'Creating…'
                 : needsReason

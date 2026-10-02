@@ -146,6 +146,10 @@ export interface SignUpParams {
   locale?: string
   invite_code?: string
   reason?: string
+  /** `agreement`: the terms of service and privacy policy were accepted. */
+  agreement: boolean
+  /** ISO 8601, asked for when the instance sets `registrations.min_age`. */
+  date_of_birth?: string
 }
 
 export async function signUp(params: SignUpParams): Promise<void> {

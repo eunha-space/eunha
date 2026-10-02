@@ -111,3 +111,30 @@ as Mastodon's page does not offer it. Revoking a single token at
 `GET /api/eunha/v1/login_activities` is the sign-in history, newest first, paged
 with `max_id` and `limit`: each attempt's method (`password`, `otp`,
 `webauthn`), whether it succeeded and why not, the address and the browser.
+
+
+Signing up
+----------
+
+`POST /api/v1/accounts`, and the sign-up forms in front of it, check what
+Mastodon 4.7's `User` validates, and answer a refusal as
+`ValidationErrorFormatter` does: `Validation failed: …` with per-attribute
+`ERR_*` codes in `details`.
+
+ -  `agreement` must be accepted: `true`, `"true"` or `"1"`. The forms ask for
+    it with a checkbox linking the terms of service (when there are any) and the
+    privacy policy.
+ -  When `Setting.min_age` is set, `date_of_birth` (an ISO 8601 date) is
+    required, and someone born less than that many years ago is refused
+    (`ERR_BELOW_LIMIT`). The date is not stored; the account's
+    `users.age_verified_at` is set when it is created, as
+    `User#set_age_verified_at` does. `registrations.min_age` in
+    `/api/v2/instance` advertises it.
+ -  When `Setting.require_invite_text` is on and registrations need approval,
+    `reason` is required unless the invite's creator may bypass approval, and
+    is at most 420 characters. `registrations.reason_required` advertises it.
+ -  The password is 8 to 72 characters, Devise's `password_length`.
+
+Eunha writes the account when its email address is confirmed rather than when
+the form is sent, so `age_verified_at` follows `Setting.min_age` as it stands
+at confirmation.

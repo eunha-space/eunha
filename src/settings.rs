@@ -38,9 +38,14 @@ fn default(var: &str) -> Value {
 
 /// `Setting[var]`.
 pub async fn get(state: &AppState, var: &str) -> Value {
+    get_in(&state.db, var).await
+}
+
+/// [`get`], from a pool rather than the whole state.
+pub async fn get_in(db: &sqlx::PgPool, var: &str) -> Value {
     let stored: Option<Option<String>> =
         sqlx::query_scalar!("SELECT value FROM settings WHERE var = $1", var)
-            .fetch_optional(&state.db)
+            .fetch_optional(db)
             .await
             .ok()
             .flatten();
@@ -101,5 +106,16 @@ pub async fn boolean(state: &AppState, var: &str) -> bool {
         Value::Bool(b) => b,
         Value::Null => false,
         _ => true,
+    }
+}
+
+/// `Setting.min_age.presence`, as a number of years: the age a new account
+/// must be to sign up, if the instance asks. The admin form stores it as an
+/// integer; a string of digits reads the same, and anything blank is unset.
+pub async fn min_age(db: &sqlx::PgPool) -> Option<u32> {
+    match get_in(db, "min_age").await {
+        Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
     }
 }

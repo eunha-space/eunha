@@ -106,14 +106,19 @@ pub async fn create_local(
         .await?;
     }
 
+    // `User#set_age_verified_at`: when the instance asks for an age, every
+    // user it creates has had theirs checked.
+    let age_verified = crate::settings::min_age(db).await.is_some();
     let user_id = sqlx::query_scalar!(
         r#"INSERT INTO users
              (account_id, email, encrypted_password, role_id,
               confirmed_at, invite_id, approved,
-              locale, created_by_application_id, sign_up_ip, created_at, updated_at)
+              locale, created_by_application_id, sign_up_ip, age_verified_at,
+              created_at, updated_at)
            VALUES ($1,$2,$3,$4,
                    now(), $5, $6,
-                   $7, $8, $9::text::inet, now(), now())
+                   $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,
+                   now(), now())
            RETURNING id"#,
         account_id,
         user.email,
@@ -124,6 +129,7 @@ pub async fn create_local(
         user.locale,
         user.app_id,
         user.sign_up_ip.map(|ip| ip.to_string()),
+        age_verified,
     )
     .fetch_one(&mut *tx)
     .await?;

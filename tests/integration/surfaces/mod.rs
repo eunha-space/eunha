@@ -18,6 +18,7 @@ mod preview_cards;
 mod schema_compatibility;
 mod sessions;
 mod signup_approval;
+mod signup_requirements;
 mod software_updates;
 mod streaming;
 mod timeline_exclusions;

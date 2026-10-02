@@ -224,13 +224,34 @@ pub fn display_name(account: &Account) -> String {
 /// `ValidationErrorFormatter` renders it.
 #[derive(Debug, Default)]
 pub struct ValidationErrors {
-    /// `(attribute, error key, message)`, in the order the validations ran.
-    errors: Vec<(&'static str, &'static str, &'static str)>,
+    /// `(attribute, error key, message, label)`, in the order the
+    /// validations ran. The label names the attribute in the full message
+    /// when it differs from the key `details` files it under.
+    errors: Vec<(
+        &'static str,
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+    )>,
 }
 
 impl ValidationErrors {
     pub fn add(&mut self, attribute: &'static str, key: &'static str, message: &'static str) {
-        self.errors.push((attribute, key, message));
+        self.errors.push((attribute, key, message, None));
+    }
+
+    /// [`ValidationErrors::add`] for an error `ValidationErrorFormatter`
+    /// files under an alias: `details` uses `attribute`, the full message
+    /// `label` (`invite_request.text` is filed as `reason` but reads
+    /// "Invite request text can't be blank").
+    pub fn add_as(
+        &mut self,
+        attribute: &'static str,
+        label: &'static str,
+        key: &'static str,
+        message: &'static str,
+    ) {
+        self.errors.push((attribute, key, message, Some(label)));
     }
 
     pub fn is_empty(&self) -> bool {
@@ -242,7 +263,10 @@ impl ValidationErrors {
         let full: Vec<String> = self
             .errors
             .iter()
-            .map(|(attribute, _, message)| format!("{} {message}", humanize(attribute)))
+            .map(|(attribute, _, message, label)| {
+                let name = label.map_or_else(|| humanize(attribute), str::to_owned);
+                format!("{name} {message}")
+            })
             .collect();
         format!("Validation failed: {}", full.join(", "))
     }
@@ -259,7 +283,7 @@ fn humanize(attribute: &str) -> String {
 impl IntoResponse for ValidationErrors {
     fn into_response(self) -> Response {
         let mut details = serde_json::Map::new();
-        for (attribute, key, message) in &self.errors {
+        for (attribute, key, message, _) in &self.errors {
             let entry = details
                 .entry(attribute.to_string())
                 .or_insert_with(|| serde_json::Value::Array(vec![]));

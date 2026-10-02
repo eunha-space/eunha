@@ -472,8 +472,11 @@ pub async fn get_instance_v2(
         registrations: InstanceRegistrations {
             enabled: instance.registrations_open,
             approval_required: instance.approval_required,
-            reason_required: false,
-            min_age: None,
+            // `Setting.registrations_mode == 'approved' && Setting.require_invite_text`.
+            reason_required: instance.registrations_open
+                && instance.approval_required
+                && crate::settings::boolean(&state, "require_invite_text").await,
+            min_age: crate::settings::min_age(&state.db).await,
             message: None,
             url: None,
         },
