@@ -68,7 +68,7 @@ pub async fn list_scheduled_statuses(
              AND ($2::bigint IS NULL OR id < $2)
              AND ($3::bigint IS NULL OR id > $3)
              AND ($5::bigint IS NULL OR id > $5)
-           ORDER BY id DESC
+           ORDER BY CASE WHEN $5::bigint IS NULL THEN -id ELSE id END
            LIMIT $4"#,
         auth.account_id,
         max_id,
@@ -78,6 +78,7 @@ pub async fn list_scheduled_statuses(
     )
     .fetch_all(&state.db)
     .await?;
+    let rows = super::timelines::newest_first(min_id, rows);
 
     let first_id = rows.first().map(|r| r.id.to_string());
     let last_id = rows.last().map(|r| r.id.to_string());

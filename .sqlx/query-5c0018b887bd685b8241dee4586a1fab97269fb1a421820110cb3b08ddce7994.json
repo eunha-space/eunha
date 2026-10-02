@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT tf.id AS follow_id, t.id, t.name\n           FROM tag_follows tf\n           JOIN tags t ON t.id = tf.tag_id\n           WHERE tf.account_id = $1\n             AND ($2::bigint IS NULL OR tf.id < $2)\n             AND ($3::bigint IS NULL OR tf.id > $3)\n             AND ($4::bigint IS NULL OR tf.id > $4)\n           ORDER BY tf.id DESC\n           LIMIT $5",
+  "query": "SELECT tf.id AS follow_id, t.id, t.name\n           FROM tag_follows tf\n           JOIN tags t ON t.id = tf.tag_id\n           WHERE tf.account_id = $1\n             AND ($2::bigint IS NULL OR tf.id < $2)\n             AND ($3::bigint IS NULL OR tf.id > $3)\n             AND ($4::bigint IS NULL OR tf.id > $4)\n           ORDER BY CASE WHEN $4::bigint IS NULL THEN -tf.id ELSE tf.id END\n           LIMIT $5",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "05b798c81675c88f307bfbcba8798d73a5fd431e988384f6f53850b9e0764b38"
+  "hash": "5c0018b887bd685b8241dee4586a1fab97269fb1a421820110cb3b08ddce7994"
 }

@@ -137,7 +137,7 @@ pub async fn list_followed_tags(
              AND ($2::bigint IS NULL OR tf.id < $2)
              AND ($3::bigint IS NULL OR tf.id > $3)
              AND ($4::bigint IS NULL OR tf.id > $4)
-           ORDER BY tf.id DESC
+           ORDER BY CASE WHEN $4::bigint IS NULL THEN -tf.id ELSE tf.id END
            LIMIT $5"#,
         auth.account_id,
         max_id,
@@ -147,6 +147,7 @@ pub async fn list_followed_tags(
     )
     .fetch_all(&state.db)
     .await?;
+    let rows = super::timelines::newest_first(min_id, rows);
 
     // Use tag_follow id (bigint) as the pagination cursor, not the tag UUID.
     let first_follow_id = rows.first().map(|r| r.follow_id.to_string());

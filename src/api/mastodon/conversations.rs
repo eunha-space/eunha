@@ -95,6 +95,8 @@ pub async fn get_conversations(
         .fetch_all(&state.db)
         .await?
     };
+    // A `min_id` page reads newest first too.
+    let rows = crate::api::mastodon::timelines::newest_first(min_id, rows);
 
     if rows.is_empty() {
         return Ok((HeaderMap::new(), Json(vec![])));

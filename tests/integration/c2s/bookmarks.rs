@@ -323,7 +323,7 @@ async fn test_bookmarks_limit_param() {
     assert_eq!(body.len(), 2, "limit=2 should return exactly 2 items");
 }
 
-/// min_id pagination returns bookmarks newer than the anchor in ascending order.
+/// min_id pagination returns the bookmarks just newer than the anchor, newest first.
 #[tokio::test]
 async fn test_bookmarks_min_id_pagination() {
     let ctx = TestContext::new("bmarks-min-id").await;

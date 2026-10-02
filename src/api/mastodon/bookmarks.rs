@@ -70,6 +70,8 @@ pub async fn get_bookmarks(
         .fetch_all(&state.db)
         .await?
     };
+    // A `min_id` page reads newest first too.
+    let brows = crate::api::mastodon::timelines::newest_first(min_id, brows);
 
     let sort_ids: Vec<i64> = brows.iter().map(|r| r.sort_id).collect();
     let status_id_order: Vec<i64> = brows.iter().map(|r| r.status_id).collect();

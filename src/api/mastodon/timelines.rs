@@ -105,6 +105,15 @@ async fn feed_access(state: &AppState, auth: Option<&AuthenticatedUser>, setting
     }
 }
 
+/// `to_a_paginated_by_id`: a `min_id` page is fetched oldest first, so it
+/// starts just past `min_id`, and handed over newest first like any other.
+pub(crate) fn newest_first<T>(min_id: Option<i64>, mut page: Vec<T>) -> Vec<T> {
+    if min_id.is_some() {
+        page.reverse();
+    }
+    page
+}
+
 // ── GET /api/v1/timelines/public ──────────────────────────────────────────
 
 pub async fn public_timeline(
@@ -264,6 +273,7 @@ pub async fn public_timeline(
         .await?
     };
 
+    let statuses = newest_first(min_id, statuses);
     let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)
@@ -316,7 +326,10 @@ pub async fn home_timeline(
                 });
             }
         }
-        home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?
+        newest_first(
+            min_id,
+            home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?,
+        )
     };
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
@@ -420,13 +433,17 @@ async fn hydrate_home_statuses(
     .fetch_all(&state.db)
     .await?;
 
-    // Preserve Redis ordering (DESC by default, ASC for min_id requests)
+    // A `min_id` page is the oldest `limit` past it, then turned around:
+    // every page reads newest first, as `to_a_paginated_by_id` hands it over.
     if asc {
         statuses.sort_by_key(|s| s.id);
     } else {
         statuses.sort_by_key(|s| std::cmp::Reverse(s.id));
     }
     statuses.truncate(limit as usize);
+    if asc {
+        statuses.reverse();
+    }
     Ok(statuses)
 }
 
@@ -769,17 +786,20 @@ pub async fn list_timeline(
                 });
             }
         }
-        list_timeline_from_db(
-            &state,
-            list_id,
-            auth.account_id,
-            replies_policy,
-            max_id,
-            since_id,
+        newest_first(
             min_id,
-            limit,
+            list_timeline_from_db(
+                &state,
+                list_id,
+                auth.account_id,
+                replies_policy,
+                max_id,
+                since_id,
+                min_id,
+                limit,
+            )
+            .await?,
         )
-        .await?
     };
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
@@ -864,6 +884,9 @@ async fn hydrate_list_statuses(
         statuses.sort_by_key(|s| std::cmp::Reverse(s.id));
     }
     statuses.truncate(limit as usize);
+    if asc {
+        statuses.reverse();
+    }
     Ok(statuses)
 }
 
@@ -1165,7 +1188,7 @@ pub async fn tag_timeline(
            ORDER BY s.id {order}
            LIMIT $10"#
     );
-    let mut statuses: Vec<DbStatus> = sqlx::query_as(&sql)
+    let statuses: Vec<DbStatus> = sqlx::query_as(&sql)
         .bind(&tag_name)
         .bind(max_id)
         .bind(since_id)
@@ -1180,9 +1203,7 @@ pub async fn tag_timeline(
         .bind(min_id)
         .fetch_all(&state.db)
         .await?;
-    if min_id.is_some() {
-        statuses.reverse();
-    }
+    let statuses = newest_first(min_id, statuses);
     let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
     Ok(resp)

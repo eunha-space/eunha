@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, scheduled_at, params\n           FROM scheduled_statuses\n           WHERE account_id = $1\n             AND ($2::bigint IS NULL OR id < $2)\n             AND ($3::bigint IS NULL OR id > $3)\n             AND ($5::bigint IS NULL OR id > $5)\n           ORDER BY id DESC\n           LIMIT $4",
+  "query": "SELECT id, scheduled_at, params\n           FROM scheduled_statuses\n           WHERE account_id = $1\n             AND ($2::bigint IS NULL OR id < $2)\n             AND ($3::bigint IS NULL OR id > $3)\n             AND ($5::bigint IS NULL OR id > $5)\n           ORDER BY CASE WHEN $5::bigint IS NULL THEN -id ELSE id END\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       true
     ]
   },
-  "hash": "bbcad3b9e2df35b7e4b8e0b2460fb87e402cf4a39d77237babe72c7539514478"
+  "hash": "a31d40ed724591f67a4be3932b4061fc5eaeb61ca4f982195121d4b5d9f3c4e9"
 }

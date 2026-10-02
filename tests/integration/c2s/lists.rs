@@ -1081,7 +1081,7 @@ async fn test_list_timeline_not_found() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// List timeline min_id returns statuses after the anchor in ascending order.
+/// List timeline min_id returns the statuses just after the anchor, newest first.
 #[tokio::test]
 async fn test_list_timeline_min_id_pagination() {
     let ctx = TestContext::new("list-tl-minid").await;
@@ -1154,17 +1154,17 @@ async fn test_list_timeline_min_id_pagination() {
             .any(|s| s["id"].as_str() == Some(s3_id.as_str())),
         "s3 should appear after min_id=s1",
     );
-    // min_id returns results in ascending order (oldest first)
+    // A min_id page reads newest first, like any other.
     let ids: Vec<i64> = paged
         .iter()
         .filter_map(|s| s["id"].as_str()?.parse::<i64>().ok())
         .collect();
     let sorted = {
         let mut s = ids.clone();
-        s.sort();
+        s.sort_by(|a, b| b.cmp(a));
         s
     };
-    assert_eq!(ids, sorted, "min_id results should be in ascending order");
+    assert_eq!(ids, sorted, "min_id results should be newest first");
 }
 
 /// List timeline with replies_policy=followed shows replies only when the viewer follows the parent's author.

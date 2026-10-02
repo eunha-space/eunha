@@ -556,7 +556,7 @@ async fn test_account_statuses_since_id_pagination() {
     );
 }
 
-/// ?min_id returns statuses newer than the anchor, in ascending order.
+/// ?min_id returns the statuses just newer than the anchor, newest first.
 #[tokio::test]
 async fn test_account_statuses_min_id_pagination() {
     let ctx = TestContext::new("acct-stat-min").await;
@@ -598,10 +598,7 @@ async fn test_account_statuses_min_id_pagination() {
 
     let s2_pos = ids.iter().position(|&id| id == s2_id).unwrap();
     let s3_pos = ids.iter().position(|&id| id == s3_id).unwrap();
-    assert!(
-        s2_pos < s3_pos,
-        "results should be in ascending order for min_id"
-    );
+    assert!(s3_pos < s2_pos, "min_id results should be newest first");
 }
 
 /// ?tagged=<name> returns only statuses with that tag; untagged statuses are excluded.

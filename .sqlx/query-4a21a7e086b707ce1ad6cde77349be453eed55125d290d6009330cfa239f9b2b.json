@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT nr.id, nr.from_account_id, nr.last_status_id, nr.notifications_count, nr.created_at, nr.updated_at\n           FROM notification_requests nr\n           WHERE nr.account_id = $1\n             AND ($3::bigint IS NULL OR nr.id < $3)\n             AND ($4::bigint IS NULL OR nr.id > $4)\n             AND ($5::bigint IS NULL OR nr.id > $5)\n           ORDER BY nr.id DESC\n           LIMIT $2",
+  "query": "SELECT nr.id, nr.from_account_id, nr.last_status_id, nr.notifications_count, nr.created_at, nr.updated_at\n           FROM notification_requests nr\n           WHERE nr.account_id = $1\n             AND ($3::bigint IS NULL OR nr.id < $3)\n             AND ($4::bigint IS NULL OR nr.id > $4)\n             AND ($5::bigint IS NULL OR nr.id > $5)\n           ORDER BY CASE WHEN $5::bigint IS NULL THEN -nr.id ELSE nr.id END\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -52,5 +52,5 @@
       false
     ]
   },
-  "hash": "e906a0890584951176473e141bbe3337600464b1356c5f2bd57cf202468fb682"
+  "hash": "4a21a7e086b707ce1ad6cde77349be453eed55125d290d6009330cfa239f9b2b"
 }

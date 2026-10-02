@@ -271,6 +271,8 @@ pub async fn get_notifications(
         .fetch_all(&state.db)
         .await?
     };
+    // A `min_id` page reads newest first too.
+    let notifications = crate::api::mastodon::timelines::newest_first(min_id, notifications);
 
     if notifications.is_empty() {
         return Ok((HeaderMap::new(), Json(vec![])));
@@ -698,6 +700,10 @@ pub async fn get_notifications_v2(
         .since_id
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
+    let min_id = pagination
+        .min_id
+        .as_deref()
+        .and_then(|s| s.parse::<i64>().ok());
 
     let expand_accounts = qs
         .as_deref()
@@ -727,7 +733,9 @@ pub async fn get_notifications_v2(
              AND ($6::text[] IS NULL OR NOT (n.type = ANY($6)))
              AND ($7::bigint IS NULL OR n.from_account_id = $7)
              AND (NOT $8::boolean OR NOT n.filtered)
-           ORDER BY n.id DESC
+             AND ($9::bigint IS NULL OR n.id > $9)
+           -- `to_a_grouped_paginated_by_id`: with `min_id`, the oldest past it.
+           ORDER BY CASE WHEN $9::bigint IS NULL THEN -n.id ELSE n.id END
            LIMIT $4"#,
     )
     .bind(auth.account_id)
@@ -738,8 +746,10 @@ pub async fn get_notifications_v2(
     .bind(exclude_types)
     .bind(account_id)
     .bind(exclude_filtered)
+    .bind(min_id)
     .fetch_all(&state.db)
     .await?;
+    let notifications = crate::api::mastodon::timelines::newest_first(min_id, notifications);
 
     // Batch-fetch from_accounts
     let from_account_ids: Vec<i64> = notifications
@@ -1475,12 +1485,13 @@ pub async fn get_notification_requests(
              AND ($3::bigint IS NULL OR nr.id < $3)
              AND ($4::bigint IS NULL OR nr.id > $4)
              AND ($5::bigint IS NULL OR nr.id > $5)
-           ORDER BY nr.id DESC
+           ORDER BY CASE WHEN $5::bigint IS NULL THEN -nr.id ELSE nr.id END
            LIMIT $2"#,
         auth.account_id, limit, max_id, since_id, min_id,
     )
     .fetch_all(&state.db)
     .await?;
+    let rows = super::timelines::newest_first(min_id, rows);
 
     // Batch-fetch and enrich all last statuses up front
     let last_status_ids: Vec<i64> = rows

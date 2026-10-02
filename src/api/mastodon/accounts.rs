@@ -562,6 +562,8 @@ pub async fn get_account_statuses(
         .fetch_all(&state.db)
         .await?
     };
+    // A `min_id` page reads newest first too.
+    let statuses = crate::api::mastodon::timelines::newest_first(min_id, statuses);
 
     let filter_map = if let Some(vid) = viewer_id {
         super::timelines::compute_filter_results(&state.db, vid, &statuses).await

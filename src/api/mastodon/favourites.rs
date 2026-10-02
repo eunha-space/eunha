@@ -70,6 +70,8 @@ pub async fn get_favourites(
         .fetch_all(&state.db)
         .await?
     };
+    // A `min_id` page reads newest first too.
+    let frows = crate::api::mastodon::timelines::newest_first(min_id, frows);
 
     let sort_ids: Vec<i64> = frows.iter().map(|r| r.sort_id).collect();
     let status_id_order: Vec<i64> = frows.iter().map(|r| r.status_id).collect();

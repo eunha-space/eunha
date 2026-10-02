@@ -1120,7 +1120,7 @@ async fn test_reblog_appears_in_home_timeline() {
 
 // ── min_id pagination ──────────────────────────────────────────────────────────
 
-/// Public timeline: min_id returns statuses *after* that id in ascending order.
+/// Public timeline: min_id returns the statuses just *after* that id, newest first.
 #[tokio::test]
 async fn test_public_timeline_min_id_pagination() {
     let ctx = TestContext::new("pub-min-id").await;
@@ -1164,7 +1164,7 @@ async fn test_public_timeline_min_id_pagination() {
         "s3 should appear after min_id"
     );
 
-    // Results should be in ascending order (oldest first).
+    // Newest first, as `to_a_paginated_by_id` turns a `min_id` page around.
     let s2_pos = ids
         .iter()
         .position(|&id| id == s2["id"].as_str().unwrap())
@@ -1173,13 +1173,10 @@ async fn test_public_timeline_min_id_pagination() {
         .iter()
         .position(|&id| id == s3["id"].as_str().unwrap())
         .unwrap();
-    assert!(
-        s2_pos < s3_pos,
-        "min_id results should be in ascending order"
-    );
+    assert!(s3_pos < s2_pos, "min_id results should be newest first");
 }
 
-/// Home timeline: min_id returns statuses after that id in ascending order.
+/// Home timeline: min_id returns the statuses just after that id, newest first.
 #[tokio::test]
 async fn test_home_timeline_min_id_pagination() {
     let ctx = TestContext::new("home-min-id").await;
@@ -1234,12 +1231,12 @@ async fn test_home_timeline_min_id_pagination() {
         .position(|&id| id == s3["id"].as_str().unwrap())
         .unwrap();
     assert!(
-        s2_pos < s3_pos,
-        "home min_id results should be in ascending order"
+        s3_pos < s2_pos,
+        "home min_id results should be newest first"
     );
 }
 
-/// Tag timeline: min_id returns statuses after that id in ascending order.
+/// Tag timeline: min_id returns the statuses just after that id, newest first.
 #[tokio::test]
 async fn test_tag_timeline_min_id_pagination() {
     let ctx = TestContext::new("tag-min-id").await;
@@ -2629,4 +2626,40 @@ async fn test_list_timeline_wrong_user_returns_404() {
         )
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// `to_a_paginated_by_id`: a `min_id` page is the `limit` posts just past the
+/// anchor, not the newest ones, and it reads newest first. A client catching
+/// up page by page gets no gap.
+#[tokio::test]
+async fn test_min_id_page_is_the_one_just_past_the_anchor() {
+    let ctx = TestContext::new("min-id-window").await;
+    let mut ids = vec![];
+    for i in 0..5 {
+        let s = ctx
+            .api
+            .post_status(&ctx.alice_token, &format!("window {i}"), "public")
+            .await;
+        ids.push(s["id"].as_str().unwrap().to_owned());
+    }
+    for path in [
+        format!(
+            "/api/v1/timelines/public?local=true&limit=2&min_id={}",
+            ids[0]
+        ),
+        format!(
+            "/api/v1/accounts/{}/statuses?limit=2&min_id={}",
+            ctx.alice_id, ids[0]
+        ),
+    ] {
+        let page: Vec<Value> = ctx
+            .api
+            .get(&path, Some(&ctx.bob_token))
+            .await
+            .json()
+            .await
+            .unwrap();
+        let got: Vec<&str> = page.iter().filter_map(|s| s["id"].as_str()).collect();
+        assert_eq!(got, vec![ids[2].as_str(), ids[1].as_str()], "{path}");
+    }
 }
