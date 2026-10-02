@@ -179,7 +179,19 @@ pub(super) async fn handle_create(
         false
     };
 
-    if !is_followed_locally && !addresses_local && !in_reply_to_local {
+    // `requested_through_relay?`, for a public or unlisted post.
+    let through_relay = activity
+        .get(super::THROUGH_RELAY)
+        .is_some_and(|flag| flag == &Value::Bool(true))
+        && matches!(
+            crate::db::models::vis::from_audience(
+                &as_string_vec(object.get("to")),
+                &as_string_vec(object.get("cc")),
+            ),
+            crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+        );
+
+    if !is_followed_locally && !addresses_local && !in_reply_to_local && !through_relay {
         tracing::debug!(
             note_uri,
             "Create(Note): ignoring, not related to local activity"

@@ -25,6 +25,14 @@ pub enum Visibility {
     Direct,
 }
 
+/// `ActivityPub::TagManager#public_collection?`: the public collection, by
+/// its IRI or as JSON-LD compacts it (`as:Public`, `Public`), which is how a
+/// processor such as ojak's writes it back.
+#[must_use]
+pub fn public_collection(uri: &str) -> bool {
+    uri == ACTIVITYSTREAMS_PUBLIC || uri == "as:Public" || uri == "Public"
+}
+
 /// Derive an object's [`Visibility`] from its `to` / `cc` audience.
 #[must_use]
 pub fn visibility_from_audience<S, T>(to: &[S], cc: &[T]) -> Visibility
@@ -32,7 +40,7 @@ where
     S: AsRef<str>,
     T: AsRef<str>,
 {
-    let is_public = |u: &str| u == ACTIVITYSTREAMS_PUBLIC;
+    let is_public = public_collection;
     let is_followers = |u: &str| u.ends_with(FOLLOWERS_SUFFIX);
 
     if to.iter().any(|u| is_public(u.as_ref())) {
@@ -103,6 +111,18 @@ mod tests {
         assert_eq!(
             visibility_from_audience(&["https://a.test/users/bob"], &[] as &[&str]),
             Visibility::Direct
+        );
+    }
+
+    #[test]
+    fn the_public_collection_is_read_however_it_is_compacted() {
+        assert_eq!(
+            visibility_from_audience(&["as:Public"], &[FOLLOWERS]),
+            Visibility::Public
+        );
+        assert_eq!(
+            visibility_from_audience(&[FOLLOWERS], &["Public"]),
+            Visibility::Unlisted
         );
     }
 

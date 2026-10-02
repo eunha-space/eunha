@@ -936,11 +936,13 @@ pub async fn post_status(
                         if let Some(note) = quote_note.clone() {
                             inline_quote_instrument(&mut qr, note);
                         }
-                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+                        // `Quote#sign?` (`QuoteRequestWorker`).
+                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
                             &state,
                             qr,
                             vec![qinbox],
                             key_id.clone(),
+                            crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
                         )
                         .await
                         {
@@ -970,9 +972,14 @@ pub async fn post_status(
         .await
         .unwrap_or_default();
         if !inboxes.is_empty() {
-            if let Err(e) =
-                crate::federation::delivery::deliver_to_inboxes(&state, activity, inboxes, key_id)
-                    .await
+            let signed = crate::federation::delivery::LinkedData::for_status(
+                matches!(vis_int, vis::PUBLIC | vis::UNLISTED),
+                crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
+            );
+            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
+                &state, activity, inboxes, key_id, signed,
+            )
+            .await
             {
                 tracing::warn!(error = %e, "failed to enqueue status delivery");
             }

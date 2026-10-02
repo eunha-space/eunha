@@ -33,7 +33,11 @@ but produces none, and publishes only an RSA `publicKey` on its actors."""
 eunha = """
 Attaches an `eddsa-jcs-2022` proof to outgoing activities when \
 `sign_integrity_proofs` is on, and publishes the Ed25519 key that verifies it \
-as a FEP-521a `Multikey` under `assertionMethod`. Off by default."""
+as a FEP-521a `Multikey` under `assertionMethod`. Off by default. An activity \
+that also goes with a Linked Data signature gets the proof first, and the \
+signature covers it, as Fedify orders them; Mastodon cannot check that \
+signature without fetching the data integrity context, and reads the proof's \
+graph into its default graph, so it takes the activity on the proof instead."""
 why = """
 An HTTP Signature authenticates the connection an activity arrived over, which \
 says nothing about a copy that was relayed or forwarded; a proof authenticates \
@@ -42,6 +46,28 @@ servers that matter. Off by default because an instance's traffic should look \
 like Mastodon's until its administrator decides otherwise."""
 evidence = "tests/integration/federation/integrity_proofs.rs"
 since = "4.7.0"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "linked-data-signatures-over-bundled-contexts"
+kind = "behaviour"
+summary = "Checks a Linked Data signature only over contexts it ships"
+mastodon = """
+Turns a signed activity into RDF with its preloaded contexts, and fetches any \
+other context the activity names (`JsonLdHelper#load_jsonld_context`), \
+caching it for 30 days."""
+eunha = """
+Turns it into RDF with the contexts ojak ships, Mastodon's preloaded ones \
+among them, and fetches nothing: an activity naming another context is not \
+verified on its signature, and is fetched from its own server instead, or \
+dropped."""
+why = """
+Fetching a context named by an activity nobody has authenticated yet is a \
+request-forgery primitive and makes a security check depend on someone \
+else's web server staying up and unchanged (docs/design/protocol.md). The \
+activities relays pass on are Mastodon's, which name only contexts ojak ships."""
+evidence = "tests/integration/federation/linked_data_signatures.rs"
+since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]

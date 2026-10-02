@@ -358,8 +358,15 @@ async fn delete_actor(state: &AppState, account: &Account) -> Result<()> {
     let activity = crate::federation::activity::delete_actor(&actor_url);
 
     let inboxes = delete_actor_inboxes(state).await?;
-    let enqueued =
-        crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await?;
+    // `always_sign`: the actor's Linked Data Signature, whatever the mode.
+    let enqueued = crate::federation::delivery::deliver_to_inboxes_signed(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        crate::federation::delivery::LinkedData::Always,
+    )
+    .await?;
     tracing::debug!(account_id = account.id, enqueued, "enqueued Delete(actor)");
     Ok(())
 }

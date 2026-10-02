@@ -298,12 +298,15 @@ deleting an enabled relay disables it first. Both start the relay's host's
 delivery failures afresh.
 
 An enabled relay gets the instance's public posts, its accounts' profile
-updates, deletions and moves, as Mastodon sends them. An `Announce` from an
-enabled relay brings the post it names here without making it a boost.
-Relays that forward posts signed by someone else rely on Linked Data
-signatures, which eunha does not verify, so such a post is taken only when
-its author's own server sends it. A relay needs unsigned fetches, so it does
-not work while authorized fetch is on.
+updates, deletions and moves, as Mastodon sends them, with their authors'
+[Linked Data signatures](../mastodon/http-signatures#linked-data-signatures)
+so that the servers the relay passes them to can tell who wrote them. An
+`Announce` from an enabled relay brings the post it names here without making
+it a boost. A post a relay passes on as its author wrote it is taken on its
+author's Linked Data signature, from an account nobody here follows too, as
+long as the relay is enabled. A relay needs unsigned fetches, and in
+authorized fetch mode posts go without their Linked Data signatures, as
+Mastodon sends them, so a relay does not work while authorized fetch is on.
 
 
 Invites

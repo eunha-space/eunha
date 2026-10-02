@@ -178,6 +178,52 @@ pub(super) async fn acquire_create_lock(
 /// for reduced to its id, so a handler that reads an embedded object reads
 /// one its sender owns and fetches anything else.
 pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
+    received_from(state, activity, None).await
+}
+
+/// Set on an activity by eunha, and never taken from its sender, when it came
+/// through an enabled relay: Mastodon's `requested_through_relay?`, which
+/// lets a public post from an account nobody here follows in.
+pub(crate) const THROUGH_RELAY: &str = "eunha:requestedThroughRelay";
+
+/// [`received`], delivered by `forwarder` rather than by its sender's
+/// server: a relay, or a server forwarding a reply. Such an activity was
+/// taken on its sender's proof or Linked Data Signature, or as its sender's
+/// server serves it, and reads as JSON-LD processing gives it when it was
+/// its Linked Data Signature (`ActivityPub::ProcessActivityService`, which
+/// compacts it first).
+pub async fn received_from(
+    state: &AppState,
+    activity: Value,
+    forwarder: Option<&str>,
+) -> AppResult<()> {
+    let mut activity = activity;
+    if let Some(members) = activity.as_object_mut() {
+        members.remove(THROUGH_RELAY);
+        if let Some(forwarder) = forwarder {
+            if through_enabled_relay(state, forwarder).await {
+                members.insert(THROUGH_RELAY.to_owned(), Value::Bool(true));
+            }
+        }
+    }
+    received_now(state, activity).await
+}
+
+/// Whether `actor` is an enabled relay's: its inbox is one (`Relay.find_by(
+/// inbox_url:)&.enabled?`).
+async fn through_enabled_relay(state: &AppState, actor: &str) -> bool {
+    let inbox: Option<String> = sqlx::query_scalar!(
+        "SELECT inbox_url FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
+        actor,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    crate::relays::is_enabled_relay_inbox(state, inbox.as_deref().unwrap_or("")).await
+}
+
+async fn received_now(state: &AppState, activity: Value) -> AppResult<()> {
     let activity_type = activity
         .get("type")
         .and_then(|t| t.as_str())

@@ -242,7 +242,12 @@ pub fn federation() -> Federation<AppState> {
                     tracing::warn!(host, %error, "could not clear a server's delivery failures");
                 }
             }
-            super::inbox::received(ctx.data(), received.vouched).await
+            super::inbox::received_from(
+                ctx.data(),
+                received.vouched,
+                received.forwarder.as_ref().map(url::Url::as_str),
+            )
+            .await
         })
         // A reply to a local post, addressed to its author's followers, is
         // passed on to them (ActivityPub §7.1.2), signed by the author.

@@ -373,7 +373,18 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
         inboxes.extend(follower_inboxes.into_iter().filter_map(|r| r.inbox));
     }
 
-    crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await?;
+    // `Status#sign?` (`DistributePollUpdateWorker`).
+    let signed = crate::federation::delivery::LinkedData::for_status(
+        matches!(
+            status.visibility,
+            crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+        ),
+        crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
+    );
+    crate::federation::delivery::deliver_to_inboxes_signed(
+        state, activity, inboxes, key_id, signed,
+    )
+    .await?;
     Ok(())
 }
 

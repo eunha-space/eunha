@@ -10,6 +10,7 @@ mod ingress;
 mod instance_actor;
 mod integrity_proofs;
 mod keypairs;
+mod linked_data_signatures;
 mod moves;
 mod objects;
 mod ownership;

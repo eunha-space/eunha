@@ -23,3 +23,37 @@ emits keeps eunha clear of anything that verifies more strictly than it should.
 
 [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
 [ojak]: https://github.com/eunha-space/ojak
+
+
+Linked Data signatures
+----------------------
+
+An HTTP signature says who delivered an activity, which for one a relay passes
+on, or a server forwarding a reply, is not who wrote it. Mastodon puts an
+`RsaSignature2017` in the activity itself for those: a signature by the
+author's main key over the canonical RDF of the activity (URDNA2015), carried
+under `signature`, made the moment it is queued and good for two days. Eunha
+makes and checks them as Mastodon does, with [ojak]'s `linked_data`, whose
+signatures are byte for byte the `json-ld` gem's.
+
+Eunha signs where `Payloadable#serialize_payload` signs: a public or unlisted
+status's `Create`, `Update` and `Announce` and its poll's `Update`, an
+account's profile `Update`, a `QuoteRequest` and a `FeatureRequest`, unless
+authorized fetch is on; and, whatever the mode, the `Delete` of a public or
+unlisted status, the `Undo` of such a boost, and an account's own `Delete`.
+Follows, likes, blocks, reports, moves, direct and followers-only posts go
+unsigned, as Mastodon sends them. With `sign_integrity_proofs` on, the
+FEP-8b32 proof is attached first and the signature covers it, the order
+Fedify uses; a verifier of either leaves the other out.
+
+An activity delivered by a server other than its actor's, with no proof that
+holds, is taken on such a signature by a key its actor publishes, as
+`ActivityPub::ProcessActivityService` takes it; failing that, ojak fetches it
+from its own server, and drops it if that does not work either. The
+signature covers what the activity means, not how its keys are spelled, so
+one taken on it is read as JSON-LD processing reads it, as Mastodon compacts
+it before reading it. A post from an account nobody here follows is taken
+when it came through an enabled relay (`requested_through_relay?`). Its
+contexts have to be ones ojak ships, Mastodon's preloaded ones among them,
+since nothing is fetched to read a signature; one naming another context is
+not verified, where Mastodon would fetch it.

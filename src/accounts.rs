@@ -650,15 +650,21 @@ pub async fn distribute_profile(
     let activity = crate::federation::activity::update_actor(&update_id, &actor_url, actor)?;
     let inboxes = crate::federation::delivery::account_reach_inboxes(state, account.id).await?;
     let key_id = AccountUris::of(&state.uris, account).key_id()?.into();
+    // `Account#sign?`: an actor's `Update` goes with its Linked Data
+    // Signature, outside authorized fetch mode.
+    let signed = crate::federation::delivery::LinkedData::UnlessAuthorizedFetch;
     match batch {
         Some(batch) => {
             crate::federation::delivery::deliver_to_inboxes_in_batch(
-                state, activity, inboxes, key_id, batch,
+                state, activity, inboxes, key_id, signed, batch,
             )
             .await
         }
         None => {
-            crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await
+            crate::federation::delivery::deliver_to_inboxes_signed(
+                state, activity, inboxes, key_id, signed,
+            )
+            .await
         }
     }
 }
@@ -813,6 +819,7 @@ pub async fn move_followers(
                     activity,
                     vec![inbox.clone()],
                     key_id.clone(),
+                    crate::federation::delivery::LinkedData::Unsigned,
                     batch,
                 )
                 .await?;

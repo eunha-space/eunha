@@ -111,6 +111,8 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 # ActivityPub vocabulary (typed activity construction)
 ojak-vocab = { git = "https://github.com/eunha-space/ojak.git" }
+# The JSON-LD contexts Linked Data Signatures are made over.
+ojak-jsonld = { git = "https://github.com/eunha-space/ojak.git" }
 # The framework: serving, the inbox, signatures (`ojak::sig`), and queued
 # delivery, with its queue in `eunha.ojak_queue`.
 ojak = { git = "https://github.com/eunha-space/ojak.git" }

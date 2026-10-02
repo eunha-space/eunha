@@ -108,22 +108,34 @@ Three separate things get called JSON-LD and only one of them is dangerous.
 The `@context` key is a namespacing convention. Eunha emits it, inlines its term
 definitions (`src/api/ap/note.rs`), and never resolves it. This stays.
 
-JSON-LD *processing* — expansion, compaction, remote context resolution — eunha
-does not do, and will not. Fetching a context at verification time is an SSRF
-surface, an availability dependency on someone else's web server, and a source
-of nondeterminism in a security path.
+Remote context resolution eunha does not do, and will not. Fetching a context at
+verification time is an SSRF surface, an availability dependency on someone
+else's web server, and a source of nondeterminism in a security path. What
+expansion and compaction eunha does is ojak's, over the contexts ojak ships.
 
 Ojak's inbox normalises every activity by default; eunha asks it not to
 (`read_inbox_as_written`) and reads the activity as its sender wrote it. The
 cost was measured as well as argued: with normalisation, a burst of 1,000
 activities a second spent more than half of eunha's CPU on it (see
-[benchmarking](./benchmarking)).
+[benchmarking](./benchmarking)). The one exception is below.
 
 JSON-LD *canonicalisation* for signatures (URDNA2015/RDFC) is the dangerous one:
 graph normalisation as a signature input is where the LD Signature forgery bugs
-came from. Eunha signs with JCS (RFC 8785) via the `eddsa-jcs-2022` cryptosuite,
-which is what the `-jcs-` in the name means and what Mastodon 4.7 verifies.
-`RsaSignature2017` is tolerated on inbound documents and never produced.
+came from. Eunha's own design signs with JCS (RFC 8785) via the
+`eddsa-jcs-2022` cryptosuite, which is what the `-jcs-` in the name means and
+what Mastodon 4.7 verifies. But Mastodon makes and checks `RsaSignature2017`
+on what relays pass on, and a relay that eunha's posts cannot travel through,
+and whose posts eunha cannot take, is a relay that does not work, so eunha
+does both too
+([Linked Data signatures](../mastodon/http-signatures#linked-data-signatures)).
+The danger is contained three ways. Canonicalisation runs over ojak's bundled
+contexts only, refusing a document that names another, and its blank-node
+labelling has a work budget. `@graph`, `@included` and `@reverse` are refused,
+which is what the 2025 forgeries (GHSA-9rfg-v8g9-9367) used. And an activity
+taken on such a signature is read as JSON-LD processing reads it, normalised by
+ojak, since the signature covers the graph and not the keys: a document
+reworded so that its keys say one thing and its graph another is read as its
+graph, which is what was signed. Only that activity pays for normalisation.
 
 Extension terms are defined inline in `@context`, never hosted. Publishing a
 context document at a eunha URL would mean other implementations' processors

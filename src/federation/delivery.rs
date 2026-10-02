@@ -261,6 +261,19 @@ pub async fn fanout_to_followers(
     enqueue_to_inboxes(state, activity, inboxes, key_id).await
 }
 
+/// [`fanout_to_followers`], with a Linked Data Signature when `linked_data`
+/// says Mastodon would make one.
+pub async fn fanout_to_followers_signed(
+    state: &AppState,
+    activity: Value,
+    actor_account_id: i64,
+    key_id: String,
+    linked_data: LinkedData,
+) -> anyhow::Result<u64> {
+    let inboxes = follower_inboxes(state, actor_account_id).await?;
+    enqueue(state, activity, inboxes, key_id, true, linked_data, None).await
+}
+
 /// Forward another server's `activity` to the remote followers of
 /// `account_id`, signed by that account, as Mastodon forwards a reply to a
 /// local post to its author's followers (ActivityPub §7.1.2). It goes as it
@@ -273,7 +286,16 @@ pub async fn forward_to_followers(
     key_id: String,
 ) -> anyhow::Result<u64> {
     let inboxes = follower_inboxes(state, account_id).await?;
-    enqueue(state, activity, inboxes, key_id, false, None).await
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        false,
+        LinkedData::Unsigned,
+        None,
+    )
+    .await
 }
 
 /// Send `activity` to the remote followers of `account_id`, signed with
@@ -288,7 +310,16 @@ pub async fn fanout_to_followers_unproven(
     batch: Option<&ojak::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     let inboxes = follower_inboxes(state, account_id).await?;
-    enqueue(state, activity, inboxes, key_id, false, batch).await
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        false,
+        LinkedData::Unsigned,
+        batch,
+    )
+    .await
 }
 
 /// The inboxes of `actor_account_id`'s remote followers, a shared inbox once
@@ -514,16 +545,70 @@ pub async fn deliver_to_inboxes(
     enqueue_to_inboxes(state, activity, inboxes, key_id).await
 }
 
-/// [`deliver_to_inboxes`], in `batch`: tagged, and given up on at its
+/// [`deliver_to_inboxes`], with a Linked Data Signature when `linked_data`
+/// says Mastodon would make one.
+pub async fn deliver_to_inboxes_signed(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+    linked_data: LinkedData,
+) -> anyhow::Result<u64> {
+    enqueue(state, activity, inboxes, key_id, true, linked_data, None).await
+}
+
+/// [`deliver_to_inboxes_signed`], in `batch`: tagged, and given up on at its
 /// deadline, so that a batch of many accounts finishes.
 pub async fn deliver_to_inboxes_in_batch(
     state: &AppState,
     activity: Value,
     inboxes: Vec<String>,
     key_id: String,
+    linked_data: LinkedData,
     batch: &ojak::deliverer::Batch,
 ) -> anyhow::Result<u64> {
-    enqueue(state, activity, inboxes, key_id, true, Some(batch)).await
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        true,
+        linked_data,
+        Some(batch),
+    )
+    .await
+}
+
+/// Whether an activity goes with a Linked Data Signature (`RsaSignature2017`)
+/// by its actor, which is what lets a relay, or a server forwarding it, pass
+/// it on to servers that still believe it is the actor's.
+///
+/// Mastodon signs a payload whose record answers `sign?` when it is given a
+/// signer (`Payloadable#serialize_payload`): a public or unlisted status's
+/// `Create`, `Update` and `Announce`, an account's `Update`, and so on, and
+/// not in authorized fetch mode, unless the payload is to be signed whatever
+/// the mode (`always_sign`), as a status's `Delete` and an account's are.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LinkedData {
+    /// Not signed: a follow, a like, a direct message.
+    #[default]
+    Unsigned,
+    /// Signed, unless the instance is in authorized fetch mode.
+    UnlessAuthorizedFetch,
+    /// Signed whatever the mode (`always_sign`).
+    Always,
+}
+
+impl LinkedData {
+    /// For a status's activity: `Status#sign?` is `distributable?`, true of
+    /// a public or unlisted status only.
+    pub fn for_status(distributable: bool, signed: LinkedData) -> Self {
+        if distributable {
+            signed
+        } else {
+            LinkedData::Unsigned
+        }
+    }
 }
 
 /// Resolve the local signing account id from a `key_id` of the form
@@ -582,17 +667,28 @@ async fn enqueue_to_inboxes(
     inboxes: Vec<String>,
     key_id: String,
 ) -> anyhow::Result<u64> {
-    enqueue(state, activity, inboxes, key_id, true, None).await
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        true,
+        LinkedData::Unsigned,
+        None,
+    )
+    .await
 }
 
 /// Queue `activity` for `inboxes`, signed by `key_id`'s account, with that
-/// account's integrity proof when `prove`.
+/// account's integrity proof when `prove`, and its Linked Data Signature as
+/// `linked_data` says.
 async fn enqueue(
     state: &AppState,
     activity: Value,
     inboxes: Vec<String>,
     key_id: String,
     prove: bool,
+    linked_data: LinkedData,
     batch: Option<&ojak::deliverer::Batch>,
 ) -> anyhow::Result<u64> {
     // Record the signing account, not its private key: the key is loaded from
@@ -628,6 +724,11 @@ async fn enqueue(
     } else {
         activity
     };
+    // The Linked Data Signature after the proof, as Fedify orders them: it
+    // covers the proof, and a proof's verifier leaves `signature` out, as
+    // Mastodon's and ojak's do.
+    let activity =
+        attach_linked_data_signature(state, activity, actor_account_id, &key_id, linked_data).await;
 
     // One statement for the whole fan-out: a per-inbox INSERT costs a
     // round-trip per follower, which for a large account is the dominant cost
@@ -715,6 +816,68 @@ async fn attach_integrity_proof(
         Ok(signed) => signed,
         Err(e) => {
             tracing::warn!(account_id, error = %e, "could not sign an integrity proof");
+            activity
+        }
+    }
+}
+
+/// The contexts Linked Data Signatures are made over: ojak's bundled ones, so
+/// that signing an activity fetches nothing.
+static JSON_LD_CONTEXTS: std::sync::LazyLock<ojak_jsonld::Registry> =
+    std::sync::LazyLock::new(ojak_jsonld::Registry::bundled);
+
+/// Sign an outgoing activity with its actor's `RsaSignature2017`, as
+/// `Payloadable#serialize_payload` has `ActivityPub::LinkedDataSignature`
+/// sign it, when `linked_data` says Mastodon would: `created` now,
+/// `expires` in two days, the security context added to `@context`.
+///
+/// Best-effort, as Mastodon's own is in effect: an activity that cannot be
+/// signed — its account has no usable key, or it names a context ojak does
+/// not ship — goes without, since the HTTP Signature is what its recipients
+/// require; only a server passing it on loses by it.
+async fn attach_linked_data_signature(
+    state: &AppState,
+    activity: Value,
+    account_id: i64,
+    key_id: &str,
+    linked_data: LinkedData,
+) -> Value {
+    match linked_data {
+        LinkedData::Unsigned => return activity,
+        // `Payloadable#signing_enabled?`.
+        LinkedData::UnlessAuthorizedFetch
+            if crate::settings::authorized_fetch_mode(state).await =>
+        {
+            return activity;
+        }
+        _ => {}
+    }
+    let key = match crate::federation::keypair::signing_key(state, account_id).await {
+        Ok(key) => key,
+        Err(e) => {
+            tracing::debug!(account_id, error = %e, "no signing key; delivering without a Linked Data Signature");
+            return activity;
+        }
+    };
+    let private_key = match ojak::sig::PrivateKey::from_pem(&key.private_key) {
+        Ok(key) => key,
+        Err(e) => {
+            tracing::warn!(account_id, error = %e, "unreadable signing key; delivering without a Linked Data Signature");
+            return activity;
+        }
+    };
+    let now = chrono::Utc::now().timestamp();
+    match ojak::sig::linked_data::sign(
+        &JSON_LD_CONTEXTS,
+        &activity,
+        key_id,
+        &private_key,
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    ) {
+        Ok(signed) => signed,
+        Err(e) => {
+            tracing::warn!(account_id, error = %e, "could not make a Linked Data Signature");
             activity
         }
     }

@@ -16,9 +16,10 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are forty-seven. They cover:
+At the time of writing there are fifty-two. They cover:
 
- -  integrity proofs on outgoing activities;
+ -  integrity proofs on outgoing activities, and Linked Data signatures
+    over contexts eunha does not ship;
  -  the invite tree, and the two ways eunha's invite API goes beyond
     Mastodon's;
  -  what the update check asks about, and what counts as a moderator being
@@ -53,7 +54,10 @@ At the time of writing there are forty-seven. They cover:
  -  deleting one's own account and changing its email address over the
     API, and the preferences Mastodon sets only through web forms;
  -  how notification emails are unsubscribed from, and where the wait before
-    sending one runs.
+    sending one runs;
+ -  the DeepL endpoint setting;
+ -  the auxiliary service provider admin API, where their workers run, and
+    when an account search asks them.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

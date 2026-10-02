@@ -661,11 +661,13 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
                         &collection_uri,
                     ) {
                         let key_id = format!("{actor_url}#main-key");
-                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+                        // `CollectionItem#sign?` (`FeatureRequestWorker`).
+                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
                             state,
                             req,
                             vec![inbox],
                             key_id,
+                            crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
                         )
                         .await
                         {

@@ -717,8 +717,13 @@ pub(crate) async fn remove_status(
             .await
             .unwrap_or_default();
             if !inboxes.is_empty() {
-                if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    state, activity, inboxes, key_id,
+                // `always_sign`, for a status that `sign?`s.
+                let signed = crate::federation::delivery::LinkedData::for_status(
+                    distributable,
+                    crate::federation::delivery::LinkedData::Always,
+                );
+                if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
+                    state, activity, inboxes, key_id, signed,
                 )
                 .await
                 {
@@ -1126,9 +1131,14 @@ pub async fn reblog_status(
         .await
         .unwrap_or_default();
         if !inboxes.is_empty() {
-            if let Err(e) =
-                crate::federation::delivery::deliver_to_inboxes(&state, announce, inboxes, key_id)
-                    .await
+            let signed = crate::federation::delivery::LinkedData::for_status(
+                matches!(boost_visibility, vis::PUBLIC | vis::UNLISTED),
+                crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
+            );
+            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
+                &state, announce, inboxes, key_id, signed,
+            )
+            .await
             {
                 tracing::warn!(error = %e, "failed to enqueue Announce delivery");
             }
@@ -1169,7 +1179,7 @@ pub async fn unreblog_status(
     }
 
     let deleted = sqlx::query!(
-        "DELETE FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL RETURNING id",
+        "DELETE FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL RETURNING id, visibility",
         auth.account_id, original_id
     )
     .fetch_optional(&state.db)
@@ -1230,6 +1240,15 @@ pub async fn unreblog_status(
                     &original_uri,
                 )?;
                 let key_id = format!("{}#main-key", actor_url);
+                // `RemoveStatusService`: `always_sign`, for a boost that
+                // `sign?`s.
+                let signed = crate::federation::delivery::LinkedData::for_status(
+                    matches!(
+                        del.visibility,
+                        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+                    ),
+                    crate::federation::delivery::LinkedData::Always,
+                );
 
                 // Deliver to remote original author's inbox
                 if let Some(orig_acc) = sqlx::query!(
@@ -1239,11 +1258,12 @@ pub async fn unreblog_status(
                     if orig_acc.domain.is_some() {
                         let inbox = if !orig_acc.shared_inbox_url.is_empty() { orig_acc.shared_inbox_url } else { orig_acc.inbox_url };
                         if !inbox.is_empty() {
-                            if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+                            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
                                 &state,
                                 undo.clone(),
                                 vec![inbox],
                                 key_id.clone(),
+                                signed,
                             )
                             .await
                             {
@@ -1253,11 +1273,12 @@ pub async fn unreblog_status(
                     }
                 }
 
-                if let Err(e) = crate::federation::delivery::fanout_to_followers(
+                if let Err(e) = crate::federation::delivery::fanout_to_followers_signed(
                     &state,
                     undo,
                     auth.account_id,
                     key_id,
+                    signed,
                 )
                 .await
                 {
@@ -1932,7 +1953,14 @@ pub(crate) async fn federate_status_update(
     )
     .await?;
     if !inboxes.is_empty() {
-        crate::federation::delivery::deliver_to_inboxes(state, activity, inboxes, key_id).await?;
+        let signed = crate::federation::delivery::LinkedData::for_status(
+            matches!(status.visibility, vis::PUBLIC | vis::UNLISTED),
+            crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
+        );
+        crate::federation::delivery::deliver_to_inboxes_signed(
+            state, activity, inboxes, key_id, signed,
+        )
+        .await?;
     }
 
     Ok(())
