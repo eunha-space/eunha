@@ -416,30 +416,34 @@ pub async fn tags(
         .await
 }
 
-/// The peers search on `InstancesIndex`.
-pub async fn peers(state: &AppState, domain: &str) -> Option<Vec<String>> {
+/// The peers search on `InstancesIndex`; `None` when Elasticsearch is off.
+///
+/// Upstream queries the index directly, outside the stoplight the other
+/// searches go through, so a failure is the caller's to raise rather than a
+/// reason to ask the database.
+pub async fn peers(state: &AppState, domain: &str) -> Option<anyhow::Result<Vec<String>>> {
     let client = state.search.as_ref()?;
-    client
-        .guarded(async {
-            let body = json!({
-                "query": { "function_score": {
-                    "query": { "prefix": { "domain": domain } },
-                    "field_value_factor": { "field": "accounts_count", "modifier": "log2p" },
-                } },
-                "size": crate::search::peers::LIMIT,
-                "_source": ["domain"],
-            });
-            let answer = client
-                .search(&[client.index_name(Index::Instances.base_name())], &body)
-                .await?;
-            Ok(answer["hits"]["hits"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|hit| hit["_source"]["domain"].as_str().map(str::to_owned))
-                .collect())
-        })
-        .await
+    let body = json!({
+        "query": { "function_score": {
+            "query": { "prefix": { "domain": domain } },
+            "field_value_factor": { "field": "accounts_count", "modifier": "log2p" },
+        } },
+        "size": crate::search::peers::LIMIT,
+        "_source": ["domain"],
+    });
+    Some(
+        client
+            .search(&[client.index_name(Index::Instances.base_name())], &body)
+            .await
+            .map(|answer| {
+                answer["hits"]["hits"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|hit| hit["_source"]["domain"].as_str().map(str::to_owned))
+                    .collect()
+            }),
+    )
 }
 
 /// What a post search was asked for beyond the query.

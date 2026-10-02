@@ -195,8 +195,9 @@ is the query moved to the front. **Peers** are matched by domain prefix and
 weighed by number of accounts.
 
 If the cluster fails, accounts and hashtags are searched in the database
-instead and posts find nothing, as in Mastodon. Peers fall back to the
-database too, where Mastodon answers 500. After ten failures in a row the
+instead and posts find nothing, as in Mastodon. A peers search answers 500, as
+upstream queries the index there without a rescue and without the stoplight.
+After ten failures in a row the
 instance stops asking the cluster for five minutes (Mastodon's
 `SearchStoplight`); the count is kept per process.
 

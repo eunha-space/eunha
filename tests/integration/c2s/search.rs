@@ -641,3 +641,33 @@ async fn test_peers_search() {
         .unwrap();
     assert!(blank.is_null(), "{blank}");
 }
+
+/// With Elasticsearch on, a search server that fails is an unrescued error,
+/// as `Api::V1::Peers::SearchController` queries the index without a rescue;
+/// accounts still fall back to the database as upstream's do.
+#[tokio::test]
+async fn test_peers_search_answers_500_when_the_cluster_fails() {
+    let ctx = TestContext::with_instance_config("search-peers-down", |instance| {
+        instance.elasticsearch.enabled = true;
+        instance.elasticsearch.host = "http://127.0.0.1".into();
+        // Nothing listens on the discard port.
+        instance.elasticsearch.port = 9;
+    })
+    .await;
+    let resp = ctx.api.get("/api/v1/peers/search?q=peer", None).await;
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({ "status": 500, "error": "Internal Server Error" })
+    );
+
+    let resp = ctx
+        .api
+        .get(
+            "/api/v2/search?q=alice&type=accounts",
+            Some(&ctx.alice_token),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
