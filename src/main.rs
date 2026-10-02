@@ -68,6 +68,11 @@ enum Command {
         #[command(subcommand)]
         command: AccountsCommand,
     },
+    /// Manage the site settings Mastodon keeps in its database.
+    Settings {
+        #[command(subcommand)]
+        command: SettingsCommand,
+    },
     /// Manage full-text search, as `tootctl search` does.
     Search {
         #[command(subcommand)]
@@ -152,6 +157,27 @@ enum Command {
         skip_existing: bool,
         /// With `--tenants`, the instance to upload into, by its domain or one
         /// of its aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SettingsCommand {
+    /// Copy the site's title, descriptions, contact address, registrations,
+    /// privacy policy and terms of service from the instance configuration
+    /// into the settings and terms tables, where nothing is saved yet.
+    ///
+    /// Eunha used to take these from the configuration until an administrator
+    /// saved them; it now reads only the database, as Mastodon does. Run this
+    /// once when upgrading, then remove the keys from the configuration.
+    /// Running it again changes nothing.
+    ImportConfig {
+        /// Report what would be written, writing nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
@@ -490,6 +516,32 @@ async fn main() -> anyhow::Result<()> {
                 println!("{line}")
             })
             .await?;
+            return Ok(());
+        }
+        Some(Command::Settings {
+            command: SettingsCommand::ImportConfig { dry_run, instance },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let db = command_database(&config).await?;
+            let report =
+                eunha::settings_import::import_config(&db, &config.instance, dry_run).await?;
+            for var in &report.written {
+                println!("{} {var}", if dry_run { "would write" } else { "wrote" });
+            }
+            for var in &report.kept {
+                println!("kept saved {var}");
+            }
+            if report.terms_published {
+                println!(
+                    "{} the configured terms of service, effective 2025-01-01",
+                    if dry_run {
+                        "would publish"
+                    } else {
+                        "published"
+                    }
+                );
+            }
+            println!("OK");
             return Ok(());
         }
         Some(Command::RenameDomain { from, to, instance }) => {

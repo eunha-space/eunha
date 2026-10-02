@@ -257,55 +257,37 @@ impl Snapshot {
         self.get(var).as_i64()
     }
 
-    /// A text setting the instance configuration provides the default for.
-    fn configured(&self, var: &str, configured: &str) -> String {
-        if self.stored(var) {
-            self.string(var)
-        } else {
-            configured.to_owned()
-        }
+    /// `Setting.site_title`: saved, or `config/settings.yml`'s `Mastodon`.
+    /// The instance configuration is not read: `eunha settings import-config`
+    /// copies what it said into the settings once.
+    pub fn site_title(&self, _instance: &InstanceConfig) -> String {
+        self.string("site_title")
     }
 
-    /// `Setting.site_title`, the configured `title` until one is saved.
-    pub fn site_title(&self, instance: &InstanceConfig) -> String {
-        self.configured("site_title", &instance.title)
+    /// `Setting.site_short_description`, blank until saved.
+    pub fn site_short_description(&self, _instance: &InstanceConfig) -> String {
+        self.string("site_short_description")
     }
 
-    /// `Setting.site_short_description`, the configured `short_description`
-    /// (or `description`, when that is all there is) until one is saved.
-    pub fn site_short_description(&self, instance: &InstanceConfig) -> String {
-        let configured = if instance.short_description.is_empty() {
-            &instance.description
-        } else {
-            &instance.short_description
-        };
-        self.configured("site_short_description", configured)
-    }
-
-    /// `Setting.site_extended_description`, the configured `description`
-    /// until one is saved.
-    pub fn site_extended_description(&self, instance: &InstanceConfig) -> String {
-        self.configured("site_extended_description", &instance.description)
+    /// `Setting.site_extended_description`, blank until saved.
+    pub fn site_extended_description(&self, _instance: &InstanceConfig) -> String {
+        self.string("site_extended_description")
     }
 
     /// `Setting.site_description`, the legacy text `/api/v1/instance` still
-    /// serves as `description`; the configured `description` until saved.
-    pub fn site_description(&self, instance: &InstanceConfig) -> String {
-        self.configured("site_description", &instance.description)
+    /// serves as `description`; blank until saved.
+    pub fn site_description(&self, _instance: &InstanceConfig) -> String {
+        self.string("site_description")
     }
 
-    /// `Setting.site_contact_email`, the configured `contact_email` until one
-    /// is saved.
-    pub fn site_contact_email(&self, instance: &InstanceConfig) -> String {
-        self.configured(
-            "site_contact_email",
-            instance.contact_email.as_deref().unwrap_or(""),
-        )
+    /// `Setting.site_contact_email`, blank until saved.
+    pub fn site_contact_email(&self, _instance: &InstanceConfig) -> String {
+        self.string("site_contact_email")
     }
 
-    /// The instance configuration as the saved settings amend it, for the
-    /// pages written against the configuration: the title, descriptions,
-    /// contact address and registrations are the settings'.
+    /// The instance configuration with the site's identity and registrations
+    /// taken from the settings, for the pages written against the
+    /// configuration.
     pub fn amend(&self, instance: &InstanceConfig) -> InstanceConfig {
         let mode = self.registrations_mode(instance);
         let contact_email = self.site_contact_email(instance);
@@ -320,16 +302,11 @@ impl Snapshot {
         }
     }
 
-    /// `Setting.registrations_mode`, what the configuration says until a mode
-    /// is saved. A saved value Mastodon would not accept reads as the
-    /// configured mode.
-    pub fn registrations_mode(&self, instance: &InstanceConfig) -> RegistrationsMode {
-        if self.stored("registrations_mode") {
-            if let Some(mode) = RegistrationsMode::parse(&self.string("registrations_mode")) {
-                return mode;
-            }
-        }
-        RegistrationsMode::from_config(instance)
+    /// `Setting.registrations_mode`: saved, or `none`. A saved value Mastodon
+    /// would not accept matches none of the modes, so it opens nothing.
+    pub fn registrations_mode(&self, _instance: &InstanceConfig) -> RegistrationsMode {
+        RegistrationsMode::parse(&self.string("registrations_mode"))
+            .unwrap_or(RegistrationsMode::None)
     }
 }
 

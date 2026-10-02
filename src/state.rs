@@ -65,6 +65,14 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(db: PgPool, config: Config) -> anyhow::Result<Self> {
+        let deprecated = config.instance.deprecated_site_keys();
+        if !deprecated.is_empty() {
+            tracing::warn!(
+                keys = ?deprecated,
+                "these [instance] keys are no longer read; copy them into the settings once \
+                 with `eunha settings import-config`, then remove them"
+            );
+        }
         let http = reqwest::Client::builder()
             .user_agent(crate::version::USER_AGENT)
             .timeout(std::time::Duration::from_secs(30))

@@ -751,6 +751,13 @@ impl TestContext {
             limits: Default::default(),
         };
         configure(&mut config);
+        // The site's identity and registrations are read from the settings
+        // alone, as Mastodon reads them; each test instance has the
+        // configuration's copied there, as an upgraded instance would have
+        // run `eunha settings import-config`.
+        eunha::settings_import::import_config(&db, &config.instance, false)
+            .await
+            .expect("failed to import the configured site settings");
         let state = eunha::state::AppState::new(db, config)
             .await
             .expect("failed to initialize AppState");

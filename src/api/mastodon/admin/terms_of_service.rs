@@ -25,8 +25,7 @@ use crate::{
 /// where it stands.
 #[derive(Debug, Serialize)]
 pub struct AdminTermsOfService {
-    /// `null` for a draft not saved yet, and for the text the instance
-    /// configuration supplies.
+    /// `null` for a draft not saved yet.
     pub id: Option<String>,
     pub text: String,
     pub changelog: String,

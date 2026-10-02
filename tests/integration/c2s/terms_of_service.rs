@@ -197,42 +197,55 @@ async fn percent_signs_are_read_as_ruby_reads_them() {
 }
 
 #[tokio::test]
-async fn configured_terms_are_served_until_a_version_is_published() {
-    let ctx = TestContext::with_instance_config("tos-config", |instance| {
-        instance.terms_of_service = "Configured *terms*.".into();
-    })
-    .await;
+async fn configured_terms_are_not_read_until_imported() {
+    let ctx = TestContext::new("tos-config").await;
+    let mut instance = ctx.state.instance.as_ref().clone();
+    instance.terms_of_service = "Configured *terms*.".into();
 
+    // The configuration is not read: nothing published is a 404.
+    let (status, _) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // `eunha settings import-config` publishes it as the version eunha
+    // served it as, effective 2025-01-01, with nobody to tell.
+    let report = eunha::settings_import::import_config(&ctx.db, &instance, true)
+        .await
+        .unwrap();
+    assert!(report.terms_published);
+    let (status, _) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "a dry run writes nothing");
+    let report = eunha::settings_import::import_config(&ctx.db, &instance, false)
+        .await
+        .unwrap();
+    assert!(report.terms_published);
     let (status, body) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["content"], "<p>Configured <em>terms</em>.</p>\n");
     assert_eq!(body["effective_date"], "2025-01-01");
     assert_eq!(body["effective"], true);
-    let (status, _) = get_json(&ctx, "/api/v1/instance/terms_of_service/2025-01-01", None).await;
-    assert_eq!(status, StatusCode::OK);
+    let notified: bool = sqlx::query_scalar(
+        "SELECT notification_sent_at IS NOT NULL FROM terms_of_services LIMIT 1",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(notified);
 
-    // A new draft starts from the configured text.
-    let (admin_id, admin) =
-        seed_user(&ctx.db, &ctx.domain, "tosadmin", "tosadmin@test.invalid").await;
-    make_admin(&ctx.db, admin_id).await;
-    let (_, draft) = get_json(&ctx, "/api/v1/admin/terms_of_service/draft", Some(&admin)).await;
-    assert_eq!(draft["text"], "Configured *terms*.");
-    assert!(draft["id"].is_null());
-
-    // Once anything is published, the configuration is no longer read.
-    insert(&ctx.db, "Published.", Some(day(3)), true).await;
-    let (_, body) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
-    assert_eq!(body["content"], "<p>Published.</p>\n");
-    let (status, _) = get_json(&ctx, "/api/v1/instance/terms_of_service/2025-01-01", None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    // Once anything is published, it is not imported again.
+    let report = eunha::settings_import::import_config(&ctx.db, &instance, false)
+        .await
+        .unwrap();
+    assert!(!report.terms_published);
+    let versions: i64 = sqlx::query_scalar("SELECT count(*) FROM terms_of_services")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(versions, 1);
 }
 
 #[tokio::test]
-async fn privacy_policy_from_the_setting_the_config_or_the_default() {
-    let ctx = TestContext::with_instance_config("privacy", |instance| {
-        instance.privacy_policy = String::new();
-    })
-    .await;
+async fn privacy_policy_from_the_setting_or_the_default() {
+    let ctx = TestContext::new("privacy").await;
 
     // Mastodon's own policy, about this domain.
     let (status, body) = get_json(&ctx, "/api/v1/instance/privacy_policy", None).await;
@@ -264,13 +277,20 @@ async fn privacy_policy_from_the_setting_the_config_or_the_default() {
     );
 }
 
+/// The configured `privacy_policy` is not read; the import copies it into a
+/// `site_terms` nobody has saved.
 #[tokio::test]
-async fn configured_privacy_policy_stands_in_for_a_blank_setting() {
-    let ctx = TestContext::with_instance_config("privacy-config", |instance| {
-        instance.privacy_policy = "Configured policy.".into();
-    })
-    .await;
-    set_setting(&ctx.db, "site_terms", "\"\"").await;
+async fn configured_privacy_policy_is_imported_into_site_terms() {
+    let ctx = TestContext::new("privacy-config").await;
+    let mut instance = ctx.state.instance.as_ref().clone();
+    instance.privacy_policy = "Configured policy.".into();
+    let (_, body) = get_json(&ctx, "/api/v1/instance/privacy_policy", None).await;
+    assert_eq!(body["updated_at"], "2022-10-07T00:00:00+00:00");
+
+    let report = eunha::settings_import::import_config(&ctx.db, &instance, false)
+        .await
+        .unwrap();
+    assert!(report.written.contains(&"site_terms".to_owned()));
     let (_, body) = get_json(&ctx, "/api/v1/instance/privacy_policy", None).await;
     assert_eq!(body["content"], "<p>Configured policy.</p>\n");
 }

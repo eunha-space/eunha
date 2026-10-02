@@ -1,9 +1,7 @@
 //! Mastodon's `PrivacyPolicy`: the `site_terms` setting an administrator
-//! writes, or the policy Mastodon ships when that is blank.
-//!
-//! Between the two eunha reads the instance configuration's `privacy_policy`,
-//! which is where it kept the policy before it read the setting; see the
-//! `privacy-policy-config-fallback` divergence.
+//! writes, or the policy Mastodon ships when that is blank. The instance
+//! configuration's `privacy_policy`, where eunha kept the policy before it
+//! read the setting, is read only by `eunha settings import-config`.
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;
@@ -53,14 +51,8 @@ pub async fn current(state: &AppState) -> AppResult<PrivacyPolicy> {
             });
         }
     }
-    let configured = &state.instance.privacy_policy;
-    let text = if configured.trim().is_empty() {
-        DEFAULT_PRIVACY_POLICY
-    } else {
-        configured
-    };
     Ok(PrivacyPolicy {
-        text: text.to_owned(),
+        text: DEFAULT_PRIVACY_POLICY.to_owned(),
         updated_at: default_updated_at(),
         default_time: true,
     })

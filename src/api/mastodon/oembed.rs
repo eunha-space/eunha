@@ -76,7 +76,8 @@ pub async fn get_oembed(
         version: "1.0".to_string(),
         author_name: display_name,
         author_url,
-        provider_name: instance.title.clone(),
+        // `OEmbedSerializer#provider_name`: the local domain.
+        provider_name: instance.domain.clone(),
         provider_url: base_url,
         cache_age: 86400,
         html,

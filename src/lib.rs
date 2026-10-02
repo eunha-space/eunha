@@ -46,6 +46,7 @@ pub mod search;
 pub mod secret_key_base;
 pub mod sessions;
 pub mod settings;
+pub mod settings_import;
 pub mod site_uploads;
 pub mod snowflake;
 pub mod software_updates;

@@ -422,6 +422,14 @@ pub struct InstanceConfig {
     /// Nothing is served on them.
     #[serde(default)]
     pub previous_domains: Vec<String>,
+    /// The site's identity and registrations, as eunha kept them before it
+    /// read Mastodon's settings: `site_title`, `site_short_description` (or
+    /// `site_extended_description`, when `short_description` is blank),
+    /// `site_extended_description`, `site_contact_email` and
+    /// `registrations_mode`. Nothing reads them but
+    /// `eunha settings import-config`, which copies them into the settings
+    /// once (docs/operating/instances.md); a server that finds them set warns.
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
     pub description: String,
@@ -435,12 +443,13 @@ pub struct InstanceConfig {
     pub vapid_private_key: String,
     pub vapid_public_key: String,
     pub icon_url: Option<String>,
-    /// Served as the privacy policy while the `site_terms` setting is blank
-    /// (docs/operating/terms-of-service.md).
+    /// The privacy policy eunha served before it read `site_terms`, which
+    /// `eunha settings import-config` copies there; not read otherwise.
     #[serde(default)]
     pub privacy_policy: String,
-    /// Served as terms of service effective on 2025-01-01 until a version is
-    /// published, and never read after (docs/operating/terms-of-service.md).
+    /// The terms of service eunha served before it read
+    /// `terms_of_services`, which `eunha settings import-config` publishes as
+    /// a version effective on 2025-01-01; not read otherwise.
     #[serde(default)]
     pub terms_of_service: String,
     /// Whether this instance offers email subscriptions at all. Mastodon's
@@ -576,6 +585,38 @@ impl ElasticsearchConfig {
 }
 
 impl InstanceConfig {
+    /// The keys `eunha settings import-config` reads that this configuration
+    /// sets, which nothing else reads any more.
+    pub fn deprecated_site_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::new();
+        let text = [
+            ("title", &self.title),
+            ("description", &self.description),
+            ("short_description", &self.short_description),
+            ("privacy_policy", &self.privacy_policy),
+            ("terms_of_service", &self.terms_of_service),
+        ];
+        for (key, value) in text {
+            if !value.trim().is_empty() {
+                keys.push(key);
+            }
+        }
+        if self
+            .contact_email
+            .as_deref()
+            .is_some_and(|e| !e.trim().is_empty())
+        {
+            keys.push("contact_email");
+        }
+        if !self.registrations_open {
+            keys.push("registrations_open");
+        }
+        if self.approval_required {
+            keys.push("approval_required");
+        }
+        keys
+    }
+
     /// `Mastodon::Feature.<name>_enabled?`.
     pub fn feature_enabled(&self, name: &str) -> bool {
         self.experimental_features.iter().any(|f| f.trim() == name)

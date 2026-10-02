@@ -636,7 +636,7 @@ pub async fn delete_page(
             err => query.err.as_deref() == Some("1"),
             has_password => !account.encrypted_password.is_empty(),
             confirmed_and_approved => account.confirmed_and_approved,
-            contact_email => instance.contact_email.clone().unwrap_or_default(),
+            contact_email => crate::settings::Snapshot::load(&state).await.site_contact_email(&instance),
             t_warning_email_change => locale.t("delete_warning_email_change"),
             t_warning_email_reconfirmation => locale.t("delete_warning_email_reconfirmation"),
             t_warning_email_contact => locale.t("delete_warning_email_contact"),

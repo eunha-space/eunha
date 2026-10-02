@@ -2,11 +2,9 @@
 //! until an administrator publishes it, and live from its effective date.
 //!
 //! Before the table existed eunha served one text from the instance
-//! configuration's `terms_of_service`. That text is still served, as a version
-//! effective on 2025-01-01 (the date eunha gave it), for as long as nothing has
-//! been published; the first published version replaces it, and a new draft
-//! starts from it so publishing once is the whole migration. See the
-//! `terms-of-service-config-fallback` divergence.
+//! configuration's `terms_of_service`. It is read no longer;
+//! `eunha settings import-config` publishes it once as a version effective on
+//! 2025-01-01, the date eunha served it as effective from.
 
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Serialize;
@@ -20,14 +18,15 @@ use crate::{
 /// `TermsOfService::NOTIFICATION_ACTIVITY_CUTOFF`.
 const NOTIFICATION_ACTIVITY_CUTOFF_DAYS: i64 = 365;
 
-/// The date the configured text was served as effective from, and is still.
+/// The date the configured text was served as effective from, which
+/// `eunha settings import-config` publishes it as.
 pub fn config_effective_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2025, 1, 1).expect("valid date")
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct TermsOfService {
-    /// 0 for the configured text, which has no row.
+    /// 0 for an unsaved draft.
     pub id: i64,
     pub text: String,
     pub changelog: String,
@@ -49,23 +48,6 @@ pub fn today() -> NaiveDate {
 }
 
 impl TermsOfService {
-    /// The configured text, as the published version it stands in for.
-    fn from_config(text: &str) -> Self {
-        let date = config_effective_date();
-        let midnight = date.and_hms_opt(0, 0, 0).expect("valid time");
-        Self {
-            id: 0,
-            text: text.to_owned(),
-            changelog: String::new(),
-            published_at: Some(midnight),
-            // Nobody is to be told about a text they were already served.
-            notification_sent_at: Some(midnight),
-            effective_date: Some(date),
-            created_at: midnight,
-            updated_at: midnight,
-        }
-    }
-
     /// An unsaved draft, as `TermsOfService.new` builds one.
     pub fn new_draft(text: String, effective_date: Option<NaiveDate>) -> Self {
         let now = now();
@@ -107,23 +89,6 @@ const COLUMNS: &str = "id, text, changelog, published_at, notification_sent_at, 
 /// `published`'s order.
 const PUBLISHED_ORDER: &str = "COALESCE(effective_date, published_at) DESC";
 
-async fn published_rows_exist(db: &PgPool) -> AppResult<bool> {
-    Ok(sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM terms_of_services WHERE published_at IS NOT NULL) AS "e!""#
-    )
-    .fetch_one(db)
-    .await?)
-}
-
-/// The configured text, when nothing is published to replace it.
-async fn fallback(state: &AppState) -> AppResult<Option<TermsOfService>> {
-    let text = &state.instance.terms_of_service;
-    if text.trim().is_empty() || published_rows_exist(&state.db).await? {
-        return Ok(None);
-    }
-    Ok(Some(TermsOfService::from_config(text)))
-}
-
 async fn first(db: &PgPool, condition: &str, order: &str) -> AppResult<Option<TermsOfService>> {
     let sql = format!(
         "SELECT {COLUMNS} FROM terms_of_services WHERE {condition} ORDER BY {order} LIMIT 1"
@@ -145,10 +110,7 @@ const UPCOMING: &str =
 
 /// `TermsOfService.live.first`.
 pub async fn live_first(state: &AppState) -> AppResult<Option<TermsOfService>> {
-    match first(&state.db, LIVE, PUBLISHED_ORDER).await? {
-        Some(tos) => Ok(Some(tos)),
-        None => fallback(state).await,
-    }
+    first(&state.db, LIVE, PUBLISHED_ORDER).await
 }
 
 /// `TermsOfService.current`: the live version, or for terms none of which is
@@ -157,18 +119,12 @@ pub async fn current(state: &AppState) -> AppResult<Option<TermsOfService>> {
     if let Some(tos) = first(&state.db, LIVE, PUBLISHED_ORDER).await? {
         return Ok(Some(tos));
     }
-    if let Some(tos) = first(&state.db, UPCOMING, "effective_date ASC").await? {
-        return Ok(Some(tos));
-    }
-    fallback(state).await
+    first(&state.db, UPCOMING, "effective_date ASC").await
 }
 
 /// `TermsOfService.published.first`: the latest, whether or not in effect.
 pub async fn published_first(state: &AppState) -> AppResult<Option<TermsOfService>> {
-    match first(&state.db, "published_at IS NOT NULL", PUBLISHED_ORDER).await? {
-        Some(tos) => Ok(Some(tos)),
-        None => fallback(state).await,
-    }
+    first(&state.db, "published_at IS NOT NULL", PUBLISHED_ORDER).await
 }
 
 /// `TermsOfService.published.all`.
@@ -177,13 +133,9 @@ pub async fn published_all(state: &AppState) -> AppResult<Vec<TermsOfService>> {
         "SELECT {COLUMNS} FROM terms_of_services WHERE published_at IS NOT NULL \
          ORDER BY {PUBLISHED_ORDER}"
     );
-    let rows = sqlx::query_as::<_, TermsOfService>(&sql)
+    Ok(sqlx::query_as::<_, TermsOfService>(&sql)
         .fetch_all(&state.db)
-        .await?;
-    if rows.is_empty() {
-        return Ok(fallback(state).await?.into_iter().collect());
-    }
-    Ok(rows)
+        .await?)
 }
 
 /// `TermsOfService.published.find_by!(effective_date:)`. A date Rails cannot
@@ -194,17 +146,11 @@ pub async fn published_by_date(state: &AppState, date: &str) -> AppResult<TermsO
         "SELECT {COLUMNS} FROM terms_of_services WHERE published_at IS NOT NULL \
          AND effective_date IS NOT DISTINCT FROM $1 ORDER BY {PUBLISHED_ORDER} LIMIT 1"
     );
-    if let Some(tos) = sqlx::query_as::<_, TermsOfService>(&sql)
+    sqlx::query_as::<_, TermsOfService>(&sql)
         .bind(date)
         .fetch_optional(&state.db)
         .await?
-    {
-        return Ok(tos);
-    }
-    match fallback(state).await? {
-        Some(tos) if tos.effective_date == date => Ok(tos),
-        _ => Err(AppError::NotFound),
-    }
+        .ok_or(AppError::NotFound)
 }
 
 /// `TermsOfService.find(id)`.

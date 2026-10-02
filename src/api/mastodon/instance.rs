@@ -149,12 +149,8 @@ pub async fn get_privacy_policy(state: AppState) -> AppResult<Json<crate::privac
 // ── GET /api/v1/instance/extended_description ────────────────────────────
 
 /// `ExtendedDescription.current`: the `site_extended_description` setting,
-/// rendered as Markdown and dated when it was saved. Until one is saved, the
-/// configured `description`, as it was served before the setting was read.
-pub async fn get_extended_description(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-) -> AppResult<Json<ExtendedDescription>> {
+/// rendered as Markdown and dated when it was saved.
+pub async fn get_extended_description(state: AppState) -> AppResult<Json<ExtendedDescription>> {
     let custom = sqlx::query!(
         "SELECT value, updated_at FROM settings WHERE var = 'site_extended_description'"
     )
@@ -162,8 +158,8 @@ pub async fn get_extended_description(
     .await?;
     let Some(row) = custom else {
         return Ok(Json(ExtendedDescription {
-            updated_at: Some(super::convert::mastodon_date(chrono::Utc::now())),
-            content: instance.description.clone(),
+            updated_at: None,
+            content: String::new(),
         }));
     };
     let text = row
@@ -631,44 +627,37 @@ async fn fetch_stats(state: &AppState) -> (i64, i64, i64) {
     (user_count, status_count, domain_count)
 }
 
-/// `InstancePresenter::ContactPresenter#account`: the local account
-/// `site_contact_username` names. Until one is saved, the local account with
-/// the highest role, as eunha picked before it read the setting.
+/// `InstancePresenter::ContactPresenter#account`: the account
+/// `site_contact_username` names (`Account.find_remote(username, domain)`,
+/// the local domain read as none), or none while it is blank.
 async fn fetch_contact_account(
     state: &AppState,
     settings: &crate::settings::Snapshot,
 ) -> Option<super::types::Account> {
-    let account = if settings.stored("site_contact_username") {
-        let configured = settings.string("site_contact_username");
-        let username = configured.trim().trim_start_matches('@');
-        let username = username.split('@').next().unwrap_or("");
-        if username.is_empty() {
-            return None;
-        }
-        sqlx::query_as!(
-            crate::db::models::Account,
-            "SELECT * FROM accounts WHERE domain IS NULL AND lower(username) = lower($1)",
-            username,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()?
-    } else {
-        sqlx::query_as!(
-            crate::db::models::Account,
-            r#"SELECT a.* FROM accounts a
-               JOIN users u ON u.account_id = a.id
-               LEFT JOIN user_roles ur ON ur.id = u.role_id
-               WHERE a.domain IS NULL
-               ORDER BY COALESCE(ur.position, 0) DESC, a.created_at ASC
-               LIMIT 1"#,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()?
+    let configured = settings.string("site_contact_username");
+    let handle = configured.trim();
+    let handle = handle.strip_prefix('@').unwrap_or(handle);
+    let (username, domain) = match handle.split_once('@') {
+        Some((username, domain)) => (username, Some(domain)),
+        None => (handle, None),
     };
+    if username.is_empty() {
+        return None;
+    }
+    let domain = domain.filter(|d| !crate::search::is_local_domain(state, d));
+    let account = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts
+         WHERE lower(username) = lower($1)
+           AND (($2::text IS NULL AND domain IS NULL) OR lower(domain) = lower($2))
+         LIMIT 1",
+        username,
+        domain,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()?;
     let mut api = super::convert::account_from_db(&state.urls, &account);
     api.emojis = super::accounts::fetch_account_emojis(state, &account).await;
     api.roles = {

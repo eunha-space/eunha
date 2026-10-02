@@ -82,8 +82,8 @@ async fn patch_settings(ctx: &TestContext, body: Value) -> reqwest::Response {
 
 const MANAGE_SETTINGS: i64 = 1 << 6;
 
-/// The settings answer only to `manage_settings`, and show the configured
-/// title and registrations until the settings say otherwise.
+/// The settings answer only to `manage_settings`, and show what was imported
+/// from the configuration (see `test_import_config_fills_only_what_is_not_saved`).
 #[tokio::test]
 async fn test_settings_need_manage_settings() {
     let ctx = TestContext::new("srv-settings-auth").await;
@@ -128,6 +128,10 @@ async fn test_settings_need_manage_settings() {
 async fn test_settings_validate_as_the_form_does() {
     let ctx = TestContext::new("srv-settings-validate").await;
     make_admin(&ctx).await;
+    let saved_before: i64 = sqlx::query_scalar("SELECT count(*) FROM settings")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
 
     let cases = [
         (
@@ -177,7 +181,7 @@ async fn test_settings_validate_as_the_form_does() {
         .fetch_one(&ctx.db)
         .await
         .unwrap();
-    assert_eq!(saved, 0);
+    assert_eq!(saved, saved_before);
 }
 
 /// What the branding, about and registrations pages save is what the instance
@@ -300,6 +304,125 @@ async fn test_settings_drive_the_instance() {
     let nodeinfo = json_ok(ctx.api.get("/nodeinfo/2.1", None).await).await;
     assert_eq!(nodeinfo["metadata"]["nodeName"], "Galaxy");
     assert_eq!(nodeinfo["openRegistrations"], true);
+}
+
+/// With nothing saved, the site is what `config/settings.yml` makes it, as
+/// Mastodon has it: titled `Mastodon`, registrations closed, no contact,
+/// whatever the instance configuration says.
+#[tokio::test]
+async fn test_site_settings_default_to_mastodons() {
+    let ctx = TestContext::new("srv-settings-defaults").await;
+    sqlx::query("DELETE FROM settings")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["title"], "Mastodon");
+    assert_eq!(v2["description"], "");
+    assert_eq!(v2["contact"]["email"], "");
+    assert_eq!(v2["contact"]["account"], Value::Null);
+    assert_eq!(v2["registrations"]["enabled"], false);
+    let v1 = json_ok(ctx.api.get("/api/v1/instance", None).await).await;
+    assert_eq!(v1["title"], "Mastodon");
+    assert_eq!(v1["registrations"], false);
+    let about = json_ok(
+        ctx.api
+            .get("/api/v1/instance/extended_description", None)
+            .await,
+    )
+    .await;
+    assert_eq!(about, json!({"updated_at": null, "content": ""}));
+    let signup = ctx
+        .api
+        .post_json(
+            "/api/v1/accounts",
+            None,
+            &json!({
+                "username": "carol",
+                "email": "carol@example.com",
+                "password": "a-long-enough-password",
+                "agreement": true,
+            }),
+        )
+        .await;
+    assert_eq!(signup.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// `eunha settings import-config` copies the configured identity and
+/// registrations into settings nobody has saved, and leaves saved ones be.
+#[tokio::test]
+async fn test_import_config_fills_only_what_is_not_saved() {
+    let ctx = TestContext::new("srv-settings-import").await;
+    sqlx::query("DELETE FROM settings")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    crate::helpers::set_setting(&ctx.db, "site_title", "\"Saved title\"").await;
+    let mut instance = ctx.state.instance.as_ref().clone();
+    instance.title = "Configured title".into();
+    instance.description = "About us.".into();
+    instance.contact_email = Some("staff@example.com".into());
+    instance.approval_required = true;
+
+    let report = eunha::settings_import::import_config(&ctx.db, &instance, false)
+        .await
+        .unwrap();
+    assert_eq!(report.kept, ["site_title"]);
+    for var in [
+        "site_short_description",
+        "site_extended_description",
+        "site_contact_email",
+        "registrations_mode",
+        "site_contact_username",
+    ] {
+        assert!(report.written.iter().any(|w| w == var), "{var}");
+    }
+
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["title"], "Saved title");
+    assert_eq!(v2["description"], "About us.");
+    assert_eq!(v2["contact"]["email"], "staff@example.com");
+    assert_eq!(v2["contact"]["account"]["username"], "alice");
+    assert_eq!(v2["registrations"]["enabled"], true);
+    assert_eq!(v2["registrations"]["approval_required"], true);
+
+    // A second run writes nothing.
+    let again = eunha::settings_import::import_config(&ctx.db, &instance, false)
+        .await
+        .unwrap();
+    assert!(again.written.is_empty(), "{again:?}");
+}
+
+/// `ContactPresenter#account`: the account `site_contact_username` names,
+/// remote ones included.
+#[tokio::test]
+async fn test_contact_account_may_be_remote() {
+    let ctx = TestContext::new("srv-settings-contact").await;
+    sqlx::query(
+        "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at)
+         VALUES ($1, 'Staff', 'remote.example', 'https://remote.example/users/staff', now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    crate::helpers::set_setting(
+        &ctx.db,
+        "site_contact_username",
+        "\"@staff@Remote.example\"",
+    )
+    .await;
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["contact"]["account"]["acct"], "Staff@remote.example");
+    crate::helpers::set_setting(
+        &ctx.db,
+        "site_contact_username",
+        &format!("\"bob@{}\"", ctx.domain),
+    )
+    .await;
+    let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
+    assert_eq!(v2["contact"]["account"]["username"], "bob");
 }
 
 /// A PNG of `width` by `height` pixels.

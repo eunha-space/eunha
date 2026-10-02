@@ -129,6 +129,26 @@ aliases = ["garden.eunha.site"]
 ~~~~
 
 
+Site settings are not configuration
+-----------------------------------
+
+The site's title, descriptions, contact address and account, registrations,
+privacy policy and terms of service live in the database, as Mastodon keeps
+them: the server settings an administrator saves, and the published terms.
+A new instance starts with Mastodon's defaults (titled `Mastodon`,
+registrations closed) until an administrator saves the settings, or a hosting
+console writes them.
+
+Older eunha read `title`, `description`, `short_description`, `contact_email`,
+`registrations_open`, `approval_required`, `privacy_policy` and
+`terms_of_service` from `[instance]`. They are read no longer, and a server
+that finds them set logs a warning. Copy them into the database once with
+`eunha settings import-config` (with `--instance` under `--tenants`), as
+[administration](./administration#settings-and-the-instance-configuration)
+describes, then delete them. Neither `eunha migrate` nor starting the server
+does it.
+
+
 Authorized fetch and limited federation
 ---------------------------------------
 

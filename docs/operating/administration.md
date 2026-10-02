@@ -75,24 +75,46 @@ CAPTCHA).
 
 ### Settings and the instance configuration
 
+The settings are read from the `settings` table alone, as Mastodon reads them;
+a setting nobody has saved has `config/settings.yml`'s default: the title
+`Mastodon`, blank descriptions and contact, no contact account, and
+registrations `none`. As in Mastodon, an invite to a server that is not open
+lets its holder sign up, but approves them only if whoever wrote it may bypass
+approval (see [invites](./invites)). `site_contact_username` may name a remote
+account (`@name@domain`).
+
 Eunha's instance configuration carried the title, descriptions, contact
-address and whether registrations are open before eunha read these settings.
-The configuration now stands where Mastodon's `config/settings.yml` stands: it
-supplies the default, and a value saved in the settings wins over it, blank
-included. So an instance runs as configured until an administrator saves the
-settings, and from then on as saved, as Mastodon would. Registrations map as:
+address, whether registrations are open, the privacy policy and the terms of
+service before eunha read the settings, and served them until an administrator
+saved the settings. It no longer reads them. An instance upgrading copies them
+into the database once with:
 
-| Configuration                                            | `registrations_mode` |
-| -------------------------------------------------------- | -------------------- |
-| `registrations_open = false`                             | `none`               |
-| `registrations_open = true`, `approval_required = true`  | `approved`           |
-| `registrations_open = true`, `approval_required = false` | `open`               |
+~~~~ sh
+eunha settings import-config            # --dry-run to see what it would write
+eunha --tenants /etc/eunha settings import-config --instance example.com
+~~~~
 
-As in Mastodon, an invite to a server that is not open lets its holder sign up,
-but approves them only if whoever wrote it may bypass approval (see
-[invites](./invites)). With no `site_contact_username` saved, the contact
-account is the local account with the highest role, as before. This is the
-`site-settings-default-to-configuration` divergence.
+It writes each setting nobody has saved and keeps every saved one, so it is
+safe to run again:
+
+| Configuration                                            | Setting                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| `title`                                                  | `site_title`                                                 |
+| `short_description`, or `description` when that is blank | `site_short_description`                                     |
+| `description`                                            | `site_extended_description`, `site_description`              |
+| `contact_email`                                          | `site_contact_email`                                         |
+| `privacy_policy`                                         | `site_terms`                                                 |
+| `registrations_open = false`                             | `registrations_mode` `none`                                  |
+| `registrations_open = true`, `approval_required = true`  | `registrations_mode` `approved`                              |
+| `registrations_open = true`, `approval_required = false` | `registrations_mode` `open`                                  |
+| the local account with the highest role                  | `site_contact_username`, the contact eunha showed by default |
+
+and, while nothing is published, publishes `terms_of_service` as the version it
+was served as (see
+[terms of service](./terms-of-service#terms-from-the-instance-configuration)).
+`eunha migrate` does not do this, and neither does the server: the schema
+migrations change the schema only. A server whose configuration still sets any
+of these keys logs a warning naming them; remove them once imported.
 
 `authorized_fetch` set in the instance configuration, or forced by limited
 federation mode, decides whatever is saved; the settings then list it under
