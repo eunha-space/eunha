@@ -44,23 +44,51 @@ pub struct Abort;
 
 /// `LinkCrawlWorker.perform_async(status.id)`, for a local post just written
 /// or edited: the card comes from the first link in its text.
-pub fn crawl(state: &AppState, status_id: i64) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        fetch_link_card(&state, status_id, None).await;
-    });
+pub async fn crawl(state: &AppState, status_id: i64) {
+    crate::jobs::push(
+        state,
+        LinkCrawlWorker {
+            status_id,
+            url: None,
+        },
+    )
+    .await;
 }
 
 /// `LinkCrawlWorker.perform_in(rand(DISTRIBUTE_DELAY), status.id, link)`, for
 /// a remote post: the card comes from its FEP-8967 `Link` attachment, or else
 /// from the first link in its content.
-pub fn crawl_later(state: &AppState, status_id: i64, link: Option<String>) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        let delay = rand::random_range(0..CRAWL_DELAY.as_millis() as u64);
-        tokio::time::sleep(Duration::from_millis(delay)).await;
-        fetch_link_card(&state, status_id, link).await;
-    });
+pub async fn crawl_later(state: &AppState, status_id: i64, link: Option<String>) {
+    let delay = Duration::from_millis(rand::random_range(0..CRAWL_DELAY.as_millis() as u64));
+    crate::jobs::push_in(
+        state,
+        delay,
+        LinkCrawlWorker {
+            status_id,
+            url: link,
+        },
+    )
+    .await;
+}
+
+/// `LinkCrawlWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LinkCrawlWorker {
+    pub status_id: i64,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+impl crate::jobs::Job for LinkCrawlWorker {
+    const KIND: &'static str = "LinkCrawlWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(0);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        fetch_link_card(state, self.status_id, self.url).await;
+        Ok(())
+    }
 }
 
 /// `Status#reset_preview_card!`: forget the card, before an edit fetches a

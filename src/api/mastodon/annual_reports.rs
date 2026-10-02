@@ -566,17 +566,37 @@ pub async fn generate_annual_report(
         return Ok(accepted_with_refresh(&state, &refresh));
     }
     let refresh = AsyncRefresh::create(&state, &key, false).await;
-    let account_id = auth.account_id;
-    let worker_state = state.clone();
-    crate::tenants::spawn(async move {
-        let guard = crate::async_refresh::FinishOnDrop::new(&worker_state, &key);
-        if let Err(error) = generate_and_store(&worker_state, account_id, year).await {
-            tracing::warn!(%error, account_id, year, "could not generate annual report");
-        }
-        guard.finish().await;
-    });
+    crate::jobs::push(
+        &state,
+        GenerateAnnualReportWorker {
+            account_id: auth.account_id,
+            year,
+        },
+    )
+    .await;
 
     Ok(accepted_with_refresh(&state, &refresh))
+}
+
+/// `GenerateAnnualReportWorker`: the report, then the async refresh the
+/// client polls marked finished.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct GenerateAnnualReportWorker {
+    pub account_id: i64,
+    pub year: i32,
+}
+
+impl crate::jobs::Job for GenerateAnnualReportWorker {
+    const KIND: &'static str = "GenerateAnnualReportWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        generate_and_store(state, self.account_id, self.year)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        crate::async_refresh::finish(state, &refresh_key(self.account_id, self.year)).await;
+        Ok(())
+    }
 }
 
 /// `AnnualReport#refresh_key`.

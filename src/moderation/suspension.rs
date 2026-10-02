@@ -22,6 +22,48 @@ async fn load(state: &AppState, account_id: i64) -> Result<Option<Account>> {
     )
 }
 
+/// `Admin::SuspensionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SuspensionWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for SuspensionWorker {
+    const KIND: &'static str = "Admin::SuspensionWorker";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Pull);
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        suspend(state, self.account_id).await
+    }
+}
+
+/// `Admin::UnsuspensionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct UnsuspensionWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for UnsuspensionWorker {
+    const KIND: &'static str = "Admin::UnsuspensionWorker";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Pull);
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        unsuspend(state, self.account_id).await
+    }
+}
+
+/// `Admin::SuspensionWorker.perform_async(account_id)`.
+pub async fn suspend_later(state: &AppState, account_id: i64) {
+    crate::jobs::push(state, SuspensionWorker { account_id }).await;
+}
+
+/// `Admin::UnsuspensionWorker.perform_async(account_id)`.
+pub async fn unsuspend_later(state: &AppState, account_id: i64) {
+    crate::jobs::push(state, UnsuspensionWorker { account_id }).await;
+}
+
 /// `SuspendAccountService#call`.
 pub async fn suspend(state: &AppState, account_id: i64) -> Result<()> {
     let Some(account) = load(state, account_id).await? else {

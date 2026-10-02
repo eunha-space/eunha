@@ -584,16 +584,38 @@ pub async fn destroy_alias(state: &AppState, account_id: i64, alias_id: i64) -> 
 
 // ── MoveWorker ───────────────────────────────────────────────────────────
 
-/// Run `MoveWorker` for `source` having moved to `target`: in the
-/// background, or at once when the tests ask for background work inline.
+/// `MoveWorker.perform_async(source, target)`, or the worker at once when the
+/// tests ask for background work inline.
 pub async fn queue_move_worker(state: &AppState, source_id: i64, target_id: i64) {
     if crate::feed::sync_fanout() {
         run_move_worker(state, source_id, target_id).await;
     } else {
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            run_move_worker(&state, source_id, target_id).await;
-        });
+        crate::jobs::push(
+            state,
+            MoveWorker {
+                source_account_id: source_id,
+                target_account_id: target_id,
+            },
+        )
+        .await;
+    }
+}
+
+/// `MoveWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MoveWorker {
+    pub source_account_id: i64,
+    pub target_account_id: i64,
+}
+
+impl crate::jobs::Job for MoveWorker {
+    const KIND: &'static str = "MoveWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        move_worker(state, self.source_account_id, self.target_account_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
     }
 }
 
@@ -779,19 +801,54 @@ async fn follow_migration(
             languages: original.as_ref().and_then(|f| f.languages.clone()),
             bypass_locked,
             bypass_limit: true,
+            migrated_from: Some(old_target.id),
         },
     )
     .await?;
     if original.is_some() {
         migrate_list_accounts(state, follower.id, old_target.id, target.id).await?;
     }
-    if matches!(
-        outcome,
-        relationships::FollowOutcome::Requested | relationships::FollowOutcome::Followed
-    ) {
-        relationships::unfollow(state, follower.id, old_target.id, true).await?;
+    match outcome {
+        // `ActivityPub::MigratedFollowDeliveryWorker`: the old account is
+        // left once the `Follow` of the new one has been delivered.
+        relationships::FollowOutcome::Requested if target.domain.is_some() => {}
+        relationships::FollowOutcome::Requested | relationships::FollowOutcome::Followed => {
+            relationships::unfollow(state, follower.id, old_target.id, true).await?;
+        }
+        _ => {}
     }
     Ok(())
+}
+
+/// What `ActivityPub::MigratedFollowDeliveryWorker` does once it has
+/// delivered the `Follow` of a follower's new account
+/// (`unfollow_old_account!`): leave the old one, whose lists the new one has
+/// already joined. The deliverer queues it when the `Follow` settles.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct UnfollowMigratedWorker {
+    pub source_account_id: i64,
+    pub old_target_account_id: i64,
+}
+
+impl crate::jobs::Job for UnfollowMigratedWorker {
+    const KIND: &'static str = "ActivityPub::MigratedFollowDeliveryWorker";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Push);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `rescue true`: whatever comes of it, the job is done.
+        if let Err(error) = relationships::unfollow(
+            state,
+            self.source_account_id,
+            self.old_target_account_id,
+            true,
+        )
+        .await
+        {
+            tracing::debug!(?error, "could not leave the account a follower moved from");
+        }
+        Ok(())
+    }
 }
 
 /// `FollowMigrationService#migrate_list_accounts!`: `list.accounts <<

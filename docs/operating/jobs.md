@@ -95,6 +95,25 @@ it is sent, so that nothing is mailed about a notification or post that has
 gone in the meantime, or to a member who can no longer sign in.
 
 
+Deliveries
+----------
+
+ActivityPub deliveries have a queue of their own, `eunha.ojak_queue`, run by
+the `[workers] delivery_workers` loops, with `ActivityPub::DeliveryWorker`'s
+seventeen attempts and backoff. What `ActivityPub::Forwarder` passes on goes
+as `ActivityPub::LowPriorityDeliveryWorker` sends it, nine attempts on a lane
+taken only when nothing else is due, as Mastodon's `pull` queue is. The
+`Follow` of a follower moving to a remote account goes as
+`ActivityPub::MigratedFollowDeliveryWorker` sends it: once it has been
+delivered, or refused for good, the old account is unfollowed by a job queued
+here.
+
+Each inbox's circuit breaker — ten failures in a row hold its deliveries back
+for a minute — is kept in Redis under the instance's prefix, so every process
+delivering for the instance counts the same failures, as Mastodon's
+Stoplights are counted across Sidekiq processes.
+
+
 Seeing whether the queue moves
 ------------------------------
 

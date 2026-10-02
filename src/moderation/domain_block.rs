@@ -28,6 +28,38 @@ async fn load(state: &AppState, id: i64) -> Result<Option<Block>> {
 const BY_DOMAIN: &str = "(a.domain = $1 OR a.domain LIKE '%.' || $1)";
 
 /// `DomainBlockWorker` → `BlockDomainService#call(domain_block, update:)`.
+/// `DomainBlockWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DomainBlockWorker {
+    pub domain_block_id: i64,
+    #[serde(default)]
+    pub update: bool,
+}
+
+impl crate::jobs::Job for DomainBlockWorker {
+    const KIND: &'static str = "DomainBlockWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        block(state, self.domain_block_id, self.update).await
+    }
+}
+
+/// `AfterUnallowDomainWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AfterUnallowDomainWorker {
+    pub domain: String,
+}
+
+impl crate::jobs::Job for AfterUnallowDomainWorker {
+    const KIND: &'static str = "AfterUnallowDomainWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        after_unallow(state, &self.domain).await
+    }
+}
+
 pub async fn block(state: &AppState, id: i64, update: bool) -> Result<()> {
     let Some(block) = load(state, id).await? else {
         return Ok(());

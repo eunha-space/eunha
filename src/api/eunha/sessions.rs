@@ -109,7 +109,7 @@ pub async fn revoke_session(
     .await?
     .ok_or(AppError::NotFound)?;
     let tokens = crate::sessions::destroy_where_ids(&state.db, &[owned]).await?;
-    crate::sessions::kill_streams(&state, tokens);
+    crate::sessions::kill_streams(&state, tokens).await;
     Ok(Json(serde_json::json!({})))
 }
 

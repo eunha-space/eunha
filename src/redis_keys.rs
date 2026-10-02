@@ -34,6 +34,16 @@ impl RedisKeyspace {
         }
     }
 
+    /// `key` without this keyspace's prefix, or `None` if it is not in the
+    /// keyspace.
+    pub fn strip<'a>(&self, key: &'a str) -> Option<&'a str> {
+        if self.prefix.is_empty() {
+            Some(key)
+        } else {
+            key.strip_prefix(self.prefix.as_str())?.strip_prefix(':')
+        }
+    }
+
     pub fn is_shared(&self) -> bool {
         !self.prefix.is_empty()
     }

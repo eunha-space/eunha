@@ -1756,7 +1756,7 @@ pub async fn accept_notification_request(
     let from = request_sender(&state, auth.account_id, id).await?;
     accept_request(&state, auth.account_id, from).await?;
     // The `UnfilterNotificationsWorker` that was the last one queued.
-    state.streaming.notifications_merged(auth.account_id);
+    state.streaming.notifications_merged(auth.account_id).await;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -1805,7 +1805,7 @@ pub async fn accept_all_notification_requests(
     }
     // Only the last of the `UnfilterNotificationsWorker`s streams.
     if !senders.is_empty() {
-        state.streaming.notifications_merged(auth.account_id);
+        state.streaming.notifications_merged(auth.account_id).await;
     }
     Ok(Json(serde_json::json!({})))
 }

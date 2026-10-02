@@ -421,7 +421,7 @@ pub async fn sso_post(
 pub async fn logout_post(state: AppState, headers: HeaderMap) -> Response {
     if let Some(session_id) = extract_session_token(&headers) {
         if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
-            crate::sessions::kill_streams(&state, tokens);
+            crate::sessions::kill_streams(&state, tokens).await;
         }
     }
 
@@ -581,7 +581,7 @@ pub async fn password_post(
             )
             .await
             {
-                Ok(tokens) => crate::sessions::kill_streams(&state, tokens),
+                Ok(tokens) => crate::sessions::kill_streams(&state, tokens).await,
                 Err(error) => tracing::warn!(%error, "could not end the other sessions"),
             }
             crate::accounts::notify_password_change(&state, session.user_id).await;
@@ -753,24 +753,17 @@ pub async fn delete_post(
         return Redirect::to("/account/delete?err=1").into_response();
     }
 
-    let account_id = account.account_id;
-    let bg = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(e) = crate::delete_account::call(
-            &bg,
-            account_id,
-            crate::delete_account::Options::self_service(),
-        )
-        .await
-        {
-            tracing::error!(account_id, error = %e, "account deletion failed");
-        }
-    });
+    crate::delete_account::call_later(
+        &state,
+        account.account_id,
+        crate::delete_account::Options::self_service(),
+    )
+    .await;
 
     // `sign_out`
     if let Some(session_id) = extract_session_token(&headers) {
         if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
-            crate::sessions::kill_streams(&state, tokens);
+            crate::sessions::kill_streams(&state, tokens).await;
         }
     }
     let mut h = HeaderMap::new();

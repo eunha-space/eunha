@@ -104,7 +104,7 @@ impl AppState {
 
         let redis_keys = crate::redis_keys::RedisKeyspace::new(&config.redis_key_prefix)?;
         let redis_client = redis::Client::open(config.redis_url.as_str())?;
-        let redis = redis::aio::ConnectionManager::new(redis_client).await?;
+        let redis = redis::aio::ConnectionManager::new(redis_client.clone()).await?;
         let redis_coordination = if let Some(url) = config.redis_coordination_url.as_deref() {
             let client = redis::Client::open(url)?;
             redis::aio::ConnectionManager::new(client).await?
@@ -135,12 +135,18 @@ impl AppState {
             redis_coordination.clone(),
             redis_keys.clone(),
         );
+        let queues: Arc<crate::background::QueueWakes> = Arc::default();
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
             db.clone(),
             encryptor.clone(),
             &config.workers.sanitized(),
             federation_client,
             delivery_failures.clone(),
+            crate::federation::delivery::RedisBreakers::new(
+                redis_coordination.clone(),
+                redis_keys.clone(),
+            ),
+            queues.clone(),
         )?);
 
         let uris = crate::api::ap::serving::uris(&config.instance.domain)?;
@@ -152,6 +158,13 @@ impl AppState {
             None
         };
         let instance = Arc::new(config.instance.clone());
+        let stop = tokio_util::sync::CancellationToken::new();
+        let streaming = StreamBus::new(
+            redis_client,
+            redis.clone(),
+            redis_keys.clone(),
+            stop.clone(),
+        );
         Ok(Self {
             db,
             metrics_in_flight: Arc::default(),
@@ -164,17 +177,17 @@ impl AppState {
             fetch,
             fetcher,
             email,
-            streaming: StreamBus::new(),
+            streaming,
             storage,
             encryptor,
             instance_actor_key: Arc::default(),
-            queues: Arc::default(),
+            queues,
             jobs: Arc::default(),
             deliverer,
             delivery_failures,
             urls,
             uris,
-            stop: tokio_util::sync::CancellationToken::new(),
+            stop,
             search,
         })
     }

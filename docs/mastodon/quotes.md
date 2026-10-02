@@ -86,7 +86,9 @@ that boosted or quoted the quoting post, and of the local author it replies
 to, signed by that author or else by the first of those accounts. The same
 forwarder passes on a remote status's `Delete`, and an edit's `Update`, when
 the activity carries a Linked Data signature and the status is public or
-unlisted.
+unlisted. What it passes on goes as `ActivityPub::LowPriorityDeliveryWorker`
+sends it: on a delivery queue of its own, Mastodon's `pull`, taken only when
+the others have nothing due, and tried nine times rather than seventeen.
 
 
 What still differs

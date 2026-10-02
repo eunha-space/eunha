@@ -262,7 +262,7 @@ pub async fn add_reaction(
     .await?;
     // `AnnouncementReaction#queue_publish`, after the reaction is saved.
     if inserted.rows_affected() > 0 {
-        publish_reaction_later(&state, id, name);
+        publish_reaction_later(&state, id, name).await;
     }
 
     Ok(StatusCode::OK)
@@ -283,18 +283,20 @@ pub async fn remove_reaction(
     .execute(&state.db)
     .await?;
     if deleted.rows_affected() > 0 {
-        publish_reaction_later(&state, id, name);
+        publish_reaction_later(&state, id, name).await;
     }
 
     Ok(StatusCode::OK)
 }
 
 /// `PublishAnnouncementReactionWorker.perform_async`.
-fn publish_reaction_later(state: &AppState, id: i64, name: String) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(error) = crate::announcements::publish_reaction(&state, id, &name).await {
-            tracing::warn!(%error, announcement = id, "could not stream a reaction");
-        }
-    });
+async fn publish_reaction_later(state: &AppState, id: i64, name: String) {
+    crate::jobs::push(
+        state,
+        crate::announcements::PublishAnnouncementReactionWorker {
+            announcement_id: id,
+            name,
+        },
+    )
+    .await;
 }

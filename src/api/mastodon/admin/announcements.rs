@@ -268,7 +268,7 @@ pub async fn create_admin_announcement(
     action_log::log(&mut *tx, auth.account_id, "create", &target(&row)).await?;
     tx.commit().await?;
     if row.published {
-        crate::announcements::publish_later(&state, row.id);
+        crate::announcements::publish_later(&state, row.id).await;
     }
     Ok(Json(row.into_api(&state.urls.local_domain)))
 }
@@ -305,7 +305,7 @@ pub async fn update_admin_announcement(
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
     if row.published {
-        crate::announcements::publish_later(&state, row.id);
+        crate::announcements::publish_later(&state, row.id).await;
     }
     Ok(Json(row.into_api(&state.urls.local_domain)))
 }
@@ -333,7 +333,7 @@ pub async fn publish_admin_announcement(
     .await?;
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
-    crate::announcements::publish_later(&state, id);
+    crate::announcements::publish_later(&state, id).await;
     Ok(Json(row.into_api(&state.urls.local_domain)))
 }
 

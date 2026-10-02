@@ -206,7 +206,7 @@ pub async fn edit_status(
     // afresh.
     if new_text != status.text {
         crate::preview_card::reset(&state, id).await;
-        crate::preview_card::crawl(&state, id);
+        crate::preview_card::crawl(&state, id).await;
     }
 
     // Update media: change descriptions and/or reorder/replace attached media.

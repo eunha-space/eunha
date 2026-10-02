@@ -101,6 +101,9 @@ pub struct FollowOptions {
     pub bypass_locked: bool,
     /// Follow past `FollowLimitValidator`'s limit.
     pub bypass_limit: bool,
+    /// `FollowMigrationService`: the account the follower moved from, left
+    /// once a remote target's `Follow` has been delivered.
+    pub migrated_from: Option<i64>,
 }
 
 /// What [`follow`] did.
@@ -307,14 +310,36 @@ pub async fn follow(
                 Some(inbox)
             };
             if let Some(inbox) = inbox {
-                if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    state,
-                    follow_activity,
-                    vec![inbox],
-                    key_id,
-                )
-                .await
-                {
+                // `ActivityPub::MigratedFollowDeliveryWorker` for a migrated
+                // follower, whose delivery leaves the old account.
+                let sent = match options.migrated_from {
+                    Some(old_target) => {
+                        let batch = ojak::deliverer::Batch {
+                            tag: Some(crate::federation::delivery::migrated_follow_tag(
+                                source.id, old_target,
+                            )),
+                            ..ojak::deliverer::Batch::default()
+                        };
+                        crate::federation::delivery::deliver_to_inboxes_tagged(
+                            state,
+                            follow_activity,
+                            vec![inbox],
+                            key_id,
+                            &batch,
+                        )
+                        .await
+                    }
+                    None => {
+                        crate::federation::delivery::deliver_to_inboxes(
+                            state,
+                            follow_activity,
+                            vec![inbox],
+                            key_id,
+                        )
+                        .await
+                    }
+                };
+                if let Err(e) = sent {
                     tracing::warn!(error = %e, "failed to enqueue Follow");
                 }
             } else {

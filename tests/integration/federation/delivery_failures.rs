@@ -230,3 +230,44 @@ fn a_delivery_is_retried_on_mastodons_schedule() {
         .sum();
     assert_eq!(floor, 178_552, "two days and a bit before jitter");
 }
+
+/// The breaker on deliveries is kept in Redis, as Mastodon's Stoplights are:
+/// failures counted by one process hold back another's deliveries, and an
+/// instance with another key prefix keeps breakers of its own.
+#[tokio::test]
+async fn test_the_delivery_breaker_is_shared_through_redis() {
+    use eunha::federation::delivery::{RedisBreakers, BREAKER};
+    use ojak::deliverer::BreakerStore as _;
+
+    let ctx = TestContext::new("breaker-shared").await;
+    let inbox = format!("https://{}.invalid/inbox", ctx.domain);
+    let one = RedisBreakers::new(
+        ctx.state.redis_coordination.clone(),
+        ctx.state.redis_keys.clone(),
+    );
+    let another = RedisBreakers::new(
+        ctx.state.redis_coordination.clone(),
+        ctx.state.redis_keys.clone(),
+    );
+    let elsewhere = RedisBreakers::new(
+        ctx.state.redis_coordination.clone(),
+        eunha::redis_keys::RedisKeyspace::new(&format!(
+            "{}-other",
+            ctx.state.config.redis_key_prefix
+        ))
+        .unwrap(),
+    );
+
+    for _ in 0..BREAKER.threshold - 1 {
+        one.record(&BREAKER, &inbox, true).await;
+    }
+    assert_eq!(another.held(&BREAKER, &inbox).await, None);
+    another.record(&BREAKER, &inbox, true).await;
+    let held = one.held(&BREAKER, &inbox).await.expect("open after ten");
+    assert!(held <= BREAKER.cool_off && held > Duration::from_secs(55));
+    assert_eq!(elsewhere.held(&BREAKER, &inbox).await, None);
+
+    // One success anywhere closes it.
+    another.record(&BREAKER, &inbox, false).await;
+    assert_eq!(one.held(&BREAKER, &inbox).await, None);
+}

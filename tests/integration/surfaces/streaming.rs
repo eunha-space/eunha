@@ -811,3 +811,41 @@ async fn test_remote_posts_on_public_streams() {
     assert_eq!(event["event"], "delete");
     assert_eq!(event["payload"], status["id"]);
 }
+
+/// Streams go through Redis, as Mastodon's do: another process serving the
+/// same instance — `eunha accounts`, a second server — reaches them, and an
+/// instance with another key prefix on the same Redis does not.
+#[tokio::test]
+async fn test_streams_are_reached_through_redis_under_the_instance_prefix() {
+    let ctx = TestContext::new("stream-redis").await;
+    signed_in(&ctx, &ctx.alice_id).await;
+    let mut ws = ws_connect(&ctx, "user:notification", &ctx.alice_token).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    assert!(ctx.state.streaming.is_online(alice).await);
+
+    let config = (*ctx.state.config).clone();
+    let other_tenant = {
+        let mut config = config.clone();
+        config.redis_key_prefix = format!("{}-other", config.redis_key_prefix);
+        eunha::state::AppState::new(ctx.state.db.clone(), config)
+            .await
+            .unwrap()
+    };
+    assert!(!other_tenant.streaming.is_online(alice).await);
+    other_tenant
+        .streaming
+        .notification(alice, json!({"id": "1", "type": "follow"}))
+        .await;
+    assert!(quiet(&mut ws).await, "another instance's channel");
+
+    let other_process = eunha::state::AppState::new(ctx.state.db.clone(), config)
+        .await
+        .unwrap();
+    other_process
+        .streaming
+        .notification(alice, json!({"id": "1", "type": "follow"}))
+        .await;
+    let event = next_event(&mut ws).await.expect("the notification");
+    assert_eq!(event["event"], "notification");
+    assert_eq!(payload(&event)["type"], "follow");
+}

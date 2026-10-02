@@ -58,6 +58,60 @@ pub const PRIORITY_QUEUE: &str = "delivery-priority";
 /// How many inboxes a send may have and still go ahead of a fan-out.
 pub const PRIORITY_MAX_INBOXES: usize = 8;
 
+/// The queue `ActivityPub::LowPriorityDeliveryWorker`'s deliveries wait in,
+/// Mastodon's `pull` queue: claimed only when the others have nothing due.
+pub const LOW_PRIORITY_QUEUE: &str = "delivery-pull";
+
+/// `ActivityPub::LowPriorityDeliveryWorker`'s `retry: 8`: nine attempts.
+pub const LOW_PRIORITY_ATTEMPTS: u32 = 9;
+
+/// What `ActivityPub::Forwarder` passes on goes as
+/// `ActivityPub::LowPriorityDeliveryWorker`: on the `pull` queue, tried nine
+/// times on the same schedule as other deliveries.
+pub fn low_priority() -> ojak::deliverer::Batch {
+    ojak::deliverer::Batch {
+        max_attempts: Some(LOW_PRIORITY_ATTEMPTS),
+        low_priority: true,
+        ..ojak::deliverer::Batch::default()
+    }
+}
+
+/// The tag a migrated follower's `Follow` is sent with, which says whom to
+/// unfollow once it has been delivered.
+pub fn migrated_follow_tag(follower_id: i64, old_target_id: i64) -> String {
+    format!("migrated-follow:{follower_id}:{old_target_id}")
+}
+
+/// What follows a delivery having settled: for a migrated follower's
+/// `Follow`, the unfollow of the old account
+/// (`ActivityPub::MigratedFollowDeliveryWorker#unfollow_old_account!`),
+/// queued as a job.
+pub async fn delivery_settled(
+    db: &sqlx::PgPool,
+    queues: &crate::background::QueueWakes,
+    settled: &ojak::deliverer::Settled,
+) {
+    let Some((follower, old_target)) = settled.tag.as_deref().and_then(parse_migrated_follow_tag)
+    else {
+        return;
+    };
+    let job = crate::moves::UnfollowMigratedWorker {
+        source_account_id: follower,
+        old_target_account_id: old_target,
+    };
+    match crate::jobs::perform_async_in(db, job).await {
+        Ok(_) => queues.jobs.notify_one(),
+        Err(error) => {
+            tracing::error!(%error, "could not queue the unfollow of a migrated follow");
+        }
+    }
+}
+
+fn parse_migrated_follow_tag(tag: &str) -> Option<(i64, i64)> {
+    let (follower, old_target) = tag.strip_prefix("migrated-follow:")?.split_once(':')?;
+    Some((follower.parse().ok()?, old_target.parse().ok()?))
+}
+
 /// Whether an inbox answering `status` is answering what will not change, as
 /// Mastodon's `response_error_unsalvageable?` has it: 501, and any 4xx but
 /// 401, 408 and 429. Mastodon gives up on a 401 too when the sender is
@@ -67,7 +121,9 @@ pub fn unsalvageable(status: u16) -> bool {
 }
 
 /// Mastodon's circuit breaker for deliveries (`STOPLIGHT_FAILURE_THRESHOLD`
-/// and `STOPLIGHT_COOL_OFF_TIME`), kept for each inbox as Mastodon keeps it.
+/// and `STOPLIGHT_COOL_OFF_TIME`), kept for each inbox as Mastodon keeps it,
+/// in Redis ([`RedisBreakers`]), so that every process delivering for an
+/// instance counts the same failures.
 pub const BREAKER: ojak::deliverer::CircuitBreaker = ojak::deliverer::CircuitBreaker {
     threshold: 10,
     cool_off: Duration::from_secs(60),
@@ -112,6 +168,8 @@ pub fn deliverer(
     workers: &crate::config::WorkersConfig,
     client: ojak::client::Client,
     tracker: DeliveryFailureTracker,
+    breakers: RedisBreakers,
+    queues: Arc<crate::background::QueueWakes>,
 ) -> anyhow::Result<Deliverer> {
     let queue = ojak_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -128,6 +186,7 @@ pub fn deliverer(
             max_inboxes: PRIORITY_MAX_INBOXES,
         }),
         breaker: Some(BREAKER),
+        low_priority: Some(LOW_PRIORITY_QUEUE.to_owned()),
         permanent: unsalvageable,
         retry: RETRY,
         // Sidekiq retries on its schedule whatever the server asked, and a
@@ -136,6 +195,7 @@ pub fn deliverer(
         ..ojak::deliverer::DelivererConfig::default()
     };
     let attempts = tracker.clone();
+    let settled_db = db.clone();
     Ok(ojak::deliverer::Deliverer::new(
         queue,
         SigningKeys {
@@ -155,6 +215,14 @@ pub fn deliverer(
         );
     })
     .on_attempt(move |attempt| attempts.record(attempt))
+    .breaker_store(breakers)
+    // `ActivityPub::MigratedFollowDeliveryWorker#unfollow_old_account!`, once
+    // the `Follow` has been delivered or refused for good.
+    .on_settled(move |settled| {
+        let db = settled_db.clone();
+        let queues = queues.clone();
+        async move { delivery_settled(&db, &queues, &settled).await }
+    })
     .skip_if(move |inbox, activity| {
         activity.get("type").and_then(Value::as_str) != Some("Follow")
             && crate::federation::delivery_failures::host(inbox)
@@ -320,7 +388,7 @@ pub async fn forward_to_inboxes(
         key_id,
         false,
         LinkedData::Unsigned,
-        None,
+        Some(&low_priority()),
     )
     .await
 }
@@ -634,6 +702,26 @@ pub async fn deliver_to_inboxes_signed(
     linked_data: LinkedData,
 ) -> anyhow::Result<u64> {
     enqueue(state, activity, inboxes, key_id, true, linked_data, None).await
+}
+
+/// [`deliver_to_inboxes`], in `batch`.
+pub async fn deliver_to_inboxes_tagged(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+    batch: &ojak::deliverer::Batch,
+) -> anyhow::Result<u64> {
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        true,
+        LinkedData::Unsigned,
+        Some(batch),
+    )
+    .await
 }
 
 /// [`deliver_to_inboxes_signed`], in `batch`: tagged, and given up on at its
@@ -1004,5 +1092,117 @@ pub async fn run_delivery_cleanup(state: AppState) {
             Err(e) => tracing::error!(error = %e, "delivery cleanup failed"),
         }
         crate::background::rest(&state.stop, DELIVERY_CLEANUP_INTERVAL).await;
+    }
+}
+
+/// Mastodon's Stoplight for an inbox, kept in Redis as
+/// `Stoplight::DataStore::Redis` keeps it, so that every process delivering
+/// for the instance holds back the same inboxes: the failures in a row
+/// (`stoplight:<inbox>:failures`) and when the last was
+/// (`stoplight:<inbox>:last_failure`), under the instance's key prefix on
+/// the coordination Redis. A breaker Redis cannot be asked about lets the
+/// delivery through.
+#[derive(Clone)]
+pub struct RedisBreakers {
+    redis: redis::aio::ConnectionManager,
+    keys: crate::redis_keys::RedisKeyspace,
+}
+
+impl RedisBreakers {
+    pub fn new(
+        redis: redis::aio::ConnectionManager,
+        keys: crate::redis_keys::RedisKeyspace,
+    ) -> Self {
+        Self { redis, keys }
+    }
+
+    fn keys_for(&self, key: &str) -> (String, String) {
+        (
+            self.keys.key(format!("stoplight:{key}:failures")),
+            self.keys.key(format!("stoplight:{key}:last_failure")),
+        )
+    }
+
+    /// How long deliveries to `inbox` are held, if its breaker is open.
+    pub async fn held_for(
+        &self,
+        breaker: &ojak::deliverer::CircuitBreaker,
+        inbox: &str,
+    ) -> Option<Duration> {
+        let (failures, last) = self.keys_for(inbox);
+        let mut redis = self.redis.clone();
+        let (failures, last): (Option<u32>, Option<u64>) = redis::cmd("MGET")
+            .arg(&failures)
+            .arg(&last)
+            .query_async(&mut redis)
+            .await
+            .ok()?;
+        if failures? < breaker.threshold.max(1) {
+            return None;
+        }
+        let since = now_millis().saturating_sub(last?);
+        breaker
+            .cool_off
+            .checked_sub(Duration::from_millis(since))
+            .filter(|left| !left.is_zero())
+    }
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+impl ojak::deliverer::BreakerStore for RedisBreakers {
+    fn held<'a>(
+        &'a self,
+        breaker: &'a ojak::deliverer::CircuitBreaker,
+        key: &'a str,
+    ) -> ojak::deliverer::BreakerFuture<'a, Option<Duration>> {
+        Box::pin(self.held_for(breaker, key))
+    }
+
+    fn record<'a>(
+        &'a self,
+        breaker: &'a ojak::deliverer::CircuitBreaker,
+        key: &'a str,
+        failed: bool,
+    ) -> ojak::deliverer::BreakerFuture<'a, ()> {
+        Box::pin(async move {
+            let (failures, last) = self.keys_for(key);
+            let mut redis = self.redis.clone();
+            let recorded: redis::RedisResult<()> = if failed {
+                // Forgotten once nobody has failed there for ten cool-offs.
+                let ttl = (breaker.cool_off.as_secs() * 10).max(600);
+                redis::pipe()
+                    .atomic()
+                    .cmd("INCRBY")
+                    .arg(&failures)
+                    .arg(1)
+                    .ignore()
+                    .cmd("EXPIRE")
+                    .arg(&failures)
+                    .arg(ttl)
+                    .ignore()
+                    .cmd("SET")
+                    .arg(&last)
+                    .arg(now_millis())
+                    .arg("EX")
+                    .arg(ttl)
+                    .ignore()
+                    .query_async(&mut redis)
+                    .await
+            } else {
+                redis::cmd("DEL")
+                    .arg(&failures)
+                    .arg(&last)
+                    .query_async(&mut redis)
+                    .await
+            };
+            if let Err(error) = recorded {
+                tracing::warn!(%error, "could not record a delivery in its circuit breaker");
+            }
+        })
     }
 }

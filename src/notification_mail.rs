@@ -113,7 +113,7 @@ pub async fn notification_delivered(
         return;
     }
     // `(!recipient_online? || always_send_emails?)`
-    let online = state.streaming.is_online(recipient_id) || user.push;
+    let online = user.push || state.streaming.is_online(recipient_id).await;
     if online && !crate::accounts::user_setting_bool(settings, "always_send_emails", false) {
         return;
     }

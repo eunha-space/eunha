@@ -96,14 +96,46 @@ pub async fn publish(state: &AppState, id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `PublishScheduledAnnouncementWorker.perform_async`, in the background.
-pub fn publish_later(state: &AppState, id: i64) {
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(error) = publish(&state, id).await {
-            tracing::warn!(%error, announcement = id, "could not publish an announcement");
-        }
-    });
+/// `PublishScheduledAnnouncementWorker.perform_async`.
+pub async fn publish_later(state: &AppState, id: i64) {
+    crate::jobs::push(
+        state,
+        PublishScheduledAnnouncementWorker {
+            announcement_id: id,
+        },
+    )
+    .await;
+}
+
+/// `PublishScheduledAnnouncementWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PublishScheduledAnnouncementWorker {
+    pub announcement_id: i64,
+}
+
+impl crate::jobs::Job for PublishScheduledAnnouncementWorker {
+    const KIND: &'static str = "PublishScheduledAnnouncementWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        publish(state, self.announcement_id).await
+    }
+}
+
+/// `PublishAnnouncementReactionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PublishAnnouncementReactionWorker {
+    pub announcement_id: i64,
+    pub name: String,
+}
+
+impl crate::jobs::Job for PublishAnnouncementReactionWorker {
+    const KIND: &'static str = "PublishAnnouncementReactionWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        publish_reaction(state, self.announcement_id, &self.name).await
+    }
 }
 
 /// `UnpublishAnnouncementWorker#perform`: take it off every stream.

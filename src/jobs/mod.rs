@@ -318,6 +318,14 @@ pub async fn push_in<J: Job>(state: &AppState, delay: Duration, job: J) {
     }
 }
 
+/// [`perform_async`] with no instance at hand, only its database: for code
+/// that runs before the instance is whole, such as the deliverer's hooks. The
+/// job is run by the instance's job loops, or by [`drain`].
+pub async fn perform_async_in<J: Job>(db: &sqlx::PgPool, job: J) -> anyhow::Result<Option<i64>> {
+    let args = serde_json::to_value(&job)?;
+    insert(db, J::KIND, &J::OPTIONS, &args, Duration::ZERO).await
+}
+
 async fn enqueue<J: Job>(state: &AppState, delay: Duration, job: J) -> anyhow::Result<Option<i64>> {
     let args = serde_json::to_value(&job)?;
     let id = insert(&state.db, J::KIND, &J::OPTIONS, &args, delay).await?;

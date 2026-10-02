@@ -281,7 +281,7 @@ pub async fn notify_staff(state: &AppState, report_id: i64, target_id: i64) {
         return;
     }
     let state = state.clone();
-    crate::tenants::spawn(async move {
+    async move {
         let staff = match crate::push::accounts_who_can(
             &state,
             &[crate::moderation::role::flag::MANAGE_REPORTS],
@@ -363,7 +363,8 @@ pub async fn notify_staff(state: &AppState, report_id: i64, target_id: i64) {
                 tracing::warn!(%error, "could not mail staff about a report");
             }
         }
-    });
+    }
+    .await;
 }
 
 /// `forward_to_origin!` and `forward_to_replied_to!`: a `Flag` from the

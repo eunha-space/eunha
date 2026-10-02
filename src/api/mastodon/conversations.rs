@@ -451,7 +451,7 @@ pub(crate) async fn push_to_streaming(state: &AppState, row_id: i64) {
         return;
     };
     let channel = format!("timeline:direct:{}", row.account_id);
-    if !state.streaming.is_subscribed(&channel) {
+    if !state.streaming.is_subscribed(&channel).await {
         return;
     }
     let Ok(conversation) = build_conversation_response(
@@ -467,10 +467,13 @@ pub(crate) async fn push_to_streaming(state: &AppState, row_id: i64) {
         return;
     };
     if let Ok(payload) = serde_json::to_value(&conversation) {
-        state.streaming.publish(
-            &channel,
-            serde_json::json!({"event": "conversation", "payload": payload}),
-        );
+        state
+            .streaming
+            .publish(
+                &channel,
+                serde_json::json!({"event": "conversation", "payload": payload}),
+            )
+            .await;
     }
 }
 

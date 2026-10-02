@@ -141,8 +141,6 @@ async fn try_deliver(
         return Ok(());
     }
 
-    let vapid_priv = state.instance.vapid_private_key.clone();
-
     let payload = serde_json::to_string(&PushPayload {
         notification_id,
         notification_type,
@@ -152,17 +150,56 @@ async fn try_deliver(
         preferred_locale: "en",
     })?;
 
-    for (_, endpoint, p256dh, auth) in &rows {
-        if let Err(e) = send_one(state, endpoint, p256dh, auth, &vapid_priv, &payload).await {
-            tracing::warn!(
-                endpoint = %endpoint,
-                error = %e,
-                "push send failed"
-            );
-        }
+    // `Web::PushNotificationWorker.perform_async(subscription.id,
+    // notification.id)` for each, with the payload as it was rendered.
+    for (id, _, _, _) in rows {
+        crate::jobs::perform_async(
+            state,
+            PushNotificationWorker {
+                web_push_subscription_id: id,
+                payload: payload.clone(),
+            },
+        )
+        .await?;
     }
 
     Ok(())
+}
+
+/// `Web::PushNotificationWorker`: one notification, to one subscription.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PushNotificationWorker {
+    pub web_push_subscription_id: i64,
+    pub payload: String,
+}
+
+impl crate::jobs::Job for PushNotificationWorker {
+    const KIND: &'static str = "Web::PushNotificationWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Push)
+        .retry(5);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `Web::PushSubscription.find`, else nothing to do.
+        let Some(sub) = sqlx::query!(
+            "SELECT endpoint, key_p256dh, key_auth FROM web_push_subscriptions WHERE id = $1",
+            self.web_push_subscription_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        else {
+            return Ok(());
+        };
+        send_one(
+            state,
+            &sub.endpoint,
+            &sub.key_p256dh,
+            &sub.key_auth,
+            &state.instance.vapid_private_key,
+            &self.payload,
+        )
+        .await
+    }
 }
 
 async fn send_one(
@@ -647,23 +684,17 @@ pub async fn create_and_push(
     // `push_to_streaming_api! if subscribed_to_streaming_api?`.
     crate::streaming::fan_out::notification(state, recipient_id, notification_id).await;
 
-    let state_clone = state.clone();
-    let icon_s = icon;
-    let title_s = title;
-    let body_s = body;
-    crate::tenants::spawn(async move {
-        deliver(
-            state_clone,
-            recipient_id,
-            from_account_id,
-            notification_id,
-            notification_type,
-            &icon_s,
-            &title_s,
-            &body_s,
-        )
-        .await;
-    });
+    deliver(
+        state.clone(),
+        recipient_id,
+        from_account_id,
+        notification_id,
+        notification_type,
+        &icon,
+        &title,
+        &body,
+    )
+    .await;
 
     // `send_email! if email_needed?`
     crate::notification_mail::notification_delivered(
@@ -747,20 +778,17 @@ pub async fn notify_local(
         .await?
         .map(|a| crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &a))
         .unwrap_or_default();
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            deliver(
-                state,
-                recipient_id,
-                from_account_id,
-                notification_id,
-                notification_type,
-                &icon,
-                &title,
-                &body,
-            )
-            .await;
-        });
+        deliver(
+            state.clone(),
+            recipient_id,
+            from_account_id,
+            notification_id,
+            notification_type,
+            &icon,
+            &title,
+            &body,
+        )
+        .await;
         Ok(())
     }
     .await;

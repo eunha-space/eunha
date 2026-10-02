@@ -105,8 +105,9 @@ it followed the old one with, past the follow limit, and past a locked account's
 approval when the new account is local; its lists gain the new account; and
 once the new follow is made or asked for, the old one is ended without clearing
 the home feed. A remote new account is followed with a `Follow`, and the old
-account is unfollowed as soon as that is queued, not once it is delivered (the
-`migrated-follow-unfollows-on-queueing` divergence).
+account is unfollowed once that has been delivered, or refused for good, as
+`ActivityPub::MigratedFollowDeliveryWorker` does; while the delivery is being
+retried the follower keeps following the old account.
 
 Then, for every local account:
 

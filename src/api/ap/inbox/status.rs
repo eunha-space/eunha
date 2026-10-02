@@ -765,7 +765,8 @@ pub(super) async fn handle_update(
                     state,
                     row.id,
                     preview_card_link(&attachments).map(str::to_owned),
-                );
+                )
+                .await;
             }
 
             // Replace hashtags

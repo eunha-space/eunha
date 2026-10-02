@@ -42,7 +42,7 @@ pub mod suspension_origin {
 /// How much of the account to keep. Mirrors `DeleteAccountService#call`'s
 /// options hash; [`Options::default`] matches its
 /// `{ reserve_username: true, reserve_email: true }`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Options {
     /// Keep the `accounts` record (scrubbed and suspended), reserving the username.
     pub reserve_username: bool,
@@ -146,7 +146,7 @@ pub async fn suspend(
     // Terminate the account's streaming connections (Mastodon publishes a
     // `kill` event on `timeline:system:{id}` for a local account).
     if local {
-        state.streaming.kill_account(account_id);
+        state.streaming.kill_account(account_id).await;
     }
     Ok(())
 }
@@ -167,7 +167,7 @@ pub async fn mark_deleted(state: &AppState, account_id: i64) -> Result<()> {
     .unwrap_or(false);
     tx.commit().await?;
     if local {
-        state.streaming.kill_account(account_id);
+        state.streaming.kill_account(account_id).await;
     }
     Ok(())
 }
@@ -270,6 +270,59 @@ pub async fn unsuspend(state: &AppState, account_id: i64) -> Result<()> {
 
 /// Port of `DeleteAccountService#call`. Deleting an account that no longer
 /// exists is a no-op (Mastodon's workers swallow `RecordNotFound`).
+/// `AccountDeletionWorker.perform_async(account_id, options)`: the purge, from
+/// the job queue, since an account can own a lot of content.
+pub async fn call_later(state: &AppState, account_id: i64, options: Options) {
+    crate::jobs::push(
+        state,
+        AccountDeletionWorker {
+            account_id,
+            options,
+        },
+    )
+    .await;
+}
+
+/// `AccountDeletionWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AccountDeletionWorker {
+    pub account_id: i64,
+    pub options: Options,
+}
+
+impl crate::jobs::Job for AccountDeletionWorker {
+    const KIND: &'static str = "AccountDeletionWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .lock(crate::jobs::Lock::UntilExecuted(
+            std::time::Duration::from_secs(7 * 24 * 3600),
+        ));
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        call(state, self.account_id, self.options).await
+    }
+}
+
+/// `Admin::AccountDeletionWorker`: a suspended account's data, deleted by a
+/// moderator.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AdminAccountDeletionWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for AdminAccountDeletionWorker {
+    const KIND: &'static str = "Admin::AccountDeletionWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .lock(crate::jobs::Lock::UntilExecuted(
+            std::time::Duration::from_secs(7 * 24 * 3600),
+        ));
+
+    async fn perform(self, state: &AppState) -> Result<()> {
+        call(state, self.account_id, Options::default()).await
+    }
+}
+
 pub async fn call(state: &AppState, account_id: i64, options: Options) -> Result<()> {
     let Some(account) =
         sqlx::query_as!(Account, "SELECT * FROM accounts WHERE id = $1", account_id,)

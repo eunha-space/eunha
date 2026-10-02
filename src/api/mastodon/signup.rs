@@ -690,9 +690,10 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
     // approval is mailed to the staff who can approve it.
     if needs_approval {
         let state2 = state.clone();
-        crate::tenants::spawn(async move {
+        async move {
             crate::accounts::notify_staff_about_pending_account(&state2, account_id).await;
-        });
+        }
+        .await;
     } else {
         crate::accounts::prepare_new_user(&state, account_id).await;
     }

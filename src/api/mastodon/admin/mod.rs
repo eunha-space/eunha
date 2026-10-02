@@ -32,7 +32,7 @@ pub(crate) mod announcements;
 mod dashboard;
 mod fasp;
 mod follow_recommendations;
-mod instances;
+pub(crate) mod instances;
 mod invites;
 mod relays;
 mod roles;

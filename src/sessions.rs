@@ -237,7 +237,7 @@ pub async fn revoke_application(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    kill_streams(state, tokens);
+    kill_streams(state, tokens).await;
     Ok(())
 }
 
@@ -266,13 +266,13 @@ pub async fn revoke_access(state: &crate::state::AppState, user_id: i64) -> sqlx
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    kill_streams(state, tokens);
+    kill_streams(state, tokens).await;
     Ok(())
 }
 
 /// `AccessTokenExtension#push_to_streaming_api`.
-pub fn kill_streams(state: &crate::state::AppState, token_ids: Vec<i64>) {
+pub async fn kill_streams(state: &crate::state::AppState, token_ids: Vec<i64>) {
     if !token_ids.is_empty() {
-        state.streaming.kill_tokens(&token_ids);
+        state.streaming.kill_tokens(&token_ids).await;
     }
 }

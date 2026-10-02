@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT l.id FROM lists l\n               JOIN list_accounts la ON la.list_id = l.id\n               JOIN users u ON u.account_id = l.account_id\n               WHERE la.account_id = $1\n                 AND (la.follow_id IS NOT NULL OR l.account_id = $1)\n                 AND u.current_sign_in_at >= now() - make_interval(days => $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7ea11baefb0dd5fb224517ff72bf3e1e6180b48e18fdacf43b7ec502a539de40"
+}

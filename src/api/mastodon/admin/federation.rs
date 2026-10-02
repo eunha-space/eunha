@@ -282,32 +282,35 @@ pub async fn create_domain_block(
 /// `DomainBlockWorker.perform_async`; run in place under the tests'
 /// synchronous switch, so they see the block take effect.
 async fn spawn_block(state: &AppState, id: i64, update: bool) {
-    let state = state.clone();
-    let work = async move {
-        if let Err(error) = crate::moderation::domain_block::block(&state, id, update).await {
+    if crate::feed::sync_fanout() {
+        if let Err(error) = crate::moderation::domain_block::block(state, id, update).await {
             tracing::warn!(domain_block = id, %error, "BlockDomainService failed");
         }
-    };
-    if crate::feed::sync_fanout() {
-        work.await;
     } else {
-        crate::tenants::spawn(work);
+        crate::jobs::push(
+            state,
+            crate::moderation::domain_block::DomainBlockWorker {
+                domain_block_id: id,
+                update,
+            },
+        )
+        .await;
     }
 }
 
 /// `AfterUnallowDomainWorker.perform_async`, run in place under the tests'
 /// synchronous switch as [`spawn_block`] is.
 async fn spawn_after_unallow(state: &AppState, domain: String) {
-    let state = state.clone();
-    let work = async move {
-        if let Err(error) = crate::moderation::domain_block::after_unallow(&state, &domain).await {
+    if crate::feed::sync_fanout() {
+        if let Err(error) = crate::moderation::domain_block::after_unallow(state, &domain).await {
             tracing::warn!(domain, %error, "AfterUnallowDomainService failed");
         }
-    };
-    if crate::feed::sync_fanout() {
-        work.await;
     } else {
-        crate::tenants::spawn(work);
+        crate::jobs::push(
+            state,
+            crate::moderation::domain_block::AfterUnallowDomainWorker { domain },
+        )
+        .await;
     }
 }
 

@@ -1370,7 +1370,7 @@ async fn prepare(state: &AppState, record: &ImportRecord, account: &Account) -> 
             )
             .execute(&state.db)
             .await?;
-            crate::api::mastodon::filters::publish_filters_changed(state, account.id);
+            crate::api::mastodon::filters::publish_filters_changed(state, account.id).await;
         }
         _ => {}
     }
@@ -1718,7 +1718,7 @@ async fn create_filter(state: &AppState, account_id: i64, data: &Value) -> AppRe
         .await?;
     }
     tx.commit().await?;
-    crate::api::mastodon::filters::publish_filters_changed(state, account_id);
+    crate::api::mastodon::filters::publish_filters_changed(state, account_id).await;
     Ok(true)
 }
 

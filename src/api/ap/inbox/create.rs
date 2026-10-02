@@ -417,7 +417,8 @@ pub(super) async fn handle_create(
         state,
         inserted_id,
         preview_card_link(&attachments).map(str::to_owned),
-    );
+    )
+    .await;
 
     // Hashtags
     let hashtag_names: Vec<String> = {
@@ -710,48 +711,17 @@ pub(super) async fn handle_create(
         .await;
     }
 
-    // Thread resolution: store the unknown parent if it is dereferenceable.
+    // Thread resolution: store the unknown parent if it is dereferenceable
+    // (`ThreadResolveWorker.perform_async(status.id, in_reply_to_uri)`).
     if let (Some(uri), None) = (in_reply_to_uri, in_reply_to_id) {
-        let state = state.clone();
-        let uri = uri.to_owned();
-        let child_id = inserted_id;
-        let child_author = account_id;
-        crate::tenants::spawn(async move {
-            tracing::debug!(uri, "fetching unknown parent status for thread resolution");
-            if let Err(e) = fetch_remote_status(&state, &uri).await {
-                tracing::debug!(uri, error = %e, "failed to store fetched parent status");
-                return;
-            }
-            // Link the now-known parent onto the child and re-run home fan-out, so
-            // a reply to an account the viewer follows (whose post we only just
-            // learned about) reaches the right followers instead of staying hidden
-            // as an orphan reply.
-            if let Ok(Some(parent)) =
-                sqlx::query!("SELECT id, account_id FROM statuses WHERE uri = $1", uri,)
-                    .fetch_optional(&state.db)
-                    .await
-            {
-                let updated = sqlx::query!(
-                    "UPDATE statuses SET in_reply_to_id = $2, in_reply_to_account_id = $3, updated_at = now() WHERE id = $1 AND in_reply_to_id IS NULL",
-                    child_id, parent.id, parent.account_id,
-                )
-                .execute(&state.db)
-                .await;
-                if updated.map(|r| r.rows_affected() > 0).unwrap_or(false) {
-                    let mut redis = state.redis.clone();
-                    let db = state.db.clone();
-                    crate::feed::fanout_new_status(
-                        &mut redis,
-                        &state.redis_keys,
-                        &db,
-                        child_author,
-                        child_id,
-                        &[],
-                    )
-                    .await;
-                }
-            }
-        });
+        crate::jobs::push(
+            state,
+            ThreadResolveWorker {
+                child_status_id: inserted_id,
+                parent_url: uri.to_owned(),
+            },
+        )
+        .await;
     }
 
     // `AccountConversation#push_to_streaming_api`, once the status is whole.
@@ -884,4 +854,74 @@ pub(super) async fn handle_poll_vote_note(
     }
 
     Ok(true)
+}
+
+/// `ThreadResolveWorker`: fetch a reply's unknown parent, link it onto the
+/// reply, and run the reply's home fan-out again, so that a reply to an
+/// account the viewer follows (whose post was only just learned about)
+/// reaches the right followers instead of staying hidden as an orphan.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ThreadResolveWorker {
+    pub child_status_id: i64,
+    pub parent_url: String,
+}
+
+impl crate::jobs::Job for ThreadResolveWorker {
+    const KIND: &'static str = "ThreadResolveWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(3);
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `return if child_status.in_reply_to_id.present?`
+        let Some(child) = sqlx::query!(
+            "SELECT account_id, in_reply_to_id FROM statuses WHERE id = $1",
+            self.child_status_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        else {
+            return Ok(());
+        };
+        if child.in_reply_to_id.is_some() {
+            return Ok(());
+        }
+        let uri = &self.parent_url;
+        tracing::debug!(uri, "fetching unknown parent status for thread resolution");
+        fetch_remote_status(state, uri)
+            .await
+            .map_err(|e| anyhow::anyhow!("could not fetch parent {uri}: {e:?}"))?;
+        let Some(parent) = sqlx::query!("SELECT id, account_id FROM statuses WHERE uri = $1", uri)
+            .fetch_optional(&state.db)
+            .await?
+        else {
+            return Ok(());
+        };
+        let updated = sqlx::query!(
+            "UPDATE statuses SET in_reply_to_id = $2, in_reply_to_account_id = $3, updated_at = now()
+             WHERE id = $1 AND in_reply_to_id IS NULL",
+            self.child_status_id,
+            parent.id,
+            parent.account_id,
+        )
+        .execute(&state.db)
+        .await?;
+        if updated.rows_affected() > 0 {
+            let mut redis = state.redis.clone();
+            crate::feed::fanout_new_status(
+                &mut redis,
+                &state.redis_keys,
+                &state.db,
+                child.account_id,
+                self.child_status_id,
+                &[],
+            )
+            .await;
+        }
+        Ok(())
+    }
 }

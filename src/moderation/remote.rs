@@ -18,23 +18,11 @@ pub async fn set_suspension(state: &AppState, account: &Account, suspended: bool
     }
     if is_suspended && !suspended {
         crate::delete_account::unsuspend(state, account.id).await?;
-        let state = state.clone();
-        let id = account.id;
-        crate::tenants::spawn(async move {
-            if let Err(error) = super::suspension::unsuspend(&state, id).await {
-                tracing::warn!(account_id = id, %error, "UnsuspendAccountService failed");
-            }
-        });
+        super::suspension::unsuspend_later(state, account.id).await;
         Ok(false)
     } else if !is_suspended && suspended {
         crate::delete_account::suspend(state, account.id, suspension_origin::REMOTE, true).await?;
-        let state = state.clone();
-        let id = account.id;
-        crate::tenants::spawn(async move {
-            if let Err(error) = super::suspension::suspend(&state, id).await {
-                tracing::warn!(account_id = id, %error, "SuspendAccountService failed");
-            }
-        });
+        super::suspension::suspend_later(state, account.id).await;
         Ok(true)
     } else {
         Ok(is_suspended)

@@ -405,6 +405,25 @@ pub async fn stop_instance_delivery(
 
 /// `PurgeDomainService`: mark the severance events about the domain purged,
 /// delete every account from it, and its custom emoji.
+/// `Admin::DomainPurgeWorker`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DomainPurgeWorker {
+    pub domain: String,
+}
+
+impl crate::jobs::Job for DomainPurgeWorker {
+    const KIND: &'static str = "Admin::DomainPurgeWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .lock(crate::jobs::Lock::UntilExecuted(
+            std::time::Duration::from_secs(7 * 24 * 3600),
+        ));
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        purge_domain(state, &self.domain).await
+    }
+}
+
 pub async fn purge_domain(state: &AppState, domain: &str) -> anyhow::Result<()> {
     sqlx::query!(
         r#"UPDATE relationship_severance_events SET purged = true, updated_at = now()
@@ -454,16 +473,13 @@ pub async fn purge_admin_instance(
         &Target::instance(&domain),
     )
     .await?;
-    let background = state.clone();
-    let work = async move {
-        if let Err(error) = purge_domain(&background, &domain).await {
+    // `Admin::DomainPurgeWorker`.
+    if crate::feed::sync_fanout() {
+        if let Err(error) = purge_domain(&state, &domain).await {
             tracing::warn!(domain, %error, "PurgeDomainService failed");
         }
-    };
-    if crate::feed::sync_fanout() {
-        work.await;
     } else {
-        crate::tenants::spawn(work);
+        crate::jobs::push(&state, DomainPurgeWorker { domain }).await;
     }
     Ok(Json(json!({})))
 }

@@ -602,31 +602,28 @@ impl Drop for Listener {
 }
 
 /// `streamFrom`: one listener per channel.
-fn stream_from(
+async fn stream_from(
     state: &AppState,
     session: &Arc<Session>,
     channel_ids: &[String],
     output: Output,
     options: FilterOptions,
 ) -> Vec<Listener> {
-    channel_ids
-        .iter()
-        .map(|channel| {
-            let mut subscription = state.streaming.subscribe(channel);
-            let (state, session, output) = (state.clone(), session.clone(), output.clone());
-            Listener(crate::tenants::spawn(async move {
-                while let Some(message) = subscription.recv().await {
-                    if let Some((event, payload)) =
-                        listen(&state, &session, options, &message).await
-                    {
-                        if !output.send(&event, &payload) {
-                            break;
-                        }
+    let mut listeners = Vec::with_capacity(channel_ids.len());
+    for channel in channel_ids {
+        let mut subscription = state.streaming.subscribe(channel).await;
+        let (state, session, output) = (state.clone(), session.clone(), output.clone());
+        listeners.push(Listener(crate::tenants::spawn(async move {
+            while let Some(message) = subscription.recv().await {
+                if let Some((event, payload)) = listen(&state, &session, options, &message).await {
+                    if !output.send(&event, &payload) {
+                        break;
                     }
                 }
-            }))
-        })
-        .collect()
+            }
+        })));
+    }
+    listeners
 }
 
 /// `streamFrom`'s listener: what of a message reaches the client.
@@ -737,20 +734,19 @@ fn id_of(value: &Value) -> Option<i64> {
 /// `subscribeHttpToSystemChannel` and `subscribeWebsocketToSystemChannel`:
 /// `kill` on the token's or the account's system channel ends the
 /// connection, and `filters_changed` drops the cached filters.
-fn subscribe_to_system_channels(
+async fn subscribe_to_system_channels(
     state: &AppState,
     session: &Arc<Session>,
     out: mpsc::UnboundedSender<Outgoing>,
 ) -> Vec<Listener> {
-    [
+    let mut listeners = Vec::with_capacity(2);
+    for channel in [
         format!("timeline:access_token:{}", session.access_token_id),
         format!("timeline:system:{}", session.account_id),
-    ]
-    .into_iter()
-    .map(|channel| {
-        let mut subscription = state.streaming.subscribe(&channel);
+    ] {
+        let mut subscription = state.streaming.subscribe(&channel).await;
         let (session, out) = (session.clone(), out.clone());
-        Listener(crate::tenants::spawn(async move {
+        listeners.push(Listener(crate::tenants::spawn(async move {
             while let Some(message) = subscription.recv().await {
                 match message.get("event").and_then(Value::as_str) {
                     Some("kill") => {
@@ -762,9 +758,9 @@ fn subscribe_to_system_channels(
                     _ => {}
                 }
             }
-        }))
-    })
-    .collect()
+        })));
+    }
+    listeners
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
@@ -818,7 +814,7 @@ async fn event_stream(
         return error.into_json_response();
     }
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
-    let system = subscribe_to_system_channels(&state, &session, out_tx.clone());
+    let system = subscribe_to_system_channels(&state, &session, out_tx.clone()).await;
 
     let params: Map<String, Value> = query
         .iter()
@@ -835,7 +831,8 @@ async fn event_stream(
         &channel_ids,
         Output::Sse { out: out_tx },
         options,
-    );
+    )
+    .await;
     tracing::debug!(
         ?channel_ids,
         account_id = session.account_id,
@@ -953,7 +950,7 @@ async fn on_connection(
 ) {
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
     let mut subscriptions = Subscribed::new();
-    let _system = subscribe_to_system_channels(&state, &session, out_tx.clone());
+    let _system = subscribe_to_system_channels(&state, &session, out_tx.clone()).await;
 
     if let Some(stream) = query.get("stream").filter(|s| !s.is_empty()) {
         let params: Map<String, Value> = query
@@ -1096,7 +1093,7 @@ async fn subscribe(
         out: out.clone(),
         stream: Arc::new(stream_name_from_channel_name(channel_name, params)),
     };
-    let listeners = stream_from(state, session, &channel_ids, output, options);
+    let listeners = stream_from(state, session, &channel_ids, output, options).await;
     subscriptions.insert(key, listeners);
     None
 }

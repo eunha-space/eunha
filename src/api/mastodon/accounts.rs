@@ -1968,20 +1968,14 @@ pub async fn delete_account(
     // `Account#mark_deleted!`.
     crate::delete_account::mark_deleted(&state, auth.account_id).await?;
 
-    // Mastodon hands the purge to `AccountDeletionWorker`; eunha runs it on a
-    // task for the same reason (an account can own a lot of content), except
-    // under the tests' synchronous-fanout switch.
+    // `AccountDeletionWorker`, run in place under the tests'
+    // synchronous-fanout switch.
     let account_id = auth.account_id;
     let options = crate::delete_account::Options::self_service();
     if crate::feed::sync_fanout() {
         crate::delete_account::call(&state, account_id, options).await?;
     } else {
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            if let Err(e) = crate::delete_account::call(&state, account_id, options).await {
-                tracing::error!(account_id, error = %e, "account deletion failed");
-            }
-        });
+        crate::delete_account::call_later(&state, account_id, options).await;
     }
 
     Ok(axum::http::StatusCode::OK)

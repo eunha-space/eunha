@@ -278,27 +278,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "migrated-follow-unfollows-on-queueing"
-kind = "behaviour"
-summary = "A follower moved to a remote account leaves the old one when its Follow is queued"
-mastodon = """
-`FollowMigrationService` hands a Follow of a remote new account to \
-`ActivityPub::MigratedFollowDeliveryWorker`, which unfollows the old account \
-only after the Follow has been delivered; a delivery that keeps failing keeps \
-the old follow while Sidekiq retries."""
-eunha = """
-Unfollows the old account as soon as the Follow is in the delivery queue, which \
-retries it on the same schedule as every other activity."""
-why = """
-Eunha's delivery queue is ojak's, and has no hook for work to run once one \
-delivery succeeds. The queue is durable, so the Follow is not lost; what \
-differs is only the window in which an undeliverable Follow leaves the \
-follower following neither account."""
-evidence = "tests/integration/federation/moves.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "admin-granted-invites"
 kind = "addition"
 summary = "An admin can mint invites into another member's account"
@@ -357,24 +336,26 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "delivery-circuit-breaker-per-process"
+id = "delivery-breaker-lets-all-through-after-cool-off"
 kind = "behaviour"
-summary = "The circuit breaker on deliveries counts each process's failures apart"
+summary = "A delivery breaker past its cool-off lets every delivery through"
 mastodon = """
 `ActivityPub::DeliveryWorker` runs each delivery through a Stoplight for its \
-inbox, threshold 10 and cool-off 60 seconds, whose failures are kept in Redis \
-and counted across every Sidekiq process."""
+inbox, threshold 10 and cool-off 60 seconds, kept in Redis. Once the cool-off \
+has passed the light turns yellow, and only the deliveries it lets through as \
+recovery probes are tried until one succeeds."""
 eunha = """
 The same breaker, ten failures in a row and a minute's cool-off for each \
-inbox, held back deliveries counting as failed attempts, but kept in the \
-memory of each process's deliverer: with several processes delivering, an \
-inbox may be tried up to ten times in each before it is held back. Once the \
-cool-off has passed every delivery to it is let through, where Stoplight's \
-half-open light lets through a few to test it."""
+inbox, its failures counted in Redis across every process delivering for \
+the instance, and held deliveries counting as failed attempts. Once the \
+cool-off has passed every delivery to the inbox is let through; one that \
+succeeds closes the breaker, one that fails holds the rest for another \
+minute."""
 why = """
-ojak keeps its breakers in memory, beside the per-host limits it already \
-keeps there. A breaker only paces attempts at a server that is not answering; \
-which deliveries arrive, and when one is given up on, do not depend on it."""
+A breaker only paces attempts at a server that is not answering; which \
+deliveries arrive, and when one is given up on, do not depend on it. \
+Stoplight's probing state is kept in Lua scripts of its own, and copying \
+them would buy only fewer requests in the first second after a cool-off."""
 evidence = "tests/integration/federation/delivery_failures.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -627,27 +608,6 @@ Without `secret_key_base` eunha can neither sign nor read Mastodon's \
 GlobalIDs; the async refresh ids take the same route. A link that keeps \
 working is what an unsubscribe link is for, and one in a mail eunha sent, \
 before or after the secret was configured, should not be refused."""
-evidence = "tests/integration/c2s/notification_emails.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "notification-email-wait-in-process"
-kind = "behaviour"
-summary = "The two-minute wait before a notification email runs in the process"
-mastodon = """
-Enqueues `NotificationMailer` with `deliver_later(wait: 2.minutes)` in \
-Sidekiq, and tells whether the recipient is online from the \
-`subscribed:timeline:<id>` keys every streaming server sets in Redis."""
-eunha = """
-Waits in a task of the eunha process, and counts the streaming connections \
-of that process. An instance stopped or restarted within the two minutes \
-does not send the mails it was waiting on."""
-why = """
-Eunha has no durable queue for work due at a time, and streaming is served \
-by the same process that creates the notification. A notification email is \
-a convenience on top of a notification that is already stored and pushed, \
-so losing one to a restart costs little."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -930,11 +890,11 @@ once. A repeated row is run like any other, and an import whose rows have \
 all been run is finished. A custom filter row is checked whole before \
 anything is saved."""
 why = """
-Eunha has no Sidekiq; a durable queue that keeps its place is what survives \
-a restart, and running rows in order is what lets the place be one row id. \
-An import that can never finish, or a half-made filter, helps nobody; \
-upstream's retries guard against transient failures that its own row \
-service already swallows when resolving accounts."""
+An import's place, kept as one row id, survives a restart without a job per \
+row in the job queue, and running rows in order is what lets the place be \
+one row id. An import that can never finish, or a half-made filter, helps \
+nobody; upstream's retries guard against transient failures that its own \
+row service already swallows when resolving accounts."""
 evidence = "tests/integration/surfaces/portability.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -1328,50 +1288,6 @@ why = """
 Servers keep the ids of activities they have seen and drop a second one with \
 the same id, as ojak does: under Mastodon's id only an account's first refusal \
 would ever be heard."""
-evidence = "tests/integration/federation/quote.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "streaming-bus-in-process"
-kind = "behaviour"
-summary = "The streaming server and its channels live in the eunha process"
-mastodon = """
-Runs the streaming API as a separate Node server, which subscribes to the \
-`timeline:*` channels the Rails app publishes on in Redis, sets \
-`subscribed:<channel>` keys the Rails side reads, and buffers what a slow \
-client has yet to read in Redis."""
-eunha = """
-Serves the streaming API from the process that publishes, over a bus in that \
-process, one per instance, with the same channels and messages. Whether a \
-channel has a subscriber is asked of the bus. A subscriber more than 256 \
-messages behind on a channel loses the oldest. When an instance is stopped \
-or reloaded its WebSockets get a close frame."""
-why = """
-Eunha is one process per set of instances, so a pub/sub hop through Redis \
-would only add a round trip and a second server to run; the channels keep \
-the same names and messages so the port can be read against upstream line \
-by line. A client that is 256 messages behind is not reading, and the close \
-frame sends a client to whatever serves its host after a reload."""
-evidence = "tests/integration/surfaces/streaming.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "forwarded-activities-retry-as-deliveries"
-kind = "behaviour"
-summary = "Forwarded activities are retried as eunha's own deliveries are"
-mastodon = """
-Sends what `ActivityPub::Forwarder` passes on through \
-`ActivityPub::LowPriorityDeliveryWorker`: the `pull` queue, eight retries, \
-and no dead set."""
-eunha = """
-Queues them with every other delivery, on the delivery queue's seventeen \
-attempts, ahead of a fan-out when they go to at most eight inboxes."""
-why = """
-Eunha's delivery queue has no lower tier, and a forwarded Delete or edit \
-that arrives a day late is still the right one to arrive; giving up sooner \
-would only lose more of them."""
 evidence = "tests/integration/federation/quote.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

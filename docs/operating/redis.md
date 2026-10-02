@@ -23,9 +23,18 @@ what was used today that trends are rescored from, the posts waiting to be
 emailed to an account's subscribers, sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
 the translation service, the search index queues (`chewy:queue:<Index>`,
-see [search](./search)), and the counts that limit how many new remote
+see [search](./search)), the counts that limit how many new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
-`discovery_per_request:*`) — uses that namespace.
+`discovery_per_request:*`), the circuit breakers on deliveries
+(`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the
+`subscribed:<channel>` keys that say a stream listens on one — uses that
+namespace.
+
+Streaming is Redis pub/sub, as in Mastodon: whatever publishes a status,
+notification or deletion `PUBLISH`es it on the instance's channels, and every
+process serving streams for the instance subscribes to the channels its
+connections listen on. Pub/sub channels have ACL patterns of their own, so the
+tenant user needs `&tenant-example:*` as well as `~tenant-example:*`.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
@@ -36,6 +45,7 @@ user, the matching key pattern, and only the commands Eunha uses:
 +sadd +scard +incrby +pfadd +pfcount +expire +smembers +srem +hset +hget
 +hincrby
 +scan +sscan
++publish +subscribe +unsubscribe
 ~~~~
 
 `SCAN` is only ever given a `MATCH` pattern under the instance's own prefix: the

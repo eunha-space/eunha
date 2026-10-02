@@ -482,7 +482,7 @@ pub async fn reset_password_by_token(
     .await
     .map_err(|_| "Could not set the password")?;
     if let Ok(tokens) = crate::sessions::destroy_all(&state.db, user_id).await {
-        crate::sessions::kill_streams(state, tokens);
+        crate::sessions::kill_streams(state, tokens).await;
     }
     if let Err(error) = crate::sessions::revoke_access(state, user_id).await {
         tracing::warn!(%error, "could not revoke access after a password reset");
@@ -952,7 +952,7 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
     )
     .await;
     let state = state.clone();
-    crate::tenants::spawn(async move {
+    async move {
         // `autofollow_inviter!`
         if let Some(invite_id) = invite_id {
             crate::api::mastodon::signup::autofollow_inviter(&state, account_id, invite_id).await;
@@ -976,7 +976,8 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
             }
             Err(error) => tracing::warn!(%error, "could not list staff for a sign-up"),
         }
-    });
+    }
+    .await;
 }
 
 /// `User#notify_staff_about_pending_account!`: mail those who may manage users

@@ -262,7 +262,7 @@ pub async fn save(
     // After the transaction, as Mastodon's `suspend!` and `disable!` run inside
     // it but publish to Redis as they go.
     match kind.as_str() {
-        "disable" => state.streaming.kill_account(target.id),
+        "disable" => state.streaming.kill_account(target.id).await,
         "suspend" => {
             crate::delete_account::suspend(
                 state,
@@ -293,13 +293,7 @@ pub async fn save(
 
     // `process_queue!`: `Admin::SuspensionWorker`.
     if kind == "suspend" {
-        let state = state.clone();
-        let id = target.id;
-        crate::tenants::spawn(async move {
-            if let Err(error) = super::suspension::suspend(&state, id).await {
-                tracing::warn!(account_id = id, %error, "SuspendAccountService failed");
-            }
-        });
+        super::suspension::suspend_later(state, target.id).await;
     }
     Ok(())
 }

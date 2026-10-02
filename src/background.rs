@@ -661,7 +661,7 @@ async fn publish_one(
     let mut status_with_uri = status.clone();
     status_with_uri.uri = Some(uri);
     // `LinkCrawlWorker.perform_async(@status.id)`.
-    crate::preview_card::crawl(state, status_with_uri.id);
+    crate::preview_card::crawl(state, status_with_uri.id).await;
     // `PostStatusService#process_email_subscriptions!`, which a scheduled
     // post goes through when it is published.
     crate::email_subscriptions::status_posted(

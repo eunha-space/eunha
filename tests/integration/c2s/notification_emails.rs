@@ -159,9 +159,34 @@ async fn test_no_mail_while_streaming_the_users_own_stream() {
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
     assert!(nothing_mailed(&ctx, "is now following you").await);
 
-    // Once the connection is gone, so is the reason not to mail.
+    // The stream said so as Mastodon's streaming server does, with a key in
+    // Redis that outlives the connection by up to eighteen minutes.
+    let key = ctx.state.redis_keys.key(format!(
+        "subscribed:timeline:{}:notifications",
+        ctx.alice_id
+    ));
+    let mut redis = ctx.state.redis.clone();
+    let ttl: i64 = redis::cmd("TTL")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert!((1000..=1080).contains(&ttl), "{ttl}");
     drop(socket);
     tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        ctx.state
+            .streaming
+            .is_online(ctx.alice_id.parse().unwrap())
+            .await
+    );
+
+    // Once the key has lapsed, so has the reason not to mail.
+    let _: () = redis::cmd("DEL")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
     let (_, carol_token) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
     ctx.api.follow(&carol_token, &ctx.alice_id).await;
     assert!(ctx

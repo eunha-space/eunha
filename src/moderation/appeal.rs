@@ -81,20 +81,20 @@ pub async fn create(state: &AppState, strike_id: i64, text: Option<&str>) -> App
     )
     .fetch_one(&state.db)
     .await?;
-    notify_staff(state, &strike, target_id, text);
+    notify_staff(state, &strike, target_id, text).await;
     Ok(appeal_id)
 }
 
 /// `AppealService#notify_staff!`: `AdminMailer#new_appeal` to every user who
 /// may handle appeals and has not turned appeal emails off.
-fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &str) {
+async fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &str) {
     let state = state.clone();
     let text = text.to_owned();
     let strike_id = strike.id;
     let issuer_id = strike.account_id;
     let strike_created_at = strike.created_at;
     let kind = action::to_str(strike.action);
-    crate::tenants::spawn(async move {
+    async move {
         let staff =
             match crate::push::accounts_who_can(&state, &[super::role::flag::MANAGE_APPEALS]).await
             {
@@ -157,7 +157,8 @@ fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &str) {
                 tracing::warn!(%error, "could not send a new appeal email");
             }
         }
-    });
+    }
+    .await;
 }
 
 struct AppealRow {
@@ -269,12 +270,7 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
         action::SUSPEND => {
             // `target_account.unsuspend!`, then `Admin::UnsuspensionWorker`.
             crate::delete_account::unsuspend(state, target_id).await?;
-            let state = state.clone();
-            crate::tenants::spawn(async move {
-                if let Err(error) = super::suspension::unsuspend(&state, target_id).await {
-                    tracing::warn!(account_id = target_id, %error, "UnsuspendAccountService failed");
-                }
-            });
+            super::suspension::unsuspend_later(state, target_id).await;
         }
         action::MARK_STATUSES_AS_SENSITIVE => {
             unmark_statuses_as_sensitive(state, &strike).await?;

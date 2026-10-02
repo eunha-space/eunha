@@ -41,7 +41,8 @@ async fn test_announcements() {
     let mut events = ctx
         .state
         .streaming
-        .subscribe(&format!("timeline:{}", ctx.alice_id));
+        .subscribe(&format!("timeline:{}", ctx.alice_id))
+        .await;
     let now = json_ok(post(json!({"text": format!("Hello all, {status_url}")})).await).await;
     assert_eq!(now["published"], true);
     assert!(now["published_at"].is_string());

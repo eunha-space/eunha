@@ -349,7 +349,7 @@ pub async fn revoke_token(
     )
     .execute(&state.db)
     .await?;
-    crate::sessions::kill_streams(&state, revoked);
+    crate::sessions::kill_streams(&state, revoked).await;
     Ok(Json(serde_json::json!({})))
 }
 

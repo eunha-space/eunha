@@ -156,30 +156,26 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
     // each a `FeedInsertWorker` that filters and then `push_to_home`s.
     let broadcastable =
         s.status.visibility == vis::PUBLIC && s.status.reblog_of_id.is_none() && !s.author_silenced;
-    let homes = bus.home_subscribers();
-    let receivers = if homes.is_empty() {
-        vec![]
-    } else {
-        // Who among them is local, signed in recently, and the author, a
-        // follower or a follower of one of its hashtags.
-        sqlx::query_scalar!(
-            r#"SELECT u.account_id FROM users u JOIN accounts a ON a.id = u.account_id
-               WHERE u.account_id = ANY($1) AND a.domain IS NULL
-                 AND u.current_sign_in_at >= now() - make_interval(days => $5)
-                 AND (u.account_id = $2
-                      OR EXISTS (SELECT 1 FROM follows f
-                                 WHERE f.account_id = u.account_id AND f.target_account_id = $2)
-                      OR ($3 AND EXISTS (SELECT 1 FROM tag_follows tf
-                                         WHERE tf.account_id = u.account_id AND tf.tag_id = ANY($4))))"#,
-            &homes,
-            s.status.account_id,
-            broadcastable,
-            &s.tag_ids,
-            ACTIVE_DAYS,
-        )
-        .fetch_all(&state.db)
-        .await?
-    };
+    // Who is local, signed in recently, and the author, a follower or a
+    // follower of one of its hashtags; then, as `push_update_required?`
+    // asks, who among them is streaming their home.
+    let candidates = sqlx::query_scalar!(
+        r#"SELECT u.account_id FROM users u JOIN accounts a ON a.id = u.account_id
+           WHERE a.domain IS NULL
+             AND u.current_sign_in_at >= now() - make_interval(days => $4)
+             AND (u.account_id = $1
+                  OR EXISTS (SELECT 1 FROM follows f
+                             WHERE f.account_id = u.account_id AND f.target_account_id = $1)
+                  OR ($2 AND EXISTS (SELECT 1 FROM tag_follows tf
+                                     WHERE tf.account_id = u.account_id AND tf.tag_id = ANY($3))))"#,
+        s.status.account_id,
+        broadcastable,
+        &s.tag_ids,
+        ACTIVE_DAYS,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let receivers = bus.subscribed_ids("timeline:", candidates).await;
     for receiver in receivers {
         for kind in home_deliveries(state, &s, receiver, broadcastable).await? {
             let pushed = match kind {
@@ -192,7 +188,8 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
                     bus.publish(
                         &format!("timeline:{receiver}"),
                         json!({"event": event, "payload": payload}),
-                    );
+                    )
+                    .await;
                 }
             }
         }
@@ -203,7 +200,13 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
         s.status.visibility,
         vis::PUBLIC | vis::UNLISTED | vis::PRIVATE
     ) {
-        for list_id in bus.list_subscribers() {
+        let lists = sqlx::query_scalar!(
+            "SELECT DISTINCT list_id FROM list_accounts WHERE account_id = $1",
+            s.status.account_id
+        )
+        .fetch_all(&state.db)
+        .await?;
+        for list_id in bus.subscribed_ids("timeline:list:", lists).await {
             let Some(list) = distributing_list(state, list_id, s.status.account_id).await? else {
                 continue;
             };
@@ -230,7 +233,8 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
                 bus.publish(
                     &format!("timeline:list:{list_id}"),
                     json!({"event": event, "payload": payload}),
-                );
+                )
+                .await;
             }
         }
     }
@@ -246,14 +250,15 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
         .fetch_all(&state.db)
         .await?;
         for account_id in mentioned {
-            if !bus.is_online(account_id) {
+            if !bus.is_online(account_id).await {
                 continue;
             }
             if let Some(payload) = render(state, &s.status, Some(account_id)).await {
                 bus.publish(
                     &format!("timeline:{account_id}:notifications"),
                     json!({"event": "status.update", "payload": payload}),
-                );
+                )
+                .await;
             }
         }
     }
@@ -281,8 +286,8 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
             });
             media_channels = true;
         }
-        if channels.iter().any(|c| bus.is_subscribed(c))
-            || (media_channels && any_media_subscriber(state))
+        if bus.subscribed(&channels).await.into_iter().any(|yes| yes)
+            || (media_channels && any_media_subscriber(state).await)
         {
             if let Some(payload) = render(state, &s.status, None).await {
                 let with_media = payload["media_attachments"]
@@ -298,7 +303,7 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
                 }
                 let message = json!({"event": event, "payload": payload});
                 for channel in channels {
-                    bus.publish(&channel, message.clone());
+                    bus.publish(&channel, message.clone()).await;
                 }
             }
         }
@@ -306,14 +311,17 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
     Ok(())
 }
 
-fn any_media_subscriber(state: &AppState) -> bool {
-    [
-        "timeline:public:media",
-        "timeline:public:local:media",
-        "timeline:public:remote:media",
-    ]
-    .iter()
-    .any(|c| state.streaming.is_subscribed(c))
+async fn any_media_subscriber(state: &AppState) -> bool {
+    state
+        .streaming
+        .subscribed(&[
+            "timeline:public:media".into(),
+            "timeline:public:local:media".into(),
+            "timeline:public:remote:media".into(),
+        ])
+        .await
+        .into_iter()
+        .any(|yes| yes)
 }
 
 enum Delivery {
@@ -676,23 +684,20 @@ async fn unpush(
     local: bool,
 ) -> anyhow::Result<()> {
     let bus = &state.streaming;
-    let homes = bus.home_subscribers();
-    if !homes.is_empty() {
-        let reached = sqlx::query_scalar!(
+    {
+        let candidates = sqlx::query_scalar!(
             r#"SELECT u.account_id FROM users u
-               WHERE u.account_id = ANY($1)
-                 AND ((u.account_id = $2 AND $3)
-                      OR (u.current_sign_in_at >= now() - make_interval(days => $4)
-                          AND EXISTS (SELECT 1 FROM follows f
-                                      WHERE f.account_id = u.account_id AND f.target_account_id = $2)))"#,
-            &homes,
+               WHERE (u.account_id = $1 AND $2)
+                  OR (u.current_sign_in_at >= now() - make_interval(days => $3)
+                      AND EXISTS (SELECT 1 FROM follows f
+                                  WHERE f.account_id = u.account_id AND f.target_account_id = $1))"#,
             author_id,
             local,
             ACTIVE_DAYS,
         )
         .fetch_all(&state.db)
         .await?;
-        for account_id in reached {
+        for account_id in bus.subscribed_ids("timeline:", candidates).await {
             if crate::feed::home_would_hold(
                 &mut state.redis.clone(),
                 &state.redis_keys,
@@ -701,27 +706,26 @@ async fn unpush(
             )
             .await
             {
-                bus.delete(&format!("timeline:{account_id}"), status_id);
+                bus.delete(&format!("timeline:{account_id}"), status_id)
+                    .await;
             }
         }
     }
 
-    let lists = bus.list_subscribers();
-    if !lists.is_empty() {
-        let reached = sqlx::query_scalar!(
+    {
+        let candidates = sqlx::query_scalar!(
             r#"SELECT DISTINCT l.id FROM lists l
                JOIN list_accounts la ON la.list_id = l.id
                JOIN users u ON u.account_id = l.account_id
-               WHERE l.id = ANY($1) AND la.account_id = $2
-                 AND (la.follow_id IS NOT NULL OR l.account_id = $2)
-                 AND u.current_sign_in_at >= now() - make_interval(days => $3)"#,
-            &lists,
+               WHERE la.account_id = $1
+                 AND (la.follow_id IS NOT NULL OR l.account_id = $1)
+                 AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
             author_id,
             ACTIVE_DAYS,
         )
         .fetch_all(&state.db)
         .await?;
-        for list_id in reached {
+        for list_id in bus.subscribed_ids("timeline:list:", candidates).await {
             if crate::feed::list_would_hold(
                 &mut state.redis.clone(),
                 &state.redis_keys,
@@ -730,7 +734,8 @@ async fn unpush(
             )
             .await
             {
-                bus.delete(&format!("timeline:list:{list_id}"), status_id);
+                bus.delete(&format!("timeline:list:{list_id}"), status_id)
+                    .await;
             }
         }
     }
@@ -771,7 +776,8 @@ async fn try_remove(state: &AppState, status_id: i64, whole: bool) -> anyhow::Re
     .await?;
     if whole {
         for account_id in mentioned {
-            bus.delete(&format!("timeline:{account_id}"), status.id);
+            bus.delete(&format!("timeline:{account_id}"), status.id)
+                .await;
         }
     }
 
@@ -802,18 +808,22 @@ async fn try_remove(state: &AppState, status_id: i64, whole: bool) -> anyhow::Re
         .await?;
         for name in tags {
             let name = name.to_lowercase();
-            bus.delete(&format!("timeline:hashtag:{name}"), status.id);
+            bus.delete(&format!("timeline:hashtag:{name}"), status.id)
+                .await;
             if status.local {
-                bus.delete(&format!("timeline:hashtag:{name}:local"), status.id);
+                bus.delete(&format!("timeline:hashtag:{name}:local"), status.id)
+                    .await;
             }
         }
         // `remove_from_public` and `remove_from_media if @status.with_media?`.
         let scope = if status.local { "local" } else { "remote" };
-        bus.delete("timeline:public", status.id);
-        bus.delete(&format!("timeline:public:{scope}"), status.id);
+        bus.delete("timeline:public", status.id).await;
+        bus.delete(&format!("timeline:public:{scope}"), status.id)
+            .await;
         if status.with_media {
-            bus.delete("timeline:public:media", status.id);
-            bus.delete(&format!("timeline:public:{scope}:media"), status.id);
+            bus.delete("timeline:public:media", status.id).await;
+            bus.delete(&format!("timeline:public:{scope}:media"), status.id)
+                .await;
         }
     }
     Ok(())
@@ -822,7 +832,7 @@ async fn try_remove(state: &AppState, status_id: i64, whole: bool) -> anyhow::Re
 /// `NotifyService#push_notification!`'s streaming half: the notification as
 /// rendered for its recipient, when the recipient is streaming.
 pub async fn notification(state: &AppState, recipient_id: i64, notification_id: i64) {
-    if !state.streaming.is_online(recipient_id) {
+    if !state.streaming.is_online(recipient_id).await {
         return;
     }
     let Some(rendered) =
@@ -831,26 +841,21 @@ pub async fn notification(state: &AppState, recipient_id: i64, notification_id: 
         return;
     };
     if let Ok(payload) = serde_json::from_str::<Value>(&rendered) {
-        state.streaming.notification(recipient_id, payload);
+        state.streaming.notification(recipient_id, payload).await;
     }
 }
 
 /// The accounts `FeedManager#with_active_accounts` yields that are streaming
 /// their home timeline: who an announcement message goes to.
 async fn active_home_subscribers(state: &AppState) -> anyhow::Result<Vec<i64>> {
-    let homes = state.streaming.home_subscribers();
-    if homes.is_empty() {
-        return Ok(vec![]);
-    }
-    Ok(sqlx::query_scalar!(
+    let active = sqlx::query_scalar!(
         r#"SELECT account_id FROM users
-           WHERE account_id = ANY($1)
-             AND current_sign_in_at >= now() - make_interval(days => $2)"#,
-        &homes,
+           WHERE current_sign_in_at >= now() - make_interval(days => $1)"#,
         ACTIVE_DAYS,
     )
     .fetch_all(&state.db)
-    .await?)
+    .await?;
+    Ok(state.streaming.subscribed_ids("timeline:", active).await)
 }
 
 /// `PublishScheduledAnnouncementWorker`, `UnpublishAnnouncementWorker` and
@@ -862,7 +867,8 @@ pub async fn to_active_accounts(state: &AppState, message: Value) {
             for account_id in accounts {
                 state
                     .streaming
-                    .publish(&format!("timeline:{account_id}"), message.clone());
+                    .publish(&format!("timeline:{account_id}"), message.clone())
+                    .await;
             }
         }
         Err(error) => tracing::warn!(%error, "could not stream an announcement"),

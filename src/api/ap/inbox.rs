@@ -4,7 +4,7 @@ use crate::{error::AppResult, state::AppState};
 
 mod attachment;
 mod collection;
-mod create;
+pub(crate) mod create;
 mod fetch;
 mod follow;
 mod moderation;

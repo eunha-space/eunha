@@ -1139,6 +1139,17 @@ async fn test_a_signed_delete_is_forwarded_to_the_boosters_followers() {
     .fetch_one(&ctx.db)
     .await
     .unwrap();
+    // `ActivityPub::LowPriorityDeliveryWorker`: the `pull` lane, nine tries.
+    let (queue, max_attempts): (String, Option<String>) = sqlx::query_as(
+        "SELECT queue, payload->>'max_attempts' FROM eunha.ojak_queue
+         WHERE payload->'activity'->>'type' = 'Delete' AND payload->>'inbox' = $1",
+    )
+    .bind(format!("{nina_uri}/inbox"))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(queue, eunha::federation::delivery::LOW_PRIORITY_QUEUE);
+    assert_eq!(max_attempts.as_deref(), Some("9"));
     assert_eq!(
         signer,
         format!("https://{}/users/bob#main-key", ctx.domain),

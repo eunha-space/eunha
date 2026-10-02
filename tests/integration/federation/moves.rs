@@ -332,3 +332,77 @@ async fn test_an_actor_update_keeps_also_known_as_and_moved_to() {
         .await;
     assert_eq!(moved_to(&ctx, olga_id).await, None);
 }
+
+/// A follower moved to a remote account leaves the old one only once the
+/// `Follow` of the new one has been delivered
+/// (`ActivityPub::MigratedFollowDeliveryWorker`); while it is being retried
+/// it keeps following the old account.
+#[tokio::test]
+async fn test_a_follower_moved_to_a_remote_account_leaves_once_the_follow_is_delivered() {
+    let ctx = TestContext::new("move-remote").await;
+    let (olga_id, olga, _) = seed_remote(&ctx, "olga").await;
+    let (nora_id, nora, _) = seed_remote(&ctx, "nora").await;
+    let (carol_id, _) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let (carol_private, carol_public) = eunha::crypto::generate_rsa_keypair().unwrap();
+    sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
+        .bind(&carol_private)
+        .bind(&carol_public)
+        .bind(carol_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(carol_id)
+    .bind(olga_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    eunha::moves::move_worker(&ctx.state, olga_id, nora_id)
+        .await
+        .unwrap();
+
+    let follows = "SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2";
+    let requested =
+        "SELECT 1 FROM follow_requests WHERE account_id = $1 AND target_account_id = $2";
+    assert!(exists(&ctx, requested, carol_id, nora_id).await);
+    assert!(
+        exists(&ctx, follows, carol_id, olga_id).await,
+        "still following the old account while the Follow is undelivered"
+    );
+    let tag: String = sqlx::query_scalar(
+        "SELECT payload->>'tag' FROM eunha.ojak_queue
+         WHERE payload->>'inbox' = $1 AND payload->'activity'->>'type' = 'Follow'",
+    )
+    .bind(format!("{nora}/inbox"))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        tag,
+        eunha::federation::delivery::migrated_follow_tag(carol_id, olga_id)
+    );
+
+    // The deliverer settles it, delivered.
+    let settled = ojak::deliverer::Settled {
+        inbox: url::Url::parse(&format!("{nora}/inbox")).unwrap(),
+        sender: format!("https://{}/users/carol#main-key", ctx.domain),
+        tag: Some(tag),
+        outcome: ojak::deliverer::SettledOutcome::Delivered,
+    };
+    eunha::federation::delivery::delivery_settled(&ctx.db, &ctx.state.queues, &settled).await;
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    assert!(!exists(&ctx, follows, carol_id, olga_id).await);
+    let undo: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.ojak_queue
+         WHERE payload->>'inbox' = $1 AND payload->'activity'->>'type' = 'Undo'",
+    )
+    .bind(format!("{olga}/inbox"))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(undo, 1);
+}

@@ -699,7 +699,7 @@ pub async fn post_status(
     .await?;
 
     // `LinkCrawlWorker.perform_async(@status.id)`.
-    crate::preview_card::crawl(&state, status.id);
+    crate::preview_card::crawl(&state, status.id).await;
     // `process_email_subscriptions!`
     crate::email_subscriptions::status_posted(
         &state,

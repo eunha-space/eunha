@@ -610,6 +610,8 @@ async fn distributing_mails_the_active_and_flags_the_rest() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(body["notification_sent_at"].is_string());
+    // `Admin::DistributeTermsOfServiceNotificationWorker` runs from the queue.
+    ctx.state.jobs.settle().await;
 
     let flagged: Vec<i64> = sqlx::query_scalar(
         "SELECT account_id FROM users WHERE require_tos_interstitial ORDER BY account_id",

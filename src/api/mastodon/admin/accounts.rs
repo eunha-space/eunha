@@ -726,15 +726,8 @@ pub async fn unsuspend_account(
             && s.account.suspension_origin == Some(crate::delete_account::suspension_origin::LOCAL),
     )?;
     crate::delete_account::unsuspend(&state, id).await?;
-    {
-        // `Admin::UnsuspensionWorker`.
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            if let Err(error) = crate::moderation::suspension::unsuspend(&state, id).await {
-                tracing::warn!(account_id = id, %error, "UnsuspendAccountService failed");
-            }
-        });
-    }
+    // `Admin::UnsuspensionWorker`.
+    crate::moderation::suspension::unsuspend_later(&state, id).await;
     action_log::log(&state.db, auth.account_id, "unsuspend", &s.account_target()).await?;
     if s.account.is_local() {
         crate::moderation::webhooks::trigger(
@@ -768,16 +761,15 @@ pub async fn delete_admin_account(
     authorize(
         s.account.suspended_at.is_some() && has_request && s.acting.can(&[flag::DELETE_USER_DATA]),
     )?;
-    let options = crate::delete_account::Options::default();
+    // `Admin::AccountDeletionWorker`.
     if crate::feed::sync_fanout() {
-        crate::delete_account::call(&state, id, options).await?;
+        crate::delete_account::call(&state, id, crate::delete_account::Options::default()).await?;
     } else {
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            if let Err(error) = crate::delete_account::call(&state, id, options).await {
-                tracing::error!(account_id = id, %error, "account deletion failed");
-            }
-        });
+        crate::jobs::push(
+            &state,
+            crate::delete_account::AdminAccountDeletionWorker { account_id: id },
+        )
+        .await;
     }
     Ok(Json(serde_json::json!({})))
 }

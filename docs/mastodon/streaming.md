@@ -4,12 +4,18 @@ Streaming
 Mastodon's streaming API is a separate Node server, *streaming/index.js*, that
 the Rails app talks to through Redis: Rails publishes `{event, payload}`
 messages on `timeline:*` channels, and the streaming server passes them to the
-connections that subscribed. Eunha serves both halves from one process, with
-the same channels and the same messages:
+connections that subscribed. Eunha serves both halves, through Redis as
+Mastodon does, with the same channels and the same messages:
 
- -  *src/streaming.rs* is the bus that stands in for Redis pub/sub, one per
-    instance. A channel exists while something listens on it, which is what
-    the `subscribed:<channel>` keys tell the Rails side
+ -  *src/streaming.rs* is the bus: `PUBLISH` on the `timeline:*` channels,
+    and one subscribing connection per instance in each process that serves
+    streams, subscribed to a channel while a stream listens on it. Channels
+    and keys go under the instance's Redis key prefix, as Mastodon's go under
+    `REDIS_NAMESPACE`, so instances sharing a Redis never hear each other,
+    and a separate process, such as `eunha accounts`, reaches the same
+    streams. A stream sets `subscribed:<channel>` for eighteen minutes when
+    it subscribes and every six minutes while it lasts, as the streaming
+    server's heartbeat does, and that key is what the publishing side asks
     (`StreamBus::is_subscribed`).
  -  *src/streaming/fan\_out.rs* publishes what `FanOutOnWriteService`,
     `FeedManager`, `PushUpdateWorker`, `RemoveStatusService` and the
@@ -135,9 +141,6 @@ server filters `update` and `status.update` for each connection, in this order:
 Differences
 -----------
 
- -  The bus is in the process: a command run as a separate process, such as
-    `eunha accounts modify`, cannot reach it, and two processes serving one
-    instance would not share streams.
  -  Mastodon pushes a home or list update when `FeedManager#add_to_feed` put
     the post in the feed. Eunha builds feeds only for users who read them, so
     it reads the feed back instead: a post the feed holds, or any post when the
@@ -145,8 +148,8 @@ Differences
     every follower streaming whose feed is not built.
  -  `conversation` is not sent when a deleted post leaves a conversation, nor
     for the direct messages a newly accepted notification request brings in.
- -  A subscriber that falls 256 messages behind on one channel loses the
-    oldest, where Redis would buffer them.
+ -  A stream that falls 256 messages behind on one channel loses the oldest,
+    where the streaming server would let Redis's output buffer grow.
  -  When an instance is stopped or reloaded, its WebSockets get a close frame,
     so clients reconnect to whatever serves the host now; its event streams
     end.

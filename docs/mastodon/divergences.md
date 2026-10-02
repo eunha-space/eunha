@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are sixty-three. They cover:
+At the time of writing there are fifty-six. They cover:
 
  -  integrity proofs on outgoing activities, and Linked Data signatures
     over contexts eunha does not ship;
@@ -29,15 +29,15 @@ At the time of writing there are sixty-three. They cover:
  -  the moderation tools API, and the server administration API;
  -  the site's identity and registrations, which default to the instance
     configuration until they are saved;
- -  the account move API, and when a moved follower leaves the old account;
+ -  the account move API;
  -  how command-line accounts are created;
- -  three details of delivery failures;
+ -  three details of delivery failures, one of them the circuit breaker's
+    half-open state;
  -  the admin custom emoji API;
  -  the private metrics listener;
  -  two details of link preview cards, and the top-level domains a URL in
     local text is linked under;
- -  the email subscription API, unsubscribe links, and where the wait
-    before mailing subscribers runs;
+ -  the email subscription API, and unsubscribe links;
  -  how a remote thread's replies are fetched, how async refresh ids are
     signed, and why the home timeline is never partial;
  -  the terms of service admin API and interstitial, and the configured
@@ -54,20 +54,16 @@ At the time of writing there are sixty-three. They cover:
     reset token is stored;
  -  deleting one's own account and changing its email address over the
     API, and the preferences Mastodon sets only through web forms;
- -  how notification emails are unsubscribed from, and where the wait before
-    sending one runs;
+ -  how notification emails are unsubscribed from;
  -  the DeepL endpoint setting;
- -  the auxiliary service provider admin API, where their workers run, and
-    when an account search asks them;
+ -  the auxiliary service provider admin API, and when an account search
+    asks them;
  -  two post searches Mastodon's query transformer cannot read, and the
     peers search falling back to the database;
- -  remote account images linked rather than downloaded, and where the work
-    on a remote account runs;
- -  how quotes are counted, how quote request rejections are named, where
-    quote verification retries run, and how forwarded activities are
-    retried;
- -  where the streaming server and its channels run, and how home
-    timeline updates are decided.
+ -  remote account images linked rather than downloaded, and how a stale
+    remote account is refreshed;
+ -  how quotes are counted, and how quote request rejections are named;
+ -  how home timeline updates are decided.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
