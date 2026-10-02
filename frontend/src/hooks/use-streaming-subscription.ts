@@ -14,7 +14,9 @@ export function useStreamingSubscription({
   onEvent: (event: mastodon.streaming.Event) => void
 }) {
   useEffect(() => {
-    if (!enabled) return
+    // The streaming server refuses a connection without a token, as
+    // Mastodon's does, so a signed-out visitor does not stream.
+    if (!enabled || !token) return
 
     let cancelled = false
     const client = streamingClient(token)
