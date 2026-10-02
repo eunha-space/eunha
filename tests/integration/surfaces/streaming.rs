@@ -857,3 +857,44 @@ async fn test_streams_are_reached_through_redis_under_the_instance_prefix() {
     assert_eq!(event["event"], "notification");
     assert_eq!(payload(&event)["type"], "follow");
 }
+
+/// `push_to_home` streams only what `add_to_feed` took: a boost of a post
+/// already among the newest in the home feed is aggregated away, and streams
+/// nothing, while the post itself did.
+#[tokio::test]
+async fn test_home_updates_follow_what_the_feed_took() {
+    let ctx = TestContext::new("stream-home-aggregate").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_account_and_token(&ctx.db, &ctx.domain, "carol", "carol@example.test")
+            .await;
+    signed_in(&ctx, &ctx.alice_id).await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    ctx.api
+        .follow(&ctx.alice_token, &carol_id.to_string())
+        .await;
+    // Build alice's home feed, so that it is the feed that answers.
+    ctx.api.home_timeline(&ctx.alice_token).await;
+    let mut alice = ws_connect(&ctx, "user", &ctx.alice_token).await;
+
+    let post = ctx
+        .api
+        .post_status(&ctx.bob_token, "boost me", "public")
+        .await;
+    let event = next_event(&mut alice).await.expect("the post");
+    assert_eq!(event["event"], "update");
+    assert_eq!(payload(&event)["id"], post["id"]);
+
+    let boosted = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{}/reblog", post["id"].as_str().unwrap()),
+            Some(&carol_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(boosted.status().as_u16(), 200);
+    assert!(
+        quiet(&mut alice).await,
+        "the aggregated boost streams nothing"
+    );
+}

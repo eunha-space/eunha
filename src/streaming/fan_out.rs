@@ -125,14 +125,27 @@ fn status_event(update: bool) -> &'static str {
 /// `DistributionWorker` → `FanOutOnWriteService#call`, for its streaming
 /// messages: the author's own home, followers' homes and lists, followers of
 /// its hashtags, the mentioned accounts on an edit, and the public and
-/// hashtag streams. Call it after the feeds were written.
-pub async fn distribute(state: &AppState, status_id: i64, update: bool) {
-    if let Err(error) = try_distribute(state, status_id, update).await {
+/// hashtag streams. Call it after the feeds were written, with what
+/// `add_to_feed` answered for each (`pushed`): a home or list gets the
+/// update only where the status went in, as `push_to_home` and
+/// `push_to_list` stream it.
+pub async fn distribute(
+    state: &AppState,
+    status_id: i64,
+    update: bool,
+    pushed: &crate::feed::Pushed,
+) {
+    if let Err(error) = try_distribute(state, status_id, update, pushed).await {
         tracing::warn!(%error, status_id, "could not stream a status");
     }
 }
 
-async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyhow::Result<()> {
+async fn try_distribute(
+    state: &AppState,
+    status_id: i64,
+    update: bool,
+    fed: &crate::feed::Pushed,
+) -> anyhow::Result<()> {
     let Some(s) = subject(state, status_id).await? else {
         return Ok(());
     };
@@ -183,7 +196,7 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
                 Delivery::Follower => filter_from_home(state, &s, receiver, None).await?.is_none(),
                 Delivery::Tags => !filter_from_tags(state, &s, receiver).await?,
             };
-            if pushed && push_to_home(state, receiver, s.status.id).await? {
+            if pushed && fed.home(receiver) {
                 if let Some(payload) = render(state, &s.status, Some(receiver)).await {
                     bus.publish(
                         &format!("timeline:{receiver}"),
@@ -219,14 +232,7 @@ async fn try_distribute(state: &AppState, status_id: i64, update: bool) -> anyho
             {
                 continue;
             }
-            if !crate::feed::list_would_hold(
-                &mut state.redis.clone(),
-                &state.redis_keys,
-                list_id,
-                s.status.id,
-            )
-            .await
-            {
+            if !fed.list(list_id) {
                 continue;
             }
             if let Some(payload) = render(state, &s.status, Some(list.account_id)).await {
@@ -387,19 +393,6 @@ async fn home_deliveries(
         }
     }
     Ok(deliveries)
-}
-
-/// `FeedManager#push_to_home`'s `add_to_feed`, read after `crate::feed` wrote
-/// the feed: the home feed holds the status, or was never built and so had
-/// nothing to keep it out.
-async fn push_to_home(state: &AppState, receiver: i64, status_id: i64) -> anyhow::Result<bool> {
-    Ok(crate::feed::home_would_hold(
-        &mut state.redis.clone(),
-        &state.redis_keys,
-        receiver,
-        status_id,
-    )
-    .await)
 }
 
 struct DistributingList {
@@ -675,8 +668,9 @@ pub async fn remove_boost(state: &AppState, boost_id: i64, booster_id: i64) {
 
 /// `remove_from_self if @account.local?`, `remove_from_followers` and
 /// `remove_from_lists`: `FeedManager#unpush_from_home` and
-/// `#unpush_from_list`, which publish `delete` where the status was in the
-/// feed. A feed never built may have been shown it too.
+/// `#unpush_from_list`, which publish `delete` only where `remove_from_feed`
+/// takes the status out: a feed that holds it, which a feed Redis does not
+/// hold yet answers as it answered the fan-out (`crate::feed::home_holds`).
 async fn unpush(
     state: &AppState,
     status_id: i64,
@@ -698,7 +692,7 @@ async fn unpush(
         .fetch_all(&state.db)
         .await?;
         for account_id in bus.subscribed_ids("timeline:", candidates).await {
-            if crate::feed::home_would_hold(
+            if crate::feed::home_holds(
                 &mut state.redis.clone(),
                 &state.redis_keys,
                 account_id,
@@ -726,7 +720,7 @@ async fn unpush(
         .fetch_all(&state.db)
         .await?;
         for list_id in bus.subscribed_ids("timeline:list:", candidates).await {
-            if crate::feed::list_would_hold(
+            if crate::feed::list_holds(
                 &mut state.redis.clone(),
                 &state.redis_keys,
                 list_id,

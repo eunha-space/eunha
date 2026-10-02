@@ -1039,16 +1039,15 @@ pub async fn reblog_status(
         let mut redis = state.redis.clone();
         let redis_keys = state.redis_keys.clone();
         let db = state.db.clone();
-        let booster_id = boost_account.id;
         let bid = boost.id;
         if feed::sync_fanout() {
-            feed::fanout_new_status(&mut redis, &redis_keys, &db, booster_id, bid, &[]).await;
-            crate::streaming::fan_out::distribute(&state, bid, false).await;
+            let pushed = feed::fanout_status(&mut redis, &redis_keys, &db, bid).await;
+            crate::streaming::fan_out::distribute(&state, bid, false, &pushed).await;
         } else {
             let state = state.clone();
             crate::tenants::spawn(async move {
-                feed::fanout_new_status(&mut redis, &redis_keys, &db, booster_id, bid, &[]).await;
-                crate::streaming::fan_out::distribute(&state, bid, false).await;
+                let pushed = feed::fanout_status(&mut redis, &redis_keys, &db, bid).await;
+                crate::streaming::fan_out::distribute(&state, bid, false, &pushed).await;
             });
         }
     }

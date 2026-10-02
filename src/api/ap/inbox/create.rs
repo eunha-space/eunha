@@ -733,7 +733,7 @@ pub(super) async fn handle_create(
     let redis_keys = state.redis_keys.clone();
     let db = state.db.clone();
     if crate::feed::sync_fanout() {
-        crate::feed::fanout_new_status(
+        let homes = crate::feed::fanout_new_status(
             &mut redis,
             &redis_keys,
             &db,
@@ -742,7 +742,7 @@ pub(super) async fn handle_create(
             &tag_ids,
         )
         .await;
-        crate::feed::fanout_to_lists(
+        let lists = crate::feed::fanout_to_lists(
             &mut redis,
             &redis_keys,
             &db,
@@ -752,11 +752,17 @@ pub(super) async fn handle_create(
             vis_str,
         )
         .await;
-        crate::streaming::fan_out::distribute(state, inserted_id, false).await;
+        crate::streaming::fan_out::distribute(
+            state,
+            inserted_id,
+            false,
+            &crate::feed::Pushed { homes, lists },
+        )
+        .await;
     } else {
         let state = state.clone();
         crate::tenants::spawn(async move {
-            crate::feed::fanout_new_status(
+            let homes = crate::feed::fanout_new_status(
                 &mut redis,
                 &redis_keys,
                 &db,
@@ -765,7 +771,7 @@ pub(super) async fn handle_create(
                 &tag_ids,
             )
             .await;
-            crate::feed::fanout_to_lists(
+            let lists = crate::feed::fanout_to_lists(
                 &mut redis,
                 &redis_keys,
                 &db,
@@ -775,7 +781,13 @@ pub(super) async fn handle_create(
                 vis_str,
             )
             .await;
-            crate::streaming::fan_out::distribute(&state, inserted_id, false).await;
+            crate::streaming::fan_out::distribute(
+                &state,
+                inserted_id,
+                false,
+                &crate::feed::Pushed { homes, lists },
+            )
+            .await;
         });
     }
 

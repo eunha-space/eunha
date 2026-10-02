@@ -934,24 +934,3 @@ it would loop."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
-
-[[divergence]]
-id = "streaming-home-updates-read-from-the-feed"
-kind = "behaviour"
-summary = "Decides a home or list update by reading the feed back"
-mastodon = """
-Pushes an `update` to `timeline:<id>` or `timeline:list:<id>` when \
-`FeedManager#add_to_feed` put the post in that feed, and a `delete` when \
-`#remove_from_feed` took it out."""
-eunha = """
-Applies the same feed filters, then reads the feed: a post the feed holds, or \
-any post when the feed has not been built, was added. A deletion goes to \
-every follower streaming whose feed holds the post or has not been built."""
-why = """
-Eunha builds a home or list feed only once its owner reads it, so for a user \
-who streams before ever loading the timeline there is no feed for \
-`add_to_feed` to answer from; a filtered post never reaches either way. A \
-`delete` for a post a client never saw is ignored by every client."""
-evidence = "tests/integration/surfaces/streaming.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"

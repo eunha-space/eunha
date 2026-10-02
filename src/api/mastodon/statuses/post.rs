@@ -816,9 +816,16 @@ pub async fn post_status(
         let reply_to_account = in_reply_to_account_id;
         let vis = visibility.clone();
         if feed::sync_fanout() {
-            feed::fanout_new_status(&mut redis, &redis_keys, &db, author_id, status_id, &tag_ids)
-                .await;
-            feed::fanout_to_lists(
+            let homes = feed::fanout_new_status(
+                &mut redis,
+                &redis_keys,
+                &db,
+                author_id,
+                status_id,
+                &tag_ids,
+            )
+            .await;
+            let lists = feed::fanout_to_lists(
                 &mut redis,
                 &redis_keys,
                 &db,
@@ -828,11 +835,17 @@ pub async fn post_status(
                 &vis,
             )
             .await;
-            crate::streaming::fan_out::distribute(&state, status_id, false).await;
+            crate::streaming::fan_out::distribute(
+                &state,
+                status_id,
+                false,
+                &crate::feed::Pushed { homes, lists },
+            )
+            .await;
         } else {
             let state = state.clone();
             crate::tenants::spawn(async move {
-                feed::fanout_new_status(
+                let homes = feed::fanout_new_status(
                     &mut redis,
                     &redis_keys,
                     &db,
@@ -841,7 +854,7 @@ pub async fn post_status(
                     &tag_ids,
                 )
                 .await;
-                feed::fanout_to_lists(
+                let lists = feed::fanout_to_lists(
                     &mut redis,
                     &redis_keys,
                     &db,
@@ -851,7 +864,13 @@ pub async fn post_status(
                     &vis,
                 )
                 .await;
-                crate::streaming::fan_out::distribute(&state, status_id, false).await;
+                crate::streaming::fan_out::distribute(
+                    &state,
+                    status_id,
+                    false,
+                    &crate::feed::Pushed { homes, lists },
+                )
+                .await;
             });
         }
     }

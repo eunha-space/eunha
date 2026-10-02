@@ -616,9 +616,16 @@ async fn try_distribute_update(
         }
     }
 
-    // `DistributionWorker` with `update`: the new version to whoever's
-    // timelines and streams have it.
-    crate::streaming::fan_out::distribute(state, status.id, true).await;
+    // `DistributionWorker` with `update`: `FanOutOnWriteService` pushes the
+    // status to the feeds again, and streams the new version where it went in.
+    let pushed = crate::feed::fanout_status(
+        &mut state.redis.clone(),
+        &state.redis_keys,
+        &state.db,
+        status.id,
+    )
+    .await;
+    crate::streaming::fan_out::distribute(state, status.id, true, &pushed).await;
     Ok(())
 }
 

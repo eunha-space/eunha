@@ -256,24 +256,87 @@ async fn trim(redis: &mut ConnectionManager, timeline: &Timeline) -> redis::Redi
     pipe.query_async(redis).await
 }
 
-/// `add_to_feed` then `trim`, as `push_to_home` and `push_to_list` do.
+/// `add_to_feed` then `trim`, as `push_to_home` and `push_to_list` do:
+/// whether the status went in.
 async fn push(
     redis: &mut ConnectionManager,
     timeline: &Timeline,
     status_id: i64,
     reblog_of_id: Option<i64>,
     aggregate: bool,
-) {
+) -> bool {
     let pushed = async {
-        if add_to_feed(redis, timeline, status_id, reblog_of_id, aggregate).await? {
+        let added = add_to_feed(redis, timeline, status_id, reblog_of_id, aggregate).await?;
+        if added {
             trim(redis, timeline).await?;
         }
-        redis::RedisResult::Ok(())
+        redis::RedisResult::Ok(added)
     }
     .await;
-    if let Err(error) = pushed {
-        tracing::warn!(%error, key = %timeline.key, "could not add a status to a feed");
+    match pushed {
+        Ok(added) => added,
+        Err(error) => {
+            tracing::warn!(%error, key = %timeline.key, "could not add a status to a feed");
+            false
+        }
     }
+}
+
+/// What `FeedManager#add_to_feed` answered for a status in each home feed
+/// (by account) and list feed (by list) the fan-out delivered it to, which is
+/// what decides whether `push_to_home` and `push_to_list` stream it. A feed
+/// Redis does not hold yet, which eunha builds when it is first read, answers
+/// as `add_to_feed` answers on an empty one: the status goes in.
+#[derive(Debug, Default, Clone)]
+pub struct Pushed {
+    pub homes: std::collections::HashMap<i64, bool>,
+    pub lists: std::collections::HashMap<i64, bool>,
+}
+
+impl Pushed {
+    /// Whether the status went into `account_id`'s home feed.
+    pub fn home(&self, account_id: i64) -> bool {
+        self.homes.get(&account_id).copied().unwrap_or(false)
+    }
+
+    /// Whether it went into the list's feed.
+    pub fn list(&self, list_id: i64) -> bool {
+        self.lists.get(&list_id).copied().unwrap_or(false)
+    }
+}
+
+/// `FanOutOnWriteService` for a status already stored, its fan-out read from
+/// its row: [`fanout_new_status`] and [`fanout_to_lists`], as
+/// `DistributionWorker` runs them for an update too.
+pub async fn fanout_status(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    status_id: i64,
+) -> Pushed {
+    let Ok(Some(row)) = sqlx::query!(
+        r#"SELECT account_id, in_reply_to_account_id, visibility,
+                  ARRAY(SELECT tag_id FROM statuses_tags WHERE status_id = s.id) AS "tag_ids!"
+           FROM statuses s WHERE id = $1"#,
+        status_id,
+    )
+    .fetch_optional(db)
+    .await
+    else {
+        return Pushed::default();
+    };
+    let homes = fanout_new_status(redis, keys, db, row.account_id, status_id, &row.tag_ids).await;
+    let lists = fanout_to_lists(
+        redis,
+        keys,
+        db,
+        row.account_id,
+        status_id,
+        row.in_reply_to_account_id,
+        crate::db::models::vis::to_str(row.visibility),
+    )
+    .await;
+    Pushed { homes, lists }
 }
 
 /// `FeedManager#merge_into_home` and `#merge_into_list`: [`add_to_feed`] for
@@ -426,11 +489,11 @@ pub async fn is_feed_populated(
         .unwrap_or(false)
 }
 
-/// What `FeedManager#add_to_feed` answered for the status, read back after
-/// the fan-out wrote the home feed: the feed holds it, or was never built and
-/// so had nothing to keep it out. The streaming API pushes an update only for
-/// a status that went in.
-pub async fn home_would_hold(
+/// What `FeedManager#remove_from_feed` will answer for the status, asked
+/// before the feed lets go of it: whether the home feed holds it. A feed
+/// Redis does not hold yet took everything the fan-out offered it (see
+/// [`Pushed`]), so it answers that it holds the status.
+pub async fn home_holds(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     account_id: i64,
@@ -447,8 +510,8 @@ pub async fn home_would_hold(
         .is_some()
 }
 
-/// [`home_would_hold`] for a list's feed.
-pub async fn list_would_hold(
+/// [`home_holds`] for a list's feed.
+pub async fn list_holds(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     list_id: i64,
@@ -631,7 +694,8 @@ pub async fn feed_populate(
 }
 
 /// Fan-out a newly posted status to all followers' initialized feeds,
-/// plus accounts following any of the status's hashtags.
+/// plus accounts following any of the status's hashtags: for each of them,
+/// whether it went in ([`Pushed::homes`]).
 pub async fn fanout_new_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -639,7 +703,7 @@ pub async fn fanout_new_status(
     author_id: i64,
     status_id: i64,
     tag_ids: &[i64],
-) {
+) -> std::collections::HashMap<i64, bool> {
     // Look up the status's reply shape and language so it is only fanned to
     // followers who should see it (Mastodon FeedManager#filter_from_home).
     let reply_meta = sqlx::query!(
@@ -738,8 +802,9 @@ pub async fn fanout_new_status(
         .chain(hashtag_recipients)
         .collect();
 
+    let mut pushed = std::collections::HashMap::new();
     if recipients.is_empty() {
-        return;
+        return pushed;
     }
 
     let pop_keys: Vec<String> = recipients
@@ -750,16 +815,20 @@ pub async fn fanout_new_status(
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("fanout mget error: {}", e);
-            return;
+            return pushed;
         }
     };
 
-    let ready: Vec<i64> = recipients
-        .iter()
-        .zip(initialized.iter())
-        .filter(|(_, init)| init.is_some())
-        .map(|(&id, _)| id)
-        .collect();
+    let mut ready = Vec::new();
+    for (&id, init) in recipients.iter().zip(initialized.iter()) {
+        if init.is_some() {
+            ready.push(id);
+        } else {
+            // Built from the database when first read; `add_to_feed` on an
+            // empty feed takes the status.
+            pushed.insert(id, true);
+        }
+    }
     let separate = if reblog_of_id.is_some() {
         not_aggregating(db, &ready).await
     } else {
@@ -767,7 +836,7 @@ pub async fn fanout_new_status(
     };
     for id in ready {
         let timeline = Timeline::home(keys, id);
-        push(
+        let added = push(
             redis,
             &timeline,
             status_id,
@@ -775,7 +844,9 @@ pub async fn fanout_new_status(
             !separate.contains(&id),
         )
         .await;
+        pushed.insert(id, added);
     }
+    pushed
 }
 
 /// Remove a deleted status from all followers' initialized feeds. The status
@@ -1036,7 +1107,9 @@ pub async fn list_feed_populate(
     }
 }
 
-/// Fan out a newly posted status to all initialized list feeds that contain the author.
+/// Fan out a newly posted status to all initialized list feeds that contain
+/// the author: for each list it passes, whether it went in
+/// ([`Pushed::lists`]).
 pub async fn fanout_to_lists(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1045,9 +1118,10 @@ pub async fn fanout_to_lists(
     status_id: i64,
     in_reply_to_account_id: Option<i64>,
     visibility: &str,
-) {
+) -> std::collections::HashMap<i64, bool> {
+    let mut pushed = std::collections::HashMap::new();
     if visibility == "direct" {
-        return;
+        return pushed;
     }
 
     let lists = sqlx::query!(
@@ -1063,7 +1137,7 @@ pub async fn fanout_to_lists(
     .unwrap_or_default();
 
     if lists.is_empty() {
-        return;
+        return pushed;
     }
 
     let pop_keys: Vec<String> = lists
@@ -1074,7 +1148,7 @@ pub async fn fanout_to_lists(
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("fanout_to_lists mget error: {}", e);
-            return;
+            return pushed;
         }
     };
 
@@ -1087,10 +1161,6 @@ pub async fn fanout_to_lists(
     };
 
     for (list, init) in lists.iter().zip(initialized.iter()) {
-        if init.is_none() {
-            continue;
-        }
-
         let passes = if let Some(reply_author) = in_reply_to_account_id {
             if reply_author == author_id || reply_author == list.account_id {
                 true
@@ -1121,12 +1191,19 @@ pub async fn fanout_to_lists(
             true
         };
 
-        if passes {
-            let timeline = Timeline::list(keys, list.id);
-            let aggregate = !separate.contains(&list.account_id);
-            push(redis, &timeline, status_id, reblog_of_id, aggregate).await;
+        if !passes {
+            continue;
         }
+        if init.is_none() {
+            pushed.insert(list.id, true);
+            continue;
+        }
+        let timeline = Timeline::list(keys, list.id);
+        let aggregate = !separate.contains(&list.account_id);
+        let added = push(redis, &timeline, status_id, reblog_of_id, aggregate).await;
+        pushed.insert(list.id, added);
     }
+    pushed
 }
 
 /// Remove a deleted status from all initialized list feeds that contain the

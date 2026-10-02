@@ -689,9 +689,16 @@ async fn publish_one(
     let author_id = account.id;
     let sid = status.id;
     let vis = visibility.clone();
-    crate::feed::fanout_new_status(&mut redis, &state.redis_keys, &db, author_id, sid, &tag_ids)
-        .await;
-    crate::feed::fanout_to_lists(
+    let homes = crate::feed::fanout_new_status(
+        &mut redis,
+        &state.redis_keys,
+        &db,
+        author_id,
+        sid,
+        &tag_ids,
+    )
+    .await;
+    let lists = crate::feed::fanout_to_lists(
         &mut redis,
         &state.redis_keys,
         &db,
@@ -701,7 +708,8 @@ async fn publish_one(
         &vis,
     )
     .await;
-    crate::streaming::fan_out::distribute(state, sid, false).await;
+    crate::streaming::fan_out::distribute(state, sid, false, &crate::feed::Pushed { homes, lists })
+        .await;
 
     // Send mention notifications (mirrors post_status)
     let mut notified = std::collections::HashSet::new();

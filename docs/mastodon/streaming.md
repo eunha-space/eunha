@@ -97,11 +97,17 @@ The hashtag in a subscription is normalized as the streaming server's
     `timeline:list:<id>` for the lists `#filter_from_list?` lets it into,
     rendered for the timeline's owner: `favourited`, `reblogged`, `muted`,
     `bookmarked`, `pinned` and `filtered` are theirs. Only users who signed in
-    within a week get these. A follower who also follows one of its hashtags
-    gets it twice, as upstream pushes it twice. An edit also reaches the
-    mentioned accounts' `timeline:<id>:notifications`.
- -  `delete` wherever the post went, to the accounts it mentions, and for each
-    boost removed with it.
+    within a week get these, and only where `FeedManager#add_to_feed` took
+    the post: the fan-out reports what each feed answered, so a boost
+    aggregated away streams nothing. A feed eunha has not built yet (it builds
+    one when it is first read) answers as an empty feed does, taking the post.
+    An edit is pushed to the feeds again, as upstream's update distribution
+    pushes it. A follower who also follows one of its hashtags gets it twice,
+    as upstream pushes it twice. An edit also reaches the mentioned accounts'
+    `timeline:<id>:notifications`.
+ -  `delete` wherever `FeedManager#remove_from_feed` takes the post out (a
+    feed that holds it, or one not built yet, which took it), to the accounts
+    it mentions, and for each boost removed with it.
  -  `notification`, rendered for its recipient, unless it was filtered;
     `notifications_merged` once a notification request is accepted.
  -  `conversation` on `direct` when a direct message arrives, or the
@@ -141,11 +147,6 @@ server filters `update` and `status.update` for each connection, in this order:
 Differences
 -----------
 
- -  Mastodon pushes a home or list update when `FeedManager#add_to_feed` put
-    the post in the feed. Eunha builds feeds only for users who read them, so
-    it reads the feed back instead: a post the feed holds, or any post when the
-    feed has not been built, counts as added. A deletion likewise goes to
-    every follower streaming whose feed is not built.
  -  `conversation` is not sent when a deleted post leaves a conversation, nor
     for the direct messages a newly accepted notification request brings in.
  -  A stream that falls 256 messages behind on one channel loses the oldest,

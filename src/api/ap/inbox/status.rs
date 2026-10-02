@@ -355,9 +355,16 @@ pub(super) async fn handle_announce(
         let db = state.db.clone();
         let vis_str = crate::db::models::vis::to_str(visibility);
         if crate::feed::sync_fanout() {
-            crate::feed::fanout_new_status(&mut redis, &redis_keys, &db, booster_id, boost_id, &[])
-                .await;
-            crate::feed::fanout_to_lists(
+            let homes = crate::feed::fanout_new_status(
+                &mut redis,
+                &redis_keys,
+                &db,
+                booster_id,
+                boost_id,
+                &[],
+            )
+            .await;
+            let lists = crate::feed::fanout_to_lists(
                 &mut redis,
                 &redis_keys,
                 &db,
@@ -367,11 +374,17 @@ pub(super) async fn handle_announce(
                 vis_str,
             )
             .await;
-            crate::streaming::fan_out::distribute(state, boost_id, false).await;
+            crate::streaming::fan_out::distribute(
+                state,
+                boost_id,
+                false,
+                &crate::feed::Pushed { homes, lists },
+            )
+            .await;
         } else {
             let state = state.clone();
             crate::tenants::spawn(async move {
-                crate::feed::fanout_new_status(
+                let homes = crate::feed::fanout_new_status(
                     &mut redis,
                     &redis_keys,
                     &db,
@@ -380,7 +393,7 @@ pub(super) async fn handle_announce(
                     &[],
                 )
                 .await;
-                crate::feed::fanout_to_lists(
+                let lists = crate::feed::fanout_to_lists(
                     &mut redis,
                     &redis_keys,
                     &db,
@@ -390,7 +403,13 @@ pub(super) async fn handle_announce(
                     vis_str,
                 )
                 .await;
-                crate::streaming::fan_out::distribute(&state, boost_id, false).await;
+                crate::streaming::fan_out::distribute(
+                    &state,
+                    boost_id,
+                    false,
+                    &crate::feed::Pushed { homes, lists },
+                )
+                .await;
             });
         }
     }
