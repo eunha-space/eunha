@@ -631,3 +631,94 @@ async fn test_unsupported_grant_type_returns_422() {
         "unsupported grant_type should return 422"
     );
 }
+
+/// Doorkeeper's redirect URI checks: authorization only for a URI the app
+/// registered (extra query allowed), and a code only good with the URI it was
+/// issued for.
+#[tokio::test]
+async fn test_redirect_uri_must_be_registered_and_match_the_code() {
+    let ctx = TestContext::new("oauth-redirect").await;
+    let app: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/apps",
+            None,
+            &json!({
+                "client_name": "Redirecting App",
+                "redirect_uris": "https://app.example/callback\nurn:ietf:wg:oauth:2.0:oob",
+                "scopes": "read"
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let client_id = app["client_id"].as_str().unwrap();
+    let client_secret = app["client_secret"].as_str().unwrap();
+    let authorize = |uri: &str| {
+        format!(
+            "/oauth/authorize?client_id={client_id}&redirect_uri={}&scope=read&response_type=code",
+            urlencoding::encode(uri)
+        )
+    };
+    for (uri, status) in [
+        ("https://app.example/callback", StatusCode::OK),
+        ("https://app.example/callback?state=x", StatusCode::OK),
+        ("urn:ietf:wg:oauth:2.0:oob", StatusCode::OK),
+        ("https://evil.example/callback", StatusCode::BAD_REQUEST),
+        ("https://app.example/other", StatusCode::BAD_REQUEST),
+        ("javascript:alert(1)", StatusCode::BAD_REQUEST),
+    ] {
+        assert_eq!(
+            ctx.api.get(&authorize(uri), None).await.status(),
+            status,
+            "{uri}"
+        );
+    }
+
+    let app_id: i64 = sqlx::query_scalar("SELECT id FROM oauth_applications WHERE uid = $1")
+        .bind(client_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let owner = crate::helpers::user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    sqlx::query(
+        "INSERT INTO oauth_access_grants
+           (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
+         VALUES ($1, $2, 'redirect-code', 'https://app.example/callback', 'read', 600, now())",
+    )
+    .bind(app_id)
+    .bind(owner)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let exchange = |uri: Option<&str>| {
+        let mut body = json!({
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": "redirect-code",
+        });
+        if let Some(uri) = uri {
+            body["redirect_uri"] = json!(uri);
+        }
+        body
+    };
+    for uri in [None, Some("https://evil.example/callback")] {
+        let refused = ctx
+            .api
+            .post_json("/oauth/token", None, &exchange(uri))
+            .await;
+        assert_eq!(refused.status(), StatusCode::UNAUTHORIZED, "{uri:?}");
+    }
+    // A refused exchange does not use the code up.
+    let ok = ctx
+        .api
+        .post_json(
+            "/oauth/token",
+            None,
+            &exchange(Some("https://app.example/callback")),
+        )
+        .await;
+    assert_eq!(ok.status(), StatusCode::OK);
+}

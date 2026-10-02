@@ -179,6 +179,29 @@ pub async fn issue_token(
                 .code
                 .as_deref()
                 .ok_or(AppError::Unprocessable("missing code".into()))?;
+            // `AuthorizationCodeRequest#validate_redirect_uri`: the code is
+            // only good with the redirect URI it was issued for.
+            let issued_for = sqlx::query_scalar!(
+                r#"SELECT redirect_uri FROM oauth_access_grants
+                   WHERE token = $1 AND application_id = $2 AND revoked_at IS NULL
+                     AND created_at + expires_in * interval '1 second' > now()"#,
+                code_str,
+                app.id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| {
+                tracing::warn!(code = %code_str, "authorization code not found or expired");
+                AppError::Unauthorized
+            })?;
+            if !form
+                .redirect_uri
+                .as_deref()
+                .is_some_and(|uri| redirect_uri_matches(uri, &issued_for))
+            {
+                tracing::warn!(client_id = %form.client_id, "redirect_uri does not match the code's");
+                return Err(AppError::Unauthorized);
+            }
             let code = sqlx::query!(
                 r#"DELETE FROM oauth_access_grants
                    WHERE token = $1 AND application_id = $2
@@ -626,6 +649,52 @@ pub async fn elk_oauth_callback(
     Redirect::to(&redirect).into_response()
 }
 
+/// Doorkeeper's `URIChecker.matches?`: the same URI as one registered,
+/// whatever extra query the request adds, unless the registered URI has a
+/// query of its own, which must then be the request's exactly.
+fn redirect_uri_matches(url: &str, registered: &str) -> bool {
+    if url == registered {
+        return true;
+    }
+    let (Ok(mut url), Ok(mut registered)) = (url::Url::parse(url), url::Url::parse(registered))
+    else {
+        return false;
+    };
+    if registered.query().is_some() {
+        let pairs = |u: &url::Url| {
+            let mut pairs: Vec<(String, String)> = u.query_pairs().into_owned().collect();
+            pairs.sort();
+            pairs
+        };
+        if pairs(&url) != pairs(&registered) {
+            return false;
+        }
+        registered.set_query(None);
+    }
+    url.set_query(None);
+    url == registered
+}
+
+/// Doorkeeper's `URIChecker.valid_for_authorization?` with Mastodon's
+/// `forbid_redirect_uri`: a URI that matches one of the application's
+/// registered redirect URIs, one per line, and is not a `data:`,
+/// `javascript:` or `vbscript:` URI.
+fn redirect_uri_allowed(url: &str, registered: &str) -> bool {
+    let forbidden = url::Url::parse(url).map_or(true, |u| {
+        matches!(
+            u.scheme().to_ascii_lowercase().as_str(),
+            "data" | "javascript" | "vbscript"
+        )
+    });
+    !forbidden
+        && registered
+            .split_whitespace()
+            .any(|candidate| redirect_uri_matches(url, candidate))
+}
+
+/// Doorkeeper's `invalid_redirect_uri`.
+const INVALID_REDIRECT_URI: &str = "The redirect uri included is not valid.";
+
 // ── GET /oauth/authorize ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -655,6 +724,10 @@ pub async fn authorize_form(
         Ok(Some(a)) => a,
         _ => return (StatusCode::BAD_REQUEST, "Unknown client_id").into_response(),
     };
+    // A code is only ever sent where the application said it may go.
+    if !redirect_uri_allowed(&params.redirect_uri, &app.redirect_uri) {
+        return (StatusCode::BAD_REQUEST, INVALID_REDIRECT_URI).into_response();
+    }
 
     let accept_lang = headers.get("accept-language").and_then(|v| v.to_str().ok());
     let locale = crate::locale::Locale::detect(params.lang.as_deref(), accept_lang);
@@ -895,6 +968,10 @@ async fn issue_grant(
     .await
     .map_err(|_| "Database error".to_string())?
     .ok_or_else(|| "Unknown application".to_string())?;
+    // The form posts the redirect URI back, so it is checked again here.
+    if !redirect_uri_allowed(redirect_uri, &app.redirect_uri) {
+        return Err(INVALID_REDIRECT_URI.to_string());
+    }
 
     let scopes = scope.unwrap_or_else(|| app.scopes.clone().unwrap_or_else(|| "read".to_string()));
     // The granted scope must stay within the app's registered scopes.
