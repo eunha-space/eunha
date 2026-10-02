@@ -412,6 +412,38 @@ export function importDomainAllows(token: string, file: File) {
   return json<string[]>(token, 'POST', '/api/v1/admin/export_domain_allows/import', body)
 }
 
+// ── Relays ──────────────────────────────────────────────────────────────────
+
+export interface AdminRelay {
+  id: string
+  inbox_url: string
+  state: 'idle' | 'pending' | 'accepted' | 'rejected'
+  enabled: boolean
+  follow_activity_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export function listRelays(token: string) {
+  return json<AdminRelay[]>(token, 'GET', '/api/v1/admin/relays')
+}
+
+export function createRelay(token: string, inboxUrl: string) {
+  return json<AdminRelay>(token, 'POST', '/api/v1/admin/relays', { inbox_url: inboxUrl })
+}
+
+export function setRelayEnabled(token: string, id: string, enabled: boolean) {
+  return json<AdminRelay>(
+    token,
+    'POST',
+    `/api/v1/admin/relays/${id}/${enabled ? 'enable' : 'disable'}`,
+  )
+}
+
+export function deleteRelay(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/relays/${id}`)
+}
+
 export function distributeAnnouncement(token: string, id: string) {
   return json<AdminAnnouncement>(
     token,

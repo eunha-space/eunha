@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relays SET state = $2, updated_at = now() WHERE follow_activity_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "487671561828d7eb5f082101c46c2253475f28a1f03b06d6a8cbd14439405add"
+}

@@ -933,6 +933,22 @@ pub fn router() -> Router {
             "/api/v1/admin/export_domain_allows/import",
             post(admin::import_domain_allows),
         )
+        .route(
+            "/api/v1/admin/relays",
+            get(admin::list_admin_relays).post(admin::create_admin_relay),
+        )
+        .route(
+            "/api/v1/admin/relays/{id}",
+            delete(admin::delete_admin_relay),
+        )
+        .route(
+            "/api/v1/admin/relays/{id}/enable",
+            post(admin::enable_admin_relay),
+        )
+        .route(
+            "/api/v1/admin/relays/{id}/disable",
+            post(admin::disable_admin_relay),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

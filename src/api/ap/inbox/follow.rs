@@ -602,6 +602,17 @@ pub(super) async fn handle_accept_reject(
         }
     });
 
+    // `return accept_follow_for_relay if relay_follow?`, and the same for a
+    // Reject: the answer to a relay's Follow, found by the Follow's id.
+    if let Some(uri) = follow_uri {
+        if crate::relays::answered(state, uri, activity_type == "Accept")
+            .await
+            .map_err(crate::error::AppError::Internal)?
+        {
+            return Ok(());
+        }
+    }
+
     if let Some(uri) = follow_uri {
         if activity_type == "Accept" {
             // Promote follow_request → follows when remote accepts our Follow

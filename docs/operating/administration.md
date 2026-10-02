@@ -247,3 +247,27 @@ then creates the ones they keep with `POST /api/v1/admin/domain_blocks`.
 `…/export_domain_allows/import` allows every domain in its file at once,
 logging each. A file without a `#domain` header is read as one domain a line.
 Both need `manage_federation`, and refuse a file of more than 20,000 rows.
+
+
+Relays
+------
+
+`/api/v1/admin/relays` lists and adds relays, and `…/:id/enable`,
+`…/:id/disable` and `DELETE …/:id` do the rest, for a role with
+`manage_federation`; each is logged. A relay's inbox URL must be an http or
+https URL no other relay has.
+
+Adding or enabling a relay sends it a `Follow` of the public collection from
+the instance actor, as Mastodon's `Relay#enable!` does, and the relay is
+pending until it answers: its `Accept` of that `Follow` enables it, and a
+`Reject` marks it rejected. Disabling sends the `Undo` of the `Follow`, and
+deleting an enabled relay disables it first. Both start the relay's host's
+delivery failures afresh.
+
+An enabled relay gets the instance's public posts, its accounts' profile
+updates, deletions and moves, as Mastodon sends them. An `Announce` from an
+enabled relay brings the post it names here without making it a boost.
+Relays that forward posts signed by someone else rely on Linked Data
+signatures, which eunha does not verify, so such a post is taken only when
+its author's own server sends it. A relay needs unsigned fetches, so it does
+not work while authorized fetch is on.

@@ -190,6 +190,15 @@ pub(super) async fn handle_announce(
     let Some(mut original_id) = original_id else {
         return Ok(());
     };
+    // `return if requested_through_relay?`: an enabled relay's Announce brings
+    // the post here, and is not a boost.
+    let booster_inbox: Option<String> =
+        sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", booster_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if crate::relays::is_enabled_relay_inbox(state, booster_inbox.as_deref().unwrap_or("")).await {
+        return Ok(());
+    }
     if let Some(unwrapped_id) = sqlx::query_scalar!(
         "SELECT reblog_of_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
         original_id,
