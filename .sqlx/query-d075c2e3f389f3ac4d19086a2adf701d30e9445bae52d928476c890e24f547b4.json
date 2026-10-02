@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.jobs SET run_at = now() WHERE dead_at IS NULL AND run_at > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d075c2e3f389f3ac4d19086a2adf701d30e9445bae52d928476c890e24f547b4"
+}

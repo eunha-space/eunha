@@ -438,7 +438,7 @@ pub async fn preview_admin_announcement(
 async fn mail(state: &AppState, to: &str, text: &str) {
     let text = super::super::formatting::linkify(state, text).await;
     if let Err(error) = state
-        .email
+        .mailer()
         .send_announcement_published(to, &state.instance.domain, &text)
         .await
     {
@@ -460,10 +460,7 @@ pub async fn test_admin_announcement(
     )
     .fetch_one(&state.db)
     .await?;
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        mail(&state, &user, &row.text).await;
-    });
+    mail(&state, &user, &row.text).await;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -483,13 +480,40 @@ pub async fn distribute_admin_announcement(
     .execute(&state.db)
     .await?;
     let row = find(&state, id).await?;
-    let text = row.text.clone();
-    let to = recipients(&state).await?;
-    let background = state.clone();
-    crate::tenants::spawn(async move {
-        for email in to {
-            mail(&background, &email, &text).await;
-        }
-    });
+    crate::jobs::perform_async(
+        &state,
+        DistributeAnnouncementNotificationWorker {
+            announcement_id: id,
+        },
+    )
+    .await
+    .map_err(AppError::Internal)?;
     Ok(Json(row.into_api(&state.urls.local_domain)))
+}
+
+/// `Admin::DistributeAnnouncementNotificationWorker`: mail the announcement to
+/// every user `scope_for_notification` selects.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DistributeAnnouncementNotificationWorker {
+    pub announcement_id: i64,
+}
+
+impl crate::jobs::Job for DistributeAnnouncementNotificationWorker {
+    const KIND: &'static str = "Admin::DistributeAnnouncementNotificationWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let row = match find(state, self.announcement_id).await {
+            Ok(row) => row,
+            Err(AppError::NotFound) => return Ok(()),
+            Err(error) => return Err(anyhow::anyhow!("{error:?}")),
+        };
+        for email in recipients(state)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            mail(state, &email, &row.text).await;
+        }
+        Ok(())
+    }
 }

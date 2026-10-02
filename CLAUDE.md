@@ -51,6 +51,8 @@ Running an instance:
  -  *docs/operating/instances.md*: several instances in one process, the
     tenants directory, admission limits, `SIGHUP` reload, host aliases, and
     shared media buckets.
+ -  *docs/operating/jobs.md*: the job queue, its workers, retries, unique
+    locks and the dead set.
  -  *docs/operating/invites.md*: the everyone role and handing out invites.
  -  *docs/operating/moderation.md*: permissions, account actions and strikes,
     the audit log, and reports.

@@ -92,13 +92,13 @@ async fn switch_to_approval_mode(state: &AppState) -> anyhow::Result<()> {
     .fetch_all(&state.db)
     .await?;
     for to in recipients {
-        let email = state.email.clone();
+        let email = state.mailer();
         let domain = state.instance.domain.clone();
-        crate::tenants::spawn(async move {
+        {
             if let Err(error) = email.send_auto_close_registrations(&to, &domain).await {
                 tracing::warn!(%error, "could not mail that registrations were closed");
             }
-        });
+        }
     }
     Ok(())
 }

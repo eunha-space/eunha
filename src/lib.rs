@@ -19,6 +19,7 @@ pub mod federation;
 pub mod feed;
 pub mod formatter;
 pub mod import;
+pub mod jobs;
 pub mod languages;
 pub mod link_verification;
 pub mod locale;

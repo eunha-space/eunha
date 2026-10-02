@@ -28,7 +28,7 @@ mod username_blocks;
 mod users;
 mod warning_presets;
 // The server administration Mastodon has only as server-rendered admin pages.
-mod announcements;
+pub(crate) mod announcements;
 mod dashboard;
 mod fasp;
 mod follow_recommendations;

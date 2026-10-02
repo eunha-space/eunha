@@ -348,7 +348,7 @@ pub async fn notify_staff(state: &AppState, report_id: i64, target_id: i64) {
                 Some(d) => (None, Some(d.clone())),
             };
             if let Err(error) = state
-                .email
+                .mailer()
                 .send_new_report(
                     &recipient.email,
                     &state.instance.domain,

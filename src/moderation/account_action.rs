@@ -374,12 +374,12 @@ pub(super) async fn notify(
     } else {
         crate::api::mastodon::formatting::linkify(state, text).await
     };
-    let email = state.email.clone();
+    let email = state.mailer();
     let to = user.email.clone();
     let domain = state.instance.domain.clone();
     let kind = kind.to_owned();
     let category = category.map(str::to_owned);
-    crate::tenants::spawn(async move {
+    {
         let reason = category.as_deref().map(|c| (c, rules.as_slice()));
         if let Err(error) = email
             .send_warning(&to, &acct, &domain, &kind, &text, reason, &cited)
@@ -387,5 +387,5 @@ pub(super) async fn notify(
         {
             tracing::warn!(%error, "could not send a moderation warning email");
         }
-    });
+    }
 }

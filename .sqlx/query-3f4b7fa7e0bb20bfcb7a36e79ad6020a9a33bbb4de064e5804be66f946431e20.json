@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH picked AS (\n             SELECT id FROM eunha.jobs\n             WHERE dead_at IS NULL\n               AND ($5::bigint IS NULL OR id = $5)\n               AND ($5::bigint IS NOT NULL OR run_at <= now())\n               AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $3))\n             ORDER BY array_position($1::text[], queue), run_at, id\n             LIMIT $2\n             FOR UPDATE SKIP LOCKED\n           )\n           UPDATE eunha.jobs j\n           SET locked_at = now(), locked_by = $4,\n               unique_key = CASE WHEN j.unlock_on_claim THEN NULL ELSE j.unique_key END\n           FROM picked WHERE j.id = picked.id\n           RETURNING j.id, j.kind, j.args, j.attempts, j.max_retries, j.keep_dead",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "args",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "keep_dead",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int8",
+        "Float8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3f4b7fa7e0bb20bfcb7a36e79ad6020a9a33bbb4de064e5804be66f946431e20"
+}

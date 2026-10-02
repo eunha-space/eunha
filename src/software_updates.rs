@@ -331,7 +331,7 @@ async fn notify_of_updates(state: &AppState, updates: &[&AvailableUpdate]) {
             continue;
         }
         if let Err(e) = state
-            .email
+            .mailer()
             .send_software_updates(
                 &recipient.email,
                 &recipient.username,
@@ -369,7 +369,7 @@ async fn notify_of_end_of_support(
             continue;
         }
         if let Err(e) = state
-            .email
+            .mailer()
             .send_end_of_support(
                 &recipient.email,
                 &recipient.username,

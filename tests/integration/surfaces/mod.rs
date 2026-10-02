@@ -10,6 +10,7 @@ mod error_contract;
 mod health;
 mod invite_grants;
 mod invite_tree;
+mod jobs;
 mod mute_exemptions;
 mod notification_rules;
 mod oembed;

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.jobs\n         SET attempts = attempts + 1, run_at = now() + make_interval(secs => $2),\n             locked_at = NULL, locked_by = NULL, last_error = $3, failed_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a8eaf9a1e9fbc002471bab45ae9599bf9b75b96f9b66f7cc9c9bc3e0ad16219c"
+}

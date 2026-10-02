@@ -35,6 +35,35 @@ pub struct EmailSender {
     smtp: Option<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>>,
     from: String,
     outbox: Option<Arc<Mutex<Vec<SentMail>>>>,
+    /// The instance whose job queue a mail goes into instead of being sent,
+    /// for a sender made by [`crate::state::AppState::mailer`].
+    later: Option<Arc<crate::state::AppState>>,
+}
+
+/// `ActionMailer::MailDeliveryJob`: a mail `deliver_later` queued, as it was
+/// rendered.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MailDeliveryJob {
+    pub to: String,
+    pub subject: String,
+    pub html: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+}
+
+impl crate::jobs::Job for MailDeliveryJob {
+    const KIND: &'static str = "ActionMailer::MailDeliveryJob";
+    /// Active Job's Sidekiq adapter queues mail on `mailers` with Sidekiq's
+    /// default retries.
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Mailers);
+
+    async fn perform(self, state: &crate::state::AppState) -> anyhow::Result<()> {
+        state
+            .email
+            .deliver_now(&self.to, &self.subject, &self.html, self.headers)
+            .await
+    }
 }
 
 impl EmailSender {
@@ -44,6 +73,7 @@ impl EmailSender {
             from: String::new(),
             outbox: (config.is_none() && CAPTURE.load(Ordering::Relaxed))
                 .then(|| Arc::new(Mutex::new(Vec::new()))),
+            later: None,
         };
         match config {
             Some(config) => sender.with_smtp(config),
@@ -1002,6 +1032,44 @@ impl EmailSender {
         html: &str,
         headers: &[(&'static str, String)],
     ) -> anyhow::Result<()> {
+        let headers = headers
+            .iter()
+            .map(|(n, v)| ((*n).to_owned(), v.clone()))
+            .collect();
+        match &self.later {
+            Some(state) => {
+                crate::jobs::perform_async(
+                    state,
+                    MailDeliveryJob {
+                        to: to.to_owned(),
+                        subject: subject.to_owned(),
+                        html: html.to_owned(),
+                        headers,
+                    },
+                )
+                .await?;
+                Ok(())
+            }
+            None => self.deliver_now(to, subject, html, headers).await,
+        }
+    }
+
+    /// A sender like this one whose mail goes into `state`'s job queue, as
+    /// `deliver_later` does, rather than out at once.
+    pub fn later(&self, state: &crate::state::AppState) -> Self {
+        let mut sender = self.clone();
+        sender.later = Some(Arc::new(state.clone()));
+        sender
+    }
+
+    /// Send a mail now.
+    pub async fn deliver_now(
+        &self,
+        to: &str,
+        subject: &str,
+        html: &str,
+        headers: Vec<(String, String)>,
+    ) -> anyhow::Result<()> {
         if let Some(smtp) = &self.smtp {
             use lettre::message::header::{HeaderName, HeaderValue};
             use lettre::AsyncTransport;
@@ -1016,11 +1084,10 @@ impl EmailSender {
                     .map_err(|_| anyhow::anyhow!("Invalid email recipient"))?)
                 .subject(subject)
                 .header(lettre::message::header::ContentType::TEXT_HTML);
-            for (name, value) in headers {
-                builder = builder.raw_header(HeaderValue::new(
-                    HeaderName::new_from_ascii_str(name),
-                    value.clone(),
-                ));
+            for (name, value) in &headers {
+                let name = HeaderName::new_from_ascii(name.clone())
+                    .map_err(|_| anyhow::anyhow!("Invalid email header"))?;
+                builder = builder.raw_header(HeaderValue::new(name, value.clone()));
             }
             let message = builder
                 .body(html.to_owned())
@@ -1035,10 +1102,7 @@ impl EmailSender {
                 to: to.to_owned(),
                 subject: subject.to_owned(),
                 html: html.to_owned(),
-                headers: headers
-                    .iter()
-                    .map(|(n, v)| ((*n).to_owned(), v.clone()))
-                    .collect(),
+                headers,
             });
             return Ok(());
         }

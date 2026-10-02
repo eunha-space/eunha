@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM eunha.jobs WHERE id IN (\n           SELECT id FROM eunha.jobs WHERE dead_at IS NOT NULL\n           ORDER BY dead_at DESC, id DESC OFFSET $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f80595e5d8dfebf68f583d12518a6daf28671fe4075f91482a3dcfd58a1994c5"
+}

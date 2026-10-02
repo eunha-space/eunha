@@ -141,7 +141,7 @@ fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &str) {
                 continue;
             }
             if let Err(error) = state
-                .email
+                .mailer()
                 .send_new_appeal(
                     &recipient.email,
                     &state.instance.domain,
@@ -389,9 +389,9 @@ async fn mail_decision(
     };
     let to = user.email;
     let time_zone = user.time_zone;
-    let email = state.email.clone();
+    let email = state.mailer();
     let domain = state.instance.domain.clone();
-    crate::tenants::spawn(async move {
+    {
         if let Err(error) = email
             .send_appeal_decided(
                 &to,
@@ -405,5 +405,5 @@ async fn mail_decision(
         {
             tracing::warn!(%error, "could not send an appeal decision email");
         }
-    });
+    }
 }

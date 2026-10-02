@@ -452,7 +452,7 @@ pub async fn send_changed_email(state: &AppState, to: &str, tos: &TermsOfService
     };
     let changelog = crate::markdown::render(&tos.changelog);
     if let Err(error) = state
-        .email
+        .mailer()
         .send_terms_of_service_changed(
             to,
             domain,
@@ -466,16 +466,47 @@ pub async fn send_changed_email(state: &AppState, to: &str, tos: &TermsOfService
     }
 }
 
-/// `Admin::DistributeTermsOfServiceNotificationWorker`: flag the users the
-/// interstitial is for, then mail the rest, one at a time in the background.
+/// `Admin::DistributeTermsOfServiceNotificationWorker.perform_async`.
 pub async fn distribute(state: &AppState, tos: TermsOfService) -> AppResult<()> {
-    flag_for_interstitial(&state.db, &tos).await?;
-    let recipients = scope_for_notification(&state.db, &tos).await?;
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        for recipient in recipients {
-            send_changed_email(&state, &recipient.email, &tos).await;
-        }
-    });
+    crate::jobs::perform_async(
+        state,
+        DistributeNotificationWorker {
+            terms_of_service_id: tos.id,
+        },
+    )
+    .await
+    .map_err(AppError::Internal)?;
     Ok(())
+}
+
+/// `Admin::DistributeTermsOfServiceNotificationWorker`: flag the users the
+/// interstitial is for, then mail the rest.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DistributeNotificationWorker {
+    pub terms_of_service_id: i64,
+}
+
+impl crate::jobs::Job for DistributeNotificationWorker {
+    const KIND: &'static str = "Admin::DistributeTermsOfServiceNotificationWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let tos = match find(&state.db, self.terms_of_service_id).await {
+            Ok(tos) => tos,
+            Err(AppError::NotFound) => return Ok(()),
+            Err(error) => return Err(anyhow::anyhow!("{error:?}")),
+        };
+        // `on_start`.
+        flag_for_interstitial(&state.db, &tos)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        // `push_bulk_mailer(UserMailer, :terms_of_service_changed, ...)`.
+        for recipient in scope_for_notification(&state.db, &tos)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        {
+            send_changed_email(state, &recipient.email, &tos).await;
+        }
+        Ok(())
+    }
 }

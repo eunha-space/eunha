@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.jobs SET locked_at = NULL, locked_by = NULL WHERE locked_by = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eeeb00e5cd8fb6d8f39d5c05564d798266637f19160be360fe3c24c146b787e5"
+}

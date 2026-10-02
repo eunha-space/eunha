@@ -220,6 +220,14 @@ pub struct WorkersConfig {
     /// same value.
     #[serde(default = "default_process_delivery_concurrency")]
     pub process_delivery_concurrency: usize,
+    /// Number of job queue loops (docs/operating/jobs.md). Each claims its
+    /// own jobs with `FOR UPDATE SKIP LOCKED`, so raising this is safe both
+    /// within a process and across processes.
+    #[serde(default = "default_job_workers")]
+    pub job_workers: usize,
+    /// Jobs each job queue loop runs at once: Sidekiq's `concurrency`.
+    #[serde(default = "default_job_concurrency")]
+    pub job_concurrency: usize,
 }
 
 /// Whether integrity proofs are signed when a config says nothing about it.
@@ -286,6 +294,16 @@ fn default_process_delivery_concurrency() -> usize {
     256
 }
 
+fn default_job_workers() -> usize {
+    1
+}
+
+/// Sidekiq's default `concurrency`, which Mastodon's `sidekiq.yml` keeps
+/// unless `SIDEKIQ_CONCURRENCY` says otherwise.
+fn default_job_concurrency() -> usize {
+    5
+}
+
 impl Default for WorkersConfig {
     fn default() -> Self {
         Self {
@@ -297,6 +315,8 @@ impl Default for WorkersConfig {
             inbox_concurrency: default_inbox_concurrency(),
             queue_idle_poll_seconds: default_queue_idle_poll_seconds(),
             process_delivery_concurrency: default_process_delivery_concurrency(),
+            job_workers: default_job_workers(),
+            job_concurrency: default_job_concurrency(),
         }
     }
 }
@@ -314,6 +334,8 @@ impl WorkersConfig {
             inbox_concurrency: self.inbox_concurrency.max(1),
             queue_idle_poll_seconds: self.queue_idle_poll_seconds.max(1),
             process_delivery_concurrency: self.process_delivery_concurrency.max(1),
+            job_workers: self.job_workers.max(1),
+            job_concurrency: self.job_concurrency.max(1),
         }
     }
 

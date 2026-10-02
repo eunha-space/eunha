@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM eunha.jobs\n         WHERE dead_at IS NOT NULL AND dead_at < now() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d99e59722927427d892cbf3ac0c5e1e727b8a5cff2811203cde98339ab0eef5"
+}

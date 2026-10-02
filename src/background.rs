@@ -118,7 +118,16 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             crate::api::ap::inbox::run_inbox_queue(state.clone(), index),
         ));
     }
+    for index in 0..workers.job_workers {
+        tasks.push(until_stopped(
+            &state,
+            "job queue",
+            crate::jobs::run(state.clone(), index),
+        ));
+    }
     tracing::info!(
+        job_workers = workers.job_workers,
+        job_concurrency = workers.job_concurrency,
         delivery_workers = workers.delivery_workers,
         delivery_concurrency = workers.delivery_concurrency,
         inbox_workers = workers.inbox_workers,
@@ -178,6 +187,8 @@ pub struct QueueWakes {
     pub delivery: tokio::sync::Notify,
     pub inbox: tokio::sync::Notify,
     pub media: tokio::sync::Notify,
+    /// A job was queued (crate::jobs).
+    pub jobs: tokio::sync::Notify,
     /// A data import was confirmed.
     pub imports: tokio::sync::Notify,
     /// An archive takeout was requested.

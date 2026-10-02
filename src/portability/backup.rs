@@ -315,13 +315,13 @@ async fn perform(state: &AppState, backup_id: i64) -> AppResult<()> {
     // `active_for_authentication?` keeps from a user who cannot sign in.
     if backup.active == Some(true) {
         if let Some(email) = backup.email {
-            let sender = state.email.clone();
+            let sender = state.mailer();
             let domain = state.instance.domain.clone();
-            crate::tenants::spawn(async move {
+            {
                 if let Err(error) = sender.send_backup_ready(&email, &domain).await {
                     tracing::warn!(%error, "could not send an archive-ready email");
                 }
-            });
+            }
         }
     }
     Ok(())

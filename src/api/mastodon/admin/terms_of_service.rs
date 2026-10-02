@@ -312,10 +312,7 @@ pub async fn test_admin_terms_of_service(
     )
     .fetch_one(&state.db)
     .await?;
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        tos::send_changed_email(&state, &email, &t).await;
-    });
+    tos::send_changed_email(&state, &email, &t).await;
     Ok(Json(serde_json::json!({})))
 }
 

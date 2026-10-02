@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.jobs SET unique_key = NULL\n             WHERE unique_key = $1 AND unique_until <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24022d029f738658417660b2d4e25918e1c288da4801b52b420ea7acc386a42d"
+}

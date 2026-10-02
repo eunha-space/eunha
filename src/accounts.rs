@@ -395,16 +395,14 @@ pub async fn send_reset_password_instructions(
         "https://{}/auth/password/edit?reset_password_token={token}",
         state.instance.domain
     );
-    let email = state.email.clone();
     let locale = user.locale.unwrap_or_else(|| "en".into());
-    crate::tenants::spawn(async move {
-        if let Err(error) = email
-            .send_password_reset(&user.email, &user.username, &url, &locale)
-            .await
-        {
-            tracing::error!(%error, "failed to send password reset email");
-        }
-    });
+    if let Err(error) = state
+        .mailer()
+        .send_password_reset(&user.email, &user.username, &url, &locale)
+        .await
+    {
+        tracing::error!(%error, "failed to send password reset email");
+    }
     Ok(())
 }
 
@@ -520,23 +518,21 @@ pub async fn send_confirmation_instructions(
         "https://{}/auth/confirm?token={token}",
         state.instance.domain
     );
-    let email = state.email.clone();
     let locale = user.locale.unwrap_or_else(|| "en".into());
-    let domain = state.instance.domain.clone();
-    crate::tenants::spawn(async move {
-        let sent = if user.reconfirming {
-            email
-                .send_reconfirmation_instructions(&user.to, &domain, &url)
-                .await
-        } else {
-            email
-                .send_confirmation(&user.to, &user.username, "", &url, &locale)
-                .await
-        };
-        if let Err(error) = sent {
-            tracing::error!(%error, "failed to send confirmation email");
-        }
-    });
+    let domain = &state.instance.domain;
+    let email = state.mailer();
+    let sent = if user.reconfirming {
+        email
+            .send_reconfirmation_instructions(&user.to, domain, &url)
+            .await
+    } else {
+        email
+            .send_confirmation(&user.to, &user.username, "", &url, &locale)
+            .await
+    };
+    if let Err(error) = sent {
+        tracing::error!(%error, "failed to send confirmation email");
+    }
     Ok(())
 }
 
@@ -592,11 +588,7 @@ pub async fn confirm_user(
         if row.approved {
             prepare_new_user(state, row.account_id).await;
         } else {
-            let state = state.clone();
-            let account_id = row.account_id;
-            crate::tenants::spawn(async move {
-                notify_staff_about_pending_account(&state, account_id).await;
-            });
+            notify_staff_about_pending_account(state, row.account_id).await;
         }
     }
     Ok(())
@@ -1022,7 +1014,7 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
                 continue;
             }
             if let Err(error) = state
-                .email
+                .mailer()
                 .send_new_pending_account(
                     &recipient.email,
                     &state.instance.domain,

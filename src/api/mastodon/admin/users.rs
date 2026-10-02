@@ -184,14 +184,14 @@ pub async fn disable_user_two_factor(
     // `UserMailer.two_factor_disabled`, which `active_for_authentication?`
     // keeps from a user who cannot sign in anyway.
     if s.user.confirmed && s.user.approved && !s.user.disabled {
-        let email = state.email.clone();
+        let email = state.mailer();
         let to = s.user.email.clone();
         let domain = state.instance.domain.clone();
-        crate::tenants::spawn(async move {
+        {
             if let Err(error) = email.send_two_factor_disabled(&to, &domain).await {
                 tracing::warn!(%error, "could not send a two-factor disabled email");
             }
-        });
+        }
     }
     render(&state, id).await
 }

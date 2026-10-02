@@ -617,7 +617,7 @@ pub async fn request_review(state: &AppState) -> anyhow::Result<Requested> {
             continue;
         }
         if let Err(error) = state
-            .email
+            .mailer()
             .send_new_trends(&recipient.email, &state.instance.domain, &requested)
             .await
         {

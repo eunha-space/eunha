@@ -610,8 +610,6 @@ impl TestContext {
         // No SMTP in tests: keep what each instance would have mailed, for
         // `TestContext::mail_to` to read.
         eunha::email::capture_for_tests();
-        // And send notification emails at once rather than two minutes on.
-        eunha::notification_mail::send_without_delay();
         // Likewise for inbound activities: handle them in the request rather
         // than on the ingress queue, so a POST to /inbox has taken effect by
         // the time it returns.
@@ -756,6 +754,10 @@ impl TestContext {
         let state = eunha::state::AppState::new(db, config)
             .await
             .expect("failed to initialize AppState");
+        // Run each job as it is queued, in a task of its own, as Mastodon's
+        // tests run Sidekiq inline. A test of the queue itself sets
+        // `Mode::Durable` and drains it.
+        state.jobs.set_mode(eunha::jobs::Mode::Immediate);
         let state_clone = state.clone();
         let app = eunha::build_app().layer(axum::Extension(state));
 

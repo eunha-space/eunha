@@ -392,7 +392,7 @@ pub fn notify(state: &AppState, user: &UserTwoFactor, notice: NoticeKind) {
     if user.memorial {
         return;
     }
-    let email = state.email.clone();
+    let email = state.mailer();
     let to = user.email.clone();
     let domain = state.instance.domain.clone();
     crate::tenants::spawn(async move {
@@ -514,7 +514,7 @@ pub async fn notify_failed_second_factor(
     if !matches!(fresh, Ok(Some(_))) {
         return;
     }
-    let email = state.email.clone();
+    let email = state.mailer();
     let to = user.email.clone();
     let domain = state.instance.domain.clone();
     let ip = ip.map(|ip| ip.to_string()).unwrap_or_default();

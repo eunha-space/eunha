@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, queue, kind, args, attempts,\n                  EXTRACT(EPOCH FROM run_at - now())::float8 AS \"due!\",\n                  dead_at IS NOT NULL AS \"dead!\", unique_key, last_error\n           FROM eunha.jobs WHERE kind = $1 ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "queue",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "args",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "due!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "dead!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "unique_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "a515f8f28a19d66c37a7d5b2171d603690a6c882f3cd103bc15cd679f25a115b"
+}

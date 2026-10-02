@@ -38,6 +38,8 @@ pub struct AppState {
     pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<ojak::sig::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,
+    /// How this instance runs the jobs in its job queue (crate::jobs).
+    pub jobs: Arc<crate::jobs::Runtime>,
     /// Outgoing deliveries, queued in `eunha.ojak_queue` (federation::delivery).
     pub deliverer: Arc<crate::federation::delivery::Deliverer>,
     /// Which servers have stopped answering deliveries, as Mastodon tracks it
@@ -167,6 +169,7 @@ impl AppState {
             encryptor,
             instance_actor_key: Arc::default(),
             queues: Arc::default(),
+            jobs: Arc::default(),
             deliverer,
             delivery_failures,
             urls,
@@ -174,6 +177,15 @@ impl AppState {
             stop: tokio_util::sync::CancellationToken::new(),
             search,
         })
+    }
+}
+
+impl AppState {
+    /// The mailer `deliver_later` sends through: what it is given to send
+    /// goes into the job queue, as `ActionMailer::MailDeliveryJob`, and out
+    /// from there.
+    pub fn mailer(&self) -> EmailSender {
+        self.email.later(self)
     }
 }
 

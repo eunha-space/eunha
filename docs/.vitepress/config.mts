@@ -24,6 +24,7 @@ export default defineConfig({
           { text: "Importing a Mastodon instance", link: "/operating/importing" },
           { text: "Shared Redis", link: "/operating/redis" },
           { text: "Several instances in one process", link: "/operating/instances" },
+          { text: "The job queue", link: "/operating/jobs" },
           { text: "Invites", link: "/operating/invites" },
           { text: "Moderation", link: "/operating/moderation" },
           { text: "Search", link: "/operating/search" },

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE eunha.jobs SET locked_at = now() WHERE id = $1 AND locked_by = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3680c086c0faafd5976362a1f6ba306d1920c601c4969e5d0f7b4a128dcd39cf"
+}

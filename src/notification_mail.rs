@@ -8,11 +8,10 @@
 //! `notification_emails.<type>` on, and either nothing of theirs is
 //! listening (no streaming connection to their own stream, no web push
 //! subscription) or they asked for every mail (`always_send_emails`). It is
-//! sent two minutes later, as `deliver_later(wait: 2.minutes)` does, and only
-//! if the notification, its post and the member's standing still allow it
-//! then.
+//! sent two minutes later from the job queue, as `deliver_later(wait:
+//! 2.minutes)` does, and only if the notification, its post and the member's
+//! standing still allow it then.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::db::models::Account;
@@ -57,14 +56,23 @@ pub const UNSUBSCRIBABLE_TYPES: &[&str] = &[
 ];
 
 /// `deliver_later(wait: 2.minutes)`.
-const DELAY: Duration = Duration::from_secs(120);
+pub const DELAY: Duration = Duration::from_secs(120);
 
-static WITHOUT_DELAY: AtomicBool = AtomicBool::new(false);
+/// `NotificationMailer.with(recipient:, notification:).public_send(type)
+/// .deliver_later(wait: 2.minutes)`: the mail, rendered when the job runs.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct NotificationMailJob {
+    pub notification_id: i64,
+}
 
-/// Send notification emails as soon as they are due rather than two minutes
-/// later, for integration tests.
-pub fn send_without_delay() {
-    WITHOUT_DELAY.store(true, Ordering::Relaxed);
+impl crate::jobs::Job for NotificationMailJob {
+    const KIND: &'static str = "ActionMailer::MailDeliveryJob(NotificationMailer)";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Mailers);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        deliver(state, self.notification_id).await
+    }
 }
 
 /// `notification_emails.<kind>` for a member, with its default.
@@ -109,21 +117,7 @@ pub async fn notification_delivered(
     if online && !crate::accounts::user_setting_bool(settings, "always_send_emails", false) {
         return;
     }
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if !WITHOUT_DELAY.load(Ordering::Relaxed) {
-            let stopped = tokio::select! {
-                () = state.stop.cancelled() => true,
-                () = tokio::time::sleep(DELAY) => false,
-            };
-            if stopped {
-                return;
-            }
-        }
-        if let Err(error) = deliver(&state, notification_id).await {
-            tracing::warn!(%error, notification_id, "could not send a notification email");
-        }
-    });
+    crate::jobs::push_in(state, DELAY, NotificationMailJob { notification_id }).await;
 }
 
 /// `NotificationMailer.with(recipient:, notification:).public_send(type)`,

@@ -434,12 +434,9 @@ pub async fn create(
         }
         Err(e) => return Err(e.into()),
     };
-    let state = state.clone();
-    crate::tenants::spawn(async move {
-        if let Err(error) = send_confirmation(&state, id).await {
-            tracing::warn!(%error, "could not mail an email subscription's confirmation");
-        }
-    });
+    if let Err(error) = send_confirmation(state, id).await {
+        tracing::warn!(%error, "could not mail an email subscription's confirmation");
+    }
     Ok(id)
 }
 
@@ -556,7 +553,7 @@ pub async fn send_confirmation(state: &AppState, id: i64) -> anyhow::Result<()> 
     let envelope = envelope(state, &sub, &account).await;
     let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account);
     state
-        .email
+        .mailer()
         .send_subscription_confirmation(
             &envelope,
             &format!("{}@{}", account.username, state.instance.domain),
@@ -820,7 +817,7 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
     for sub in &subscribers {
         let envelope = envelope(state, sub, &account).await;
         if let Err(error) = state
-            .email
+            .mailer()
             .send_subscription_notification(
                 &envelope,
                 &account.display_name,

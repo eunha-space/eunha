@@ -542,18 +542,18 @@ pub async fn api_create_account(
         "https://{}/auth/confirm?token={}",
         instance.domain, confirmation_token
     );
-    let email_sender = state.email.clone();
+    let email_sender = state.mailer();
     let to = email.clone();
     let uname = username.clone();
     let locale_for_email = locale_str.clone();
-    crate::tenants::spawn(async move {
+    {
         if let Err(e) = email_sender
             .send_confirmation(&to, &uname, "", &confirm_url, &locale_for_email)
             .await
         {
             tracing::error!(error = %e, "failed to send confirmation email");
         }
-    });
+    }
 
     // Return a profile-scoped token placeholder. The token is not stored — it cannot
     // be used to authenticate. A real token is issued after email confirmation.
