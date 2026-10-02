@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are fifty-five. They cover:
+At the time of writing there are sixty-one. They cover:
 
  -  integrity proofs on outgoing activities, and Linked Data signatures
     over contexts eunha does not ship;
@@ -60,7 +60,12 @@ At the time of writing there are fifty-five. They cover:
  -  the auxiliary service provider admin API, where their workers run, and
     when an account search asks them;
  -  two post searches Mastodon's query transformer cannot read, and the
-    peers search falling back to the database.
+    peers search falling back to the database;
+ -  remote account images linked rather than downloaded, and where the work
+    on a remote account runs;
+ -  how quotes are counted, how quote request rejections are named, where
+    quote verification retries run, and how forwarded activities are
+    retried.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
