@@ -199,3 +199,44 @@ async fn test_the_invite_request_text_can_be_required() {
     body["reason"] = json!("I would like to join.");
     assert_eq!(sign_up(&ctx, body).await.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_sign_up_keeps_a_time_zone_rails_knows() {
+    let ctx = TestContext::new("signup-time-zone").await;
+    for (username, time_zone) in [("carol", "Seoul"), ("dave", "Mars/Olympus_Mons")] {
+        let accepted = sign_up(
+            &ctx,
+            json!({ "username": username, "email": format!("{username}@example.com"),
+                    "password": "a-long-enough-password", "agreement": true,
+                    "time_zone": time_zone }),
+        )
+        .await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let token: String = sqlx::query_scalar(
+            "SELECT confirmation_token FROM eunha.pending_signups WHERE username = $1",
+        )
+        .bind(username)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        ctx.api
+            .get(&format!("/auth/confirm?token={token}"), None)
+            .await;
+    }
+    let zones: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT a.username, u.time_zone FROM users u JOIN accounts a ON a.id = u.account_id
+         WHERE a.username IN ('carol', 'dave') ORDER BY a.username",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    // `normalizes :time_zone`: a name `ActiveSupport::TimeZone` cannot find
+    // is no time zone at all, not a refusal.
+    assert_eq!(
+        zones,
+        [
+            ("carol".into(), Some("Seoul".into())),
+            ("dave".into(), None)
+        ]
+    );
+}

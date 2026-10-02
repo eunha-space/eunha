@@ -134,6 +134,9 @@ Mastodon 4.7's `User` validates, and answer a refusal as
     `reason` is required unless the invite's creator may bypass approval, and
     is at most 420 characters. `registrations.reason_required` advertises it.
  -  The password is 8 to 72 characters, Devise's `password_length`.
+ -  `time_zone`, as `AppSignUpService` takes it, becomes `users.time_zone`
+    when it names a zone Rails knows (see [Time zones](#time-zones)); any
+    other value is dropped rather than refused.
 
 Eunha writes the account when its email address is confirmed rather than when
 the form is sent, so `age_verified_at` follows `Setting.min_age` as it stands
@@ -202,6 +205,8 @@ privacy section uses both.
  -  `chosen_languages` limits public timelines to those languages; an empty
     list clears it. `locale` is the language eunha writes mail in; one Mastodon
     has no translation for is cleared.
+ -  `time_zone` is the zone the times in mail are written in (see
+    [Time zones](#time-zones)).
  -  `notification_emails` turns the staff mails eunha sends on or off:
     `report`, `pending_account`, `trends`, `appeal`, `end_of_support`, and
     `software_updates` (`none`, `critical`, `patch` or `all`).
@@ -209,3 +214,24 @@ privacy section uses both.
 `source[sensitive]` is kept under Mastodon's `default_sensitive` key in
 `users.settings`; eunha used to write `web.default_sensitive`, which it still
 reads.
+
+
+Time zones
+----------
+
+`users.time_zone` holds what Rails' `ActiveSupport::TimeZone[name]` finds:
+one of the friendly names in `ActiveSupport::TimeZone::MAPPING` (`Seoul`,
+`Eastern Time (US & Canada)`) or any IANA identifier (`Asia/Seoul`). As
+Mastodon's `User` normalizes it, a name Rails would not find is stored as no
+time zone at all, which reads as UTC. Eunha carries the mapping as Mastodon
+4.7.1's Rails (8.1) has it, and the IANA zones through `chrono-tz`.
+
+`GET /api/eunha/v1/preferences/time_zones` lists the appearance page's
+choices, `SettingsHelper#time_zone_options`: every zone in the mapping,
+ordered by its standard offset and then its name, labelled with its offset now
+(`(GMT+09:00) Seoul`), with the IANA identifier the form submits.
+
+The time zone is where Mastodon puts it to use: the times written into a
+member's mail (`:with_time_zone`, as `Mar 05, 2026, 00:06 KST`), in the
+failed second factor and new sign-in notices, the appeal decisions, and the
+posts quoted in notification emails.

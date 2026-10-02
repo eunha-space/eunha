@@ -508,6 +508,32 @@ impl Drop for TestContext {
 }
 
 impl TestContext {
+    /// The mail this instance has sent to `address`, oldest first.
+    pub fn sent_to(&self, address: &str) -> Vec<eunha::email::SentMail> {
+        self.state
+            .email
+            .sent()
+            .into_iter()
+            .filter(|m| m.to == address || m.to.ends_with(&format!("<{address}>")))
+            .collect()
+    }
+
+    /// The first mail to `address` whose subject contains `subject`, waiting
+    /// a few seconds for one sent from a background task.
+    pub async fn mail_to(&self, address: &str, subject: &str) -> Option<eunha::email::SentMail> {
+        for _ in 0..50 {
+            if let Some(mail) = self
+                .sent_to(address)
+                .into_iter()
+                .find(|m| m.subject.contains(subject))
+            {
+                return Some(mail);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        None
+    }
+
     /// A context configured the way a real instance is out of the box.
     pub async fn new(label: &str) -> Self {
         Self::with_integrity_proofs(label, eunha::config::default_sign_integrity_proofs()).await
@@ -581,6 +607,9 @@ impl TestContext {
         // Make fanout/populate/backfill run inline so tests don't race with background tasks.
         eunha::feed::enable_sync_fanout();
         eunha::moderation::signup::skip_mx_check();
+        // No SMTP in tests: keep what each instance would have mailed, for
+        // `TestContext::mail_to` to read.
+        eunha::email::capture_for_tests();
         // Likewise for inbound activities: handle them in the request rather
         // than on the ingress queue, so a POST to /inbox has taken effect by
         // the time it returns.

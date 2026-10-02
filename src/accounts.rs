@@ -32,6 +32,8 @@ pub struct NewLocalUser<'a> {
     /// `invite_request`: the reason given for joining, as a
     /// `user_invite_requests` row.
     pub invite_request: Option<&'a str>,
+    /// `users.time_zone`, already normalized.
+    pub time_zone: Option<&'a str>,
 }
 
 /// The rows a new local account was written as.
@@ -114,11 +116,11 @@ pub async fn create_local(
              (account_id, email, encrypted_password, role_id,
               confirmed_at, invite_id, approved,
               locale, created_by_application_id, sign_up_ip, age_verified_at,
-              created_at, updated_at)
+              time_zone, created_at, updated_at)
            VALUES ($1,$2,$3,$4,
                    now(), $5, $6,
                    $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,
-                   now(), now())
+                   $11, now(), now())
            RETURNING id"#,
         account_id,
         user.email,
@@ -130,6 +132,7 @@ pub async fn create_local(
         user.app_id,
         user.sign_up_ip.map(|ip| ip.to_string()),
         age_verified,
+        user.time_zone,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -256,6 +259,7 @@ pub async fn create_from_command(
             app_id: None,
             sign_up_ip: None,
             invite_request: None,
+            time_zone: None,
         },
     )
     .await?;

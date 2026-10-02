@@ -219,8 +219,18 @@ export interface Preferences {
   show_application: boolean
   chosen_languages: string[] | null
   locale: string | null
+  time_zone: string | null
   notification_emails: Record<string, boolean | string | null>
 }
+
+/** One of Rails' `ActiveSupport::TimeZone.all`, as the settings page lists it. */
+export interface TimeZoneChoice {
+  value: string
+  label: string
+}
+
+export const getTimeZones = (token: string) =>
+  call<TimeZoneChoice[]>('/api/eunha/v1/preferences/time_zones', token)
 
 export const getPreferences = (token: string) =>
   call<Preferences>('/api/eunha/v1/preferences', token)

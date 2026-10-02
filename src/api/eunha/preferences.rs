@@ -23,7 +23,9 @@ use crate::{
 };
 
 pub fn routes() -> Router {
-    Router::new().route("/api/eunha/v1/preferences", get(show).patch(update))
+    Router::new()
+        .route("/api/eunha/v1/preferences", get(show).patch(update))
+        .route("/api/eunha/v1/preferences/time_zones", get(time_zones))
 }
 
 /// The `notification_emails.*` settings for the mails eunha sends staff.
@@ -47,6 +49,9 @@ pub struct Preferences {
     pub chosen_languages: Option<Vec<String>>,
     /// `users.locale`, the language mail is written in.
     pub locale: Option<String>,
+    /// `users.time_zone`: the zone times in mail are written in, a name
+    /// `ActiveSupport::TimeZone` knows, or null for UTC.
+    pub time_zone: Option<String>,
     pub notification_emails: NotificationEmails,
 }
 
@@ -63,7 +68,7 @@ pub struct NotificationEmails {
 
 async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
     let row = sqlx::query!(
-        "SELECT settings, chosen_languages, locale FROM users WHERE id = $1",
+        "SELECT settings, chosen_languages, locale, time_zone FROM users WHERE id = $1",
         user_id,
     )
     .fetch_one(&state.db)
@@ -84,6 +89,7 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         show_application: user_setting_bool(settings, "show_application", true),
         chosen_languages: row.chosen_languages.filter(|l| !l.is_empty()),
         locale: row.locale,
+        time_zone: row.time_zone,
         notification_emails: NotificationEmails {
             report: bool_of("notification_emails.report", true),
             pending_account: bool_of("notification_emails.pending_account", true),
@@ -113,6 +119,8 @@ pub struct Update {
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
+    /// A name Rails does not know clears it, as `User` normalizes it.
+    pub time_zone: Option<String>,
     #[serde(default)]
     pub notification_emails: NotificationEmails,
 }
@@ -214,6 +222,27 @@ pub async fn update(
         .execute(&state.db)
         .await?;
     }
+    if let Some(time_zone) = form.time_zone {
+        sqlx::query!(
+            "UPDATE users SET time_zone = $1, updated_at = now() WHERE id = $2",
+            crate::time_zones::normalize(Some(time_zone.trim())),
+            user_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
 
     Ok(Json(load(&state, user_id).await?))
+}
+
+/// GET /api/eunha/v1/preferences/time_zones
+///
+/// The appearance page's time zone list, `SettingsHelper#time_zone_options`:
+/// every zone `ActiveSupport::TimeZone.all` offers, in its order, with the
+/// value the preference takes.
+pub async fn time_zones(
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<Vec<crate::time_zones::Choice>>> {
+    signed_in(auth, "read:accounts")?;
+    Ok(Json(crate::time_zones::choices(chrono::Utc::now())))
 }

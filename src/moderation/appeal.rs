@@ -378,18 +378,29 @@ async fn mail_decision(
     appeal_created_at: chrono::NaiveDateTime,
     strike_created_at: chrono::NaiveDateTime,
 ) {
-    let Ok(Some(to)) =
-        sqlx::query_scalar!("SELECT email FROM users WHERE account_id = $1", account_id)
-            .fetch_optional(&state.db)
-            .await
+    let Ok(Some(user)) = sqlx::query!(
+        "SELECT email, time_zone FROM users WHERE account_id = $1",
+        account_id
+    )
+    .fetch_optional(&state.db)
+    .await
     else {
         return;
     };
+    let to = user.email;
+    let time_zone = user.time_zone;
     let email = state.email.clone();
     let domain = state.instance.domain.clone();
     crate::tenants::spawn(async move {
         if let Err(error) = email
-            .send_appeal_decided(&to, &domain, approved, appeal_created_at, strike_created_at)
+            .send_appeal_decided(
+                &to,
+                &domain,
+                approved,
+                appeal_created_at,
+                strike_created_at,
+                time_zone.as_deref(),
+            )
             .await
         {
             tracing::warn!(%error, "could not send an appeal decision email");

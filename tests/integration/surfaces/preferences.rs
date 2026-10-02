@@ -203,3 +203,39 @@ async fn test_default_sensitive_is_stored_under_mastodons_key() {
         .unwrap();
     assert_eq!(prefs["posting:default:sensitive"], true);
 }
+
+#[tokio::test]
+async fn test_time_zone_preference() {
+    let ctx = TestContext::new("preferences-time-zone").await;
+    assert!(preferences(&ctx).await["time_zone"].is_null());
+
+    let choices: Value = ctx
+        .api
+        .get(
+            "/api/eunha/v1/preferences/time_zones",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let choices = choices.as_array().unwrap();
+    assert_eq!(choices[0]["value"], "Etc/GMT+12");
+    assert!(choices
+        .iter()
+        .any(|c| c["value"] == "Asia/Seoul" && c["label"] == "(GMT+09:00) Seoul"));
+
+    for (asked, kept) in [
+        ("Asia/Seoul", Some("Asia/Seoul")),
+        ("Tokyo", Some("Tokyo")),
+        // `normalizes :time_zone`: a name Rails cannot find clears it.
+        ("Atlantis/Lost", None),
+    ] {
+        let changed: Value = patch(&ctx, json!({ "time_zone": asked }))
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(changed["time_zone"].as_str(), kept, "{asked}");
+    }
+}

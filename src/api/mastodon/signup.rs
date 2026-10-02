@@ -263,6 +263,9 @@ pub struct ApiCreateAccountForm {
     pub invite_code: Option<String>,
     /// Asked for when the instance sets a minimum age (`Setting.min_age`).
     pub date_of_birth: Option<String>,
+    /// `users.time_zone`; a name Rails would not know is dropped, as
+    /// `User` normalizes it.
+    pub time_zone: Option<String>,
 }
 
 /// `validates :agreement, acceptance: { accept: [true, 'true', '1'] }`.
@@ -504,8 +507,8 @@ pub async fn api_create_account(
     sqlx::query!(
         r#"INSERT INTO eunha.pending_signups
              (username, email, email_normalized, password_hash,
-              invite_id, reason, locale, app_id, confirmation_token, sign_up_ip)
-           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8,$9::text::inet)
+              invite_id, reason, locale, app_id, confirmation_token, sign_up_ip, time_zone)
+           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8,$9::text::inet,$10)
            ON CONFLICT (email_normalized) DO UPDATE SET
              username           = EXCLUDED.username,
              password_hash      = EXCLUDED.password_hash,
@@ -515,6 +518,7 @@ pub async fn api_create_account(
              app_id             = EXCLUDED.app_id,
              confirmation_token = EXCLUDED.confirmation_token,
              sign_up_ip         = EXCLUDED.sign_up_ip,
+             time_zone          = EXCLUDED.time_zone,
              expires_at         = now() + interval '24 hours'"#,
         username,
         email,
@@ -525,6 +529,7 @@ pub async fn api_create_account(
         app_id,
         confirmation_token,
         sign_up_ip.map(|ip| ip.to_string()),
+        crate::time_zones::normalize(form.time_zone.as_deref()),
     )
     .execute(&state.db)
     .await
@@ -570,7 +575,7 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
            WHERE confirmation_token = $1 AND expires_at > now()
            RETURNING username, email, email_normalized,
                      password_hash, invite_id, reason, locale, app_id,
-                     host(sign_up_ip) AS sign_up_ip"#,
+                     host(sign_up_ip) AS sign_up_ip, time_zone"#,
         q.token,
     )
     .fetch_optional(&state.db)
@@ -651,6 +656,7 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
             app_id: pending.app_id,
             sign_up_ip,
             invite_request: pending.reason.as_deref(),
+            time_zone: pending.time_zone.as_deref(),
         },
     )
     .await

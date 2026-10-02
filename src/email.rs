@@ -1,7 +1,40 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+static CAPTURE: AtomicBool = AtomicBool::new(false);
+
+/// Keep what every sender created from now on without SMTP would have sent,
+/// instead of failing, so integration tests can read the mail an instance
+/// sent with [`EmailSender::sent`]. Each sender keeps its own, so instances
+/// that share a process do not see each other's.
+pub fn capture_for_tests() {
+    CAPTURE.store(true, Ordering::Relaxed);
+}
+
+/// A mail kept by [`capture_for_tests`].
+#[derive(Debug, Clone)]
+pub struct SentMail {
+    pub to: String,
+    pub subject: String,
+    pub html: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl SentMail {
+    /// The value of header `name`, if the mail carried one.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
 #[derive(Clone)]
 pub struct EmailSender {
     smtp: Option<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>>,
     from: String,
+    outbox: Option<Arc<Mutex<Vec<SentMail>>>>,
 }
 
 impl EmailSender {
@@ -9,6 +42,8 @@ impl EmailSender {
         let sender = Self {
             smtp: None,
             from: String::new(),
+            outbox: (config.is_none() && CAPTURE.load(Ordering::Relaxed))
+                .then(|| Arc::new(Mutex::new(Vec::new()))),
         };
         match config {
             Some(config) => sender.with_smtp(config),
@@ -610,7 +645,8 @@ impl EmailSender {
 
     /// `UserMailer#appeal_approved` (`approved` true) and
     /// `UserMailer#appeal_rejected`. The dates are `l(...)` in Mastodon's
-    /// `default` and `with_time_zone` formats, in UTC.
+    /// `default` format in UTC for the subject and `with_time_zone` in the
+    /// user's `time_zone` for the body.
     pub async fn send_appeal_decided(
         &self,
         to: &str,
@@ -618,10 +654,12 @@ impl EmailSender {
         approved: bool,
         appeal_created_at: chrono::NaiveDateTime,
         strike_created_at: chrono::NaiveDateTime,
+        time_zone: Option<&str>,
     ) -> anyhow::Result<()> {
+        use crate::time_zones::format_with_time_zone;
         let date = appeal_created_at.format("%b %d, %Y, %H:%M");
-        let appeal_date = appeal_created_at.format("%b %d, %Y, %H:%M UTC");
-        let strike_date = strike_created_at.format("%b %d, %Y, %H:%M UTC");
+        let appeal_date = format_with_time_zone(appeal_created_at.and_utc(), time_zone, "en");
+        let strike_date = format_with_time_zone(strike_created_at.and_utc(), time_zone, "en");
         let (subject, title, explanation) = if approved {
             (
                 format!("Your appeal from {date} has been approved"),
@@ -791,6 +829,7 @@ impl EmailSender {
 
     /// `UserMailer#failed_2fa` (`suspicious` false) and
     /// `UserMailer#suspicious_sign_in`: where a sign-in came from.
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_sign_in_alert(
         &self,
         to: &str,
@@ -799,6 +838,7 @@ impl EmailSender {
         remote_ip: &str,
         browser: &str,
         timestamp: chrono::DateTime<chrono::Utc>,
+        time_zone: Option<&str>,
     ) -> anyhow::Result<()> {
         let (subject, title, explanation, details, further) = if suspicious {
             (
@@ -827,7 +867,7 @@ impl EmailSender {
              <a href=\"{url}\">change your password</a> {further}</p>",
             html_escape(remote_ip),
             html_escape(browser),
-            timestamp.format("%b %d, %Y, %H:%M UTC"),
+            crate::time_zones::format_with_time_zone(timestamp, time_zone, "en"),
         );
         self.send(to, subject, &body).await
     }
@@ -871,7 +911,27 @@ impl EmailSender {
                 .map_err(|_| anyhow::anyhow!("SMTP delivery failed"))?;
             return Ok(());
         }
+        if let Some(outbox) = &self.outbox {
+            outbox.lock().expect("outbox lock").push(SentMail {
+                to: to.to_owned(),
+                subject: subject.to_owned(),
+                html: html.to_owned(),
+                headers: headers
+                    .iter()
+                    .map(|(n, v)| ((*n).to_owned(), v.clone()))
+                    .collect(),
+            });
+            return Ok(());
+        }
         anyhow::bail!("SMTP is not configured")
+    }
+
+    /// What this sender kept under [`capture_for_tests`], oldest first.
+    pub fn sent(&self) -> Vec<SentMail> {
+        self.outbox
+            .as_ref()
+            .map(|o| o.lock().expect("outbox lock").clone())
+            .unwrap_or_default()
     }
 }
 

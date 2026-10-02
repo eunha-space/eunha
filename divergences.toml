@@ -997,17 +997,18 @@ kind = "addition"
 summary = "Serves the preferences Mastodon has only as web forms over a REST API"
 mastodon = """
 Sets `noindex` (shown inverted as \"include profile page in search engines\"), \
-`show_application`, the interface language, the languages shown in public \
-timelines and the notification email settings through \
+`show_application`, the interface language and time zone, the languages \
+shown in public timelines and the notification email settings through \
 `/settings/privacy` and `/settings/preferences/*` web forms behind a \
 session."""
 eunha = """
 Serves `GET` and `PATCH /api/eunha/v1/preferences` for `noindex` (or \
-`indexable`, its inverse), `show_application`, `chosen_languages`, `locale` \
+`indexable`, its inverse), `show_application`, `chosen_languages`, `locale`, \
+`time_zone` (with the zones to choose from at `preferences/time_zones`) \
 and the staff notification emails eunha sends (`report`, `pending_account`, \
 `trends`, `appeal`, `end_of_support`, `software_updates`), stored in \
-`users.settings`, `users.chosen_languages` and `users.locale` as Mastodon \
-stores them."""
+`users.settings`, `users.chosen_languages`, `users.locale` and \
+`users.time_zone` as Mastodon stores them."""
 why = """
 Eunha's settings page is a single-page app holding a token, so these forms \
 need an API to call. Settings Mastodon already serves through \

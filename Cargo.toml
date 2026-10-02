@@ -72,6 +72,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+# The IANA zones behind `users.time_zone`, which Rails resolves through tzinfo
+# (src/time_zones.rs)
+chrono-tz = "0.10"
 
 # Error handling
 anyhow = "1"

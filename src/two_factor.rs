@@ -164,6 +164,8 @@ pub struct UserTwoFactor {
     pub role_requires: bool,
     /// `Account#memorial?`, which keeps `UserMailer` from writing.
     pub memorial: bool,
+    /// `users.time_zone`, which the times in its mail are written in.
+    pub time_zone: Option<String>,
 }
 
 impl UserTwoFactor {
@@ -192,7 +194,7 @@ impl UserTwoFactor {
 pub async fn load(db: &PgPool, user_id: i64) -> sqlx::Result<Option<UserTwoFactor>> {
     let row = sqlx::query!(
         r#"SELECT u.id, u.email, u.otp_required_for_login, u.otp_secret, u.otp_backup_codes,
-                  u.consumed_timestep, u.updated_at, a.memorial,
+                  u.consumed_timestep, u.updated_at, a.memorial, u.time_zone,
                   (SELECT count(*) FROM webauthn_credentials w WHERE w.user_id = u.id) AS "webauthn!",
                   COALESCE((SELECT r.require_2fa FROM user_roles r WHERE r.id = COALESCE(u.role_id, -99)),
                            false) AS "role_requires!"
@@ -213,6 +215,7 @@ pub async fn load(db: &PgPool, user_id: i64) -> sqlx::Result<Option<UserTwoFacto
         updated_at: r.updated_at,
         role_requires: r.role_requires,
         memorial: r.memorial,
+        time_zone: r.time_zone,
     }))
 }
 
@@ -513,9 +516,18 @@ pub async fn notify_failed_second_factor(
     let domain = state.instance.domain.clone();
     let ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
     let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
+    let time_zone = user.time_zone.clone();
     crate::tenants::spawn(async move {
         if let Err(error) = email
-            .send_sign_in_alert(&to, &domain, false, &ip, &browser, chrono::Utc::now())
+            .send_sign_in_alert(
+                &to,
+                &domain,
+                false,
+                &ip,
+                &browser,
+                chrono::Utc::now(),
+                time_zone.as_deref(),
+            )
             .await
         {
             tracing::warn!(%error, "could not send a failed second factor email");

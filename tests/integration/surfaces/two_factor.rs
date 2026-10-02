@@ -256,6 +256,11 @@ async fn test_totp_setup_stores_what_mastodon_stores() {
 async fn test_sign_in_asks_for_the_second_factor() {
     let ctx = TestContext::new("2fa-sign-in").await;
     let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    sqlx::query("UPDATE users SET time_zone = 'Asia/Seoul' WHERE id = $1")
+        .bind(alice_user)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
     let (secret, codes) = enable_totp(&ctx, &ctx.alice_token).await;
     let client_id = register_app(&ctx).await;
 
@@ -293,6 +298,12 @@ async fn test_sign_in_asks_for_the_second_factor() {
     .await
     .unwrap();
     assert_eq!(failures, 1);
+    // `UserMailer#failed_2fa`, with the time in the user's own zone.
+    let mail = ctx
+        .mail_to("alice@test.invalid", "Second factor authentication failure")
+        .await
+        .expect("a failed second factor mail");
+    assert!(mail.html.contains(" KST"), "{}", mail.html);
 
     // A recovery code works once.
     let granted = authorize(

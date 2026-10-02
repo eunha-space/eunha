@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM eunha.pending_signups\n           WHERE confirmation_token = $1 AND expires_at > now()\n           RETURNING username, email, email_normalized,\n                     password_hash, invite_id, reason, locale, app_id,\n                     host(sign_up_ip) AS sign_up_ip",
+  "query": "DELETE FROM eunha.pending_signups\n           WHERE confirmation_token = $1 AND expires_at > now()\n           RETURNING username, email, email_normalized,\n                     password_hash, invite_id, reason, locale, app_id,\n                     host(sign_up_ip) AS sign_up_ip, time_zone",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "sign_up_ip",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "time_zone",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -63,8 +68,9 @@
       true,
       false,
       true,
-      null
+      null,
+      true
     ]
   },
-  "hash": "79832cd73b0eabd1dd01c6dbebca2873192c231b43cfc643f7b0755f1db0c83d"
+  "hash": "46b19c254909cd27bc6b744229ae48d230b238b27fe83545267c46392d455d74"
 }

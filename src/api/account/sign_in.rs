@@ -438,9 +438,18 @@ async fn on_authentication_success(
         let domain = state.instance.domain.clone();
         let ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
         let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
+        let time_zone = user.time_zone.clone();
         crate::tenants::spawn(async move {
             if let Err(error) = email
-                .send_sign_in_alert(&to, &domain, true, &ip, &browser, chrono::Utc::now())
+                .send_sign_in_alert(
+                    &to,
+                    &domain,
+                    true,
+                    &ip,
+                    &browser,
+                    chrono::Utc::now(),
+                    time_zone.as_deref(),
+                )
                 .await
             {
                 tracing::warn!(%error, "could not send a suspicious sign-in email");
