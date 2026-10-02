@@ -3,12 +3,17 @@ import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import {
+  createReportNote,
+  deleteReportNote,
   getAccount,
   getReport,
+  getReportHistory,
+  listReportNotes,
   publicAccount,
   transitionReport,
   updateReport,
   type AccountActionType,
+  type ActionLog,
   type AdminAccount,
   type AdminReport,
   type ReportCategory,
@@ -27,6 +32,8 @@ import {
   formatDate,
 } from '@/components/admin/admin-common.tsx'
 import { AccountActionDialog } from '@/components/admin/account-action-dialog.tsx'
+import { ActionLogEntry } from '@/components/admin/action-log-entry.tsx'
+import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
@@ -141,6 +148,7 @@ export default function ReportDetail() {
   const [rules, setRules] = useState<InstanceRule[]>([])
   const [busy, setBusy] = useState(false)
   const [action, setAction] = useState<AccountActionType | 'custom' | null>(null)
+  const [history, setHistory] = useState<ActionLog[]>([])
 
   const load = useCallback(() => {
     if (!token) return
@@ -155,6 +163,9 @@ export default function ReportDetail() {
         return getAccount(token, publicAccount(r.target_account).id).then(setTarget)
       })
       .catch((e) => setError(String(e)))
+    getReportHistory(token, id)
+      .then(setHistory)
+      .catch(() => setHistory([]))
   }, [token, id])
 
   useEffect(() => {
@@ -332,9 +343,17 @@ export default function ReportDetail() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">
-              Reported posts ({report.statuses.length})
-            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="min-w-0 flex-1 text-sm font-semibold">
+                Reported posts ({report.statuses.length})
+              </h2>
+              <Link
+                className="text-xs"
+                to={`/admin/accounts/${publicAccount(report.target_account).id}/statuses?report_id=${report.id}`}
+              >
+                Add posts
+              </Link>
+            </div>
             {report.statuses.length === 0 && (
               <p className="text-muted-foreground text-sm">No posts were attached.</p>
             )}
@@ -342,6 +361,34 @@ export default function ReportDetail() {
               <AdminStatus key={s.id} status={s} />
             ))}
           </section>
+
+          <ModerationNotes
+            key={report.id}
+            load={() => listReportNotes(token, report.id)}
+            create={(content, flags) =>
+              createReportNote(token, { report_id: report.id, content, ...flags })
+            }
+            remove={(noteId) => deleteReportNote(token, noteId)}
+            extraSubmits={[
+              report.action_taken
+                ? { label: 'Add note and reopen', flags: { create_and_unresolve: true } }
+                : { label: 'Add note and resolve', flags: { create_and_resolve: true } },
+            ]}
+            onCreated={(flags) => {
+              if (Object.keys(flags).length > 0) load()
+            }}
+          />
+
+          {history.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold">Moderation history</h2>
+              <div className="divide-y rounded-lg border">
+                {history.map((log) => (
+                  <ActionLogEntry key={log.id} log={log} />
+                ))}
+              </div>
+            </section>
+          )}
 
           <p className="text-sm">
             <Link

@@ -272,7 +272,12 @@ pub async fn reset_password(db: &PgPool, username: &str) -> Result<String> {
     .fetch_optional(db)
     .await?
     .ok_or_else(|| anyhow!("no user with such username"))?;
+    change_password(db, user_id).await
+}
 
+/// `User#change_password!(SecureRandom.hex)`: a new random password, every
+/// session and authorization of the user gone with it. Returns the password.
+pub async fn change_password(db: &PgPool, user_id: i64) -> Result<String> {
     // `SecureRandom.hex`: 16 random bytes, written as 32 hex digits.
     let password = crate::crypto::generate_token(16);
     let password_hash = crate::crypto::hash_password(&password)
@@ -319,6 +324,129 @@ pub async fn reset_password(db: &PgPool, username: &str) -> Result<String> {
     tx.commit().await?;
 
     Ok(password)
+}
+
+/// `User#send_reset_password_instructions`: a reset token, and a mail with the
+/// link that uses it, as eunha's password reset form sends. Nothing for a user
+/// without a password (`encrypted_password.blank?`).
+pub async fn send_reset_password_instructions(
+    state: &crate::state::AppState,
+    user_id: i64,
+) -> Result<()> {
+    let Some(user) = sqlx::query!(
+        r#"SELECT u.email, u.encrypted_password, u.locale, a.username
+           FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1"#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    if user.encrypted_password.is_empty() {
+        return Ok(());
+    }
+    let token = crate::crypto::generate_token(32);
+    sqlx::query!(
+        "UPDATE users SET reset_password_token = $1, reset_password_sent_at = now() WHERE id = $2",
+        token,
+        user_id,
+    )
+    .execute(&state.db)
+    .await?;
+    let url = format!(
+        "https://{}/auth/password/reset?token={token}",
+        state.instance.domain
+    );
+    let email = state.email.clone();
+    let locale = user.locale.unwrap_or_else(|| "en".into());
+    crate::tenants::spawn(async move {
+        if let Err(error) = email
+            .send_password_reset(&user.email, &user.username, &url, &locale)
+            .await
+        {
+            tracing::error!(%error, "failed to send password reset email");
+        }
+    });
+    Ok(())
+}
+
+/// `send_confirmation_instructions`: a fresh confirmation token, mailed to the
+/// address awaiting confirmation (`unconfirmed_email` when there is one).
+pub async fn send_confirmation_instructions(
+    state: &crate::state::AppState,
+    user_id: i64,
+) -> Result<()> {
+    let token = crate::crypto::generate_token(32);
+    let Some(user) = sqlx::query!(
+        r#"UPDATE users u SET confirmation_token = $2, confirmation_sent_at = now()
+           FROM accounts a
+           WHERE u.id = $1 AND a.id = u.account_id
+           RETURNING COALESCE(u.unconfirmed_email, u.email) AS "to!", u.locale, a.username"#,
+        user_id,
+        token,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let url = format!(
+        "https://{}/auth/confirm?token={token}",
+        state.instance.domain
+    );
+    let email = state.email.clone();
+    let locale = user.locale.unwrap_or_else(|| "en".into());
+    crate::tenants::spawn(async move {
+        if let Err(error) = email
+            .send_confirmation(&user.to, &user.username, "", &url, &locale)
+            .await
+        {
+            tracing::error!(%error, "failed to send confirmation email");
+        }
+    });
+    Ok(())
+}
+
+/// `User#mark_email_as_confirmed!` and Devise's `confirm`, for a user who
+/// exists: an address awaiting confirmation becomes the address, and a user
+/// confirmed for the first time is welcomed in (or put before the staff, when
+/// still awaiting approval), as `after_confirmation_tasks` does.
+pub async fn confirm_user(
+    state: &crate::state::AppState,
+    user_id: i64,
+    reconfirm: bool,
+) -> Result<()> {
+    let row = sqlx::query!(
+        r#"UPDATE users u SET
+             email = CASE WHEN $2 THEN COALESCE(lower(btrim(u.unconfirmed_email)), u.email) ELSE u.email END,
+             unconfirmed_email = CASE WHEN $2 THEN NULL ELSE u.unconfirmed_email END,
+             confirmed_at = COALESCE(u.confirmed_at, now()),
+             confirmation_token = NULL,
+             updated_at = now()
+           FROM users before
+           WHERE u.id = $1 AND before.id = u.id
+           RETURNING u.account_id, u.approved, (before.confirmed_at IS NULL) AS "new_user!""#,
+        user_id,
+        reconfirm,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(row) = row else {
+        return Ok(());
+    };
+    if row.new_user {
+        if row.approved {
+            prepare_new_user(state, row.account_id).await;
+        } else {
+            let state = state.clone();
+            let account_id = row.account_id;
+            crate::tenants::spawn(async move {
+                notify_staff_about_pending_account(&state, account_id).await;
+            });
+        }
+    }
+    Ok(())
 }
 
 /// One `@` between a non-empty local part and a domain, with none of the

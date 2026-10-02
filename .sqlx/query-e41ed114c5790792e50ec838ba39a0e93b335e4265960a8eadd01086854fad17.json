@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, target_account_id, report_id, action, text, status_ids,\n                  overruled_at, created_at\n           FROM account_warnings WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "report_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "action",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_ids",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "overruled_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "e41ed114c5790792e50ec838ba39a0e93b335e4265960a8eadd01086854fad17"
+}

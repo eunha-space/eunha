@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reports\n                             (account_id, target_account_id, status_ids, comment, uri,\n                              created_at, updated_at)\n                           VALUES ($1, $2, $3, '', $4, now(), now())\n                           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8Array",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5a24c05ceb5827da89ce2d425d74ad20f83fd244946d5ce7f405a8ee588d7b1c"
+}

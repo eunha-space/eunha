@@ -3,6 +3,7 @@
 
 pub mod account_action;
 pub mod action_log;
+pub mod appeal;
 pub mod domain_block;
 pub mod history;
 pub mod notification_policy;

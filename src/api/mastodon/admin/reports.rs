@@ -73,7 +73,7 @@ async fn admin_account(state: &AppState, id: Option<i64>) -> AppResult<Option<Ad
 }
 
 /// `Report#statuses`: `Status.with_discarded.where(id: status_ids)`.
-async fn report_statuses(
+pub(crate) async fn report_statuses(
     state: &AppState,
     ids: &[i64],
 ) -> AppResult<Vec<super::super::types::Status>> {

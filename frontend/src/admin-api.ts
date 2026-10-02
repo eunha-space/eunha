@@ -895,6 +895,263 @@ export function generateTermsOfService(token: string, params: TermsOfServiceGene
   )
 }
 
+// ── Moderation tools (eunha) ───────────────────────────────────────────────
+//
+// What Mastodon has only as server-rendered admin pages, served by eunha over
+// REST at the paths its admin API would use (`moderation-tools-rest-api` in
+// divergences.toml).
+
+/** A note on a report or an account. */
+export interface ModerationNote {
+  id: string
+  content: string
+  created_at: string
+  account: Account | null
+  report_id?: string
+  target_account_id?: string
+}
+
+export function listReportNotes(token: string, reportId: string) {
+  return json<ModerationNote[]>(
+    token,
+    'GET',
+    `/api/v1/admin/report_notes${query({ report_id: reportId })}`,
+  )
+}
+
+export function createReportNote(
+  token: string,
+  params: {
+    report_id: string
+    content: string
+    create_and_resolve?: boolean
+    create_and_unresolve?: boolean
+  },
+) {
+  return json<ModerationNote>(token, 'POST', '/api/v1/admin/report_notes', params)
+}
+
+export function deleteReportNote(token: string, id: string) {
+  return empty(token, 'DELETE', `/api/v1/admin/report_notes/${id}`)
+}
+
+export function listAccountNotes(token: string, accountId: string) {
+  return json<ModerationNote[]>(
+    token,
+    'GET',
+    `/api/v1/admin/account_moderation_notes${query({ target_account_id: accountId })}`,
+  )
+}
+
+export function createAccountNote(token: string, accountId: string, content: string) {
+  return json<ModerationNote>(token, 'POST', '/api/v1/admin/account_moderation_notes', {
+    target_account_id: accountId,
+    content,
+  })
+}
+
+export function deleteAccountNote(token: string, id: string) {
+  return empty(token, 'DELETE', `/api/v1/admin/account_moderation_notes/${id}`)
+}
+
+/** An audit log entry, worded as Mastodon's log words it. */
+export interface ActionLog {
+  id: string
+  action: string
+  action_type: string | null
+  target_type: string | null
+  target_id: string | null
+  created_at: string
+  account: Account | null
+  /** The sentence, with `%{name}` and `%{target}` left to fill. */
+  template: string
+  target: { text: string; href: string | null } | null
+  changes: string | null
+  text: string
+}
+
+export interface ActionLogFilters {
+  account_id?: string
+  action_type?: string
+  target_account_id?: string
+  target_domain?: string
+  target_tag?: string
+}
+
+export function listActionLogs(token: string, filters: ActionLogFilters) {
+  return paginate<ActionLog>(token, '/api/v1/admin/action_logs', { ...filters })
+}
+
+export interface FilterChoice {
+  key: string
+  label: string
+}
+
+export function getActionLogFilters(token: string) {
+  return json<{ accounts: FilterChoice[]; action_types: FilterChoice[] }>(
+    token,
+    'GET',
+    '/api/v1/admin/action_logs/filters',
+  )
+}
+
+export function getReportHistory(token: string, reportId: string) {
+  return json<ActionLog[]>(token, 'GET', `/api/v1/admin/reports/${reportId}/history`)
+}
+
+export interface WarningPreset {
+  id: string
+  title: string
+  text: string
+  created_at: string
+}
+
+export function listWarningPresets(token: string) {
+  return json<WarningPreset[]>(token, 'GET', '/api/v1/admin/warning_presets')
+}
+
+export function createWarningPreset(token: string, params: { title: string; text: string }) {
+  return json<WarningPreset>(token, 'POST', '/api/v1/admin/warning_presets', params)
+}
+
+export function updateWarningPreset(
+  token: string,
+  id: string,
+  params: { title?: string; text?: string },
+) {
+  return json<WarningPreset>(token, 'PATCH', `/api/v1/admin/warning_presets/${id}`, params)
+}
+
+export function deleteWarningPreset(token: string, id: string) {
+  return empty(token, 'DELETE', `/api/v1/admin/warning_presets/${id}`)
+}
+
+export type UsernameComparison = 'equals' | 'contains'
+
+export interface UsernameBlock {
+  id: string
+  username: string
+  comparison: UsernameComparison
+  allow_with_approval: boolean
+  created_at: string
+}
+
+export type UsernameBlockParams = Partial<
+  Pick<UsernameBlock, 'username' | 'comparison' | 'allow_with_approval'>
+>
+
+export function listUsernameBlocks(token: string) {
+  return json<UsernameBlock[]>(token, 'GET', '/api/v1/admin/username_blocks')
+}
+
+export function createUsernameBlock(token: string, params: UsernameBlockParams) {
+  return json<UsernameBlock>(token, 'POST', '/api/v1/admin/username_blocks', params)
+}
+
+export function updateUsernameBlock(token: string, id: string, params: UsernameBlockParams) {
+  return json<UsernameBlock>(token, 'PATCH', `/api/v1/admin/username_blocks/${id}`, params)
+}
+
+export function deleteUsernameBlock(token: string, id: string) {
+  return empty(token, 'DELETE', `/api/v1/admin/username_blocks/${id}`)
+}
+
+export type StrikeAction =
+  | 'none'
+  | 'disable'
+  | 'mark_statuses_as_sensitive'
+  | 'delete_statuses'
+  | 'sensitive'
+  | 'silence'
+  | 'suspend'
+
+export interface Appeal {
+  id: string
+  text: string
+  state: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  approved_at: string | null
+  rejected_at: string | null
+}
+
+/** A strike, as its page shows it. */
+export interface Strike {
+  id: string
+  action: StrikeAction
+  text: string
+  status_ids: string[] | null
+  created_at: string
+  target_account: Account | null
+  appeal: Appeal | null
+  overruled_at: string | null
+  appeal_eligible: boolean
+  appeal_deadline: string
+  can_appeal: boolean
+  statuses: Status[]
+  /** Who issued it; staff only. */
+  account?: Account | null
+  report_id?: string
+}
+
+export type AdminAppeal = Appeal & { account: Account | null; strike: Strike }
+
+export function listStrikes(token: string) {
+  return json<Strike[]>(token, 'GET', '/api/v1/disputes/strikes')
+}
+
+export function getStrike(token: string, id: string) {
+  return json<Strike>(token, 'GET', `/api/v1/disputes/strikes/${id}`)
+}
+
+export function appealStrike(token: string, id: string, text: string) {
+  return json<Strike>(token, 'POST', `/api/v1/disputes/strikes/${id}/appeal`, { text })
+}
+
+export function listAppeals(token: string, status: Appeal['state']) {
+  return paginate<AdminAppeal>(token, '/api/v1/admin/disputes/appeals', { status })
+}
+
+export function decideAppeal(token: string, id: string, decision: 'approve' | 'reject') {
+  return json<AdminAppeal>(token, 'POST', `/api/v1/admin/disputes/appeals/${id}/${decision}`)
+}
+
+export interface StatusEdit {
+  content: string
+  spoiler_text: string
+  sensitive: boolean
+  created_at: string
+}
+
+export type AdminStatusDetail = Status & { edits: StatusEdit[] }
+
+export function listAccountStatuses(token: string, accountId: string, media?: boolean) {
+  return paginate<Status>(token, `/api/v1/admin/accounts/${accountId}/statuses`, {
+    media: media ? true : undefined,
+  })
+}
+
+export function getAccountStatus(token: string, accountId: string, statusId: string) {
+  return json<AdminStatusDetail>(
+    token,
+    'GET',
+    `/api/v1/admin/accounts/${accountId}/statuses/${statusId}`,
+  )
+}
+
+/** `Admin::StatusBatchAction`: answers with the report, when there is one. */
+export function batchAccountStatuses(
+  token: string,
+  accountId: string,
+  params: { type: 'report' | 'remove_from_report'; status_ids: string[]; report_id?: string },
+) {
+  return json<Partial<AdminReport>>(
+    token,
+    'POST',
+    `/api/v1/admin/accounts/${accountId}/statuses/batch`,
+    params,
+  )
+}
+
 export function previewTermsOfService(token: string, id: string) {
   return json<{ terms_of_service: AdminTermsOfService; user_count: number }>(
     token,
@@ -913,4 +1170,51 @@ export function distributeTermsOfService(token: string, id: string) {
     'POST',
     `/api/v1/admin/terms_of_service/${id}/distribution`,
   )
+}
+
+export interface RelationshipFilters {
+  relationship?: 'following' | 'followed_by' | 'mutual' | 'invited'
+  location?: 'local' | 'remote'
+  status?: 'moved' | 'primary'
+  order?: 'recent' | 'active'
+  activity?: 'dormant'
+  by_domain?: string
+}
+
+export function listRelationships(token: string, accountId: string, filters: RelationshipFilters) {
+  return paginate<AdminAccount>(token, `/api/v1/admin/accounts/${accountId}/relationships`, {
+    ...filters,
+  })
+}
+
+export type AssignableRole = Role & { position: number }
+
+export function listAssignableRoles(token: string) {
+  return json<AssignableRole[]>(token, 'GET', '/api/v1/admin/roles')
+}
+
+export function changeUserRole(token: string, accountId: string, roleId: string | null) {
+  return json<AdminAccount>(token, 'PUT', `/api/v1/admin/accounts/${accountId}/role`, {
+    role_id: roleId ?? '',
+  })
+}
+
+export type UserAccessAction = 'reset' | 'confirmation' | 'confirmation/resend'
+
+export function userAccessAction(token: string, accountId: string, action: UserAccessAction) {
+  return json<AdminAccount>(token, 'POST', `/api/v1/admin/accounts/${accountId}/${action}`)
+}
+
+export function disableTwoFactor(token: string, accountId: string) {
+  return json<AdminAccount>(
+    token,
+    'DELETE',
+    `/api/v1/admin/accounts/${accountId}/two_factor_authentication`,
+  )
+}
+
+export function changeUserEmail(token: string, accountId: string, email: string) {
+  return json<AdminAccount>(token, 'POST', `/api/v1/admin/accounts/${accountId}/change_email`, {
+    unconfirmed_email: email,
+  })
 }

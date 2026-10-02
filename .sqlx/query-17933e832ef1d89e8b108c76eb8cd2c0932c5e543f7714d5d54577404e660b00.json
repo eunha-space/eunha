@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           LEFT JOIN statuses r ON r.id = s.reblog_of_id\n           LEFT JOIN accounts ra ON ra.id = r.account_id\n           WHERE s.account_id = $1 AND s.id = ANY($3)\n             AND a.suspended_at IS NULL\n             AND (\n               $1 = $2\n               OR (\n                 (s.visibility IN (0, 1)\n                  OR (s.visibility = 2 AND EXISTS (\n                        SELECT 1 FROM follows f WHERE f.account_id = $2 AND f.target_account_id = $1))\n                  OR EXISTS (\n                        SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2))\n                 AND (s.reblog_of_id IS NULL OR (\n                   (ra.domain IS NULL OR ra.domain NOT IN (\n                      SELECT domain FROM account_domain_blocks WHERE account_id = $2))\n                   AND r.account_id NOT IN (\n                      SELECT target_account_id FROM blocks WHERE account_id = $2\n                      UNION SELECT account_id FROM blocks WHERE target_account_id = $2\n                      UNION SELECT target_account_id FROM mutes WHERE account_id = $2)))\n               )\n             )\n           ORDER BY s.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "17933e832ef1d89e8b108c76eb8cd2c0932c5e543f7714d5d54577404e660b00"
+}

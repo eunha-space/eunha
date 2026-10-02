@@ -7,6 +7,7 @@ pub mod bookmarks;
 pub mod collections;
 pub mod conversations;
 pub mod convert;
+pub mod disputes;
 pub mod domain_blocks;
 pub mod email_subscriptions;
 pub mod emojis;
@@ -722,6 +723,110 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/terms_of_service/{id}/distribution",
             post(admin::distribute_admin_terms_of_service),
+        )
+        // Moderation tools Mastodon has only as server-rendered admin pages
+        // (eunha's own REST surface; see `moderation-tools-rest-api` in
+        // divergences.toml).
+        .route(
+            "/api/v1/admin/report_notes",
+            get(admin::list_report_notes).post(admin::create_report_note),
+        )
+        .route(
+            "/api/v1/admin/report_notes/{id}",
+            delete(admin::delete_report_note),
+        )
+        .route(
+            "/api/v1/admin/reports/{id}/history",
+            get(admin::report_history),
+        )
+        .route(
+            "/api/v1/admin/account_moderation_notes",
+            get(admin::list_account_moderation_notes).post(admin::create_account_moderation_note),
+        )
+        .route(
+            "/api/v1/admin/account_moderation_notes/{id}",
+            delete(admin::delete_account_moderation_note),
+        )
+        .route("/api/v1/admin/action_logs", get(admin::list_action_logs))
+        .route(
+            "/api/v1/admin/action_logs/filters",
+            get(admin::action_log_filters),
+        )
+        .route(
+            "/api/v1/admin/warning_presets",
+            get(admin::list_warning_presets).post(admin::create_warning_preset),
+        )
+        .route(
+            "/api/v1/admin/warning_presets/{id}",
+            get(admin::get_warning_preset)
+                .patch(admin::update_warning_preset)
+                .delete(admin::delete_warning_preset),
+        )
+        .route(
+            "/api/v1/admin/username_blocks",
+            get(admin::list_username_blocks).post(admin::create_username_block),
+        )
+        .route(
+            "/api/v1/admin/username_blocks/{id}",
+            get(admin::get_username_block)
+                .patch(admin::update_username_block)
+                .delete(admin::delete_username_block),
+        )
+        .route("/api/v1/admin/disputes/appeals", get(admin::list_appeals))
+        .route(
+            "/api/v1/admin/disputes/appeals/{id}/approve",
+            post(admin::approve_appeal),
+        )
+        .route(
+            "/api/v1/admin/disputes/appeals/{id}/reject",
+            post(admin::reject_appeal),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/statuses",
+            get(admin::list_admin_account_statuses),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/statuses/batch",
+            post(admin::batch_admin_account_statuses),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/statuses/{status_id}",
+            get(admin::get_admin_account_status),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/relationships",
+            get(admin::list_admin_relationships),
+        )
+        .route("/api/v1/admin/roles", get(admin::list_assignable_roles))
+        .route(
+            "/api/v1/admin/accounts/{id}/role",
+            put(admin::change_user_role),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/two_factor_authentication",
+            delete(admin::disable_user_two_factor),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/change_email",
+            post(admin::change_user_email),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/confirmation",
+            post(admin::confirm_user),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/confirmation/resend",
+            post(admin::resend_user_confirmation),
+        )
+        .route(
+            "/api/v1/admin/accounts/{id}/reset",
+            post(admin::reset_user_password),
+        )
+        .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
+        .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
+        .route(
+            "/api/v1/disputes/strikes/{id}/appeal",
+            post(disputes::appeal_strike),
         )
         // Account move and aliases
         .route("/api/v1/accounts/move", post(accounts::move_account))

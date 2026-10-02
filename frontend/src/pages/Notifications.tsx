@@ -126,6 +126,9 @@ function NotificationItem({
     return (
       <SystemNotice icon={<Gavel className="size-4" />} title={WARNING_TEXT[w.action] ?? w.action}>
         {w.text && <p className="text-muted-foreground text-sm whitespace-pre-wrap">{w.text}</p>}
+        <Link to={`/disputes/strikes/${w.id}`} className="text-sm">
+          Learn more
+        </Link>
       </SystemNotice>
     )
   }

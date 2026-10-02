@@ -48,6 +48,15 @@ import {
   AdminTermsOfServicePreview,
 } from './pages/admin/TermsOfService.tsx'
 import { TermsOfServiceInterstitial } from './components/terms-of-service-interstitial.tsx'
+import AdminActionLogs from './pages/admin/ActionLogs.tsx'
+import AdminAppeals from './pages/admin/Appeals.tsx'
+import AdminWarningPresets from './pages/admin/WarningPresets.tsx'
+import AdminUsernameBlocks from './pages/admin/UsernameBlocks.tsx'
+import AdminAccountStatuses from './pages/admin/AccountStatuses.tsx'
+import AdminAccountStatusDetail from './pages/admin/AccountStatusDetail.tsx'
+import AdminRelationships from './pages/admin/Relationships.tsx'
+import Strikes from './pages/Strikes.tsx'
+import StrikeDetail from './pages/StrikeDetail.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -122,6 +131,17 @@ const router = createBrowserRouter([
   { path: '/admin/terms_of_service/history', element: <AdminTermsOfServiceHistory /> },
   { path: '/admin/terms_of_service/generate', element: <AdminTermsOfServiceGenerate /> },
   { path: '/admin/terms_of_service/:id/preview', element: <AdminTermsOfServicePreview /> },
+  { path: '/admin/action_logs', element: <AdminActionLogs /> },
+  { path: '/admin/disputes/appeals', element: <AdminAppeals /> },
+  { path: '/admin/warning_presets', element: <AdminWarningPresets /> },
+  { path: '/admin/username_blocks', element: <AdminUsernameBlocks /> },
+  { path: '/admin/accounts/:id/statuses', element: <AdminAccountStatuses /> },
+  { path: '/admin/accounts/:id/statuses/:statusId', element: <AdminAccountStatusDetail /> },
+  { path: '/admin/accounts/:id/relationships', element: <AdminRelationships /> },
+  // Strikes and appeals, at Mastodon's paths, which its moderation warning
+  // notifications and emails link to.
+  { path: '/disputes/strikes', element: <Strikes /> },
+  { path: '/disputes/strikes/:id', element: <StrikeDetail /> },
   { path: '/:acct', element: <Profile /> },
   // Static second segments outrank the dynamic `:id` thread route, so these
   // win over `/:acct/:id` (status ids are numeric and never collide).

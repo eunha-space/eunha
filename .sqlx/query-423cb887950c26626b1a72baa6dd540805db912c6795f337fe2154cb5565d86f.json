@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s\n           WHERE s.account_id = $1 AND s.deleted_at IS NULL\n             AND s.visibility IN ($2, $3)\n             AND (NOT $4 OR EXISTS (\n                   SELECT 1 FROM media_attachments m\n                   WHERE m.status_id = s.id AND m.account_id = $1))\n             AND ($5::bigint IS NULL OR s.id < $5)\n             AND ($6::bigint IS NULL OR s.id > $6)\n             AND ($7::bigint IS NULL OR s.id > $7)\n           ORDER BY CASE WHEN $7::bigint IS NULL THEN -s.id ELSE s.id END\n           LIMIT $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "423cb887950c26626b1a72baa6dd540805db912c6795f337fe2154cb5565d86f"
+}

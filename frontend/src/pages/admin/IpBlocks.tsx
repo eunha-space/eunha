@@ -33,6 +33,7 @@ export const BLOCK_TABS = [
   { to: '/admin/ip_blocks', label: 'IP rules' },
   { to: '/admin/email_domain_blocks', label: 'Email domains' },
   { to: '/admin/canonical_email_blocks', label: 'Email addresses' },
+  { to: '/admin/username_blocks', label: 'Usernames' },
 ]
 
 // Mastodon's labels for `IpBlock#severity`.

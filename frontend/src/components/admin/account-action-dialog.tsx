@@ -3,10 +3,13 @@ import { toast } from 'sonner'
 
 import {
   accountAction,
+  listWarningPresets,
   publicAccount,
   type AccountActionType,
   type AdminAccount,
+  type WarningPreset,
 } from '../../admin-api.ts'
+import { ChoiceSelect } from '@/components/admin/admin-common.tsx'
 import { errorMessage } from '@/lib/utils.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
@@ -48,6 +51,8 @@ const TYPES: Record<AccountActionType, { label: string; hint: string }> = {
   },
 }
 
+const NO_PRESET = 'none'
+
 /** `Admin::AccountAction.types_for_account`: warnings and freezing need a local user. */
 function typesFor(account: AdminAccount): AccountActionType[] {
   const all = Object.keys(TYPES) as AccountActionType[]
@@ -69,8 +74,8 @@ function disabledFor(account: AdminAccount): AccountActionType[] {
  * report alone, and anything stronger resolves every open report on the
  * account, as upstream does.
  *
- * Mastodon's form also offers warning presets. There is no API that lists
- * them, so there is nothing to pick from here; a typed warning still goes out.
+ * A warning preset, when one is picked, leads the warning, and the custom text
+ * follows it, as upstream's `text_for_warning` joins them.
  */
 export function AccountActionDialog({
   account,
@@ -98,9 +103,19 @@ export function AccountActionDialog({
   const [text, setText] = useState('')
   const [notify, setNotify] = useState(true)
   const [sending, setSending] = useState(false)
+  const [presets, setPresets] = useState<WarningPreset[]>([])
+  const [presetId, setPresetId] = useState<string>(NO_PRESET)
+
+  useEffect(() => {
+    if (!open || !local) return
+    listWarningPresets(token)
+      .then(setPresets)
+      .catch(() => setPresets([]))
+  }, [open, local, token])
 
   useEffect(() => {
     if (!open) return
+    setPresetId(NO_PRESET)
     setType(initialType && types.includes(initialType) && !disabled.includes(initialType)
       ? initialType
       : firstEnabled)
@@ -118,6 +133,7 @@ export function AccountActionDialog({
       await accountAction(token, account.id, {
         type,
         report_id: reportId,
+        warning_preset_id: local && presetId !== NO_PRESET ? presetId : undefined,
         // Only a local user can be written to: a remote one has no inbox here
         // for the warning or the email.
         text: local && text.trim() ? text.trim() : undefined,
@@ -172,6 +188,25 @@ export function AccountActionDialog({
               <Checkbox checked={notify} onCheckedChange={(v) => setNotify(v === true)} />
               Notify the user by email
             </Label>
+            {presets.length > 0 && (
+              <div className="space-y-1">
+                <Label>Use a warning preset</Label>
+                <ChoiceSelect
+                  label="Warning preset"
+                  value={presetId}
+                  items={{
+                    [NO_PRESET]: 'None',
+                    ...Object.fromEntries(presets.map((p) => [p.id, p.title || p.text.slice(0, 40)])),
+                  }}
+                  onChange={setPresetId}
+                />
+                {presetId !== NO_PRESET && (
+                  <p className="text-muted-foreground text-xs whitespace-pre-wrap">
+                    {presets.find((p) => p.id === presetId)?.text}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="action-text">Custom warning</Label>
               <Textarea

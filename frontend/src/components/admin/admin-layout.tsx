@@ -152,6 +152,7 @@ const SECTION_PREFIXES: Record<string, string[]> = {
     '/admin/ip_blocks',
     '/admin/email_domain_blocks',
     '/admin/canonical_email_blocks',
+    '/admin/username_blocks',
   ],
   '/admin/trends/links': ['/admin/trends'],
   '/admin/email_subscriptions': ['/admin/email_subscriptions'],

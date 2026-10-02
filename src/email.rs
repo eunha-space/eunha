@@ -584,6 +584,99 @@ impl EmailSender {
             .await
     }
 
+    /// `UserMailer#appeal_approved` (`approved` true) and
+    /// `UserMailer#appeal_rejected`. The dates are `l(...)` in Mastodon's
+    /// `default` and `with_time_zone` formats, in UTC.
+    pub async fn send_appeal_decided(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        approved: bool,
+        appeal_created_at: chrono::NaiveDateTime,
+        strike_created_at: chrono::NaiveDateTime,
+    ) -> anyhow::Result<()> {
+        let date = appeal_created_at.format("%b %d, %Y, %H:%M");
+        let appeal_date = appeal_created_at.format("%b %d, %Y, %H:%M UTC");
+        let strike_date = strike_created_at.format("%b %d, %Y, %H:%M UTC");
+        let (subject, title, explanation) = if approved {
+            (
+                format!("Your appeal from {date} has been approved"),
+                "Appeal approved",
+                format!(
+                    "The appeal of the strike against your account on {strike_date} that you \
+                     submitted on {appeal_date} has been approved. Your account is once again \
+                     in good standing."
+                ),
+            )
+        } else {
+            (
+                format!("Your appeal from {date} has been rejected"),
+                "Appeal rejected",
+                format!(
+                    "The appeal of the strike against your account on {strike_date} that you \
+                     submitted on {appeal_date} has been rejected."
+                ),
+            )
+        };
+        let url = format!("https://{instance_domain}/");
+        let body =
+            format!("<h1>{title}</h1><p>{explanation}</p><p><a href=\"{url}\">{url}</a></p>");
+        self.send(to, &subject, &body).await
+    }
+
+    /// `AdminMailer#new_appeal`. `action` is the strike's
+    /// `AccountWarning#action` key.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_new_appeal(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        target: &str,
+        action_taken_by: &str,
+        strike_created_at: chrono::NaiveDateTime,
+        action: &str,
+        text: &str,
+        strike_id: i64,
+    ) -> anyhow::Result<()> {
+        let subject = format!("{target} is appealing a moderation decision on {instance_domain}");
+        // `admin_mailer.new_appeal.actions`.
+        let kind = match action {
+            "delete_statuses" => "to delete their posts",
+            "disable" => "to freeze their account",
+            "mark_statuses_as_sensitive" => "to mark their posts as sensitive",
+            "sensitive" => "to mark their account as sensitive",
+            "silence" => "to limit their account",
+            "suspend" => "to suspend their account",
+            _ => "a warning",
+        };
+        let date = strike_created_at.format("%b %d, %Y, %H:%M UTC");
+        let url = format!("https://{instance_domain}/disputes/strikes/{strike_id}");
+        let body = format!(
+            "<p>{} is appealing a moderation decision by {} from {date}, which was {kind}. \
+             They wrote:</p><blockquote>{}</blockquote><p>You can approve the appeal to undo \
+             the moderation decision, or ignore it.</p><p>View: <a href=\"{url}\">{url}</a></p>",
+            html_escape(target),
+            html_escape(action_taken_by),
+            html_escape(text).replace('\n', "<br>"),
+        );
+        self.send(to, &subject, &body).await
+    }
+
+    /// `UserMailer#two_factor_disabled`.
+    pub async fn send_two_factor_disabled(
+        &self,
+        to: &str,
+        instance_domain: &str,
+    ) -> anyhow::Result<()> {
+        let url = format!("https://{instance_domain}/settings");
+        let body = format!(
+            "<h1>2FA disabled</h1><p>Login is now possible using only e-mail address and \
+             password.</p><p><a href=\"{url}\">{url}</a></p>"
+        );
+        self.send(to, "Mastodon: Two-factor authentication disabled", &body)
+            .await
+    }
+
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         self.send_with_headers(to, subject, html, &[]).await
     }

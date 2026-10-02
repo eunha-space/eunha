@@ -226,3 +226,110 @@ test('a report notification links to the report', async ({ page }) => {
   const link = page.getByRole('link', { name: /Report on @spammer/ })
   await expect(link).toHaveAttribute('href', '/admin/reports/7')
 })
+
+test('the audit log words each entry and links its target', async ({ page }) => {
+  await signIn(page, ADMINISTRATOR)
+  await page.route('**/api/v1/admin/action_logs/filters', (r) =>
+    r.fulfill({
+      json: {
+        accounts: [{ key: '1', label: 'alice' }],
+        action_types: [{ key: 'silence_account', label: 'Limit Account' }],
+      },
+    }),
+  )
+  await page.route(/\/api\/v1\/admin\/action_logs(\?.*)?$/, (r) =>
+    r.fulfill({
+      json: [
+        {
+          id: '40',
+          action: 'silence',
+          action_type: 'silence_account',
+          target_type: 'Account',
+          target_id: '3',
+          created_at: '2026-09-30T00:00:00.000Z',
+          account: account('1', 'alice'),
+          template: "%{name} limited %{target}'s account",
+          target: { text: 'spammer', href: '/admin/accounts/3' },
+          changes: null,
+          text: "alice limited spammer's account",
+        },
+      ],
+    }),
+  )
+  await page.goto('/admin/action_logs')
+  await expect(page.getByText("limited", { exact: false })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'spammer' })).toHaveAttribute(
+    'href',
+    '/admin/accounts/3',
+  )
+})
+
+test('the moderation form offers warning presets', async ({ page }) => {
+  await signIn(page, ADMINISTRATOR)
+  await page.route('**/api/v1/admin/accounts/3', (r) =>
+    r.fulfill({ json: adminAccount('3', 'spammer') }),
+  )
+  await page.route('**/api/v1/admin/account_moderation_notes**', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/admin/roles', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/admin/warning_presets', (r) =>
+    r.fulfill({
+      json: [{ id: '8', title: 'Spam', text: 'Stop spamming.', created_at: '2026-09-01T00:00:00Z' }],
+    }),
+  )
+  let action: Record<string, unknown> | null = null
+  await page.route('**/api/v1/admin/accounts/3/action', async (r) => {
+    action = r.request().postDataJSON()
+    await r.fulfill({ json: {} })
+  })
+  await page.goto('/admin/accounts/3')
+  await page.getByRole('button', { name: 'Moderate…' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox', { name: 'Warning preset' }).click()
+  await page.getByRole('option', { name: 'Spam' }).click()
+  await expect(dialog.getByText('Stop spamming.')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Warning', exact: true }).click()
+  await expect.poll(() => action).toMatchObject({ type: 'none', warning_preset_id: '8' })
+})
+
+test('a user appeals a strike against them', async ({ page }) => {
+  await signIn(page, 1 << 16)
+  const strike = {
+    id: '21',
+    action: 'silence',
+    text: 'Too loud.',
+    status_ids: null,
+    created_at: '2026-09-30T00:00:00.000Z',
+    target_account: account('1', 'alice'),
+    appeal: null,
+    overruled_at: null,
+    appeal_eligible: true,
+    appeal_deadline: '2026-10-20T00:00:00.000Z',
+    can_appeal: true,
+    statuses: [],
+  }
+  let appealed: Record<string, unknown> | null = null
+  await page.route('**/api/v1/disputes/strikes/21', (r) => r.fulfill({ json: strike }))
+  await page.route('**/api/v1/disputes/strikes/21/appeal', async (r) => {
+    appealed = r.request().postDataJSON()
+    await r.fulfill({
+      json: {
+        ...strike,
+        can_appeal: false,
+        appeal: {
+          id: '5',
+          text: 'I was quiet',
+          state: 'pending',
+          created_at: '2026-10-01T00:00:00.000Z',
+          approved_at: null,
+          rejected_at: null,
+        },
+      },
+    })
+  })
+  await page.goto('/disputes/strikes/21')
+  await expect(page.getByRole('heading', { name: /Limitation of account/ })).toBeVisible()
+  await page.getByRole('textbox').fill('I was quiet')
+  await page.getByRole('button', { name: 'Submit appeal' }).click()
+  await expect.poll(() => appealed).toMatchObject({ text: 'I was quiet' })
+  await expect(page.getByRole('heading', { name: 'Appeal', exact: true })).toBeVisible()
+})

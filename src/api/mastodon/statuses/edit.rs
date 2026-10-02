@@ -405,6 +405,16 @@ pub async fn get_status_history(
         }
     }
 
+    Ok(Json(status_edits(&state, &status).await?))
+}
+
+/// Every version of `status`, oldest first and the current one last, as
+/// `REST::StatusEditSerializer` renders `status.edits` and the status itself.
+pub(crate) async fn status_edits(
+    state: &AppState,
+    status: &DbStatus,
+) -> AppResult<Vec<StatusEdit>> {
+    let id = status.id;
     let account = sqlx::query_as!(
         Account,
         "SELECT * FROM accounts WHERE id = $1",
@@ -437,10 +447,9 @@ pub async fn get_status_history(
     // the time, so the status's current mentions are the map for every version.
     // Upstream has no better answer either: `StatusEdit` does not respond to
     // `active_mentions`, so its preloaded accounts are just the author.
-    let current_mentions =
-        crate::api::mastodon::status_serialize::fetch_status_mentions(&state, id)
-            .await
-            .unwrap_or_default();
+    let current_mentions = crate::api::mastodon::status_serialize::fetch_status_mentions(state, id)
+        .await
+        .unwrap_or_default();
     let instance_domain = state.instance.domain.clone();
     let mention_map =
         crate::api::mastodon::formatting::mention_map_from_api(&current_mentions, &instance_domain);
@@ -455,12 +464,12 @@ pub async fn get_status_history(
     };
     let current_content = render(&status.text);
 
-    let account_emojis = batch_account_emojis(&state, std::slice::from_ref(&account)).await;
-    let account_roles = batch_account_roles(&state, std::slice::from_ref(&account)).await;
+    let account_emojis = batch_account_emojis(state, std::slice::from_ref(&account)).await;
+    let account_roles = batch_account_roles(state, std::slice::from_ref(&account)).await;
     let mut api_account = account_from_db(&state.urls, &account);
     api_account.emojis = account_emojis.get(&account.id).cloned().unwrap_or_default();
     api_account.roles = account_roles.get(&account.id).cloned().unwrap_or_default();
-    crate::api::mastodon::accounts::apply_account_stats(&state, &mut api_account, account.id).await;
+    crate::api::mastodon::accounts::apply_account_stats(state, &mut api_account, account.id).await;
 
     // Collect all media attachment IDs needed across all edits, then batch-fetch them.
     let all_media_ids: Vec<i64> = edits
@@ -570,7 +579,7 @@ pub async fn get_status_history(
         quote: None,
     });
 
-    Ok(Json(result))
+    Ok(result)
 }
 
 // ── GET /api/v1/statuses/:id/source ───────────────────────────────────────

@@ -94,6 +94,19 @@ impl Target {
         Self::new("UserRole", id, name)
     }
 
+    /// `UsernameBlock#to_log_human_identifier` is its `username`.
+    pub fn username_block(id: i64, username: impl Into<String>) -> Self {
+        Self::new("UsernameBlock", id, username)
+    }
+
+    /// `Appeal` reads as its account's `acct`, and routes by its strike.
+    pub fn appeal(id: i64, acct: impl Into<String>, strike_id: i64) -> Self {
+        Self {
+            route_param: Some(strike_id.to_string()),
+            ..Self::new("Appeal", id, acct)
+        }
+    }
+
     pub fn rule(id: i64) -> Self {
         Self {
             kind: "Rule",

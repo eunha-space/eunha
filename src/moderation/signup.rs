@@ -130,7 +130,9 @@ pub fn normalize_username(username: &str) -> String {
 }
 
 /// `UsernameBlock.matches?(username, allow_with_approval:)`: an exact block
-/// equal to it, or a partial one it contains, once both are normalized.
+/// equal to it, or a partial one it contains, once both are normalized. The
+/// partial match is Arel's `matches`, which is `ILIKE` on PostgreSQL, with the
+/// block's own `%` and `_` left as wildcards as upstream leaves them.
 pub async fn username_blocked(state: &AppState, username: &str, allow_with_approval: bool) -> bool {
     let normalized = normalize_username(username);
     sqlx::query_scalar!(
@@ -138,7 +140,7 @@ pub async fn username_blocked(state: &AppState, username: &str, allow_with_appro
              SELECT 1 FROM username_blocks
              WHERE allow_with_approval = $2
                AND ((exact AND normalized_username = $1)
-                    OR (NOT exact AND $1 LIKE '%' || normalized_username || '%'))
+                    OR (NOT exact AND $1 ILIKE '%' || normalized_username || '%'))
            ) AS "e!""#,
         normalized,
         allow_with_approval,

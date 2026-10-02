@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM appeals\n           WHERE CASE $1\n                   WHEN 'approved' THEN approved_at IS NOT NULL\n                   WHEN 'rejected' THEN rejected_at IS NOT NULL\n                   ELSE approved_at IS NULL AND rejected_at IS NULL\n                 END\n             AND ($2::bigint IS NULL OR id < $2)\n             AND ($3::bigint IS NULL OR id > $3)\n             AND ($4::bigint IS NULL OR id > $4)\n           ORDER BY CASE WHEN $4::bigint IS NULL THEN -id ELSE id END\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f005ec0cfaf37cdd61e55c7c8a0fa553267e895a6d8c056b88aa4530c385ee82"
+}

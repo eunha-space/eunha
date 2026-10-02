@@ -4,7 +4,10 @@ import { toast } from 'sonner'
 
 import {
   can,
+  createAccountNote,
   deleteAccount,
+  deleteAccountNote,
+  listAccountNotes,
   getAccount,
   rejectAccount,
   undoAccount,
@@ -20,6 +23,8 @@ import {
   formatDate,
 } from '@/components/admin/admin-common.tsx'
 import { AccountActionDialog } from '@/components/admin/account-action-dialog.tsx'
+import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
+import { UserManagement } from '@/components/admin/user-management.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 
@@ -220,6 +225,17 @@ export default function AccountDetail() {
               {' · '}
               <Link to={`/admin/reports?account_id=${a.id}`}>Filed by this account</Link>
             </Field>
+            <Field label="Moderation">
+              <Link to={`/admin/accounts/${a.id}/statuses`}>Posts</Link>
+              {' · '}
+              <Link to={`/admin/accounts/${a.id}/relationships`}>Relationships</Link>
+              {can(permissions, 'view_audit_log') && (
+                <>
+                  {' · '}
+                  <Link to={`/admin/action_logs?target_account_id=${a.id}`}>Audit log</Link>
+                </>
+              )}
+            </Field>
           </dl>
 
           {local && a.ips.length > 0 && (
@@ -234,6 +250,24 @@ export default function AccountDetail() {
                 ))}
               </ul>
             </section>
+          )}
+
+          {local && (
+            <UserManagement
+              account={a}
+              permissions={permissions}
+              token={token}
+              onChanged={setAccount}
+            />
+          )}
+
+          {can(permissions, 'manage_reports') && (
+            <ModerationNotes
+              key={a.id}
+              load={() => listAccountNotes(token, a.id)}
+              create={(content) => createAccountNote(token, a.id, content)}
+              remove={(noteId) => deleteAccountNote(token, noteId)}
+            />
           )}
 
           <AccountActionDialog

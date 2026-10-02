@@ -24,6 +24,7 @@ mod lists;
 mod markers;
 mod media;
 mod moderation;
+mod moderation_tools;
 mod moves;
 mod mutes;
 mod notifications;

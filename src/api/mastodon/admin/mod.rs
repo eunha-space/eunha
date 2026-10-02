@@ -18,6 +18,15 @@ mod federation;
 mod reports;
 mod terms_of_service;
 mod trends;
+// The moderation tools Mastodon has only as server-rendered admin pages.
+mod action_logs;
+mod appeals;
+mod notes;
+mod relationships;
+mod statuses;
+mod username_blocks;
+mod users;
+mod warning_presets;
 
 pub use accounts::*;
 pub use blocks::*;
@@ -26,6 +35,33 @@ pub use federation::*;
 pub use reports::*;
 pub use terms_of_service::*;
 pub use trends::*;
+// The moderation tools Mastodon has only as server-rendered admin pages.
+pub use action_logs::*;
+pub use appeals::*;
+pub use notes::*;
+pub use relationships::*;
+pub use statuses::*;
+pub use username_blocks::*;
+pub use users::*;
+pub use warning_presets::*;
+
+/// `REST::AccountSerializer` of an account, if it exists.
+pub(super) async fn api_account(
+    state: &AppState,
+    id: i64,
+) -> AppResult<Option<super::types::Account>> {
+    match sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    {
+        Some(account) => Ok(Some(super::accounts::account_to_api(state, &account).await)),
+        None => Ok(None),
+    }
+}
 
 /// `limit` and the id bounds of `to_a_paginated_by_id`.
 #[derive(Debug, Deserialize)]

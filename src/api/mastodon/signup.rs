@@ -408,6 +408,31 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
     .ok()
     .flatten();
 
+    // Not a sign-up: a user's own confirmation token, from an address a
+    // moderator changed or a confirmation mail sent again. Devise's `confirm`
+    // within `confirm_within` (two days) of sending.
+    if pending.is_none() {
+        let user_id = sqlx::query_scalar!(
+            r#"SELECT id FROM users
+               WHERE confirmation_token = $1
+                 AND confirmation_sent_at > now() - interval '2 days'"#,
+            q.token,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+        if let Some(user_id) = user_id {
+            return match crate::accounts::confirm_user(&state, user_id, true).await {
+                Ok(()) => Redirect::to("/account/login?confirmed=1").into_response(),
+                Err(e) => {
+                    tracing::error!(error = %format!("{e:#}"), "could not confirm a user");
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            };
+        }
+    }
+
     let Some(pending) = pending else {
         // A dead end told someone their link was broken and left them there. The
         // usual reason a link is dead is that it already worked, so send them to

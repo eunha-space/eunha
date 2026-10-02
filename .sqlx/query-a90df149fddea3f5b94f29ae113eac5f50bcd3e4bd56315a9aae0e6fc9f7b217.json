@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, username FROM accounts\n           WHERE id IN (SELECT DISTINCT account_id FROM admin_action_logs)\n           ORDER BY username ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a90df149fddea3f5b94f29ae113eac5f50bcd3e4bd56315a9aae0e6fc9f7b217"
+}

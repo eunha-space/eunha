@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM reports\n             WHERE target_account_id = $1 AND action_taken_at IS NULL AND $2 = ANY(status_ids)\n           ) OR EXISTS (\n             SELECT 1 FROM account_warnings\n             WHERE target_account_id = $1 AND $2::bigint::text = ANY(status_ids)\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dd9c0c60e5884f601988bdb9826dc394c10c4cf5d10565c2ed98ba2fd729f192"
+}

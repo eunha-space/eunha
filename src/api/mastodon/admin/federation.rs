@@ -89,7 +89,7 @@ async fn find_block(state: &AppState, id: i64) -> AppResult<BlockRow> {
 
 /// `TagManager#normalize_domain` (`DomainNormalizable`): stripped, without
 /// trailing slashes, lowercased and in its ASCII form.
-fn normalize_domain(domain: &str) -> Option<String> {
+pub(super) fn normalize_domain(domain: &str) -> Option<String> {
     let domain = domain.trim().trim_end_matches('/').to_lowercase();
     if domain.is_empty() {
         return None;

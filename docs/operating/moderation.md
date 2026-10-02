@@ -5,8 +5,9 @@ Moderation follows Mastodon's admin API: the same endpoints, the same
 permission checks, and the same rows written to the same tables. A database
 moderated from eunha reads the same in Mastodon's admin interface, and the
 other way round. Eunha's web client has a moderation section under `/admin`
-built on that API alone. Anything Mastodon offers only in its own
-server-rendered admin pages, eunha does not have yet.
+built on that API. What Mastodon offers only in its own server-rendered admin
+pages, eunha serves over REST endpoints of its own, at the paths Mastodon's
+admin API would use; see [the moderation tools](#the-moderation-tools) below.
 
 
 Who may do what
@@ -17,14 +18,19 @@ the role's `computed_permissions` (see [invites](./invites) for how the
 everyone role and `administrator` feed into that). A disabled user has no
 permissions at all. Some examples:
 
-| Permission          | Bit       | What it opens                                 |
-| ------------------- | --------- | --------------------------------------------- |
-| `manage_reports`    | `1 << 4`  | reports, and acting on accounts from them     |
-| `manage_federation` | `1 << 5`  | domain blocks and allows                      |
-| `manage_blocks`     | `1 << 7`  | IP, email domain and canonical email blocks   |
-| `manage_taxonomies` | `1 << 8`  | hashtags and trends review                    |
-| `manage_users`      | `1 << 10` | accounts: approving, enabling, lifting limits |
-| `delete_user_data`  | `1 << 19` | erasing a suspended account's data now        |
+| Permission           | Bit       | What it opens                                  |
+| -------------------- | --------- | ---------------------------------------------- |
+| `view_audit_log`     | `1 << 2`  | the audit log                                  |
+| `manage_reports`     | `1 << 4`  | reports, notes, and acting from reports        |
+| `manage_federation`  | `1 << 5`  | domain blocks and allows                       |
+| `manage_settings`    | `1 << 6`  | warning presets                                |
+| `manage_blocks`      | `1 << 7`  | IP, email, canonical email and username blocks |
+| `manage_taxonomies`  | `1 << 8`  | hashtags and trends review                     |
+| `manage_appeals`     | `1 << 9`  | appeals against strikes                        |
+| `manage_users`       | `1 << 10` | accounts: approving, enabling, lifting limits  |
+| `manage_roles`       | `1 << 17` | changing a user's role                         |
+| `manage_user_access` | `1 << 18` | passwords, 2FA, email addresses                |
+| `delete_user_data`   | `1 << 19` | erasing a suspended account's data now         |
 
 A role position decides nothing by itself. What a role may do comes from its
 permission bits alone. Acting against an account (warning it, limiting it,
@@ -282,6 +288,105 @@ Every hour, unless `trendable_by_default` is on or trends are off, Eunha
 looks for trends awaiting review that score above the allowed trend
 ranked third in their language. It marks each one as asked about and
 mails every moderator with `manage_taxonomies` who has trend emails on.
+
+
+The moderation tools
+--------------------
+
+Mastodon has these as pages of its own web admin, with no API behind them.
+Eunha serves each over REST, asking for the permission Mastodon's policy asks
+for and writing the audit log entries Mastodon's controllers write. The web
+client's moderation section is built on them. They are eunha's own surface,
+recorded as `moderation-tools-rest-api` in *divergences.toml*; no Mastodon
+client calls them.
+
+### Notes
+
+Moderators leave each other notes on a report
+(`/api/v1/admin/report_notes`) and on an account
+(`/api/v1/admin/account_moderation_notes`). Writing one needs
+`manage_reports`, and a note holds at most 2,000 characters. A report note can
+resolve or reopen its report as it is added (`create_and_resolve`,
+`create_and_unresolve`), which is logged as resolving or reopening it. A note
+may be deleted by its author, or by a role that may handle reports and
+outranks the author's. Notes themselves are not logged.
+
+### The audit log
+
+`/api/v1/admin/action_logs` lists `admin_action_logs` newest first, for a role
+with `view_audit_log`. It filters by `account_id` (who acted), `action_type`
+(one of Mastodon's filter keys, such as `silence_account`),
+`target_account_id`, `target_domain` and `target_tag`, as Mastodon's filter
+does. Each entry carries the sentence Mastodon's log shows, such as
+`alice limited bob's account`, both as text and as a template with the target
+for the client to link. `/api/v1/admin/action_logs/filters` lists the
+accounts that have acted and the action types by label. A report's own history
+(what was logged about it, its account, its posts and its strikes) is at
+`/api/v1/admin/reports/:id/history`.
+
+### Warning presets
+
+`/api/v1/admin/warning_presets` holds canned warning texts, managed with
+`manage_settings`. Anyone who may take an account action may list them, since
+Mastodon's action form shows them to such a moderator too. A preset picked in
+the action form leads the warning, followed by any text typed with it.
+
+### Username blocks
+
+`/api/v1/admin/username_blocks` is Mastodon 4.7's username rules, managed with
+`manage_blocks`. A rule with `comparison` `equals` matches a username equal to
+it, and one with `contains` matches any username containing it, after the
+normalizing described under [sign-ups](#sign-ups-and-addresses). Creating,
+changing and removing a rule are logged. Sign-ups read the same
+`username_blocks` table.
+
+### Strikes and appeals
+
+Every account action records a strike. The account sees its strikes at
+`/api/v1/disputes/strikes`, and the web client at `/disputes/strikes`, where
+the `moderation_warning` notification links. A strike can be appealed once,
+within 20 days, with at most 2,000 characters, even from a frozen login.
+Staff with `manage_appeals` see any strike, are mailed about each new appeal
+unless they turned appeal emails off, and decide it at
+`/api/v1/admin/disputes/appeals`.
+
+Approving an appeal undoes the strike as far as it can be undone: it unfreezes
+the login, lifts a limit, a suspension or forced sensitivity, and marks cited
+posts not sensitive again. Removed posts stay removed. The strike is marked
+overruled. Rejecting changes nothing. Either way the account is mailed and the
+decision logged.
+
+### An account's posts and relationships
+
+`/api/v1/admin/accounts/:id/statuses` lists an account's public and unlisted
+posts, optionally only those with media, for a role with `manage_reports` or
+`manage_users`. One post, with its edit history, is at `…/statuses/:id`, for a
+post that is public, unlisted, reported, or one the moderator could read anyway.
+`…/statuses/batch` adds posts to a report, a new one by the moderator when no
+`report_id` is given, or takes them out of one. Only posts the moderator could
+read are added. `/api/v1/admin/accounts/:id/relationships` lists whom an
+account follows, who follows it, and whom it invited.
+
+### Managing a user
+
+For a local account:
+
+ -  `PUT …/role` changes the role, for a role with `manage_roles` that
+    outranks the user's. The new role may not be positioned above the
+    moderator's own. `/api/v1/admin/roles` lists the roles to choose from.
+ -  `POST …/reset` signs the user out everywhere with a random password, and
+    mails a link to choose a new one.
+ -  `DELETE …/two_factor_authentication` clears the user's two-factor
+    authentication and security keys, and tells the user by mail. Eunha has no
+    two-factor sign-in of its own, so this matters only for a database that
+    came from Mastodon.
+ -  `POST …/change_email` mails a confirmation link to a new address, which
+    takes over once followed.
+ -  `POST …/confirmation` confirms an unconfirmed user, and
+    `POST …/confirmation/resend` mails the link again.
+
+All but the role change need `manage_user_access`, and all but confirming need
+the moderator to outrank the user. Each is logged.
 
 
 Changes from earlier versions

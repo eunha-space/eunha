@@ -34,6 +34,7 @@ pub use post::post_status;
 mod context;
 pub use context::get_status_context;
 mod edit;
+pub(crate) use edit::status_edits;
 pub use edit::{edit_status, get_status_history, get_status_source};
 mod quotes;
 pub use quotes::{get_status_quotes, revoke_quote};
@@ -1766,7 +1767,7 @@ pub async fn update_interaction_policy(
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Return NotFound if `viewer_id` cannot see `status` (private/direct visibility).
-pub(super) async fn check_status_visible(
+pub(crate) async fn check_status_visible(
     state: &AppState,
     status: &DbStatus,
     viewer_id: i64,

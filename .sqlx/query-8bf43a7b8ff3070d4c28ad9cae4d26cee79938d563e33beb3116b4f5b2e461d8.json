@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE appeals SET approved_at = now(), approved_by_account_id = $2, updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bf43a7b8ff3070d4c28ad9cae4d26cee79938d563e33beb3116b4f5b2e461d8"
+}
