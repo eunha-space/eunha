@@ -197,9 +197,6 @@ access_key_id = "spike"
 secret_access_key = "spike"
 base_url = "http://127.0.0.1:$SIM_PORT/spike"
 
-[resend]
-api_key = ""
-from = "spike@spike.invalid"
 EOF
 [ -n "$CONFIG_APPEND" ] && { printf '\n'; cat "$CONFIG_APPEND"; } >> "$WORK/config.toml"
 cp "$WORK/config.toml" "$RESULTS/config.toml"

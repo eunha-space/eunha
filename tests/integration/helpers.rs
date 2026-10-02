@@ -551,10 +551,6 @@ impl TestContext {
                 base_url: fake_s3,
             },
             smtp: None,
-            resend: eunha::config::ResendConfig {
-                api_key: "test-key".into(),
-                from: "test@test.invalid".into(),
-            },
             instance: eunha::config::InstanceConfig {
                 domain: domain.clone(),
                 aliases: Vec::new(),

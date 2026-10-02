@@ -194,7 +194,7 @@ Email delivery
 Each instance can supply its own `[smtp]` configuration with `host`, `port`,
 `username`, `password`, and `from` (the sender email address). Port 465 uses
 implicit TLS; port 587 requires STARTTLS. Certificate verification is required.
-SMTP takes precedence over `[resend]`; without SMTP, Resend remains the default.
-A failed SMTP delivery does not fall back to Resend. Keep tenant configuration
+SMTP is the only email transport. Without SMTP settings, email delivery fails
+with a configuration error. Keep tenant configuration
 files private because they contain credentials. Reload the tenants directory
 after changing email settings.

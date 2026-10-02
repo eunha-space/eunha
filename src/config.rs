@@ -40,7 +40,6 @@ pub struct Config {
     pub bind_address: String,
     pub media_storage: MediaStorageConfig,
     pub smtp: Option<SmtpConfig>,
-    pub resend: ResendConfig,
     pub instance: InstanceConfig,
     /// Mastodon's ActiveRecord encryption keys, needed to read or write the
     /// encrypted `keypairs.private_key` column a Mastodon 4.7 database uses.
@@ -422,12 +421,6 @@ pub struct InstanceConfig {
 
 fn default_true() -> bool {
     true
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ResendConfig {
-    pub api_key: String,
-    pub from: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

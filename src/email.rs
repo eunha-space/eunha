@@ -1,18 +1,18 @@
 #[derive(Clone)]
 pub struct EmailSender {
     smtp: Option<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>>,
-    http: reqwest::Client,
-    api_key: String,
     from: String,
 }
 
 impl EmailSender {
-    pub fn new(http: reqwest::Client, api_key: String, from: String) -> Self {
-        Self {
+    pub fn new(config: Option<&crate::config::SmtpConfig>) -> anyhow::Result<Self> {
+        let sender = Self {
             smtp: None,
-            http,
-            api_key,
-            from,
+            from: String::new(),
+        };
+        match config {
+            Some(config) => sender.with_smtp(config),
+            None => Ok(sender),
         }
     }
 
@@ -464,23 +464,7 @@ impl EmailSender {
                 .map_err(|_| anyhow::anyhow!("SMTP delivery failed"))?;
             return Ok(());
         }
-        let payload = serde_json::json!({
-            "from": self.from,
-            "to": [to],
-            "subject": subject,
-            "html": html,
-        });
-        let resp = self
-            .http
-            .post("https://api.resend.com/emails")
-            .bearer_auth(&self.api_key)
-            .json(&payload)
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            anyhow::bail!("Resend email delivery failed (HTTP {})", resp.status());
-        }
-        Ok(())
+        anyhow::bail!("SMTP is not configured")
     }
 }
 
@@ -497,7 +481,7 @@ mod smtp_tests {
     use super::*;
 
     #[tokio::test]
-    async fn smtp_overrides_resend_and_requires_tls_ports() {
+    async fn smtp_requires_tls_ports_and_configuration() {
         let mut config = crate::config::SmtpConfig {
             host: "smtp.example.com".into(),
             port: 587,
@@ -505,26 +489,21 @@ mod smtp_tests {
             password: "private-password".into(),
             from: "mail@example.com".into(),
         };
-        let sender = EmailSender::new(
-            reqwest::Client::new(),
-            "resend-secret".into(),
-            "fallback@example.com".into(),
-        )
-        .with_smtp(&config)
-        .unwrap();
+        let sender = EmailSender::new(Some(&config)).unwrap();
         assert!(sender.smtp.is_some());
         assert_eq!(sender.from, "mail@example.com");
         config.port = 465;
-        assert!(
-            EmailSender::new(reqwest::Client::new(), String::new(), String::new())
-                .with_smtp(&config)
-                .is_ok()
-        );
+        assert!(EmailSender::new(Some(&config)).is_ok());
         config.port = 25;
-        assert!(
-            EmailSender::new(reqwest::Client::new(), String::new(), String::new())
-                .with_smtp(&config)
-                .is_err()
+        assert!(EmailSender::new(Some(&config)).is_err());
+        let unconfigured = EmailSender::new(None).unwrap();
+        assert_eq!(
+            unconfigured
+                .send("mail@example.com", "subject", "body")
+                .await
+                .unwrap_err()
+                .to_string(),
+            "SMTP is not configured"
         );
     }
 }

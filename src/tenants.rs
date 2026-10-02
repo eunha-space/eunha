@@ -1054,10 +1054,6 @@ access_key_id = "k"
 secret_access_key = "s"
 base_url = "http://127.0.0.1:9"
 
-[resend]
-api_key = ""
-from = "admin@example.test"
-
 [instance]
 domain = "{domain}"
 title = "t"

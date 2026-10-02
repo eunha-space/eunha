@@ -95,16 +95,7 @@ impl AppState {
             storage.missing_avatar_url(),
             storage.missing_header_url(),
         ));
-        let email = EmailSender::new(
-            http.clone(),
-            config.resend.api_key.clone(),
-            config.resend.from.clone(),
-        );
-
-        let email = match &config.smtp {
-            Some(smtp) => email.with_smtp(smtp)?,
-            None => email,
-        };
+        let email = EmailSender::new(config.smtp.as_ref())?;
 
         let redis_keys = crate::redis_keys::RedisKeyspace::new(&config.redis_key_prefix)?;
         let redis_client = redis::Client::open(config.redis_url.as_str())?;

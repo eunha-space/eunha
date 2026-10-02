@@ -74,9 +74,6 @@ access_key_id = "benchmark"
 secret_access_key = "benchmark"
 base_url = "http://127.0.0.1:9"
 
-[resend]
-api_key = ""
-from = "user1@bench.invalid"
 EOF
   (cd "$run"; exec "$ROOT/target/release/eunha" >eunha.log 2>&1) &
   pid=$!

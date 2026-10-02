@@ -178,9 +178,6 @@ access_key_id = "benchmark"
 secret_access_key = "benchmark"
 base_url = "http://127.0.0.1:9"
 
-[resend]
-api_key = ""
-from = "user1@bench.invalid"
 EOF
   if [ -n "$QUEUE_IDLE_POLL" ]; then
     printf '\n[workers]\nqueue_idle_poll_seconds = %s\n' "$QUEUE_IDLE_POLL" >> "$dir/config.toml"

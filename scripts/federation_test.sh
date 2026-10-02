@@ -159,9 +159,6 @@ access_key_id = "f"
 secret_access_key = "f"
 base_url = "http://localhost:9999"
 
-[resend]
-api_key = ""
-from = "alice@localhost"
 EOF
 
 echo "==> Building eunha"
