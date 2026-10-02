@@ -182,6 +182,62 @@ async fn test_no_mail_for_a_disabled_user() {
     assert!(nothing_mailed(&ctx, "is now following you").await);
 }
 
+/// With the Mastodon's `secret_key_base`, the link names the user with
+/// Mastodon's signed GlobalID, and one Mastodon mailed is honoured.
+#[tokio::test]
+async fn test_unsubscribe_link_with_a_signed_global_id() {
+    let ctx = TestContext::with_instance_config("notifmail-sgid", |instance| {
+        instance.secret_key_base = Some(eunha::secret_key_base::SecretKeyBase::new(
+            "0123456789abcdef".repeat(8),
+        ));
+    })
+    .await;
+    let secret = ctx.state.instance.secret_key_base.clone().unwrap();
+    let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    let mail = ctx
+        .mail_to(ALICE, "is now following you")
+        .await
+        .expect("a follow mail");
+    let path = unsubscribe_path(&ctx, &mail);
+    let token = path
+        .strip_prefix("/unsubscribe?token=")
+        .and_then(|rest| rest.split_once('&'))
+        .map(|(token, _)| urlencoding::decode(token).unwrap().into_owned())
+        .unwrap();
+    assert_eq!(
+        secret.locate_signed(&token, "unsubscribe", chrono::Utc::now()),
+        Some(("User".to_owned(), alice_user))
+    );
+
+    // `@user.to_sgid(for: 'unsubscribe')`, as Mastodon mails it.
+    let sgid = secret.signed_global_id("User", alice_user, "unsubscribe", chrono::Utc::now());
+    let path = format!(
+        "/unsubscribe?token={}&type=follow",
+        urlencoding::encode(&sgid)
+    );
+    let page = ctx.api.get(&path, None).await;
+    assert_eq!(page.status(), StatusCode::OK);
+    assert!(page
+        .text()
+        .await
+        .unwrap()
+        .contains("Unsubscribe from follow notification emails?"));
+    let done = ctx
+        .api
+        .post_form(&path, None, &[("List-Unsubscribe", "One-Click")])
+        .await;
+    assert!(done.text().await.unwrap().contains("You are unsubscribed"));
+    let prefs: Value = ctx
+        .api
+        .get("/api/eunha/v1/preferences", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(prefs["notification_emails"]["follow"], false);
+}
+
 #[tokio::test]
 async fn test_unsubscribe_link_turns_the_type_off() {
     let ctx = TestContext::new("notifmail-unsubscribe").await;

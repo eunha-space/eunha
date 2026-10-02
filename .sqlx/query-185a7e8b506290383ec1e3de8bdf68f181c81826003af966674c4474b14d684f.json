@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id FROM email_subscriptions WHERE confirmation_token = $1",
+  "query": "SELECT account_id FROM email_subscriptions WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,12 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "48ccf052b9642ed9a129cfd3834ed44843ed04dee468f7a7840cf19039d9df82"
+  "hash": "185a7e8b506290383ec1e3de8bdf68f181c81826003af966674c4474b14d684f"
 }

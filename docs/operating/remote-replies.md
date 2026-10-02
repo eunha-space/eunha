@@ -75,12 +75,14 @@ If the instance stops while the work runs, the refresh is marked finished
 rather than left running for the day.
 
 Mastodon's id is the key signed by Rails' message verifier, keyed from
-`SECRET_KEY_BASE`, which eunha does not have. Eunha's has the same shape —
-the key in URL-safe base64, `--`, and a hex HMAC-SHA256 — keyed from the
-instance's VAPID private key. Clients treat the id as opaque and it lives a
+`SECRET_KEY_BASE`, and an instance given its Mastodon's
+[`secret_key_base`](./instances.md#mastodon-s-secret-key-base) signs exactly
+that. Without it, eunha's id has the same shape — the key in URL-safe base64,
+`--`, and a hex HMAC-SHA256 — keyed from the instance's VAPID private key, and
+that kind is read either way. Clients treat the id as opaque and it lives a
 day at most, and no Mastodon process ever reads an id eunha handed out, so
-the two need not agree. Rotating the VAPID key only makes refreshes already
-handed out unreadable.
+the two need not agree. Rotating either key only makes refreshes already
+handed out under it unreadable.
 
 A home timeline is never answered with a refresh: eunha reads a feed Redis
 does not hold from the database there and then, where Mastodon answers `206`

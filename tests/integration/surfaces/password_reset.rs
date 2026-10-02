@@ -222,3 +222,75 @@ async fn test_a_reset_sets_the_password_and_ends_every_session() {
         .await;
     assert_eq!(put.status(), StatusCode::OK);
 }
+
+/// The `SECRET_KEY_BASE` and token that *scripts/rails_signing_vectors.rb*
+/// uses, and the digest Mastodon's Devise stores for that token under it.
+const MASTODON_SECRET_KEY_BASE: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const MASTODON_RESET_TOKEN: &str = "sxyzAbCdEfGhIjKlMnOp";
+const MASTODON_RESET_DIGEST: &str =
+    "a5106b6b4dc0e29d5f7eef97ecf87a7734d60218ca010180d6cf0aea936391a7";
+
+/// With the Mastodon's `secret_key_base`, a reset link that Mastodon mailed
+/// works, so does one eunha mailed before the secret was configured, and what
+/// eunha stores for a link it mails is Devise's digest.
+#[tokio::test]
+async fn test_a_reset_mastodon_mailed_works_with_its_secret_key_base() {
+    let ctx = TestContext::with_instance_config("password-reset-skb", |instance| {
+        instance.secret_key_base = Some(eunha::secret_key_base::SecretKeyBase::new(
+            MASTODON_SECRET_KEY_BASE,
+        ));
+    })
+    .await;
+    let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+
+    let earlier = mail_a_token(&ctx, alice_user, 1).await;
+    let form = ctx
+        .api
+        .get(
+            &format!("/auth/password/edit?reset_password_token={earlier}"),
+            None,
+        )
+        .await;
+    assert_eq!(form.status(), StatusCode::OK);
+
+    sqlx::query(
+        "UPDATE users SET reset_password_token = $1, reset_password_sent_at = now() WHERE id = $2",
+    )
+    .bind(MASTODON_RESET_DIGEST)
+    .bind(alice_user)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let done = html_post(
+        &ctx,
+        "/auth/password/edit",
+        &[
+            ("reset_password_token", MASTODON_RESET_TOKEN),
+            ("password", "brand-new-password"),
+            ("password_confirmation", "brand-new-password"),
+        ],
+    )
+    .await;
+    assert!(done
+        .text()
+        .await
+        .unwrap()
+        .contains("Your password has been changed successfully."));
+    account_session_cookie(&ctx.api, "alice@test.invalid", "brand-new-password").await;
+
+    html_post(&ctx, "/auth/password", &[("email", "alice@test.invalid")]).await;
+    let mail = ctx
+        .mail_to("alice@test.invalid", "Reset password instructions")
+        .await
+        .expect("a reset mail");
+    let (_, rest) = mail.html.split_once("reset_password_token=").unwrap();
+    let token = &rest[..rest.find('"').unwrap()];
+    assert_eq!(token.len(), 20, "Devise.friendly_token: {token}");
+    let stored: String = sqlx::query_scalar("SELECT reset_password_token FROM users WHERE id = $1")
+        .bind(alice_user)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let secret = ctx.state.instance.secret_key_base.clone().unwrap();
+    assert_eq!(stored, secret.reset_password_token_digest(token).await);
+}

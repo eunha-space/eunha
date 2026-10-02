@@ -297,6 +297,89 @@ async fn test_confirmation_and_unsubscribing() {
     assert_eq!(left, 0);
 }
 
+/// With the Mastodon's `secret_key_base`, links carry Mastodon's signed
+/// GlobalID of the subscription, a GlobalID Mastodon signed unsubscribes, and
+/// a link eunha mailed before the secret was configured still works.
+#[tokio::test]
+async fn test_unsubscribing_with_a_signed_global_id() {
+    let ctx = TestContext::with_instance_config("emailsub-sgid", |instance| {
+        instance.secret_key_base = Some(eunha::secret_key_base::SecretKeyBase::new(
+            "0123456789abcdef".repeat(8),
+        ));
+    })
+    .await;
+    let secret = ctx.state.instance.secret_key_base.clone().unwrap();
+    let alice = offer(&ctx).await;
+    subscribe(&ctx, alice, "reader@example.com").await;
+    let token = token_for(&ctx, "reader@example.com").await;
+    let id: i64 = sqlx::query_scalar("SELECT id FROM email_subscriptions WHERE email = $1")
+        .bind("reader@example.com")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+
+    let page = ctx
+        .api
+        .get(
+            &format!("/email_subscriptions/confirmation?confirmation_token={token}"),
+            None,
+        )
+        .await
+        .text()
+        .await
+        .unwrap();
+    let (_, rest) = page.split_once("/unsubscribe?token=").unwrap();
+    let linked = urlencoding::decode(&rest[..rest.find('"').unwrap()])
+        .unwrap()
+        .into_owned();
+    assert_eq!(
+        secret.locate_signed(&linked, "unsubscribe", chrono::Utc::now()),
+        Some(("EmailSubscription".to_owned(), id))
+    );
+
+    // `@subscription.to_sgid(for: 'unsubscribe')`, as Mastodon mails it.
+    let sgid = secret.signed_global_id("EmailSubscription", id, "unsubscribe", chrono::Utc::now());
+    let query = format!("token={}", urlencoding::encode(&sgid));
+    let resp = ctx.api.get(&format!("/unsubscribe?{query}"), None).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp
+        .text()
+        .await
+        .unwrap()
+        .contains("Unsubscribe from alice?"));
+    // One made for another purpose, or that has expired, names nothing.
+    let other = secret.signed_global_id("EmailSubscription", id, "default", chrono::Utc::now());
+    let stale = secret.signed_global_id(
+        "EmailSubscription",
+        id,
+        "unsubscribe",
+        chrono::Utc::now() - chrono::Duration::days(40),
+    );
+    for bad in [other, stale] {
+        let resp = ctx
+            .api
+            .get(
+                &format!("/unsubscribe?token={}", urlencoding::encode(&bad)),
+                None,
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+    let resp = form_post(&ctx, "/unsubscribe", &query).await;
+    assert!(resp.text().await.unwrap().contains("You are unsubscribed"));
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM email_subscriptions")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+
+    // The confirmation token, which eunha's links carried before.
+    subscribe(&ctx, alice, "other@example.com").await;
+    let token = token_for(&ctx, "other@example.com").await;
+    let resp = form_post(&ctx, "/unsubscribe", &format!("token={token}")).await;
+    assert!(resp.text().await.unwrap().contains("You are unsubscribed"));
+}
+
 /// Posting batches public posts that are not replies to others, and the
 /// worker mails the batch to confirmed subscribers only.
 #[tokio::test]

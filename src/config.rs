@@ -448,6 +448,16 @@ pub struct InstanceConfig {
     /// (`Scheduler::AutoCloseRegistrationsScheduler`).
     #[serde(default)]
     pub disable_automatic_switching_to_approved_registrations: bool,
+    /// Mastodon's `SECRET_KEY_BASE`. With it, async refresh ids, the signed
+    /// GlobalIDs in unsubscribe links and password reset digests are made and
+    /// read exactly as that Mastodon makes them, so what it handed out keeps
+    /// working. Unset, eunha keeps schemes of its own (see
+    /// [`crate::secret_key_base`]).
+    #[serde(
+        default,
+        deserialize_with = "crate::secret_key_base::deserialize_optional"
+    )]
+    pub secret_key_base: Option<crate::secret_key_base::SecretKeyBase>,
     /// Mastodon's `DEEPL_*` and `LIBRE_TRANSLATE_*`: the machine translation
     /// service, if any (`[instance.translation]`).
     #[serde(default)]
@@ -530,13 +540,14 @@ impl Config {
     }
 }
 
-/// Accept Mastodon's own spelling of the encryption secrets and the
-/// translation service.
+/// Accept Mastodon's own spelling of its secrets and the translation
+/// service.
 ///
 /// Eunha's environment keys nest with `__`, so its name for the primary key is
 /// `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY` — but the values themselves come
 /// from a Mastodon installation, whose `.env.production` spells them with a
-/// single underscore. Copying that file across should be enough.
+/// single underscore, and calls `instance.secret_key_base` `SECRET_KEY_BASE`.
+/// Copying that file across should be enough.
 fn adopt_mastodon_env() {
     for (mastodon, eunha) in [
         (
@@ -557,6 +568,7 @@ fn adopt_mastodon_env() {
             "LIBRE_TRANSLATE_API_KEY",
             "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
+        ("SECRET_KEY_BASE", "INSTANCE__SECRET_KEY_BASE"),
     ] {
         if std::env::var_os(eunha).is_none() {
             if let Some(value) = std::env::var_os(mastodon) {

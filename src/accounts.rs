@@ -341,10 +341,18 @@ pub async fn change_password(db: &PgPool, user_id: i64) -> Result<String> {
 /// Devise's `reset_password_within`.
 const RESET_PASSWORD_WITHIN_HOURS: i32 = 6;
 
-/// What `users.reset_password_token` holds for a token mailed out: its
-/// SHA-256, so the column alone cannot reset anyone's password. Devise keeps
-/// an HMAC keyed by `secret_key_base`, which eunha does not have.
-fn reset_password_digest(token: &str) -> String {
+/// What `users.reset_password_token` holds for a token mailed out, so the
+/// column alone cannot reset anyone's password: Devise's HMAC
+/// (`Devise.token_generator.digest`) when `secret_key_base` is configured,
+/// and the token's SHA-256 when it is not.
+async fn reset_password_digest(state: &crate::state::AppState, token: &str) -> String {
+    match &state.instance.secret_key_base {
+        Some(secret) => secret.reset_password_token_digest(token).await,
+        None => reset_password_sha256(token),
+    }
+}
+
+fn reset_password_sha256(token: &str) -> String {
     use sha2::Digest as _;
     hex::encode(sha2::Sha256::digest(token.as_bytes()))
 }
@@ -370,10 +378,11 @@ pub async fn send_reset_password_instructions(
     if user.encrypted_password.is_empty() {
         return Ok(());
     }
-    let token = crate::crypto::generate_token(32);
+    // `set_reset_password_token`: `Devise.friendly_token`, stored as its digest.
+    let token = crate::email_subscriptions::friendly_token();
     sqlx::query!(
         "UPDATE users SET reset_password_token = $1, reset_password_sent_at = now() WHERE id = $2",
-        reset_password_digest(&token),
+        reset_password_digest(state, &token).await,
         user_id,
     )
     .execute(&state.db)
@@ -401,18 +410,27 @@ pub async fn send_reset_password_instructions(
 
 /// The user a mailed reset token belongs to, if it is still good:
 /// `with_reset_password_token` and `reset_password_period_valid?`.
-pub async fn reset_password_user(db: &PgPool, token: &str) -> Result<i64, &'static str> {
+pub async fn reset_password_user(
+    state: &crate::state::AppState,
+    token: &str,
+) -> Result<i64, &'static str> {
     if token.is_empty() {
         return Err("Reset password token can't be blank");
     }
+    // A SHA-256 is still read once `secret_key_base` is configured, so a link
+    // eunha mailed before then keeps its six hours.
+    let digests = vec![
+        reset_password_digest(state, token).await,
+        reset_password_sha256(token),
+    ];
     let row = sqlx::query!(
         r#"SELECT id, reset_password_sent_at > now() - make_interval(hours => $2) AS "fresh!"
            FROM users
-           WHERE reset_password_token = $1 AND encrypted_password <> ''"#,
-        reset_password_digest(token),
+           WHERE reset_password_token = ANY($1) AND encrypted_password <> ''"#,
+        &digests,
         RESET_PASSWORD_WITHIN_HOURS,
     )
-    .fetch_optional(db)
+    .fetch_optional(&state.db)
     .await
     .map_err(|_| "Reset password token is invalid")?;
     match row {
@@ -448,7 +466,7 @@ pub async fn reset_password_by_token(
     password: &str,
     confirmation: Option<&str>,
 ) -> Result<i64, &'static str> {
-    let user_id = reset_password_user(&state.db, token).await?;
+    let user_id = reset_password_user(state, token).await?;
     if let Some(problem) = password_problem(password, confirmation) {
         return Err(problem);
     }

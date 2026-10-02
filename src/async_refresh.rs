@@ -9,12 +9,13 @@
 //!
 //! Mastodon's id is the Redis key signed with `Rails.application.
 //! message_verifier('async_refreshes')`, which derives its key from
-//! `SECRET_KEY_BASE` — a secret eunha does not have. The id here has the same
-//! shape (the key in base64, `--`, an HMAC-SHA256 of it) and is keyed from the
-//! instance's VAPID private key, the one secret every instance is configured
-//! with. Ids are opaque to clients and live at most a day, and the hashes they
-//! name sit under eunha's key prefix where a Mastodon would not look, so
-//! nothing depends on the two signers agreeing.
+//! `SECRET_KEY_BASE`. An instance configured with its Mastodon's
+//! `secret_key_base` signs ids exactly so ([`crate::secret_key_base`]). One
+//! without it signs an id of the same shape (the key in base64, `--`, an
+//! HMAC-SHA256 of it) keyed from the instance's VAPID private key, the one
+//! secret every instance is configured with, and both read that kind. Ids are
+//! opaque to clients and live at most a day, so nothing depends on the two
+//! signers agreeing.
 //!
 //! The hashes live in the coordination Redis, which is not evicted: a refresh
 //! that vanished while its work ran would let the next request start the same
@@ -216,13 +217,27 @@ impl Drop for FinishOnDrop {
     }
 }
 
-/// `MessageVerifier#generate`, in URL-safe base64 so the id can sit in a path.
+/// `MessageVerifier#generate`: Mastodon's id with `secret_key_base`, and
+/// without it one keyed from the VAPID key, in URL-safe base64.
 fn sign(state: &AppState, key: &str) -> String {
-    crate::crypto::sign_message(&state.instance.vapid_private_key, b"async_refreshes", key)
+    match &state.instance.secret_key_base {
+        Some(secret) => secret.async_refresh_id(key),
+        None => {
+            crate::crypto::sign_message(&state.instance.vapid_private_key, b"async_refreshes", key)
+        }
+    }
 }
 
 /// `MessageVerifier#verify`: the key an id signs, or `None` for an id that was
-/// not signed here.
+/// not signed here. An id keyed from the VAPID key is read either way, so that
+/// configuring `secret_key_base` does not strand the ones already handed out.
 fn verify(state: &AppState, id: &str) -> Option<String> {
-    crate::crypto::verify_message(&state.instance.vapid_private_key, b"async_refreshes", id)
+    state
+        .instance
+        .secret_key_base
+        .as_ref()
+        .and_then(|secret| secret.verify_async_refresh_id(id))
+        .or_else(|| {
+            crate::crypto::verify_message(&state.instance.vapid_private_key, b"async_refreshes", id)
+        })
 }

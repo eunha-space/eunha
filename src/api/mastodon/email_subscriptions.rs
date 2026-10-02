@@ -162,8 +162,8 @@ pub async fn confirmation(
     let Some(token) = q.confirmation_token.filter(|t| !t.is_empty()) else {
         return not_found();
     };
-    let account = match subs::confirm(&state, &token).await {
-        Ok(Some(account)) => account,
+    let (id, account) = match subs::confirm(&state, &token).await {
+        Ok(Some(found)) => found,
         Ok(None) => return not_found(),
         Err(error) => {
             tracing::error!(%error, "could not confirm an email subscription");
@@ -183,7 +183,7 @@ pub async fn confirmation(
         } else {
             "Changed your mind?"
         },
-        crate::email::html_escape(&subs::unsubscribe_url(&state, &token)),
+        crate::email::html_escape(&subs::unsubscribe_url(&state, id, &token)),
         if ko { "구독 해제" } else { "Unsubscribe" },
     );
     render(

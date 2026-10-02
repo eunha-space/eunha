@@ -94,6 +94,42 @@ async fn test_async_refresh_lifecycle() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// With the Mastodon's `secret_key_base`, ids are what its
+/// `message_verifier('async_refreshes')` makes (the vector from
+/// *scripts/rails_signing_vectors.rb*), and one signed from the VAPID key, as
+/// eunha's were without it, is still read.
+#[tokio::test]
+async fn test_async_refresh_ids_with_a_secret_key_base() {
+    let ctx = TestContext::with_instance_config("async-refresh-skb", |instance| {
+        instance.secret_key_base = Some(eunha::secret_key_base::SecretKeyBase::new(
+            "0123456789abcdef".repeat(8),
+        ));
+    })
+    .await;
+    let key = "async_refreshes:v1:accounts:123:refresh_followers";
+    let mastodon_id = "ImFzeW5jX3JlZnJlc2hlczp2MTphY2NvdW50czoxMjM6cmVmcmVzaF9mb2xsb3dlcnMi--509406b78242a360e365efdfc925d0e7c576618f";
+    let refresh = AsyncRefresh::create(&ctx.state, key, true).await;
+    assert_eq!(refresh.id(&ctx.state), mastodon_id);
+
+    let vapid_signed = eunha::crypto::sign_message(
+        &ctx.state.instance.vapid_private_key,
+        b"async_refreshes",
+        key,
+    );
+    for id in [mastodon_id, vapid_signed.as_str()] {
+        let resp = ctx
+            .api
+            .get(
+                &format!("/api/v1_alpha/async_refreshes/{id}"),
+                Some(&ctx.alice_token),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK, "{id}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(body["async_refresh"]["status"], "running");
+    }
+}
+
 /// `doorkeeper_authorize! :read` and `require_user!`.
 #[tokio::test]
 async fn test_async_refresh_requires_a_user_with_read() {

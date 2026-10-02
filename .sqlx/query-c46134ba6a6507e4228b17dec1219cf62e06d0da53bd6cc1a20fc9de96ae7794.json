@@ -1,22 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM email_subscriptions WHERE confirmation_token = $1 RETURNING account_id",
+  "query": "SELECT id FROM email_subscriptions WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "account_id",
+        "name": "id",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "955758018997914561000ae8eca6a37a9723f161902ad2f10e807abea61fb23e"
+  "hash": "c46134ba6a6507e4228b17dec1219cf62e06d0da53bd6cc1a20fc9de96ae7794"
 }

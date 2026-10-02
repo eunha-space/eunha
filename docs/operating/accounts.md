@@ -158,10 +158,11 @@ A forgotten password is Devise's recoverable module, as Mastodon's
     account (`config.paranoid`), and mails a link only to a confirmed user
     with a password whose account is not a memorial.
  -  The link, `/auth/password/edit?reset_password_token=…`, works for six hours
-    (`reset_password_within`). `users.reset_password_token` holds the token's
-    SHA-256, not the token; Devise keys its digest with `SECRET_KEY_BASE`,
-    which eunha does not have, so a link one of them mailed does not work on
-    the other.
+    (`reset_password_within`). The token is `Devise.friendly_token`, and
+    `users.reset_password_token` holds a digest of it, never the token: with
+    the instance's [`secret_key_base`](./instances#mastodon-s-secret-key-base),
+    Devise's own, so a link Mastodon mailed works too; without it, the
+    token's SHA-256, which is still read once the secret is configured.
  -  Setting the new password there, or with `PUT /auth/password`
     (`reset_password_token`, `password`, `password_confirmation`), ends every
     session, revokes every token and grant with their push subscriptions and
@@ -299,10 +300,12 @@ are written; other locales get English.
 The unsubscribe link is `/unsubscribe?token=…&type=…`, the address email
 subscriptions use. `GET` asks, as `UnsubscriptionsController#show` does, and
 `POST` — the page's button, or a mail client's one-click request — turns
-`notification_emails.<type>` off. The token names the user, signed with a key
-derived from the instance's VAPID key, since eunha has no `secret_key_base`
-to sign a GlobalID with; it does not expire, and a link Mastodon mailed is not
-recognised. A subscription's confirmation token is still read as before.
+`notification_emails.<type>` off. With the instance's
+[`secret_key_base`](./instances#mastodon-s-secret-key-base), the token is
+Mastodon's signed GlobalID of the user, good for a month, and one Mastodon
+mailed works. Without it, the token names the user signed with a key derived
+from the instance's VAPID key; it does not expire, it is still read once the
+secret is configured, and a link Mastodon mailed is not recognised.
 
 
 Time zones

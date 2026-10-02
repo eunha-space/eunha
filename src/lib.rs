@@ -38,6 +38,7 @@ pub mod redis_lock;
 pub mod relays;
 pub mod remote_ip;
 pub mod schema_check;
+pub mod secret_key_base;
 pub mod sessions;
 pub mod settings;
 pub mod site_uploads;

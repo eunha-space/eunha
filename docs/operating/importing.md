@@ -51,7 +51,10 @@ domain they were seen under and will not follow them to a new one.
 
 An imported instance keeps its accounts'
 [signing keys](../mastodon/signing-keys), so it needs the ActiveRecord
-encryption secrets the source Mastodon used.
+encryption secrets the source Mastodon used. The import reads a dump, not the
+source's *.env.production*, so these come across by hand. So should its
+[`SECRET_KEY_BASE`](./instances#mastodon-s-secret-key-base), which keeps the
+unsubscribe and password reset links that Mastodon mailed working.
 
 
 Media

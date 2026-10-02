@@ -72,13 +72,15 @@ as Mastodon's `UserCleanupScheduler` does.
 
 Every email carries a link to `/unsubscribe`, which asks before unsubscribing,
 and `List-Unsubscribe` and `List-Unsubscribe-Post` headers so that a mail
-client can unsubscribe in one click. The link's token is the subscription's
-confirmation token: Mastodon signs a GlobalID with `secret_key_base`, which
-eunha does not have (the `email-subscription-unsubscribe-token` divergence).
-A link mailed by Mastodon before the switch to eunha therefore no longer
-works, and one mailed by eunha does not expire after a month as Mastodon's
-does. The same address serves the unsubscribe links in members' notification
-emails, told apart by their signed token (see
+client can unsubscribe in one click. With the instance's
+[`secret_key_base`](./instances.md#mastodon-s-secret-key-base), the link's
+token is Mastodon's: a GlobalID of the subscription signed with it, good for a
+month, so a link Mastodon mailed before the switch keeps working. Without it,
+the token is the subscription's confirmation token (the
+`email-subscription-unsubscribe-token` divergence), which does not expire,
+and a link Mastodon mailed no longer works. The confirmation token is read
+either way. The same address serves the unsubscribe links in members'
+notification emails, told apart by their signed token (see
 [Account security](./accounts.md#notification-emails)).
 
 

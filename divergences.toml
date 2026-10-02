@@ -539,20 +539,23 @@ reviewed_for = "4.7.1"
 [[divergence]]
 id = "email-subscription-unsubscribe-token"
 kind = "behaviour"
-summary = "Unsubscribe links carry the subscription's confirmation token"
+summary = "Without `secret_key_base`, unsubscribe links carry the subscription's confirmation token"
 mastodon = """
 Links `/unsubscribe` with a signed GlobalID of the subscription \
 (`to_sgid(for: 'unsubscribe')`), signed with `secret_key_base` and valid for \
 a month."""
 eunha = """
-Links `/unsubscribe?token=` with the subscription's confirmation token, which \
-Mastodon keeps after confirming. It does not expire, and a link Mastodon \
-mailed before the instance moved to eunha is not recognised."""
+Configured with the Mastodon's `secret_key_base`, links and reads exactly \
+that GlobalID. Without it, links `/unsubscribe?token=` with the \
+subscription's confirmation token, which Mastodon keeps after confirming; it \
+does not expire, and a link Mastodon mailed is not recognised. The \
+confirmation token is read either way."""
 why = """
-Eunha does not have Mastodon's `secret_key_base` and cannot sign or verify a \
-GlobalID. The confirmation token is as secret, was only ever sent to the \
-subscriber, and is unique by index, so it names the subscription without a \
-new column. A link that keeps working is what an unsubscribe link is for."""
+Without `secret_key_base` eunha cannot sign or verify a GlobalID. The \
+confirmation token is as secret, was only ever sent to the subscriber, and is \
+unique by index, so it names the subscription without a new column. A link \
+that keeps working is what an unsubscribe link is for, so the ones eunha \
+mailed before the secret was configured are still honoured."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -560,21 +563,23 @@ reviewed_for = "4.7.1"
 [[divergence]]
 id = "notification-email-unsubscribe-token"
 kind = "behaviour"
-summary = "Notification email unsubscribe links are signed with a VAPID-derived key, and cover quotes"
+summary = "Without `secret_key_base`, notification email unsubscribe links are signed with a VAPID-derived key; quotes are covered"
 mastodon = """
 Links `/unsubscribe?token=&type=` with the user's signed GlobalID \
 (`to_sgid(for: 'unsubscribe')`, keyed from `secret_key_base`, valid for a \
 month), and accepts `follow`, `reblog`, `favourite`, `mention` and \
 `follow_request` as the type, so the link in a `quote` mail answers 404."""
 eunha = """
-Signs `User/<id>` with HMAC-SHA256 under a key derived for `unsubscribe` from \
-the instance's VAPID private key, as `base64url(message)--hexdigest`, with no \
-expiry, and accepts `quote` as well."""
+Configured with the Mastodon's `secret_key_base`, links and reads exactly \
+that GlobalID. Without it, signs `User/<id>` with HMAC-SHA256 under a key \
+derived for `unsubscribe` from the instance's VAPID private key, as \
+`base64url(message)--hexdigest`, with no expiry, and reads that either way. \
+It accepts `quote` as the type as well."""
 why = """
-Eunha has no `secret_key_base`, so it can neither sign nor read Mastodon's \
-GlobalIDs; the async refresh ids already take the same route. A link that \
-keeps working is what an unsubscribe link is for, and one in a mail eunha \
-sent should not be refused."""
+Without `secret_key_base` eunha can neither sign nor read Mastodon's \
+GlobalIDs; the async refresh ids take the same route. A link that keeps \
+working is what an unsubscribe link is for, and one in a mail eunha sent, \
+before or after the secret was configured, should not be refused."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -768,18 +773,20 @@ reviewed_for = "4.7.1"
 [[divergence]]
 id = "async-refresh-ids-signed-without-rails"
 kind = "behaviour"
-summary = "Signs async refresh ids with a key derived from the VAPID key"
+summary = "Without `secret_key_base`, signs async refresh ids with a key derived from the VAPID key"
 mastodon = """
 Signs the refresh's Redis key with `Rails.application.message_verifier\
 ('async_refreshes')`, keyed from `SECRET_KEY_BASE`."""
 eunha = """
-Signs it with HMAC-SHA256 under a key derived from the instance's VAPID \
-private key, as `base64url(key)--hexdigest`, and keeps the hash in the \
-coordination Redis under the instance's prefix."""
+Configured with the Mastodon's `secret_key_base`, signs exactly so. Without \
+it, signs it with HMAC-SHA256 under a key derived from the instance's VAPID \
+private key, as `base64url(key)--hexdigest`, and reads that kind either way. \
+The hash is kept in the coordination Redis under the instance's prefix."""
 why = """
-Eunha has no `SECRET_KEY_BASE`. An id is opaque to clients and lives a day \
-at most, and eunha replaces a Mastodon rather than serving beside it, so no \
-Mastodon process ever has to read an id eunha handed out, or the reverse."""
+Without `secret_key_base` there is nothing to derive Rails' key from. An id is \
+opaque to clients and lives a day at most, and eunha replaces a Mastodon \
+rather than serving beside it, so no Mastodon process ever has to read an id \
+eunha handed out, or the reverse."""
 evidence = "tests/integration/c2s/async_refreshes.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
@@ -1023,18 +1030,19 @@ reviewed_for = "4.7.1"
 [[divergence]]
 id = "reset-password-token-digest"
 kind = "behaviour"
-summary = "Stores a password reset token's SHA-256 rather than Devise's keyed digest"
+summary = "Without `secret_key_base`, stores a password reset token's SHA-256 rather than Devise's keyed digest"
 mastodon = """
 Mails a random token and stores `Devise.token_generator.digest`, an \
 HMAC-SHA256 keyed by a key derived from `SECRET_KEY_BASE`, in \
 `users.reset_password_token`."""
 eunha = """
-Mails a random token and stores its plain SHA-256 there. The link, its six \
-hours, and what following it does are Mastodon's."""
+Configured with the Mastodon's `secret_key_base`, stores exactly that digest. \
+Without it, stores the token's plain SHA-256 there, which is read either way. \
+The link, its six hours, and what following it does are Mastodon's."""
 why = """
-Eunha has no `SECRET_KEY_BASE` to derive Devise's key from. Storing a digest \
-still keeps the column from being enough to reset a password; the cost is \
-that a link mailed by one of eunha and Mastodon does not work on the other, \
+Without `secret_key_base` there is nothing to derive Devise's key from. \
+Storing a digest still keeps the column from being enough to reset a \
+password; the cost is that a link Mastodon mailed does not work on eunha, \
 which matters only for a reset in flight when an instance switches."""
 evidence = "tests/integration/surfaces/password_reset.rs"
 since = "4.7.1"

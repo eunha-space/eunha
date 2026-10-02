@@ -462,17 +462,49 @@ async fn load_subscription(state: &AppState, id: i64) -> anyhow::Result<Option<S
     .await?)
 }
 
-/// Where a subscription's link to unsubscribe goes.
+/// Where subscription `id`'s link to unsubscribe goes.
 ///
-/// Mastodon signs a GlobalID with `secret_key_base`, which eunha does not
-/// have. The confirmation token is as secret, reaches no one but the
-/// subscriber, and Mastodon keeps it after confirming, so it is the key here.
-pub fn unsubscribe_url(state: &AppState, token: &str) -> String {
+/// Mastodon signs a GlobalID with `secret_key_base`
+/// (`to_sgid(for: 'unsubscribe')`), and so does an instance configured with
+/// it. Without it the link carries the subscription's confirmation token
+/// instead: as secret, it reaches no one but the subscriber, and Mastodon
+/// keeps it after confirming.
+pub fn unsubscribe_url(state: &AppState, id: i64, confirmation_token: &str) -> String {
+    let token = match &state.instance.secret_key_base {
+        Some(secret) => {
+            secret.signed_global_id("EmailSubscription", id, "unsubscribe", chrono::Utc::now())
+        }
+        None => confirmation_token.to_owned(),
+    };
     format!(
         "https://{}/unsubscribe?token={}",
         state.instance.domain,
-        urlencoding::encode(token)
+        urlencoding::encode(&token)
     )
+}
+
+/// The subscription a link to unsubscribe names: by its signed GlobalID when
+/// `secret_key_base` is configured, and otherwise, or failing that, by its
+/// confirmation token, which is what eunha's links carried without it.
+async fn subscription_for_token(state: &AppState, token: &str) -> anyhow::Result<Option<i64>> {
+    if let Some(secret) = &state.instance.secret_key_base {
+        if let Some((model, id)) = secret.locate_signed(token, "unsubscribe", chrono::Utc::now()) {
+            if model != "EmailSubscription" {
+                return Ok(None);
+            }
+            return Ok(
+                sqlx::query_scalar!("SELECT id FROM email_subscriptions WHERE id = $1", id)
+                    .fetch_optional(&state.db)
+                    .await?,
+            );
+        }
+    }
+    Ok(sqlx::query_scalar!(
+        "SELECT id FROM email_subscriptions WHERE confirmation_token = $1",
+        token
+    )
+    .fetch_optional(&state.db)
+    .await?)
 }
 
 /// `email_subscriptions_confirmation_url(confirmation_token:)`.
@@ -498,7 +530,7 @@ async fn envelope(
         name: display_name(account),
         domain: state.instance.domain.clone(),
         list_id: format!("<{}.{}>", account.username, state.instance.domain),
-        unsubscribe_url: unsubscribe_url(state, &token),
+        unsubscribe_url: unsubscribe_url(state, sub.id, &token),
         privacy_policy_url: format!("https://{}/about", state.instance.domain),
         footer_text: (!footer.trim().is_empty()).then_some(footer),
     }
@@ -535,8 +567,9 @@ pub async fn send_confirmation(state: &AppState, id: i64) -> anyhow::Result<()> 
 }
 
 /// `EmailSubscriptions::ConfirmationsController#show`: the subscription the
-/// token belongs to, confirmed if it was not yet. `None` is a 404.
-pub async fn confirm(state: &AppState, token: &str) -> anyhow::Result<Option<Account>> {
+/// token belongs to, with its account, confirmed if it was not yet. `None` is
+/// a 404.
+pub async fn confirm(state: &AppState, token: &str) -> anyhow::Result<Option<(i64, Account)>> {
     let row = sqlx::query!(
         "SELECT id, account_id, confirmed_at FROM email_subscriptions
          WHERE confirmation_token = $1",
@@ -557,7 +590,9 @@ pub async fn confirm(state: &AppState, token: &str) -> anyhow::Result<Option<Acc
         .execute(&state.db)
         .await?;
     }
-    load_account(state, row.account_id).await
+    Ok(load_account(state, row.account_id)
+        .await?
+        .map(|account| (row.id, account)))
 }
 
 /// The account a link to unsubscribe is for, without unsubscribing: what
@@ -566,9 +601,12 @@ pub async fn subscription_account(
     state: &AppState,
     token: &str,
 ) -> anyhow::Result<Option<Account>> {
+    let Some(id) = subscription_for_token(state, token).await? else {
+        return Ok(None);
+    };
     let account_id = sqlx::query_scalar!(
-        "SELECT account_id FROM email_subscriptions WHERE confirmation_token = $1",
-        token
+        "SELECT account_id FROM email_subscriptions WHERE id = $1",
+        id
     )
     .fetch_optional(&state.db)
     .await?;
@@ -581,9 +619,12 @@ pub async fn subscription_account(
 /// `UnsubscriptionsController#create` for an email subscription: destroy it.
 /// Returns the account it was for, or `None` for a token that names nothing.
 pub async fn unsubscribe(state: &AppState, token: &str) -> anyhow::Result<Option<Account>> {
+    let Some(id) = subscription_for_token(state, token).await? else {
+        return Ok(None);
+    };
     let account_id = sqlx::query_scalar!(
-        "DELETE FROM email_subscriptions WHERE confirmation_token = $1 RETURNING account_id",
-        token
+        "DELETE FROM email_subscriptions WHERE id = $1 RETURNING account_id",
+        id
     )
     .fetch_optional(&state.db)
     .await?;

@@ -330,17 +330,29 @@ async fn target_status(
 }
 
 /// What a link to unsubscribe from `kind` carries for a user: the user, signed
-/// for `unsubscribe`.
+/// for `unsubscribe`. With `secret_key_base` that is Mastodon's
+/// `to_sgid(for: 'unsubscribe')`, good for a month; without it, `User/<id>`
+/// signed with a key derived from the VAPID key, which does not expire.
 fn user_token(state: &AppState, user_id: i64) -> String {
-    crate::crypto::sign_message(
-        &state.instance.vapid_private_key,
-        b"unsubscribe",
-        &format!("User/{user_id}"),
-    )
+    match &state.instance.secret_key_base {
+        Some(secret) => secret.signed_global_id("User", user_id, "unsubscribe", chrono::Utc::now()),
+        None => crate::crypto::sign_message(
+            &state.instance.vapid_private_key,
+            b"unsubscribe",
+            &format!("User/{user_id}"),
+        ),
+    }
 }
 
-/// The user a [`user_token`] names, or `None` for any other token.
+/// The user a [`user_token`] names, or `None` for any other token. A token
+/// signed with the VAPID key is read with or without `secret_key_base`, so the
+/// links eunha mailed before it was configured keep working.
 pub fn user_from_token(state: &AppState, token: &str) -> Option<i64> {
+    if let Some(secret) = &state.instance.secret_key_base {
+        if let Some((model, id)) = secret.locate_signed(token, "unsubscribe", chrono::Utc::now()) {
+            return (model == "User").then_some(id);
+        }
+    }
     crate::crypto::verify_message(&state.instance.vapid_private_key, b"unsubscribe", token)?
         .strip_prefix("User/")?
         .parse()

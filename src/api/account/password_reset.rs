@@ -130,7 +130,7 @@ pub async fn edit_page(
     Query(query): Query<EditQuery>,
 ) -> Response {
     let token = query.reset_password_token.unwrap_or_default();
-    if crate::accounts::reset_password_user(&state.db, &token)
+    if crate::accounts::reset_password_user(&state, &token)
         .await
         .is_err()
     {

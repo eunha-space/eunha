@@ -278,3 +278,37 @@ SMTP is the only email transport. Without SMTP settings, email delivery fails
 with a configuration error. Keep tenant configuration
 files private because they contain credentials. Reload the tenants directory
 after changing email settings.
+
+
+Mastodon's `secret_key_base`
+----------------------------
+
+An instance that replaced a Mastodon can be given that Mastodon's
+`SECRET_KEY_BASE`:
+
+~~~~ toml
+[instance]
+secret_key_base = "…the 128 hex characters from .env.production…"
+~~~~
+
+In the environment of a lone instance, `INSTANCE__SECRET_KEY_BASE` or
+Mastodon's own `SECRET_KEY_BASE` sets it, so a copied *.env.production* is
+enough. With it, eunha signs and digests what Mastodon 4.7.1 does with it,
+byte for byte, and reads what that Mastodon handed out before the switch:
+
+ -  async refresh ids, Rails' `message_verifier('async_refreshes')`;
+ -  the unsubscribe links in notification emails and email subscription
+    mails, signed GlobalIDs (`to_sgid(for: 'unsubscribe')`) that expire after
+    a month;
+ -  `users.reset_password_token`, Devise's keyed digest of the token mailed.
+
+Without it, each of these uses a scheme of eunha's own (the divergences that
+name `secret_key_base`), and what Mastodon issued is not recognised. What
+eunha issued under those schemes keeps working after the secret is
+configured, so it can be added at any time. Changing or removing it
+invalidates whatever was signed with it, as rotating `SECRET_KEY_BASE` does
+on Mastodon; it also signs Mastodon's sessions, so keep it as secret.
+
+*scripts/rails\_signing\_vectors.rb* prints what Mastodon makes from a given
+secret, using nothing but Ruby's standard library, for checking an instance
+against its Mastodon.
