@@ -50,7 +50,7 @@ size, the favicon at 16, 32 and 48 pixels.
 | `registrations_mode`                                             | sign-ups, approval of new accounts, the instance API, NodeInfo                         |
 | `closed_registrations_message`                                   | `/api/v2/instance`'s `registrations.message` while sign-ups are closed                 |
 | `require_invite_text`                                            | a sign-up waiting for approval must give a reason                                      |
-| `min_age`                                                        | `/api/v2/instance`'s `registrations.min_age`                                           |
+| `min_age`                                                        | the sign-up age check (see [account security](./accounts)) and the instance API        |
 | `status_page_url`                                                | `/api/v2/instance`'s `configuration.urls.status`                                       |
 | `thumbnail`, `thumbnail_description`                             | the instance thumbnail                                                                 |
 | `app_icon`, `favicon`                                            | the instance's icons, and the web client's favicon                                     |
@@ -65,11 +65,13 @@ size, the favicon at 16, 32 and 48 pixels.
 | `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                |
 | `wrapstodon`                                                     | annual reports                                                                         |
 | `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                              |
+| `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))            |
+| `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))       |
 
 The rest are saved for a Mastodon on the same database and read by nothing in
 eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
-`mascot`, `noindex`, `preview_sensitive_media`, `captcha_enabled` (eunha has
-no CAPTCHA), and `backups_retention_period`.
+`mascot`, `preview_sensitive_media` and `captcha_enabled` (eunha has no
+CAPTCHA).
 
 ### Settings and the instance configuration
 
