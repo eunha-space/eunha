@@ -6,14 +6,12 @@ import {
   getDimensions,
   getMeasures,
   getRetention,
-  listAccounts,
-  listReports,
-  listTrendingTags,
-  type AdminTag,
   type Cohort,
   type Dimension,
   type Measure,
+  type Permission,
 } from '../../admin-api.ts'
+import { getDashboard, type SystemCheck } from '../../admin-server-api.ts'
 import { getToken } from '../../auth.ts'
 import { AdminError, AdminLayout, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
@@ -222,18 +220,6 @@ function RetentionTable({ cohorts }: { cohorts: Cohort[] }) {
 }
 
 /**
- * Counts the first page of a queue: exact below a page, "N+" at or above it.
- * Mastodon's dashboard reads these counts from the database; the admin API has
- * no count endpoint, so a page is what there is.
- */
-async function firstPageCount(list: AsyncIterable<unknown[]>): Promise<string> {
-  const it = list[Symbol.asyncIterator]()
-  const { value } = await it.next()
-  const n = value?.length ?? 0
-  return n >= 40 ? `${n}+` : String(n)
-}
-
-/**
  * Mastodon's admin dashboard on `POST /api/v1/admin/measures`, `/dimensions`
  * and `/retention`, over the last 30 days, with what is waiting for a
  * moderator above it.
@@ -245,6 +231,7 @@ export default function Dashboard() {
   const [dimensions, setDimensions] = useState<Dimension[]>([])
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [pending, setPending] = useState<{ label: string; count: string; href: string }[]>([])
+  const [checks, setChecks] = useState<SystemCheck[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -263,35 +250,42 @@ export default function Dashboard() {
       .catch(() => {})
   }, [token])
 
+  // `Admin::DashboardController#index`: what waits for a moderator, each
+  // shown to a role that may act on it, and the system checks.
   useEffect(() => {
     if (!token) return
-    const queues: Promise<{ label: string; count: string; href: string } | null>[] = [
-      can(permissions, 'manage_reports')
-        ? firstPageCount(listReports(token, { limit: 40 })).then((count) => ({
+    getDashboard(token)
+      .then((d) => {
+        const rows: { label: string; count: string; href: string; permission: Permission }[] = [
+          {
             label: 'Pending reports',
-            count,
+            count: String(d.pending_reports_count),
             href: '/admin/reports',
-          }))
-        : Promise.resolve(null),
-      can(permissions, 'manage_users')
-        ? firstPageCount(listAccounts(token, { status: 'pending', limit: 40 })).then((count) => ({
+            permission: 'manage_reports',
+          },
+          {
             label: 'Pending users',
-            count,
+            count: String(d.pending_users_count),
             href: '/admin/accounts?status=pending',
-          }))
-        : Promise.resolve(null),
-      can(permissions, 'manage_taxonomies')
-        ? (async () => {
-            const it = listTrendingTags(token)[Symbol.asyncIterator]()
-            const { value } = await it.next()
-            const n = ((value ?? []) as AdminTag[]).filter((t) => t.requires_review).length
-            return { label: 'Hashtags to review', count: String(n), href: '/admin/trends/tags' }
-          })()
-        : Promise.resolve(null),
-    ]
-    Promise.all(queues.map((q) => q.catch(() => null))).then((rows) =>
-      setPending(rows.filter((r): r is { label: string; count: string; href: string } => !!r)),
-    )
+            permission: 'manage_users',
+          },
+          {
+            label: 'Pending hashtags',
+            count: String(d.pending_tags_count),
+            href: '/admin/trends/tags',
+            permission: 'manage_taxonomies',
+          },
+          {
+            label: 'Pending appeals',
+            count: String(d.pending_appeals_count),
+            href: '/admin/disputes/appeals',
+            permission: 'manage_appeals',
+          },
+        ]
+        setPending(rows.filter((r) => can(permissions, r.permission)))
+        setChecks(d.system_checks)
+      })
+      .catch(() => {})
   }, [token, permissions])
 
   const byKey = <T extends { key: string }>(list: T[], key: string) =>
@@ -301,6 +295,28 @@ export default function Dashboard() {
     <AdminLayout title="Dashboard" permission="view_dashboard">
       <AdminError error={error} />
       <div className="space-y-4">
+        {checks.length > 0 && (
+          <ul className="space-y-2">
+            {checks.map((c) => (
+              <li
+                key={c.key}
+                className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                  c.critical ? 'border-destructive text-destructive' : ''
+                }`}
+              >
+                <span className="min-w-0 flex-1">{c.message}</span>
+                {c.action &&
+                  (c.action.startsWith('/') ? (
+                    <Link to={c.action}>{c.action_label}</Link>
+                  ) : (
+                    <a href={c.action} target="_blank" rel="noreferrer">
+                      {c.action_label}
+                    </a>
+                  ))}
+              </li>
+            ))}
+          </ul>
+        )}
         {pending.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-3">
             {pending.map((p) => (

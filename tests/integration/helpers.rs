@@ -534,7 +534,10 @@ impl TestContext {
 
     /// A context whose configuration `configure` has changed from the
     /// default, for what is read off it at startup.
-    pub async fn with_config(label: &str, configure: fn(&mut eunha::config::Config)) -> Self {
+    pub async fn with_config(
+        label: &str,
+        configure: impl FnOnce(&mut eunha::config::Config),
+    ) -> Self {
         Self::build(
             label,
             eunha::config::default_sign_integrity_proofs(),

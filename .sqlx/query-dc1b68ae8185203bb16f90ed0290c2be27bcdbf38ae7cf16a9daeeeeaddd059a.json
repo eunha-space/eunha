@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT count(*) FROM appeals WHERE approved_at IS NULL AND rejected_at IS NULL)\n               AS \"appeals!\",\n             (SELECT count(*) FROM reports WHERE action_taken_at IS NULL) AS \"reports!\",\n             (SELECT count(DISTINCT t.id) FROM tags t JOIN tag_trends tt ON tt.tag_id = t.id\n              WHERE t.reviewed_at IS NULL AND t.requested_review_at IS NOT NULL) AS \"tags!\",\n             (SELECT count(*) FROM users WHERE NOT approved) AS \"users!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "appeals!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reports!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "tags!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "users!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "dc1b68ae8185203bb16f90ed0290c2be27bcdbf38ae7cf16a9daeeeeaddd059a"
+}

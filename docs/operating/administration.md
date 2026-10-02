@@ -335,3 +335,30 @@ sensitive ones.
 `status=suppressed` the accounts kept out of them, for a role with
 `manage_taxonomies`. `…/suppress` and `…/unsuppress` with `account_ids` keep
 accounts out and let them back, at once. As in Mastodon, neither is logged.
+
+
+Software updates
+----------------
+
+`/api/v1/admin/software_updates` lists the newer releases the update check
+recorded; see [update notices](./update-notices).
+
+
+The dashboard
+-------------
+
+`GET /api/v1/admin/dashboard`, for a role with `view_dashboard`, is what
+Mastodon's dashboard shows above its charts: how many reports are unresolved,
+users await approval, hashtags await review and appeals await a decision, and
+the system checks the role may see, each with its message and where to act on
+it. The web client's dashboard shows each count to a role that may act on it.
+The checks are Mastodon's, less the two for services eunha does not use
+(Elasticsearch and Sidekiq):
+
+ -  `software_version_check`, and its critical and patch variants, while the
+    update check has recorded a newer release, for `view_devops`;
+ -  `upload_check_privacy_error_object_storage`, when asking the media
+    bucket's public address, or its S3 endpoint, for a listing gets one, for
+    `view_devops`. It is critical: anyone could list every upload;
+ -  `database_schema_check`, while migrations are pending, for `view_devops`;
+ -  `rules_check`, while the server has no rules, for `manage_rules`.

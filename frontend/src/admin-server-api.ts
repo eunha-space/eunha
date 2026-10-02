@@ -552,6 +552,30 @@ export function listSoftwareUpdates(token: string) {
   )
 }
 
+// ── Dashboard ───────────────────────────────────────────────────────────────
+
+/** `Admin::SystemCheck::Message`, with its text. */
+export interface SystemCheck {
+  key: string
+  value: string | null
+  action: string | null
+  action_label: string | null
+  critical: boolean
+  message: string
+}
+
+export interface AdminDashboard {
+  pending_appeals_count: number
+  pending_reports_count: number
+  pending_tags_count: number
+  pending_users_count: number
+  system_checks: SystemCheck[]
+}
+
+export function getDashboard(token: string) {
+  return json<AdminDashboard>(token, 'GET', '/api/v1/admin/dashboard')
+}
+
 // ── Invites ─────────────────────────────────────────────────────────────────
 
 export interface AdminInvite {

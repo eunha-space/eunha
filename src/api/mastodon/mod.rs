@@ -987,6 +987,7 @@ pub fn router() -> Router {
             "/api/v1/admin/software_updates",
             get(admin::list_software_updates),
         )
+        .route("/api/v1/admin/dashboard", get(admin::get_admin_dashboard))
         .route("/api/v1/admin/invites", get(admin::list_admin_invites))
         .route(
             "/api/v1/admin/invites/deactivate_all",
