@@ -1,5 +1,6 @@
 #[derive(Clone)]
 pub struct EmailSender {
+    smtp: Option<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>>,
     http: reqwest::Client,
     api_key: String,
     from: String,
@@ -8,10 +9,38 @@ pub struct EmailSender {
 impl EmailSender {
     pub fn new(http: reqwest::Client, api_key: String, from: String) -> Self {
         Self {
+            smtp: None,
             http,
             api_key,
             from,
         }
+    }
+
+    pub fn with_smtp(mut self, config: &crate::config::SmtpConfig) -> anyhow::Result<Self> {
+        use lettre::{
+            transport::smtp::authentication::Credentials, AsyncSmtpTransport, Tokio1Executor,
+        };
+        let transport = match config.port {
+            465 => AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host),
+            587 => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host),
+            _ => anyhow::bail!("SMTP requires port 465 or 587"),
+        }
+        .map_err(|_| anyhow::anyhow!("Invalid SMTP host"))?;
+        config
+            .from
+            .parse::<lettre::message::Mailbox>()
+            .map_err(|_| anyhow::anyhow!("Invalid SMTP sender"))?;
+        self.smtp = Some(
+            transport
+                .credentials(Credentials::new(
+                    config.username.clone(),
+                    config.password.clone(),
+                ))
+                .timeout(Some(std::time::Duration::from_secs(30)))
+                .build(),
+        );
+        self.from = config.from.clone();
+        Ok(self)
     }
 
     /// `code` — when non-empty, displayed prominently for manual entry.
@@ -415,6 +444,26 @@ impl EmailSender {
     }
 
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
+        if let Some(smtp) = &self.smtp {
+            use lettre::AsyncTransport;
+            let message = lettre::Message::builder()
+                .from(
+                    self.from
+                        .parse()
+                        .map_err(|_| anyhow::anyhow!("Invalid SMTP sender"))?,
+                )
+                .to(to
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("Invalid email recipient"))?)
+                .subject(subject)
+                .header(lettre::message::header::ContentType::TEXT_HTML)
+                .body(html.to_owned())
+                .map_err(|_| anyhow::anyhow!("Could not build email"))?;
+            smtp.send(message)
+                .await
+                .map_err(|_| anyhow::anyhow!("SMTP delivery failed"))?;
+            return Ok(());
+        }
         let payload = serde_json::json!({
             "from": self.from,
             "to": [to],
@@ -429,8 +478,7 @@ impl EmailSender {
             .send()
             .await?;
         if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Resend API error: {text}");
+            anyhow::bail!("Resend email delivery failed (HTTP {})", resp.status());
         }
         Ok(())
     }
@@ -442,4 +490,41 @@ pub fn html_escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod smtp_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn smtp_overrides_resend_and_requires_tls_ports() {
+        let mut config = crate::config::SmtpConfig {
+            host: "smtp.example.com".into(),
+            port: 587,
+            username: "private-login".into(),
+            password: "private-password".into(),
+            from: "mail@example.com".into(),
+        };
+        let sender = EmailSender::new(
+            reqwest::Client::new(),
+            "resend-secret".into(),
+            "fallback@example.com".into(),
+        )
+        .with_smtp(&config)
+        .unwrap();
+        assert!(sender.smtp.is_some());
+        assert_eq!(sender.from, "mail@example.com");
+        config.port = 465;
+        assert!(
+            EmailSender::new(reqwest::Client::new(), String::new(), String::new())
+                .with_smtp(&config)
+                .is_ok()
+        );
+        config.port = 25;
+        assert!(
+            EmailSender::new(reqwest::Client::new(), String::new(), String::new())
+                .with_smtp(&config)
+                .is_err()
+        );
+    }
 }

@@ -186,3 +186,15 @@ These metrics describe service work, not per-tenant CPU or memory. Those remain
 shared-process resources. Background-job and media-transfer instrumentation
 are not included yet. No Mastodon-compatible responses or database schemas
 are changed by enabling the listener.
+
+
+Email delivery
+--------------
+
+Each instance can supply its own `[smtp]` configuration with `host`, `port`,
+`username`, `password`, and `from` (the sender email address). Port 465 uses
+implicit TLS; port 587 requires STARTTLS. Certificate verification is required.
+SMTP takes precedence over `[resend]`; without SMTP, Resend remains the default.
+A failed SMTP delivery does not fall back to Resend. Keep tenant configuration
+files private because they contain credentials. Reload the tenants directory
+after changing email settings.
