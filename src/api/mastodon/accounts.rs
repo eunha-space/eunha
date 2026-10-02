@@ -1530,164 +1530,43 @@ pub async fn get_account_lists(
 
 // ── Tag / mention fetchers ─────────────────────────────────────────────────
 
-/// Extract `:shortcode:` patterns from account profile fields and look them up.
+/// `Account#emojifiable_text`: the note, the display name, and each field's
+/// name and value.
+fn emojifiable_text(a: &Account) -> String {
+    let mut parts = vec![a.note.clone(), a.display_name.clone()];
+    if let Some(fields) = a.fields.as_ref().and_then(|f| f.as_array()) {
+        parts.extend(
+            fields
+                .iter()
+                .filter_map(|f| f["name"].as_str().map(str::to_owned)),
+        );
+        parts.extend(
+            fields
+                .iter()
+                .filter_map(|f| f["value"].as_str().map(str::to_owned)),
+        );
+    }
+    parts.join(" ")
+}
+
+/// `Account#emojis`: `CustomEmoji.from_text(emojifiable_text, domain)`.
 pub async fn fetch_account_emojis(state: &AppState, a: &Account) -> Vec<super::types::CustomEmoji> {
-    let mut combined = format!("{} {}", a.display_name, a.note);
-    if let Some(fields) = a.fields.as_ref().and_then(|f| f.as_array()) {
-        for f in fields {
-            if let (Some(n), Some(v)) = (f["name"].as_str(), f["value"].as_str()) {
-                combined.push(' ');
-                combined.push_str(n);
-                combined.push(' ');
-                combined.push_str(v);
-            }
-        }
-    }
-    let mut shortcodes: Vec<String> = Vec::new();
-    let mut rest = combined.as_str();
-    while let Some(start) = rest.find(':') {
-        rest = &rest[start + 1..];
-        if let Some(end) = rest.find(':') {
-            let code = &rest[..end];
-            if !code.is_empty() && code.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                shortcodes.push(code.to_string());
-            }
-            rest = &rest[end + 1..];
-        } else {
-            break;
-        }
-    }
-    if shortcodes.is_empty() {
-        return vec![];
-    }
-    let rows = sqlx::query!(
-        r#"SELECT shortcode, image_remote_url, visible_in_picker
-           FROM custom_emojis
-           WHERE shortcode = ANY($1) AND domain IS NULL AND NOT disabled"#,
-        &shortcodes,
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-    rows.into_iter()
-        .map(|r| {
-            let url = r.image_remote_url.unwrap_or_default();
-            super::types::CustomEmoji {
-                shortcode: r.shortcode,
-                url: url.clone(),
-                static_url: url,
-                visible_in_picker: r.visible_in_picker,
-                category: None,
-                featured: None,
-            }
-        })
-        .collect()
+    batch_account_emojis(state, std::slice::from_ref(a))
+        .await
+        .remove(&a.id)
+        .unwrap_or_default()
 }
 
-/// Extract emoji shortcodes from account profile text.
-fn extract_account_shortcodes(a: &Account) -> Vec<String> {
-    let mut combined = format!("{} {}", a.display_name, a.note);
-    if let Some(fields) = a.fields.as_ref().and_then(|f| f.as_array()) {
-        for f in fields {
-            if let (Some(n), Some(v)) = (f["name"].as_str(), f["value"].as_str()) {
-                combined.push(' ');
-                combined.push_str(n);
-                combined.push(' ');
-                combined.push_str(v);
-            }
-        }
-    }
-    let mut codes = Vec::new();
-    let mut rest = combined.as_str();
-    while let Some(start) = rest.find(':') {
-        rest = &rest[start + 1..];
-        if let Some(end) = rest.find(':') {
-            let code = &rest[..end];
-            if !code.is_empty() && code.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                codes.push(code.to_string());
-            }
-            rest = &rest[end + 1..];
-        } else {
-            break;
-        }
-    }
-    codes
-}
-
-/// Batch-fetch account profile emojis for multiple accounts in one DB query.
+/// [`fetch_account_emojis`] for many accounts in one query.
 pub async fn batch_account_emojis(
     state: &AppState,
     accounts: &[Account],
 ) -> std::collections::HashMap<i64, Vec<super::types::CustomEmoji>> {
-    if accounts.is_empty() {
-        return std::collections::HashMap::new();
-    }
-
-    // Collect all shortcodes per account
-    let mut account_shortcodes: std::collections::HashMap<i64, Vec<String>> =
-        std::collections::HashMap::new();
-    let mut all_shortcodes_set: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
-
-    for a in accounts {
-        let codes = extract_account_shortcodes(a);
-        if !codes.is_empty() {
-            all_shortcodes_set.extend(codes.iter().cloned());
-            account_shortcodes.insert(a.id, codes);
-        }
-    }
-
-    if all_shortcodes_set.is_empty() {
-        return std::collections::HashMap::new();
-    }
-
-    let all_shortcodes: Vec<String> = all_shortcodes_set.into_iter().collect();
-
-    let rows = sqlx::query!(
-        r#"SELECT shortcode, image_remote_url, visible_in_picker
-           FROM custom_emojis
-           WHERE disabled = false
-             AND domain IS NULL
-             AND shortcode = ANY($1)"#,
-        &all_shortcodes as &[String],
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    // Build a map: shortcode → CustomEmoji
-    let emoji_lookup: std::collections::HashMap<String, super::types::CustomEmoji> = rows
-        .into_iter()
-        .map(|r| {
-            let url = r.image_remote_url.unwrap_or_default();
-            let emoji = super::types::CustomEmoji {
-                shortcode: r.shortcode.clone(),
-                url: url.clone(),
-                static_url: url,
-                visible_in_picker: r.visible_in_picker,
-                category: None,
-                featured: None,
-            };
-            (r.shortcode, emoji)
-        })
+    let texts: Vec<(i64, Option<String>, String)> = accounts
+        .iter()
+        .map(|a| (a.id, a.domain.clone(), emojifiable_text(a)))
         .collect();
-
-    // Build result map: account_id → emojis
-    let mut result = std::collections::HashMap::new();
-    for a in accounts {
-        if let Some(codes) = account_shortcodes.get(&a.id) {
-            let mut seen = std::collections::HashSet::new();
-            let emojis: Vec<_> = codes
-                .iter()
-                .filter(|code| seen.insert(*code))
-                .filter_map(|code| emoji_lookup.get(code).cloned())
-                .collect();
-            if !emojis.is_empty() {
-                result.insert(a.id, emojis);
-            }
-        }
-    }
-    result
+    super::convert::emojis_from_texts(state, &texts).await
 }
 
 /// Batch-fetch role badges for a set of accounts. Only local accounts (domain IS NULL)

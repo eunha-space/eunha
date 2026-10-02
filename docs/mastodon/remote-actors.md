@@ -89,7 +89,8 @@ are taken. A domain blocked at the time an account is first seen starts it out
 suspended or limited from the time of the block.
 
 The custom emojis in the profile's `tag` are stored by shortcode and domain,
-unless the domain is blocked with `reject_media`.
+unless the domain is blocked with `reject_media`. A profile or post shows the
+emojis of its author's domain, as `CustomEmoji.from_text` looks them up.
 
 [FEP-521a]: https://codeberg.org/fediverse/fep/src/branch/main/fep/521a/fep-521a.md
 
@@ -123,7 +124,8 @@ Differences
 -----------
 
  -  Avatars, headers and custom emojis are shown from where the remote server
-    keeps them, never downloaded. When an image's URL changes, the copy a
+    keeps them, never downloaded: the operator chose not to cache remote
+    media. When an image's URL changes, the copy a
     Mastodon sharing the database made of the old one is forgotten, so that it
     downloads the new one.
  -  An account whose `movedTo` is its own `id` is not marked as moved.

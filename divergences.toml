@@ -815,10 +815,10 @@ Stores `avatar_remote_url`, `header_remote_url` and the emojis' \
 image's URL changes or goes, the copy's file columns are cleared, so that a \
 Mastodon sharing the database downloads the new one."""
 why = """
-Eunha does not keep copies of remote media at all: storage and proxying of \
-remote files is its own piece of work, and accounts' images are the least of \
-it. Writing the columns as Mastodon writes them keeps a shared database \
-correct for both."""
+The operator chose not to cache remote media: eunha keeps no copies of remote \
+avatars, headers, emojis or post media, so it stores and serves none of their \
+bytes, and clients load them from the servers they came from. Writing the \
+columns as Mastodon writes them keeps a shared database correct for both."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

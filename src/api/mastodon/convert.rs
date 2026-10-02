@@ -160,6 +160,111 @@ pub fn media_preview_url(urls: &InstanceUrls, m: &models::MediaAttachment) -> Op
         .map(str::to_string)
 }
 
+/// `CustomEmoji::SCAN_RE`: the `:shortcode:`s in `text`, each once, in the
+/// order they first appear.
+pub fn scan_emoji_shortcodes(text: &str) -> Vec<String> {
+    static SCAN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r":([a-zA-Z0-9_]{2,}):").expect("valid shortcode pattern")
+    });
+    let alnum_or_colon = |c: char| c.is_alphanumeric() || c == ':';
+    let mut seen = std::collections::HashSet::new();
+    let mut codes = Vec::new();
+    let mut at = 0;
+    while let Some(m) = SCAN.find_at(text, at) {
+        let before = text[..m.start()].chars().next_back();
+        let after = text[m.end()..].chars().next();
+        // `(?<=[^[:alnum:]:]|\n|^)` and `(?=[^[:alnum:]:]|$)`.
+        if before.is_none_or(|c| !alnum_or_colon(c)) && after.is_none_or(|c| !alnum_or_colon(c)) {
+            let code = &text[m.start() + 1..m.end() - 1];
+            if seen.insert(code.to_owned()) {
+                codes.push(code.to_owned());
+            }
+            at = m.end();
+        } else {
+            at = m.start() + 1;
+        }
+    }
+    codes
+}
+
+/// A `custom_emojis` row, as much of it as the entity needs.
+pub struct EmojiRow {
+    pub shortcode: String,
+    pub domain: Option<String>,
+    pub image_remote_url: Option<String>,
+    pub visible_in_picker: bool,
+}
+
+/// The `CustomEmoji` entity for `row`, shown from the URL it was stored
+/// with: eunha keeps no copy of a remote emoji's image
+/// (`remote-account-images-not-downloaded`).
+pub fn custom_emoji_entity(row: &EmojiRow, category: Option<String>) -> types::CustomEmoji {
+    let url = row.image_remote_url.clone().unwrap_or_default();
+    types::CustomEmoji {
+        shortcode: row.shortcode.clone(),
+        url: url.clone(),
+        static_url: url,
+        visible_in_picker: row.visible_in_picker,
+        category,
+        featured: None,
+    }
+}
+
+/// `CustomEmoji.from_text` for many texts at once: each text's emojis, the
+/// enabled ones its owner's domain has under the shortcodes the text uses,
+/// keyed by the caller's key.
+pub async fn emojis_from_texts<K: std::hash::Hash + Eq + Clone>(
+    state: &crate::state::AppState,
+    texts: &[(K, Option<String>, String)],
+) -> std::collections::HashMap<K, Vec<types::CustomEmoji>> {
+    let mut wanted: Vec<(K, Option<String>, Vec<String>)> = Vec::new();
+    let mut codes: Vec<String> = Vec::new();
+    let mut domains: Vec<String> = Vec::new();
+    for (key, domain, text) in texts {
+        let found = scan_emoji_shortcodes(text);
+        for code in &found {
+            codes.push(code.clone());
+            domains.push(domain.clone().unwrap_or_default());
+        }
+        if !found.is_empty() {
+            wanted.push((key.clone(), domain.clone(), found));
+        }
+    }
+    let mut result = std::collections::HashMap::new();
+    if codes.is_empty() {
+        return result;
+    }
+    let rows = sqlx::query_as!(
+        EmojiRow,
+        r#"SELECT DISTINCT ce.shortcode, ce.domain, ce.image_remote_url, ce.visible_in_picker
+           FROM custom_emojis ce
+           JOIN unnest($1::text[], $2::text[]) AS q(shortcode, domain)
+             ON ce.shortcode = q.shortcode
+            AND ce.domain IS NOT DISTINCT FROM NULLIF(q.domain, '')
+           WHERE NOT ce.disabled"#,
+        &codes,
+        &domains,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    let by_key: std::collections::HashMap<(Option<&str>, &str), &EmojiRow> = rows
+        .iter()
+        .map(|r| ((r.domain.as_deref(), r.shortcode.as_str()), r))
+        .collect();
+    for (key, domain, found) in wanted {
+        let emojis: Vec<types::CustomEmoji> = found
+            .iter()
+            .filter_map(|code| by_key.get(&(domain.as_deref(), code.as_str())))
+            .map(|row| custom_emoji_entity(row, None))
+            .collect();
+        if !emojis.is_empty() {
+            result.insert(key, emojis);
+        }
+    }
+    result
+}
+
 pub trait MastodonTimestamp {
     fn format_mastodon(self) -> String;
 }

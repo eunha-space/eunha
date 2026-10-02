@@ -704,88 +704,28 @@ pub async fn batch_status_emojis(
     if statuses.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-
-    fn extract_shortcodes(text: &str) -> Vec<String> {
-        let mut codes = Vec::new();
-        let mut rest = text;
-        while let Some(start) = rest.find(':') {
-            rest = &rest[start + 1..];
-            if let Some(end) = rest.find(':') {
-                let code = &rest[..end];
-                if !code.is_empty() && code.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    codes.push(code.to_string());
-                }
-                rest = &rest[end + 1..];
-            } else {
-                break;
-            }
-        }
-        codes
-    }
-
-    // Collect all shortcodes per status
-    let mut status_codes: Vec<(i64, Vec<String>)> = Vec::new();
-    for s in statuses {
-        let combined = format!("{} {}", s.spoiler_text, s.text);
-        let codes = extract_shortcodes(&combined);
-        if !codes.is_empty() {
-            status_codes.push((s.id, codes));
-        }
-    }
-
-    let mut map: std::collections::HashMap<i64, Vec<super::types::CustomEmoji>> =
-        std::collections::HashMap::new();
-
-    if status_codes.is_empty() {
-        return Ok(map);
-    }
-
-    let all_codes: Vec<String> = status_codes
-        .iter()
-        .flat_map(|(_, codes)| codes.iter().cloned())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let rows = sqlx::query!(
-        r#"SELECT shortcode, image_remote_url, visible_in_picker
-           FROM custom_emojis
-           WHERE shortcode = ANY($1) AND domain IS NULL AND NOT disabled"#,
-        &all_codes,
+    // `CustomEmoji.from_text([spoiler_text, text].join(' '), account.domain)`.
+    let account_ids: Vec<i64> = statuses.iter().map(|s| s.account_id).collect();
+    let domains: std::collections::HashMap<i64, Option<String>> = sqlx::query!(
+        "SELECT id, domain FROM accounts WHERE id = ANY($1)",
+        &account_ids,
     )
     .fetch_all(&state.db)
-    .await?;
-
-    let emoji_by_code: std::collections::HashMap<String, super::types::CustomEmoji> = rows
-        .into_iter()
-        .map(|r| {
-            let url = r.image_remote_url.unwrap_or_default();
+    .await?
+    .into_iter()
+    .map(|r| (r.id, r.domain))
+    .collect();
+    let texts: Vec<(i64, Option<String>, String)> = statuses
+        .iter()
+        .map(|s| {
             (
-                r.shortcode.clone(),
-                super::types::CustomEmoji {
-                    shortcode: r.shortcode,
-                    url: url.clone(),
-                    static_url: url,
-                    visible_in_picker: r.visible_in_picker,
-                    category: None,
-                    featured: None,
-                },
+                s.id,
+                domains.get(&s.account_id).cloned().flatten(),
+                format!("{} {}", s.spoiler_text, s.text),
             )
         })
         .collect();
-
-    for (status_id, codes) in status_codes {
-        let unique_codes: std::collections::HashSet<&String> = codes.iter().collect();
-        let emojis: Vec<super::types::CustomEmoji> = unique_codes
-            .iter()
-            .filter_map(|c| emoji_by_code.get(*c).cloned())
-            .collect();
-        if !emojis.is_empty() {
-            map.insert(status_id, emojis);
-        }
-    }
-
-    Ok(map)
+    Ok(super::convert::emojis_from_texts(state, &texts).await)
 }
 
 /// Batch-fetch polls for a list of status IDs. Returns map from status_id → Poll.
@@ -1043,58 +983,17 @@ pub async fn build_status_with_app(
     Ok(api)
 }
 
-/// Extract `:shortcode:` patterns from status text + spoiler and look them up
-/// in `custom_emojis` for the status's instance.
+/// `Status#emojis`: the emojis of the status's author's domain that its
+/// spoiler text and text use.
 async fn fetch_status_emojis(
     state: &AppState,
     s: &crate::db::models::Status,
 ) -> Vec<super::types::CustomEmoji> {
-    let combined = format!("{} {}", s.spoiler_text, s.text);
-    let shortcodes: Vec<&str> = {
-        let mut v = Vec::new();
-        let mut rest = combined.as_str();
-        while let Some(start) = rest.find(':') {
-            rest = &rest[start + 1..];
-            if let Some(end) = rest.find(':') {
-                let code = &rest[..end];
-                if !code.is_empty() && code.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    v.push(code);
-                }
-                rest = &rest[end + 1..];
-            } else {
-                break;
-            }
-        }
-        v
-    };
-
-    if shortcodes.is_empty() {
-        return vec![];
-    }
-
-    let rows = sqlx::query!(
-        r#"SELECT shortcode, image_remote_url, visible_in_picker
-           FROM custom_emojis
-           WHERE shortcode = ANY($1) AND domain IS NULL AND NOT disabled"#,
-        &shortcodes.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    rows.into_iter()
-        .map(|r| {
-            let url = r.image_remote_url.unwrap_or_default();
-            super::types::CustomEmoji {
-                shortcode: r.shortcode,
-                url: url.clone(),
-                static_url: url,
-                visible_in_picker: r.visible_in_picker,
-                category: None,
-                featured: None,
-            }
-        })
-        .collect()
+    batch_status_emojis(state, std::slice::from_ref(s))
+        .await
+        .unwrap_or_default()
+        .remove(&s.id)
+        .unwrap_or_default()
 }
 
 /// Batch-fetch `status_stats` for the given status ids.

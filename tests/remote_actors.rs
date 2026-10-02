@@ -405,6 +405,13 @@ async fn test_a_new_actor_is_stored_as_mastodon_stores_it() {
     assert_eq!(account["locked"], true);
     assert_eq!(account["memorial"], true);
     assert_eq!(account["acct"], format!("eve@{}", server.host));
+    // `CustomEmoji.from_text(emojifiable_text, domain)`: her server's emoji,
+    // shown from where it was found.
+    assert_eq!(account["emojis"][0]["shortcode"], "blobcat");
+    assert_eq!(
+        account["emojis"][0]["url"],
+        format!("{base}/emoji/blobcat.png")
+    );
 }
 
 /// An `Update` of the actor replaces what it says, signed with the key
