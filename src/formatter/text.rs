@@ -579,8 +579,8 @@ mod tests {
             ..Options::new(DOMAIN)
         };
         assert_eq!(
-            format("@carol@xn--bcher-kva.example https://e.example", &field),
-            r#"<span class="h-card" translate="no"><a href="https://xn--bcher-kva.example/@carol" class="u-url mention">@<span>carol@bücher.example</span></a></span> <a href="https://e.example" target="_blank" rel="nofollow noopener me" translate="no"><span class="invisible">https://</span><span class="">e.example</span><span class="invisible"></span></a>"#
+            format("@carol@xn--bcher-kva.example https://e.org", &field),
+            r#"<span class="h-card" translate="no"><a href="https://xn--bcher-kva.example/@carol" class="u-url mention">@<span>carol@bücher.example</span></a></span> <a href="https://e.org" target="_blank" rel="nofollow noopener me" translate="no"><span class="invisible">https://</span><span class="">e.org</span><span class="invisible"></span></a>"#
         );
     }
 

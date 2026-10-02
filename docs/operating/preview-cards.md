@@ -82,8 +82,6 @@ Differences from Mastodon
     `Content-Type`. Eunha takes a byte-order mark, then UTF-8 when the bytes
     are UTF-8, then the header's charset, then a `<meta charset>`, and only
     then guesses.
- -  Mastodon's URL expression checks a link's top-level domain against a
-    list of the registered ones; eunha accepts any made of letters.
  -  URLs are normalized by the WHATWG URL standard rather than Addressable,
     which can differ in how a non-ASCII path is written.
  -  A remote edit fetches the card again when its text changed, where

@@ -2,10 +2,8 @@
 //! amends it, in *config/initializers/twitter_regex.rb* and
 //! *app/lib/extractor.rb*. Offsets are byte offsets into the text where
 //! twitter-text counts codepoints; the entities they delimit are the same.
-//!
-//! One approximation: twitter-text checks a URL's top-level domain against
-//! its list of registered ones, and this accepts any run of two or more
-//! letters there (still followed by what twitter-text requires after one).
+//! A URL's top-level domain is checked against twitter-text 3.1.0's lists
+//! ([`super::tlds`]), so one under a newer domain stays text, as upstream.
 
 use std::sync::LazyLock;
 
@@ -62,6 +60,18 @@ static END_MENTION_MATCH: LazyLock<regex::Regex> = LazyLock::new(|| {
     .expect("valid pattern")
 });
 
+/// twitter-text's `valid_gTLD | valid_ccTLD | valid_punycode`: a top-level
+/// domain on one of its lists, not followed by a letter, digit, `@`, `+` or
+/// `-`, or a punycode one. Read case-insensitively, as twitter-text's
+/// expressions are.
+pub(crate) fn tld_pattern() -> String {
+    let generic = super::tlds::GENERIC.join("|");
+    let country = super::tlds::COUNTRY.join("|");
+    format!(
+        r"(?:(?:(?:{generic})(?=[^0-9a-z@+\-]|$))|(?:(?:{country})(?=[^0-9a-z@+\-]|$))|(?:xn--[0-9a-z]+))"
+    )
+}
+
 /// The pieces twitter-text builds its URL expressions from.
 struct UrlParts {
     before: String,
@@ -78,8 +88,7 @@ fn url_parts() -> UrlParts {
     let dvc = r"[^\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{85}\x{A0}\x{1680}\x{180E}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FFFE}\x{FEFF}\x{FFFF}]";
     let subdomain = format!(r"(?:(?:{dvc}(?:[_-]|{dvc})*)?{dvc}\.)");
     let domain_name = format!(r"(?:(?:{dvc}(?:-|{dvc})*)?{dvc}\.)");
-    // `valid_gTLD | valid_ccTLD | valid_punycode`, the lists approximated.
-    let tld = r"(?:(?:[a-z]{2,}|[^\x00-\x7F\s\p{P}\p{S}]{2,})(?=[^0-9a-z@+\-]|$)|xn--[0-9a-z]+)";
+    let tld = tld_pattern();
     let domain = format!("(?:{subdomain}*{domain_name}{tld})");
     let general = r"[^\s<>()?]";
     let balanced = format!(r"\((?:{general}+|(?:{general}*\({general}+\){general}*))\)");
@@ -435,5 +444,22 @@ mod tests {
     fn a_top_level_domain_is_not_followed_by_a_digit() {
         assert!(extract_urls("https://example.com1").is_empty());
         assert_eq!(extract_urls("https://example.com-x.org").len(), 1);
+    }
+
+    /// twitter-text 3.1.0's lists, as `Twitter::TwitterText::Regex` joins
+    /// them: a domain under a top-level domain it does not know is no link.
+    #[test]
+    fn top_level_domains_are_twitter_texts() {
+        for linked in [
+            "https://eunha.social/docs",
+            "https://EXAMPLE.COM",
+            "https://example.한국",
+            "https://example.xn--3e0b707e",
+        ] {
+            assert_eq!(extract_urls(linked).len(), 1, "{linked}");
+        }
+        for text in ["https://example.zzz", "https://example.notatld/path"] {
+            assert!(extract_urls(text).is_empty(), "{text}");
+        }
     }
 }

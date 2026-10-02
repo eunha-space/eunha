@@ -39,6 +39,12 @@ Mastodon amends them:
  -  A URL needs one of `http`, `https`, `dat`, `dweb`, `ipfs`, `ipns`, `ssb`,
     `gopher` or `gemini` before `://`; `xmpp:` and `magnet:` URIs are found
     too. A bare `example.com` is not linked.
+ -  A URL's top-level domain must be on twitter-text 3.1.0's lists, the
+    version Mastodon bundles (*src/formatter/tlds.rs* holds them), or be a
+    punycode one, and be followed by none of a letter, digit, `@`, `+` or
+    `-`. A URL under a domain newer than the lists, or under `.example`, stays
+    text, as upstream. Picking a local post's preview card link reads URLs the
+    same way.
  -  A link shows at most 30 characters of the URL after its scheme and a
     leading `www.`, the rest hidden in a span with the class `invisible` and
     the cut marked with the class `ellipsis`, so copying the link copies all
@@ -86,9 +92,6 @@ deep is shown as nothing, as Nokogiri refuses to parse it.
 Differences from Mastodon
 -------------------------
 
- -  twitter-text checks a URL's top-level domain against a list of the
-    registered ones; eunha accepts any made of two or more letters, or a
-    punycode one. This is recorded in *divergences.toml*.
  -  A domain is checked with UTS 46 IDNA rather than libidn's IDNA 2003,
     which can disagree about a few unusual characters.
  -  A local bio's or field's mentions are looked up wherever an account is

@@ -575,31 +575,30 @@ fn remote_links(html: &str, mention_urls: &HashSet<String>) -> Vec<String> {
 }
 
 /// `FetchLinkCardService::URL_PATTERN`: the URLs in a local post's text,
-/// found with twitter-text's URL expression as Mastodon amends it. The one
-/// approximation is the top-level domain, which twitter-text checks against
-/// its list of registered ones and this accepts when it is made of letters.
+/// found with twitter-text's URL expression as Mastodon amends it, its
+/// top-level domains twitter-text 3.1.0's lists.
 fn local_urls(text: &str) -> Vec<String> {
-    static URL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-        let dvc = r"[^\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\u{85}\u{A0}\u{1680}\u{180E}\u{2000}-\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FFFE}\u{FEFF}\u{FFFF}]";
+    static URL_PATTERN: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
+        let dvc = r"[^\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{85}\x{A0}\x{1680}\x{180E}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FFFE}\x{FEFF}\x{FFFF}]";
         let subdomain = format!(r"(?:(?:{dvc}(?:[_-]|{dvc})*)?{dvc}\.)");
         let domain_name = format!(r"(?:(?:{dvc}(?:-|{dvc})*)?{dvc}\.)");
-        let tld = r"(?:xn--[0-9a-z]+|[a-z]{2,}|[^\x00-\x7F\s\p{P}\p{S}]{2,})";
+        let tld = crate::formatter::extractor::tld_pattern();
         let domain = format!("(?:{subdomain}*{domain_name}{tld})");
         let general = r"[^\s<>()?]";
         let balanced = format!(r"\((?:{general}+|(?:{general}*\({general}+\){general}*))\)");
         let ending = format!(r#"(?:[^\s()?!*"'「」<>;:=,.$%\[\]~&|]|{balanced})"#);
         let path = format!(r"(?:(?:{general}*(?:{balanced}{general}*)*{ending})|(?:{general}+/))");
-        let uchars = r"\u{A0}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFEF}\u{10000}-\u{1FFFD}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}\u{40000}-\u{4FFFD}\u{50000}-\u{5FFFD}\u{60000}-\u{6FFFD}\u{70000}-\u{7FFFD}\u{80000}-\u{8FFFD}\u{90000}-\u{9FFFD}\u{A0000}-\u{AFFFD}\u{B0000}-\u{BFFFD}\u{C0000}-\u{CFFFD}\u{D0000}-\u{DFFFD}\u{E1000}-\u{EFFFD}\u{E000}-\u{F8FF}\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}";
+        let uchars = r"\x{A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}\x{10000}-\x{1FFFD}\x{20000}-\x{2FFFD}\x{30000}-\x{3FFFD}\x{40000}-\x{4FFFD}\x{50000}-\x{5FFFD}\x{60000}-\x{6FFFD}\x{70000}-\x{7FFFD}\x{80000}-\x{8FFFD}\x{90000}-\x{9FFFD}\x{A0000}-\x{AFFFD}\x{B0000}-\x{BFFFD}\x{C0000}-\x{CFFFD}\x{D0000}-\x{DFFFD}\x{E1000}-\x{EFFFD}\x{E000}-\x{F8FF}\x{F0000}-\x{FFFFD}\x{100000}-\x{10FFFD}";
         let query = format!(r"[a-z0-9!?*'();:&=+$/%#\[\]\-_.,~|@\^{uchars}]");
         let query_ending = format!(r"[a-z0-9_&=#/\-{uchars}]");
-        Regex::new(&format!(
-            r"(?i)(?:^|[^A-Z0-9@＠$#＃\u{{FFFE}}\u{{FEFF}}\u{{FFFF}}]|[\u{{202A}}-\u{{202E}}\u{{061C}}\u{{200E}}\u{{200F}}\u{{2066}}-\u{{2069}}])(https?://{domain}(?::[0-9]+)?(?:/{path}*)?(?:\?{query}*{query_ending})?)"
+        fancy_regex::Regex::new(&format!(
+            r"(?i)(?:^|[^A-Z0-9@＠$#＃\x{{FFFE}}\x{{FEFF}}\x{{FFFF}}]|[\x{{202A}}-\x{{202E}}\x{{061C}}\x{{200E}}\x{{200F}}\x{{2066}}-\x{{2069}}])(https?://{domain}(?::[0-9]+)?(?:/{path}*)?(?:\?{query}*{query_ending})?)"
         ))
         .expect("valid URL pattern")
     });
     URL_PATTERN
         .captures_iter(text)
-        .filter_map(|c| c.get(1).map(|m| m.as_str().to_owned()))
+        .filter_map(|c| c.ok()?.get(1).map(|m| m.as_str().to_owned()))
         .collect()
 }
 
@@ -1007,9 +1006,11 @@ mod tests {
         assert!(local_urls("@https://example.com x#https://example.com").is_empty());
         assert!(local_urls("http://localhost:3000/ http://10.0.0.1/").is_empty());
         assert_eq!(
-            local_urls("https://한국.example/경로"),
-            vec!["https://한국.example/경로"]
+            local_urls("https://한국.kr/경로"),
+            vec!["https://한국.kr/경로"]
         );
+        // twitter-text 3.1.0 knows no `.example` and no `.zzz`.
+        assert!(local_urls("https://한국.example/경로 https://site.zzz/").is_empty());
     }
 
     #[test]

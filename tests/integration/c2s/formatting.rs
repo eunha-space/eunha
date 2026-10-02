@@ -135,7 +135,7 @@ async fn test_local_bio_mentions_are_looked_up() {
     sqlx::query("UPDATE accounts SET note = $2, fields = $3 WHERE id = $1")
         .bind(alice_id)
         .bind("Friends: @bob, @carol@remote.example\nand @nobody")
-        .bind(json!([{"name": "Web", "value": "https://alice.example @carol@remote.example"}]))
+        .bind(json!([{"name": "Web", "value": "https://alice.org @carol@remote.example"}]))
         .execute(&ctx.db)
         .await
         .unwrap();
@@ -149,7 +149,7 @@ async fn test_local_bio_mentions_are_looked_up() {
     );
     assert_eq!(
         account["fields"][0]["value"].as_str().unwrap(),
-        r#"<a href="https://alice.example" target="_blank" rel="nofollow noopener me" translate="no"><span class="invisible">https://</span><span class="">alice.example</span><span class="invisible"></span></a> <span class="h-card" translate="no"><a href="https://remote.example/@carol" class="u-url mention">@<span>carol@remote.example</span></a></span>"#
+        r#"<a href="https://alice.org" target="_blank" rel="nofollow noopener me" translate="no"><span class="invisible">https://</span><span class="">alice.org</span><span class="invisible"></span></a> <span class="h-card" translate="no"><a href="https://remote.example/@carol" class="u-url mention">@<span>carol@remote.example</span></a></span>"#
     );
 
     // The same account, embedded in a status.
