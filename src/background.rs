@@ -31,6 +31,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             run_suspended_account_cleanup(state.clone()),
         ),
         until_stopped(&state, "trends refresh", run_trends_refresh(state.clone())),
+        until_stopped(
+            &state,
+            "instances refresh",
+            run_instances_refresh(state.clone()),
+        ),
         until_stopped(&state, "trends review", run_trends_review(state.clone())),
         until_stopped(
             &state,
@@ -755,6 +760,36 @@ async fn publish_one(
 /// wake-up: a new request falls due `DELAY_TO_DELETION` after it is made, later
 /// than anything already waiting and far later than the ceiling.
 /// `Scheduler::Trends::RefreshScheduler`: rescore trends every five minutes.
+/// `Scheduler::InstanceRefreshScheduler`: `Instance.refresh` every hour,
+/// which refreshes the `instances` materialized view concurrently. A view
+/// never populated (the schema creates it `WITH NO DATA`) is filled plainly
+/// first, since PostgreSQL refuses `CONCURRENTLY` on one.
+async fn run_instances_refresh(state: AppState) {
+    while !state.stop.is_cancelled() {
+        if let Err(e) = refresh_instances(&state).await {
+            tracing::error!(error = %e, "instances refresh failed");
+        }
+        rest(&state.stop, Duration::from_secs(60 * 60)).await;
+    }
+}
+
+/// `Instance.refresh`.
+pub async fn refresh_instances(state: &AppState) -> anyhow::Result<()> {
+    let populated: bool = sqlx::query_scalar(
+        "SELECT ispopulated FROM pg_matviews WHERE schemaname = 'public' AND matviewname = 'instances'",
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(true);
+    let sql = if populated {
+        "REFRESH MATERIALIZED VIEW CONCURRENTLY public.instances"
+    } else {
+        "REFRESH MATERIALIZED VIEW public.instances"
+    };
+    sqlx::query(sql).execute(&state.db).await?;
+    Ok(())
+}
+
 async fn run_trends_refresh(state: AppState) {
     while !state.stop.is_cancelled() {
         if let Err(e) = crate::trends::refresh(&state).await {

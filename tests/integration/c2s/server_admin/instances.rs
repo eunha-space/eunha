@@ -324,3 +324,30 @@ async fn test_domain_block_and_allow_csv() {
         "Validation failed: Data can't be blank"
     );
 }
+
+/// `Instance.refresh`: the `instances` materialized view, created empty, is
+/// filled on the first refresh and refreshed concurrently after that.
+#[tokio::test]
+async fn test_instances_view_is_refreshed() {
+    let ctx = crate::helpers::TestContext::new("instances-refresh").await;
+    sqlx::query(
+        "INSERT INTO accounts (id, username, domain, uri, url, created_at, updated_at)
+         VALUES (777001, 'far', 'far.example', 'https://far.example/users/far',
+                 'https://far.example/@far', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    eunha::background::refresh_instances(&ctx.state)
+        .await
+        .unwrap();
+    // A second refresh runs concurrently against the populated view.
+    eunha::background::refresh_instances(&ctx.state)
+        .await
+        .unwrap();
+    let domains: Vec<String> = sqlx::query_scalar("SELECT domain FROM instances")
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap();
+    assert!(domains.contains(&"far.example".to_owned()), "{domains:?}");
+}

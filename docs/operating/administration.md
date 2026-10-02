@@ -233,6 +233,12 @@ federation mode it lists only the allowed domains. Each server comes with its
 block, its allow, whether it is unavailable, and how many days deliveries to
 it have failed. All of this needs `manage_federation`.
 
+The `instances` materialized view itself is refreshed every hour, as
+Mastodon's `Scheduler::InstanceRefreshScheduler` does, so a Mastodon sharing
+the database, or anything else reading the view, sees current servers. The
+schema creates it empty, so the first refresh fills it plainly and later ones
+run concurrently.
+
 `/api/v1/admin/instances/:domain` is one server's page: the same, plus the
 fourteen days of delivery failures Mastodon's availability strip shows, and
 its moderation notes. On it:
