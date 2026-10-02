@@ -8,25 +8,22 @@ use super::formatting::text_to_html;
 use super::types::{Announcement, AnnouncementReaction};
 use crate::{error::AppResult, middleware::AuthenticatedUser, state::AppState};
 
-// ── GET /api/v1/announcements ─────────────────────────────────────────────
-
-pub async fn get_announcements(
-    state: AppState,
-    auth: Option<Extension<AuthenticatedUser>>,
-) -> AppResult<Json<Vec<Announcement>>> {
-    let viewer_id = auth.map(|Extension(a)| a.account_id);
-
-    let rows = sqlx::query!(
-        r#"SELECT id, text, published, all_day, starts_at, ends_at,
-                  published_at, created_at, updated_at
-           FROM announcements
-           WHERE published = true
-             AND (ends_at IS NULL OR ends_at > now())
-           ORDER BY published_at DESC"#,
+/// `REST::AnnouncementSerializer` of the announcements with these ids, in
+/// that order, for `viewer` (with `read` and `me`) or for nobody, as the
+/// streaming payload is rendered.
+pub async fn render(
+    state: &AppState,
+    ids: &[i64],
+    viewer_id: Option<i64>,
+) -> AppResult<Vec<Announcement>> {
+    let mut rows = sqlx::query!(
+        r#"SELECT id, text, all_day, starts_at, ends_at, published_at, updated_at, status_ids
+           FROM announcements WHERE id = ANY($1)"#,
+        ids,
     )
     .fetch_all(&state.db)
     .await?;
-
+    rows.sort_by_key(|r| ids.iter().position(|id| *id == r.id));
     let ann_ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
 
     // Batch-fetch dismissed announcements for the viewer
@@ -43,7 +40,7 @@ pub async fn get_announcements(
         std::collections::HashSet::new()
     };
 
-    // Batch-fetch all reactions for all announcements
+    // `grouped_ordered_announcement_reactions`: by name, first reacted first.
     let all_reactions = sqlx::query!(
         r#"SELECT ar.announcement_id, ar.name,
                   COUNT(*) AS "count!",
@@ -52,7 +49,7 @@ pub async fn get_announcements(
            LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id
            WHERE ar.announcement_id = ANY($1::bigint[])
            GROUP BY ar.announcement_id, ar.name, ce.image_remote_url
-           ORDER BY ar.announcement_id, ar.name"#,
+           ORDER BY ar.announcement_id, MIN(ar.created_at)"#,
         &ann_ids,
     )
     .fetch_all(&state.db)
@@ -93,6 +90,27 @@ pub async fn get_announcements(
 
     let mut result = Vec::with_capacity(rows.len());
     for r in &rows {
+        // `statuses`: `Status.with_includes.distributable_visibility.where(id:
+        // status_ids)`, public and unlisted posts only.
+        let mut statuses = vec![];
+        if let Some(status_ids) = r.status_ids.as_ref().filter(|ids| !ids.is_empty()) {
+            let found = sqlx::query_as!(
+                crate::db::models::Status,
+                r#"SELECT * FROM statuses
+                   WHERE id = ANY($1) AND deleted_at IS NULL AND visibility IN (0, 1)
+                   ORDER BY id"#,
+                status_ids,
+            )
+            .fetch_all(&state.db)
+            .await?;
+            for status in &found {
+                if let Ok(entity) =
+                    super::statuses::serialize_status(state, status, viewer_id).await
+                {
+                    statuses.push(serde_json::to_value(entity).unwrap_or_default());
+                }
+            }
+        }
         result.push(Announcement {
             id: r.id.to_string(),
             content: text_to_html(&r.text),
@@ -110,14 +128,34 @@ pub async fn get_announcements(
                 None
             },
             reactions: reactions_by_ann.remove(&r.id).unwrap_or_default(),
-            statuses: vec![],
+            statuses,
             tags: vec![],
             emojis: vec![],
             mentions: vec![],
         });
     }
+    Ok(result)
+}
 
-    Ok(Json(result))
+// ── GET /api/v1/announcements ─────────────────────────────────────────────
+
+/// `Api::V1::AnnouncementsController#index`: `Announcement.published
+/// .chronological`, the expired ones left out until the scheduler unpublishes
+/// them.
+pub async fn get_announcements(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<Vec<Announcement>>> {
+    let viewer_id = auth.map(|Extension(a)| a.account_id);
+    let ids = sqlx::query_scalar!(
+        r#"SELECT id FROM announcements
+           WHERE published = true
+             AND (ends_at IS NULL OR ends_at > now())
+           ORDER BY COALESCE(starts_at, scheduled_at, published_at, created_at) ASC"#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(render(&state, &ids, viewer_id).await?))
 }
 
 // ── POST /api/v1/announcements/:id/dismiss ────────────────────────────────
@@ -215,7 +253,7 @@ pub async fn add_reaction(
         }
     }
 
-    sqlx::query!(
+    let inserted = sqlx::query!(
         r#"INSERT INTO announcement_reactions (announcement_id, account_id, name, custom_emoji_id, created_at, updated_at)
            VALUES ($1, $2, $3, $4, now(), now())
            ON CONFLICT (announcement_id, account_id, name) DO NOTHING"#,
@@ -223,6 +261,10 @@ pub async fn add_reaction(
     )
     .execute(&state.db)
     .await?;
+    // `AnnouncementReaction#queue_publish`, after the reaction is saved.
+    if inserted.rows_affected() > 0 {
+        publish_reaction_later(&state, id, name);
+    }
 
     Ok(StatusCode::OK)
 }
@@ -235,12 +277,25 @@ pub async fn remove_reaction(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<StatusCode> {
     auth.require_scope("write:favourites")?;
-    sqlx::query!(
+    let deleted = sqlx::query!(
         "DELETE FROM announcement_reactions WHERE announcement_id = $1 AND account_id = $2 AND name = $3",
         id, auth.account_id, name,
     )
     .execute(&state.db)
     .await?;
+    if deleted.rows_affected() > 0 {
+        publish_reaction_later(&state, id, name);
+    }
 
     Ok(StatusCode::OK)
+}
+
+/// `PublishAnnouncementReactionWorker.perform_async`.
+fn publish_reaction_later(state: &AppState, id: i64, name: String) {
+    let state = state.clone();
+    crate::tenants::spawn(async move {
+        if let Err(error) = crate::announcements::publish_reaction(&state, id, &name).await {
+            tracing::warn!(%error, announcement = id, "could not stream a reaction");
+        }
+    });
 }

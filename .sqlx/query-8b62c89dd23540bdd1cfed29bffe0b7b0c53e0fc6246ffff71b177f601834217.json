@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM announcements\n           WHERE published = true\n             AND (ends_at IS NULL OR ends_at > now())\n           ORDER BY COALESCE(starts_at, scheduled_at, published_at, created_at) ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8b62c89dd23540bdd1cfed29bffe0b7b0c53e0fc6246ffff71b177f601834217"
+}

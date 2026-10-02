@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE announcements\n           SET text = $2, scheduled_at = $3, starts_at = $4, ends_at = $5, all_day = $6,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, text, published, published_at, scheduled_at, starts_at, ends_at,\n                     all_day, notification_sent_at, created_at, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "published",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "published_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "scheduled_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "starts_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "ends_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "all_day",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "notification_sent_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamp",
+        "Timestamp",
+        "Timestamp",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b707d45a3d1000489a194a0dd8cba4d56021fbe90361c1607cdc742ce60b7eb5"
+}

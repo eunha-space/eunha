@@ -514,6 +514,34 @@ fn to_wire(
 
         // Handled by closing the connection in `run`, never sent on the wire.
         Event::Kill { .. } | Event::KillTokens { .. } => None,
+
+        Event::Announcement { payload } => {
+            if stream != "user" || account_id.is_none() {
+                return None;
+            }
+            Some(wire("announcement", &["user"], payload))
+        }
+
+        Event::AnnouncementReaction { payload } => {
+            if stream != "user" || account_id.is_none() {
+                return None;
+            }
+            Some(wire("announcement.reaction", &["user"], payload))
+        }
+
+        Event::AnnouncementDelete { announcement_id } => {
+            if stream != "user" || account_id.is_none() {
+                return None;
+            }
+            Some(
+                serde_json::json!({
+                    "stream": ["user"],
+                    "event": "announcement.delete",
+                    "payload": announcement_id.to_string(),
+                })
+                .to_string(),
+            )
+        }
     }
 }
 
@@ -620,7 +648,10 @@ async fn to_wire_authenticated(
         Event::Notification { .. }
         | Event::FiltersChanged { .. }
         | Event::Kill { .. }
-        | Event::KillTokens { .. } => None,
+        | Event::KillTokens { .. }
+        | Event::Announcement { .. }
+        | Event::AnnouncementDelete { .. }
+        | Event::AnnouncementReaction { .. } => None,
     }
 }
 

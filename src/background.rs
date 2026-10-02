@@ -68,6 +68,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             crate::portability::run_vacuum(state.clone()),
         ),
         until_stopped(&state, "vacuum", crate::vacuum::run(state.clone())),
+        until_stopped(
+            &state,
+            "announcement schedule",
+            crate::announcements::run_schedule(state.clone()),
+        ),
     ];
 
     // Queue loops are sized from `[workers]` in config. Each loop claims work

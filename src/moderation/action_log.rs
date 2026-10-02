@@ -115,6 +115,28 @@ impl Target {
         }
     }
 
+    /// `Announcement#to_log_human_identifier` is its `text`.
+    pub fn announcement(id: i64, text: impl Into<String>) -> Self {
+        Self::new("Announcement", id, text)
+    }
+
+    /// `Relay#to_log_human_identifier` is its `inbox_url`.
+    pub fn relay(id: i64, inbox_url: impl Into<String>) -> Self {
+        Self::new("Relay", id, inbox_url)
+    }
+
+    /// `UnavailableDomain#to_log_human_identifier` is its `domain`.
+    pub fn unavailable_domain(id: i64, domain: impl Into<String>) -> Self {
+        Self::new("UnavailableDomain", id, domain)
+    }
+
+    /// An `Instance` reads as its domain, which is also its primary key; the
+    /// integer `target_id` takes that as Rails casts a domain to an integer,
+    /// zero.
+    pub fn instance(domain: impl Into<String>) -> Self {
+        Self::new("Instance", 0, domain)
+    }
+
     pub fn rule(id: i64) -> Self {
         Self {
             kind: "Rule",

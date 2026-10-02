@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM users u JOIN accounts a ON a.id = u.account_id\n           WHERE u.confirmed_at IS NOT NULL AND a.suspended_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c41754e43dacd8d82e2fb1d09aa76a2850aa0be442b43686e9fc435790e45553"
+}

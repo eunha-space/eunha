@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, text, published, all_day, starts_at, ends_at,\n                  published_at, created_at, updated_at\n           FROM announcements\n           WHERE published = true\n             AND (ends_at IS NULL OR ends_at > now())\n           ORDER BY published_at DESC",
+  "query": "SELECT id, text, published, published_at, scheduled_at, starts_at, ends_at, all_day,\n                  notification_sent_at, created_at, updated_at\n           FROM announcements\n           WHERE (NOT $1 OR published) AND (NOT $2 OR NOT published)\n           ORDER BY COALESCE(starts_at, scheduled_at, published_at, created_at) DESC",
   "describe": {
     "columns": [
       {
@@ -20,49 +20,64 @@
       },
       {
         "ordinal": 3,
-        "name": "all_day",
-        "type_info": "Bool"
-      },
-      {
-        "ordinal": 4,
-        "name": "starts_at",
-        "type_info": "Timestamp"
-      },
-      {
-        "ordinal": 5,
-        "name": "ends_at",
-        "type_info": "Timestamp"
-      },
-      {
-        "ordinal": 6,
         "name": "published_at",
         "type_info": "Timestamp"
       },
       {
+        "ordinal": 4,
+        "name": "scheduled_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "starts_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "ends_at",
+        "type_info": "Timestamp"
+      },
+      {
         "ordinal": 7,
+        "name": "all_day",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "notification_sent_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamp"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Bool",
+        "Bool"
+      ]
     },
     "nullable": [
       false,
       false,
       false,
+      true,
+      true,
+      true,
+      true,
       false,
-      true,
-      true,
       true,
       false,
       false
     ]
   },
-  "hash": "66d0faaa6a25d8394bd897a92bb7c38b0e4b56deaba7bfdbb06c180b4267635a"
+  "hash": "e9aee65e39d9bc7d53b1fc447a6ae25da63f84eb67b8fd06e25ce4f8a8cb3b7d"
 }

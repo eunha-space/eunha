@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ar.announcement_id, ar.name,\n                  COUNT(*) AS \"count!\",\n                  ce.image_remote_url AS \"image_remote_url?\"\n           FROM announcement_reactions ar\n           LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id\n           WHERE ar.announcement_id = ANY($1::bigint[])\n           GROUP BY ar.announcement_id, ar.name, ce.image_remote_url\n           ORDER BY ar.announcement_id, ar.name",
+  "query": "SELECT ar.announcement_id, ar.name,\n                  COUNT(*) AS \"count!\",\n                  ce.image_remote_url AS \"image_remote_url?\"\n           FROM announcement_reactions ar\n           LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id\n           WHERE ar.announcement_id = ANY($1::bigint[])\n           GROUP BY ar.announcement_id, ar.name, ce.image_remote_url\n           ORDER BY ar.announcement_id, MIN(ar.created_at)",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       true
     ]
   },
-  "hash": "4434cb6b49b669a89c502feb23e4fa6500b0495f1e2edb15e451a8148b09f0f7"
+  "hash": "1eaf10dde82536c2c4ca531b537dc615f0b7cbcf6c6b19d42a1a1079e4577c68"
 }

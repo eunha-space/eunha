@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE announcements\n           SET published = true, published_at = now(), scheduled_at = NULL, updated_at = now()\n           WHERE id = $1 AND NOT published",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "caf44830e9e931f32464d702de81747b349e49410bb0f58e23cb50428770a234"
+}

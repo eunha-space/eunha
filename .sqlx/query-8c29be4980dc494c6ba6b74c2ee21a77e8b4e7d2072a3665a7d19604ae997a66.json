@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM announcement_mutes WHERE announcement_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c29be4980dc494c6ba6b74c2ee21a77e8b4e7d2072a3665a7d19604ae997a66"
+}

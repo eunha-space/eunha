@@ -202,3 +202,73 @@ export function updateRole(token: string, id: string, params: RoleParams) {
 export function deleteRole(token: string, id: string) {
   return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/roles/${id}`)
 }
+
+// ── Announcements ───────────────────────────────────────────────────────────
+
+export interface AdminAnnouncement {
+  id: string
+  text: string
+  content: string
+  published: boolean
+  published_at: string | null
+  scheduled_at: string | null
+  starts_at: string | null
+  ends_at: string | null
+  all_day: boolean
+  notification_sent_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AnnouncementParams {
+  text: string
+  scheduled_at: string
+  starts_at: string
+  ends_at: string
+  all_day: boolean
+}
+
+export function listAnnouncements(token: string, filter?: 'published' | 'unpublished') {
+  const q = filter ? `?${filter}=1` : ''
+  return json<AdminAnnouncement[]>(token, 'GET', `/api/v1/admin/announcements${q}`)
+}
+
+export function createAnnouncement(token: string, params: AnnouncementParams) {
+  return json<AdminAnnouncement>(token, 'POST', '/api/v1/admin/announcements', params)
+}
+
+export function updateAnnouncement(token: string, id: string, params: AnnouncementParams) {
+  return json<AdminAnnouncement>(token, 'PATCH', `/api/v1/admin/announcements/${id}`, params)
+}
+
+export function deleteAnnouncement(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/announcements/${id}`)
+}
+
+export function setAnnouncementPublished(token: string, id: string, published: boolean) {
+  return json<AdminAnnouncement>(
+    token,
+    'POST',
+    `/api/v1/admin/announcements/${id}/${published ? 'publish' : 'unpublish'}`,
+  )
+}
+
+export function previewAnnouncement(token: string, id: string) {
+  return json<{ announcement: AdminAnnouncement; user_count: number }>(
+    token,
+    'GET',
+    `/api/v1/admin/announcements/${id}/preview`,
+  )
+}
+
+export function testAnnouncement(token: string, id: string) {
+  return json<Record<string, never>>(token, 'POST', `/api/v1/admin/announcements/${id}/test`)
+}
+
+export function distributeAnnouncement(token: string, id: string) {
+  return json<AdminAnnouncement>(
+    token,
+    'POST',
+    `/api/v1/admin/announcements/${id}/distribution`,
+  )
+}

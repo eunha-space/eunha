@@ -158,3 +158,31 @@ is checked against the editor's own role, with Mastodon's messages:
     hex color, and the collection limit may not be negative.
 
 Creating, editing and deleting a role are logged.
+
+
+Announcements
+-------------
+
+`/api/v1/admin/announcements` lists announcements, newest first (`?published=1`
+or `?unpublished=1` to narrow it), and creates one; `…/:id` shows, edits and
+deletes one, and `…/:id/publish` and `…/:id/unpublish` do what they say. All
+need `manage_announcements`. An announcement needs text, and a start once it
+has an end, and the other way round. Creating, editing, publishing,
+unpublishing and deleting are logged, the publishing as updates, as in
+Mastodon.
+
+A new announcement is published at once unless `scheduled_at` is later. Every
+minute each instance publishes the scheduled announcements that are due, and
+unpublishes the ones whose `ends_at` has passed. Publishing an announcement, or
+editing a published one, links the posts its text names (`status_ids`, which
+`/api/v1/announcements` serves as `statuses`) and sends it to every signed-in
+user's stream as an `announcement` event. Unpublishing or deleting sends
+`announcement.delete`, and a reaction sends `announcement.reaction` with its new
+count. `/api/v1/announcements` lists the published ones in Mastodon's order,
+by start, schedule or publication.
+
+`…/:id/preview`, `…/:id/test` and `…/:id/distribution` mail a published
+announcement, as Mastodon's announcement notifications do: the preview counts
+the confirmed users who are not suspended, the test mails the moderator alone,
+and the distribution mails everyone once. They need `manage_settings` as well,
+and are refused once the announcement has been mailed.

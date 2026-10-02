@@ -2,6 +2,7 @@
 //! pages, as eunha serves it over REST: the server settings and site uploads,
 //! and what the settings drive, here; the rest in the modules below.
 
+mod announcements;
 mod roles;
 mod rules;
 

@@ -862,6 +862,36 @@ pub fn router() -> Router {
                 .patch(admin::update_admin_role)
                 .delete(admin::delete_admin_role),
         )
+        .route(
+            "/api/v1/admin/announcements",
+            get(admin::list_admin_announcements).post(admin::create_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}",
+            get(admin::get_admin_announcement)
+                .patch(admin::update_admin_announcement)
+                .delete(admin::delete_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}/publish",
+            post(admin::publish_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}/unpublish",
+            post(admin::unpublish_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}/preview",
+            get(admin::preview_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}/test",
+            post(admin::test_admin_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/{id}/distribution",
+            post(admin::distribute_admin_announcement),
+        )
         .route("/api/v1/disputes/strikes", get(disputes::list_strikes))
         .route("/api/v1/disputes/strikes/{id}", get(disputes::get_strike))
         .route(

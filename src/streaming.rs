@@ -44,6 +44,20 @@ pub enum Event {
     KillTokens {
         token_ids: Vec<i64>,
     },
+    /// An announcement published, sent to every signed-in user's stream as
+    /// `PublishScheduledAnnouncementWorker` sends it to each active account's
+    /// `timeline:{id}`; the payload is the announcement rendered for nobody.
+    Announcement {
+        payload: Arc<String>,
+    },
+    /// An announcement unpublished or deleted (`UnpublishAnnouncementWorker`).
+    AnnouncementDelete {
+        announcement_id: i64,
+    },
+    /// A reaction's new count (`PublishAnnouncementReactionWorker`).
+    AnnouncementReaction {
+        payload: Arc<String>,
+    },
 }
 
 #[derive(Clone)]

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE announcements SET published = false, scheduled_at = NULL\n           WHERE published AND ends_at IS NOT NULL AND ends_at <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "35770b8bc857ba6fd0f5f985356d18850553772403721e4f2cd527b269ecded6"
+}

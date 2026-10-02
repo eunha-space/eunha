@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM announcement_reactions WHERE announcement_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ccb88d84e703537b10c1923c859ac5c0158f8d348e5d0ec8122fa76da09f06a1"
+}

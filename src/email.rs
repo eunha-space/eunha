@@ -590,6 +590,24 @@ impl EmailSender {
             .await
     }
 
+    /// `UserMailer#announcement_published`: the announcement's text, as
+    /// written.
+    pub async fn send_announcement_published(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        text: &str,
+    ) -> anyhow::Result<()> {
+        let domain = html_escape(instance_domain);
+        let text = html_escape(text).replace('\n', "<br>");
+        let body = format!(
+            "<h1>{domain} service announcement</h1>\
+             <p>The administrators of {domain} are making an announcement:</p>\
+             <p>{text}</p>"
+        );
+        self.send(to, "Service announcement", &body).await
+    }
+
     /// `UserMailer#appeal_approved` (`approved` true) and
     /// `UserMailer#appeal_rejected`. The dates are `l(...)` in Mastodon's
     /// `default` and `with_time_zone` formats, in UTC.
