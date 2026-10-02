@@ -27,9 +27,10 @@ harness now refuses to compare without a live worker.
 
 **`/api/v1/timelines/home` answering 206 on Mastodon and 200 on eunha** has not
 been seen since. It was the same dead worker — a feed with nothing to regenerate
-it stays `regenerating?` forever — so it may already be gone. If it comes back
-with a worker running, it is real, and the harness should skip the comparison
-while the feed rebuilds rather than report it.
+it stays `regenerating?` forever. Eunha now regenerates feeds as Mastodon does
+and answers 206 while it does, so a feed rebuilding on either side can still
+show up as a difference; the harness should skip the comparison while one
+rebuilds rather than report it.
 
 **The 503 on `/ap/users/:id/collections/featured` is fixed.** It was a missing
 route, not an error: under the numeric AP-ID scheme only `followers` and

@@ -217,16 +217,7 @@ pub async fn authorize(
     .await?
     .unwrap_or(false);
     if requester_is_local {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        if feed::sync_fanout() {
-            feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, target_id).await;
-        } else {
-            crate::tenants::spawn(async move {
-                feed::backfill_follow(&mut redis, &redis_keys, &db, requester_id, target_id).await;
-            });
-        }
+        crate::home_feed::enqueue_merge_into_home(state, target_id, requester_id).await;
     }
 
     Ok(Some(request.uri))

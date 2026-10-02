@@ -1,5 +1,5 @@
-//! Mastodon's `Scheduler::VacuumScheduler`, for the parts the content
-//! retention settings drive (`ContentRetentionPolicy`):
+//! Mastodon's `Scheduler::VacuumScheduler`: the parts the content
+//! retention settings drive (`ContentRetentionPolicy`), and the feeds:
 //!
 //!  -  `Vacuum::StatusesVacuum`: remote posts older than
 //!     `content_cache_retention_period` days are deleted;
@@ -7,7 +7,9 @@
 //!     `media_cache_retention_period` days is forgotten (the remote URL stays),
 //!     and uploads never attached to a post are deleted after a day;
 //!  -  `Vacuum::PreviewCardsVacuum`: link preview images older than
-//!     `media_cache_retention_period` days are forgotten.
+//!     `media_cache_retention_period` days are forgotten;
+//!  -  `Vacuum::FeedsVacuum`: the home and list feeds of users who have not
+//!     signed in for a week are removed from Redis (see [`crate::home_feed`]).
 //!
 //! A period that is not a positive number of days keeps everything, as an
 //! unset one does.
@@ -62,6 +64,12 @@ pub async fn perform(state: &AppState) {
     }
     if let Err(error) = vacuum_preview_cards(state, media).await {
         tracing::error!(%error, "preview cards vacuum failed");
+    }
+    let mut redis = state.redis.clone();
+    if let Err(error) =
+        crate::feed::vacuum_inactive_feeds(&mut redis, &state.redis_keys, &state.db).await
+    {
+        tracing::error!(%error, "feeds vacuum failed");
     }
 }
 

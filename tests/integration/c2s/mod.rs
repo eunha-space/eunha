@@ -20,6 +20,7 @@ mod filters;
 mod follow_requests;
 mod formatting;
 mod gates;
+mod home_feed;
 mod instance;
 mod invites;
 mod limited_federation;

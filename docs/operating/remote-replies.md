@@ -87,6 +87,6 @@ day at most, and no Mastodon process ever reads an id eunha handed out, so
 the two need not agree. Rotating either key only makes refreshes already
 handed out under it unreadable.
 
-A home timeline is never answered with a refresh: eunha reads a feed Redis
-does not hold from the database there and then, where Mastodon answers `206`
-with a partial feed while it regenerates one.
+The home timeline carries a refresh, with `retry=5` and a `206` status, while
+the member's home feed is rebuilt; see
+[accounts](./accounts.md#the-home-feed-while-away).

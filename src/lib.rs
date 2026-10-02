@@ -18,6 +18,7 @@ pub mod fasp;
 pub mod federation;
 pub mod feed;
 pub mod formatter;
+pub mod home_feed;
 pub mod import;
 pub mod jobs;
 pub mod languages;

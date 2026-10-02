@@ -70,10 +70,9 @@ and eunha already avoids parts of it. These exist today.
     running cost, and it trades many server-side downloads for client-side ones
     — usually a large win, but not unconditionally, and it is currently
     undocumented. It needs a `divergences.toml` entry.
- -  **Home feeds are populated lazily.** `src/feed.rs` gates on
-    `is_feed_populated` rather than fanning out to every follower on write.
-    Mastodon writes into every follower's Redis list whether or not that account
-    has logged in this year.
+ -  **Home feeds are kept only for active accounts.** As in Mastodon, posts are
+    fanned out only to the feeds of accounts signed in within a week, and a
+    returning account's feed is rebuilt from the database (`src/home_feed.rs`).
  -  **Per-account Ed25519 keys already exist.** `src/federation/keypair.rs`
     provisions them in `keypairs` under `#ed25519-key` and publishes them as a
     FEP-521a `Multikey` under `assertionMethod`.

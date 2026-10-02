@@ -278,9 +278,14 @@ pub async fn home_timeline(
     let since_id = q.since_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let min_id = q.min_id.as_deref().and_then(|s| s.parse::<i64>().ok());
 
-    // Try Redis feed first; fall back to DB on cold start.
+    // A feed Redis does not hold is regenerated, as `User#regenerate_feed!`
+    // regenerates a returning user's; until then the page is what the feed
+    // holds, answered as partial.
     let mut redis = state.redis.clone();
-    let redis_ids = feed::feed_get(
+    if !feed::is_feed_populated(&mut redis, &state.redis_keys, auth.account_id).await {
+        crate::home_feed::regenerate_feed(&state, auth.account_id).await;
+    }
+    let ids = feed::feed_get(
         &mut redis,
         &state.redis_keys,
         auth.account_id,
@@ -290,60 +295,26 @@ pub async fn home_timeline(
         // Over-fetch to account for rows filtered at read time
         (limit * 3) as isize,
     )
-    .await;
-
-    let statuses = if let Some(ids) = redis_ids {
-        // Redis path: hydrate the IDs from DB with read-time filters applied
-        hydrate_home_statuses(&state, &ids, auth.account_id, min_id.is_some(), limit).await?
-    } else {
-        // Cold start: populate feed in background, use DB for this request
-        {
-            let mut redis2 = state.redis.clone();
-            let redis_keys = state.redis_keys.clone();
-            let db = state.db.clone();
-            let account_id = auth.account_id;
-            if feed::sync_fanout() {
-                feed::feed_populate(&mut redis2, &redis_keys, account_id, &db).await;
-            } else {
-                crate::tenants::spawn(async move {
-                    feed::feed_populate(&mut redis2, &redis_keys, account_id, &db).await;
-                });
-            }
-        }
-        let page =
-            home_timeline_from_db(&state, auth.account_id, max_id, since_id, min_id, limit).await?;
-        newest_first(min_id, aggregate_page(&state, auth.account_id, page).await)
-    };
+    .await
+    .unwrap_or_default();
+    let statuses =
+        hydrate_home_statuses(&state, &ids, auth.account_id, min_id.is_some(), limit).await?;
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
-    let resp = with_pagination_link(&req_headers, &uri, result);
-    Ok(resp)
-}
-
-/// A home page read from the database while the feed is rebuilt, with the
-/// boosts the feed would have held back (`aggregate_reblogs`) left out, as
-/// far as the page itself shows them.
-async fn aggregate_page(state: &AppState, account_id: i64, page: Vec<DbStatus>) -> Vec<DbStatus> {
-    let settings = sqlx::query_scalar!(
-        "SELECT settings FROM users WHERE account_id = $1",
-        account_id
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()
-    .flatten();
-    if !feed::aggregates_reblogs(settings.as_deref()) {
-        return page;
+    let mut resp = with_pagination_link(&req_headers, &uri, result).into_response();
+    // `add_async_refresh_header(account_home_feed.async_refresh, retry_seconds:
+    // 5)`, and `206` while `regenerating?`.
+    let refresh = crate::home_feed::async_refresh(&state, auth.account_id).await;
+    if let Some(value) = refresh.header_value(&state, crate::home_feed::RETRY_SECONDS) {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&value) {
+            resp.headers_mut()
+                .insert(crate::async_refresh::HEADER, value);
+        }
     }
-    let mut candidates: Vec<(i64, Option<i64>)> =
-        page.iter().map(|s| (s.id, s.reblog_of_id)).collect();
-    candidates.sort_unstable_by_key(|(id, _)| *id);
-    let kept: std::collections::HashSet<i64> = feed::aggregate(&candidates, true)
-        .feed
-        .into_iter()
-        .collect();
-    page.into_iter().filter(|s| kept.contains(&s.id)).collect()
+    if refresh.is_running() {
+        *resp.status_mut() = axum::http::StatusCode::PARTIAL_CONTENT;
+    }
+    Ok(resp)
 }
 
 // Hydrate status IDs from a Redis feed with viewer-specific read-time filters applied.
@@ -438,247 +409,6 @@ async fn hydrate_home_statuses(
         statuses.reverse();
     }
     Ok(statuses)
-}
-
-// DB fallback used on cold start (feed not yet populated in Redis).
-async fn home_timeline_from_db(
-    state: &AppState,
-    account_id: i64,
-    max_id: Option<i64>,
-    since_id: Option<i64>,
-    min_id: Option<i64>,
-    limit: i64,
-) -> AppResult<Vec<DbStatus>> {
-    if min_id.is_some() {
-        sqlx::query_as!(
-            DbStatus,
-            r#"WITH candidate_ids AS MATERIALIZED (
-                   SELECT s.id FROM statuses s
-                   WHERE s.account_id IN (
-                       SELECT target_account_id FROM follows
-                       WHERE account_id = $1
-                       UNION ALL SELECT $1
-                   )
-                   AND s.deleted_at IS NULL
-                   AND ($2::bigint IS NULL OR s.id > $2)
-                   UNION
-                   SELECT st.status_id AS id FROM statuses_tags st
-                   JOIN tag_follows tf ON tf.tag_id = st.tag_id
-                   JOIN statuses s ON s.id = st.status_id
-                   WHERE tf.account_id = $1
-                   AND s.visibility = 0
-                   AND s.deleted_at IS NULL
-                   AND ($2::bigint IS NULL OR s.id > $2)
-               )
-               SELECT s.*
-               FROM statuses s
-               JOIN accounts a ON a.id = s.account_id
-               WHERE s.id IN (SELECT id FROM candidate_ids)
-               AND s.deleted_at IS NULL
-               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-               AND (NOT EXISTS (
-                   SELECT 1 FROM mutes m
-                   WHERE m.account_id = $1 AND m.target_account_id = s.account_id
-                   AND (m.expires_at IS NULL OR m.expires_at > now())
-               ))
-               AND (s.account_id = $1 OR NOT EXISTS (
-                   SELECT 1 FROM blocks b
-                   WHERE (b.account_id = $1 AND b.target_account_id = s.account_id)
-                      OR (b.account_id = s.account_id AND b.target_account_id = $1)
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN blocks b ON (
-                       (b.account_id = $1 AND b.target_account_id = orig.account_id)
-                       OR (b.account_id = orig.account_id AND b.target_account_id = $1)
-                   )
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN mutes m ON m.account_id = $1 AND m.target_account_id = orig.account_id
-                       AND (m.expires_at IS NULL OR m.expires_at > now())
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN accounts orig_a ON orig_a.id = orig.account_id
-                   JOIN account_domain_blocks adb ON adb.account_id = $1 AND adb.domain = orig_a.domain
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND NOT (
-                   s.reblog_of_id IS NOT NULL
-                   AND EXISTS (
-                       SELECT 1 FROM follows f
-                       WHERE f.account_id = $1 AND f.target_account_id = s.account_id
-                       AND f.show_reblogs = false
-                   )
-               )
-               AND (s.account_id = $1 OR NOT EXISTS (
-                   SELECT 1 FROM list_accounts la
-                   JOIN lists l ON l.id = la.list_id
-                   WHERE la.account_id = s.account_id AND l.account_id = $1 AND l.exclusive = true
-               ))
-               AND (
-                   s.visibility != 3
-                   OR s.account_id = $1
-                   OR EXISTS (
-                       SELECT 1 FROM mentions m
-                       WHERE m.status_id = s.id AND m.account_id = $1
-                   )
-               )
-               AND (
-                    NOT s.reply
-                    OR s.account_id = $1
-                    OR (
-                        s.in_reply_to_account_id IS NOT NULL
-                        AND (
-                            s.in_reply_to_account_id = s.account_id
-                            OR s.in_reply_to_account_id = $1
-                            OR EXISTS (SELECT 1 FROM follows f WHERE f.account_id = $1 AND f.target_account_id = s.in_reply_to_account_id)
-                        )
-                    )
-               )
-               AND (
-                    s.language IS NULL
-                    OR s.account_id = $1
-                    OR NOT EXISTS (
-                        SELECT 1 FROM follows fl
-                        WHERE fl.account_id = $1 AND fl.target_account_id = s.account_id
-                          AND fl.languages IS NOT NULL AND array_length(fl.languages, 1) >= 1
-                          AND NOT (s.language = ANY(fl.languages))
-                    )
-               )
-               AND (s.text != ''
-                    OR s.reblog_of_id IS NOT NULL
-                    OR s.poll_id IS NOT NULL
-                    OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))
-               ORDER BY s.id ASC
-               LIMIT $3"#,
-            account_id,
-            min_id,
-            limit,
-        )
-        .fetch_all(&state.db)
-        .await
-        .map_err(AppError::from)
-    } else {
-        sqlx::query_as!(
-            DbStatus,
-            r#"WITH candidate_ids AS MATERIALIZED (
-                   SELECT s.id FROM statuses s
-                   WHERE s.account_id IN (
-                       SELECT target_account_id FROM follows
-                       WHERE account_id = $1
-                       UNION ALL SELECT $1
-                   )
-                   AND s.deleted_at IS NULL
-                   AND ($2::bigint IS NULL OR s.id < $2)
-                   AND ($3::bigint IS NULL OR s.id > $3)
-                   UNION
-                   SELECT st.status_id AS id FROM statuses_tags st
-                   JOIN tag_follows tf ON tf.tag_id = st.tag_id
-                   JOIN statuses s ON s.id = st.status_id
-                   WHERE tf.account_id = $1
-                   AND s.visibility = 0
-                   AND s.deleted_at IS NULL
-                   AND ($2::bigint IS NULL OR s.id < $2)
-                   AND ($3::bigint IS NULL OR s.id > $3)
-               )
-               SELECT s.*
-               FROM statuses s
-               JOIN accounts a ON a.id = s.account_id
-               WHERE s.id IN (SELECT id FROM candidate_ids)
-               AND s.deleted_at IS NULL
-               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-               AND (NOT EXISTS (
-                   SELECT 1 FROM mutes m
-                   WHERE m.account_id = $1 AND m.target_account_id = s.account_id
-                   AND (m.expires_at IS NULL OR m.expires_at > now())
-               ))
-               AND (s.account_id = $1 OR NOT EXISTS (
-                   SELECT 1 FROM blocks b
-                   WHERE (b.account_id = $1 AND b.target_account_id = s.account_id)
-                      OR (b.account_id = s.account_id AND b.target_account_id = $1)
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN blocks b ON (
-                       (b.account_id = $1 AND b.target_account_id = orig.account_id)
-                       OR (b.account_id = orig.account_id AND b.target_account_id = $1)
-                   )
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN mutes m ON m.account_id = $1 AND m.target_account_id = orig.account_id
-                       AND (m.expires_at IS NULL OR m.expires_at > now())
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM statuses orig
-                   JOIN accounts orig_a ON orig_a.id = orig.account_id
-                   JOIN account_domain_blocks adb ON adb.account_id = $1 AND adb.domain = orig_a.domain
-                   WHERE orig.id = s.reblog_of_id
-               ))
-               AND NOT (
-                   s.reblog_of_id IS NOT NULL
-                   AND EXISTS (
-                       SELECT 1 FROM follows f
-                       WHERE f.account_id = $1 AND f.target_account_id = s.account_id
-                       AND f.show_reblogs = false
-                   )
-               )
-               AND (s.account_id = $1 OR NOT EXISTS (
-                   SELECT 1 FROM list_accounts la
-                   JOIN lists l ON l.id = la.list_id
-                   WHERE la.account_id = s.account_id AND l.account_id = $1 AND l.exclusive = true
-               ))
-               AND (
-                   s.visibility != 3
-                   OR s.account_id = $1
-                   OR EXISTS (
-                       SELECT 1 FROM mentions m
-                       WHERE m.status_id = s.id AND m.account_id = $1
-                   )
-               )
-               AND (
-                    NOT s.reply
-                    OR s.account_id = $1
-                    OR (
-                        s.in_reply_to_account_id IS NOT NULL
-                        AND (
-                            s.in_reply_to_account_id = s.account_id
-                            OR s.in_reply_to_account_id = $1
-                            OR EXISTS (SELECT 1 FROM follows f WHERE f.account_id = $1 AND f.target_account_id = s.in_reply_to_account_id)
-                        )
-                    )
-               )
-               AND (
-                    s.language IS NULL
-                    OR s.account_id = $1
-                    OR NOT EXISTS (
-                        SELECT 1 FROM follows fl
-                        WHERE fl.account_id = $1 AND fl.target_account_id = s.account_id
-                          AND fl.languages IS NOT NULL AND array_length(fl.languages, 1) >= 1
-                          AND NOT (s.language = ANY(fl.languages))
-                    )
-               )
-               AND (s.text != ''
-                    OR s.reblog_of_id IS NOT NULL
-                    OR s.poll_id IS NOT NULL
-                    OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))
-               ORDER BY s.id DESC
-               LIMIT $4"#,
-            account_id,
-            max_id,
-            since_id,
-            limit,
-        )
-        .fetch_all(&state.db)
-        .await
-        .map_err(AppError::from)
-    }
 }
 
 // ── GET /api/v1/timelines/list/:id ───────────────────────────────────────

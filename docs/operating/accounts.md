@@ -268,9 +268,32 @@ from showing up again and again as people boost it, the way Mastodon's
 
 What a feed tracks for this lives in Redis beside the feed, under Mastodon's
 key names (`feed:home:<id>:reblogs`, `feed:home:<id>:reblogs:<post>`), and
-expires with it. Turning the setting off affects only boosts that arrive
-afterwards. A home page served from the database while the feed is rebuilt
-leaves out the boosts the page itself shows to be repeats.
+goes with it. Turning the setting off affects only boosts that arrive
+afterwards.
+
+
+The home feed while away
+------------------------
+
+As in Mastodon, Redis keeps the home feed and list feeds only of members who
+signed in within the last seven days (`User::ACTIVE_DURATION`). New posts are
+not added to anyone else's, and the daily vacuum removes them
+(`Vacuum::FeedsVacuum`). Every authenticated request records the sign-in at
+most once a day, as `UserTrackingConcern` does; when the sign-in before was
+more than seven days ago, the member's feeds are rebuilt in the background
+(`RegenerationWorker`). Signing in on the authorization page records a new
+sign-in too.
+
+While the home feed is being rebuilt, `GET /api/v1/timelines/home` answers
+`206 Partial Content` with what the feed already holds and a
+`Mastodon-Async-Refresh` header carrying `retry=5`, whose id the client polls at
+`GET /api/v1_alpha/async_refreshes/:id`. The refresh lives in the coordination
+Redis under Mastodon's key, `account:<id>:regeneration`. A member who follows no
+one is answered the same way after their first follow, until that account's
+posts are merged into the feed — for a follow request, once it is accepted, or
+for a day at most.
+A feed Redis does not hold at all, because Redis lost it or it was never built,
+is rebuilt the same way the first time it is read.
 
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:

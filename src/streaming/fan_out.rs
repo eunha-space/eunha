@@ -19,8 +19,7 @@ use crate::state::AppState;
 /// distributed.
 const REAL_TIME_WINDOW_HOURS: i64 = 6;
 
-/// `User::ACTIVE_DURATION` (`USER_ACTIVE_DAYS`, 7 days by default).
-const ACTIVE_DAYS: i32 = 7;
+use crate::home_feed::ACTIVE_DAYS;
 
 /// What a status needs for the feed filters.
 struct Subject {

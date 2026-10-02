@@ -4,7 +4,6 @@ use sqlx::PgPool;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const FEED_MAX_ITEMS: isize = 800;
-const FEED_TTL_SECS: u64 = 7 * 24 * 3600; // 1 week
 
 // When true, fanout/populate/backfill run inline (no tokio::spawn).
 // Set by integration tests to eliminate timing races.
@@ -124,23 +123,13 @@ async fn add_to_feed(
                 .query_async(redis)
                 .await?;
             if tracked == 1 {
-                redis::pipe()
-                    .zadd(&timeline.key, status_id, status_id as f64)
-                    .ignore()
-                    .expire(&timeline.reblogs, FEED_TTL_SECS as i64)
-                    .ignore()
-                    .query_async::<()>(redis)
+                redis
+                    .zadd::<_, _, _, ()>(&timeline.key, status_id, status_id as f64)
                     .await?;
                 Ok(true)
             } else {
                 let set = timeline.reblog_set(reblog_of_id);
-                redis::pipe()
-                    .sadd(&set, status_id)
-                    .ignore()
-                    .expire(&set, FEED_TTL_SECS as i64)
-                    .ignore()
-                    .query_async::<()>(redis)
-                    .await?;
+                redis.sadd::<_, _, ()>(&set, status_id).await?;
                 Ok(false)
             }
         }
@@ -443,18 +432,12 @@ async fn fill(
     for &id in &plan.feed {
         pipe.zadd(&timeline.key, id, id as f64).ignore();
     }
-    pipe.expire(&timeline.key, FEED_TTL_SECS as i64).ignore();
     for &(boosted, boost) in &plan.tracked {
         pipe.zadd(&timeline.reblogs, boosted, boost as f64).ignore();
     }
-    pipe.expire(&timeline.reblogs, FEED_TTL_SECS as i64)
-        .ignore();
     for &(boosted, boost) in &plan.held_back {
         let set = timeline.reblog_set(boosted);
-        pipe.sadd(&set, boost)
-            .ignore()
-            .expire(&set, FEED_TTL_SECS as i64)
-            .ignore();
+        pipe.sadd(&set, boost).ignore();
     }
     let _: redis::RedisResult<()> = pipe.query_async(redis).await;
 }
@@ -472,6 +455,75 @@ async fn clean_reblogs(redis: &mut ConnectionManager, timeline: &Timeline) {
         pipe.del(timeline.reblog_set(boosted)).ignore();
     }
     let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+}
+
+/// Those of `account_ids` whose user signed in within
+/// [`crate::home_feed::ACTIVE_DAYS`] (`User.signed_in_recently`), in order.
+async fn signed_in_recently(db: &PgPool, account_ids: &[i64]) -> Vec<i64> {
+    if account_ids.is_empty() {
+        return Vec::new();
+    }
+    let active: std::collections::HashSet<i64> = sqlx::query_scalar!(
+        r#"SELECT account_id FROM users
+           WHERE account_id = ANY($1)
+             AND current_sign_in_at >= now() - make_interval(days => $2)"#,
+        account_ids,
+        crate::home_feed::ACTIVE_DAYS,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+    account_ids
+        .iter()
+        .copied()
+        .filter(|id| active.contains(id))
+        .collect()
+}
+
+/// `Vacuum::FeedsVacuum`: remove the home feeds and list feeds of confirmed
+/// users who have not signed in within [`crate::home_feed::ACTIVE_DAYS`]
+/// (`User.confirmed.not_signed_in_recently`), so that they are regenerated
+/// when those users return.
+pub async fn vacuum_inactive_feeds(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+) -> sqlx::Result<()> {
+    const BATCH: i64 = 1000;
+    let mut after = 0i64;
+    loop {
+        let users = sqlx::query!(
+            r#"SELECT id, account_id FROM users
+               WHERE confirmed_at IS NOT NULL
+                 AND current_sign_in_at < now() - make_interval(days => $1)
+                 AND id > $2
+               ORDER BY id LIMIT $3"#,
+            crate::home_feed::ACTIVE_DAYS,
+            after,
+            BATCH,
+        )
+        .fetch_all(db)
+        .await?;
+        let Some(last) = users.last() else {
+            return Ok(());
+        };
+        after = last.id;
+        let account_ids: Vec<i64> = users.iter().map(|u| u.account_id).collect();
+        for &account_id in &account_ids {
+            delete_home_feed(redis, keys, account_id).await;
+        }
+        let lists: Vec<i64> = sqlx::query_scalar!(
+            "SELECT id FROM lists WHERE account_id = ANY($1)",
+            &account_ids,
+        )
+        .fetch_all(db)
+        .await?;
+        for list_id in lists {
+            delete_list_feed(redis, keys, list_id).await;
+        }
+    }
 }
 
 fn populated_key(keys: &RedisKeyspace, account_id: i64) -> String {
@@ -616,9 +668,7 @@ pub async fn feed_populate(
     account_id: i64,
     db: &PgPool,
 ) {
-    let _: redis::RedisResult<()> = redis
-        .set_ex(populated_key(keys, account_id), 1i64, FEED_TTL_SECS)
-        .await;
+    let _: redis::RedisResult<()> = redis.set(populated_key(keys, account_id), 1i64).await;
 
     // The reply clause mirrors Mastodon's FeedManager#filter_from_home: a reply
     // is only kept when it is the viewer's own post, a reply to the viewer, a
@@ -818,14 +868,18 @@ pub async fn fanout_new_status(
             return pushed;
         }
     };
+    let initialized_of: std::collections::HashMap<i64, Option<i64>> =
+        recipients.iter().copied().zip(initialized).collect();
 
+    // `push_to_home` returns unless `account.user&.signed_in_recently?`.
+    let recipients = signed_in_recently(db, &recipients).await;
     let mut ready = Vec::new();
-    for (&id, init) in recipients.iter().zip(initialized.iter()) {
-        if init.is_some() {
+    for &id in &recipients {
+        if initialized_of.get(&id).is_some_and(Option::is_some) {
             ready.push(id);
         } else {
-            // Built from the database when first read; `add_to_feed` on an
-            // empty feed takes the status.
+            // Regenerated from the database when first read; `add_to_feed`
+            // on an empty feed takes the status.
             pushed.insert(id, true);
         }
     }
@@ -1032,9 +1086,7 @@ pub async fn list_feed_populate(
     replies_policy: &str,
     db: &PgPool,
 ) {
-    let _: redis::RedisResult<()> = redis
-        .set_ex(list_populated_key(keys, list_id), 1i64, FEED_TTL_SECS)
-        .await;
+    let _: redis::RedisResult<()> = redis.set(list_populated_key(keys, list_id), 1i64).await;
 
     let status_ids: Vec<i64> = match replies_policy {
         "none" => sqlx::query_scalar!(
@@ -1129,8 +1181,12 @@ pub async fn fanout_to_lists(
                   CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
            FROM lists l
            JOIN list_accounts la ON la.list_id = l.id
-           WHERE la.account_id = $1"#,
+           -- `push_to_list` returns unless `list.account.user&.signed_in_recently?`.
+           JOIN users u ON u.account_id = l.account_id
+           WHERE la.account_id = $1
+             AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
         author_id,
+        crate::home_feed::ACTIVE_DAYS,
     )
     .fetch_all(db)
     .await

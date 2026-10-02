@@ -150,7 +150,9 @@ Mastodon. Signing in on the authorization page sets it (and counts the sign-in),
 and every authenticated request, eunha's own client's included, moves it again
 once it is a day old (`UserTrackingConcern`), keeping the previous one in
 `last_sign_in_at`. Such a request also counts a confirmed user towards the day's
-logins in Redis (`activity:logins:<day>`), as Mastodon's `ActivityTracker` does.
+logins in Redis (`activity:logins:<day>`), as Mastodon's `ActivityTracker` does,
+and has its home feed regenerated when the sign-in before was more than a week
+ago (see [accounts](./accounts.md)).
 
 ### Content retention
 
@@ -167,6 +169,9 @@ everything.
     that long are forgotten too.
  -  Uploads that were never attached to a post are deleted after a day, as
     Mastodon deletes them. Media waiting on a scheduled post is attached.
+ -  The home and list feeds of members who have not signed in for a week are
+    removed from Redis, and rebuilt when they return (see
+    [accounts](./accounts.md#the-home-feed-while-away)).
 
 Eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon.

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM users u\n             WHERE u.account_id = ANY($1)\n               AND u.current_sign_in_at >= now() - make_interval(hours => $2)\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "df79af8de7f9af06f0e65334cd863de6b1d24219a704fc5d97de80ec111d5990"
+}

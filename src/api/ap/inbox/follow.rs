@@ -677,6 +677,15 @@ pub(super) async fn handle_accept_reject(
                     row.target_account_id,
                 )
                 .await;
+                // `FollowRequest#authorize!`: `MergeWorker` into the home
+                // feed of the local account that asked, which also finishes
+                // the regeneration its first follow started.
+                crate::home_feed::enqueue_merge_into_home(
+                    state,
+                    row.target_account_id,
+                    row.account_id,
+                )
+                .await;
             }
         } else {
             sqlx::query!("DELETE FROM follow_requests WHERE uri = $1", uri)

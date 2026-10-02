@@ -218,6 +218,19 @@ pub async fn follow(
     let notify = options.notify.unwrap_or(false);
     let languages: Vec<String> = options.languages.clone().unwrap_or_default();
 
+    // `mark_home_feed_as_partial! if @source_account.not_following_anyone?`:
+    // the first follow leaves the home feed regenerating until the followed
+    // account's posts are merged into it.
+    let following_anyone = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM follows WHERE account_id = $1) AS "e!""#,
+        source.id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if !following_anyone {
+        crate::home_feed::regeneration_in_progress(state, source.id).await;
+    }
+
     // Mastodon FollowLimitValidator: cap new follows/requests. Free up to LIMIT,
     // then max(round(followers * RATIO), LIMIT).
     if !options.bypass_limit {
@@ -402,17 +415,7 @@ pub async fn follow(
     )
     .await;
 
-    let mut redis = state.redis.clone();
-    let redis_keys = state.redis_keys.clone();
-    let db = state.db.clone();
-    let follower_id = source.id;
-    if feed::sync_fanout() {
-        feed::backfill_follow(&mut redis, &redis_keys, &db, follower_id, target_id).await;
-    } else {
-        crate::tenants::spawn(async move {
-            feed::backfill_follow(&mut redis, &redis_keys, &db, follower_id, target_id).await;
-        });
-    }
+    crate::home_feed::enqueue_merge_into_home(state, target_id, source.id).await;
 
     Ok(FollowOutcome::Followed)
 }

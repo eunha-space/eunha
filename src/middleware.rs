@@ -223,31 +223,32 @@ pub const SIGN_IN_UPDATE_FREQUENCY: chrono::Duration = chrono::Duration::hours(2
 /// `User#update_sign_in!(new_sign_in:)` and the `prepare_returning_user!` it
 /// ends with: the sign-in time moves to now, the last one to what it was (or
 /// now), the count goes up for a new sign-in, and a confirmed user counts
-/// towards the day's logins (`ActivityTracker.record('activity:logins', id)`).
-/// The feed regeneration `prepare_returning_user!` also starts for a user
-/// back after two weeks is the home feed's to do when it is read.
+/// towards the day's logins (`ActivityTracker.record('activity:logins', id)`)
+/// and, when the sign-in before this one was longer ago than
+/// `User::ACTIVE_DURATION`, has the home feed regenerated
+/// (`User#regenerate_feed!`, [`crate::home_feed::regenerate_feed`]).
 pub async fn update_sign_in(state: &AppState, user_id: i64, new_sign_in: bool) {
-    let confirmed = match sqlx::query_scalar!(
+    let row = match sqlx::query!(
         r#"UPDATE users SET last_sign_in_at = COALESCE(current_sign_in_at, now()),
                             current_sign_in_at = now(),
                             sign_in_count = sign_in_count + CASE WHEN $2 THEN 1 ELSE 0 END
            WHERE id = $1
-           RETURNING confirmed_at IS NOT NULL AS "confirmed!""#,
+           RETURNING account_id, confirmed_at IS NOT NULL AS "confirmed!",
+                     last_sign_in_at < now() - make_interval(days => $3) AS "inactive!""#,
         user_id,
         new_sign_in,
+        crate::home_feed::ACTIVE_DAYS,
     )
     .fetch_optional(&state.db)
     .await
     {
-        Ok(confirmed) => confirmed.unwrap_or(false),
+        Ok(Some(row)) if row.confirmed => row,
+        Ok(_) => return,
         Err(error) => {
             tracing::warn!(user_id, %error, "could not record a sign-in");
             return;
         }
     };
-    if !confirmed {
-        return;
-    }
     let today = chrono::Utc::now()
         .date_naive()
         .and_hms_opt(0, 0, 0)
@@ -267,6 +268,9 @@ pub async fn update_sign_in(state: &AppState, user_id: i64, new_sign_in: bool) {
         .ignore()
         .query_async(&mut redis)
         .await;
+    if row.inactive {
+        crate::home_feed::regenerate_feed(state, row.account_id).await;
+    }
 }
 
 /// `ActivityTracker::EXPIRE_AFTER`: six months, as ActiveSupport counts them.
@@ -476,6 +480,8 @@ pub async fn api_gates(req: Request, next: Next) -> Response {
         // Without a token, the route's own `doorkeeper_authorize!` answers.
         let auth = req.extensions().get::<AuthenticatedUser>();
         if auth.is_some() || req.extensions().get::<AppToken>().is_some() {
+            // `require_user!` ends in `update_user_sign_in`, which
+            // [`authenticate`] already ran for every authenticated request.
             if let Err(error) = require_user(auth) {
                 return error.into_response();
             }
