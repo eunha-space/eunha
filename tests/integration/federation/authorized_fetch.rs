@@ -277,8 +277,14 @@ async fn limited_federation_takes_deliveries_only_from_allowed_domains() {
         .api
         .post_signed("/inbox", &follow, &stranger_key, &stranger_pem)
         .await;
-    // Mastodon answers 403 (divergences.toml, `refused-deliveries-accepted`).
-    assert_eq!(refused.status(), StatusCode::ACCEPTED);
+    // Refused before the key is looked for, as `keypair_from_key_id` refuses
+    // it, with the body `require_actor_signature!` renders.
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    let body: serde_json::Value = refused.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({ "error": format!("Public key not found for key {stranger_key}") })
+    );
     assert_eq!(follows_of(stranger_id).await.unwrap(), 0);
 
     let (friend_id, friend_key, friend_pem) = remote_account(&ctx, "friend.invalid", "fran").await;

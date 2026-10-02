@@ -735,13 +735,13 @@ pub(super) async fn handle_quote_request(
     }
 
     if !allowed {
-        // `reject_quote_request!`, about a quote never saved. Mastodon names
-        // the Reject after that unsaved quote's id, which is nil, so every
-        // Reject an account sends has the one id; this one is named apart
-        // (`quote-request-rejects-are-named-apart`).
+        // `reject_quote_request!`, about a quote never saved:
+        // `RejectQuoteRequestSerializer` names the Reject after that unsaved
+        // quote's id, which is nil, so every Reject an account sends has the
+        // one id. ojak tells such activities apart by what they say.
         let mut reject = json!({
             "@context": quote_request_context(),
-            "id": format!("{actor_url}#rejects/quote_requests/{}", crate::snowflake::next_id()),
+            "id": format!("{actor_url}#rejects/quote_requests/"),
             "type": "Reject",
             "actor": actor_url,
             "object": quote_request_object(req_id, &quoter_uri, object_uri, instrument_uri),

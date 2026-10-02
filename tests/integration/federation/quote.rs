@@ -1015,28 +1015,32 @@ async fn test_remote_quotes_wait_for_their_stamp() {
             .fetch_one(&ctx.db)
             .await
             .unwrap();
-    let resp = ctx
-        .api
-        .post_signed(
-            "/inbox",
-            &json!({
-                "@context": "https://www.w3.org/ns/activitystreams",
-                "id": format!("{dave_uri}#Reject/{}", eunha::snowflake::next_id()),
-                "type": "Reject",
-                "actor": dave_uri,
-                "object": second_request,
-            }),
-            &format!("{dave_uri}#main-key"),
-            &dave_key,
-        )
-        .await;
-    assert!(resp.status().is_success(), "{}", resp.status());
+    // Mastodon names every Reject of a QuoteRequest an account sends alike
+    // (`{actor}#rejects/quote_requests/`, after a quote id that is nil); each
+    // is heard all the same.
+    let reject = |object: String| {
+        let api = &ctx.api;
+        let key = dave_key.clone();
+        let key_id = format!("{dave_uri}#main-key");
+        let activity = json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{dave_uri}#rejects/quote_requests/"),
+            "type": "Reject",
+            "actor": dave_uri,
+            "object": object,
+        });
+        async move {
+            let resp = api.post_signed("/inbox", &activity, &key_id, &key).await;
+            assert!(resp.status().is_success(), "{}", resp.status());
+        }
+    };
+    reject(second_request).await;
     assert_eq!(quote_state(&ctx, second).await, 2);
     assert_eq!(quotes_count(&ctx, dave_post).await, 0);
 
     // A Reject after all: an accepted quote is revoked, and its stamp
     // forgotten. The count is already at its floor.
-    answer("Reject", None).await;
+    reject(request_id.clone()).await;
     assert_eq!(quote_state(&ctx, ours).await, 3);
     assert_eq!(quotes_count(&ctx, dave_post).await, 0);
     let approval: Option<String> =
@@ -1049,7 +1053,7 @@ async fn test_remote_quotes_wait_for_their_stamp() {
 }
 
 /// A QuoteRequest that may not quote is rejected, at the asker's own inbox,
-/// under an id of its own.
+/// under the id Mastodon gives every such Reject.
 #[tokio::test]
 async fn test_a_quote_request_that_may_not_quote_is_rejected() {
     let ctx = TestContext::new("quote-request-reject").await;
@@ -1095,7 +1099,7 @@ async fn test_a_quote_request_that_may_not_quote_is_rejected() {
     let reject = &rejects[0];
     let prefix = format!("https://{}/users/alice#rejects/quote_requests/", ctx.domain);
     let id = reject["id"].as_str().unwrap();
-    assert!(id.starts_with(&prefix) && id.len() > prefix.len(), "{id}");
+    assert_eq!(id, prefix, "named after the unsaved quote, whose id is nil");
     assert_eq!(reject["object"]["type"], "QuoteRequest");
     assert_eq!(reject["object"]["id"], request["id"]);
     assert_eq!(reject["object"]["object"].as_str(), Some(post_uri.as_str()));

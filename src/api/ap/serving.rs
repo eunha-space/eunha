@@ -183,10 +183,10 @@ pub fn federation() -> Federation<AppState> {
             }
         })
         // A domain this instance does not federate with (`domain_not_allowed?`:
-        // suspended, or off the allow list in limited federation mode) has its
-        // activities dropped, and its signatures refused, before any key is
-        // fetched from it, as `SignatureVerification#keypair_from_key_id`
-        // refuses them.
+        // suspended, or off the allow list in limited federation mode): a
+        // request signed with a key there is refused 403 before any key is
+        // fetched, as `SignatureVerification#keypair_from_key_id` refuses it,
+        // and an activity whose actor is there is dropped.
         .blocked(|ctx: Ctx, host: String| async move {
             Ok::<_, AppError>(
                 crate::federation::moderation::domain_not_allowed(ctx.data(), &host).await,
@@ -210,10 +210,22 @@ pub fn federation() -> Federation<AppState> {
             );
             // A server that delivers to us is up: Mastodon clears its failures
             // (`DeliveryFailureTracker.reset!` in `InboxesController`), and
-            // its mark if it had one, by the host of the actor that signed.
-            // Here it is the host of the actor the activity is vouched for,
-            // which is that one unless another server passed it on.
-            if let Some(host) = crate::federation::delivery_failures::host(&received.sender) {
+            // its mark if it had one, by the host of the inbox of the actor
+            // that signed the request (`signed_request_actor.inbox_url`): the
+            // forwarder when another server passed the activity on.
+            let signer = received.forwarder.as_ref().unwrap_or(&received.sender);
+            let inbox: Option<String> = sqlx::query_scalar(
+                "SELECT inbox_url FROM accounts WHERE uri = $1 AND inbox_url <> '' LIMIT 1",
+            )
+            .bind(signer.as_str())
+            .fetch_optional(&ctx.data().db)
+            .await
+            .ok()
+            .flatten();
+            let inbox = inbox.and_then(|inbox| url::Url::parse(&inbox).ok());
+            if let Some(host) =
+                crate::federation::delivery_failures::host(inbox.as_ref().unwrap_or(signer))
+            {
                 if let Err(error) = ctx.data().delivery_failures.track_success(&host).await {
                     tracing::warn!(host, %error, "could not clear a server's delivery failures");
                 }

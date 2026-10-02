@@ -114,8 +114,9 @@ fn parse_migrated_follow_tag(tag: &str) -> Option<(i64, i64)> {
 
 /// Whether an inbox answering `status` is answering what will not change, as
 /// Mastodon's `response_error_unsalvageable?` has it: 501, and any 4xx but
-/// 401, 408 and 429. Mastodon gives up on a 401 too when the sender is
-/// deleted or suspended; eunha retries it like any other.
+/// 401, 408 and 429. A 401 is final too when the sender is deleted or
+/// suspended for good (`unsalvageable_authorization_failure?`), which
+/// [`SigningKeys`] answers as `gone`.
 pub fn unsalvageable(status: u16) -> bool {
     status == 501 || ((400..500).contains(&status) && !matches!(status, 401 | 408 | 429))
 }
@@ -188,6 +189,7 @@ pub fn deliverer(
         breaker: Some(BREAKER),
         low_priority: Some(LOW_PRIORITY_QUEUE.to_owned()),
         permanent: unsalvageable,
+        permanent_if_sender_gone: |status| status == 401,
         retry: RETRY,
         // Sidekiq retries on its schedule whatever the server asked, and a
         // delivery Stoplight held is retried like any other failure.
@@ -297,6 +299,33 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
             }
         }
     }
+
+    async fn gone(&self, key_id: &str) -> bool {
+        sender_gone(&self.db, key_id).await
+    }
+}
+
+/// Whether the account signing with `key_id` is gone for good:
+/// `permanently_unavailable?`, deleted or suspended (the instance actor never
+/// is) with no deletion request left to undo it.
+pub async fn sender_gone(db: &sqlx::PgPool, key_id: &str) -> bool {
+    let Ok(account_id) = signing_account_id_in(db, key_id).await else {
+        return false;
+    };
+    sqlx::query_scalar!(
+        r#"SELECT (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)
+                      AND a.id <> $2
+                      AND NOT EXISTS (SELECT 1 FROM account_deletion_requests r
+                                      WHERE r.account_id = a.id) AS "gone!"
+               FROM accounts a WHERE a.id = $1"#,
+        account_id,
+        crate::federation::instance_actor::INSTANCE_ACTOR_ID,
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// Fetch the set of domains currently marked unavailable.

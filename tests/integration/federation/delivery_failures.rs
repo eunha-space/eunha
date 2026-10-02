@@ -138,10 +138,13 @@ async fn an_attempt_counts_as_mastodon_counts_it() {
     eventually(async || failure_days(&ctx, &failing).await == 0).await;
 }
 
+/// `DeliveryFailureTracker.reset!(signed_request_actor.inbox_url)`: by the
+/// host of the signer's inbox, which need not be its own.
 #[tokio::test]
 async fn a_server_that_delivers_to_us_is_available_again() {
     let ctx = TestContext::new("delivery-failures-inbound").await;
     let remote = host("back");
+    let inbox_host = host("inbox");
     let (private_key, public_key) = eunha::crypto::generate_rsa_keypair().unwrap();
     let carol = format!("https://{remote}/users/carol");
     sqlx::query(
@@ -149,22 +152,24 @@ async fn a_server_that_delivers_to_us_is_available_again() {
              (id, username, domain, display_name, note, url, uri, public_key,
               inbox_url, outbox_url, created_at, updated_at)
            VALUES ($1, 'carol', $2, 'carol', '', $3, $3, $4,
-                   $3 || '/inbox', $3 || '/outbox', now(), now())"#,
+                   $5, $3 || '/outbox', now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(&remote)
     .bind(&carol)
     .bind(&public_key)
+    .bind(format!("https://{inbox_host}/inbox"))
     .execute(&ctx.db)
     .await
     .unwrap();
-    failed_before(&ctx, &remote, 7).await;
+    failed_before(&ctx, &remote, 3).await;
+    failed_before(&ctx, &inbox_host, 7).await;
     ctx.state
         .delivery_failures
-        .track_failure(&remote)
+        .track_failure(&inbox_host)
         .await
         .unwrap();
-    assert!(is_marked(&ctx, &remote).await);
+    assert!(is_marked(&ctx, &inbox_host).await);
 
     let follow = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
@@ -184,8 +189,13 @@ async fn a_server_that_delivers_to_us_is_available_again() {
         .await;
     assert!(response.status().is_success(), "{}", response.status());
 
-    assert_eq!(failure_days(&ctx, &remote).await, 0);
-    assert!(!is_marked(&ctx, &remote).await);
+    assert_eq!(failure_days(&ctx, &inbox_host).await, 0);
+    assert!(!is_marked(&ctx, &inbox_host).await);
+    assert_eq!(
+        failure_days(&ctx, &remote).await,
+        3,
+        "the actor's own host is not the inbox's"
+    );
 }
 
 #[test]
@@ -270,4 +280,47 @@ async fn test_the_delivery_breaker_is_shared_through_redis() {
     // One success anywhere closes it.
     another.record(&BREAKER, &inbox, false).await;
     assert_eq!(one.held(&BREAKER, &inbox).await, None);
+}
+
+/// `unsalvageable_authorization_failure?`: a 401 is final for a delivery
+/// whose sender is deleted or suspended with nothing left to undo, and only
+/// for one.
+#[tokio::test]
+async fn a_401_is_final_only_for_a_sender_that_is_gone() {
+    use eunha::federation::delivery::sender_gone;
+
+    let ctx = TestContext::new("delivery-failures-gone").await;
+    let key_id = format!("https://{}/users/alice#main-key", ctx.domain);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    assert!(!sender_gone(&ctx.db, &key_id).await, "alice is here");
+
+    // Suspended, with the deletion request that lets it be undone.
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO account_deletion_requests (account_id, created_at, updated_at) \
+         VALUES ($1, now(), now())",
+    )
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    assert!(
+        !sender_gone(&ctx.db, &key_id).await,
+        "a suspension can be undone"
+    );
+
+    sqlx::query("DELETE FROM account_deletion_requests WHERE account_id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert!(sender_gone(&ctx.db, &key_id).await, "nothing left to undo");
+    assert!(
+        !eunha::federation::delivery::unsalvageable(401),
+        "a 401 is final only through `sender_gone`"
+    );
 }
