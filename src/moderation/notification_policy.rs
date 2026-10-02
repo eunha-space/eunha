@@ -134,7 +134,7 @@ async fn private_mention_not_in_response(
 
 /// `from_staff?`: a local sender whose role may bypass blocks of the
 /// recipient's (`UserRole#bypass_block?`).
-async fn from_staff(db: &PgPool, recipient: i64, sender: i64) -> bool {
+pub async fn from_staff(db: &PgPool, recipient: i64, sender: i64) -> bool {
     let Ok(Some(sender_role)) = super::role::of_account(db, sender).await else {
         return false;
     };

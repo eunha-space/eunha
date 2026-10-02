@@ -11,7 +11,7 @@ mod health;
 mod invite_grants;
 mod invite_tree;
 mod jobs;
-mod mute_exemptions;
+mod mute_reach;
 mod notification_rules;
 mod oembed;
 mod password_reset;

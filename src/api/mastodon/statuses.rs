@@ -1543,9 +1543,6 @@ pub async fn favourited_by(
              ))
              AND ($2::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id
-             ) OR EXISTS (
-                 -- Mute exemption: a reaction to a post of mine.
-                 SELECT 1 FROM statuses ms WHERE ms.id = $1 AND ms.account_id = $2
              ))
              AND ($3::bigint IS NULL OR f.id < $3)
              AND ($4::bigint IS NULL OR f.id > $4)
@@ -1642,9 +1639,6 @@ pub async fn reblogged_by(
              ))
              AND ($2::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id
-             ) OR EXISTS (
-                 -- Mute exemption: a reaction to a post of mine.
-                 SELECT 1 FROM statuses ms WHERE ms.id = $1 AND ms.account_id = $2
              ))
              AND ($3::bigint IS NULL OR s.id < $3)
              AND ($4::bigint IS NULL OR s.id > $4)

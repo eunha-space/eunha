@@ -131,34 +131,6 @@ since = "4.7.0"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "mute-does-not-silence-replies-to-me"
-kind = "behaviour"
-summary = "A mute hides someone's posts, but not what they address to me"
-mastodon = """
-Drops every status by a muted account from the viewer's timelines \
-(`FeedManager#filter_from_home`), and — once `hide_notifications` is set — \
-every notification from them (`NotifyService::DropCondition#drop?`), a mention \
-of the viewer and a favourite of the viewer's own post among them."""
-eunha = """
-Exempts what is addressed to the viewer: a post that mentions them \
-(non-silently), and a favourite, boost or quote of a post of theirs. Those \
-appear in timelines and notify as though no mute were set, and a muted account \
-that reacted to the viewer's own post is still listed under `favourited_by` and \
-`reblogged_by`. A mute of a third party no longer drops a mention of the \
-viewer, either. Everything else the mute does is unchanged, including follow \
-notifications and the account's own posts."""
-why = """
-Muting someone you follow is how you stop reading them without unfollowing, \
-which is a statement about their posts rather than about them. Mastodon's \
-version also severs the channel back: mute a noisy colleague and you stop being \
-told they replied to you, which reads as a bug to the person who muted them and \
-is invisible to the one who was muted. Blocking is the relationship that cuts \
-someone off, and it still does."""
-evidence = "tests/integration/surfaces/mute_exemptions.rs"
-since = "4.7.0"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "invites-rest-api"
 kind = "addition"
 summary = "Serves invite creation over the REST API"
