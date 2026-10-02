@@ -12,6 +12,7 @@ pub mod keypair;
 pub mod local_uri;
 pub mod moderation;
 pub mod portable;
+pub mod replies;
 pub mod safe_fetch;
 pub mod tag;
 pub mod webfinger;

@@ -4,6 +4,26 @@ use serde_json::Value;
 
 use crate::helpers::TestContext;
 
+/// Polls the report's state until it is no longer being generated.
+async fn wait_for_report(ctx: &TestContext, year: i32) -> String {
+    for _ in 0..100 {
+        let resp = ctx
+            .api
+            .get(
+                &format!("/api/v1/annual_reports/{year}/state"),
+                Some(&ctx.alice_token),
+            )
+            .await;
+        let body: Value = resp.json().await.unwrap();
+        let state = body["state"].as_str().unwrap_or_default().to_owned();
+        if state != "generating" {
+            return state;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the annual report was never generated");
+}
+
 /// GET /api/v1/annual_reports returns empty wrapped response when no reports.
 #[tokio::test]
 async fn test_annual_reports_empty() {
@@ -87,14 +107,19 @@ async fn test_annual_report_lifecycle() {
         )
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    // Generated in the background, with an async refresh to poll.
+    let header = resp
+        .headers()
+        .get("mastodon-async-refresh")
+        .expect("generate should hand out an async refresh")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(header.starts_with("id=\""), "{header}");
+    assert!(header.ends_with(", retry=2"), "{header}");
 
-    // State is now "available"
-    let resp = ctx
-        .api
-        .get("/api/v1/annual_reports/2023/state", Some(&ctx.alice_token))
-        .await;
-    let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["state"].as_str(), Some("available"));
+    // State is "available" once the report is written.
+    assert_eq!(wait_for_report(&ctx, 2023).await, "available");
 
     // List returns the report
     let resp = ctx
@@ -177,6 +202,7 @@ async fn test_annual_report_data_structure() {
             &serde_json::json!({}),
         )
         .await;
+    assert_eq!(wait_for_report(&ctx, 2022).await, "available");
 
     let resp = ctx
         .api

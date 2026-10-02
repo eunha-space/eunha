@@ -60,6 +60,8 @@ Running an instance:
     and inbound `Move`s.
  -  *docs/operating/preview-cards.md*: link preview cards, how they are
     fetched, their images and authors.
+ -  *docs/operating/remote-replies.md*: fetching remote threads' replies,
+    and async refreshes (`Mastodon-Async-Refresh`).
  -  *docs/operating/update-notices.md*: the optional update check.
 
 Tracking Mastodon:

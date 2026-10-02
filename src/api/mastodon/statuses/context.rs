@@ -9,7 +9,7 @@ pub async fn get_status_context(
     state: AppState,
     Path(id): Path<i64>,
     auth: Option<Extension<AuthenticatedUser>>,
-) -> AppResult<Json<StatusContext>> {
+) -> AppResult<axum::response::Response> {
     let root = sqlx::query_as!(
         DbStatus,
         "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
@@ -326,8 +326,36 @@ pub async fn get_status_context(
     let ancestors = build_batch(anc_owned, anc_filters).await?;
     let descendants = build_batch(desc_owned, desc_filters).await?;
 
-    Ok(Json(StatusContext {
+    let refresh_header = context_refresh(&state, &root, viewer_id.is_some()).await;
+    let mut response = Json(StatusContext {
         ancestors,
         descendants,
-    }))
+    })
+    .into_response();
+    if let Some(value) = refresh_header.and_then(|v| axum::http::HeaderValue::from_str(&v).ok()) {
+        response
+            .headers_mut()
+            .insert(crate::async_refresh::HEADER, value);
+    }
+    Ok(response)
+}
+
+/// The context controller's async refresh: report the reply fetch already
+/// running for this status, or, for a signed-in viewer of a remote status
+/// whose replies are due a fetch, start one.
+async fn context_refresh(state: &AppState, root: &DbStatus, signed_in: bool) -> Option<String> {
+    use crate::async_refresh::AsyncRefresh;
+    use crate::federation::replies;
+
+    let key = replies::refresh_key(root.id);
+    let refresh = AsyncRefresh::new(state, &key).await;
+    if refresh.is_running() {
+        return refresh.header_value(state, 3);
+    }
+    if !signed_in || !replies::should_fetch_replies(root) {
+        return None;
+    }
+    let refresh = AsyncRefresh::create(state, &key, true).await;
+    crate::tenants::spawn(replies::fetch_all_replies(state.clone(), root.id, key));
+    refresh.header_value(state, 3)
 }

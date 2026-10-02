@@ -29,6 +29,7 @@ export default defineConfig({
           { text: "Email subscriptions", link: "/operating/email-subscriptions" },
           { text: "Account moves", link: "/operating/account-moves" },
           { text: "Preview cards", link: "/operating/preview-cards" },
+          { text: "Remote replies", link: "/operating/remote-replies" },
           { text: "Update notices", link: "/operating/update-notices" },
         ],
       },

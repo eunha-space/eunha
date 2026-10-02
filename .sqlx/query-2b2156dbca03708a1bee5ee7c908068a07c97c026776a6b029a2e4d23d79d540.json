@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET fetched_replies_at = now(), updated_at = now()\n           WHERE uri = ANY($1::text[]) AND deleted_at IS NULL\n             AND local = false AND uri IS NOT NULL\n             AND created_at <= now() - make_interval(mins => $2)\n             AND (fetched_replies_at IS NULL\n                  OR fetched_replies_at <= now() - make_interval(mins => $3))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b2156dbca03708a1bee5ee7c908068a07c97c026776a6b029a2e4d23d79d540"
+}

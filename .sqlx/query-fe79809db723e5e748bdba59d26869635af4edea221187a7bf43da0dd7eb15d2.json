@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET fetched_replies_at = now(), updated_at = now()\n           WHERE id = $1 AND deleted_at IS NULL\n             AND local = false AND uri IS NOT NULL\n             AND visibility IN (0, 1)\n             AND created_at <= now() - make_interval(mins => $2)\n             AND (fetched_replies_at IS NULL\n                  OR fetched_replies_at <= now() - make_interval(mins => $3))\n           RETURNING uri AS \"uri!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "fe79809db723e5e748bdba59d26869635af4edea221187a7bf43da0dd7eb15d2"
+}

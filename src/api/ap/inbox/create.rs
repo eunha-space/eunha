@@ -715,6 +715,16 @@ pub(super) async fn handle_create(
         }
     }
 
+    // `fetch_replies`: the first page of the new status's replies, from its
+    // author's server.
+    if let Some(collection) = object.get("replies").filter(|r| !r.is_null()) {
+        crate::tenants::spawn(crate::federation::replies::fetch_replies_on_create(
+            state.clone(),
+            actor_uri.to_owned(),
+            collection.clone(),
+        ));
+    }
+
     // Thread resolution: store the unknown parent if it is dereferenceable.
     if let (Some(uri), None) = (in_reply_to_uri, in_reply_to_id) {
         let state = state.clone();

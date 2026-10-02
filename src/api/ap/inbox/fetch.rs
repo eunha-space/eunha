@@ -21,7 +21,9 @@ use super::{as_string_vec, json_uri, sync_remote_poll};
 /// does not recurse into referenced posts. Returns `Ok(None)` if the object
 /// can't be fetched or isn't a storable Note.
 pub async fn fetch_remote_status(state: &AppState, uri: &str) -> AppResult<Option<i64>> {
-    fetch_remote_status_depth(state, uri, None, 0).await
+    Ok(fetch_remote_status_depth(state, uri, None, 0)
+        .await?
+        .map(|(id, _)| id))
 }
 
 /// As [`fetch_remote_status`], for an object already in hand: the caller has
@@ -32,6 +34,19 @@ pub async fn fetch_remote_status_prefetched(
     uri: &str,
     json: Value,
 ) -> AppResult<Option<i64>> {
+    Ok(fetch_remote_status_depth(state, uri, Some(json), 0)
+        .await?
+        .map(|(id, _)| id))
+}
+
+/// As [`fetch_remote_status_prefetched`], saying too whether the status is new
+/// — FetchReplyWorker's `previously_new_record?`, which is what an async
+/// refresh's `result_count` counts.
+pub async fn store_remote_status_prefetched(
+    state: &AppState,
+    uri: &str,
+    json: Value,
+) -> AppResult<Option<(i64, bool)>> {
     fetch_remote_status_depth(state, uri, Some(json), 0).await
 }
 
@@ -51,7 +66,7 @@ async fn fetch_remote_status_depth(
     uri: &str,
     prefetched: Option<Value>,
     depth: u8,
-) -> AppResult<Option<i64>> {
+) -> AppResult<Option<(i64, bool)>> {
     if uri.is_empty() {
         return Ok(None);
     }
@@ -67,7 +82,7 @@ async fn fetch_remote_status_depth(
     .fetch_optional(&state.db)
     .await?
     {
-        return Ok(Some(id));
+        return Ok(Some((id, false)));
     }
 
     let fetched: Value = match prefetched {
@@ -175,7 +190,7 @@ async fn fetch_remote_status_depth(
             .await?
             .map(|r| (r.id, r.account_id));
             if found.is_none() && depth < MAX_FETCH_DEPTH {
-                if let Some(pid) =
+                if let Some((pid, _)) =
                     Box::pin(fetch_remote_status_depth(state, irt, None, depth + 1)).await?
                 {
                     found = sqlx::query!("SELECT id, account_id FROM statuses WHERE id = $1", pid)
@@ -226,7 +241,8 @@ async fn fetch_remote_status_depth(
             note_uri,
         )
         .fetch_optional(&state.db)
-        .await?);
+        .await?
+        .map(|id| (id, false)));
     };
 
     // Quote linkage (only if the quoted post is already local).
@@ -245,7 +261,7 @@ async fn fetch_remote_status_depth(
         .await?
         .map(|r| (r.id, r.account_id));
         if quoted.is_none() && depth < MAX_FETCH_DEPTH {
-            if let Some(qid) =
+            if let Some((qid, _)) =
                 Box::pin(fetch_remote_status_depth(state, q, None, depth + 1)).await?
             {
                 quoted = sqlx::query!("SELECT id, account_id FROM statuses WHERE id = $1", qid)
@@ -317,7 +333,7 @@ async fn fetch_remote_status_depth(
 
     sync_remote_poll(state, new_id, account_id, object).await?;
 
-    Ok(Some(new_id))
+    Ok(Some((new_id, true)))
 }
 
 /// Looks up a remote account by URI, fetching it from the remote server if unknown.

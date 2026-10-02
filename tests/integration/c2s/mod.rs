@@ -5,6 +5,7 @@ mod admin;
 mod announcements;
 mod annual_reports;
 mod apps;
+mod async_refreshes;
 mod blocks;
 mod bookmarks;
 mod collections;

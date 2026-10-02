@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod api;
+pub mod async_refresh;
 pub mod background;
 pub mod config;
 pub mod counters;

@@ -17,6 +17,10 @@ path = "tests/integration/mod.rs"
 name = "first_contact"
 path = "tests/first_contact.rs"
 
+[[test]]
+name = "remote_replies"
+path = "tests/remote_replies.rs"
+
 [[bin]]
 name = "eunha-upload-media"
 path = "src/bin/upload_media.rs"

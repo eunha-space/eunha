@@ -459,6 +459,33 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
+id = "reply-fetches-run-in-process"
+kind = "behaviour"
+summary = "Walks a remote thread's replies in one task, fetching each reply once"
+mastodon = """
+Queues `ActivityPub::FetchAllRepliesWorker`, which fetches each reply to read \
+its `replies` collection and queues a `FetchReplyWorker` that fetches it again \
+to store it, retried three times. Each stored reply goes through `Create` \
+processing, which reads the first page of its own replies, and a reply \
+already held is processed again as an `Update`."""
+eunha = """
+Runs the walk as one task in the instance's process, storing each reply from \
+the same request its collection is read from, without retries. Replies \
+already held are not refreshed, and fetched replies do not have their own \
+first page read. An instance that stops mid-walk marks its async refresh \
+finished."""
+why = """
+The walk is bounded (1,000 replies, 500 pages) and repeated at most every \
+fifteen minutes per post, so the post's next walk recovers what a failed \
+fetch missed; a durable queue would add a table and a worker for work that \
+is safe to lose. Fetching each reply once halves the requests a walk makes \
+of the remote server. Eunha stores fetched posts through its lighter remote \
+status path, which neither refreshes known posts nor recurses."""
+evidence = "tests/remote_replies.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "email-distribution-in-process"
 kind = "behaviour"
 summary = "The five-minute wait before mailing subscribers runs in the process"
@@ -476,5 +503,43 @@ does not justify one: the batch itself is in Redis for an hour, as upstream \
 keeps it, so what a restart can lose is only the timing. The short key keeps \
 a crash from silencing an account's emails for a day."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "async-refresh-ids-signed-without-rails"
+kind = "behaviour"
+summary = "Signs async refresh ids with a key derived from the VAPID key"
+mastodon = """
+Signs the refresh's Redis key with `Rails.application.message_verifier\
+('async_refreshes')`, keyed from `SECRET_KEY_BASE`."""
+eunha = """
+Signs it with HMAC-SHA256 under a key derived from the instance's VAPID \
+private key, as `base64url(key)--hexdigest`, and keeps the hash in the \
+coordination Redis under the instance's prefix."""
+why = """
+Eunha has no `SECRET_KEY_BASE`. An id is opaque to clients and lives a day \
+at most, and eunha replaces a Mastodon rather than serving beside it, so no \
+Mastodon process ever has to read an id eunha handed out, or the reverse."""
+evidence = "tests/integration/c2s/async_refreshes.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "home-feed-built-from-database"
+kind = "behaviour"
+summary = "Never answers the home timeline as partial while a feed is rebuilt"
+mastodon = """
+Regenerates an inactive user's home feed in the background and, until it is \
+done, answers `GET /api/v1/timelines/home` with `206` and a \
+`Mastodon-Async-Refresh` header (`retry=5`)."""
+eunha = """
+Reads a home feed Redis does not hold from the database in the request, and \
+answers `200` with the whole page and no header."""
+why = """
+The database query that fills a missing feed is fast enough to run in the \
+request, so there is nothing for the client to wait for; a partial answer \
+would only make it poll."""
+evidence = "tests/integration/c2s/async_refreshes.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

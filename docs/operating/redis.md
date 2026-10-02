@@ -15,10 +15,10 @@ adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
 markers, ActivityPub and preview card locks, tombstones, the oEmbed endpoints
 remembered for each domain, posting idempotency, notification
-group state, the days each server failed deliveries on, the activity counts
-behind trends and email domain blocks' `history`, and the sets of what was
-used today that trends are rescored from, and the posts waiting to be emailed
-to an account's subscribers — uses that namespace.
+group state, async refreshes, the days each server failed deliveries on, the
+activity counts behind trends and email domain blocks' `history`, the sets of
+what was used today that trends are rescored from, and the posts waiting to be
+emailed to an account's subscribers — uses that namespace.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
@@ -26,7 +26,7 @@ user, the matching key pattern, and only the commands Eunha uses:
 ~~~~
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
 +zrangebyscore +zrevrangebyscore +mget +del +sadd +scard
-+incrby +pfadd +pfcount +expire +smembers +srem
++incrby +pfadd +pfcount +expire +smembers +srem +hset +hget +hincrby
 ~~~~
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used
@@ -47,7 +47,8 @@ Redis.
 Feeds, their population markers and the remembered oEmbed endpoints use
 `redis_url`; they are bounded cache state. Set `redis_coordination_url` to
 route locks, ActivityPub deletion tombstones, posting idempotency,
-notification grouping and the batches of posts waiting for
+notification grouping, async refreshes (see
+[Remote replies](./remote-replies.md)) and the batches of posts waiting for
 [email subscribers](./email-subscriptions.md) to a separate non-evicting Redis
 pool, along with the
 days each server failed deliveries on, `exhausted_deliveries:<host>` as

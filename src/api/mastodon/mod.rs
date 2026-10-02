@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod admin;
 pub mod announcements;
 pub mod annual_reports;
+pub mod async_refreshes;
 pub mod bookmarks;
 pub mod collections;
 pub mod conversations;
@@ -818,6 +819,10 @@ pub fn router() -> Router {
                 .post(push::create_subscription)
                 .put(push::update_subscription)
                 .delete(push::delete_subscription),
+        )
+        .route(
+            "/api/v1_alpha/async_refreshes/{id}",
+            get(async_refreshes::show_async_refresh),
         )
         // Annual reports
         .route(

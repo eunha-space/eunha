@@ -18,6 +18,7 @@ use super::{
     types::{Account as ApiAccount, Status as ApiStatus},
 };
 use crate::{
+    async_refresh::AsyncRefresh,
     db::models::{Account as DbAccount, Status as DbStatus},
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
@@ -533,7 +534,8 @@ pub async fn generate_annual_report(
             Json(serde_json::json!({
                 "error": "Report can only be generated for completed years"
             })),
-        ));
+        )
+            .into_response());
     }
 
     // If already generated, return immediately
@@ -543,7 +545,7 @@ pub async fn generate_annual_report(
     ).fetch_optional(&state.db).await?;
 
     if existing.is_some() {
-        return Ok((StatusCode::ACCEPTED, Json(serde_json::json!({}))));
+        return Ok((StatusCode::ACCEPTED, Json(serde_json::json!({}))).into_response());
     }
 
     if !is_eligible(&state, auth.account_id, year).await? {
@@ -552,21 +554,60 @@ pub async fn generate_annual_report(
             Json(serde_json::json!({
                 "error": "Not eligible for this year"
             })),
-        ));
+        )
+            .into_response());
     }
 
-    let data = generate_report_data(&state, auth.account_id, year).await?;
+    // Generated in the background, as `GenerateAnnualReportWorker` does, with
+    // an async refresh the client polls until the report is ready.
+    let key = refresh_key(auth.account_id, year);
+    let refresh = AsyncRefresh::new(&state, &key).await;
+    if refresh.is_running() {
+        return Ok(accepted_with_refresh(&state, &refresh));
+    }
+    let refresh = AsyncRefresh::create(&state, &key, false).await;
+    let account_id = auth.account_id;
+    let worker_state = state.clone();
+    crate::tenants::spawn(async move {
+        let guard = crate::async_refresh::FinishOnDrop::new(&worker_state, &key);
+        if let Err(error) = generate_and_store(&worker_state, account_id, year).await {
+            tracing::warn!(%error, account_id, year, "could not generate annual report");
+        }
+        guard.finish().await;
+    });
 
-    // Upsert the report
+    Ok(accepted_with_refresh(&state, &refresh))
+}
+
+/// `AnnualReport#refresh_key`.
+fn refresh_key(account_id: i64, year: i32) -> String {
+    format!("wrapstodon:{account_id}:{year}")
+}
+
+/// `head 202`, with the refresh's header (`retry_seconds: 2`).
+fn accepted_with_refresh(state: &AppState, refresh: &AsyncRefresh) -> axum::response::Response {
+    let mut response = (StatusCode::ACCEPTED, Json(serde_json::json!({}))).into_response();
+    if let Some(value) = refresh
+        .header_value(state, 2)
+        .and_then(|v| axum::http::HeaderValue::from_str(&v).ok())
+    {
+        response
+            .headers_mut()
+            .insert(crate::async_refresh::HEADER, value);
+    }
+    response
+}
+
+async fn generate_and_store(state: &AppState, account_id: i64, year: i32) -> AppResult<()> {
+    let data = generate_report_data(state, account_id, year).await?;
     sqlx::query!(
         "INSERT INTO generated_annual_reports (account_id, year, data, schema_version, created_at, updated_at)
          VALUES ($1, $2, $3, $4, now(), now())
          ON CONFLICT (account_id, year) DO UPDATE
          SET data = $3, schema_version = $4, updated_at = NOW()",
-        auth.account_id, year, data, SCHEMA_VERSION,
+        account_id, year, data, SCHEMA_VERSION,
     ).execute(&state.db).await?;
-
-    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({}))))
+    Ok(())
 }
 
 // ── GET /api/v1/annual_reports/{year}/state ────────────────────────────────
@@ -575,7 +616,7 @@ pub async fn get_annual_report_state(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(year): Path<i32>,
-) -> AppResult<Json<serde_json::Value>> {
+) -> AppResult<axum::response::Response> {
     auth.require_scope("read:accounts")?;
 
     let row = sqlx::query!(
@@ -586,6 +627,7 @@ pub async fn get_annual_report_state(
     .fetch_optional(&state.db)
     .await?;
 
+    let mut refresh_header = None;
     let state_str = if let Some(r) = row {
         if r.data.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
             "available"
@@ -593,13 +635,23 @@ pub async fn get_annual_report_state(
             "generating"
         }
     } else {
+        let refresh = AsyncRefresh::new(&state, &refresh_key(auth.account_id, year)).await;
         let current_year = Utc::now().year();
-        if year < current_year && is_eligible(&state, auth.account_id, year).await? {
+        if refresh.is_running() {
+            refresh_header = refresh.header_value(&state, 2);
+            "generating"
+        } else if year < current_year && is_eligible(&state, auth.account_id, year).await? {
             "eligible"
         } else {
             "ineligible"
         }
     };
 
-    Ok(Json(serde_json::json!({ "state": state_str })))
+    let mut response = Json(serde_json::json!({ "state": state_str })).into_response();
+    if let Some(value) = refresh_header.and_then(|v| axum::http::HeaderValue::from_str(&v).ok()) {
+        response
+            .headers_mut()
+            .insert(crate::async_refresh::HEADER, value);
+    }
+    Ok(response)
 }

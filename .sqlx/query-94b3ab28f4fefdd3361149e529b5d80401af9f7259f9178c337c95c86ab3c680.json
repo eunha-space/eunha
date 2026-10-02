@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT s.uri AS \"uri!\" FROM statuses s\n                 LEFT JOIN follows f ON f.target_account_id = s.account_id\n                 LEFT JOIN accounts fa ON fa.id = f.account_id\n               WHERE s.in_reply_to_id = $1 AND s.deleted_at IS NULL\n                 AND s.local = false AND s.uri IS NOT NULL\n                 AND NOT (s.uri = ANY($2::text[]))\n                 AND (fa.domain IS NOT NULL\n                      OR NOT (f.created_at < s.updated_at)\n                      OR f.id IS NULL)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "94b3ab28f4fefdd3361149e529b5d80401af9f7259f9178c337c95c86ab3c680"
+}
