@@ -444,6 +444,93 @@ export function deleteRelay(token: string, id: string) {
   return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/relays/${id}`)
 }
 
+// ── Fediverse Auxiliary Service Providers ──────────────────────────────────
+
+/** `Fasp::Capability`. */
+export interface FaspCapability {
+  id: string
+  version: string
+  enabled: boolean
+}
+
+export interface AdminFaspProvider {
+  id: string
+  name: string
+  base_url: string
+  confirmed: boolean
+  sign_in_url: string | null
+  remote_identifier: string
+  capabilities: FaspCapability[]
+  privacy_policy: unknown
+  contact_email: string | null
+  fediverse_account: string | null
+  provider_public_key_fingerprint: string | null
+  delivery_last_failed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminFaspDebugCallback {
+  id: string
+  provider: { id: string; name: string; base_url: string }
+  ip: string
+  request_body: string
+  created_at: string
+}
+
+let faspProbe: Promise<boolean> | null = null
+
+/**
+ * Whether the instance has the experimental `fasp` feature on, which the
+ * FASP endpoints say by answering at all: 404 while it is off. Asked once per
+ * page load, and only of a role that may manage federation.
+ */
+export function faspEnabled(token: string): Promise<boolean> {
+  faspProbe ??= request(token, 'GET', '/api/v1/admin/fasp/providers').then(
+    () => true,
+    () => false,
+  )
+  return faspProbe
+}
+
+export function listFaspProviders(token: string) {
+  return json<AdminFaspProvider[]>(token, 'GET', '/api/v1/admin/fasp/providers')
+}
+
+export function getFaspProvider(token: string, id: string) {
+  return json<AdminFaspProvider>(token, 'GET', `/api/v1/admin/fasp/providers/${id}`)
+}
+
+export function updateFaspCapabilities(token: string, id: string, capabilities: FaspCapability[]) {
+  return json<AdminFaspProvider>(token, 'PUT', `/api/v1/admin/fasp/providers/${id}`, {
+    capabilities,
+  })
+}
+
+export function deleteFaspProvider(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/fasp/providers/${id}`)
+}
+
+export function confirmFaspRegistration(token: string, id: string) {
+  return json<AdminFaspProvider>(token, 'POST', `/api/v1/admin/fasp/providers/${id}/registration`)
+}
+
+export function performFaspDebugCall(token: string, id: string) {
+  return json<Record<string, never>>(
+    token,
+    'POST',
+    `/api/v1/admin/fasp/providers/${id}/debug_calls`,
+  )
+}
+
+export function listFaspDebugCallbacks(token: string) {
+  return json<AdminFaspDebugCallback[]>(token, 'GET', '/api/v1/admin/fasp/debug/callbacks')
+}
+
+export function deleteFaspDebugCallback(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/fasp/debug/callbacks/${id}`)
+}
+
 // ── Webhooks ────────────────────────────────────────────────────────────────
 
 /** `Webhook::EVENTS`, with the permission each needs. */

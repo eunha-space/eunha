@@ -4,6 +4,8 @@ export interface AdminSection {
   to: string
   label: string
   permission: Permission
+  /** The experimental feature the section needs on, as Mastodon's navigation hides FASP. */
+  feature?: 'fasp'
 }
 
 /**
@@ -37,6 +39,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { to: '/admin/relays', label: 'Relays', permission: 'manage_federation' },
   { to: '/admin/invites', label: 'Invites', permission: 'manage_invites' },
   { to: '/admin/webhooks', label: 'Webhooks', permission: 'manage_webhooks' },
+  { to: '/admin/fasp/providers', label: 'FASP', permission: 'manage_federation', feature: 'fasp' },
   {
     to: '/admin/follow_recommendations',
     label: 'Follow recommendations',
@@ -47,5 +50,5 @@ export const ADMIN_SECTIONS: AdminSection[] = [
 
 /** The first section this role may open, for `/admin` and the rail's link. */
 export function firstAdminSection(permissions: number): AdminSection | null {
-  return ADMIN_SECTIONS.find((s) => can(permissions, s.permission)) ?? null
+  return ADMIN_SECTIONS.find((s) => !s.feature && can(permissions, s.permission)) ?? null
 }

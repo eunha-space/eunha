@@ -64,6 +64,12 @@ import AdminAnnouncements from './pages/admin/Announcements.tsx'
 import AdminInstances from './pages/admin/Instances.tsx'
 import AdminInstanceDetail from './pages/admin/InstanceDetail.tsx'
 import AdminRelays from './pages/admin/Relays.tsx'
+import {
+  FaspDebugCallbacks as AdminFaspDebugCallbacks,
+  FaspProviderEdit as AdminFaspProviderEdit,
+  FaspProviders as AdminFaspProviders,
+  FaspRegistration as AdminFaspRegistration,
+} from './pages/admin/Fasp.tsx'
 import AdminInvites from './pages/admin/AdminInvites.tsx'
 import AdminWebhooks from './pages/admin/Webhooks.tsx'
 import AdminFollowRecommendations from './pages/admin/FollowRecommendations.tsx'
@@ -165,6 +171,11 @@ const router = createBrowserRouter([
   { path: '/admin/instances', element: <AdminInstances /> },
   { path: '/admin/instances/:domain', element: <AdminInstanceDetail /> },
   { path: '/admin/relays', element: <AdminRelays /> },
+  { path: '/admin/fasp/providers', element: <AdminFaspProviders /> },
+  { path: '/admin/fasp/providers/:id/edit', element: <AdminFaspProviderEdit /> },
+  // Where a provider's registration answer sends the administrator.
+  { path: '/admin/fasp/providers/:id/registration/new', element: <AdminFaspRegistration /> },
+  { path: '/admin/fasp/debug/callbacks', element: <AdminFaspDebugCallbacks /> },
   { path: '/admin/invites', element: <AdminInvites /> },
   { path: '/admin/webhooks', element: <AdminWebhooks /> },
   { path: '/admin/follow_recommendations', element: <AdminFollowRecommendations /> },

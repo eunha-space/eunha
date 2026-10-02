@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 
 import { can, type Permission } from '../../admin-api.ts'
+import { faspEnabled } from '../../admin-server-api.ts'
 import { ADMIN_SECTIONS, type AdminSection } from '../../lib/admin-sections.ts'
 import { beginLogin, getToken } from '../../auth.ts'
 import { getMeAccount, loadMe } from '../../me.ts'
@@ -34,6 +35,27 @@ export function useRolePermissions(): number | null {
     }
   }, [token])
   return permissions
+}
+
+/**
+ * Whether the instance has the `fasp` feature on, asked only of a role that
+ * may manage federation, which is who the FASP section is for.
+ */
+function useFaspEnabled(permissions: number | null): boolean {
+  const token = getToken()
+  const [enabled, setEnabled] = useState(false)
+  const allowed = permissions !== null && can(permissions, 'manage_federation')
+  useEffect(() => {
+    if (!token || !allowed) return
+    let cancelled = false
+    faspEnabled(token).then((on) => {
+      if (!cancelled) setEnabled(on)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token, allowed])
+  return enabled
 }
 
 const tab =
@@ -97,8 +119,13 @@ export function AdminLayout({
     body = children
   }
 
+  const fasp = useFaspEnabled(permissions)
   const sections =
-    permissions === null ? [] : ADMIN_SECTIONS.filter((s) => can(permissions, s.permission))
+    permissions === null
+      ? []
+      : ADMIN_SECTIONS.filter(
+          (s) => can(permissions, s.permission) && (s.feature !== 'fasp' || fasp),
+        )
 
   return (
     <div className="page-frame">
@@ -159,6 +186,7 @@ const SECTION_PREFIXES: Record<string, string[]> = {
   '/admin/terms_of_service': ['/admin/terms_of_service'],
   '/admin/settings/branding': ['/admin/settings'],
   '/admin/instances': ['/admin/instances'],
+  '/admin/fasp/providers': ['/admin/fasp'],
 }
 
 function sectionOwns(section: AdminSection, pathname: string): boolean {
