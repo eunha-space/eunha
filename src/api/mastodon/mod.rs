@@ -949,6 +949,28 @@ pub fn router() -> Router {
             "/api/v1/admin/relays/{id}/disable",
             post(admin::disable_admin_relay),
         )
+        .route(
+            "/api/v1/admin/webhooks",
+            get(admin::list_admin_webhooks).post(admin::create_admin_webhook),
+        )
+        .route(
+            "/api/v1/admin/webhooks/{id}",
+            get(admin::get_admin_webhook)
+                .patch(admin::update_admin_webhook)
+                .delete(admin::delete_admin_webhook),
+        )
+        .route(
+            "/api/v1/admin/webhooks/{id}/enable",
+            post(admin::enable_admin_webhook),
+        )
+        .route(
+            "/api/v1/admin/webhooks/{id}/disable",
+            post(admin::disable_admin_webhook),
+        )
+        .route(
+            "/api/v1/admin/webhooks/{id}/secret/rotate",
+            post(admin::rotate_admin_webhook_secret),
+        )
         .route("/api/v1/admin/invites", get(admin::list_admin_invites))
         .route(
             "/api/v1/admin/invites/deactivate_all",

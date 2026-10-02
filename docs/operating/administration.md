@@ -279,3 +279,22 @@ Invites
 Every invite on the server is listed, and all of them deactivated, at
 `/api/v1/admin/invites`, for a role with `manage_invites`; see
 [invites](./invites#every-invite).
+
+
+Webhooks
+--------
+
+`/api/v1/admin/webhooks` lists and adds webhooks, `…/:id` shows, edits and
+deletes one, `…/:id/enable` and `…/:id/disable` switch one, and
+`…/:id/secret/rotate` gives it a new secret, all for a role with
+`manage_webhooks`, as Mastodon's `WebhookPolicy` allows. Editing or deleting a
+webhook also needs the permissions its events need: `manage_users` for the
+account events, `manage_reports` for the report events, and `view_devops` for
+the status events; each webhook says whether the acting role may
+(`can_update`). A new webhook gets a random secret, as Mastodon makes one.
+
+A webhook needs an http or https URL no other webhook has, and at least one of
+the events [moderation](./moderation#webhooks) lists, each one the moderator's
+role could see. Its template, if any, must parse as Mastodon's does: text, and
+<code v-pre>{{path.to.value}}</code> expressions of lower-case names and array
+indices. As in Mastodon, none of this is logged.

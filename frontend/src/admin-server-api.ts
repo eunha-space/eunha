@@ -444,6 +444,61 @@ export function deleteRelay(token: string, id: string) {
   return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/relays/${id}`)
 }
 
+// ── Webhooks ────────────────────────────────────────────────────────────────
+
+/** `Webhook::EVENTS`, with the permission each needs. */
+export const WEBHOOK_EVENTS: { event: string; permission: Permission }[] = [
+  { event: 'account.approved', permission: 'manage_users' },
+  { event: 'account.created', permission: 'manage_users' },
+  { event: 'account.updated', permission: 'manage_users' },
+  { event: 'report.created', permission: 'manage_reports' },
+  { event: 'report.updated', permission: 'manage_reports' },
+  { event: 'status.created', permission: 'view_devops' },
+  { event: 'status.updated', permission: 'view_devops' },
+]
+
+export interface AdminWebhook {
+  id: string
+  url: string
+  events: string[]
+  template: string | null
+  enabled: boolean
+  secret: string
+  can_update: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookParams {
+  url: string
+  events: string[]
+  template: string
+}
+
+export function listWebhooks(token: string) {
+  return json<AdminWebhook[]>(token, 'GET', '/api/v1/admin/webhooks')
+}
+
+export function createWebhook(token: string, params: WebhookParams) {
+  return json<AdminWebhook>(token, 'POST', '/api/v1/admin/webhooks', params)
+}
+
+export function updateWebhook(token: string, id: string, params: WebhookParams) {
+  return json<AdminWebhook>(token, 'PATCH', `/api/v1/admin/webhooks/${id}`, params)
+}
+
+export function deleteWebhook(token: string, id: string) {
+  return json<Record<string, never>>(token, 'DELETE', `/api/v1/admin/webhooks/${id}`)
+}
+
+export function webhookAction(
+  token: string,
+  id: string,
+  action: 'enable' | 'disable' | 'secret/rotate',
+) {
+  return json<AdminWebhook>(token, 'POST', `/api/v1/admin/webhooks/${id}/${action}`)
+}
+
 // ── Invites ─────────────────────────────────────────────────────────────────
 
 export interface AdminInvite {

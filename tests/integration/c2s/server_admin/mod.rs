@@ -8,6 +8,7 @@ mod invites;
 mod relays;
 mod roles;
 mod rules;
+mod webhooks;
 
 use reqwest::StatusCode;
 use serde_json::{json, Value};

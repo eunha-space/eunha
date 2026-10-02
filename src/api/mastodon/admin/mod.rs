@@ -35,6 +35,7 @@ mod relays;
 mod roles;
 mod rules;
 mod settings;
+mod webhooks;
 
 pub use accounts::*;
 pub use blocks::*;
@@ -60,6 +61,7 @@ pub use relays::*;
 pub use roles::*;
 pub use rules::*;
 pub use settings::*;
+pub use webhooks::*;
 
 /// `REST::AccountSerializer` of an account, if it exists.
 pub(super) async fn api_account(
