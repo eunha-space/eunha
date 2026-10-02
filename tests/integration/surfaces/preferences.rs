@@ -112,6 +112,12 @@ async fn test_noindex_reaches_the_account_entity() {
         .await
         .unwrap();
     assert_eq!(me["noindex"], true);
+    // And on the account a status embeds.
+    ctx.api
+        .post_status(&ctx.alice_token, "hello", "public")
+        .await;
+    let timeline = ctx.api.public_timeline().await;
+    assert_eq!(timeline[0]["account"]["noindex"], true);
 
     // Someone who never chose follows `Setting.noindex`.
     set_setting(&ctx.db, "noindex", "true").await;

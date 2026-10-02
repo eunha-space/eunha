@@ -1153,6 +1153,7 @@ pub async fn hydrate_status_stats<'a>(
     }
     let account_stats = batch_account_stats(state, &account_ids).await;
     let status_stats = batch_status_stats(state, &status_ids).await;
+    let noindex = super::accounts::batch_noindex(state, &account_ids).await;
     // `AccountSerializer#email_subscriptions`, while the feature is enabled.
     let offering = if crate::email_subscriptions::enabled(state).await {
         Some(crate::email_subscriptions::offering(state, &account_ids).await)
@@ -1163,6 +1164,9 @@ pub async fn hydrate_status_stats<'a>(
     let apply = |s: &mut super::types::Status| {
         if let Ok(aid) = s.account.id.parse::<i64>() {
             s.account.email_subscriptions = offering.as_ref().map(|o| o.contains(&aid));
+            if let Some(&value) = noindex.get(&aid) {
+                s.account.noindex = Some(value);
+            }
             if let Some(&(statuses_c, following, followers)) = account_stats.get(&aid) {
                 s.account.statuses_count = statuses_c;
                 s.account.following_count = following;
