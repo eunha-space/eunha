@@ -353,14 +353,17 @@ async fn test_a_mute_still_hides_an_ordinary_post_from_notifications() {
         "the bell should notify before any mute"
     );
 
+    // A mute that hides notifications queues `BlockWorker`, whose
+    // `AfterBlockService` deletes the notifications Bob already caused.
     alice_mutes_bob(&ctx).await;
+    assert_eq!(notifications_from_bob(&ctx, "status").await, 0);
     ctx.api
         .post_status(&ctx.bob_token, "bob talking to nobody", "public")
         .await;
 
     assert_eq!(
         notifications_from_bob(&ctx, "status").await,
-        1,
+        0,
         "a muted account's own post must not notify me"
     );
 }
