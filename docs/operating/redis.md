@@ -32,7 +32,9 @@ search index queues
 (`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
 new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
-`discovery_per_request:*`), the circuit breakers on deliveries
+`discovery_per_request:*`), whether a domain's accounts have feature approval
+policies (`feature_approval_policy_availability:*`), the circuit breakers on
+deliveries
 (`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the
 `subscribed:<channel>` keys that say a stream listens on one — uses that
 namespace.

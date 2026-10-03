@@ -1081,13 +1081,74 @@ pub fn possibly_stale(account: &Account) -> bool {
         || account.username.starts_with("! ")
 }
 
-/// `Account#needs_background_refresh?`.
-fn needs_background_refresh(account: &Account) -> bool {
-    !account.is_local()
-        && (account
-            .last_webfingered_at
-            .is_none_or(|at| at <= chrono::Utc::now().naive_utc() - BACKGROUND_REFRESH_INTERVAL)
-            || account.username.starts_with("! "))
+/// `Account#needs_background_refresh?`: a remote account not refreshed
+/// for a week, or whose handle was taken from it — or, for now, one with no
+/// `feature_approval_policy` from a domain where another account has one.
+async fn needs_background_refresh(state: &AppState, account: &Account) -> bool {
+    if account.is_local() {
+        return false;
+    }
+    if account
+        .last_webfingered_at
+        .is_none_or(|at| at <= chrono::Utc::now().naive_utc() - BACKGROUND_REFRESH_INTERVAL)
+        || account.username.starts_with("! ")
+    {
+        return true;
+    }
+    // Upstream: "TODO: Remove some time after 4.6. This is temporary
+    // workaround to speed up account refreshs after collections have been
+    // enabled / deployed." Mastodon 4.7.1 still has it: an account that
+    // lacks a feature approval policy is refreshed when others on its
+    // server are known to have one. Drop this when upstream does.
+    if account.feature_approval_policy != 0 {
+        return false;
+    }
+    match account.domain.as_deref() {
+        Some(domain) => feature_approval_policy_availability(state, domain).await,
+        None => false,
+    }
+}
+
+/// How long `feature_approval_policy_availability:<domain>` is cached.
+const FEATURE_APPROVAL_POLICY_AVAILABILITY_TTL_SECS: u64 = 30 * 60;
+
+/// `Rails.cache.fetch("feature_approval_policy_availability:#{domain}",
+/// expires_in: 30.minutes)` of whether any account on `domain` has a
+/// feature approval policy, kept in Redis under the instance's prefix. An
+/// answer Redis cannot keep is worked out again next time.
+async fn feature_approval_policy_availability(state: &AppState, domain: &str) -> bool {
+    let key = state
+        .redis_keys
+        .key(format!("feature_approval_policy_availability:{domain}"));
+    let mut redis = state.redis.clone();
+    let cached: Option<String> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .ok()
+        .flatten();
+    if let Some(cached) = cached {
+        return cached == "true";
+    }
+    let Ok(available) = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts WHERE domain = $1 AND feature_approval_policy <> 0
+           ) AS "exists!""#,
+        domain
+    )
+    .fetch_one(&state.db)
+    .await
+    else {
+        return false;
+    };
+    let _: redis::RedisResult<()> = redis::cmd("SET")
+        .arg(&key)
+        .arg(if available { "true" } else { "false" })
+        .arg("EX")
+        .arg(FEATURE_APPROVAL_POLICY_AVAILABILITY_TTL_SECS)
+        .query_async(&mut redis)
+        .await;
+    available
 }
 
 /// `Account#schedule_refresh_if_stale!`: refresh an account that has not
@@ -1096,7 +1157,7 @@ pub async fn schedule_refresh_if_stale(state: &AppState, account_id: i64) {
     let Ok(Some(account)) = find_by_id(state, account_id).await else {
         return;
     };
-    if !needs_background_refresh(&account) {
+    if !needs_background_refresh(state, &account).await {
         return;
     }
     // `AccountRefreshWorker.perform_in(rand(REFRESH_DEADLINE), id)`.
@@ -1134,7 +1195,7 @@ impl crate::jobs::Job for AccountRefreshWorker {
         let Some(account) = find_by_id(state, self.account_id).await? else {
             return Ok(());
         };
-        if !needs_background_refresh(&account) {
+        if !needs_background_refresh(state, &account).await {
             return Ok(());
         }
         resolve_account(state, &account, self.request_id.as_deref())

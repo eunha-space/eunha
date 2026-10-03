@@ -797,3 +797,75 @@ async fn test_an_actor_moved_to_itself_is_marked_as_moved() {
             .unwrap();
     assert_eq!(moved, Some(id));
 }
+
+/// An account refreshed in the last week, with no feature approval policy,
+/// is refreshed anyway when another account on its server has one, as
+/// Mastodon 4.7.1's `needs_background_refresh?` still has it, the answer
+/// cached for the domain.
+#[tokio::test]
+async fn test_an_account_without_a_feature_policy_is_refreshed_when_its_server_has_them() {
+    use eunha::jobs::Job as _;
+
+    let (ctx, server) = spawn_server("actors-feature-policy").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .unwrap();
+    let mut changed = server.full_actor();
+    changed["name"] = json!("Eve, refreshed");
+    server.remote.put("/users/eve", changed);
+
+    let run = || async {
+        // Stale enough for `ResolveAccountService`, not for a weekly refresh.
+        sqlx::query(
+            "UPDATE accounts SET feature_approval_policy = 0,
+                                 last_webfingered_at = now() - interval '2 days'
+             WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        eunha::federation::process_account::AccountRefreshWorker {
+            account_id: id,
+            request_id: None,
+        }
+        .perform(&ctx.state)
+        .await
+        .unwrap();
+        sqlx::query_scalar::<_, String>("SELECT display_name FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap()
+    };
+    assert_eq!(run().await, "Eve :blobcat:", "nobody on its server has one");
+
+    sqlx::query(
+        "INSERT INTO accounts (id, username, domain, uri, feature_approval_policy, created_at, updated_at)
+         VALUES ($1, 'frank', $2, $3, 65536, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(&server.host)
+    .bind(format!("{}/users/frank", server.base))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        run().await,
+        "Eve :blobcat:",
+        "the answer is cached for half an hour"
+    );
+
+    let mut redis = ctx.state.redis.clone();
+    let _: () = redis::cmd("DEL")
+        .arg(ctx.state.redis_keys.key(format!(
+            "feature_approval_policy_availability:{}",
+            server.host
+        )))
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(run().await, "Eve, refreshed");
+}

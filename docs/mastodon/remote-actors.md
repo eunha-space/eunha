@@ -115,16 +115,20 @@ their own retries and unique locks:
     are verified against the account's `url`, as a local account's are.
 
 A `Create` or `Update` from an account not refreshed for a week schedules a
-refresh some time in the next six hours (`schedule_refresh_if_stale!`). The
-refresh is `ResolveAccountService`'s: WebFinger is asked about the account's
-handle, following one redirect to a handle that names itself, and the actor
-its `self` link names is fetched and processed, so an account whose handle now
-names another `id` moves to it. An account whose handle was taken from it is
-fetched by its `id` instead. A `410 Gone` from WebFinger suspends the account
-as its server's doing and queues its deletion, as a `410` to the actor's own
-fetch does; any other failure is dropped, except a server that cannot be
-reached, which retries the job. The first refresh of an account eunha stored
-before this was written fills in everything above.
+refresh some time in the next six hours (`schedule_refresh_if_stale!`). So
+does one from an account with no `feature_approval_policy` when another
+account on its server has one, which upstream answers from a cache kept for
+half an hour (`feature_approval_policy_availability:<domain>`, under the
+instance's Redis prefix here) and marks as temporary, to be removed some time
+after 4.6. The refresh is `ResolveAccountService`'s: WebFinger is asked about
+the account's handle, following one redirect to a handle that names itself, and
+the actor its `self` link names is fetched and processed, so an account whose
+handle now names another `id` moves to it. An account whose handle was taken
+from it is fetched by its `id` instead. A `410 Gone` from WebFinger suspends
+the account as its server's doing and queues its deletion, as a `410` to the
+actor's own fetch does; any other failure is dropped, except a server that
+cannot be reached, which retries the job. The first refresh of an account eunha
+stored before this was written fills in everything above.
 
 
 Differences
