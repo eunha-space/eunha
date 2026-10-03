@@ -572,3 +572,86 @@ async fn test_blocking_clears_the_feed_and_notifications() {
     assert!(!feed_holds(&ctx, &boost_id).await);
     assert_eq!(notifications_from_carol().await.unwrap(), 0);
 }
+
+/// Blocking a domain undoes the follows there, which unmerges those
+/// accounts' posts as `UnfollowService` does, and does nothing else to the
+/// home feed: a boost already in it of a post from there stays, as
+/// `AfterBlockDomainFromAccountService` leaves it.
+#[tokio::test]
+async fn test_a_domain_block_unmerges_only_through_the_follows_it_ends() {
+    let ctx = TestContext::new("home-feed-domain-block").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let domain = format!("blocked-{}", ctx.domain);
+    let actor_uri = format!("https://{domain}/users/stranger");
+    let stranger = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO accounts
+             (id, username, domain, display_name, note, url, uri, public_key,
+              inbox_url, outbox_url, created_at, updated_at)
+           VALUES ($1, 'stranger', $2, 'stranger', '', $3, $3, 'remote-key',
+                   '', '', now(), now())"#,
+    )
+    .bind(stranger)
+    .bind(&domain)
+    .bind(&actor_uri)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(alice)
+    .bind(stranger)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+
+    let mut posts = vec![];
+    for n in 1..=2 {
+        let post = eunha::snowflake::next_id();
+        sqlx::query(
+            r#"INSERT INTO statuses (id, account_id, text, visibility, uri, url, local, created_at, updated_at)
+               VALUES ($1, $2, 'from elsewhere', 0, $3, $3, false, now(), now())"#,
+        )
+        .bind(post)
+        .bind(stranger)
+        .bind(format!("https://{domain}/notes/{n}"))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        posts.push(post);
+    }
+    // The first reaches Alice's feed through her follow; the second only as
+    // Bob's boost.
+    let mut redis = ctx.state.redis.clone();
+    eunha::feed::fanout_status(&mut redis, &ctx.state.redis_keys, &ctx.db, posts[0]).await;
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{}/reblog", posts[1]),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boost_id = boost["id"].as_str().unwrap().to_owned();
+    assert!(feed_holds(&ctx, &posts[0].to_string()).await);
+    assert!(feed_holds(&ctx, &boost_id).await);
+
+    ctx.api
+        .post_json(
+            "/api/v1/domain_blocks",
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "domain": domain }),
+        )
+        .await;
+    assert!(
+        !feed_holds(&ctx, &posts[0].to_string()).await,
+        "unmerged with the follow"
+    );
+    assert!(feed_holds(&ctx, &boost_id).await, "Bob's boost stays");
+}

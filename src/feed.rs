@@ -1851,36 +1851,6 @@ async fn unmerge_account(
     unmerge(redis, db, owner_id, timeline, &ids).await;
 }
 
-/// Remove every home-feed entry authored by an account on `domain`, used when a
-/// user blocks a domain.
-pub async fn unmerge_domain_from_home(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    db: &PgPool,
-    domain: &str,
-    into_account_id: i64,
-) {
-    let timeline = Timeline::home(keys, into_account_id);
-    let members: Vec<i64> = redis
-        .zrange::<_, Vec<i64>>(&timeline.key, 0, -1)
-        .await
-        .unwrap_or_default();
-    if members.is_empty() {
-        return;
-    }
-    let ids: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT s.id FROM statuses s
-           JOIN accounts a ON a.id = s.account_id
-           WHERE s.id = ANY($1::bigint[]) AND a.domain = $2"#,
-        &members,
-        domain,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
-    unmerge(redis, db, into_account_id, &timeline, &ids).await;
-}
-
 /// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it.
 async fn unmerge(
     redis: &mut ConnectionManager,

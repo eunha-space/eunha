@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT la.list_id, la.account_id FROM list_accounts la\n           JOIN lists l ON l.id = la.list_id\n           JOIN accounts a ON a.id = la.account_id\n           WHERE l.account_id = $1 AND a.domain = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "list_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bca8b9e6daaba00f86f63c31cf4091067cba3ee1ed25d7e8b2f8fe7c6d4f151f"
+}

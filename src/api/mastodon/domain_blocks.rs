@@ -73,8 +73,10 @@ pub async fn block_domain(
 }
 
 /// `Account#block_domain!` followed by `AfterAccountDomainBlockWorker`:
-/// `account_id` blocks `domain`, given lowercased, and its follows,
-/// notifications and home feed entries from there go.
+/// `account_id` blocks `domain`, given lowercased, and its follows and
+/// notifications from there go. The home feed is left as it is, as
+/// Mastodon leaves it: undoing the follows unmerges those accounts' posts,
+/// and the fan-out keeps the domain's boosted posts out from then on.
 pub async fn block_domain_for(state: &AppState, account_id: i64, domain: &str) -> AppResult<()> {
     sqlx::query!(
         r#"INSERT INTO account_domain_blocks (account_id, domain, created_at, updated_at) VALUES ($1, $2, now(), now())
@@ -99,26 +101,6 @@ pub async fn block_domain_for(state: &AppState, account_id: i64, domain: &str) -
     .execute(&state.db)
     .await;
 
-    // Strip that domain's posts from the blocker's cached home feed.
-    let mut redis = state.redis.clone();
-    let db = state.db.clone();
-    let redis_keys = state.redis_keys.clone();
-    let domain = domain.to_owned();
-    if crate::feed::sync_fanout() {
-        crate::feed::unmerge_domain_from_home(&mut redis, &redis_keys, &db, &domain, account_id)
-            .await;
-    } else {
-        crate::tenants::spawn(async move {
-            crate::feed::unmerge_domain_from_home(
-                &mut redis,
-                &redis_keys,
-                &db,
-                &domain,
-                account_id,
-            )
-            .await;
-        });
-    }
     Ok(())
 }
 
@@ -167,7 +149,27 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
         None
     };
 
-    // `remove_follows!`: `UnfollowService` for each.
+    // `remove_follows!`: `UnfollowService` for each, which unmerges the
+    // followed account from the home feed and the lists that held it —
+    // memberships that go with the follow, so they are read first.
+    let mut lists_holding: std::collections::HashMap<i64, Vec<i64>> =
+        std::collections::HashMap::new();
+    for row in sqlx::query!(
+        r#"SELECT la.list_id, la.account_id FROM list_accounts la
+           JOIN lists l ON l.id = la.list_id
+           JOIN accounts a ON a.id = la.account_id
+           WHERE l.account_id = $1 AND a.domain = $2"#,
+        account_id,
+        domain,
+    )
+    .fetch_all(&state.db)
+    .await?
+    {
+        lists_holding
+            .entry(row.account_id)
+            .or_default()
+            .push(row.list_id);
+    }
     let following = sqlx::query!(
         r#"DELETE FROM follows f USING accounts a
            WHERE f.target_account_id = a.id AND f.account_id = $1 AND a.domain = $2
@@ -182,6 +184,13 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
         crate::search::elasticsearch::indexing::accounts(state, &[account_id, follow.target_id])
             .await;
         crate::counters::on_follow_removed(&state.db, account_id, follow.target_id).await?;
+        crate::home_feed::unmerge_from_home_and_lists(
+            state,
+            follow.target_id,
+            account_id,
+            lists_holding.remove(&follow.target_id).unwrap_or_default(),
+        )
+        .await;
         let follow_uri = follow
             .uri
             .unwrap_or_else(|| format!("{my_url}#follows/{}", follow.id));
