@@ -257,7 +257,7 @@ pub async fn feature_authorization_document(
            JOIN collections c ON c.id = ci.collection_id
            JOIN accounts a ON a.id = ci.account_id
            WHERE ci.id = $1 AND ci.state = 1
-             AND a.username = $2 AND a.domain IS NULL"#,
+             AND lower(a.username) = lower($2) AND a.domain IS NULL"#,
         id,
         username,
     )

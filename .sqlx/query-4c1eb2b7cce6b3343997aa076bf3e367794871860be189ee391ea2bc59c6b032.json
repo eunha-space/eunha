@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM accounts WHERE username = $1 AND domain IS NULL",
+  "query": "SELECT id FROM accounts\n                 WHERE domain IS NULL AND lower(username) = lower($1) LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "83df6e88d4f19b72887835565d13e8f33628f8cfc214802f9253b0d2ea2a52ef"
+  "hash": "4c1eb2b7cce6b3343997aa076bf3e367794871860be189ee391ea2bc59c6b032"
 }

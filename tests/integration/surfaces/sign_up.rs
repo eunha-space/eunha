@@ -220,10 +220,11 @@ async fn test_a_link_lasts_two_days() {
     assert!(!confirmed);
 }
 
-/// A user confirmed for the first time who signed up through an app with a
-/// redirect is handed back to it with an authorization code.
+/// The link mailed to a user who signed up through an app asks to go back to
+/// it (`redirect_to_app`), and following it sends the browser to the app's
+/// first redirect URI as it stands, as `after_confirmation_path_for` does.
 #[tokio::test]
-async fn test_confirming_returns_to_the_app_with_a_code() {
+async fn test_confirming_returns_to_the_app() {
     let ctx = TestContext::new("signup-confirm-redirect").await;
     let app: Value = ctx
         .api
@@ -232,7 +233,7 @@ async fn test_confirming_returns_to_the_app_with_a_code() {
             None,
             &json!({
                 "client_name": "Phone",
-                "redirect_uris": "https://client.example/cb",
+                "redirect_uris": "https://client.example/cb\nhttps://client.example/other",
                 "scopes": "read write",
             }),
         )
@@ -261,20 +262,137 @@ async fn test_confirming_returns_to_the_app_with_a_code() {
         .await;
     assert_eq!(signed_up.status(), StatusCode::OK);
     let confirmation = ctx.confirmation_token("carol").await;
-    let confirmed = ctx
-        .api
-        .get(&format!("/auth/confirm?token={confirmation}"), None)
-        .await;
-    let location = confirmed
-        .headers()
-        .get("location")
-        .unwrap()
-        .to_str()
+    let mail = ctx
+        .mail_to("carol@example.com", "Confirm your email address")
+        .await
         .unwrap();
-    assert!(
-        location.starts_with("https://client.example/cb?code="),
-        "{location}"
+    let link = format!("/auth/confirm?token={confirmation}&redirect_to_app=true");
+    assert!(mail.html.contains(&link), "{}", mail.html);
+
+    let confirmed = ctx.api.get(&link, None).await;
+    assert_eq!(confirmed.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        confirmed.headers().get("location").unwrap(),
+        "https://client.example/cb"
     );
+    let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM oauth_access_grants")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(grants, 0, "nothing is granted on confirming");
+}
+
+/// The username is kept as it was entered, and is taken whatever the case.
+#[tokio::test]
+async fn test_the_username_keeps_its_case() {
+    let ctx = TestContext::new("signup-username-case").await;
+    let mut body = carol();
+    body["username"] = json!("Carol_Day");
+    assert_eq!(ctx.sign_up(&body).await.status(), StatusCode::OK);
+    let username: String = sqlx::query_scalar(
+        "SELECT a.username FROM accounts a JOIN users u ON u.account_id = a.id
+         WHERE u.email = 'carol@example.com'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(username, "Carol_Day");
+
+    let mut again = carol();
+    again["username"] = json!("carol_day");
+    again["email"] = json!("other@example.com");
+    let refused: Value = ctx.sign_up(&again).await.json().await.unwrap();
+    assert_eq!(details(&refused, "username"), ["ERR_TAKEN"]);
+
+    let found = ctx
+        .api
+        .get(
+            &format!(
+                "/.well-known/webfinger?resource=acct:carol_day@{}",
+                ctx.domain
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(found.status(), StatusCode::OK);
+}
+
+/// Every validation runs, the moderation ones with the rest, as the model's
+/// do, so one refusal names all that is wrong.
+#[tokio::test]
+async fn test_a_refusal_names_everything_wrong() {
+    let ctx = TestContext::new("signup-all-errors").await;
+    sqlx::query(
+        "INSERT INTO email_domain_blocks (domain, allow_with_approval, created_at, updated_at)
+         VALUES ('blocked.example', false, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO username_blocks (username, normalized_username, exact, allow_with_approval, created_at, updated_at)
+         VALUES ('admin', 'admin', false, false, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let refused = ctx
+        .sign_up(&json!({
+            "username": "admin",
+            "email": "someone@blocked.example",
+            "password": "short",
+        }))
+        .await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Value = refused.json().await.unwrap();
+    assert_eq!(details(&body, "password"), ["ERR_TOO_SHORT"]);
+    assert_eq!(details(&body, "username"), ["ERR_RESERVED"]);
+    assert_eq!(details(&body, "email"), ["ERR_BLOCKED"]);
+    assert_eq!(details(&body, "agreement"), ["ERR_ACCEPTED"]);
+}
+
+/// The authorization page an app sends a user to signs an unconfirmed user in
+/// and sends them on to `auth/setup`, as `require_functional!` does.
+#[tokio::test]
+async fn test_the_authorization_page_sends_an_unconfirmed_user_to_setup() {
+    let ctx = TestContext::new("signup-authorize-setup").await;
+    assert_eq!(ctx.sign_up(&carol()).await.status(), StatusCode::OK);
+    let app: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/apps",
+            None,
+            &json!({
+                "client_name": "Phone",
+                "redirect_uris": "https://client.example/cb",
+                "scopes": "read",
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let response = ctx
+        .api
+        .post_form(
+            "/oauth/authorize",
+            None,
+            &[
+                ("client_id", app["client_id"].as_str().unwrap()),
+                ("redirect_uri", "https://client.example/cb"),
+                ("scope", "read"),
+                ("email", "carol@example.com"),
+                ("password", "a-long-enough-password"),
+            ],
+        )
+        .await;
+    assert_eq!(response.headers().get("location").unwrap(), "/auth/setup");
+    assert!(session_cookie(&response).is_some(), "signed in");
+    let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM oauth_access_grants")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(grants, 0);
 }
 
 /// `Api::V1::Emails::ConfirmationsController#create`: for the app the user
@@ -333,10 +451,18 @@ async fn test_the_app_can_resend_the_link_and_correct_the_address() {
             .await
             .unwrap();
     assert_eq!(unconfirmed.as_deref(), Some("carol@elsewhere.example"));
-    assert!(ctx
-        .mail_to("carol@elsewhere.example", "Confirm email")
-        .await
-        .is_some());
+    // Devise sends the reconfirmation for the address held back, then the
+    // resend: two mails, the same link.
+    let mut to_new = Vec::new();
+    for _ in 0..50 {
+        to_new = ctx.sent_to("carol@elsewhere.example");
+        if to_new.len() == 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(to_new.len(), 2);
+    assert_eq!(to_new[0].html, to_new[1].html);
     let confirmation = ctx.confirmation_token("carol").await;
     ctx.api
         .get(&format!("/auth/confirm?token={confirmation}"), None)
@@ -523,6 +649,15 @@ async fn test_pending_sign_ups_are_converted() {
     .unwrap();
     assert_eq!(report.converted, 1);
     assert_eq!(report.dropped, 2);
+    // `account.created`, queued for the server to deliver.
+    let webhooks: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'TriggerWebhookWorker'
+           AND args->>'event' = 'account.created'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(webhooks, 1);
 
     let reason: String = sqlx::query_scalar(
         "SELECT r.text FROM user_invite_requests r JOIN users u ON u.id = r.user_id

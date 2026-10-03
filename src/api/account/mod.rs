@@ -1090,6 +1090,13 @@ pub async fn setup_post(
             tracing::error!(%error, "could not change the address awaiting confirmation");
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
+        // `after_commit :send_reconfirmation_instructions`, for the address
+        // `update` held back.
+        if let Err(error) =
+            crate::accounts::send_confirmation_instructions(&state, session.user_id).await
+        {
+            tracing::error!(error = %format!("{error:#}"), "could not send reconfirmation instructions");
+        }
     }
     if !user.confirmed {
         if let Err(error) =
@@ -1099,4 +1106,45 @@ pub async fn setup_post(
         }
     }
     Redirect::to("/auth/setup?sent=1").into_response()
+}
+
+/// Whether the browser holds a session of a user who may sign in, for the
+/// pages outside this module that answer a signed-in browser differently.
+pub async fn signed_in(
+    state: &AppState,
+    headers: &HeaderMap,
+    ip: Option<std::net::IpAddr>,
+) -> bool {
+    get_session(headers, state, ip).await.is_some()
+}
+
+/// Devise's `sign_in(user)` from a page outside this module, then on to
+/// `target`, with `return_to` kept as the page to come back to after signing
+/// in (`store_location_for`).
+pub async fn sign_in_and_redirect(
+    state: &AppState,
+    user_id: i64,
+    ip: Option<std::net::IpAddr>,
+    user_agent: Option<&str>,
+    target: &str,
+    return_to: Option<&str>,
+) -> Response {
+    let session_id = match crate::sessions::activate(&state.db, user_id, ip, user_agent).await {
+        Ok(id) => id,
+        Err(error) => {
+            tracing::error!(%error, "could not activate a session");
+            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let mut h = HeaderMap::new();
+    h.append(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
+    if let Some(path) = return_to {
+        if let Ok(value) = HeaderValue::from_str(&format!(
+            "{RETURN_TO_COOKIE}={}; HttpOnly; SameSite=Lax; Path=/",
+            urlencoding::encode(path)
+        )) {
+            h.append(header::SET_COOKIE, value);
+        }
+    }
+    (h, Redirect::to(target)).into_response()
 }

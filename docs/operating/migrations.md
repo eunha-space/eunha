@@ -75,7 +75,8 @@ with no `confirmed_at` from the start, as Mastodon writes it, and migration 026
 drops the table. Before applying it, `eunha migrate` turns each sign-up still
 within its day into such a user: the account with a new signing key, the user
 with the address, password, locale, reason, app and time zone it was made with,
-approved as registrations and its invite allow, and the invite's use counted.
+approved as registrations and its invite allow, and the invite's use counted;
+the `account.created` webhook is queued for the server to deliver once it runs.
 The user keeps the confirmation token its mail carries and the time it was
 sent, so the link already in its inbox confirms it within two days of sign-up.
 

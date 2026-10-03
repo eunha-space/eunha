@@ -846,7 +846,8 @@ async fn signing_account_id_in(db: &sqlx::PgPool, key_id: &str) -> anyhow::Resul
         }
         ["users", username] => {
             sqlx::query_scalar!(
-                "SELECT id FROM accounts WHERE domain IS NULL AND username = $1 LIMIT 1",
+                "SELECT id FROM accounts
+                 WHERE domain IS NULL AND lower(username) = lower($1) LIMIT 1",
                 username,
             )
             .fetch_optional(db)

@@ -318,17 +318,10 @@ const REASON_SIZE_LIMIT: usize = 420;
 /// Devise's `password_length`.
 const PASSWORD_LENGTH: std::ops::RangeInclusive<usize> = 8..=72;
 
-/// The validations of `User` that a sign-up can fail and eunha checks here:
-/// Devise's password length, `agreement`, `date_of_birth` against
-/// `Setting.min_age`, and the invite request's text.
-async fn validate_registration(
-    state: &AppState,
-    form: &ApiCreateAccountForm,
-    reason_required: bool,
-) -> crate::email_subscriptions::ValidationErrors {
-    let mut errors = crate::email_subscriptions::ValidationErrors::default();
-    let password_length = form.password.chars().count();
-    if form.password.is_empty() {
+/// Devise's validatable for the password: present, and of `password_length`.
+fn validate_password(errors: &mut crate::email_subscriptions::ValidationErrors, password: &str) {
+    let password_length = password.chars().count();
+    if password.is_empty() {
         errors.add("password", "blank", "can't be blank");
     } else if password_length < *PASSWORD_LENGTH.start() {
         errors.add(
@@ -343,6 +336,37 @@ async fn validate_registration(
             "is too long (maximum is 72 characters)",
         );
     }
+}
+
+/// `UserInviteRequest`'s validations on its text, filed under `reason`
+/// (`'invite_request.text': :reason`): present when it is required, and at
+/// most 420 characters.
+fn validate_reason(
+    errors: &mut crate::email_subscriptions::ValidationErrors,
+    reason: Option<&str>,
+    required: bool,
+) {
+    let reason = reason.map(str::trim).unwrap_or("");
+    if reason.is_empty() {
+        if required {
+            errors.add_as("reason", "Reason", "blank", "can't be blank");
+        }
+    } else if reason.chars().count() > REASON_SIZE_LIMIT {
+        errors.add_as(
+            "reason",
+            "Reason",
+            "too_long",
+            "is too long (maximum is 420 characters)",
+        );
+    }
+}
+
+/// `agreement`'s acceptance, then `date_of_birth` against `Setting.min_age`.
+async fn validate_agreement_and_age(
+    state: &AppState,
+    errors: &mut crate::email_subscriptions::ValidationErrors,
+    form: &ApiCreateAccountForm,
+) {
     if !form.agreement.0 {
         errors.add_as(
             "agreement",
@@ -360,20 +384,6 @@ async fn validate_registration(
             Some(_) => {}
         }
     }
-    let reason = form.reason.as_deref().map(str::trim).unwrap_or("");
-    if reason.is_empty() {
-        if reason_required {
-            errors.add_as("reason", "Reason", "blank", "can't be blank");
-        }
-    } else if reason.chars().count() > REASON_SIZE_LIMIT {
-        errors.add_as(
-            "reason",
-            "Reason",
-            "too_long",
-            "is too long (maximum is 420 characters)",
-        );
-    }
-    errors
 }
 
 /// `attribute :date_of_birth, :date`: an ISO 8601 date.
@@ -454,37 +464,38 @@ pub async fn register(
         return Err(AppError::Forbidden.into());
     }
 
-    let username = form.username.trim().to_lowercase();
+    // `normalizes :username, with: squish`: the case is kept as entered.
+    let username = form.username.trim().to_string();
     let email = form.email.trim().to_lowercase();
     let locale = form.locale.clone().unwrap_or_else(|| "en".into());
-    let mut errors = validate_registration(
-        state,
-        form,
-        reason_required(state, instance, invite_id.filter(|_| valid_invitation)).await,
-    )
-    .await;
+    // `User`'s validations, every one of them, in the order the model runs
+    // them, so that a refusal names everything wrong at once.
+    let mut errors = crate::email_subscriptions::ValidationErrors::default();
+    let email_label = "E-mail address";
+    // Devise's validatable: the address present, unique among users confirmed
+    // or not, and shaped like one; then the password.
+    let email_shaped = crate::accounts::valid_email(&email);
+    if email.is_empty() {
+        errors.add_as("email", email_label, "blank", "can't be blank");
+    } else {
+        let taken = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1) AS "e!""#,
+            email,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            errors.add_as("email", email_label, "taken", "has already been taken");
+        }
+        if !email_shaped {
+            errors.add_as("email", email_label, "invalid", "is invalid");
+        }
+    }
+    validate_password(&mut errors, &form.password);
 
-    // `Account`'s validations, filed under `username` (`'account.username':
-    // :username`).
+    // The account's, filed under `username` (`'account.username': :username`).
     if username.is_empty() {
         errors.add_as("username", "Username", "blank", "can't be blank");
-    } else if !username
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
-        errors.add_as(
-            "username",
-            "Username",
-            "invalid",
-            "must contain only letters, numbers and underscores",
-        );
-    } else if username.chars().count() > 30 {
-        errors.add_as(
-            "username",
-            "Username",
-            "too_long",
-            "is too long (maximum is 30 characters)",
-        );
     } else {
         // `UniqueUsernameValidator`, which ignores case.
         let taken = sqlx::query_scalar!(
@@ -498,49 +509,63 @@ pub async fn register(
         if taken {
             errors.add_as("username", "Username", "taken", "has already been taken");
         }
-    }
-    // Devise's validatable: present, shaped like an address, and unique
-    // among users confirmed or not.
-    if email.is_empty() {
-        errors.add_as("email", "E-mail address", "blank", "can't be blank");
-    } else if !crate::accounts::valid_email(&email) {
-        errors.add_as("email", "E-mail address", "invalid", "is invalid");
-    } else {
-        let taken = sqlx::query_scalar!(
-            r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1) AS "e!""#,
-            email,
-        )
-        .fetch_one(&state.db)
-        .await?;
-        if taken {
-            errors.add_as("email", "E-mail address", "taken", "has already been taken");
+        if !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            errors.add_as(
+                "username",
+                "Username",
+                "invalid",
+                "must contain only letters, numbers and underscores",
+            );
+        }
+        if username.chars().count() > 30 {
+            errors.add_as(
+                "username",
+                "Username",
+                "too_long",
+                "is too long (maximum is 30 characters)",
+            );
+        }
+        // `UnreservedUsernameValidator`.
+        if crate::moderation::signup::username_blocked(state, &username, false).await {
+            let (attribute, label, key, message) =
+                crate::moderation::signup::Refusal::UsernameReserved.detail();
+            errors.add_as(attribute, label, key, message);
         }
     }
 
-    // The validations that are about moderation: reserved usernames
-    // (`UnreservedUsernameValidator`), unreachable or blocked addresses
-    // (`EmailMxValidator`, `UserEmailValidator`).
-    let mut requires_approval = false;
-    if errors.is_empty() {
-        match crate::moderation::signup::check(
-            state,
-            &username,
-            &email,
-            sign_up_ip,
-            valid_invitation,
-        )
-        .await
-        {
-            Ok(checked) => requires_approval = checked.requires_approval,
-            Err(refusal) => {
-                let (attribute, label, key, message) = refusal.detail();
-                errors.add_as(attribute, label, key, message);
-            }
+    // The invite request's text.
+    validate_reason(
+        &mut errors,
+        form.reason.as_deref(),
+        reason_required(state, instance, invite_id.filter(|_| valid_invitation)).await,
+    );
+
+    // `EmailMxValidator`, then `UserEmailValidator` unless the invite is good.
+    let mut mx_records = Vec::new();
+    if email_shaped {
+        let refusals =
+            crate::moderation::signup::email_refusals(state, &email, sign_up_ip, valid_invitation)
+                .await;
+        mx_records = refusals.mx_records;
+        for refusal in refusals.refusals {
+            let (attribute, label, key, message) = refusal.detail();
+            errors.add_as(attribute, label, key, message);
         }
     }
+
+    validate_agreement_and_age(state, &mut errors, form).await;
+
     if !errors.is_empty() {
         return Err(SignupError::Invalid(errors));
     }
+    // `User#requires_approval?`.
+    let requires_approval = crate::moderation::signup::approval_required(
+        state, &username, &email, mx_records, sign_up_ip,
+    )
+    .await;
 
     // `User#set_approved`.
     let approved = !requires_approval
@@ -748,18 +773,29 @@ pub async fn api_create_account(
 #[derive(Debug, Deserialize)]
 pub struct ConfirmQuery {
     pub token: String,
+    /// Set on the link mailed to a user, as Mastodon's
+    /// `confirmation_instructions` sets it.
+    #[serde(default)]
+    pub redirect_to_app: Option<String>,
 }
 
 /// `Auth::ConfirmationsController#show`: Devise's `confirm_by_token`, for a
-/// link sent within `confirm_within`. A user confirmed for the first time who
-/// signed up through an app is sent back to it with an authorization code;
-/// anyone else to sign in.
-pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Response {
+/// link sent within `confirm_within`, then `after_confirmation_path_for`: the
+/// app the user signed up through, at its first redirect URI as it stands,
+/// when the link asks to go back to it (`redirect_to_app`); the web app for a
+/// browser already signed in; the sign-in page otherwise.
+pub async fn confirm_email(
+    state: AppState,
+    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
+    headers: HeaderMap,
+    Query(q): Query<ConfirmQuery>,
+) -> Response {
     let user = sqlx::query!(
-        r#"SELECT id, confirmed_at IS NULL AS "new_user!", approved, created_by_application_id
-           FROM users
-           WHERE confirmation_token = $1
-             AND confirmation_sent_at > now() - make_interval(days => $2)"#,
+        r#"SELECT u.id, a.redirect_uri AS "redirect_uri?"
+           FROM users u
+           LEFT JOIN oauth_applications a ON a.id = u.created_by_application_id
+           WHERE u.confirmation_token = $1
+             AND u.confirmation_sent_at > now() - make_interval(days => $2)"#,
         q.token,
         crate::accounts::CONFIRM_WITHIN_DAYS,
     )
@@ -777,38 +813,28 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         tracing::error!(error = %format!("{e:#}"), "could not confirm a user");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
+
+    // `confirmation_redirect_uri`: `redirect_uri.lines.first.strip`.
+    let redirect_to_app = matches!(q.redirect_to_app.as_deref(), Some("true" | "1" | "on"));
+    if let (true, Some(uri)) = (redirect_to_app, user.redirect_uri.as_deref()) {
+        let uri = uri.lines().next().unwrap_or("").trim();
+        if let Ok(location) = axum::http::HeaderValue::from_str(uri) {
+            return (
+                StatusCode::SEE_OTHER,
+                [(axum::http::header::LOCATION, location)],
+            )
+                .into_response();
+        }
+    }
+    if crate::api::account::signed_in(&state, &headers, client_ip.and_then(|Extension(c)| c.0))
+        .await
+    {
+        return Redirect::to("/").into_response();
+    }
     let approved = sqlx::query_scalar!("SELECT approved FROM users WHERE id = $1", user.id)
         .fetch_one(&state.db)
         .await
-        .unwrap_or(user.approved);
-
-    if let (true, Some(app_id)) = (user.new_user, user.created_by_application_id) {
-        if let Ok(Some(app)) = sqlx::query!(
-            "SELECT redirect_uri, scopes FROM oauth_applications WHERE id = $1",
-            app_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        {
-            let redirect_uri = app.redirect_uri.lines().next().unwrap_or("").to_string();
-            if !redirect_uri.is_empty() && redirect_uri != "urn:ietf:wg:oauth:2.0:oob" {
-                let code = crypto::generate_token(64);
-                if sqlx::query!(
-                    r#"INSERT INTO oauth_access_grants
-                         (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
-                       VALUES ($1, $2, $3, $4, $5, 600, now())"#,
-                    app_id, user.id, code, redirect_uri, app.scopes,
-                ).execute(&state.db).await.is_ok() {
-                    let sep = if redirect_uri.contains('?') { '&' } else { '?' };
-                    return Redirect::to(&format!("{}{}code={}", redirect_uri, sep, code))
-                        .into_response();
-                }
-            }
-        }
-    }
-
-    // No app to hand back to — a signup from eunha's own form, or one whose app
-    // registered no redirect. Sign-in is the next step either way.
+        .unwrap_or(false);
     if approved {
         Redirect::to("/account/login?confirmed=1").into_response()
     } else {
@@ -898,8 +924,12 @@ pub async fn resend_email_confirmation(
                 )));
             }
             crate::accounts::set_unconfirmed_email(&state.db, user.id, &email).await?;
+            // `after_commit :send_reconfirmation_instructions`, for the
+            // address `update!` held back.
+            crate::accounts::send_confirmation_instructions(&state, user.id).await?;
         }
     }
+    // `resend_confirmation_instructions`: the same link, once more.
     crate::accounts::send_confirmation_instructions(&state, user.id).await?;
     Ok(Json(serde_json::json!({})))
 }

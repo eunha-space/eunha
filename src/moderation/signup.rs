@@ -241,13 +241,6 @@ impl Refusal {
     }
 }
 
-/// The outcome of a sign-up's checks.
-pub struct Checked {
-    /// `User#requires_approval?`: an IP, email domain or username block that
-    /// lets the sign-up through only into the approval queue.
-    pub requires_approval: bool,
-}
-
 /// `EmailMxValidator`: the address's domain resolves to a mail server, and
 /// neither it nor its mail servers are blocked. Returns the MX hosts.
 async fn email_mx(
@@ -271,20 +264,78 @@ async fn email_mx(
 }
 
 /// `UserEmailValidator`: the address's domain is not blocked, nor the address
-/// itself (`CanonicalEmailBlock`).
+/// itself (`CanonicalEmailBlock`); both may be wrong at once.
 async fn user_email(
     state: &AppState,
     email: &str,
     domain: &str,
     sign_up_ip: Option<IpAddr>,
-) -> Result<(), Refusal> {
+) -> Vec<Refusal> {
+    let mut refusals = Vec::new();
     if email_domain_blocked(state, &[domain.to_owned()], false, sign_up_ip).await {
-        return Err(Refusal::EmailBlocked);
+        refusals.push(Refusal::EmailBlocked);
     }
     if canonical_email_blocked(state, email).await {
-        return Err(Refusal::EmailTaken);
+        refusals.push(Refusal::EmailTaken);
     }
-    Ok(())
+    refusals
+}
+
+/// What the address's moderation validations found: each refusal, in the
+/// order `EmailMxValidator` and `UserEmailValidator` add them, and the
+/// address's mail servers, which [`approval_required`] weighs.
+pub struct EmailRefusals {
+    pub refusals: Vec<Refusal>,
+    pub mx_records: Vec<String>,
+}
+
+/// `EmailMxValidator` and, unless the sign-up holds an invite good for use,
+/// `UserEmailValidator`, all of whose errors stand together.
+pub async fn email_refusals(
+    state: &AppState,
+    email: &str,
+    sign_up_ip: Option<IpAddr>,
+    valid_invitation: bool,
+) -> EmailRefusals {
+    let Some(domain) = email_domain(email) else {
+        return EmailRefusals {
+            refusals: vec![Refusal::EmailInvalid],
+            mx_records: vec![],
+        };
+    };
+    let mut refusals = Vec::new();
+    let mx_records = match email_mx(state, &domain, sign_up_ip).await {
+        Ok(records) => records,
+        Err(refusal) => {
+            refusals.push(refusal);
+            vec![]
+        }
+    };
+    if !valid_invitation {
+        refusals.extend(user_email(state, email, &domain, sign_up_ip).await);
+    }
+    EmailRefusals {
+        refusals,
+        mx_records,
+    }
+}
+
+/// `User#requires_approval?`: an IP, email domain (or mail server) or
+/// username block that lets the sign-up through only into the approval queue.
+pub async fn approval_required(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    mx_records: Vec<String>,
+    sign_up_ip: Option<IpAddr>,
+) -> bool {
+    let mut domains = mx_records;
+    if let Some(domain) = email_domain(email) {
+        domains.push(domain);
+    }
+    crate::remote_ip::sign_up_requires_approval(state, sign_up_ip).await
+        || email_domain_blocked(state, &domains, true, sign_up_ip).await
+        || username_blocked(state, username, true).await
 }
 
 /// The email validations a user made outside the sign-up flow still meets —
@@ -295,37 +346,15 @@ pub async fn check_email(state: &AppState, email: &str, confirmed: bool) -> Resu
     let domain = email_domain(email).ok_or(Refusal::EmailInvalid)?;
     email_mx(state, &domain, None).await?;
     if !confirmed {
-        user_email(state, email, &domain, None).await?;
+        if let Some(refusal) = user_email(state, email, &domain, None)
+            .await
+            .into_iter()
+            .next()
+        {
+            return Err(refusal);
+        }
     }
     Ok(())
-}
-
-/// The sign-up validations that are about moderation. `valid_invitation`
-/// skips the email provider checks, as `UserEmailValidator` does.
-pub async fn check(
-    state: &AppState,
-    username: &str,
-    email: &str,
-    sign_up_ip: Option<IpAddr>,
-    valid_invitation: bool,
-) -> Result<Checked, Refusal> {
-    // `UnreservedUsernameValidator`
-    if username_blocked(state, username, false).await {
-        return Err(Refusal::UsernameReserved);
-    }
-    let domain = email_domain(email).ok_or(Refusal::EmailInvalid)?;
-    let mx_records = email_mx(state, &domain, sign_up_ip).await?;
-    if !valid_invitation {
-        user_email(state, email, &domain, sign_up_ip).await?;
-    }
-
-    // `requires_approval?`
-    let mut approval_domains = mx_records;
-    approval_domains.push(domain);
-    let requires_approval = crate::remote_ip::sign_up_requires_approval(state, sign_up_ip).await
-        || email_domain_blocked(state, &approval_domains, true, sign_up_ip).await
-        || username_blocked(state, username, true).await;
-    Ok(Checked { requires_approval })
 }
 
 /// `User#requires_approval?` alone, asked again when a confirmed sign-up

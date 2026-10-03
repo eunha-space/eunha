@@ -166,26 +166,37 @@ There are two ways in, as on Mastodon:
     with an access token for the new user, with the app's scopes. Until the
     address is confirmed that token authenticates, but where Mastodon's
     `require_user!` runs it is refused with `403` and
-    `Your login is missing a confirmed e-mail address`. Following the link
-    sends a user who signed up through an app with a redirect URI back to it
-    with an authorization code.
+    `Your login is missing a confirmed e-mail address`. The link mailed to a
+    user who signed up through an app carries `redirect_to_app=true`, and
+    following it sends the browser to the app's first redirect URI as it
+    stands; the app learns the address is confirmed by asking
+    `GET /api/v1/emails/check_confirmation` with its token. Without an app
+    the link leads to the web app for a browser already signed in, and to
+    the sign-in page otherwise.
  -  `POST /auth`, which the sign-up page posts to (form-encoded or JSON, no
     token). The new user is signed in and sent to `/auth/setup`, Mastodon's
     `Auth::SetupController`: it names the address the link went to and lets the
     user correct it and have the link sent again. An unconfirmed user who signs
-    in later is sent there too, and so is one who opens the account pages.
+    in later is sent there too, from the sign-in page or the authorization
+    page an app sends them to, and so is one who opens the account pages.
 
 `POST /api/v1/emails/confirmations` is Mastodon's: for the app the user signed
 up through, while the address awaits confirmation, it sends the link again,
 and with `email` it puts the address right first; the new address waits in
-`unconfirmed_email` and the link goes to it.
+`unconfirmed_email` and the link goes to it, twice, as Devise sends it: once
+for the address held back, once as the resend. Correcting the address on
+`/auth/setup` does the same.
 `GET /api/v1/emails/check_confirmation` answers whether the address is
 confirmed.
 
 Both check what Mastodon 4.7's `User` validates, and answer a refusal as
 `ValidationErrorFormatter` does: `Validation failed: …` with per-attribute
 `ERR_*` codes in `details`, the attribute named in the message as Mastodon's
-locale names it (`E-mail address`, `Service agreement`, `Reason`).
+locale names it (`E-mail address`, `Service agreement`, `Reason`). Every
+validation runs, the moderation ones among them, so a refusal names
+everything wrong with the sign-up at once. The username is kept as entered,
+case and all; whether it is taken ignores case, as every lookup by username
+does.
 
  -  The username is letters, digits and underscores, at most 30 characters,
     and not taken by another local account in any case (`ERR_TAKEN`), nor

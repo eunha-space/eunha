@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id, u.encrypted_password\n           FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           WHERE lower(u.email) = lower($1)\n             AND u.confirmed_at IS NOT NULL\n             AND u.disabled = false",
+  "query": "SELECT u.id, u.encrypted_password\n           FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           WHERE lower(u.email) = lower($1)\n             AND u.disabled = false",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "64aa15b921ae6161ae3951fb20b408358bdf460a37a50ef12860c37a62eecf94"
+  "hash": "61e818929ad55cbbf412c350914daffe69e1e65c69208ef2de17f700d1c1e98e"
 }

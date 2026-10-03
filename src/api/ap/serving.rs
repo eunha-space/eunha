@@ -1043,7 +1043,7 @@ async fn by_username(ctx: &Ctx, username: &str) -> AppResult<Option<ActorRef>> {
         return Ok(Some(ActorRef::new("instance", "")));
     }
     let account = sqlx::query!(
-        "SELECT id, username, id_scheme FROM accounts WHERE username = $1 AND domain IS NULL",
+        "SELECT id, username, id_scheme FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL",
         username,
     )
     .fetch_optional(&ctx.data().db)

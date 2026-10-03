@@ -853,6 +853,27 @@ pub async fn authorize_submit(
                 ..
             },
         ) => {
+            // `require_functional!`, which the authorization page runs once
+            // the user is signed in: an address still unconfirmed sends them
+            // to `auth/setup`, signed in, the page kept to come back to
+            // (`store_current_location`).
+            if !user_confirmed(&state, user_id).await {
+                let back = format!(
+                    "/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}",
+                    urlencoding::encode(&client_id),
+                    urlencoding::encode(&redirect_uri),
+                    urlencoding::encode(&scope),
+                );
+                return crate::api::account::sign_in_and_redirect(
+                    &state,
+                    user_id,
+                    ip,
+                    user_agent.as_deref(),
+                    "/auth/setup",
+                    Some(&back),
+                )
+                .await;
+            }
             let scope = (!scope.is_empty()).then_some(scope);
             match issue_grant(&state, &client_id, &redirect_uri, scope, user_id).await {
                 Ok(redirect_url) => Redirect::to(&redirect_url).into_response(),
@@ -881,7 +902,6 @@ async fn check_password(
            FROM users u
            JOIN accounts a ON a.id = u.account_id
            WHERE lower(u.email) = lower($1)
-             AND u.confirmed_at IS NOT NULL
              AND u.disabled = false"#,
         email.trim(),
     )
@@ -909,6 +929,19 @@ async fn check_password(
         return None;
     }
     Some(user.id)
+}
+
+/// Whether the user has confirmed their address.
+async fn user_confirmed(state: &AppState, user_id: i64) -> bool {
+    sqlx::query_scalar!(
+        r#"SELECT confirmed_at IS NOT NULL AS "confirmed!" FROM users WHERE id = $1"#,
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// `Oauth::AuthorizationsController#create`: an authorization code for the

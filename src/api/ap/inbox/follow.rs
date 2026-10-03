@@ -86,9 +86,9 @@ pub(super) async fn handle_follow(
                 // https://{domain}/users/{username}
                 ["users", username] => {
                     sqlx::query_scalar!(
-                        "SELECT id FROM accounts WHERE username = $1 AND domain IS NULL",
-                        username,
-                    )
+                    "SELECT id FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL",
+                    username,
+                )
                     .fetch_optional(&state.db)
                     .await?
                 }

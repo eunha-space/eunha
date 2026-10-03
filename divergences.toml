@@ -254,34 +254,6 @@ since = "4.7.0"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "confirmation-link-hands-the-app-a-code"
-kind = "behaviour"
-summary = "Confirming a sign-up made through an app sends the browser back to it with an authorization code"
-mastodon = """
-The confirmation mail's link carries `redirect_to_app=true` for a user who \
-signed up through an app, and `Auth::ConfirmationsController` then sends the \
-browser to the app's first redirect URI as it stands, with nothing added; the \
-app learns that the address is confirmed by polling \
-`GET /api/v1/emails/check_confirmation` with the token it was given at sign-up. \
-Without an app, or once signed in, the browser goes to the sign-in page or \
-`/start`."""
-eunha = """
-A user confirmed for the first time who signed up through an app with a \
-redirect URI other than `urn:ietf:wg:oauth:2.0:oob` is sent to that URI with \
-`code=`, an authorization code for the app's scopes good for ten minutes, as \
-the authorization flow would hand it. Anyone else is sent to the sign-in page, \
-which says the address is confirmed, or that the account now awaits approval."""
-why = """
-An app that lost the token it was given at sign-up — reinstalled, or opened on \
-another device from the mail — has nothing to poll with, and following \
-Mastodon would leave the user to sign in again by hand. The code lets the app \
-finish the sign-in it started; an app that does not expect one ignores the \
-extra parameter, and Mastodon's own redirect target is unchanged otherwise."""
-evidence = "tests/integration/surfaces/sign_up.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "command-line-force-checks-before-deleting"
 kind = "behaviour"
 summary = "`eunha accounts create --reattach --force` deletes nothing for an account it would refuse"

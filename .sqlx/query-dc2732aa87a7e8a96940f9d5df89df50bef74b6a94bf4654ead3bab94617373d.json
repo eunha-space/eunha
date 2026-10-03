@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users u SET\n             confirmation_token = CASE\n                 WHEN u.confirmation_token IS NOT NULL\n                      AND u.confirmation_sent_at > now() - make_interval(days => $3)\n                 THEN u.confirmation_token ELSE $2 END,\n             confirmation_sent_at = CASE\n                 WHEN u.confirmation_token IS NOT NULL\n                      AND u.confirmation_sent_at > now() - make_interval(days => $3)\n                 THEN u.confirmation_sent_at ELSE now() END\n           FROM accounts a\n           WHERE u.id = $1 AND a.id = u.account_id\n           RETURNING u.confirmation_token AS \"token!\",\n                     COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS \"to!\", u.locale,\n                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS \"reconfirming!\",\n                     (u.created_by_application_id IS NOT NULL) AS \"from_app!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "to!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "reconfirming!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "from_app!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "dc2732aa87a7e8a96940f9d5df89df50bef74b6a94bf4654ead3bab94617373d"
+}

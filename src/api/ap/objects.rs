@@ -59,7 +59,7 @@ pub async fn load_local_account(
         AccountRef::Username(username) => {
             sqlx::query_as!(
                 crate::db::models::Account,
-                "SELECT * FROM accounts WHERE username = $1 AND domain IS NULL",
+                "SELECT * FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL",
                 username,
             )
             .fetch_optional(&state.db)

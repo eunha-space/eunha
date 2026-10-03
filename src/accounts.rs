@@ -768,7 +768,8 @@ pub async fn send_confirmation_instructions(
            WHERE u.id = $1 AND a.id = u.account_id
            RETURNING u.confirmation_token AS "token!",
                      COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS "to!", u.locale,
-                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!""#,
+                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!",
+                     (u.created_by_application_id IS NOT NULL) AS "from_app!""#,
         user_id,
         fresh,
         CONFIRM_WITHIN_DAYS,
@@ -778,8 +779,15 @@ pub async fn send_confirmation_instructions(
     else {
         return Ok(());
     };
+    // `confirmation_url`: with `redirect_to_app: 'true'` on the confirmation
+    // of a user who signed up through an app, as its button carries it.
+    let back_to_app = if user.from_app && !user.reconfirming {
+        "&redirect_to_app=true"
+    } else {
+        ""
+    };
     let url = format!(
-        "https://{}/auth/confirm?token={}",
+        "https://{}/auth/confirm?token={}{back_to_app}",
         state.instance.domain, user.token
     );
     let locale = user.locale.unwrap_or_else(|| "en".into());
@@ -985,7 +993,7 @@ pub async fn select(
         "SELECT * FROM accounts
          WHERE domain IS NULL AND id > 0
            AND suspended_at IS NULL AND requested_deletion_at IS NULL
-           AND ($1::text[] IS NULL OR username = ANY($1))
+           AND ($1::text[] IS NULL OR lower(username) = ANY(SELECT lower(u) FROM unnest($1::text[]) u))
          ORDER BY id",
     )
     .bind(&names)
@@ -994,7 +1002,11 @@ pub async fn select(
     let unknown = names
         .unwrap_or_default()
         .into_iter()
-        .filter(|name| !accounts.iter().any(|account| &account.username == name))
+        .filter(|name| {
+            !accounts
+                .iter()
+                .any(|account| account.username.eq_ignore_ascii_case(name))
+        })
         .collect();
     Ok((accounts, unknown))
 }
@@ -1411,7 +1423,8 @@ pub async fn pending_signups_waiting(db: &PgPool) -> Result<u64> {
 /// the sign-up was made, so the link still confirms it within
 /// [`CONFIRM_WITHIN_DAYS`]. Approval is what `User#set_approved` gives on the
 /// instance's registrations and the invite; a block asking for approval is
-/// weighed again on confirming (`grant_approval_on_confirmation?`). `eunha
+/// weighed again on confirming (`grant_approval_on_confirmation?`). The
+/// `account.created` webhook is queued for the server's job loops. `eunha
 /// migrate` runs this before the migration that drops the table; nothing
 /// happens once it is gone.
 pub async fn convert_pending_signups(
@@ -1454,6 +1467,9 @@ pub async fn convert_pending_signups(
     let open = crate::settings::registrations_mode_in(db, instance)
         .await
         .open();
+    let jobs_ready: bool = sqlx::query_scalar("SELECT to_regclass('eunha.jobs') IS NOT NULL")
+        .fetch_one(db)
+        .await?;
     for (
         username,
         email,
@@ -1534,6 +1550,20 @@ pub async fn convert_pending_signups(
                 .bind(id)
                 .execute(db)
                 .await?;
+        }
+        // `User#trigger_webhooks`, `after_create_commit`: queued for the
+        // server's job loops, as `TriggerWebhookWorker.perform_async` queues
+        // it for Sidekiq. A database too old to have the job queue yet has no
+        // webhooks to deliver to either.
+        if jobs_ready {
+            crate::jobs::perform_async_in(
+                db,
+                crate::moderation::webhooks::TriggerWebhookWorker {
+                    event: "account.created".to_owned(),
+                    object: crate::moderation::webhooks::Object::Account(created.account_id),
+                },
+            )
+            .await?;
         }
         sqlx::query("DELETE FROM eunha.pending_signups WHERE confirmation_token = $1")
             .bind(&token)

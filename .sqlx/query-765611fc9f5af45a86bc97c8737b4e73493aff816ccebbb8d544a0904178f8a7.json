@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, a.redirect_uri AS \"redirect_uri?\"\n           FROM users u\n           LEFT JOIN oauth_applications a ON a.id = u.created_by_application_id\n           WHERE u.confirmation_token = $1\n             AND u.confirmation_sent_at > now() - make_interval(days => $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "redirect_uri?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "765611fc9f5af45a86bc97c8737b4e73493aff816ccebbb8d544a0904178f8a7"
+}

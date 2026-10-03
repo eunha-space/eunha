@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.local AS collection_local, c.id AS collection_id,\n                  c.uri AS \"collection_uri?\", a.uri AS \"account_uri?\"\n           FROM collection_items ci\n           JOIN collections c ON c.id = ci.collection_id\n           JOIN accounts a ON a.id = ci.account_id\n           WHERE ci.id = $1 AND ci.state = 1\n             AND a.username = $2 AND a.domain IS NULL",
+  "query": "SELECT c.local AS collection_local, c.id AS collection_id,\n                  c.uri AS \"collection_uri?\", a.uri AS \"account_uri?\"\n           FROM collection_items ci\n           JOIN collections c ON c.id = ci.collection_id\n           JOIN accounts a ON a.id = ci.account_id\n           WHERE ci.id = $1 AND ci.state = 1\n             AND lower(a.username) = lower($2) AND a.domain IS NULL",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       true
     ]
   },
-  "hash": "3e83993ddab80e76c06b7ddfd3db58482e4a038e2b970f305b80dfc1e0557056"
+  "hash": "57afb1d4e3f624184e05cbecc67114db2b01ea8f6c6c22f679a042d96a5790b7"
 }
