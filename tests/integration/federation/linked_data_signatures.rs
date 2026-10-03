@@ -11,7 +11,8 @@ use crate::helpers::TestContext;
 
 /// A remote account with a key, known here as Mastodon would know it.
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
@@ -32,7 +33,8 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 /// Give alice a key and a remote follower, so that what she posts is queued.
 async fn alice_with_a_follower(ctx: &TestContext) -> (i64, String) {
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice_id)
         .bind(&priv_pem)

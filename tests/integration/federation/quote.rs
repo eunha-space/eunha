@@ -91,7 +91,8 @@ async fn test_quote_consent_handshake_between_instances() {
     let (bob_in_a, _) = seed_remote_account(&a.db, "alice", &b.domain).await;
     let s_in_a = seed_remote_status(&a.db, bob_in_a, &s_uri).await;
     // bob signs the Accept he later sends to A, so A must know bob's public key.
-    let (bob_priv, bob_pub) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (bob_priv, bob_pub) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query!(
         "UPDATE accounts SET public_key = $2 WHERE id = $1",
         bob_in_a,
@@ -150,7 +151,8 @@ async fn test_quote_consent_handshake_between_instances() {
     let (alice_in_b, _) = seed_remote_account(&b.db, "alice-remote", &a.domain).await;
     // Override the seeded uri to alice's real actor uri so resolution matches,
     // and store alice's public key so B can verify her signed QuoteRequest.
-    let (alice_priv, alice_pub) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (alice_priv, alice_pub) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query!(
         "UPDATE accounts SET uri = $2, url = $2, public_key = $3 WHERE id = $1",
         alice_in_b,
@@ -463,7 +465,8 @@ async fn seed_remote_with_key(
     username: &str,
     domain: &str,
 ) -> (i64, String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
@@ -483,7 +486,8 @@ async fn seed_remote_with_key(
 
 /// Give `account_id` a key, and return its public half.
 async fn give_key(ctx: &TestContext, account_id: i64) -> String {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(account_id)
         .bind(&priv_pem)

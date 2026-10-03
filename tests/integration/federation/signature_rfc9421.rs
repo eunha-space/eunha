@@ -13,7 +13,8 @@ async fn test_inbound_rfc9421_activity_is_accepted() {
     use crate::helpers::TestContext;
 
     let ctx = TestContext::new("rfc9421-in").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/kim";
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
@@ -66,7 +67,8 @@ async fn test_inbound_rfc9421_rejects_a_swapped_body() {
     use crate::helpers::TestContext;
 
     let ctx = TestContext::new("rfc9421-swap").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/lee";
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)

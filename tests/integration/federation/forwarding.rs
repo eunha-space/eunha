@@ -7,7 +7,8 @@ use serde_json::{json, Value};
 use crate::helpers::TestContext;
 
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
@@ -38,7 +39,8 @@ async fn queued_for(ctx: &TestContext, inbox: &str) -> Vec<Value> {
 #[tokio::test]
 async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
     let ctx = TestContext::new("forward-reply").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )
@@ -134,7 +136,8 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
 #[tokio::test]
 async fn test_profiles_are_updated_in_batch_with_their_avatar() {
     let ctx = TestContext::new("distribute-profiles").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2,
              avatar_file_name = 'face.png', avatar_content_type = 'image/png',
@@ -229,7 +232,8 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
 #[tokio::test]
 async fn test_followers_are_moved_from_a_previous_domain() {
     let ctx = TestContext::new("move-domain").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )

@@ -227,7 +227,8 @@ async fn spawn_fake() -> Fake {
     let base = format!("http://{}", listener.local_addr().unwrap());
     let pem = eunha::fasp::keys::generate_private_key_pem().unwrap();
     let (seed, public) = eunha::fasp::keys::parse_private_key_pem(&pem).unwrap();
-    let (_, rsa_public) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (_, rsa_public) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let mut documents = HashMap::new();
     for name in ["eve", "frank"] {
         let actor = format!("{base}/users/{name}");

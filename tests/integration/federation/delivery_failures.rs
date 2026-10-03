@@ -145,7 +145,8 @@ async fn a_server_that_delivers_to_us_is_available_again() {
     let ctx = TestContext::new("delivery-failures-inbound").await;
     let remote = host("back");
     let inbox_host = host("inbox");
-    let (private_key, public_key) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (private_key, public_key) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let carol = format!("https://{remote}/users/carol");
     sqlx::query(
         r#"INSERT INTO accounts

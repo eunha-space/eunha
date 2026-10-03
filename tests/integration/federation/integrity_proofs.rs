@@ -19,7 +19,8 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     // Only accounts with a signing key federate, and only remote followers
     // produce a delivery.
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice_id)
         .bind(&priv_pem)
@@ -147,7 +148,8 @@ async fn test_proofs_are_not_attached_unless_asked_for() {
     let ctx = TestContext::new("proof-off").await;
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
 
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice_id)
         .bind(&priv_pem)

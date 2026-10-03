@@ -212,7 +212,8 @@ async fn test_inbox_deliveries_stay_with_the_tenant_addressed() {
     let a = TestContext::new("tenant-inbox-a").await;
     let b = TestContext::new("tenant-inbox-b").await;
     let base_url = serve(vec![a.state.clone(), b.state.clone()]).await;
-    let (private_key, public_key) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (private_key, public_key) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let carol = "https://remote-tenant.invalid/users/carol";
     seed_remote_actor(&a.db, carol, &public_key).await;
     seed_remote_actor(&b.db, carol, &public_key).await;

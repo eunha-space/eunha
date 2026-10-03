@@ -8,7 +8,8 @@ use crate::helpers::TestContext;
 
 /// Seed a remote account with a real keypair so it can sign.
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
@@ -50,7 +51,8 @@ async fn test_an_actor_updates_only_itself() {
     let (_, mallory, mallory_key) = seed_remote(&ctx, "mallory", "evil.invalid").await;
     let (victim_id, victim, _) = seed_remote(&ctx, "victim", "victim.invalid").await;
     let before = display_name_and_key(&ctx, victim_id).await;
-    let (_, forged_key) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (_, forged_key) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
 
     send(
         &ctx,

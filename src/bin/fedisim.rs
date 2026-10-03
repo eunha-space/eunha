@@ -260,8 +260,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let args = Args::parse();
 
-    let generating =
-        (0..args.keys).map(|_| eunha::tenants::spawn_blocking(eunha::crypto::generate_rsa_keypair));
+    let generating = (0..args.keys).map(|_| {
+        eunha::tenants::spawn_blocking(|| {
+            ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+        })
+    });
     let mut keys = Vec::with_capacity(args.keys);
     for handle in generating {
         let (private_pem, public_pem) = handle.await??;

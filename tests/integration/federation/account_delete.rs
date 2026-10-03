@@ -8,7 +8,8 @@ use crate::helpers::TestContext;
 
 /// Seed a remote ActivityPub account with a real keypair so it can sign.
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(

@@ -68,7 +68,8 @@ async fn serve(State(remote): State<Remote>, uri: Uri) -> axum::response::Respon
 async fn spawn_remote(remote: &Remote) -> (String, String) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (private_pem, public_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let actor = format!("{base}/users/eve");
     remote.put(
         "/users/eve",

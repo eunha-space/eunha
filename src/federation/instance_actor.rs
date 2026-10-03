@@ -33,10 +33,11 @@ pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)>
         }
     }
 
-    let (private_pem, public_pem) =
-        crate::tenants::spawn_blocking(crate::crypto::generate_rsa_keypair)
-            .await?
-            .map_err(|e| anyhow::anyhow!("instance actor keygen: {e}"))?;
+    let (private_pem, public_pem) = crate::tenants::spawn_blocking(|| {
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+    })
+    .await?
+    .map_err(|e| anyhow::anyhow!("instance actor keygen: {e}"))?;
 
     // The account row has to exist before a keypair can reference it.
     sqlx::query!(

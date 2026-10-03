@@ -58,35 +58,6 @@ pub fn generate_token(len: usize) -> String {
         .collect()
 }
 
-/// A new 2048-bit RSA keypair as PEM, `(private, public)`.
-///
-/// Generating one takes on the order of a hundred milliseconds of CPU, so async
-/// code runs it with `crate::tenants::spawn_blocking` rather than on a worker.
-pub fn generate_rsa_keypair() -> AppResult<(String, String)> {
-    use pkcs8::spki::EncodePublicKey;
-    use pkcs8::LineEnding;
-    use rsa::pkcs8::EncodePrivateKey;
-    use rsa::rand_core::OsRng;
-    use rsa::RsaPrivateKey;
-
-    let priv_key = RsaPrivateKey::new(&mut OsRng, 2048)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("RSA keygen failed: {e}")))?;
-
-    let priv_doc = priv_key
-        .to_pkcs8_pem(LineEnding::LF)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("PKCS8 encode failed: {e}")))?;
-    let priv_pem = std::str::from_utf8(priv_doc.as_bytes())
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("PEM UTF-8: {e}")))?
-        .to_string();
-
-    let pub_pem = priv_key
-        .to_public_key()
-        .to_public_key_pem(LineEnding::LF)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("SPKI encode failed: {e}")))?;
-
-    Ok((priv_pem, pub_pem))
-}
-
 fn hash_password_blocking(password: &str) -> AppResult<String> {
     use argon2::password_hash::{rand_core::OsRng, SaltString};
     use argon2::{Argon2, PasswordHasher};

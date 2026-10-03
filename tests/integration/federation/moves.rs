@@ -11,7 +11,8 @@ use crate::helpers::{seed_user, TestContext};
 
 async fn seed_remote(ctx: &TestContext, username: &str) -> (i64, String, String) {
     let domain = format!("{username}.invalid");
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
@@ -85,7 +86,8 @@ async fn test_an_inbound_move_moves_local_followers_and_relationships() {
 
     // Carol, who can sign, follows olga without reblogs, and keeps a note
     // on her.
-    let (carol_private, carol_public) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (carol_private, carol_public) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
         .bind(&carol_private)
         .bind(&carol_public)
@@ -343,7 +345,8 @@ async fn test_a_follower_moved_to_a_remote_account_leaves_once_the_follow_is_del
     let (olga_id, olga, _) = seed_remote(&ctx, "olga").await;
     let (nora_id, nora, _) = seed_remote(&ctx, "nora").await;
     let (carol_id, _) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
-    let (carol_private, carol_public) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (carol_private, carol_public) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
         .bind(&carol_private)
         .bind(&carol_public)

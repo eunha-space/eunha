@@ -64,7 +64,8 @@ async fn serve(State(remote): State<Remote>, Path(path): Path<String>) -> axum::
 
 /// A remote account with a key, known here as Mastodon would know it.
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (String, String) {
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = format!("https://{domain}/users/{username}");
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)

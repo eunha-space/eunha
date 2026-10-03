@@ -82,7 +82,8 @@ async fn follow_from_new_actor(label: &str, shared_inbox: bool) -> usize {
     eunha::federation::webfinger::use_plain_http_for_tests();
     let ctx = TestContext::reaching_loopback(label).await;
 
-    let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (private_pem, public_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let (actor_uri, fetches) = spawn_remote_actor(public_pem, shared_inbox).await;
 
     let follow = json!({
@@ -206,7 +207,8 @@ async fn test_a_portable_actor_follows() {
 
     let ctx = TestContext::reaching_loopback("portable-follow").await;
     // Only an account with a signing key answers a Follow.
-    let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (private_pem, public_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )

@@ -38,7 +38,8 @@ async fn test_signature_actor_host_mismatch_does_nothing() {
     let ctx = TestContext::new("sig-mismatch").await;
 
     // A real keypair for a key on attacker.invalid …
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let attacker_uri = "https://attacker.invalid/users/eve";
     sqlx::query!(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
@@ -132,7 +133,8 @@ async fn test_mastodon_shaped_signature_is_accepted() {
     use sha2::Digest as _;
 
     let ctx = TestContext::new("cavage-mastodon").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/mona";
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)

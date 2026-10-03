@@ -532,7 +532,8 @@ async fn test_a_local_move_rewrites_follows_and_carries_relationships() {
 #[tokio::test]
 async fn test_a_move_is_sent_to_followers_and_blockers() {
     let ctx = TestContext::new("move-delivery").await;
-    let (priv_pem, pub_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )

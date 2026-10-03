@@ -53,10 +53,11 @@ pub async fn create_local(
     user: NewLocalUser<'_>,
 ) -> Result<LocalUser> {
     // A 2048-bit key is on the order of a hundred milliseconds of CPU.
-    let (private_key, public_key) =
-        crate::tenants::spawn_blocking(crate::crypto::generate_rsa_keypair)
-            .await
-            .context("generating a signing key did not finish")??;
+    let (private_key, public_key) = crate::tenants::spawn_blocking(|| {
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+    })
+    .await
+    .context("generating a signing key did not finish")??;
 
     let url = format!("https://{}/@{}", domain, user.username);
     let new_account_id = crate::snowflake::next_id();
