@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (a.domain IS NULL) AS \"local!\" FROM statuses s\n           JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "76bc76b6a9058651c2c3907b1863a4b9e6cd3b764ca9019115e145187bc1bc64"
+}

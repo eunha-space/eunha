@@ -12,7 +12,7 @@ What a job is
 -------------
 
 A job is a Mastodon worker class and its arguments, stored under the
-class's name: `EmailDistributionWorker`, `ActivityPub::FetchReplyWorker`,
+class's name: `EmailDistributionWorker`, `FetchReplyWorker`,
 `ActionMailer::MailDeliveryJob`. Each worker keeps its `sidekiq_options`:
 
  -  the queue it waits in: `default`, `push`, `ingress`, `mailers`, `pull`,

@@ -17,7 +17,8 @@ adds the separating colon, so the ACL key pattern for the example is
 `feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
 preview card locks, tombstones, the oEmbed endpoints
 remembered for each domain, posting idempotency, notification
-group state, async refreshes, the days each server failed deliveries on, the
+group state, async refreshes and the job batches that finish them
+(`worker_batch:<id>`), the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
 emailed to an account's subscribers, the users who signed in each day
@@ -32,9 +33,10 @@ search index queues
 (`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
 new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
-`discovery_per_request:*`), whether a domain's accounts have feature approval
-policies (`feature_approval_policy_availability:*`), the circuit breakers on
-deliveries
+`discovery_per_request:*`) and how many posts one chain of fetches may
+(`status_discovery_per_request:*`), whether a domain's accounts have feature
+approval policies (`feature_approval_policy_availability:*`), the circuit
+breakers on deliveries
 (`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the
 `subscribed:<channel>` keys that say a stream listens on one — uses that
 namespace.
@@ -90,7 +92,8 @@ again, which processing an activity tolerates; Mastodon keeps no such record
 at all. Kept in Redis rather than in each process's memory, a redelivery is
 recognised whichever process it reaches. Set
 `redis_coordination_url` to route locks, ActivityPub deletion tombstones,
-posting idempotency, notification grouping, async refreshes (see
+posting idempotency, notification grouping, async refreshes and their job
+batches (see
 [Remote replies](./remote-replies.md)) and the batches of posts waiting for
 [email subscribers](./email-subscriptions.md) to a separate non-evicting Redis
 pool, along with the days each server failed deliveries on,

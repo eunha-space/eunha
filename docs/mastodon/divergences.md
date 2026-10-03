@@ -31,8 +31,8 @@ At the time of writing there are thirty-two. They cover:
  -  how a link preview card reads a page's character set;
  -  which private addresses are refused;
  -  the email subscription API, and unsubscribe links;
- -  how a remote thread's replies are fetched, and how async refresh ids are
-    signed;
+ -  how async refresh ids are signed, and who an embedded note that names
+    another author is taken to be by;
  -  the terms of service admin API and interstitial;
  -  the data export, import and archive takeout API;
  -  the two-factor authentication API, and where a sign-in waits for its

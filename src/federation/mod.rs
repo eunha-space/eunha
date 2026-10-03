@@ -10,6 +10,7 @@ pub mod follow;
 pub mod forwarder;
 pub mod handle;
 pub mod instance_actor;
+pub mod json_ld;
 pub mod json_ld_contexts;
 pub mod keypair;
 pub mod local_uri;

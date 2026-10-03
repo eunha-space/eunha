@@ -587,7 +587,9 @@ pub(crate) async fn remove_status(
     // Decrement original's reblogs_count if this was a boost
     if let Some(original_id) = status.reblog_of_id {
         let _ = sqlx::query!(
-            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0), updated_at = now()
+            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
+                 untrusted_reblogs_count = GREATEST(untrusted_reblogs_count - 1, 0),
+                 updated_at = now()
                WHERE status_id = $1"#,
             original_id
         )
@@ -757,6 +759,7 @@ pub async fn favourite_status(
            VALUES ($1, 1, now(), now())
            ON CONFLICT (status_id) DO UPDATE
              SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1),
+                 untrusted_favourites_count = CASE WHEN status_stats.untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(status_stats.untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - status_stats.favourites_count, 0), 100000000) END,
                  updated_at = now()"#,
         id
     )
@@ -837,6 +840,7 @@ pub async fn unfavourite_status(
 
     sqlx::query!(
         r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1),
+               untrusted_favourites_count = CASE WHEN untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - favourites_count, 0), 100000000) END,
                updated_at = now()
            WHERE status_id = $1"#,
         id
@@ -985,6 +989,7 @@ pub async fn reblog_status(
            VALUES ($1, 1, now(), now())
            ON CONFLICT (status_id) DO UPDATE
              SET reblogs_count = status_stats.reblogs_count + 1,
+                 untrusted_reblogs_count = LEAST(status_stats.untrusted_reblogs_count + 1, 100000000),
                  updated_at = now()"#,
         original_id
     )
@@ -1160,7 +1165,9 @@ pub async fn unreblog_status(
 
     if let Some(ref del) = deleted {
         sqlx::query!(
-            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0), updated_at = now()
+            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
+                 untrusted_reblogs_count = GREATEST(untrusted_reblogs_count - 1, 0),
+                 updated_at = now()
                WHERE status_id = $1"#,
             original_id
         )

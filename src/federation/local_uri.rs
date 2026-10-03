@@ -19,6 +19,12 @@ fn local_path(state: &AppState, uri: &str) -> Option<Vec<String>> {
     Some(url.path_segments()?.map(str::to_owned).collect())
 }
 
+/// Whether a URI is on this instance's domain or one of its aliases
+/// (`ActivityPub::TagManager#local_uri?`).
+pub fn is_local(state: &AppState, uri: &str) -> bool {
+    local_path(state, uri).is_some()
+}
+
 /// The account a URI names, local or already known.
 pub async fn account(state: &AppState, uri: &str) -> Option<i64> {
     match local_path(state, uri) {

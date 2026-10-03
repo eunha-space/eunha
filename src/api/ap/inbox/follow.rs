@@ -510,7 +510,7 @@ pub(super) async fn handle_undo(
                 removed = deleted.rows_affected() > 0;
                 crate::search::elasticsearch::indexing::status_interaction(state, sid).await;
                 sqlx::query!(
-                    r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), updated_at = now() WHERE status_id = $1"#,
+                    r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), untrusted_favourites_count = CASE WHEN untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - favourites_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,
                     sid
                 ).execute(&state.db).await?;
             }
@@ -547,7 +547,7 @@ pub(super) async fn handle_undo(
                             crate::feed::unpush_boost(state, row.account_id, row.id, original_id)
                                 .await;
                             sqlx::query!(
-                                r#"UPDATE status_stats SET reblogs_count = (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL), updated_at = now() WHERE status_id = $1"#,
+                                r#"UPDATE status_stats SET reblogs_count = (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL), untrusted_reblogs_count = CASE WHEN untrusted_reblogs_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_reblogs_count + (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL) - reblogs_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,
                                 original_id,
                             ).execute(&state.db).await?;
                         }

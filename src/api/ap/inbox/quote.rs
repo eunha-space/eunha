@@ -11,10 +11,7 @@ use crate::db::models::{quote_state, vis};
 use crate::quotes::Quote;
 use crate::{error::AppResult, state::AppState};
 
-use super::{
-    fetch_remote_status, fetch_remote_status_prefetched, json_uri, resolve_or_fetch_remote_account,
-    same_host,
-};
+use super::{fetch_remote_status_prefetched, json_uri, resolve_or_fetch_remote_account, same_host};
 
 /// `value_or_id`: a string IRI, or an object's `id`.
 fn value_or_id(v: &Value) -> Option<&str> {
@@ -367,7 +364,14 @@ async fn verify(
     // `fetch_quoted_post_if_needed!`
     if quote.quoted_status_id.is_none() {
         if let Some(uri) = quoted_uri {
-            let found = find_or_fetch_status(state, uri, embedded_quote, depth).await?;
+            // A quoted post whose server does not answer is verified later
+            // (`fetch_and_verify_quote` rescues `HTTP_CONNECTION_ERRORS`
+            // into a `RefetchAndVerifyQuoteWorker`).
+            let found = match find_or_fetch_status(state, uri, embedded_quote, depth).await {
+                Ok(found) => found,
+                Err(error) if super::fetch::unanswered(&error) => return Ok(true),
+                Err(error) => return Err(error),
+            };
             if let Some(found) = found {
                 quote = set_quoted_status(state, quote, found).await?;
             }
@@ -780,8 +784,20 @@ pub(super) async fn handle_quote_request(
             }
         }
     }
+    // `FetchRemoteStatusService.new.call(instrument_uri, on_behalf_of:
+    // quoted_status.account)`, whose unanswered request fails the activity,
+    // to be retried.
     if quoting_id.is_none() && !instrument_uri.is_empty() {
-        quoting_id = fetch_remote_status(state, instrument_uri).await?;
+        quoting_id = super::fetch_remote_status_with(
+            state,
+            instrument_uri,
+            super::FetchOptions {
+                on_behalf_of: Some(quoted.account_id),
+                ..Default::default()
+            },
+        )
+        .await?
+        .map(|(id, _)| id);
     }
     let Some(quoting_id) = quoting_id else {
         return Ok(());

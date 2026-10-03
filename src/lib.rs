@@ -68,6 +68,7 @@ pub mod vacuum;
 pub mod version;
 pub mod web;
 pub mod webauthn;
+pub mod worker_batch;
 
 use axum::{extract::Request, middleware as axum_middleware, response::IntoResponse, Router};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};

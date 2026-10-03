@@ -1,28 +1,23 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, account_id FROM statuses WHERE id = $1",
+  "query": "SELECT id FROM statuses WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "id",
         "type_info": "Int8"
-      },
-      {
-        "ordinal": 1,
-        "name": "account_id",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Int8"
       ]
     },
     "nullable": [
-      false,
       false
     ]
   },
-  "hash": "bd4d75839b23593198b5da605caa693469e0b516fe19dbd274da94ed5747689d"
+  "hash": "e2e02ec85fd9f2b92aede63b24150ff8a1a7713ba62163ccc2dd16fa64ddfddf"
 }

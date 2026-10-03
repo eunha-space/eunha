@@ -60,6 +60,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::api::ap::inbox::quote::RefetchAndVerifyQuoteWorker>(),
         entry::<crate::federation::replies::FetchAllRepliesWorker>(),
         entry::<crate::federation::replies::FetchRepliesWorker>(),
+        entry::<crate::federation::replies::FetchReplyWorker>(),
         entry::<crate::moderation::webhooks::TriggerWebhookWorker>(),
         entry::<crate::moderation::webhooks::DeliveryWorker>(),
         entry::<crate::moderation::suspension::SuspensionWorker>(),

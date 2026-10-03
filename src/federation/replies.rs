@@ -14,19 +14,21 @@
 //!     it answers with an async refresh the client polls; its `result_count`
 //!     counts the statuses that were new to us.
 //!
-//! Both run as jobs (crate::jobs): `ActivityPub::FetchRepliesWorker` and
-//! `ActivityPub::FetchAllRepliesWorker`, on the `pull` queue, retried three
-//! times on `ExponentialBackoff`. Mastodon splits the walk into the worker
-//! and one `FetchReplyWorker` job per reply, which fetches the reply again to
-//! store it. Here the walk does both with the same request: the reply's
-//! document is what is stored and also where its own `replies` collection is
-//! read from (`reply-walk-fetches-each-reply-once`).
+//! Both run as jobs (crate::jobs), as Mastodon's do: `ActivityPub::
+//! FetchRepliesWorker` and `ActivityPub::FetchAllRepliesWorker`, which queue
+//! one `FetchReplyWorker` for each reply they find, all on the `pull` queue,
+//! retried three times on `ExponentialBackoff`. A `FetchReplyWorker` fetches
+//! the reply again and processes it as the `Create` it would have come in —
+//! so its own first page of replies is read in turn — or, when it is already
+//! held, as an `Update`. The walk and the replies it queues are one
+//! [`crate::worker_batch::WorkerBatch`], whose end finishes the refresh.
 
 use std::collections::HashSet;
 
 use serde_json::Value;
 
 use crate::db::models::Status as DbStatus;
+use crate::federation::json_ld::{self, is_present, non_matching_uri_hosts, value_or_id};
 use crate::state::AppState;
 
 /// `Status::FetchRepliesConcern::FETCH_REPLIES_COOLDOWN_MINUTES`.
@@ -70,147 +72,11 @@ pub fn should_fetch_replies(status: &DbStatus) -> bool {
             .is_none_or(|at| at <= now - chrono::Duration::minutes(FETCH_REPLIES_COOLDOWN_MINUTES))
 }
 
-/// The id of an item that is either a URI or an object carrying one
-/// (`JsonLdHelper#value_or_id`).
-fn value_or_id(value: &Value) -> Option<&str> {
-    match value {
-        Value::String(s) => Some(s.as_str()),
-        Value::Object(o) => o.get("id").and_then(Value::as_str),
-        _ => None,
-    }
-}
-
-/// `JsonLdHelper#non_matching_uri_hosts?`: true unless both are HTTP(S) URIs
-/// on the same host.
-pub(crate) fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
-    let host = |uri: &str| {
-        url::Url::parse(uri)
-            .ok()
-            .filter(|u| matches!(u.scheme(), "http" | "https"))
-            .and_then(|u| u.host_str().map(str::to_lowercase))
-    };
-    match (host(base), host(comparison)) {
-        (Some(a), Some(b)) => a != b,
-        _ => true,
-    }
-}
-
-/// `JsonLdHelper#fetch_collection_page`: an embedded page as it is, or a
-/// linked one fetched — only from `reference_uri`'s host, when one is given.
-pub(crate) async fn fetch_collection_page(
-    state: &AppState,
-    collection_or_uri: &Value,
-    reference_uri: Option<&str>,
-) -> Option<Value> {
-    match collection_or_uri {
-        Value::Object(_) => Some(collection_or_uri.clone()),
-        Value::String(uri) => {
-            if reference_uri.is_some_and(|reference| non_matching_uri_hosts(reference, uri)) {
-                return None;
-            }
-            crate::federation::fetch::signed_get_json(state, uri)
-                .await
-                .inspect_err(|error| tracing::debug!(uri, %error, "could not fetch replies page"))
-                .ok()
-                .filter(Value::is_object)
-        }
-        _ => None,
-    }
-}
-
-/// `JsonLdHelper#collection_page_items`.
-pub(crate) fn collection_page_items(collection: &Value) -> Vec<Value> {
-    let items = match collection.get("type").and_then(Value::as_str) {
-        Some("Collection" | "CollectionPage") => collection.get("items"),
-        Some("OrderedCollection" | "OrderedCollectionPage") => collection.get("orderedItems"),
-        _ => None,
-    };
-    match items {
-        Some(Value::Array(items)) => items.clone(),
-        Some(Value::Null) | None => Vec::new(),
-        Some(item) => vec![item.clone()],
-    }
-}
-
-/// `JsonLdHelper#collection_items`: the items of a collection, page after
-/// page until `max_items` have been gathered or `max_pages` read, with the
-/// page count Mastodon reports — which counts one more than was fetched when
-/// the collection runs out first.
-pub(crate) async fn collection_items(
-    state: &AppState,
-    collection_or_uri: &Value,
-    max_pages: usize,
-    max_items: usize,
-    reference_uri: Option<&str>,
-) -> Option<(Vec<Value>, usize)> {
-    let mut collection = fetch_collection_page(state, collection_or_uri, reference_uri).await?;
-    if let Some(first) = collection.get("first").filter(|f| is_present(f)).cloned() {
-        collection = fetch_collection_page(state, &first, reference_uri).await?;
-    }
-    let mut items = Vec::new();
-    let mut n_pages = 1;
-    let mut page = Some(collection);
-    while let Some(current) = page {
-        items.extend(collection_page_items(&current));
-        if items.len() >= max_items || n_pages >= max_pages {
-            break;
-        }
-        page = match current.get("next").filter(|n| is_present(n)) {
-            Some(next) => fetch_collection_page(state, next, reference_uri).await,
-            None => None,
-        };
-        n_pages += 1;
-    }
-    Some((items, n_pages))
-}
-
-/// Rails' `present?` for a JSON value.
-pub(crate) fn is_present(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::String(s) => !s.trim().is_empty(),
-        Value::Object(o) => !o.is_empty(),
-        Value::Array(a) => !a.is_empty(),
-        _ => true,
-    }
-}
-
-/// Fetch `uri` as Mastodon's `fetch_resource(uri, true)` does: the document
-/// only if it says it is the object at that id.
-async fn fetch_object(state: &AppState, uri: &str) -> Option<Value> {
-    if crate::federation::moderation::actor_is_suspended(state, uri).await {
-        return None;
-    }
-    let json = crate::federation::fetch::signed_get_json(state, uri)
-        .await
-        .inspect_err(|error| tracing::debug!(uri, %error, "could not fetch reply"))
-        .ok()?;
-    let id = json.get("id").and_then(Value::as_str)?;
-    let canonical = crate::federation::portable::canonical;
-    (id == uri || canonical(id) == canonical(uri)).then_some(json)
-}
-
-/// Store a fetched status, and say whether it was new to us.
-async fn store(state: &AppState, uri: &str, json: Value) -> bool {
-    match crate::api::ap::inbox::store_remote_status_prefetched(state, uri, json).await {
-        Ok(Some((_, created))) => created,
-        Ok(None) => false,
-        Err(error) => {
-            tracing::debug!(uri, %error, "could not store fetched reply");
-            false
-        }
-    }
-}
-
-/// Fetch `uri` and store it, counting it in the refresh if it was new.
-async fn fetch_reply(state: &AppState, uri: &str, refresh_key: Option<&str>) -> Option<Value> {
-    let json = fetch_object(state, uri).await?;
-    if store(state, uri, json.clone()).await {
-        if let Some(key) = refresh_key {
-            crate::async_refresh::increment_result_count(state, key, 1).await;
-        }
-    }
-    Some(json)
+/// `fetch_resource(uri, true)`, as the walk asks for a status to read its
+/// `replies` from: `raise_on_error: :none`, so only a request that was not
+/// answered at all is an `Err`.
+async fn fetch_object(state: &AppState, uri: &str) -> anyhow::Result<Option<Value>> {
+    json_ld::fetch_resource(state, uri, None, json_ld::RaiseOn::None).await
 }
 
 /// `ActivityPub::FetchAllRepliesService#filter_replies`: of the replies a
@@ -296,40 +162,93 @@ async fn filter_all_replies(state: &AppState, status_uri: &str, items: &[Value])
         .collect()
 }
 
+/// `FetchReplyWorker.push_bulk`: one job for each of `uris`, in the batch
+/// `batch_id` when there is one — joined before the jobs are queued.
+async fn push_fetch_reply_workers(
+    state: &AppState,
+    uris: &[String],
+    batch_id: Option<&str>,
+    request_id: Option<&str>,
+) {
+    let jids: Vec<Option<String>> = uris
+        .iter()
+        .map(|_| batch_id.map(|_| crate::worker_batch::random_id()))
+        .collect();
+    if let Some(batch_id) = batch_id {
+        let batch = crate::worker_batch::WorkerBatch::new(Some(batch_id.to_owned()));
+        let jids: Vec<String> = jids.iter().flatten().cloned().collect();
+        batch.add_jobs(state, &jids).await;
+    }
+    for (uri, jid) in uris.iter().zip(jids) {
+        crate::jobs::push(
+            state,
+            FetchReplyWorker {
+                url: uri.clone(),
+                prefetched_body: None,
+                request_id: request_id.map(str::to_owned),
+                batch_id: batch_id.map(str::to_owned),
+                jid,
+            },
+        )
+        .await;
+    }
+}
+
 /// `FetchAllRepliesWorker#get_replies` → `FetchAllRepliesService#call`: the
-/// replies worth fetching from one status's collection, and the pages read.
+/// replies worth fetching from one status's collection, each queued for a
+/// `FetchReplyWorker` in the walk's batch, and the pages read. A collection
+/// page that fails for the time being fails the walk, to be retried, as it
+/// raises out of Mastodon's worker.
 async fn get_replies(
     state: &AppState,
     status_uri: &str,
     status_json: &Value,
     max_pages: usize,
-) -> Option<(Vec<String>, usize)> {
-    let collection = status_json.get("replies").filter(|r| !r.is_null())?;
-    let (items, n_pages) = collection_items(
+    batch_id: Option<&str>,
+) -> anyhow::Result<Option<(Vec<String>, usize)>> {
+    let Some(collection) = status_json.get("replies").filter(|r| !r.is_null()) else {
+        return Ok(None);
+    };
+    let Some((items, n_pages)) = json_ld::collection_items(
         state,
         collection,
-        max_pages,
-        COLLECTION_MAX_ITEMS,
-        Some(status_uri),
+        Some(max_pages),
+        Some(COLLECTION_MAX_ITEMS),
+        status_uri,
+        None,
     )
-    .await?;
-    Some((filter_all_replies(state, status_uri, &items).await, n_pages))
+    .await?
+    else {
+        return Ok(None);
+    };
+    let uris = filter_all_replies(state, status_uri, &items).await;
+    push_fetch_reply_workers(state, &uris, batch_id, None).await;
+    Ok(Some((uris, n_pages)))
 }
 
-/// `ActivityPub::FetchAllRepliesWorker.perform_async(root_status_id)`, whose
-/// walk finishes the async refresh named `refresh_key`.
+/// The context controller's `WorkerBatch.new.within { |batch|
+/// batch.connect(refresh_key, threshold: 1.0); ActivityPub::
+/// FetchAllRepliesWorker.perform_async(root_status_id, { 'batch_id' =>
+/// batch.id }) }`: the walk and every reply it queues are one batch, whose
+/// end finishes the async refresh named `refresh_key`.
 pub async fn fetch_all_replies(state: &AppState, root_status_id: i64, refresh_key: String) {
+    let batch = crate::worker_batch::WorkerBatch::new(None);
+    batch.connect(state, &refresh_key, 1.0).await;
+    let jid = crate::worker_batch::random_id();
+    batch.add_jobs(state, std::slice::from_ref(&jid)).await;
     crate::jobs::push(
         state,
         FetchAllRepliesWorker {
             root_status_id,
-            refresh_key,
+            batch_id: Some(batch.id),
+            jid: Some(jid),
+            refresh_key: None,
         },
     )
     .await;
 }
 
-/// The options both reply workers share: `queue: 'pull', retry: 3`.
+/// The options all three reply workers share: `queue: 'pull', retry: 3`.
 const REPLIES_OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
     .queue(crate::jobs::Queue::Pull)
     .retry(3);
@@ -338,7 +257,13 @@ const REPLIES_OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct FetchAllRepliesWorker {
     pub root_status_id: i64,
-    pub refresh_key: String,
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    #[serde(default)]
+    pub jid: Option<String>,
+    /// The refresh a walk queued before walks had batches finishes itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_key: Option<String>,
 }
 
 impl crate::jobs::Job for FetchAllRepliesWorker {
@@ -350,9 +275,22 @@ impl crate::jobs::Job for FetchAllRepliesWorker {
     }
 
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
-        let guard = crate::async_refresh::FinishOnDrop::new(state, &self.refresh_key);
-        let walked = walk_replies(state, self.root_status_id, &self.refresh_key).await;
-        guard.finish().await;
+        let membership = crate::worker_batch::Membership::new(
+            state,
+            self.batch_id.as_deref(),
+            self.jid.as_deref(),
+        );
+        let legacy = self
+            .refresh_key
+            .as_deref()
+            .map(|key| crate::async_refresh::FinishOnDrop::new(state, key));
+        let walked = walk_replies(state, self.root_status_id, self.batch_id.as_deref()).await;
+        if let Some(membership) = membership {
+            membership.leave(false).await;
+        }
+        if let Some(legacy) = legacy {
+            legacy.finish().await;
+        }
         walked
     }
 }
@@ -363,6 +301,8 @@ impl crate::jobs::Job for FetchAllRepliesWorker {
 pub struct FetchRepliesWorker {
     pub account_uri: String,
     pub collection: Value,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 impl crate::jobs::Job for FetchRepliesWorker {
@@ -374,17 +314,75 @@ impl crate::jobs::Job for FetchRepliesWorker {
     }
 
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
-        fetch_replies_now(state, &self.account_uri, &self.collection).await;
-        Ok(())
+        fetch_replies(
+            state,
+            &self.account_uri,
+            &self.collection,
+            self.request_id.as_deref(),
+        )
+        .await
     }
 }
 
-/// The walk. Fails, to be retried, only when the root status cannot be
-/// fetched, as `get_replies_uri` raises for the root alone.
+/// `FetchReplyWorker`: fetch one status — or take the document already
+/// fetched — and process it as `FetchRemoteStatusService` does, as the
+/// `Create` it would have come in or, when we hold it, as an `Update`. It
+/// leaves its batch however it ends, counting in the batch's refresh when
+/// the status was new to us.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FetchReplyWorker {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefetched_body: Option<Value>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    #[serde(default)]
+    pub jid: Option<String>,
+}
+
+impl crate::jobs::Job for FetchReplyWorker {
+    const KIND: &'static str = "FetchReplyWorker";
+    const OPTIONS: crate::jobs::Options = REPLIES_OPTIONS;
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let membership = crate::worker_batch::Membership::new(
+            state,
+            self.batch_id.as_deref(),
+            self.jid.as_deref(),
+        );
+        let result = crate::api::ap::inbox::fetch_remote_status_by_url(
+            state,
+            &self.url,
+            self.prefetched_body,
+            self.request_id,
+        )
+        .await;
+        let created = matches!(result, Ok(Some((_, true))));
+        if let Some(membership) = membership {
+            membership.leave(created).await;
+        }
+        result
+            .map(|_| ())
+            .map_err(|error| anyhow::anyhow!("could not process {}: {error}", self.url))
+    }
+}
+
+/// The walk. Fails, to be retried, where Mastodon's raises: when a request
+/// for the root status is not answered at all (a status the server answers
+/// with, success or not, is not retried), and when a collection page fails
+/// for the time being. Each reply it finds is queued for a
+/// `FetchReplyWorker` in `batch_id` as it is found; the walk itself fetches
+/// a reply only to read its collection, and passes over one it cannot.
 async fn walk_replies(
     state: &AppState,
     root_status_id: i64,
-    refresh_key: &str,
+    batch_id: Option<&str>,
 ) -> anyhow::Result<()> {
     // `@root_status&.should_fetch_replies?` and `touch(:fetched_replies_at)`,
     // in one statement so that two requests cannot both start the walk.
@@ -409,12 +407,24 @@ async fn walk_replies(
         return Ok(());
     };
 
-    // `get_root_replies`.
-    let Some(root_json) = fetch_object(state, &root_uri).await else {
-        anyhow::bail!("could not fetch {root_uri} to walk its replies");
+    // `get_root_replies`: the root is refreshed from the same document, by a
+    // `FetchReplyWorker` outside the batch.
+    let Some(root_json) = fetch_object(state, &root_uri).await? else {
+        return Ok(());
     };
+    crate::jobs::push(
+        state,
+        FetchReplyWorker {
+            url: root_uri.clone(),
+            prefetched_body: Some(root_json.clone()),
+            request_id: None,
+            batch_id: None,
+            jid: None,
+        },
+    )
+    .await;
     let Some((mut to_fetch, mut n_pages)) =
-        get_replies(state, &root_uri, &root_json, MAX_PAGES).await
+        get_replies(state, &root_uri, &root_json, MAX_PAGES, batch_id).await?
     else {
         return Ok(());
     };
@@ -424,12 +434,13 @@ async fn walk_replies(
         let Some(next) = to_fetch.pop() else {
             break;
         };
-        // Storing the reply is `FetchReplyWorker`'s job; reading its
-        // collection from the same document is the walk's.
-        let Some(json) = fetch_reply(state, &next, Some(refresh_key)).await else {
+        // `get_replies_uri`: the reply is fetched to read its collection;
+        // storing it is its `FetchReplyWorker`'s job.
+        let Some(json) = fetch_object(state, &next).await.ok().flatten() else {
             continue;
         };
-        let Some((replies, pages)) = get_replies(state, &next, &json, MAX_PAGES - n_pages).await
+        let Some((replies, pages)) =
+            get_replies(state, &next, &json, MAX_PAGES - n_pages, batch_id).await?
         else {
             continue;
         };
@@ -441,11 +452,6 @@ async fn walk_replies(
         n_pages += pages;
     }
 
-    // Replies discovered but not walked to are still stored, as Mastodon
-    // queued a `FetchReplyWorker` for each when it found them.
-    for uri in to_fetch {
-        fetch_reply(state, &uri, Some(refresh_key)).await;
-    }
     tracing::debug!(
         root = root_uri,
         replies = discovered.len(),
@@ -454,10 +460,15 @@ async fn walk_replies(
     Ok(())
 }
 
-/// `ActivityPub::Activity::Create#fetch_replies` and `ActivityPub::
-/// FetchRepliesService`: on a new remote status, fetch up to five replies
-/// from the first page of its `replies`, from the author's server.
-pub async fn fetch_replies_on_create(state: &AppState, account_uri: String, collection: Value) {
+/// `ActivityPub::Activity::Create#fetch_replies`: on a new remote status,
+/// queue the read of the first page of its `replies`, from the author's
+/// server, carrying the `request_id` the status was processed under.
+pub async fn fetch_replies_on_create(
+    state: &AppState,
+    account_uri: String,
+    collection: Value,
+    request_id: Option<String>,
+) {
     if !is_present(&collection) {
         return;
     }
@@ -466,22 +477,32 @@ pub async fn fetch_replies_on_create(state: &AppState, account_uri: String, coll
         FetchRepliesWorker {
             account_uri,
             collection,
+            request_id,
         },
     )
     .await;
 }
 
-async fn fetch_replies_now(state: &AppState, account_uri: &str, collection: &Value) {
-    let Some((items, _)) = collection_items(
+/// `ActivityPub::FetchRepliesService#call`: up to five replies from the first
+/// page of a collection, on the author's server, each queued for a
+/// `FetchReplyWorker` — which processes one we already hold as an `Update`.
+async fn fetch_replies(
+    state: &AppState,
+    account_uri: &str,
+    collection: &Value,
+    request_id: Option<&str>,
+) -> anyhow::Result<()> {
+    let Some((items, _)) = json_ld::collection_items(
         state,
         collection,
-        1,
-        COLLECTION_MAX_ITEMS,
-        Some(account_uri),
+        Some(1),
+        Some(COLLECTION_MAX_ITEMS),
+        account_uri,
+        None,
     )
-    .await
+    .await?
     else {
-        return;
+        return Ok(());
     };
     let uris: Vec<String> = items
         .iter()
@@ -490,26 +511,8 @@ async fn fetch_replies_now(state: &AppState, account_uri: &str, collection: &Val
         .take(COLLECTION_MAX_ITEMS)
         .map(str::to_owned)
         .collect();
-    for uri in uris {
-        // A status already held is one Mastodon would fetch again only to
-        // refresh it, which eunha's store does not do.
-        let known = sqlx::query_scalar!(
-            "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-            uri,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-        if known.is_some()
-            || crate::federation::local_uri::status(state, &uri)
-                .await
-                .is_some()
-        {
-            continue;
-        }
-        fetch_reply(state, &uri, None).await;
-    }
+    push_fetch_reply_workers(state, &uris, None, request_id).await;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -530,17 +533,5 @@ mod tests {
             "https://a.example/users/x",
             "ftp://a.example/notes/1"
         ));
-    }
-
-    #[test]
-    fn page_items_follow_the_page_type() {
-        let page = serde_json::json!({"type": "OrderedCollectionPage", "orderedItems": ["a", {"id": "b"}]});
-        let items = collection_page_items(&page);
-        assert_eq!(
-            items.iter().filter_map(value_or_id).collect::<Vec<_>>(),
-            ["a", "b"]
-        );
-        let unordered = serde_json::json!({"type": "CollectionPage", "orderedItems": ["a"]});
-        assert!(collection_page_items(&unordered).is_empty());
     }
 }

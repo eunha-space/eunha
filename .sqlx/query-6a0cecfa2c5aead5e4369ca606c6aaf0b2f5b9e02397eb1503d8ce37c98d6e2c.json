@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_stats SET reblogs_count = (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL), untrusted_reblogs_count = CASE WHEN untrusted_reblogs_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_reblogs_count + (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL) - reblogs_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a0cecfa2c5aead5e4369ca606c6aaf0b2f5b9e02397eb1503d8ce37c98d6e2c"
+}

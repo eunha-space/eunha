@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_stats ss\n           SET favourites_count = GREATEST(0, ss.favourites_count - c.n),\n               untrusted_favourites_count = GREATEST(0, ss.untrusted_favourites_count - c.n),\n               updated_at = now()\n           FROM (SELECT status_id, count(*) AS n FROM favourites\n                 WHERE account_id = $1 GROUP BY status_id) c\n           WHERE ss.status_id = c.status_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc0f812bf318a24636f7024884b6626ae35b0107a95519fadde59563a0ddce81"
+}

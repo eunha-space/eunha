@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ss.status_id, ss.replies_count,\n                  CASE WHEN NOT (COALESCE(s.local, false) OR s.uri IS NULL)\n                            AND ss.untrusted_reblogs_count IS NOT NULL\n                       THEN ss.untrusted_reblogs_count\n                       ELSE GREATEST(ss.reblogs_count, 0) END AS \"reblogs_count!\",\n                  CASE WHEN NOT (COALESCE(s.local, false) OR s.uri IS NULL)\n                            AND ss.untrusted_favourites_count IS NOT NULL\n                       THEN ss.untrusted_favourites_count\n                       ELSE GREATEST(ss.favourites_count, 0) END AS \"favourites_count!\",\n                  ss.quotes_count\n           FROM status_stats ss JOIN statuses s ON s.id = ss.status_id\n           WHERE ss.status_id = ANY($1::bigint[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "replies_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "reblogs_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "favourites_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "quotes_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "d5875afc6c78f39b85cb2b1549b16a1e6cbc155ab43c25a96906d8b4a56618c9"
+}

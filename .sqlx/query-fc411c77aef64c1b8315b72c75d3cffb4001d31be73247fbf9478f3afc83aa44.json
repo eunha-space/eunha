@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT reblog_of_id, visibility,\n                      EXISTS (SELECT 1 FROM status_pins WHERE account_id = $2 AND status_id = $1)\n                        AS \"pinned!\"\n               FROM statuses WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "pinned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "fc411c77aef64c1b8315b72c75d3cffb4001d31be73247fbf9478f3afc83aa44"
+}

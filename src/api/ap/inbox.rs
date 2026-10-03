@@ -10,12 +10,13 @@ mod follow;
 mod moderation;
 pub(crate) mod quote;
 mod status;
+pub(crate) mod status_parser;
 use collection::{handle_add, handle_remove};
 use create::handle_create;
 pub use fetch::{
-    fetch_remote_account, fetch_remote_status, fetch_remote_status_prefetched,
-    resolve_or_fetch_remote_account, resolve_or_fetch_remote_account_prefetched,
-    store_key_fetched_actor, store_remote_status_prefetched,
+    fetch_remote_account, fetch_remote_status, fetch_remote_status_by_url,
+    fetch_remote_status_prefetched, fetch_remote_status_with, resolve_or_fetch_remote_account,
+    resolve_or_fetch_remote_account_prefetched, store_key_fetched_actor, FetchOptions,
 };
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
@@ -236,7 +237,17 @@ async fn received_now(state: &AppState, activity: Value) -> AppResult<()> {
     if !sync_ingress() {
         return enqueue_activity(state, &activity_type, &actor_uri, &activity).await;
     }
-    process_activity(state, &state.instance.clone(), &activity_type, &activity).await
+    // Handled inline, an activity that fails — a fetch its handler needs was
+    // not answered, say — is queued to be tried again, as it would have been
+    // from the queue: whether it is accepted does not hang on processing it,
+    // in Mastodon or here.
+    if let Err(error) =
+        process_activity(state, &state.instance.clone(), &activity_type, &activity).await
+    {
+        tracing::debug!(activity_type, %error, "activity failed inline; queued to retry");
+        return enqueue_activity(state, &activity_type, &actor_uri, &activity).await;
+    }
+    Ok(())
 }
 
 /// Dispatch a verified activity to its handler. Runs on the ingress queue in

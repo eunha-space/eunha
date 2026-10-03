@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),\n                 untrusted_reblogs_count = GREATEST(untrusted_reblogs_count - 1, 0),\n                 updated_at = now()\n               WHERE status_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51b5c45a89ce0435c522a88a7c03d955dab147a41936a338a422f768d576862f"
+}

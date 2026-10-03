@@ -80,7 +80,7 @@ async fn test_a_domain_block_stops_notifications() {
             "content": "<p>hello there</p>",
             "to": [alice_uri],
             "tag": [{"type": "Mention", "href": alice_uri, "name": "@alice"}],
-            "published": "2026-01-01T00:00:00Z",
+            "published": chrono::Utc::now().to_rfc3339(),
         },
     });
     sqlx::query!(
@@ -155,7 +155,7 @@ async fn test_following_through_a_domain_block_still_notifies() {
             "content": "<p>still here</p>",
             "to": [alice_uri],
             "tag": [{"type": "Mention", "href": alice_uri, "name": "@alice"}],
-            "published": "2026-01-01T00:00:00Z",
+            "published": chrono::Utc::now().to_rfc3339(),
         },
     });
     sqlx::query!(
@@ -225,7 +225,7 @@ async fn test_a_mention_alongside_a_blocked_account_is_not_delivered() {
                 {"type": "Mention", "href": alice_uri, "name": "@alice"},
                 {"type": "Mention", "href": bob_uri, "name": "@bob"},
             ],
-            "published": "2026-01-01T00:00:00Z",
+            "published": chrono::Utc::now().to_rfc3339(),
         },
     });
     sqlx::query!(
@@ -280,7 +280,7 @@ async fn test_an_ordinary_co_mention_still_notifies() {
                 {"type": "Mention", "href": alice_uri, "name": "@alice"},
                 {"type": "Mention", "href": bob_uri, "name": "@bob"},
             ],
-            "published": "2026-01-01T00:00:00Z",
+            "published": chrono::Utc::now().to_rfc3339(),
         },
     });
     sqlx::query!(

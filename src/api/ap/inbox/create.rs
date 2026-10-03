@@ -14,23 +14,70 @@ use super::{
     resolve_or_fetch_remote_account, tag_type_is,
 };
 
+/// How a `Create` reached us: the options `ActivityPub::Activity` is given.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CreateOptions {
+    /// Fetched by us rather than delivered (`fetch?`, which is `!@options
+    /// [:delivery]`): what we asked for is taken whether or not it concerns
+    /// anyone here.
+    pub fetched: bool,
+    /// `@options[:request_id]`, which the replies it leads us to fetch carry
+    /// on, so that they count against one budget of discoveries.
+    pub request_id: Option<String>,
+    /// `@options[:depth]`: how deep in a chain of quotes this status was
+    /// fetched, which bounds verifying its own.
+    pub depth: u8,
+}
+
 pub(super) async fn handle_create(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
 ) -> AppResult<()> {
+    create(state, activity, &CreateOptions::default()).await
+}
+
+/// `ActivityPub::Activity::Create#perform`, delivered or fetched.
+pub(super) async fn create(
+    state: &AppState,
+    activity: &Value,
+    create_options: &CreateOptions,
+) -> AppResult<()> {
     let object = match activity.get("object") {
         Some(o) if o.is_object() => o,
-        Some(o) if o.is_string() => {
-            if let Some(uri) = o.as_str() {
-                let _ = fetch_remote_status(state, uri).await?;
+        Some(Value::String(uri)) => {
+            // `dereference_object!` (`ActivityPub::Dereferencer`): the object
+            // fetched from the sender's host, and taken if it says it is
+            // what was named; a temporary failure raises, for the activity
+            // to be retried. What cannot be had leaves a `Create` of a bare
+            // IRI, which is not a status.
+            let actor_uri = activity.get("actor").and_then(Value::as_str).unwrap_or("");
+            if crate::federation::json_ld::non_matching_uri_hosts(actor_uri, uri) {
+                return Ok(());
             }
-            return Ok(());
+            let fetched = crate::federation::json_ld::fetch_resource_without_id_validation(
+                state,
+                uri,
+                None,
+                crate::federation::json_ld::RaiseOn::Temporary,
+            )
+            .await?
+            .filter(|json| {
+                crate::federation::json_ld::is_present(json)
+                    && json.get("id").and_then(Value::as_str) == Some(uri.as_str())
+            });
+            let Some(object) = fetched else {
+                return Ok(());
+            };
+            let mut dereferenced = activity.clone();
+            dereferenced["object"] = object;
+            return Box::pin(create(state, &dereferenced, create_options)).await;
         }
         _ => return Ok(()),
     };
-    let obj_type = object.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    if obj_type != "Note" {
+    // `unsupported_object_type?`: a `Note` or `Question`, or one of the
+    // kinds that are converted into a status (`Article`, `Video`, …).
+    if !super::status_parser::is_status_type(object) {
         return Ok(());
     }
 
@@ -56,6 +103,14 @@ pub(super) async fn handle_create(
         }
         _ => Vec::new(),
     };
+    // `return reject_payload! if non_matching_uri_hosts?(@account.uri,
+    // object_uri)`.
+    if crate::federation::json_ld::non_matching_uri_hosts(actor_uri, note_uri) {
+        return Ok(());
+    }
+    // On the sender's host but on another origin, or attributed to someone
+    // else: fetched from where its id says it lives
+    // (`embedded-note-attribution-fetched`).
     if !ojak::origin::same_origin(note_uri, actor_uri)
         || (!attributed.is_empty() && !attributed.contains(&actor_uri))
     {
@@ -155,7 +210,8 @@ pub(super) async fn handle_create(
     }
 
     // Acceptance filter: only process if related to local activity (mirrors Mastodon's
-    // related_to_local_activity? / addresses_local_accounts? checks).
+    // related_to_local_activity? / addresses_local_accounts? checks), which
+    // whatever we fetched ourselves is (`fetch?`).
     let is_followed_locally = sqlx::query_scalar!(
         r#"SELECT EXISTS(
             SELECT 1 FROM follows f
@@ -193,7 +249,12 @@ pub(super) async fn handle_create(
             crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
         );
 
-    if !is_followed_locally && !addresses_local && !in_reply_to_local && !through_relay {
+    if !create_options.fetched
+        && !is_followed_locally
+        && !addresses_local
+        && !in_reply_to_local
+        && !through_relay
+    {
         tracing::debug!(
             note_uri,
             "Create(Note): ignoring, not related to local activity"
@@ -201,17 +262,10 @@ pub(super) async fn handle_create(
         return Ok(());
     }
 
-    // Field extraction
-    let text = object
-        .get("content")
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .to_string();
-    let spoiler_text = object
-        .get("summary")
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
+    // Field extraction: `processed_text` and `processed_spoiler_text`, which
+    // for a converted object are its title, summary and a link to it.
+    let text = super::status_parser::processed_text(state, object);
+    let spoiler_text = super::status_parser::processed_spoiler_text(object);
     // `@account.sensitized? || @status_parser.sensitive`.
     let sensitive = object
         .get("sensitive")
@@ -224,32 +278,28 @@ pub(super) async fn handle_create(
         .fetch_optional(&state.db)
         .await?
         .unwrap_or(false);
-    let url = object
-        .get("url")
-        .and_then(|u| u.as_str())
-        .map(str::to_owned);
+    // `@status_parser.url || @status_parser.uri`.
+    let url = super::status_parser::url(object).or_else(|| Some(note_uri.to_owned()));
     let published = object
         .get("published")
         .and_then(|p| p.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
+    // `edited_at`, unless it is the same moment as `created_at`.
     let edited_at = object
         .get("updated")
         .and_then(|p| p.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
+        .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
+        .filter(|edited| Some(*edited) != published);
 
     // Visibility is determined from the Note object's own to/cc fields.
     let note_to = as_string_vec(object.get("to"));
     let note_cc = as_string_vec(object.get("cc"));
     let visibility = crate::db::models::vis::from_audience(&note_to, &note_cc);
 
-    let language = object
-        .get("contentMap")
-        .and_then(|m| m.as_object())
-        .and_then(|m| m.keys().next())
-        .map(|s| s.to_string())
-        .filter(|s| ["ko", "en"].contains(&s.as_str()));
+    // `StatusParser#language`.
+    let language = super::status_parser::language(object);
 
     let status_id = crate::snowflake::next_id();
     let created_at = published.unwrap_or_else(|| chrono::Utc::now().naive_utc());
@@ -315,9 +365,12 @@ pub(super) async fn handle_create(
         account_id,
         object,
         activity.get("@context"),
-        0,
+        create_options.depth,
     )
     .await?;
+
+    // `attach_counts`: the counts the status's server reports.
+    super::status_parser::store_untrusted_counts(state, inserted_id, object).await?;
 
     // Media attachments. Domains blocked with `reject_media` (or fully
     // suspended) federate text but not media, so skip storing attachments.
@@ -504,8 +557,14 @@ pub(super) async fn handle_create(
         mentioned.push((mentioned_id, is_local));
     }
 
+    // `DistributionWorker` runs only for a status within the real-time
+    // window (`Status#within_realtime_window?`), and with it the mention
+    // notifications and the home and list feeds: a status fetched long after
+    // it was written is stored, not announced.
+    let within_realtime_window =
+        chrono::Utc::now().naive_utc() - created_at <= chrono::Duration::hours(6);
     for (mentioned_id, is_local) in mentioned {
-        if !is_local {
+        if !is_local || !within_realtime_window {
             continue;
         }
         if let Some(ref info) = actor_info {
@@ -586,7 +645,16 @@ pub(super) async fn handle_create(
 
         // For each local recipient, upsert account_conversations.
         // participant_account_ids = everyone else in the conversation (not this recipient).
-        for &local_id in &mentioned_local_ids {
+        // Mastodon adds a status to its conversations from `DistributionWorker`
+        // (`deliver_to_conversation!`) and from the mention's notification
+        // (`NotifyService#push_to_conversation!`), so only within the
+        // real-time window.
+        let recipients: &[i64] = if within_realtime_window {
+            &mentioned_local_ids
+        } else {
+            &[]
+        };
+        for &local_id in recipients {
             let mut others: Vec<i64> = all_participant_ids
                 .iter()
                 .copied()
@@ -707,6 +775,7 @@ pub(super) async fn handle_create(
             state,
             actor_uri.to_owned(),
             collection.clone(),
+            create_options.request_id.clone(),
         )
         .await;
     }
@@ -719,15 +788,22 @@ pub(super) async fn handle_create(
             ThreadResolveWorker {
                 child_status_id: inserted_id,
                 parent_url: uri.to_owned(),
+                request_id: create_options.request_id.clone(),
             },
         )
         .await;
     }
 
-    // `AccountConversation#push_to_streaming_api`, once the status is whole.
-    crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
+    // `AccountConversation#push_to_streaming_api`, once the status is whole,
+    // for the conversations it was added to.
+    if within_realtime_window {
+        crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
+    }
 
     // Fanout to home and list feeds, then stream it (`DistributionWorker`).
+    if !within_realtime_window {
+        return Ok(());
+    }
     crate::feed::distribute_later(state, inserted_id).await;
 
     Ok(())
@@ -815,6 +891,8 @@ pub(super) async fn handle_poll_vote_note(
 pub struct ThreadResolveWorker {
     pub child_status_id: i64,
     pub parent_url: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 impl crate::jobs::Job for ThreadResolveWorker {
@@ -843,7 +921,9 @@ impl crate::jobs::Job for ThreadResolveWorker {
         }
         let uri = &self.parent_url;
         tracing::debug!(uri, "fetching unknown parent status for thread resolution");
-        fetch_remote_status(state, uri)
+        // `FetchRemoteStatusService.new.call(parent_url, request_id:)`, which
+        // gives nothing for a parent it cannot reach.
+        super::fetch_remote_status_by_url(state, uri, None, self.request_id.clone())
             .await
             .map_err(|e| anyhow::anyhow!("could not fetch parent {uri}: {e:?}"))?;
         let Some(parent) = sqlx::query!("SELECT id, account_id FROM statuses WHERE uri = $1", uri)

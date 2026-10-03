@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses\n           SET quote_approval_policy = COALESCE($2, quote_approval_policy),\n               updated_at = CASE\n                   WHEN quote_approval_policy IS DISTINCT FROM COALESCE($2, quote_approval_policy)\n                   THEN now() ELSE updated_at END\n           WHERE uri = $1 AND deleted_at IS NULL\n             AND account_id = (\n                 SELECT id FROM accounts WHERE uri = $3 AND domain IS NOT NULL\n             )\n           RETURNING id, account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6b457aae980164e93ed6bd804885b4fb564a4c93adf8a104e383c09f5a6abb58"
+}

@@ -195,6 +195,7 @@ async fn wait_finished(ctx: &TestContext, header: &str) -> Value {
 /// Opening a remote thread fetches its replies — page after page of the
 /// root's collection until five are gathered, then each reply's own — counts
 /// the new ones in the refresh, and does not go again within the cooldown.
+/// The next walk processes the replies already held again, as `Update`s.
 #[tokio::test]
 async fn test_context_fetches_remote_replies() {
     let (ctx, remote, base, _) = context_ctx("replies-walk").await;
@@ -266,6 +267,9 @@ async fn test_context_fetches_remote_replies() {
     }
 
     let root = store(&ctx, &base, "root").await;
+    // Stored as its `Create`, the root has the first page of its replies
+    // read: r1, r2 and r3, and with r1 its own first page, r1a.
+    ctx.state.jobs.settle().await;
     let root_fetches = remote.fetches("/notes/root");
 
     // Signed out: nothing is started.
@@ -276,10 +280,11 @@ async fn test_context_fetches_remote_replies() {
     let (header, body) = context(&ctx, root, Some(&ctx.alice_token)).await;
     let header = header.expect("a signed-in view should start fetching replies");
     assert!(header.ends_with(", retry=3, result_count=0"), "{header}");
-    assert!(body["descendants"].as_array().unwrap().is_empty());
+    assert_eq!(body["descendants"].as_array().unwrap().len(), 4);
 
     let finished = wait_finished(&ctx, &header).await;
-    assert_eq!(finished["async_refresh"]["result_count"], 6);
+    // Only r4 and r5 were new to the walk.
+    assert_eq!(finished["async_refresh"]["result_count"], 2);
     assert_eq!(remote.fetches("/notes/root/replies/3"), 0);
     assert_eq!(remote.fetches("/notes/r6"), 0);
 
@@ -317,11 +322,22 @@ async fn test_context_fetches_remote_replies() {
     assert_eq!(remote.fetches("/notes/root"), fetches);
 
     // Once the cooldown has passed, the next view fetches again; replies
-    // already held count for nothing.
+    // already held count for nothing, and are processed again as updates:
+    // r2 says it was edited, and is; r3 changed without saying so, which
+    // leaves its text alone.
+    let mut r2 = note(&base, "r2", Some("root"), None);
+    r2["content"] = json!("<p>r2, edited</p>");
+    r2["updated"] = json!("2026-01-02T00:00:00Z");
+    remote.put("/notes/r2", r2);
+    let mut r3 = note(&base, "r3", Some("root"), None);
+    r3["content"] = json!("<p>r3, quietly changed</p>");
+    remote.put("/notes/r3", r3);
+    let r2_fetches = remote.fetches("/notes/r2");
+    // The root, and the replies the first walk found already held.
     sqlx::query(
-        "UPDATE statuses SET fetched_replies_at = now() - interval '16 minutes' WHERE id = $1",
+        "UPDATE statuses SET fetched_replies_at = now() - interval '16 minutes'
+         WHERE fetched_replies_at IS NOT NULL",
     )
-    .bind(root)
     .execute(&ctx.db)
     .await
     .unwrap();
@@ -329,6 +345,20 @@ async fn test_context_fetches_remote_replies() {
     let finished = wait_finished(&ctx, &header.expect("due again after the cooldown")).await;
     assert_eq!(finished["async_refresh"]["result_count"], 0);
     assert_eq!(remote.fetches("/notes/root"), fetches + 1);
+    // Once by the walk, to read its collection, and once by its
+    // `FetchReplyWorker`, to process it.
+    assert_eq!(remote.fetches("/notes/r2"), r2_fetches + 2);
+    let text = |name: &str| {
+        sqlx::query_as::<_, (String, Option<chrono::NaiveDateTime>)>(
+            "SELECT text, edited_at FROM statuses WHERE uri = $1",
+        )
+        .bind(format!("{base}/notes/{name}"))
+        .fetch_one(&ctx.db)
+    };
+    let (r2_text, r2_edited) = text("r2").await.unwrap();
+    assert_eq!(r2_text, "<p>r2, edited</p>");
+    assert!(r2_edited.is_some());
+    assert_eq!(text("r3").await.unwrap(), ("<p>r3</p>".to_owned(), None));
 }
 
 /// A status too new, local, or not public is not fetched for; a fetch already
@@ -420,7 +450,25 @@ async fn test_create_fetches_first_page_of_replies() {
             ],
         }),
     );
-    remote.put("/notes/c1", note(&base, "c1", Some("c"), None));
+    // c1's own replies are read when c1 is stored, as its `Create` is.
+    remote.put(
+        "/notes/c1",
+        note(
+            &base,
+            "c1",
+            Some("c"),
+            Some(json!({
+                "id": format!("{base}/notes/c1/replies"),
+                "type": "Collection",
+                "first": {
+                    "type": "CollectionPage",
+                    "partOf": format!("{base}/notes/c1/replies"),
+                    "items": [format!("{base}/notes/c1a")],
+                },
+            })),
+        ),
+    );
+    remote.put("/notes/c1a", note(&base, "c1a", Some("c1"), None));
     remote.put("/notes/c2", note(&base, "c2", Some("c"), None));
 
     let object = note(
@@ -494,4 +542,103 @@ async fn test_create_fetches_first_page_of_replies() {
         remote.fetches("/notes/c/replies/1"),
         remote.fetches("/notes/c1"),
     );
+    let mut grandchild = None;
+    for _ in 0..100 {
+        grandchild = sqlx::query_scalar::<_, String>(
+            "SELECT uri FROM statuses WHERE in_reply_to_id = (SELECT id FROM statuses WHERE uri = $1)",
+        )
+        .bind(format!("{base}/notes/c1"))
+        .fetch_optional(&ctx.db)
+        .await
+        .unwrap();
+        if grandchild.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(grandchild, Some(format!("{base}/notes/c1a")));
+}
+
+/// A status fetched is a `Create`, whatever kind of status it is: an
+/// `Article` becomes its title, summary and a link to it, and the counts its
+/// server reports are what the API serves.
+#[tokio::test]
+async fn test_fetched_statuses_are_processed_as_mastodon_processes_them() {
+    let (ctx, remote, base, _) = context_ctx("replies-kinds").await;
+    let mut article = note(&base, "article", None, None);
+    article["type"] = json!("Article");
+    article["name"] = json!("A title");
+    article["summary"] = json!("What it is about");
+    article["url"] = json!("https://blog.example.com/a-title");
+    article["likes"] = json!({"type": "Collection", "totalItems": 42});
+    article["shares"] = json!({"type": "Collection", "totalItems": "7"});
+    remote.put("/notes/article", article);
+    let id = store(&ctx, &base, "article").await;
+
+    let (text, spoiler, url): (String, String, Option<String>) =
+        sqlx::query_as("SELECT text, spoiler_text, url FROM statuses WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(
+        text.starts_with("<h2>A title</h2>\n\nWhat it is about\n\n<p><a href=\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("href=\"https://blog.example.com/a-title\""),
+        "{text}"
+    );
+    assert_eq!(spoiler, "");
+    assert_eq!(url.as_deref(), Some("https://blog.example.com/a-title"));
+
+    let status: Value = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}"), Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["favourites_count"], 42);
+    assert_eq!(status["reblogs_count"], 7);
+
+    // A favourite here moves the reported count with ours.
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{id}/favourite"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let untrusted: Option<i64> = sqlx::query_scalar(
+        "SELECT untrusted_favourites_count FROM status_stats WHERE status_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(untrusted, Some(43));
+}
+
+/// A walk whose root the server answers for with an error is not retried:
+/// Mastodon retries only a request that was not answered.
+#[tokio::test]
+async fn test_a_root_the_server_refuses_is_not_retried() {
+    let (ctx, remote, base, _) = context_ctx("replies-refused").await;
+    remote.put("/notes/gone", note(&base, "gone", None, None));
+    let root = store(&ctx, &base, "gone").await;
+    remote.documents.lock().unwrap().remove("/notes/gone");
+
+    let (header, _) = context(&ctx, root, Some(&ctx.alice_token)).await;
+    wait_finished(&ctx, &header.expect("a walk is started")).await;
+    ctx.state.jobs.settle().await;
+    let retries: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::FetchAllRepliesWorker'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(retries, 0);
 }

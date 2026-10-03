@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_stats\n             (status_id, untrusted_favourites_count, untrusted_reblogs_count, created_at, updated_at)\n           VALUES ($1, $2, $3, now(), now())\n           ON CONFLICT (status_id) DO UPDATE SET\n             untrusted_favourites_count =\n               COALESCE($2, status_stats.untrusted_favourites_count),\n             untrusted_reblogs_count = COALESCE($3, status_stats.untrusted_reblogs_count),\n             updated_at = CASE\n               WHEN status_stats.untrusted_favourites_count IS DISTINCT FROM\n                      COALESCE($2, status_stats.untrusted_favourites_count)\n                 OR status_stats.untrusted_reblogs_count IS DISTINCT FROM\n                      COALESCE($3, status_stats.untrusted_reblogs_count)\n               THEN now() ELSE status_stats.updated_at END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6416f437ff97f7419b65a95c71330d44f7f1be93a808dd1da03c992b9be266ec"
+}

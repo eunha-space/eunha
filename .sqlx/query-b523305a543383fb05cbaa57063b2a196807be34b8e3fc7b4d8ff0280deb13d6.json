@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (suspended_at IS NOT NULL) AS \"s!\" FROM accounts\n           WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "s!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b523305a543383fb05cbaa57063b2a196807be34b8e3fc7b4d8ff0280deb13d6"
+}

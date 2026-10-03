@@ -1007,8 +1007,21 @@ pub async fn batch_status_stats(
         return std::collections::HashMap::new();
     }
     sqlx::query!(
-        "SELECT status_id, replies_count, reblogs_count, favourites_count, quotes_count
-         FROM status_stats WHERE status_id = ANY($1::bigint[])",
+        // `REST::StatusSerializer#reblogs_count` and `#favourites_count`: the
+        // count a remote status's server reports, when it reported one
+        // (`Status#untrusted_*_count`, never for a local status), else ours.
+        r#"SELECT ss.status_id, ss.replies_count,
+                  CASE WHEN NOT (COALESCE(s.local, false) OR s.uri IS NULL)
+                            AND ss.untrusted_reblogs_count IS NOT NULL
+                       THEN ss.untrusted_reblogs_count
+                       ELSE GREATEST(ss.reblogs_count, 0) END AS "reblogs_count!",
+                  CASE WHEN NOT (COALESCE(s.local, false) OR s.uri IS NULL)
+                            AND ss.untrusted_favourites_count IS NOT NULL
+                       THEN ss.untrusted_favourites_count
+                       ELSE GREATEST(ss.favourites_count, 0) END AS "favourites_count!",
+                  ss.quotes_count
+           FROM status_stats ss JOIN statuses s ON s.id = ss.status_id
+           WHERE ss.status_id = ANY($1::bigint[])"#,
         status_ids,
     )
     .fetch_all(&state.db)

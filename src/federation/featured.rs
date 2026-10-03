@@ -8,7 +8,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::db::models::Account;
-use crate::federation::replies::{collection_items, fetch_collection_page, non_matching_uri_hosts};
+use crate::federation::json_ld::{self, non_matching_uri_hosts, supported_context, RaiseOn};
 use crate::state::AppState;
 
 /// `FeaturedTag::LIMIT`.
@@ -69,6 +69,7 @@ impl crate::jobs::Job for SynchronizeFeaturedCollectionWorker {
             self.account_id,
             self.collection.as_deref(),
             self.hashtag,
+            self.request_id.as_deref(),
         )
         .await
     }
@@ -149,12 +150,16 @@ async fn remote_account(state: &AppState, account_id: i64) -> Result<Option<Acco
 
 /// `ActivityPub::FetchFeaturedCollectionService`: the account's pinned posts
 /// are the `Note`s of its `featured` collection's first page, and, when
-/// asked, its featured hashtags the `Hashtag`s there.
+/// asked, its featured hashtags the `Hashtag`s there. The collection is
+/// fetched as it is named; its pages, and the posts, only from the account's
+/// host, on behalf of a local follower. A page that fails for the time being
+/// fails the job, to be retried.
 pub async fn fetch_featured_collection(
     state: &AppState,
     account_id: i64,
     collection: Option<&str>,
     hashtag: bool,
+    request_id: Option<&str>,
 ) -> Result<()> {
     let Some(account) = remote_account(state, account_id).await? else {
         return Ok(());
@@ -167,17 +172,27 @@ pub async fn fetch_featured_collection(
     let Some(url) = url else {
         return Ok(());
     };
-    let Some(json) = fetch_collection_page(state, &Value::String(url), None).await else {
+    // `fetch_collection_page(url)`: no reference, no on-behalf-of.
+    let Some(json) =
+        json_ld::fetch_resource_without_id_validation(state, &url, None, RaiseOn::Temporary)
+            .await?
+            .filter(json_ld::is_present)
+    else {
         return Ok(());
     };
     let Some(uri) = account.stored_uri() else {
         return Ok(());
     };
-    let Some((items, _)) = collection_items(state, &json, 1, usize::MAX, Some(uri)).await else {
+    let local_follower = json_ld::local_follower(state, account.id).await;
+    let Some((items, _)) =
+        json_ld::collection_items(state, &json, Some(1), None, uri, local_follower).await?
+    else {
         return Ok(());
     };
 
-    // `process_note_items`.
+    // `process_note_items`: each fetched, as `FetchRemoteStatusService`
+    // fetches it, on behalf of a local follower and only if the account is
+    // its author.
     let mut status_ids = Vec::new();
     for item in &items {
         let item_uri = match item {
@@ -187,27 +202,37 @@ pub async fn fetch_featured_collection(
             }
             _ => continue,
         };
-        if item_uri.is_empty()
-            || crate::federation::moderation::domain_of(item_uri)
-                .is_some_and(|host| host.eq_ignore_ascii_case(&state.instance.domain))
+        if crate::federation::local_uri::is_local(state, item_uri)
             || non_matching_uri_hosts(uri, item_uri)
         {
             continue;
         }
-        let Ok(Some(status_id)) = crate::api::ap::inbox::fetch_remote_status(state, item_uri).await
-        else {
+        let fetched = crate::api::ap::inbox::fetch_remote_status_with(
+            state,
+            item_uri,
+            crate::api::ap::inbox::FetchOptions {
+                on_behalf_of: local_follower,
+                expected_actor_uri: Some(uri.to_owned()),
+                request_id: request_id.map(str::to_owned),
+                ..Default::default()
+            },
+        )
+        // A request the post's server does not answer fails the job, to be
+        // retried, as it raises out of Mastodon's.
+        .await?;
+        let Some((status_id, _)) = fetched else {
             continue;
         };
-        let pinnable = sqlx::query_scalar!(
-            r#"SELECT (account_id = $2 AND reblog_of_id IS NULL AND visibility <> 3) AS "pinnable!"
-               FROM statuses WHERE id = $1"#,
+        // `next unless status&.account_id == @account.id`.
+        let authored = sqlx::query_scalar!(
+            r#"SELECT (account_id = $2) AS "authored!" FROM statuses WHERE id = $1"#,
             status_id,
             account.id,
         )
         .fetch_optional(&state.db)
         .await?
         .unwrap_or(false);
-        if pinnable && !status_ids.contains(&status_id) {
+        if authored && !status_ids.contains(&status_id) {
             status_ids.push(status_id);
         }
     }
@@ -218,11 +243,33 @@ pub async fn fetch_featured_collection(
     )
     .execute(&state.db)
     .await?;
+    // `StatusPin.create!` for each post not yet pinned, in order. A post
+    // `StatusPinValidator` refuses — a boost, or a direct post — raises,
+    // failing the job to be retried as Mastodon's is, with the pins before
+    // it kept.
     for status_id in status_ids {
+        let status = sqlx::query!(
+            r#"SELECT reblog_of_id, visibility,
+                      EXISTS (SELECT 1 FROM status_pins WHERE account_id = $2 AND status_id = $1)
+                        AS "pinned!"
+               FROM statuses WHERE id = $1"#,
+            status_id,
+            account.id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if status.pinned {
+            continue;
+        }
+        if status.reblog_of_id.is_some() {
+            anyhow::bail!("Validation failed: Boosts cannot be pinned (status {status_id})");
+        }
+        if status.visibility == crate::db::models::vis::DIRECT {
+            anyhow::bail!("Validation failed: Direct posts cannot be pinned (status {status_id})");
+        }
         sqlx::query!(
             r#"INSERT INTO status_pins (account_id, status_id, created_at, updated_at)
-               VALUES ($1, $2, now(), now())
-               ON CONFLICT DO NOTHING"#,
+               VALUES ($1, $2, now(), now())"#,
             account.id,
             status_id,
         )
@@ -253,20 +300,27 @@ pub async fn fetch_featured_tags_collection(
     let Some(account) = remote_account(state, account_id).await? else {
         return Ok(());
     };
-    let Ok(json) = crate::federation::fetch::signed_get_json(state, url).await else {
+    // `fetch_resource(url, true, local_follower)`.
+    let local_follower = json_ld::local_follower(state, account.id).await;
+    let Some(json) = json_ld::fetch_resource(state, url, local_follower, RaiseOn::None).await?
+    else {
         return Ok(());
     };
-    if json.get("id").and_then(Value::as_str) != Some(url) || !supported_context(&json) {
+    if !supported_context(&json) {
         return Ok(());
     }
-    let Some((items, _)) = collection_items(
+    let Some(uri) = account.stored_uri() else {
+        return Ok(());
+    };
+    let Some((items, _)) = json_ld::collection_items(
         state,
         &json,
-        FEATURED_TAG_LIMIT,
-        FEATURED_TAG_LIMIT,
-        account.stored_uri(),
+        Some(FEATURED_TAG_LIMIT),
+        Some(FEATURED_TAG_LIMIT),
+        uri,
+        local_follower,
     )
-    .await
+    .await?
     else {
         return Ok(());
     };
@@ -366,14 +420,15 @@ pub async fn fetch_featured_collections_collection(
     let Some(uri) = account.stored_uri() else {
         return Ok(());
     };
-    let Some((items, _)) = collection_items(
+    let Some((items, _)) = json_ld::collection_items(
         state,
         &Value::String(collections_url),
-        COLLECTIONS_MAX_PAGES,
-        usize::MAX,
-        Some(uri),
+        Some(COLLECTIONS_MAX_PAGES),
+        None,
+        uri,
+        None,
     )
-    .await
+    .await?
     else {
         return Ok(());
     };
@@ -449,16 +504,6 @@ fn normalize_hashtag(name: &str) -> String {
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '·' || *c == '\u{200c}')
         .collect()
-}
-
-/// `JsonLdHelper#supported_context?`.
-fn supported_context(json: &Value) -> bool {
-    const CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
-    match json.get("@context") {
-        Some(Value::String(context)) => context == CONTEXT,
-        Some(Value::Array(contexts)) => contexts.iter().any(|c| c.as_str() == Some(CONTEXT)),
-        _ => false,
-    }
 }
 
 #[cfg(test)]

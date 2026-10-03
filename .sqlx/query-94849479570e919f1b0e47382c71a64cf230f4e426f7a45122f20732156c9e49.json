@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_stats (status_id, favourites_count, created_at, updated_at)\n           VALUES ($1, 1, now(), now())\n           ON CONFLICT (status_id) DO UPDATE\n             SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1),\n                 untrusted_favourites_count = CASE WHEN status_stats.untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(status_stats.untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - status_stats.favourites_count, 0), 100000000) END,\n                 updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94849479570e919f1b0e47382c71a64cf230f4e426f7a45122f20732156c9e49"
+}

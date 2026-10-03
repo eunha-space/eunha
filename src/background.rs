@@ -507,7 +507,16 @@ async fn publish_one(
         .to_string();
     let spoiler_text = params["spoiler_text"].as_str().unwrap_or("").to_string();
     let sensitive = params["sensitive"].as_bool().unwrap_or(false);
-    let language = params["language"].as_str().map(str::to_string);
+    // `PostStatusService`: `valid_locale_cascade(options[:language], user's
+    // preferred posting language, I18n.default_locale)`.
+    let preferred = crate::api::mastodon::accounts::user_defaults(state, account_id)
+        .await
+        .language;
+    let language = crate::languages::valid_locale_cascade(&[
+        params["language"].as_str(),
+        preferred.as_deref(),
+        Some(crate::api::mastodon::DEFAULT_LOCALE),
+    ]);
     let in_reply_to_id: Option<i64> = params["in_reply_to_id"]
         .as_str()
         .and_then(|s| s.parse::<i64>().ok());

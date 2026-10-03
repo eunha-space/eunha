@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT (account_id = $2 AND reblog_of_id IS NULL AND visibility <> 3) AS \"pinnable!\"\n               FROM statuses WHERE id = $1",
+  "query": "SELECT (account_id = $2) AS \"authored!\" FROM statuses WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "pinnable!",
+        "name": "authored!",
         "type_info": "Bool"
       }
     ],
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "1ba785063899f2338bfe3b79d0e80b106ce72ed772f65f09366e9a2cadeba5b6"
+  "hash": "10900cd974749a7c479a8ba40dd4f7ea1da83aef954afd9bb060fec63a526c47"
 }

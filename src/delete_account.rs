@@ -883,7 +883,9 @@ async fn decrement_interaction_counters(state: &AppState, ids: &[i64]) -> Result
     .await?;
     sqlx::query!(
         r#"UPDATE status_stats ss
-           SET reblogs_count = GREATEST(0, ss.reblogs_count - c.n), updated_at = now()
+           SET reblogs_count = GREATEST(0, ss.reblogs_count - c.n),
+               untrusted_reblogs_count = GREATEST(0, ss.untrusted_reblogs_count - c.n),
+               updated_at = now()
            FROM (SELECT reblog_of_id AS status_id, count(*) AS n FROM statuses
                  WHERE id = ANY($1::bigint[]) AND reblog_of_id IS NOT NULL
                  GROUP BY reblog_of_id) c
@@ -997,7 +999,9 @@ async fn purge_generated_notifications(state: &AppState, account_id: i64) -> Res
 async fn purge_favourites(state: &AppState, account_id: i64) -> Result<()> {
     sqlx::query!(
         r#"UPDATE status_stats ss
-           SET favourites_count = GREATEST(0, ss.favourites_count - c.n), updated_at = now()
+           SET favourites_count = GREATEST(0, ss.favourites_count - c.n),
+               untrusted_favourites_count = GREATEST(0, ss.untrusted_favourites_count - c.n),
+               updated_at = now()
            FROM (SELECT status_id, count(*) AS n FROM favourites
                  WHERE account_id = $1 GROUP BY status_id) c
            WHERE ss.status_id = c.status_id"#,

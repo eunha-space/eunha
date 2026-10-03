@@ -1,7 +1,9 @@
-//! Fetching remote ActivityPub objects into local rows: dereferencing a remote
-//! status (following in-reply-to/quote references up to a bounded depth) and
+//! Fetching remote ActivityPub objects into local rows: Mastodon's
+//! `ActivityPub::FetchRemoteStatusService`, which processes a fetched status
+//! as the `Create` (or `Update`, or `Announce`) it would have come in, and
 //! resolving-or-fetching a remote account. These are the shared entry points
-//! the inbound activity handlers use to materialise objects they reference.
+//! the inbound activity handlers and the API use to materialise objects they
+//! reference.
 
 use serde_json::Value;
 
@@ -10,63 +12,390 @@ use crate::{
     state::AppState,
 };
 
-use super::attachment::{ap_attachment_file_meta, classify_attachment_type};
-use super::{as_string_vec, json_uri, sync_remote_poll};
-
-/// Resolve a status by URI, fetching and storing it from its origin server if
-/// not already known locally. Returns the local status id.
-///
-/// This stores the core of the Note (text, audience/visibility, in-reply-to and
-/// quote linkage when the referenced posts are already local, and media); it
-/// does not recurse into referenced posts. Returns `Ok(None)` if the object
-/// can't be fetched or isn't a storable Note.
+/// Resolve a status by URI as Mastodon's `FetchRemoteStatusService` does:
+/// fetched from its server, and processed as the `Create` it would have come
+/// in — or, when we already hold it, as an `Update`. Returns the local status
+/// id, or `None` when the object cannot be had or is not a status.
 pub async fn fetch_remote_status(state: &AppState, uri: &str) -> AppResult<Option<i64>> {
-    Ok(fetch_remote_status_depth(state, uri, None, 0)
-        .await?
-        .map(|(id, _)| id))
+    Ok(Box::pin(fetch_remote_status_with(
+        state,
+        uri,
+        FetchOptions::default(),
+    ))
+    .await?
+    .map(|(id, _)| id))
 }
 
 /// As [`fetch_remote_status`], for an object already in hand: the caller has
 /// fetched it from the server that owns its id (Mastodon's `prefetched_body`),
-/// so storing it needs no second request.
+/// so processing it needs no second request.
 pub async fn fetch_remote_status_prefetched(
     state: &AppState,
     uri: &str,
     json: Value,
 ) -> AppResult<Option<i64>> {
-    Ok(fetch_remote_status_depth(state, uri, Some(json), 0)
-        .await?
-        .map(|(id, _)| id))
+    Ok(Box::pin(fetch_remote_status_with(
+        state,
+        uri,
+        FetchOptions {
+            prefetched_body: Some(json),
+            ..FetchOptions::default()
+        },
+    ))
+    .await?
+    .map(|(id, _)| id))
 }
 
-/// As [`fetch_remote_status_prefetched`], saying too whether the status is new
-/// — FetchReplyWorker's `previously_new_record?`, which is what an async
-/// refresh's `result_count` counts.
-pub async fn store_remote_status_prefetched(
-    state: &AppState,
-    uri: &str,
-    json: Value,
-) -> AppResult<Option<(i64, bool)>> {
-    fetch_remote_status_depth(state, uri, Some(json), 0).await
-}
-
-/// Largest depth to which `fetch_remote_status` follows references (in-reply-to
-/// and quoted posts), to avoid unbounded fetch chains.
+/// Largest depth to which quoted posts are fetched while a status is
+/// processed (`VerifyQuoteService::MAX_SYNCHRONOUS_DEPTH`).
 pub(super) const MAX_FETCH_DEPTH: u8 = 2;
 
-/// [`fetch_remote_status`] at `depth` in a chain of references, with the
-/// object already in hand when `prefetched`.
+/// [`fetch_remote_status`] at `depth` in a chain of quotes, with the object
+/// already in hand when `prefetched`.
 pub(super) async fn fetch_remote_status_at_depth(
     state: &AppState,
     uri: &str,
     prefetched: Option<Value>,
     depth: u8,
 ) -> AppResult<Option<i64>> {
-    Ok(
-        Box::pin(fetch_remote_status_depth(state, uri, prefetched, depth))
-            .await?
-            .map(|(id, _)| id),
+    Ok(Box::pin(fetch_remote_status_with(
+        state,
+        uri,
+        FetchOptions {
+            prefetched_body: prefetched,
+            depth,
+            ..FetchOptions::default()
+        },
+    ))
+    .await?
+    .map(|(id, _)| id))
+}
+
+/// `::FetchRemoteStatusService#call` (not the `ActivityPub::` one): the
+/// document at `url`, found as `FetchResourceService` finds it — which
+/// follows a page's link to its ActivityPub object, and gives nothing for a
+/// request that is not answered — unless it is already in hand, and then
+/// processed by [`fetch_remote_status_with`]. A status of ours is only
+/// looked up.
+pub async fn fetch_remote_status_by_url(
+    state: &AppState,
+    url: &str,
+    prefetched_body: Option<Value>,
+    request_id: Option<String>,
+) -> AppResult<Option<(i64, bool)>> {
+    if crate::federation::local_uri::is_local(state, url) {
+        let id = crate::federation::local_uri::status(state, url).await;
+        return Ok(id.map(|id| (id, false)));
+    }
+    let (url, json) = match prefetched_body {
+        Some(json) => (url.to_owned(), json),
+        None => {
+            let fetched = crate::federation::fetch_resource::fetch_resource(state, url).await;
+            let Some(resource) = fetched.resource else {
+                tracing::debug!(url, "could not fetch status");
+                return Ok(None);
+            };
+            (resource.url, resource.json)
+        }
+    };
+    Box::pin(fetch_remote_status_with(
+        state,
+        &url,
+        FetchOptions {
+            prefetched_body: Some(json),
+            request_id,
+            ..FetchOptions::default()
+        },
+    ))
+    .await
+}
+
+/// `ActivityPub::FetchRemoteStatusService#call`'s options.
+#[derive(Debug, Default, Clone)]
+pub struct FetchOptions {
+    /// The document, already fetched from the server that owns its id.
+    pub prefetched_body: Option<Value>,
+    /// The local account the fetch is signed on behalf of; the instance
+    /// actor when there is none.
+    pub on_behalf_of: Option<i64>,
+    /// The actor the status has to be by.
+    pub expected_actor_uri: Option<String>,
+    /// The chain of fetches this one belongs to; one is made up when there
+    /// is none, as Mastodon's `"#{Time.now.utc.to_i}-status-#{uri}"`.
+    pub request_id: Option<String>,
+    /// How deep in a chain of quotes the status is.
+    pub depth: u8,
+}
+
+/// `ActivityPub::FetchRemoteStatusService::DISCOVERIES_PER_REQUEST`.
+const DISCOVERIES_PER_REQUEST: i64 = 1000;
+
+/// `ActivityPub::FetchRemoteStatusService#call`: the status document at
+/// `uri` — fetched, or in hand — processed as the `Create` it would have come
+/// in, or, when we already hold it from its author, as an `Update`; an
+/// `Announce` document as the `Announce` it is. Returns the status's id and
+/// whether it was new to us (`previously_new_record?`).
+///
+/// A chain of fetches (`request_id`) stops after [`DISCOVERIES_PER_REQUEST`]
+/// statuses, which is what bounds a thread whose every reply has its own
+/// replies read.
+///
+/// A request for the status that was not answered at all — a connection
+/// error, a refused address, a redirect that could not be followed — is an
+/// `Err`, as Mastodon raises one, for the caller to rescue or retry as
+/// Mastodon's does ([`unanswered`] says which errors those are). A status
+/// the server answers with is `None`.
+pub async fn fetch_remote_status_with(
+    state: &AppState,
+    uri: &str,
+    options: FetchOptions,
+) -> AppResult<Option<(i64, bool)>> {
+    use crate::federation::fetch_resource::type_matches;
+    use crate::federation::json_ld;
+
+    if uri.is_empty() || crate::federation::moderation::domain_not_allowed(state, uri).await {
+        return Ok(None);
+    }
+    let request_id = options
+        .request_id
+        .unwrap_or_else(|| format!("{}-status-{uri}", chrono::Utc::now().timestamp()));
+
+    // `body_to_json(prefetched_body, compare_id: uri)`, or `fetch_status`.
+    let json = match options.prefetched_body {
+        Some(json) => json
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id == uri)
+            .then_some(json),
+        None => fetch_status(state, uri, options.on_behalf_of).await?,
+    };
+    let Some(json) = json else {
+        return Ok(None);
+    };
+    if !json_ld::supported_context(&json) {
+        return Ok(None);
+    }
+
+    let first_id = |value: Option<&Value>| -> Option<String> {
+        let value = match value? {
+            Value::Array(items) => items.first()?,
+            value => value,
+        };
+        json_ld::value_or_id(value).map(str::to_owned)
+    };
+    let (mut activity, actor_uri, object_uri) = if super::status_parser::is_status_type(&json) {
+        let actor_uri = first_id(json.get("attributedTo"));
+        let object_uri = super::status_parser::uri(&json);
+        let mut activity = serde_json::json!({
+            "type": "Create",
+            "actor": actor_uri,
+            "object": json,
+        });
+        if let Some(context) = activity["object"].get("@context").cloned() {
+            activity["@context"] = context;
+        }
+        (activity, actor_uri, object_uri)
+    } else if type_matches(&json, &["Create", "Announce"]) {
+        let actor_uri = first_id(json.get("actor"));
+        let object_uri = json
+            .get("object")
+            .and_then(json_ld::value_or_id)
+            .map(str::to_owned);
+        (json, actor_uri, object_uri)
+    } else {
+        return Ok(None);
+    };
+    let (Some(actor_uri), Some(object_uri)) = (actor_uri, object_uri) else {
+        return Ok(None);
+    };
+    // `trustworthy_attribution?`: the document's id and its actor on one host.
+    let Some(document_id) = activity
+        .get("id")
+        .or_else(|| activity["object"].get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return Ok(None);
+    };
+    if !same_host(&document_id, &actor_uri) {
+        return Ok(None);
+    }
+    if options
+        .expected_actor_uri
+        .as_deref()
+        .is_some_and(|expected| !expected.is_empty() && expected != actor_uri)
+    {
+        return Ok(None);
+    }
+    if crate::federation::local_uri::is_local(state, &object_uri) {
+        let id = crate::federation::local_uri::status(state, &object_uri).await;
+        return Ok(id.map(|id| (id, false)));
+    }
+
+    // `account_from_uri`, and `return if actor.nil? || actor.suspended?`.
+    let Ok(account_id) = resolve_or_fetch_remote_account(state, &actor_uri).await else {
+        return Ok(None);
+    };
+    let suspended = sqlx::query_scalar!(
+        r#"SELECT (suspended_at IS NOT NULL) AS "suspended!" FROM accounts WHERE id = $1"#,
+        account_id,
     )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(true);
+    if suspended {
+        return Ok(None);
+    }
+
+    let announce = type_matches(&activity, &["Announce"]);
+    let held_by_actor = sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+        object_uri,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    // A status we already have is an `Update` rather than a `Create`.
+    let update = !announce && held_by_actor.is_some();
+    if update {
+        activity["type"] = Value::String("Update".into());
+    }
+    let result_uri = if announce {
+        document_id.clone()
+    } else {
+        object_uri.clone()
+    };
+    let held = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM statuses WHERE uri = $1) AS "e!""#,
+        result_uri,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    if discovery_limit_reached(state, &request_id).await {
+        return Ok(None);
+    }
+
+    if announce {
+        Box::pin(super::status::handle_announce(
+            state,
+            &state.instance,
+            &activity,
+        ))
+        .await?;
+    } else if update {
+        Box::pin(super::status::handle_update(
+            state,
+            &state.instance,
+            &activity,
+        ))
+        .await?;
+    } else {
+        Box::pin(super::create::create(
+            state,
+            &activity,
+            &super::create::CreateOptions {
+                fetched: true,
+                request_id: Some(request_id),
+                depth: options.depth,
+            },
+        ))
+        .await?;
+    }
+    let id = sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+        result_uri,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(id.map(|id| (id, !held)))
+}
+
+/// `FetchRemoteStatusService#fetch_status`: `fetch_resource(uri, true,
+/// on_behalf_of, raise_on_error: :all)`, where a `404` for a public status
+/// we hold from elsewhere removes it.
+async fn fetch_status(
+    state: &AppState,
+    uri: &str,
+    on_behalf_of: Option<i64>,
+) -> AppResult<Option<Value>> {
+    use crate::federation::json_ld;
+    match json_ld::fetch_resource(state, uri, on_behalf_of, json_ld::RaiseOn::All).await {
+        Ok(json) => Ok(json),
+        Err(error) => {
+            let status = error
+                .downcast_ref::<ojak::fetch::FetchError>()
+                .and_then(ojak::fetch::FetchError::status);
+            if status.is_none()
+                && crate::federation::json_ld::raises(
+                    error
+                        .downcast_ref::<ojak::fetch::FetchError>()
+                        .unwrap_or(&ojak::fetch::FetchError::NoId),
+                    json_ld::RaiseOn::All,
+                )
+            {
+                return Err(AppError::Internal(error));
+            }
+            if status == Some(404) {
+                let orphan = sqlx::query_scalar!(
+                    "SELECT id FROM statuses
+                     WHERE uri = $1 AND local = false AND deleted_at IS NULL
+                       AND visibility IN (0, 1)",
+                    uri,
+                )
+                .fetch_optional(&state.db)
+                .await?;
+                if let Some(status_id) = orphan {
+                    tracing::debug!(uri, "got 404 for an orphaned status, deleting it");
+                    super::status::remove_remote_status(state, status_id).await?;
+                }
+            } else {
+                tracing::debug!(uri, %error, "could not fetch status");
+            }
+            Ok(None)
+        }
+    }
+}
+
+/// Whether `error` is a request for a status that was not answered, which
+/// Mastodon raises as one of its `HTTP_CONNECTION_ERRORS` (or a refused
+/// host): what its callers rescue, or let their jobs retry.
+pub fn unanswered(error: &AppError) -> bool {
+    match error {
+        AppError::Internal(error) => {
+            error
+                .downcast_ref::<ojak::fetch::FetchError>()
+                .is_some_and(|error| {
+                    error.status().is_none()
+                        && crate::federation::json_ld::raises(
+                            error,
+                            crate::federation::json_ld::RaiseOn::All,
+                        )
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Count one more status discovered under `request_id`, and say whether the
+/// chain has gone past [`DISCOVERIES_PER_REQUEST`]. A key that lives five
+/// minutes, under the instance's prefix.
+async fn discovery_limit_reached(state: &AppState, request_id: &str) -> bool {
+    let key = state
+        .redis_keys
+        .key(format!("status_discovery_per_request:{request_id}"));
+    let mut redis = state.redis.clone();
+    let discoveries: redis::RedisResult<(i64,)> = redis::pipe()
+        .cmd("INCRBY")
+        .arg(&key)
+        .arg(1)
+        .cmd("EXPIRE")
+        .arg(&key)
+        .arg(5 * 60)
+        .ignore()
+        .query_async(&mut redis)
+        .await;
+    discoveries.is_ok_and(|(discoveries,)| discoveries > DISCOVERIES_PER_REQUEST)
 }
 
 /// Whether two URIs name the same HTTP(S) host, which is how Mastodon decides
@@ -74,255 +403,6 @@ pub(super) async fn fetch_remote_status_at_depth(
 /// same DID, whose proof is what vouches for them.
 fn same_host(a: &str, b: &str) -> bool {
     crate::federation::portable::same_authority(a, b)
-}
-
-async fn fetch_remote_status_depth(
-    state: &AppState,
-    uri: &str,
-    prefetched: Option<Value>,
-    depth: u8,
-) -> AppResult<Option<(i64, bool)>> {
-    if uri.is_empty() {
-        return Ok(None);
-    }
-    // Fetched by the id as given, hints and all, and stored and looked up by
-    // its canonical form.
-    let fetch_uri = uri;
-    let canonical = crate::federation::portable::canonical(uri);
-    let uri = canonical.as_str();
-    if let Some(id) = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-        uri,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        return Ok(Some((id, false)));
-    }
-    // `FetchRemoteStatusService`: `return if domain_not_allowed?(uri)`.
-    if crate::federation::moderation::domain_not_allowed(state, fetch_uri).await {
-        return Ok(None);
-    }
-
-    let fetched: Value = match prefetched {
-        Some(json) => json,
-        None => match crate::federation::fetch::signed_get_json(state, fetch_uri).await {
-            Ok(v) => v,
-            Err(_) => return Ok(None),
-        },
-    };
-
-    let nested_fetched;
-    let object = match fetched.get("type").and_then(|t| t.as_str()).unwrap_or("") {
-        "Create" | "Update" => match fetched.get("object") {
-            Some(o) if o.is_object() => o,
-            Some(o) if o.is_string() => {
-                let Some(object_uri) = o.as_str() else {
-                    return Ok(None);
-                };
-                nested_fetched =
-                    match crate::federation::fetch::signed_get_json(state, object_uri).await {
-                        Ok(v) => v,
-                        Err(_) => return Ok(None),
-                    };
-                &nested_fetched
-            }
-            _ => return Ok(None),
-        },
-        _ => &fetched,
-    };
-
-    // Only store Note-like objects.
-    let obj_type = object.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    if !matches!(obj_type, "Note" | "Article" | "Question") {
-        return Ok(None);
-    }
-    let note_uri = object.get("id").and_then(|v| v.as_str()).unwrap_or(uri);
-
-    let attributed_to = json_uri(object.get("attributedTo"));
-    if attributed_to.is_empty() {
-        return Ok(None);
-    }
-    // `FetchRemoteStatusService#trustworthy_attribution?`: a server may only
-    // attribute a status to an account on its own host. Without this, anyone
-    // who can get us to dereference a URL of theirs — a search for it is
-    // enough — can hang a status off any account on the network.
-    if !same_host(note_uri, attributed_to) {
-        return Ok(None);
-    }
-    let Ok(account_id) = resolve_or_fetch_remote_account(state, attributed_to).await else {
-        return Ok(None);
-    };
-
-    let text = object
-        .get("content")
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .to_string();
-    let spoiler_text = object
-        .get("summary")
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
-    // `@account.sensitized? || @status_parser.sensitive`.
-    let sensitive = object
-        .get("sensitive")
-        .and_then(|s| s.as_bool())
-        .unwrap_or(false)
-        || sqlx::query_scalar!(
-            r#"SELECT (sensitized_at IS NOT NULL) AS "s!" FROM accounts WHERE id = $1"#,
-            account_id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .unwrap_or(false);
-    let url = object
-        .get("url")
-        .and_then(|u| u.as_str())
-        .map(str::to_owned);
-    let created_at = object
-        .get("published")
-        .and_then(|p| p.as_str())
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-
-    let note_to = as_string_vec(object.get("to"));
-    let note_cc = as_string_vec(object.get("cc"));
-    let visibility = crate::db::models::vis::from_audience(&note_to, &note_cc);
-    let language = object
-        .get("contentMap")
-        .and_then(|m| m.as_object())
-        .and_then(|m| m.keys().next())
-        .map(|s| s.to_string())
-        .filter(|s| ["ko", "en"].contains(&s.as_str()));
-
-    // Link in-reply-to: use the local copy if present, otherwise fetch it once.
-    let in_reply_to_uri = object.get("inReplyTo").and_then(|v| v.as_str());
-    let (in_reply_to_id, in_reply_to_account_id): (Option<i64>, Option<i64>) =
-        if let Some(irt) = in_reply_to_uri {
-            let mut found: Option<(i64, i64)> = sqlx::query!(
-                "SELECT id, account_id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-                irt,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .map(|r| (r.id, r.account_id));
-            if found.is_none() && depth < MAX_FETCH_DEPTH {
-                if let Some((pid, _)) =
-                    Box::pin(fetch_remote_status_depth(state, irt, None, depth + 1)).await?
-                {
-                    found = sqlx::query!("SELECT id, account_id FROM statuses WHERE id = $1", pid)
-                        .fetch_optional(&state.db)
-                        .await?
-                        .map(|r| (r.id, r.account_id));
-                }
-            }
-            found
-                .map(|(id, aid)| (Some(id), Some(aid)))
-                .unwrap_or((None, None))
-        } else {
-            (None, None)
-        };
-
-    let status_id = crate::snowflake::next_id();
-    let inserted = sqlx::query_scalar!(
-        r#"INSERT INTO statuses
-             (id, account_id, text, spoiler_text, visibility, sensitive,
-              uri, url, in_reply_to_id, in_reply_to_account_id, reply,
-              language, local, created_at, updated_at, quote_approval_policy)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13, now(), $14)
-           ON CONFLICT (uri) WHERE uri IS NOT NULL AND uri != '' DO NOTHING
-           RETURNING id"#,
-        status_id,
-        account_id,
-        text,
-        spoiler_text,
-        visibility,
-        sensitive,
-        note_uri,
-        url,
-        in_reply_to_id,
-        in_reply_to_account_id,
-        // A status with an inReplyTo is a reply even if its parent isn't local.
-        in_reply_to_uri.is_some(),
-        language,
-        created_at,
-        super::remote_quote_policy(state, account_id, object).await,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Lost an insert race — return the existing row.
-    let Some(new_id) = inserted else {
-        return Ok(sqlx::query_scalar!(
-            "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-            note_uri,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|id| (id, false)));
-    };
-    crate::fasp::events::status_created(state, new_id).await;
-
-    // `process_quote` and `fetch_and_verify_quote`.
-    Box::pin(super::quote::process_quote(
-        state,
-        new_id,
-        account_id,
-        object,
-        fetched.get("@context"),
-        depth,
-    ))
-    .await?;
-
-    // Media attachments.
-    for att in object
-        .get("attachment")
-        .and_then(|a| a.as_array())
-        .into_iter()
-        .flatten()
-    {
-        let media_type_str = att.get("mediaType").and_then(|v| v.as_str()).unwrap_or("");
-        let att_type = classify_attachment_type(
-            att.get("type").and_then(|v| v.as_str()).unwrap_or(""),
-            media_type_str,
-        );
-        let Some(remote_url) = att
-            .get("url")
-            .and_then(|v| v.as_str())
-            .filter(|u| !u.is_empty())
-        else {
-            continue;
-        };
-        let description = att.get("name").and_then(|v| v.as_str()).map(str::to_owned);
-        let blurhash = att
-            .get("blurhash")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
-        let file_content_type = (!media_type_str.is_empty()).then(|| media_type_str.to_owned());
-        let file_meta = ap_attachment_file_meta(att);
-        let _ = sqlx::query!(
-            r#"INSERT INTO media_attachments
-                 (id, account_id, status_id, remote_url, description, blurhash, type, file_content_type, file_meta, created_at, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), now())"#,
-            crate::snowflake::next_id(),
-            account_id,
-            new_id,
-            remote_url,
-            description,
-            blurhash,
-            att_type,
-            file_content_type,
-            file_meta,
-        )
-        .execute(&state.db)
-        .await;
-    }
-
-    sync_remote_poll(state, new_id, account_id, object).await?;
-
-    Ok(Some((new_id, true)))
 }
 
 /// Looks up a remote account by URI, fetching it from the remote server if unknown.

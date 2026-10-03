@@ -191,11 +191,11 @@ pub async fn post_status(
     // posting language, I18n.default_locale)` — a status always ends up with a
     // language, so a client offering a translation or filtering by one has
     // something to read. eunha stopped at the user's setting and left it null.
-    let language = form
-        .language
-        .clone()
-        .or(defaults.language)
-        .or_else(|| Some(crate::api::mastodon::DEFAULT_LOCALE.to_string()));
+    let language = crate::languages::valid_locale_cascade(&[
+        form.language.as_deref(),
+        defaults.language.as_deref(),
+        Some(crate::api::mastodon::DEFAULT_LOCALE),
+    ]);
     let in_reply_to_id = form
         .in_reply_to_id
         .as_deref()

@@ -70,7 +70,18 @@ pub async fn edit_status(
     }
     // Mastodon forces sensitive when a content warning is present.
     let new_sensitive = form.sensitive.unwrap_or(status.sensitive) || !new_spoiler.is_empty();
-    let new_language = form.language.clone().or(status.language.clone());
+    // `UpdateStatusService`: `valid_locale_cascade(options[:language],
+    // status.language, user's preferred posting language,
+    // I18n.default_locale)`.
+    let preferred = crate::api::mastodon::accounts::user_defaults(&state, status.account_id)
+        .await
+        .language;
+    let new_language = crate::languages::valid_locale_cascade(&[
+        form.language.as_deref(),
+        status.language.as_deref(),
+        preferred.as_deref(),
+        Some(crate::api::mastodon::DEFAULT_LOCALE),
+    ]);
 
     // Detect whether the attached media set changes (description edits via
     // media_attributes also count as a change).

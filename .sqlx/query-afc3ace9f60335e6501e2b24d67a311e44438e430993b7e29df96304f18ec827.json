@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM statuses\n                     WHERE uri = $1 AND local = false AND deleted_at IS NULL\n                       AND visibility IN (0, 1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "afc3ace9f60335e6501e2b24d67a311e44438e430993b7e29df96304f18ec827"
+}

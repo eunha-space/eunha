@@ -456,32 +456,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "reply-walk-fetches-each-reply-once"
-kind = "behaviour"
-summary = "Walks a remote thread's replies in one job, fetching each reply once"
-mastodon = """
-`ActivityPub::FetchAllRepliesWorker` fetches each reply to read its \
-`replies` collection and queues a `FetchReplyWorker` that fetches it again \
-to store it, retried three times. Each stored reply goes through `Create` \
-processing, which reads the first page of its own replies, and a reply \
-already held is processed again as an `Update`."""
-eunha = """
-Runs the walk as one `ActivityPub::FetchAllRepliesWorker` job, retried as \
-Mastodon retries it, storing each reply from the same request its \
-collection is read from. A reply that cannot be fetched is not retried on \
-its own. Replies already held are not refreshed, and fetched replies do not \
-have their own first page read."""
-why = """
-The walk is bounded (1,000 replies, 500 pages) and repeated at most every \
-fifteen minutes per post, so the post's next walk recovers what a failed \
-fetch missed. Fetching each reply once halves the requests a walk makes of \
-the remote server. Eunha stores fetched posts through its lighter remote \
-status path, which neither refreshes known posts nor recurses."""
-evidence = "tests/remote_replies.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "async-refresh-ids-signed-without-rails"
 kind = "behaviour"
 summary = "Without `secret_key_base`, signs async refresh ids with a key derived from the VAPID key"
@@ -782,5 +756,26 @@ internal host by the embedded IPv4 address or by a network that still \
 routes site-local addresses. The guard lives in ojak, which other \
 applications share."""
 evidence = "tests/integration/federation/private_addresses.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "embedded-note-attribution-fetched"
+kind = "behaviour"
+summary = "Fetches an embedded note attributed to someone other than its sender, rather than storing it as the sender's"
+mastodon = """
+`ActivityPub::Activity::Create` rejects an object on another host than its \
+sender, and otherwise stores it as the sender's status, whatever its \
+`attributedTo` names."""
+eunha = """
+Rejects an object on another host too. One on the sender's host but on \
+another origin, or attributed to someone else, is fetched from its id and \
+stored as that server serves it, through `FetchRemoteStatusService`'s path, \
+which keeps it only if the document's `attributedTo` is on its host."""
+why = """
+A server could otherwise make any of its accounts the author of a note it says \
+another account wrote, and the real author's copy could then never take its \
+URI. Fetching it from its id asks the server that owns it who wrote it."""
+evidence = "tests/integration/federation/ownership.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

@@ -224,6 +224,35 @@ pub fn valid_locale(locale: Option<&str>) -> bool {
     locale.is_some_and(|l| SUPPORTED_LOCALES.iter().any(|(code, _, _)| *code == l))
 }
 
+/// `LanguagesHelper#valid_locale_or_nil`: the locale if it is supported,
+/// else its language without the region (`en_US`, `ja-JP`) if that is.
+pub fn valid_locale_or_nil(locale: Option<&str>) -> Option<String> {
+    let locale = locale.filter(|l| !l.trim().is_empty())?;
+    if valid_locale(Some(locale)) {
+        return Some(locale.to_owned());
+    }
+    let code = locale.split(['_', '-']).next().unwrap_or_default();
+    valid_locale(Some(code)).then(|| code.to_owned())
+}
+
+/// `LanguagesHelper#valid_locale_cascade`: the first of `locales` that
+/// [`valid_locale_or_nil`] makes something of.
+pub fn valid_locale_cascade(locales: &[Option<&str>]) -> Option<String> {
+    locales
+        .iter()
+        .find_map(|locale| valid_locale_or_nil(*locale))
+}
+
+/// `ActivityPub::Parser::StatusParser::NORMALIZED_LOCALE_NAMES.fetch(
+/// lang.downcase.to_sym, lang)`: a supported locale in its own spelling,
+/// whatever the case it came in; anything else as it came.
+pub fn normalized_locale_name(lang: &str) -> String {
+    SUPPORTED_LOCALES
+        .iter()
+        .find(|(code, _, _)| code.eq_ignore_ascii_case(lang))
+        .map_or_else(|| lang.to_owned(), |(code, _, _)| (*code).to_owned())
+}
+
 /// `I18n.available_locales`, the languages Mastodon's interface is offered
 /// in (`config/initializers/i18n.rb`): what `Localized#requested_locale`
 /// chooses from.
@@ -282,5 +311,29 @@ mod accept_language_tests {
         assert_eq!(accept_language_locale("pt-BR,en;q=0.8"), Some("pt-BR"));
         assert_eq!(accept_language_locale("en-US"), Some("en"));
         assert_eq!(accept_language_locale("xx, *"), None);
+    }
+}
+
+#[cfg(test)]
+mod locale_tests {
+    use super::*;
+
+    #[test]
+    fn locales_cascade_as_mastodon_cascades_them() {
+        assert_eq!(valid_locale_or_nil(Some("ja-JP")).as_deref(), Some("ja"));
+        assert_eq!(valid_locale_or_nil(Some("zh-TW")).as_deref(), Some("zh-TW"));
+        assert_eq!(valid_locale_or_nil(Some("xx")), None);
+        assert_eq!(valid_locale_or_nil(Some(" ")), None);
+        assert_eq!(
+            valid_locale_cascade(&[Some("xx"), None, Some("en_US")]).as_deref(),
+            Some("en")
+        );
+    }
+
+    #[test]
+    fn locale_names_are_normalized_in_their_own_spelling() {
+        assert_eq!(normalized_locale_name("ZH-tw"), "zh-TW");
+        assert_eq!(normalized_locale_name("EN"), "en");
+        assert_eq!(normalized_locale_name("tlh"), "tlh");
     }
 }

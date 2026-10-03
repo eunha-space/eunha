@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use crate::db::models::Account;
 use crate::delete_account::suspension_origin;
-use crate::federation::replies::is_present;
+use crate::federation::json_ld::is_present;
 use crate::state::AppState;
 
 /// `MAX_PUBLIC_KEYS`.

@@ -192,6 +192,39 @@ pub(super) async fn handle_delete(
     Ok(())
 }
 
+/// `RemoveStatusService` for a remote status whose server says it is gone:
+/// it is deleted as a `Delete` from its author deletes it.
+pub(super) async fn remove_remote_status(state: &AppState, status_id: i64) -> AppResult<()> {
+    let Some(row) = sqlx::query!(
+        r#"UPDATE statuses SET deleted_at = now()
+           WHERE id = $1 AND deleted_at IS NULL
+           RETURNING reblog_of_id, account_id, in_reply_to_id, visibility"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    crate::streaming::fan_out::remove(state, status_id).await;
+    crate::fasp::events::status_deleted(state, status_id).await;
+    crate::quotes::status_removed(state, status_id).await;
+    if let Err(e) = crate::counters::on_status_deleted(
+        &state.db,
+        row.account_id,
+        row.visibility,
+        row.in_reply_to_id,
+    )
+    .await
+    {
+        tracing::error!(error = %e, "failed to uncount a removed status");
+    }
+    crate::search::elasticsearch::indexing::status(state, row.reblog_of_id.unwrap_or(status_id))
+        .await;
+    crate::search::elasticsearch::indexing::account(state, row.account_id).await;
+    Ok(())
+}
+
 pub(super) async fn handle_announce(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
@@ -227,8 +260,19 @@ pub(super) async fn handle_announce(
         Err(_) => return Ok(()),
     };
 
-    // Find the boosted status in our database, fetching URI-only boosted
-    // objects on demand like Mastodon's dereferencer path.
+    // `Announce#requested_through_relay?`: relayed to us by an enabled
+    // relay, or sent by one.
+    let booster_inbox: Option<String> =
+        sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", booster_id)
+            .fetch_optional(&state.db)
+            .await?;
+    let requested_through_relay = activity
+        .get(super::THROUGH_RELAY)
+        .is_some_and(|flag| flag == &Value::Bool(true))
+        || crate::relays::is_enabled_relay_inbox(state, booster_inbox.as_deref().unwrap_or(""))
+            .await;
+
+    // Find the boosted status in our database.
     let mut original_id = sqlx::query_scalar!(
         "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
         boosted_uri,
@@ -236,20 +280,108 @@ pub(super) async fn handle_announce(
     .fetch_optional(&state.db)
     .await?;
 
+    // `Announce#related_to_local_activity?`: the booster has followers here,
+    // came through a relay, or boosted a local post.
+    let followed_by_local_accounts = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM follows WHERE target_account_id = $1) AS "e!""#,
+        booster_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let reblog_of_local_status = match original_id {
+        Some(id) => sqlx::query_scalar!(
+            r#"SELECT (a.domain IS NULL) AS "local!" FROM statuses s
+               JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
+            id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .unwrap_or(false),
+        None => false,
+    };
+    if !(followed_by_local_accounts || requested_through_relay || reblog_of_local_status) {
+        tracing::debug!(announce_uri, "Announce: not related to local activity");
+        return Ok(());
+    }
+
+    // `status_from_object`: an embedded self-boost is taken as the `Create`
+    // it is; anything else is fetched, on behalf of a local follower of the
+    // booster (`fetch_remote_original_status`).
     if original_id.is_none() {
-        original_id = fetch_remote_status(state, boosted_uri).await?;
+        let embedded_self_boost = object
+            .filter(|o| o.is_object() && super::status_parser::is_status_type(o))
+            .filter(|o| {
+                let attributed = match o.get("attributedTo") {
+                    Some(Value::Array(items)) => items.first(),
+                    other => other,
+                };
+                attributed
+                    .and_then(crate::federation::json_ld::value_or_id)
+                    .is_some_and(|a| a == actor_uri)
+            });
+        if let Some(embedded) = embedded_self_boost {
+            let virtual_create = serde_json::json!({
+                "type": "Create",
+                "actor": actor_uri,
+                "object": embedded,
+            });
+            Box::pin(super::create::create(
+                state,
+                &virtual_create,
+                &super::create::CreateOptions {
+                    fetched: true,
+                    ..Default::default()
+                },
+            ))
+            .await?;
+            original_id = sqlx::query_scalar!(
+                "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+                boosted_uri,
+            )
+            .fetch_optional(&state.db)
+            .await?;
+        } else if boosted_uri.starts_with("http") {
+            if crate::federation::local_uri::is_local(state, boosted_uri) {
+                return Ok(());
+            }
+            original_id = super::fetch_remote_status_with(
+                state,
+                boosted_uri,
+                super::FetchOptions {
+                    on_behalf_of: crate::federation::json_ld::local_follower(state, booster_id)
+                        .await,
+                    ..Default::default()
+                },
+            )
+            .await?
+            .map(|(id, _)| id);
+        } else if let Some(url) = object
+            .and_then(|o| o.get("url"))
+            .and_then(Value::as_str)
+            .filter(|url| !url.trim().is_empty())
+        {
+            original_id = fetch_remote_status(state, url).await?;
+        }
     }
 
     let Some(mut original_id) = original_id else {
         return Ok(());
     };
+    // `announceable?`: the booster's own post, or a public or unlisted one.
+    let announceable = sqlx::query_scalar!(
+        r#"SELECT (account_id = $2 OR visibility IN (0, 1)) AS "ok!" FROM statuses WHERE id = $1"#,
+        original_id,
+        booster_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if !announceable {
+        return Ok(());
+    }
     // `return if requested_through_relay?`: an enabled relay's Announce brings
     // the post here, and is not a boost.
-    let booster_inbox: Option<String> =
-        sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", booster_id)
-            .fetch_optional(&state.db)
-            .await?;
-    if crate::relays::is_enabled_relay_inbox(state, booster_inbox.as_deref().unwrap_or("")).await {
+    if requested_through_relay {
         return Ok(());
     }
     if let Some(unwrapped_id) = sqlx::query_scalar!(
@@ -261,6 +393,19 @@ pub(super) async fn handle_announce(
     .flatten()
     {
         original_id = unwrapped_id;
+    }
+    // `Status.find_by(account: @account, reblog: original_status)`: a boost
+    // the booster already made stands.
+    let already_boosted = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM statuses
+             WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL) AS "e!""#,
+        booster_id,
+        original_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if already_boosted {
+        return Ok(());
     }
 
     let published = activity
@@ -315,6 +460,8 @@ pub(super) async fn handle_announce(
            ON CONFLICT (status_id) DO UPDATE
              SET reblogs_count = (SELECT COUNT(*) FROM statuses
                                   WHERE reblog_of_id = $1 AND deleted_at IS NULL),
+                 untrusted_reblogs_count = CASE WHEN status_stats.untrusted_reblogs_count IS NULL THEN NULL ELSE LEAST(GREATEST(status_stats.untrusted_reblogs_count + (SELECT COUNT(*) FROM statuses
+                                  WHERE reblog_of_id = $1 AND deleted_at IS NULL) - status_stats.reblogs_count, 0), 100000000) END,
                  updated_at = now()"#,
         original_id,
     )
@@ -373,17 +520,23 @@ pub(super) async fn handle_like(
         return Ok(());
     }
 
-    let mut status_id = sqlx::query_scalar!("SELECT id FROM statuses WHERE uri = $1", object_uri)
-        .fetch_optional(&state.db)
-        .await?;
-
-    if status_id.is_none() {
-        status_id = fetch_remote_status(state, object_uri).await?;
-    }
-
-    let Some(status_id) = status_id else {
+    // `status_from_uri(object_uri)`, fetching nothing: only a favourite of a
+    // local post is recorded (`return if original_status.nil? ||
+    // !original_status.account.local?`).
+    let Some(status_id) = crate::federation::local_uri::status(state, object_uri).await else {
         return Ok(());
     };
+    let local_author = sqlx::query_scalar!(
+        r#"SELECT (a.domain IS NULL) AS "local!" FROM statuses s
+           JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if !local_author {
+        return Ok(());
+    }
 
     let account_id = match resolve_or_fetch_remote_account(state, actor_uri).await {
         Ok(id) => id,
@@ -409,6 +562,7 @@ pub(super) async fn handle_like(
            VALUES ($1, (SELECT COUNT(*) FROM favourites WHERE status_id = $1), now(), now())
            ON CONFLICT (status_id) DO UPDATE
              SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1),
+                 untrusted_favourites_count = CASE WHEN status_stats.untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(status_stats.untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - status_stats.favourites_count, 0), 100000000) END,
                  updated_at = now()"#,
         status_id
     )
@@ -515,6 +669,9 @@ pub(super) async fn handle_update(
         &crate::federation::fetch_resource::ACTOR_TYPES,
     ) {
         "Person"
+    } else if super::status_parser::is_status_type(object) {
+        // `supported_object_type? || converted_object_type?`.
+        "Note"
     } else {
         object.get("type").and_then(|t| t.as_str()).unwrap_or("")
     };
@@ -559,16 +716,8 @@ pub(super) async fn handle_update(
                 return Ok(());
             }
 
-            let text = object
-                .get("content")
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
-            let spoiler_text = object
-                .get("summary")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
+            let text = super::status_parser::processed_text(state, object);
+            let spoiler_text = super::status_parser::processed_spoiler_text(object);
             // `@account.sensitized? || @status_parser.sensitive`.
             let sensitive = object
                 .get("sensitive")
@@ -585,12 +734,8 @@ pub(super) async fn handle_update(
                 .fetch_optional(&state.db)
                 .await?
                 .unwrap_or(false);
-            let language = object
-                .get("contentMap")
-                .and_then(|m| m.as_object())
-                .and_then(|m| m.keys().next())
-                .map(|s| s.to_string())
-                .filter(|s| ["ko", "en"].contains(&s.as_str()));
+            // `StatusParser#language`.
+            let language = super::status_parser::language(object);
             let edited_at = object
                 .get("updated")
                 .and_then(|p| p.as_str())
@@ -625,6 +770,17 @@ pub(super) async fn handle_update(
                 (Some(_), None) => true,
                 (None, _) => false,
             };
+            // `already_updated_more_recently?`, and an update older than the
+            // edit we hold, are both left alone.
+            if let Some(old) = previous.as_ref().and_then(|p| p.edited_at) {
+                if edited_at.is_none_or(|new| new < old) {
+                    return Ok(());
+                }
+            }
+            if previous.is_some() && !explicit {
+                return implicit_status_update(state, activity, object, note_uri, quote_policy)
+                    .await;
+            }
             let text_changed = previous
                 .as_ref()
                 .is_some_and(|p| p.text != text || p.spoiler_text != spoiler_text);
@@ -656,8 +812,7 @@ pub(super) async fn handle_update(
             .await?;
 
             if updated.is_none() {
-                let _ = fetch_remote_status(state, note_uri).await?;
-                return Ok(());
+                return create_from_update(state, activity, object).await;
             }
 
             let Some(row) = updated else {
@@ -762,6 +917,8 @@ pub(super) async fn handle_update(
             crate::search::elasticsearch::indexing::status(state, row.id).await;
 
             sync_remote_poll(state, row.id, row.account_id, object).await?;
+            // `update_counts!`.
+            super::status_parser::store_untrusted_counts(state, row.id, object).await?;
 
             // `update_quote!` or `update_quote_approval!`, then
             // `broadcast_updates!`: for an edit that changed something, and
@@ -791,6 +948,102 @@ pub(super) async fn handle_update(
         _ => {}
     }
 
+    Ok(())
+}
+
+/// `Update#update_status` for a status we do not hold from the sender:
+/// `return if @status.nil? && (@account.suspended? || object_too_old?)`,
+/// then `Create.new(@json, @account, **@options).perform` — the updated
+/// object taken as the `Create` it would have come in, delivered like the
+/// `Update` was.
+async fn create_from_update(state: &AppState, activity: &Value, object: &Value) -> AppResult<()> {
+    let sender = activity
+        .get("actor")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let suspended = sqlx::query_scalar!(
+        r#"SELECT (suspended_at IS NOT NULL) AS "s!" FROM accounts
+           WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1"#,
+        sender,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    // `object_too_old?`: published more than a day ago (`OBJECT_AGE_THRESHOLD`).
+    let too_old = object
+        .get("published")
+        .and_then(Value::as_str)
+        .and_then(|p| chrono::DateTime::parse_from_rfc3339(p).ok())
+        .is_some_and(|p| {
+            p.with_timezone(&chrono::Utc) < chrono::Utc::now() - chrono::Duration::days(1)
+        });
+    if suspended || too_old {
+        return Ok(());
+    }
+    let mut create = activity.clone();
+    create["type"] = Value::String("Create".into());
+    Box::pin(super::create::create(
+        state,
+        &create,
+        &super::create::CreateOptions::default(),
+    ))
+    .await
+}
+
+/// `ProcessStatusUpdateService#handle_implicit_update!`: an update that does
+/// not say the status was edited since we last had it — a status fetched
+/// again, say — leaves its text, media and tags as they are, and refreshes
+/// only its quote policy, its poll's tallies and its quote's approval.
+async fn implicit_status_update(
+    state: &AppState,
+    activity: &Value,
+    object: &Value,
+    note_uri: &str,
+    quote_policy: Option<i32>,
+) -> AppResult<()> {
+    let sender = activity
+        .get("actor")
+        .and_then(|a| a.as_str())
+        .unwrap_or_default();
+    // `update_interaction_policies!`, which moves `updated_at` only when the
+    // policy changed.
+    let row = sqlx::query!(
+        r#"UPDATE statuses
+           SET quote_approval_policy = COALESCE($2, quote_approval_policy),
+               updated_at = CASE
+                   WHEN quote_approval_policy IS DISTINCT FROM COALESCE($2, quote_approval_policy)
+                   THEN now() ELSE updated_at END
+           WHERE uri = $1 AND deleted_at IS NULL
+             AND account_id = (
+                 SELECT id FROM accounts WHERE uri = $3 AND domain IS NOT NULL
+             )
+           RETURNING id, account_id"#,
+        note_uri,
+        quote_policy,
+        sender,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(row) = row else {
+        return create_from_update(state, activity, object).await;
+    };
+    sync_remote_poll(state, row.id, row.account_id, object).await?;
+    // `update_counts!`.
+    super::status_parser::store_untrusted_counts(state, row.id, object).await?;
+    // `update_quote_approval!`, then `broadcast_updates!` if the quote
+    // changed state.
+    if super::quote::update_quote(
+        state,
+        row.id,
+        row.account_id,
+        object,
+        activity.get("@context"),
+        false,
+    )
+    .await?
+    {
+        crate::quotes::distribute_update(state, row.id, false).await;
+    }
     Ok(())
 }
 
