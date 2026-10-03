@@ -763,59 +763,14 @@ pub async fn post_status(
         crate::quotes::notify(&state, quote).await;
     }
 
-    // Notify followers who opted in to per-account posting notifications (the
-    // "bell"). Mastodon's FeedInsertWorker#notify? excludes replies to other
-    // accounts (self-replies still notify), reblogs, and edits.
-    let is_reply_to_other = in_reply_to_id.is_some() && in_reply_to_account_id != Some(account.id);
-    if (visibility == "public" || visibility == "unlisted") && !is_reply_to_other {
-        if let Ok(followers) = sqlx::query!(
-            r#"SELECT account_id FROM follows
-               WHERE target_account_id = $1 AND notify = true"#,
-            account.id,
-        )
-        .fetch_all(&state.db)
-        .await
-        {
-            for row in followers {
-                if notified.contains(&row.account_id) {
-                    continue;
-                }
-                push::create_and_push(
-                    &state,
-                    row.account_id,
-                    account.id,
-                    "status",
-                    Some(status.id),
-                    format!("{} posted a new status", account.display_name),
-                    account.acct().clone(),
-                    crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-                )
-                .await;
-            }
-        }
-    }
+    // The "bell" — `FeedInsertWorker#notify?` — is the fan-out's
+    // (`crate::feed::distribute`).
 
     // `AccountConversation#push_to_streaming_api`, once the status is whole.
     crate::api::mastodon::conversations::push_for_status(&state, status.id).await;
 
     // Fan-out to follower feeds and list feeds in background (non-blocking)
-    {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        let status_id = status.id;
-        if feed::sync_fanout() {
-            let pushed = crate::feed::fanout_status(&mut redis, &redis_keys, &db, status_id).await;
-            crate::streaming::fan_out::distribute(&state, status_id, false, &pushed).await;
-        } else {
-            let state = state.clone();
-            crate::tenants::spawn(async move {
-                let pushed =
-                    crate::feed::fanout_status(&mut redis, &redis_keys, &db, status_id).await;
-                crate::streaming::fan_out::distribute(&state, status_id, false, &pushed).await;
-            });
-        }
-    }
+    crate::feed::distribute_later(&state, status.id).await;
 
     // Federate outgoing statuses to remote inboxes
     if matches!(

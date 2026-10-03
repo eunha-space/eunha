@@ -1035,22 +1035,7 @@ pub async fn reblog_status(
     // Fan the boost into followers' home feeds (mirrors the post path) so it
     // appears immediately, not only after a feed repopulate, then stream it
     // (`DistributionWorker`).
-    {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        let bid = boost.id;
-        if feed::sync_fanout() {
-            let pushed = feed::fanout_status(&mut redis, &redis_keys, &db, bid).await;
-            crate::streaming::fan_out::distribute(&state, bid, false, &pushed).await;
-        } else {
-            let state = state.clone();
-            crate::tenants::spawn(async move {
-                let pushed = feed::fanout_status(&mut redis, &redis_keys, &db, bid).await;
-                crate::streaming::fan_out::distribute(&state, bid, false, &pushed).await;
-            });
-        }
-    }
+    crate::feed::distribute_later(&state, boost.id).await;
 
     // Send Announce activity to followers and original status author (if remote)
     if crate::federation::keypair::has_signing_key(&state, boost_account.id)

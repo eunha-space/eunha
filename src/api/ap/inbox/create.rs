@@ -728,20 +728,7 @@ pub(super) async fn handle_create(
     crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
 
     // Fanout to home and list feeds, then stream it (`DistributionWorker`).
-    let mut redis = state.redis.clone();
-    let redis_keys = state.redis_keys.clone();
-    let db = state.db.clone();
-    if crate::feed::sync_fanout() {
-        let pushed = crate::feed::fanout_status(&mut redis, &redis_keys, &db, inserted_id).await;
-        crate::streaming::fan_out::distribute(state, inserted_id, false, &pushed).await;
-    } else {
-        let state = state.clone();
-        crate::tenants::spawn(async move {
-            let pushed =
-                crate::feed::fanout_status(&mut redis, &redis_keys, &db, inserted_id).await;
-            crate::streaming::fan_out::distribute(&state, inserted_id, false, &pushed).await;
-        });
-    }
+    crate::feed::distribute_later(state, inserted_id).await;
 
     Ok(())
 }

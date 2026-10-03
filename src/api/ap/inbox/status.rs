@@ -350,20 +350,7 @@ pub(super) async fn handle_announce(
     let within_realtime_window =
         chrono::Utc::now().naive_utc() - published < chrono::Duration::hours(6);
     if let (Some(boost_id), true) = (inserted, within_realtime_window) {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        if crate::feed::sync_fanout() {
-            let pushed = crate::feed::fanout_status(&mut redis, &redis_keys, &db, boost_id).await;
-            crate::streaming::fan_out::distribute(state, boost_id, false, &pushed).await;
-        } else {
-            let state = state.clone();
-            crate::tenants::spawn(async move {
-                let pushed =
-                    crate::feed::fanout_status(&mut redis, &redis_keys, &db, boost_id).await;
-                crate::streaming::fan_out::distribute(&state, boost_id, false, &pushed).await;
-            });
-        }
+        crate::feed::distribute_later(state, boost_id).await;
     }
 
     Ok(())

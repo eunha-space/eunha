@@ -405,6 +405,9 @@ struct Crutches {
     domain_blocking: HashSet<String>,
     blocked_by: HashSet<i64>,
     exclusive_list_users: HashSet<i64>,
+    /// Whether the receiver follows the author with `notify` (not one of
+    /// Mastodon's crutches: `FeedInsertWorker#notify?` reads it per follow).
+    notifying: bool,
 }
 
 impl Crutches {
@@ -587,8 +590,17 @@ impl Crutches {
             domain_blocking,
             blocked_by,
             exclusive_list_users,
+            notifying: false,
         })
     }
+}
+
+/// What `FeedManager#filter_from_home` answers: `nil`, `:filter`, or
+/// `:skip_home` for a post an exclusive list keeps off the home feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Filtered {
+    Filter,
+    SkipHome,
 }
 
 /// `FeedManager#filter_from_home`: whether `status` stays out of the
@@ -599,19 +611,33 @@ fn filter_from_home(
     crutches: &Crutches,
     receiver: Receiver,
 ) -> bool {
+    filter_result(status, receiver_id, crutches, receiver).is_some()
+}
+
+/// [`filter_from_home`], saying why.
+fn filter_result(
+    status: &Candidate,
+    receiver_id: i64,
+    crutches: &Crutches,
+    receiver: Receiver,
+) -> Option<Filtered> {
     if receiver_id == status.account_id {
-        return false;
+        return None;
     }
     if status.reply && (status.in_reply_to_id.is_none() || status.in_reply_to_account_id.is_none())
     {
-        return true;
+        return Some(Filtered::Filter);
     }
-    // `:skip_home`
     if matches!(receiver, Receiver::Home)
         && crutches.exclusive_list_users.contains(&status.account_id)
     {
-        return true;
+        return Some(Filtered::SkipHome);
     }
+    filtered_after_lists(status, receiver_id, crutches).then_some(Filtered::Filter)
+}
+
+/// The rest of `FeedManager#filter_from_home`, after its exclusive list test.
+fn filtered_after_lists(status: &Candidate, receiver_id: i64, crutches: &Crutches) -> bool {
     if let (Some(languages), Some(language)) = (
         crutches.languages.get(&status.account_id),
         status.language.as_deref().filter(|l| !l.is_empty()),
@@ -848,6 +874,8 @@ pub async fn list_holds(
 pub struct Pushed {
     pub homes: HashMap<i64, bool>,
     pub lists: HashMap<i64, bool>,
+    /// The followers `FeedInsertWorker#notify?` would notify of the post.
+    pub notify: Vec<i64>,
 }
 
 impl Pushed {
@@ -862,17 +890,75 @@ impl Pushed {
     }
 }
 
-/// `FanOutOnWriteService` for a status already stored: [`fanout_new_status`]
-/// and [`fanout_to_lists`], as `DistributionWorker` runs them.
+/// `FanOutOnWriteService` for a status already stored, its feed work: the
+/// home feeds and the lists, as `DistributionWorker` runs it, for an edit
+/// when `update`.
 pub async fn fanout_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
     status_id: i64,
+    update: bool,
 ) -> Pushed {
-    let homes = fanout_new_status(redis, keys, db, status_id).await;
-    let lists = fanout_to_lists(redis, keys, db, status_id).await;
-    Pushed { homes, lists }
+    let (homes, notify) = fan_out_home(redis, keys, db, status_id, update).await;
+    let lists = fan_out_lists(redis, keys, db, status_id, update).await;
+    Pushed {
+        homes,
+        lists,
+        notify,
+    }
+}
+
+/// `DistributionWorker#perform`: [`fanout_status`], the bell notifications
+/// it asks for (`LocalNotificationWorker` with a `status` notification),
+/// then the streaming messages.
+pub async fn distribute(state: &crate::state::AppState, status_id: i64, update: bool) {
+    let mut redis = state.redis.clone();
+    let pushed = fanout_status(&mut redis, &state.redis_keys, &state.db, status_id, update).await;
+    if !pushed.notify.is_empty() {
+        notify_followers(state, status_id, &pushed.notify).await;
+    }
+    crate::streaming::fan_out::distribute(state, status_id, update, &pushed).await;
+}
+
+/// `DistributionWorker.perform_async(status_id)`: [`distribute`] in a task
+/// of its own, or at once when the tests ask for background work inline.
+pub async fn distribute_later(state: &crate::state::AppState, status_id: i64) {
+    if sync_fanout() {
+        distribute(state, status_id, false).await;
+    } else {
+        let state = state.clone();
+        crate::tenants::spawn(async move { distribute(&state, status_id, false).await });
+    }
+}
+
+/// `LocalNotificationWorker.perform_async(follower, status, 'Status',
+/// 'status')` for each of `followers`.
+async fn notify_followers(state: &crate::state::AppState, status_id: i64, followers: &[i64]) {
+    let Ok(Some(author)) =
+        sqlx::query_scalar!("SELECT account_id FROM statuses WHERE id = $1", status_id)
+            .fetch_optional(&state.db)
+            .await
+    else {
+        return;
+    };
+    let Ok(account) = crate::api::mastodon::accounts::fetch_account(state, author).await else {
+        return;
+    };
+    let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account);
+    for &follower in followers {
+        crate::push::create_and_push(
+            state,
+            follower,
+            account.id,
+            "status",
+            Some(status_id),
+            format!("{} posted a new status", account.display_name),
+            account.acct().clone(),
+            avatar.clone(),
+        )
+        .await;
+    }
 }
 
 /// A status as `FanOutOnWriteService` distributes it.
@@ -1005,7 +1091,7 @@ async fn crutches_for(
         }
     }
     for f in sqlx::query!(
-        "SELECT account_id, languages, show_reblogs FROM follows
+        "SELECT account_id, languages, show_reblogs, notify FROM follows
          WHERE account_id = ANY($1) AND target_account_id = $2",
         receivers,
         author,
@@ -1020,6 +1106,7 @@ async fn crutches_for(
             if status.reblog_of_id.is_some() && !f.show_reblogs {
                 c.hiding_reblogs.insert(author);
             }
+            c.notifying = f.notify;
         }
     }
     for b in sqlx::query!(
@@ -1132,9 +1219,24 @@ pub async fn fanout_new_status(
     db: &PgPool,
     status_id: i64,
 ) -> HashMap<i64, bool> {
+    fan_out_home(redis, keys, db, status_id, false).await.0
+}
+
+/// [`fanout_new_status`], for an edit when `update`: a receiver the filters
+/// now keep it from has it taken out (`FeedInsertWorker#perform_unpush`,
+/// which streams no `delete`). Also the followers to notify
+/// ([`Pushed::notify`]).
+async fn fan_out_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    status_id: i64,
+    update: bool,
+) -> (HashMap<i64, bool>, Vec<i64>) {
     let mut pushed = HashMap::new();
+    let mut notify = Vec::new();
     let Some(d) = distributed(db, status_id).await else {
-        return pushed;
+        return (pushed, notify);
     };
     let status = &d.status;
     let author = status.account_id;
@@ -1192,13 +1294,28 @@ pub async fn fanout_new_status(
             Ok(crutches) => crutches,
             Err(error) => {
                 tracing::warn!(%error, status_id, "could not read what filters the fan-out");
-                return pushed;
+                return (pushed, notify);
             }
         };
+    // `FeedInsertWorker#notify?`, for a `home` worker: no boost, no reply to
+    // someone else, no edit, and nothing `:filter`ed (an exclusive list's
+    // `:skip_home` still notifies).
+    let notifies = status.reblog_of_id.is_none()
+        && !(status.reply && status.in_reply_to_account_id != Some(author))
+        && !update;
+    // Each `FeedInsertWorker` in turn: `push_to_home` where the filter lets
+    // the status in; for an edit, `unpush_from_home` where it does not.
+    let mut unpushes: Vec<i64> = Vec::new();
     for follower in followers {
         if let Some(c) = crutches.get(&follower) {
-            if !filter_from_home(status, follower, c, Receiver::Home) {
-                deliveries.push(follower);
+            let result = filter_result(status, follower, c, Receiver::Home);
+            match result {
+                None => deliveries.push(follower),
+                Some(_) if update => unpushes.push(follower),
+                Some(_) => {}
+            }
+            if notifies && result != Some(Filtered::Filter) && c.notifying {
+                notify.push(follower);
             }
         }
     }
@@ -1206,18 +1323,35 @@ pub async fn fanout_new_status(
         if let Some(c) = crutches.get(&follower) {
             if !filter_from_tags(status, d.author_domain.as_deref(), follower, c) {
                 deliveries.push(follower);
+            } else if update {
+                unpushes.push(follower);
             }
         }
     }
-    if deliveries.is_empty() {
-        return pushed;
+    if deliveries.is_empty() && unpushes.is_empty() {
+        return (pushed, notify);
     }
 
+    let affected: Vec<i64> = deliveries.iter().chain(&unpushes).copied().collect();
     let separate = if status.reblog_of_id.is_some() {
-        not_aggregating(db, &deliveries).await
+        not_aggregating(db, &affected).await
     } else {
         Default::default()
     };
+    for id in unpushes {
+        let timeline = Timeline::home(keys, id);
+        if let Err(error) = remove_from_feed(
+            redis,
+            &timeline,
+            status_id,
+            status.reblog_of_id,
+            !separate.contains(&id),
+        )
+        .await
+        {
+            tracing::warn!(%error, account_id = id, "could not remove a status from a home feed");
+        }
+    }
     // One account can be pushed to twice, as a follower and as a follower of
     // a hashtag, as Mastodon queues a `FeedInsertWorker` for each.
     for id in deliveries {
@@ -1232,7 +1366,7 @@ pub async fn fanout_new_status(
         .await;
         *pushed.entry(id).or_insert(false) |= added;
     }
-    pushed
+    (pushed, notify)
 }
 
 /// Remove a deleted status from its author's and followers' home feeds. The
@@ -1386,6 +1520,18 @@ pub async fn fanout_to_lists(
     db: &PgPool,
     status_id: i64,
 ) -> HashMap<i64, bool> {
+    fan_out_lists(redis, keys, db, status_id, false).await
+}
+
+/// [`fanout_to_lists`], for an edit when `update`: a list the filters now
+/// keep it from has it taken out (`unpush_from_list`).
+async fn fan_out_lists(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    status_id: i64,
+    update: bool,
+) -> HashMap<i64, bool> {
     let mut pushed = HashMap::new();
     let Some(d) = distributed(db, status_id).await else {
         return pushed;
@@ -1445,18 +1591,17 @@ pub async fn fanout_to_lists(
     };
     for (list_id, owner_id, replies_policy) in lists {
         let listed = listing_reply_target.contains(&list_id);
-        // `FeedManager#filter_from_list?`
-        if status.reply && in_reply_to != Some(author) {
-            let filtered = in_reply_to != Some(owner_id)
-                && replies_policy != crate::db::models::replies::FOLLOWED
-                && !(replies_policy == crate::db::models::replies::LIST && listed);
-            if filtered {
-                continue;
-            }
-        }
         let Some(owner) = owner_crutches.get(&owner_id) else {
             continue;
         };
+        let timeline = Timeline::list(keys, list_id);
+        let aggregate = !separate.contains(&owner_id);
+        // `FeedManager#filter_from_list?`
+        let filtered_from_list = status.reply
+            && in_reply_to != Some(author)
+            && in_reply_to != Some(owner_id)
+            && replies_policy != crate::db::models::replies::FOLLOWED
+            && !(replies_policy == crate::db::models::replies::LIST && listed);
         // `crutches_following` for the list.
         let following: HashSet<i64> = match replies_policy {
             crate::db::models::replies::FOLLOWED => owner.following.clone(),
@@ -1475,16 +1620,23 @@ pub async fn fanout_to_lists(
             domain_blocking: owner.domain_blocking.clone(),
             blocked_by: owner.blocked_by.clone(),
             exclusive_list_users: HashSet::new(),
+            notifying: false,
         };
         let receiver = Receiver::List {
             id: list_id,
             replies_policy,
         };
-        if filter_from_home(status, owner_id, &crutches, receiver) {
+        if filtered_from_list || filter_from_home(status, owner_id, &crutches, receiver) {
+            if update {
+                if let Err(error) =
+                    remove_from_feed(redis, &timeline, status_id, status.reblog_of_id, aggregate)
+                        .await
+                {
+                    tracing::warn!(%error, list_id, "could not remove a status from a list feed");
+                }
+            }
             continue;
         }
-        let timeline = Timeline::list(keys, list_id);
-        let aggregate = !separate.contains(&owner_id);
         let added = push(redis, &timeline, status_id, status.reblog_of_id, aggregate).await;
         pushed.insert(list_id, added);
     }

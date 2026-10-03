@@ -668,12 +668,8 @@ async fn publish_one(
         },
     )
     .await;
-    // Fan-out to follower home feeds and list feeds
-    let mut redis = state.redis.clone();
-    let db = state.db.clone();
-    let sid = status.id;
-    let pushed = crate::feed::fanout_status(&mut redis, &state.redis_keys, &db, sid).await;
-    crate::streaming::fan_out::distribute(state, sid, false, &pushed).await;
+    // `DistributionWorker`.
+    crate::feed::distribute(state, status.id, false).await;
 
     // Send mention notifications (mirrors post_status)
     let mut notified = std::collections::HashSet::new();

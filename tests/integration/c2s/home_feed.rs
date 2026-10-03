@@ -626,7 +626,7 @@ async fn test_a_domain_block_unmerges_only_through_the_follows_it_ends() {
     // The first reaches Alice's feed through her follow; the second only as
     // Bob's boost.
     let mut redis = ctx.state.redis.clone();
-    eunha::feed::fanout_status(&mut redis, &ctx.state.redis_keys, &ctx.db, posts[0]).await;
+    eunha::feed::fanout_status(&mut redis, &ctx.state.redis_keys, &ctx.db, posts[0], false).await;
     let boost: Value = ctx
         .api
         .post_json(
@@ -654,4 +654,129 @@ async fn test_a_domain_block_unmerges_only_through_the_follows_it_ends() {
         "unmerged with the follow"
     );
     assert!(feed_holds(&ctx, &boost_id).await, "Bob's boost stays");
+}
+
+/// An edit runs the fan-out again with `update`: a follower whose filters
+/// now keep the post out (here, a follow limited to English, and the post
+/// edited into Korean) has it taken out of the feed.
+#[tokio::test]
+async fn test_an_edit_takes_a_post_out_where_it_is_now_filtered() {
+    let ctx = TestContext::new("home-feed-edit").await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/follow", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "languages": ["en"] }),
+        )
+        .await;
+    let post: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &serde_json::json!({ "status": "in english", "language": "en" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = post["id"].as_str().unwrap().to_owned();
+    assert!(feed_holds(&ctx, &id).await);
+
+    let resp = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({ "status": "한국어로", "language": "ko" }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(!feed_holds(&ctx, &id).await, "the edit took it out");
+    // Bob's own feed keeps it: `deliver_to_self!` is not filtered.
+    let mut redis = ctx.state.redis.clone();
+    let own: Option<f64> = redis::cmd("ZSCORE")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key(format!("feed:home:{}", ctx.bob_id)),
+        )
+        .arg(&id)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert!(own.is_some());
+}
+
+/// The bell (`FeedInsertWorker#notify?`): a follower notified of each new
+/// post once, but not of a reply to someone else, a boost, or an edit.
+#[tokio::test]
+async fn test_the_bell_notifies_as_feed_insert_worker_does() {
+    let ctx = TestContext::new("home-feed-bell").await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/follow", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "notify": true }),
+        )
+        .await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let count = || {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notifications
+             WHERE account_id = $1 AND from_account_id = $2 AND type = 'status'",
+        )
+        .bind(alice)
+        .bind(bob)
+        .fetch_one(&ctx.db)
+    };
+
+    let post = ctx.api.post_status(&ctx.bob_token, "news", "public").await;
+    let id = post["id"].as_str().unwrap().to_owned();
+    assert_eq!(count().await.unwrap(), 1);
+
+    // An edit does not notify again.
+    ctx.api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({ "status": "news, corrected" }),
+        )
+        .await;
+    assert_eq!(count().await.unwrap(), 1);
+
+    // Nor does a reply to someone else, or a boost.
+    let other = ctx
+        .api
+        .post_status(&ctx.alice_token, "alice's own", "public")
+        .await;
+    ctx.api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &serde_json::json!({
+                "status": "replying",
+                "in_reply_to_id": other["id"].as_str().unwrap(),
+            }),
+        )
+        .await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/statuses/{}/reblog", other["id"].as_str().unwrap()),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(count().await.unwrap(), 1);
+
+    // A self-reply does.
+    ctx.api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &serde_json::json!({ "status": "and more", "in_reply_to_id": id }),
+        )
+        .await;
+    assert_eq!(count().await.unwrap(), 2);
 }

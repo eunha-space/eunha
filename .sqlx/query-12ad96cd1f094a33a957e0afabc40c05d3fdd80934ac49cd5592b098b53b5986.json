@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id, languages, show_reblogs FROM follows\n         WHERE account_id = ANY($1) AND target_account_id = $2",
+  "query": "SELECT account_id, languages, show_reblogs, notify FROM follows\n         WHERE account_id = ANY($1) AND target_account_id = $2",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "show_reblogs",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "notify",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -28,8 +33,9 @@
     "nullable": [
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "b2c1204910bfe302f7d09d6c80fb7d351498b470431fdffe951c334ddbaa55ee"
+  "hash": "12ad96cd1f094a33a957e0afabc40c05d3fdd80934ac49cd5592b098b53b5986"
 }
