@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT l.account_id FROM list_accounts la\n             JOIN lists l ON l.id = la.list_id\n             WHERE l.account_id = ANY($1) AND l.exclusive AND la.account_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "df3519b87d84689c0411f2b7715021f398d26f80f2ccee857de155b2177fb1ed"
+}

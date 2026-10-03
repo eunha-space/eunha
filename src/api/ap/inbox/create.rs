@@ -728,66 +728,18 @@ pub(super) async fn handle_create(
     crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
 
     // Fanout to home and list feeds, then stream it (`DistributionWorker`).
-    let vis_str = crate::db::models::vis::to_str(visibility);
     let mut redis = state.redis.clone();
     let redis_keys = state.redis_keys.clone();
     let db = state.db.clone();
     if crate::feed::sync_fanout() {
-        let homes = crate::feed::fanout_new_status(
-            &mut redis,
-            &redis_keys,
-            &db,
-            account_id,
-            inserted_id,
-            &tag_ids,
-        )
-        .await;
-        let lists = crate::feed::fanout_to_lists(
-            &mut redis,
-            &redis_keys,
-            &db,
-            account_id,
-            inserted_id,
-            in_reply_to_account_id,
-            vis_str,
-        )
-        .await;
-        crate::streaming::fan_out::distribute(
-            state,
-            inserted_id,
-            false,
-            &crate::feed::Pushed { homes, lists },
-        )
-        .await;
+        let pushed = crate::feed::fanout_status(&mut redis, &redis_keys, &db, inserted_id).await;
+        crate::streaming::fan_out::distribute(state, inserted_id, false, &pushed).await;
     } else {
         let state = state.clone();
         crate::tenants::spawn(async move {
-            let homes = crate::feed::fanout_new_status(
-                &mut redis,
-                &redis_keys,
-                &db,
-                account_id,
-                inserted_id,
-                &tag_ids,
-            )
-            .await;
-            let lists = crate::feed::fanout_to_lists(
-                &mut redis,
-                &redis_keys,
-                &db,
-                account_id,
-                inserted_id,
-                in_reply_to_account_id,
-                vis_str,
-            )
-            .await;
-            crate::streaming::fan_out::distribute(
-                &state,
-                inserted_id,
-                false,
-                &crate::feed::Pushed { homes, lists },
-            )
-            .await;
+            let pushed =
+                crate::feed::fanout_status(&mut redis, &redis_keys, &db, inserted_id).await;
+            crate::streaming::fan_out::distribute(&state, inserted_id, false, &pushed).await;
         });
     }
 
@@ -928,9 +880,7 @@ impl crate::jobs::Job for ThreadResolveWorker {
                 &mut redis,
                 &state.redis_keys,
                 &state.db,
-                child.account_id,
                 self.child_status_id,
-                &[],
             )
             .await;
         }

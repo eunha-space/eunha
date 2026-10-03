@@ -800,77 +800,19 @@ pub async fn post_status(
 
     // Fan-out to follower feeds and list feeds in background (non-blocking)
     {
-        let tag_ids: Vec<i64> = sqlx::query_scalar!(
-            "SELECT tag_id FROM statuses_tags WHERE status_id = $1",
-            status.id
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
-
         let mut redis = state.redis.clone();
         let redis_keys = state.redis_keys.clone();
         let db = state.db.clone();
-        let author_id = account.id;
         let status_id = status.id;
-        let reply_to_account = in_reply_to_account_id;
-        let vis = visibility.clone();
         if feed::sync_fanout() {
-            let homes = feed::fanout_new_status(
-                &mut redis,
-                &redis_keys,
-                &db,
-                author_id,
-                status_id,
-                &tag_ids,
-            )
-            .await;
-            let lists = feed::fanout_to_lists(
-                &mut redis,
-                &redis_keys,
-                &db,
-                author_id,
-                status_id,
-                reply_to_account,
-                &vis,
-            )
-            .await;
-            crate::streaming::fan_out::distribute(
-                &state,
-                status_id,
-                false,
-                &crate::feed::Pushed { homes, lists },
-            )
-            .await;
+            let pushed = crate::feed::fanout_status(&mut redis, &redis_keys, &db, status_id).await;
+            crate::streaming::fan_out::distribute(&state, status_id, false, &pushed).await;
         } else {
             let state = state.clone();
             crate::tenants::spawn(async move {
-                let homes = feed::fanout_new_status(
-                    &mut redis,
-                    &redis_keys,
-                    &db,
-                    author_id,
-                    status_id,
-                    &tag_ids,
-                )
-                .await;
-                let lists = feed::fanout_to_lists(
-                    &mut redis,
-                    &redis_keys,
-                    &db,
-                    author_id,
-                    status_id,
-                    reply_to_account,
-                    &vis,
-                )
-                .await;
-                crate::streaming::fan_out::distribute(
-                    &state,
-                    status_id,
-                    false,
-                    &crate::feed::Pushed { homes, lists },
-                )
-                .await;
+                let pushed =
+                    crate::feed::fanout_status(&mut redis, &redis_keys, &db, status_id).await;
+                crate::streaming::fan_out::distribute(&state, status_id, false, &pushed).await;
             });
         }
     }

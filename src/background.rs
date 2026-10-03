@@ -669,40 +669,11 @@ async fn publish_one(
     )
     .await;
     // Fan-out to follower home feeds and list feeds
-    let tag_ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT tag_id FROM statuses_tags WHERE status_id = $1",
-        status.id,
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
     let mut redis = state.redis.clone();
     let db = state.db.clone();
-    let author_id = account.id;
     let sid = status.id;
-    let vis = visibility.clone();
-    let homes = crate::feed::fanout_new_status(
-        &mut redis,
-        &state.redis_keys,
-        &db,
-        author_id,
-        sid,
-        &tag_ids,
-    )
-    .await;
-    let lists = crate::feed::fanout_to_lists(
-        &mut redis,
-        &state.redis_keys,
-        &db,
-        author_id,
-        sid,
-        in_reply_to_account_id,
-        &vis,
-    )
-    .await;
-    crate::streaming::fan_out::distribute(state, sid, false, &crate::feed::Pushed { homes, lists })
-        .await;
+    let pushed = crate::feed::fanout_status(&mut redis, &state.redis_keys, &db, sid).await;
+    crate::streaming::fan_out::distribute(state, sid, false, &pushed).await;
 
     // Send mention notifications (mirrors post_status)
     let mut notified = std::collections::HashSet::new();

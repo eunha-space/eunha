@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT tf.account_id FROM tag_follows tf\n               JOIN statuses_tags st ON st.tag_id = tf.tag_id\n               JOIN users u ON u.account_id = tf.account_id\n               WHERE st.status_id = $1\n                 AND u.current_sign_in_at >= now() - make_interval(days => $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7fb6c71ab4868c52eeaf39e888ba5437cc0b9f0c6e3c13f20fdfa3a3370e1e0b"
+}

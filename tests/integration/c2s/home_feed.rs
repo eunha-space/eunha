@@ -372,3 +372,100 @@ async fn test_a_feed_built_elsewhere_is_fed_and_read() {
     assert!(texts[0].contains("fanned out here"));
     assert!(texts[1].contains("built elsewhere"));
 }
+
+/// The fan-out filters as `FeedInsertWorker` does, before anything is
+/// written: a muted account's post, a boost from a follow whose boosts are
+/// hidden, and a post by a member of an exclusive list never enter the home
+/// feed, though the last enters the list's.
+#[tokio::test]
+async fn test_the_fan_out_filters_before_writing() {
+    let ctx = TestContext::new("home-feed-filter").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let (dave_id, dave_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "dave", "dave@test.invalid").await;
+    let carol_id = carol_id.to_string();
+    let dave_id = dave_id.to_string();
+
+    // Bob: followed with boosts hidden. Carol: followed and muted. Dave:
+    // followed, in an exclusive list.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/follow", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "reblogs": false }),
+        )
+        .await;
+    ctx.api.follow(&ctx.alice_token, &carol_id).await;
+    ctx.api.follow(&ctx.alice_token, &dave_id).await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/mute"),
+            Some(&ctx.alice_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    let list: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/lists",
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "title": "exclusive", "exclusive": true }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let list_id = list["id"].as_str().unwrap().to_owned();
+    ctx.api
+        .post_json(
+            &format!("/api/v1/lists/{list_id}/accounts"),
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "account_ids": [dave_id] }),
+        )
+        .await;
+
+    let bob_post = ctx
+        .api
+        .post_status(&ctx.bob_token, "bob's own post", "public")
+        .await;
+    let carol_post = ctx
+        .api
+        .post_status(&carol_token, "carol, muted", "public")
+        .await;
+    let dave_post = ctx
+        .api
+        .post_status(&dave_token, "dave, listed", "public")
+        .await;
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/reblog",
+                dave_post["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+
+    assert!(feed_holds(&ctx, bob_post["id"].as_str().unwrap()).await);
+    assert!(!feed_holds(&ctx, carol_post["id"].as_str().unwrap()).await);
+    assert!(!feed_holds(&ctx, dave_post["id"].as_str().unwrap()).await);
+    assert!(!feed_holds(&ctx, boost["id"].as_str().unwrap()).await);
+
+    let mut redis = ctx.state.redis.clone();
+    let in_list: Option<f64> = redis::cmd("ZSCORE")
+        .arg(ctx.state.redis_keys.key(format!("feed:list:{list_id}")))
+        .arg(dave_post["id"].as_str().unwrap())
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert!(
+        in_list.is_some(),
+        "the exclusive list takes its member's post"
+    );
+}

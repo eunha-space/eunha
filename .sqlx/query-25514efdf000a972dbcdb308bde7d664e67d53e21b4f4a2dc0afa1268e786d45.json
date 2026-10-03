@@ -1,16 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT tag_id FROM statuses_tags WHERE status_id = $1",
+  "query": "SELECT list_id FROM list_accounts WHERE list_id = ANY($1) AND account_id = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "tag_id",
+        "name": "list_id",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8Array",
         "Int8"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "491672089be7bf738a5ced6732a37b327ec558f170e9bae58de3cb2d35575596"
+  "hash": "25514efdf000a972dbcdb308bde7d664e67d53e21b4f4a2dc0afa1268e786d45"
 }

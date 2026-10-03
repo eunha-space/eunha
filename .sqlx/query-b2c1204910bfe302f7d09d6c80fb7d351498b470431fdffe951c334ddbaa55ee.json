@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id, languages, show_reblogs FROM follows\n         WHERE account_id = ANY($1) AND target_account_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "languages",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "show_reblogs",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b2c1204910bfe302f7d09d6c80fb7d351498b470431fdffe951c334ddbaa55ee"
+}

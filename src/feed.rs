@@ -861,172 +861,375 @@ impl Pushed {
     }
 }
 
-/// `FanOutOnWriteService` for a status already stored, its fan-out read from
-/// its row: [`fanout_new_status`] and [`fanout_to_lists`], as
-/// `DistributionWorker` runs them for an update too.
+/// `FanOutOnWriteService` for a status already stored: [`fanout_new_status`]
+/// and [`fanout_to_lists`], as `DistributionWorker` runs them.
 pub async fn fanout_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
     status_id: i64,
 ) -> Pushed {
-    let Ok(Some(row)) = sqlx::query!(
-        r#"SELECT account_id, in_reply_to_account_id, visibility,
-                  ARRAY(SELECT tag_id FROM statuses_tags WHERE status_id = s.id) AS "tag_ids!"
-           FROM statuses s WHERE id = $1"#,
-        status_id,
-    )
-    .fetch_optional(db)
-    .await
-    else {
-        return Pushed::default();
-    };
-    let homes = fanout_new_status(redis, keys, db, row.account_id, status_id, &row.tag_ids).await;
-    let lists = fanout_to_lists(
-        redis,
-        keys,
-        db,
-        row.account_id,
-        status_id,
-        row.in_reply_to_account_id,
-        crate::db::models::vis::to_str(row.visibility),
-    )
-    .await;
+    let homes = fanout_new_status(redis, keys, db, status_id).await;
+    let lists = fanout_to_lists(redis, keys, db, status_id).await;
     Pushed { homes, lists }
 }
 
-/// Fan a newly posted status out to its author's and followers' home feeds,
-/// plus those of accounts following any of its hashtags: for each of them,
-/// whether it went in ([`Pushed::homes`]). `push_to_home` skips everyone who
-/// has not signed in recently.
-pub async fn fanout_new_status(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    db: &PgPool,
-    author_id: i64,
-    status_id: i64,
-    tag_ids: &[i64],
-) -> HashMap<i64, bool> {
-    // Look up the status's reply shape and language so it is only fanned to
-    // followers who should see it (Mastodon FeedManager#filter_from_home).
-    let reply_meta = sqlx::query!(
-        "SELECT reply, in_reply_to_account_id, language, reblog_of_id FROM statuses WHERE id = $1",
+/// A status as `FanOutOnWriteService` distributes it.
+struct Distributed {
+    status: Candidate,
+    visibility: i32,
+    author_domain: Option<String>,
+    author_silenced: bool,
+}
+
+impl Distributed {
+    /// `broadcastable?`: public, no boost, and not by a silenced account.
+    fn broadcastable(&self) -> bool {
+        self.visibility == crate::db::models::vis::PUBLIC
+            && self.status.reblog_of_id.is_none()
+            && !self.author_silenced
+    }
+}
+
+/// The status, unless it is gone or `@status.proper.account.suspended?`.
+async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
+    let row = sqlx::query!(
+        r#"SELECT s.id, s.account_id, s.reply, s.in_reply_to_id, s.in_reply_to_account_id,
+                  s.language, s.reblog_of_id, s.visibility,
+                  a.domain AS author_domain, a.silenced_at IS NOT NULL AS "author_silenced!",
+                  a.suspended_at IS NOT NULL AS "author_suspended!",
+                  r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?",
+                  ra.suspended_at IS NOT NULL AS "reblog_suspended?"
+           FROM statuses s
+           JOIN accounts a ON a.id = s.account_id
+           LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
+           LEFT JOIN accounts ra ON ra.id = r.account_id
+           WHERE s.id = $1 AND s.deleted_at IS NULL"#,
         status_id,
     )
     .fetch_optional(db)
     .await
     .ok()
-    .flatten();
-    let is_reply = reply_meta.as_ref().map(|m| m.reply).unwrap_or(false);
-    let reply_to = reply_meta.as_ref().and_then(|m| m.in_reply_to_account_id);
-    let language = reply_meta.as_ref().and_then(|m| m.language.clone());
-    let reblog_of_id = reply_meta.as_ref().and_then(|m| m.reblog_of_id);
-
-    let mut follower_ids: Vec<i64> = if is_reply && reply_to.is_none() {
-        // Orphan reply (parent gone): filtered from every follower's home.
-        Vec::new()
-    } else if let Some(target) = reply_to.filter(|&t| is_reply && t != author_id) {
-        // Reply to someone else: only followers who are, or who follow, that
-        // account (a reply to the target themselves is covered by the first arm).
-        sqlx::query_scalar!(
-            r#"SELECT f.account_id FROM follows f
-               WHERE f.target_account_id = $1
-                 AND (
-                     f.account_id = $2
-                     OR EXISTS (
-                         SELECT 1 FROM follows f2
-                         WHERE f2.account_id = f.account_id AND f2.target_account_id = $2
-                     )
-                 )"#,
-            author_id,
-            target,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default()
-    } else {
-        // Non-reply or self-reply: all followers.
-        sqlx::query_scalar!(
-            "SELECT account_id FROM follows WHERE target_account_id = $1",
-            author_id,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default()
+    .flatten()?;
+    let proper_suspended = match row.reblog_account_id {
+        Some(_) => row.reblog_suspended.unwrap_or(false),
+        None => row.author_suspended,
     };
+    if proper_suspended {
+        return None;
+    }
+    Some(Distributed {
+        status: Candidate {
+            id: row.id,
+            account_id: row.account_id,
+            reply: row.reply,
+            in_reply_to_id: row.in_reply_to_id,
+            in_reply_to_account_id: row.in_reply_to_account_id,
+            language: row.language,
+            reblog_of_id: row.reblog_of_id,
+            reblog: row.reblog_account_id.map(|id| (id, row.reblog_domain)),
+        },
+        visibility: row.visibility,
+        author_domain: row.author_domain,
+        author_silenced: row.author_silenced,
+    })
+}
 
-    // Drop followers who restricted this follow to a language subset that
-    // excludes the status's language (Mastodon crutches[:languages]).
-    if let Some(ref lang) = language {
-        if !follower_ids.is_empty() {
-            let excluded: Vec<i64> = sqlx::query_scalar!(
-                r#"SELECT account_id FROM follows
-                   WHERE target_account_id = $1
-                     AND account_id = ANY($2::bigint[])
-                     AND languages IS NOT NULL
-                     AND array_length(languages, 1) >= 1
-                     AND NOT ($3 = ANY(languages))"#,
-                author_id,
-                &follower_ids,
-                lang,
-            )
-            .fetch_all(db)
-            .await
-            .unwrap_or_default();
-            if !excluded.is_empty() {
-                let ex: HashSet<i64> = excluded.into_iter().collect();
-                follower_ids.retain(|id| !ex.contains(id));
+/// `FeedManager#build_crutches` for one status and many receivers at once:
+/// the crutches each of `receivers` would get, read in a handful of
+/// queries rather than a handful per receiver, as the fan-out's
+/// `FeedInsertWorker`s build them one at a time. `home` adds
+/// `crutches[:exclusive_list_users]`, which a list's crutches go without;
+/// `crutches[:following]` is the follows, which a list replaces as its
+/// `replies_policy` says.
+async fn crutches_for(
+    db: &PgPool,
+    status: &Candidate,
+    author_domain: Option<&str>,
+    receivers: &[i64],
+    home: bool,
+) -> sqlx::Result<HashMap<i64, Crutches>> {
+    let mut crutches: HashMap<i64, Crutches> = receivers
+        .iter()
+        .map(|&r| (r, Crutches::default()))
+        .collect();
+    if receivers.is_empty() {
+        return Ok(crutches);
+    }
+    let author = status.account_id;
+    let mentioned_ids: Vec<i64> = std::iter::once(status.id)
+        .chain(status.reblog_of_id)
+        .collect();
+    let mut active_mentions: HashMap<i64, Vec<i64>> = HashMap::new();
+    for m in sqlx::query!(
+        "SELECT status_id, account_id FROM mentions WHERE status_id = ANY($1) AND NOT silent",
+        &mentioned_ids,
+    )
+    .fetch_all(db)
+    .await?
+    {
+        active_mentions
+            .entry(m.status_id)
+            .or_default()
+            .push(m.account_id);
+    }
+    let mut check_for_blocks: Vec<i64> =
+        active_mentions.get(&status.id).cloned().unwrap_or_default();
+    check_for_blocks.push(author);
+    let reblog_author = status.reblog.as_ref().map(|(id, _)| *id);
+    if let (Some(reblog_of_id), Some(reblog_author)) = (status.reblog_of_id, reblog_author) {
+        check_for_blocks.push(reblog_author);
+        check_for_blocks.extend(active_mentions.get(&reblog_of_id).into_iter().flatten());
+    }
+    let domains: Vec<String> = author_domain
+        .map(str::to_owned)
+        .into_iter()
+        .chain(status.reblog.as_ref().and_then(|(_, d)| d.clone()))
+        .collect();
+    let authors: Vec<i64> = std::iter::once(author).chain(reblog_author).collect();
+
+    if let Some(in_reply_to) = status.in_reply_to_account_id {
+        for receiver in sqlx::query_scalar!(
+            "SELECT account_id FROM follows
+             WHERE account_id = ANY($1) AND target_account_id = $2",
+            receivers,
+            in_reply_to,
+        )
+        .fetch_all(db)
+        .await?
+        {
+            if let Some(c) = crutches.get_mut(&receiver) {
+                c.following.insert(in_reply_to);
             }
         }
     }
+    for f in sqlx::query!(
+        "SELECT account_id, languages, show_reblogs FROM follows
+         WHERE account_id = ANY($1) AND target_account_id = $2",
+        receivers,
+        author,
+    )
+    .fetch_all(db)
+    .await?
+    {
+        if let Some(c) = crutches.get_mut(&f.account_id) {
+            if let Some(languages) = f.languages.filter(|l| !l.is_empty()) {
+                c.languages.insert(author, languages);
+            }
+            if status.reblog_of_id.is_some() && !f.show_reblogs {
+                c.hiding_reblogs.insert(author);
+            }
+        }
+    }
+    for b in sqlx::query!(
+        "SELECT account_id, target_account_id FROM blocks
+         WHERE account_id = ANY($1) AND target_account_id = ANY($2)",
+        receivers,
+        &check_for_blocks,
+    )
+    .fetch_all(db)
+    .await?
+    {
+        if let Some(c) = crutches.get_mut(&b.account_id) {
+            c.blocking.insert(b.target_account_id);
+        }
+    }
+    for m in sqlx::query!(
+        "SELECT account_id, target_account_id FROM mutes
+         WHERE account_id = ANY($1) AND target_account_id = ANY($2)",
+        receivers,
+        &check_for_blocks,
+    )
+    .fetch_all(db)
+    .await?
+    {
+        if let Some(c) = crutches.get_mut(&m.account_id) {
+            c.muting.insert(m.target_account_id);
+        }
+    }
+    if !domains.is_empty() {
+        for d in sqlx::query!(
+            "SELECT account_id, domain FROM account_domain_blocks
+             WHERE account_id = ANY($1) AND domain = ANY($2)",
+            receivers,
+            &domains,
+        )
+        .fetch_all(db)
+        .await?
+        {
+            if let Some(c) = crutches.get_mut(&d.account_id) {
+                c.domain_blocking.insert(d.domain);
+            }
+        }
+    }
+    for b in sqlx::query!(
+        "SELECT account_id, target_account_id FROM blocks
+         WHERE target_account_id = ANY($1) AND account_id = ANY($2)",
+        receivers,
+        &authors,
+    )
+    .fetch_all(db)
+    .await?
+    {
+        if let Some(c) = crutches.get_mut(&b.target_account_id) {
+            c.blocked_by.insert(b.account_id);
+        }
+    }
+    if home {
+        for receiver in sqlx::query_scalar!(
+            "SELECT DISTINCT l.account_id FROM list_accounts la
+             JOIN lists l ON l.id = la.list_id
+             WHERE l.account_id = ANY($1) AND l.exclusive AND la.account_id = $2",
+            receivers,
+            author,
+        )
+        .fetch_all(db)
+        .await?
+        {
+            if let Some(c) = crutches.get_mut(&receiver) {
+                c.exclusive_list_users.insert(author);
+            }
+        }
+    }
+    for c in crutches.values_mut() {
+        c.active_mentions = active_mentions.clone();
+    }
+    Ok(crutches)
+}
 
-    let hashtag_recipients: Vec<i64> = if !tag_ids.is_empty() {
+/// `FeedManager#filter_from_tags?`: whether a followed hashtag's status
+/// stays out of the receiver's home feed.
+fn filter_from_tags(
+    status: &Candidate,
+    author_domain: Option<&str>,
+    receiver_id: i64,
+    crutches: &Crutches,
+) -> bool {
+    receiver_id == status.account_id
+        || crutches
+            .active_mentions
+            .get(&status.id)
+            .into_iter()
+            .flatten()
+            .chain(std::iter::once(&status.account_id))
+            .any(|id| crutches.blocking.contains(id) || crutches.muting.contains(id))
+        || crutches.blocked_by.contains(&status.account_id)
+        || author_domain.is_some_and(|d| crutches.domain_blocking.contains(d))
+}
+
+/// `FanOutOnWriteService#fan_out_to_local_recipients!` and
+/// `#fan_out_to_public_recipients!` for the home feeds: `deliver_to_self!`
+/// unfiltered, then a `FeedInsertWorker` for each follower who signed in
+/// recently (only those mentioned, for a direct or limited post), filtered
+/// by `FeedManager#filter_from_home`, and for each such follower of one of
+/// its hashtags when the post is `broadcastable?`, filtered by
+/// `#filter_from_tags?`; each that passes is `push_to_home`d. For each home
+/// pushed to, whether the status went in ([`Pushed::homes`]).
+pub async fn fanout_new_status(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    status_id: i64,
+) -> HashMap<i64, bool> {
+    let mut pushed = HashMap::new();
+    let Some(d) = distributed(db, status_id).await else {
+        return pushed;
+    };
+    let status = &d.status;
+    let author = status.account_id;
+
+    // `deliver_to_self!` (`if @account.local?`; only a local account has a
+    // user to have signed in).
+    let mut deliveries: Vec<i64> = signed_in_recently(db, &[author]).await;
+
+    let followers: Vec<i64> = match d.visibility {
+        crate::db::models::vis::PUBLIC
+        | crate::db::models::vis::UNLISTED
+        | crate::db::models::vis::PRIVATE => followers_for_local_distribution(db, author).await,
+        // `deliver_to_mentioned_followers!`
+        _ => sqlx::query_scalar!(
+            r#"SELECT DISTINCT u.account_id FROM mentions m
+               JOIN follows f ON f.account_id = m.account_id AND f.target_account_id = $2
+               JOIN users u ON u.account_id = m.account_id
+               WHERE m.status_id = $1
+                 AND u.current_sign_in_at >= now() - make_interval(days => $3)"#,
+            status_id,
+            author,
+            crate::home_feed::ACTIVE_DAYS,
+        )
+        .fetch_all(db)
+        .await
+        .unwrap_or_default(),
+    };
+    // `deliver_to_hashtag_followers!` (`TagFollow.for_local_distribution`).
+    let tag_followers: Vec<i64> = if d.broadcastable() {
         sqlx::query_scalar!(
             r#"SELECT DISTINCT tf.account_id FROM tag_follows tf
-               WHERE tf.tag_id = ANY($1::bigint[])
-               AND tf.account_id != $2
-               AND NOT EXISTS (
-                   SELECT 1 FROM follows
-                   WHERE account_id = tf.account_id
-                   AND target_account_id = $2
-               )"#,
-            tag_ids as &[i64],
-            author_id,
+               JOIN statuses_tags st ON st.tag_id = tf.tag_id
+               JOIN users u ON u.account_id = tf.account_id
+               WHERE st.status_id = $1
+                 AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
+            status_id,
+            crate::home_feed::ACTIVE_DAYS,
         )
         .fetch_all(db)
         .await
         .unwrap_or_default()
     } else {
-        vec![]
+        Vec::new()
     };
 
-    let recipients: Vec<i64> = std::iter::once(author_id)
-        .chain(follower_ids)
-        .chain(hashtag_recipients)
+    let receivers: Vec<i64> = followers
+        .iter()
+        .chain(&tag_followers)
+        .copied()
+        .collect::<HashSet<i64>>()
+        .into_iter()
         .collect();
-
-    let mut pushed = HashMap::new();
-    // `push_to_home` returns unless `account.user&.signed_in_recently?`.
-    let recipients = signed_in_recently(db, &recipients).await;
-    if recipients.is_empty() {
+    let crutches =
+        match crutches_for(db, status, d.author_domain.as_deref(), &receivers, true).await {
+            Ok(crutches) => crutches,
+            Err(error) => {
+                tracing::warn!(%error, status_id, "could not read what filters the fan-out");
+                return pushed;
+            }
+        };
+    for follower in followers {
+        if let Some(c) = crutches.get(&follower) {
+            if !filter_from_home(status, follower, c, Receiver::Home) {
+                deliveries.push(follower);
+            }
+        }
+    }
+    for follower in tag_followers {
+        if let Some(c) = crutches.get(&follower) {
+            if !filter_from_tags(status, d.author_domain.as_deref(), follower, c) {
+                deliveries.push(follower);
+            }
+        }
+    }
+    if deliveries.is_empty() {
         return pushed;
     }
-    let separate = if reblog_of_id.is_some() {
-        not_aggregating(db, &recipients).await
+
+    let separate = if status.reblog_of_id.is_some() {
+        not_aggregating(db, &deliveries).await
     } else {
         Default::default()
     };
-    for id in recipients {
+    // One account can be pushed to twice, as a follower and as a follower of
+    // a hashtag, as Mastodon queues a `FeedInsertWorker` for each.
+    for id in deliveries {
         let timeline = Timeline::home(keys, id);
         let added = push(
             redis,
             &timeline,
             status_id,
-            reblog_of_id,
+            status.reblog_of_id,
             !separate.contains(&id),
         )
         .await;
-        pushed.insert(id, added);
+        *pushed.entry(id).or_insert(false) |= added;
     }
     pushed
 }
@@ -1171,74 +1374,117 @@ async fn lists_for_local_distribution(db: &PgPool, author_id: i64) -> Vec<(i64, 
     .collect()
 }
 
-/// `FanOutOnWriteService#deliver_to_lists!`: `push_to_list` for each list of
-/// [`lists_for_local_distribution`] the status passes
-/// (`FeedManager#filter_from_list?`), and whether it went in
-/// ([`Pushed::lists`]).
+/// `FanOutOnWriteService#deliver_to_lists!`, for a public, unlisted or
+/// private post: a `FeedInsertWorker` for each list of
+/// [`lists_for_local_distribution`], which `push_to_list`s unless
+/// `FeedManager#filter_from_list?` or `#filter_from_home` (with the list's
+/// crutches) keeps it out; and whether it went in ([`Pushed::lists`]).
 pub async fn fanout_to_lists(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
-    author_id: i64,
     status_id: i64,
-    in_reply_to_account_id: Option<i64>,
-    visibility: &str,
 ) -> HashMap<i64, bool> {
     let mut pushed = HashMap::new();
-    if visibility == "direct" {
+    let Some(d) = distributed(db, status_id).await else {
+        return pushed;
+    };
+    if !matches!(
+        d.visibility,
+        crate::db::models::vis::PUBLIC
+            | crate::db::models::vis::UNLISTED
+            | crate::db::models::vis::PRIVATE
+    ) {
         return pushed;
     }
-
-    let lists = lists_for_local_distribution(db, author_id).await;
+    let status = &d.status;
+    let author = status.account_id;
+    let lists = lists_for_local_distribution(db, author).await;
     if lists.is_empty() {
         return pushed;
     }
 
-    let reblog_of_id = reblogs_of(db, &[status_id]).await.get(&status_id).copied();
-    let owners: Vec<i64> = lists.iter().map(|l| l.1).collect();
-    let separate = if reblog_of_id.is_some() {
+    let owners: Vec<i64> = lists
+        .iter()
+        .map(|l| l.1)
+        .collect::<HashSet<i64>>()
+        .into_iter()
+        .collect();
+    let owner_crutches =
+        match crutches_for(db, status, d.author_domain.as_deref(), &owners, false).await {
+            Ok(crutches) => crutches,
+            Err(error) => {
+                tracing::warn!(%error, status_id, "could not read what filters the fan-out");
+                return pushed;
+            }
+        };
+    // The lists that hold the account replied to, for `show_list?`.
+    let in_reply_to = status.in_reply_to_account_id;
+    let listing_reply_target: HashSet<i64> = match in_reply_to {
+        Some(target) => {
+            let list_ids: Vec<i64> = lists.iter().map(|l| l.0).collect();
+            sqlx::query_scalar!(
+                "SELECT list_id FROM list_accounts WHERE list_id = ANY($1) AND account_id = $2",
+                &list_ids,
+                target,
+            )
+            .fetch_all(db)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+        }
+        None => HashSet::new(),
+    };
+
+    let separate = if status.reblog_of_id.is_some() {
         not_aggregating(db, &owners).await
     } else {
         Default::default()
     };
-
     for (list_id, owner_id, replies_policy) in lists {
-        let passes = if let Some(reply_author) = in_reply_to_account_id {
-            if reply_author == author_id || reply_author == owner_id {
-                true
-            } else {
-                match replies_policy {
-                    crate::db::models::replies::NONE => false,
-                    crate::db::models::replies::LIST => sqlx::query_scalar!(
-                        "SELECT 1 FROM list_accounts WHERE list_id = $1 AND account_id = $2",
-                        list_id,
-                        reply_author,
-                    )
-                    .fetch_optional(db)
-                    .await
-                    .unwrap_or(None)
-                    .is_some(),
-                    _ => sqlx::query_scalar!(
-                        "SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2",
-                        owner_id,
-                        reply_author,
-                    )
-                    .fetch_optional(db)
-                    .await
-                    .unwrap_or(None)
-                    .is_some(),
-                }
+        let listed = listing_reply_target.contains(&list_id);
+        // `FeedManager#filter_from_list?`
+        if status.reply && in_reply_to != Some(author) {
+            let filtered = in_reply_to != Some(owner_id)
+                && replies_policy != crate::db::models::replies::FOLLOWED
+                && !(replies_policy == crate::db::models::replies::LIST && listed);
+            if filtered {
+                continue;
             }
-        } else {
-            true
+        }
+        let Some(owner) = owner_crutches.get(&owner_id) else {
+            continue;
         };
-
-        if !passes {
+        // `crutches_following` for the list.
+        let following: HashSet<i64> = match replies_policy {
+            crate::db::models::replies::FOLLOWED => owner.following.clone(),
+            crate::db::models::replies::LIST => {
+                in_reply_to.filter(|_| listed).into_iter().collect()
+            }
+            _ => HashSet::new(),
+        };
+        let crutches = Crutches {
+            active_mentions: owner.active_mentions.clone(),
+            following,
+            languages: owner.languages.clone(),
+            hiding_reblogs: owner.hiding_reblogs.clone(),
+            blocking: owner.blocking.clone(),
+            muting: owner.muting.clone(),
+            domain_blocking: owner.domain_blocking.clone(),
+            blocked_by: owner.blocked_by.clone(),
+            exclusive_list_users: HashSet::new(),
+        };
+        let receiver = Receiver::List {
+            id: list_id,
+            replies_policy,
+        };
+        if filter_from_home(status, owner_id, &crutches, receiver) {
             continue;
         }
         let timeline = Timeline::list(keys, list_id);
         let aggregate = !separate.contains(&owner_id);
-        let added = push(redis, &timeline, status_id, reblog_of_id, aggregate).await;
+        let added = push(redis, &timeline, status_id, status.reblog_of_id, aggregate).await;
         pushed.insert(list_id, added);
     }
     pushed

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id FROM follows WHERE target_account_id = $1",
+  "query": "SELECT account_id FROM follows\n             WHERE account_id = ANY($1) AND target_account_id = $2",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8Array",
         "Int8"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "b3a799bea2ce56f01f909535abfc9c3b67b2e0a22c9702c908742045df6b2961"
+  "hash": "14176d8070f4dc20b48ea6f35b26c93facb55a6d454b9f1983c6410f20a39b9b"
 }
