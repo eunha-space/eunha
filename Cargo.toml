@@ -217,3 +217,12 @@ serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 uuid = { version = "1", features = ["v4"] }
 argon2 = "0.5"
+
+# Generating an RSA key unoptimised takes seconds rather than the tenth of one
+# it takes in a release build, which is long enough to time out tests that
+# fetch with the instance actor's lazily made key.
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
