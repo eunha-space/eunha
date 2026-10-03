@@ -70,14 +70,15 @@ fn rel_me_hrefs(html: &str) -> Vec<String> {
 /// Fetch `url` and return whether it links back to `link_back` via `rel="me"`.
 /// Mirrors `VerifyLinkService#link_back_present?` (minus the redirect-follow
 /// fallback used by a handful of services).
-async fn links_back(http: &reqwest::Client, url: &str, link_back: &str) -> bool {
-    // Reuse the SSRF-guarded client and validate the target up front, matching
-    // how preview cards are fetched.
-    if crate::federation::safe_fetch::validate_url(url).is_err() {
+async fn links_back(http: &ojak::client::Client, url: &str, link_back: &str) -> bool {
+    // Through the SSRF-guarded client, as preview cards are fetched.
+    let Ok(url) = url::Url::parse(url) else {
         return false;
-    }
-    let Ok(resp) = http
-        .get(url)
+    };
+    let Ok(request) = http.request(reqwest::Method::GET, &url) else {
+        return false;
+    };
+    let Ok(resp) = request
         .header("Accept", "text/html")
         .timeout(Duration::from_secs(5))
         .send()

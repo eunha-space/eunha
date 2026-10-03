@@ -265,12 +265,10 @@ async fn spawn_fake() -> Fake {
 }
 
 async fn fasp_ctx(label: &str) -> TestContext {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
     eunha::federation::webfinger::use_plain_http_for_tests();
-    TestContext::with_instance_config(label, |instance| {
-        instance.experimental_features = vec!["fasp".into()];
+    TestContext::with_config(label, |config| {
+        config.allowed_private_networks = vec!["127.0.0.0/8".into()];
+        config.instance.experimental_features = vec!["fasp".into()];
     })
     .await
 }
@@ -411,10 +409,7 @@ async fn register_and_confirm(ctx: &TestContext, fake: &Fake) -> String {
 
 #[tokio::test]
 async fn test_fasp_is_off_unless_configured() {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
-    let ctx = TestContext::new("fasp-off").await;
+    let ctx = TestContext::reaching_loopback("fasp-off").await;
     let response = ctx
         .api
         .post_json("/api/fasp/registration", None, &json!({"name": "x"}))

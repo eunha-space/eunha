@@ -207,7 +207,6 @@ fn aliases(configs: &[TenantConfig]) -> HashMap<String, String> {
 /// What the tenants of one process agreed on.
 struct ProcessSettings {
     bind_address: String,
-    private_networks: Vec<String>,
     delivery_concurrency: usize,
     max_tenants: usize,
     database_connections: Option<u64>,
@@ -232,13 +231,6 @@ fn process_settings(configs: &[TenantConfig]) -> Result<ProcessSettings> {
             first.config.bind_address,
             tenant.source,
             tenant.config.bind_address,
-        );
-        anyhow::ensure!(
-            tenant.config.allowed_private_networks == first.config.allowed_private_networks,
-            "{} and {} allow different private networks: the SSRF-guarded resolver is shared \
-             by the whole process, so every tenant must name the same allowed_private_networks",
-            first.source,
-            tenant.source,
         );
         let theirs = tenant
             .config
@@ -283,7 +275,6 @@ fn process_settings(configs: &[TenantConfig]) -> Result<ProcessSettings> {
     }
     Ok(ProcessSettings {
         bind_address: first.config.bind_address.clone(),
-        private_networks: first.config.allowed_private_networks.clone(),
         delivery_concurrency,
         max_tenants: first.config.limits.max_tenants(),
         database_connections: first.config.limits.process_database_connections,
@@ -447,8 +438,7 @@ async fn server_slots(database_url: &str) -> Result<u64> {
 }
 
 /// Whether a reload leaves alone what the process set up when it started: the
-/// listener, the private networks its resolver may reach, and its delivery
-/// budget. Changing any of those takes a restart.
+/// listener and its delivery budget. Changing any of those takes a restart.
 fn check_reloadable(at_start: &ProcessSettings, next: &ProcessSettings) -> Result<()> {
     anyhow::ensure!(
         next.bind_address == at_start.bind_address,
@@ -456,11 +446,6 @@ fn check_reloadable(at_start: &ProcessSettings, next: &ProcessSettings) -> Resul
          move the listener",
         next.bind_address,
         at_start.bind_address,
-    );
-    anyhow::ensure!(
-        next.private_networks == at_start.private_networks,
-        "the tenants now name different allowed_private_networks from the ones this process's \
-         resolver was set up with: restart it to change them",
     );
     anyhow::ensure!(
         next.delivery_concurrency == at_start.delivery_concurrency,
@@ -779,7 +764,6 @@ impl Tenants {
         let first = states.first().context("no tenants to serve")?;
         let settings = ProcessSettings {
             bind_address: bind_address.to_string(),
-            private_networks: first.config.allowed_private_networks.clone(),
             delivery_concurrency: first
                 .config
                 .workers
@@ -1265,10 +1249,6 @@ vapid_public_key = ""
         for (next, setting) in [
             (settings("127.0.0.1:3001", &[], ""), "bind_address"),
             (
-                settings("127.0.0.1:3000", &["10.0.0.0/8"], ""),
-                "allowed_private_networks",
-            ),
-            (
                 settings(
                     "127.0.0.1:3000",
                     &[],
@@ -1306,13 +1286,13 @@ vapid_public_key = ""
             .err()
             .is_some_and(|e| format!("{e:#}").contains("bind_address")));
 
+        // Each instance's guarded client is its own, so each may reach the
+        // private networks it names, and a reload may change them.
         let networks = [
             tenant("a.toml", "a.example", "127.0.0.1:3000", &[], ""),
             tenant("b.toml", "b.example", "127.0.0.1:3000", &["10.0.0.0/8"], ""),
         ];
-        assert!(process_settings(&networks)
-            .err()
-            .is_some_and(|e| format!("{e:#}").contains("allowed_private_networks")));
+        assert!(process_settings(&networks).is_ok());
 
         let deliveries = [
             tenant("a.toml", "a.example", "127.0.0.1:3000", &[], ""),

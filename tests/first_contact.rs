@@ -79,11 +79,8 @@ async fn spawn_remote_actor(
 
 /// Sends a first Follow from a new actor and returns how often it was fetched.
 async fn follow_from_new_actor(label: &str, shared_inbox: bool) -> usize {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
     eunha::federation::webfinger::use_plain_http_for_tests();
-    let ctx = TestContext::new(label).await;
+    let ctx = TestContext::reaching_loopback(label).await;
 
     let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
     let (actor_uri, fetches) = spawn_remote_actor(public_pem, shared_inbox).await;
@@ -207,10 +204,7 @@ async fn spawn_gateway(
 async fn test_a_portable_actor_follows() {
     use ojak::portable::{Ed25519Signer, ProofSigner};
 
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
-    let ctx = TestContext::new("portable-follow").await;
+    let ctx = TestContext::reaching_loopback("portable-follow").await;
     // Only an account with a signing key answers a Follow.
     let (private_pem, public_pem) = eunha::crypto::generate_rsa_keypair().unwrap();
     sqlx::query(

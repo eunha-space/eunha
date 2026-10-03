@@ -18,9 +18,13 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub instance: Arc<InstanceConfig>,
     pub http: reqwest::Client,
-    /// SSRF-guarded client for fetching untrusted remote content (ActivityPub
-    /// objects, actor keys, link previews). See [`crate::federation::safe_fetch`].
-    pub fetch: reqwest::Client,
+    /// The SSRF-guarded client every request to a URL someone else chose goes
+    /// through — link previews, profile link verification, FASP, the update
+    /// check — as Mastodon's `Request` guards them: ojak's, refusing what
+    /// `PrivateAddressCheck` refuses unless this instance's
+    /// `allowed_private_networks` names it. The same client, and pool, as
+    /// `fetcher`'s and the deliverer's.
+    pub fetch: ojak::client::Client,
     /// Fetches ActivityPub documents, signed as the instance actor, through
     /// ojak's guarded client: each redirect is checked and signed again,
     /// and a document is trusted only from its own origin.
@@ -80,12 +84,16 @@ impl AppState {
             .build()
             .expect("failed to build HTTP client");
 
-        // Declared before the client is built, so the resolver it installs is
-        // already answering with the operator's ranges in mind.
+        // `ALLOWED_PRIVATE_ADDRESSES`: networks the guarded client may reach
+        // although they are not public.
         let allowed: Vec<ipnet::IpNet> = config
             .allowed_private_networks
             .iter()
-            .filter_map(|cidr| match cidr.parse() {
+            // `IPAddr.new`: a network, or a single address.
+            .filter_map(|cidr| match cidr
+                .parse::<ipnet::IpNet>()
+                .or_else(|e| cidr.parse::<std::net::IpAddr>().map(Into::into).map_err(|_| e))
+            {
                 Ok(net) => Some(net),
                 Err(e) => {
                     tracing::error!(cidr, error = %e, "ignoring unparseable allowed_private_networks entry");
@@ -99,10 +107,6 @@ impl AppState {
                 "federation may reach these private networks; this relaxes an SSRF protection"
             );
         }
-        crate::federation::safe_fetch::set_allowed_private_networks(allowed.clone());
-
-        let fetch = crate::federation::safe_fetch::build_client();
-
         let storage = Arc::new(Storage::from_config(&config.media_storage).await);
         let urls = Arc::new(crate::api::mastodon::convert::InstanceUrls::new(
             config.instance.domain.clone(),
@@ -125,16 +129,15 @@ impl AppState {
             crate::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
         });
 
-        // Deliveries and fetches share one guarded client and its pool.
+        // Deliveries, fetches and every other request to a URL someone else
+        // chose share one guarded client and its pool.
         let federation_client = ojak::client::Client::new(ojak::client::ClientConfig {
-            // The process's list, which the first instance to start set: the
-            // same one the SSRF guard above answers to, so that ojak's
-            // client and eunha's older one agree on what may be reached.
-            allow_private: crate::federation::safe_fetch::allowed_private_networks(),
+            allow_private: allowed,
             user_agent: crate::version::USER_AGENT.to_string(),
             ..ojak::client::ClientConfig::default()
         })
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let fetch = federation_client.clone();
         let fetcher = Arc::new(ojak::fetch::Fetcher::new(
             federation_client.clone(),
             ojak::sig::Scheme::DraftCavage,

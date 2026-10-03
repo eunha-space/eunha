@@ -17,6 +17,5 @@ pub mod moderation;
 pub mod portable;
 pub mod process_account;
 pub mod replies;
-pub mod safe_fetch;
 pub mod tag;
 pub mod webfinger;

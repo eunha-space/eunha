@@ -56,10 +56,10 @@ pub async fn fetch(state: &AppState, url: Option<&str>) -> Outcome {
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none_or(str::is_empty) {
         return Outcome::Keep;
     }
-    if crate::federation::safe_fetch::validate_url(url).is_err() {
+    let Ok(request) = state.fetch.request(reqwest::Method::GET, &parsed) else {
         return Outcome::Clear;
-    }
-    let Ok(response) = state.fetch.get(url).timeout(super::TIMEOUT).send().await else {
+    };
+    let Ok(response) = request.timeout(super::TIMEOUT).send().await else {
         return Outcome::Clear;
     };
     if !response.status().is_success() {

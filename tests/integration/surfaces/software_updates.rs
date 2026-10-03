@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use crate::helpers::TestContext;
 
-/// Stand in for the update server, answering with a fixed body.
+/// Stand in for the update server, answering with a fixed body, on the
+/// loopback network the guarded client reaches only when allowed, as
+/// Mastodon's `Request` does.
 async fn spawn_update_server(body: &'static str) -> String {
     let app = Router::new()
         .fallback(any(|State(body): State<Arc<&'static str>>| async move {
@@ -24,7 +26,7 @@ async fn spawn_update_server(body: &'static str) -> String {
 /// Available releases are recorded where the admin surfaces read them.
 #[tokio::test]
 async fn test_available_updates_are_recorded() {
-    let ctx = TestContext::new("sw-updates").await;
+    let ctx = TestContext::reaching_loopback("sw-updates").await;
     let url = spawn_update_server(
         r#"{"updatesAvailable":[
              {"version":"4.8.0","releaseNotes":"https://example/4.8.0","urgent":false,"type":"minor"},
@@ -57,7 +59,7 @@ async fn test_available_updates_are_recorded() {
 /// that has been taken up (or withdrawn) does not linger.
 #[tokio::test]
 async fn test_withdrawn_updates_are_dropped() {
-    let ctx = TestContext::new("sw-withdrawn").await;
+    let ctx = TestContext::reaching_loopback("sw-withdrawn").await;
 
     sqlx::query!(
         r#"INSERT INTO software_updates (version, urgent, type, release_notes, created_at, updated_at)
@@ -88,7 +90,7 @@ async fn test_withdrawn_updates_are_dropped() {
 /// that branch, with the warning its nearness has earned.
 #[tokio::test]
 async fn test_end_of_support_is_recorded_for_the_tracked_branch() {
-    let ctx = TestContext::new("sw-eol").await;
+    let ctx = TestContext::reaching_loopback("sw-eol").await;
     let url = spawn_update_server(
         r#"{"updatesAvailable":[],"currentVersion":{"endOfSupport":"2020-01-01"}}"#,
     )
@@ -124,7 +126,7 @@ async fn test_end_of_support_is_recorded_for_the_tracked_branch() {
 /// this build rather than whatever came before it.
 #[tokio::test]
 async fn test_stale_branches_are_cleared() {
-    let ctx = TestContext::new("sw-stale").await;
+    let ctx = TestContext::reaching_loopback("sw-stale").await;
 
     sqlx::query!(
         r#"INSERT INTO software_deprecations (branch, end_of_support, warning_issued, created_at, updated_at)
@@ -162,7 +164,7 @@ async fn test_stale_branches_are_cleared() {
 /// few hours and nobody wants that in their inbox.
 #[tokio::test]
 async fn test_only_newly_seen_releases_are_reported() {
-    let ctx = TestContext::new("sw-repeat").await;
+    let ctx = TestContext::reaching_loopback("sw-repeat").await;
     let body = r#"{"updatesAvailable":[
              {"version":"4.8.0","releaseNotes":"","urgent":true,"type":"minor"}
            ],"currentVersion":{"endOfSupport":null}}"#;
@@ -202,7 +204,7 @@ async fn test_only_newly_seen_releases_are_reported() {
 /// is noted once rather than every time the check runs.
 #[tokio::test]
 async fn test_a_warning_is_not_reissued() {
-    let ctx = TestContext::new("sw-warn-once").await;
+    let ctx = TestContext::reaching_loopback("sw-warn-once").await;
     let url = spawn_update_server(
         r#"{"updatesAvailable":[],"currentVersion":{"endOfSupport":"2020-01-01"}}"#,
     )
@@ -232,7 +234,7 @@ async fn test_a_warning_is_not_reissued() {
 /// A date that moves further out does not withdraw a warning already given.
 #[tokio::test]
 async fn test_a_later_date_does_not_lower_the_warning() {
-    let ctx = TestContext::new("sw-warn-keep").await;
+    let ctx = TestContext::reaching_loopback("sw-warn-keep").await;
 
     let near = spawn_update_server(
         r#"{"updatesAvailable":[],"currentVersion":{"endOfSupport":"2020-01-01"}}"#,
@@ -294,8 +296,8 @@ async fn test_one_request_serves_every_instance() {
     });
     let url = format!("http://{addr}/update-check");
 
-    let a = TestContext::new("sw-shared-a").await;
-    let b = TestContext::new("sw-shared-b").await;
+    let a = TestContext::reaching_loopback("sw-shared-a").await;
+    let b = TestContext::reaching_loopback("sw-shared-b").await;
     eunha::software_updates::check_once_for(&[a.state.clone(), b.state.clone()], &url)
         .await
         .expect("the check should succeed");

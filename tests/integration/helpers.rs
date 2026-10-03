@@ -558,6 +558,16 @@ impl TestContext {
         .await
     }
 
+    /// A context whose instance may reach the loopback network, as an
+    /// operator allows a private one with `allowed_private_networks`: for
+    /// tests whose remote servers listen on `127.0.0.1`.
+    pub async fn reaching_loopback(label: &str) -> Self {
+        Self::with_config(label, |config| {
+            config.allowed_private_networks = vec!["127.0.0.0/8".into()];
+        })
+        .await
+    }
+
     /// A context whose configuration `configure` has changed from the
     /// default, for what is read off it at startup.
     pub async fn with_config(

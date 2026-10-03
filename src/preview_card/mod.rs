@@ -246,11 +246,12 @@ impl Service<'_> {
         if let Some(html) = &self.html {
             return Ok(html.clone());
         }
-        crate::federation::safe_fetch::validate_url(&self.url).map_err(|_| Abort)?;
+        let url = Url::parse(&self.url).map_err(|_| Abort)?;
         let response = self
             .state
             .fetch
-            .get(&self.url)
+            .request(reqwest::Method::GET, &url)
+            .map_err(|_| Abort)?
             .header(reqwest::header::ACCEPT, "text/html")
             .header(
                 reqwest::header::ACCEPT_LANGUAGE,

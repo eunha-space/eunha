@@ -159,10 +159,11 @@ impl OEmbed {
         let Some(endpoint) = self.endpoint_url.as_deref().filter(|e| !super::is_blank(e)) else {
             return Ok(None);
         };
-        crate::federation::safe_fetch::validate_url(endpoint).map_err(|_| Abort)?;
+        let endpoint = Url::parse(endpoint).map_err(|_| Abort)?;
         let response = state
             .fetch
-            .get(endpoint)
+            .request(reqwest::Method::GET, &endpoint)
+            .map_err(|_| Abort)?
             .timeout(super::TIMEOUT)
             .send()
             .await

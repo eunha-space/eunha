@@ -58,13 +58,16 @@ pub struct Config {
     #[serde(default)]
     pub software_update_url: Option<String>,
 
-    /// Private networks this instance may nonetheless reach, as CIDR blocks.
+    /// Private networks this instance may nonetheless reach, as CIDR blocks or
+    /// single addresses.
     ///
-    /// Federation refuses private addresses by default, because a peer that can
-    /// name an address can otherwise make this server probe its own network.
-    /// An instance that legitimately federates inside one — split-horizon DNS, a
-    /// proxy on a LAN, a mesh network — names those ranges here and no others.
-    /// Mastodon's `ALLOWED_PRIVATE_ADDRESSES` is the same setting.
+    /// Federation refuses private addresses by default — those Mastodon's
+    /// `PrivateAddressCheck` refuses, NAT64 and 6to4 included — because a peer
+    /// that can name an address can otherwise make this server probe its own
+    /// network. An instance that legitimately federates inside one —
+    /// split-horizon DNS, a proxy on a LAN, a mesh network, NAT64 — names those
+    /// ranges here and no others. Mastodon's `ALLOWED_PRIVATE_ADDRESSES` is the
+    /// same setting. Each instance in a process has its own.
     #[serde(default)]
     pub allowed_private_networks: Vec<String>,
     /// Attach FEP-8b32 integrity proofs to outgoing activities, so that a

@@ -122,10 +122,15 @@ async fn spawn_site(creator: &str) -> Arc<Site> {
 }
 
 /// The test's AppState, fetching with a client that may reach the local
-/// stand-in, which the SSRF-guarded one rightly refuses.
+/// stand-in, as an operator allows a private network, which the default
+/// SSRF-guarded one rightly refuses.
 fn local_state(ctx: &TestContext) -> eunha::state::AppState {
     let mut state = ctx.state.clone();
-    state.fetch = reqwest::Client::new();
+    state.fetch = ojak::client::Client::new(ojak::client::ClientConfig {
+        allow_private: vec!["127.0.0.0/8".parse().unwrap(), "::1/128".parse().unwrap()],
+        ..ojak::client::ClientConfig::default()
+    })
+    .unwrap();
     state
 }
 

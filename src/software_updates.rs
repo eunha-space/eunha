@@ -123,9 +123,13 @@ pub async fn check_once_for(states: &[AppState], url: &str) -> Result<()> {
         return Ok(());
     };
     let target = crate::version::MASTODON;
+    let endpoint =
+        url::Url::parse(&format!("{url}?version={target}")).context("the update check URL")?;
     let response = asking
         .fetch
-        .get(format!("{url}?version={target}"))
+        .request(reqwest::Method::GET, &endpoint)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .context("requesting update notices")?
         .header("Accept", "application/json")
         .send()
         .await

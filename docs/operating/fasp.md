@@ -87,8 +87,9 @@ longer match its digest.
 
 Requests to providers go out through the SSRF-guarded client federation uses,
 so a provider on a private address is reached only inside
-`allowed_private_networks`. A request that cannot connect counts against the
-provider's host at the resolution of minutes, as Mastodon's
+`allowed_private_networks`, which names networks or single addresses as
+Mastodon's `ALLOWED_PRIVATE_ADDRESSES` does. A request that cannot connect
+counts against the provider's host at the resolution of minutes, as Mastodon's
 `DeliveryFailureTracker` does for providers: failures in five different minutes
 mark the host unavailable in `unavailable_domains`, which also stops federation
 deliveries to it, and any answered request clears them. An unavailable provider

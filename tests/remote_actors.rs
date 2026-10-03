@@ -147,11 +147,8 @@ impl Server {
 }
 
 async fn spawn_server(label: &str) -> (TestContext, Server) {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
     eunha::federation::webfinger::use_plain_http_for_tests();
-    let ctx = TestContext::new(label).await;
+    let ctx = TestContext::reaching_loopback(label).await;
     let remote = Remote::default();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let host = listener.local_addr().unwrap().to_string();

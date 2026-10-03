@@ -136,11 +136,8 @@ fn page(base: &str, path: &str, items: &[&str], next: Option<&str>) -> Value {
 }
 
 async fn context_ctx(label: &str) -> (TestContext, Remote, String, String) {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
     eunha::federation::webfinger::use_plain_http_for_tests();
-    let ctx = TestContext::new(label).await;
+    let ctx = TestContext::reaching_loopback(label).await;
     let remote = Remote::default();
     let (base, private_pem) = spawn_remote(&remote).await;
     (ctx, remote, base, private_pem)

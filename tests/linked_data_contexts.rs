@@ -129,10 +129,7 @@ async fn stored(ctx: &TestContext, bob: &str, n: u32) -> bool {
 /// megabyte, is refused, and the post naming it is not taken.
 #[tokio::test]
 async fn test_a_relayed_post_is_checked_over_a_fetched_context() {
-    eunha::federation::safe_fetch::set_allowed_private_networks(vec!["127.0.0.0/8"
-        .parse()
-        .unwrap()]);
-    let ctx = TestContext::new("ldctx-fetch").await;
+    let ctx = TestContext::reaching_loopback("ldctx-fetch").await;
     let remote = Remote::default();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());

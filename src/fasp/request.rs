@@ -88,7 +88,11 @@ async fn perform(
 ) -> Result<Option<Value>, Error> {
     let url = provider.url(path);
     let body = encode(body);
-    crate::federation::safe_fetch::validate_url(&url)?;
+    let target = url::Url::parse(&url).map_err(|e| anyhow::anyhow!("invalid URL {url:?}: {e}"))?;
+    let request = state
+        .fetch
+        .request(method.clone(), &target)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let seed = provider.server_key()?;
     let signed = ojak::sig::rfc9421::sign_request(
         method.as_str(),
@@ -103,9 +107,7 @@ async fn perform(
         .content_digest
         .unwrap_or_else(|| super::signature::content_digest(body.as_bytes()));
 
-    let sent = state
-        .fetch
-        .request(method, &url)
+    let sent = request
         .header("accept", "application/json")
         .header("content-type", "application/json")
         .header("content-digest", digest)

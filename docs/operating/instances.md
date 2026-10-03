@@ -34,9 +34,10 @@ than per instance. Three things follow from that:
  -  **Tenant files are read on their own.** Environment variables belong to the
     process, so none of them overrides a tenant's file.
  -  **Every tenant must agree on what the process owns:** `bind_address`,
-    because there is one listener, and `allowed_private_networks`, because the
-    SSRF-guarded resolver is shared. Eunha refuses to start otherwise, and when
-    two files claim one domain.
+    because there is one listener. Eunha refuses to start otherwise, and when
+    two files claim one domain. `allowed_private_networks` is each tenant's
+    own: every instance has its own SSRF-guarded client, which reaches only
+    the private networks its own file names.
  -  **A tenant that cannot start does not stop the rest.** One whose database is
     behind this binary, or that fails to start, is left out and its host
     answers 503; a host no tenant serves answers 421. A lone instance still
@@ -104,8 +105,8 @@ kill -HUP <pid>
 A reload is all or nothing. It is refused, and the running tenants left as they
 were, when the directory could not have been started as it stands — a domain
 served twice, too many tenants, pools past their budget, no tenants at all — or
-when it would change what the process set up when it started: `bind_address`,
-`allowed_private_networks` and `process_delivery_concurrency` take a restart. A
+when it would change what the process set up when it started: `bind_address`
+and `process_delivery_concurrency` take a restart. A
 tenant that fails to start does not fail the reload; its host answers 503, and
 the next `SIGHUP` tries it again.
 
