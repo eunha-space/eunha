@@ -1126,16 +1126,21 @@ pub async fn run_delivery_cleanup(state: AppState) {
 
 /// Mastodon's Stoplight for an inbox, kept in Redis as
 /// `Stoplight::DataStore::Redis` keeps it, so that every process delivering
-/// for the instance holds back the same inboxes: the failures in a row
-/// (`stoplight:<inbox>:failures`) and when the last was
-/// (`stoplight:<inbox>:last_failure`), under the instance's key prefix on
-/// the coordination Redis. A breaker Redis cannot be asked about lets the
-/// delivery through.
+/// for the instance holds back the same inboxes and lets one probe through
+/// between them: the failures in a row (`stoplight:<inbox>:failures`), when
+/// an open breaker turns half-open (`stoplight:<inbox>:recovery_after`, in
+/// milliseconds), and the lock its probe holds (`stoplight:<inbox>:probe`),
+/// under the instance's key prefix on the coordination Redis. Each lasts a
+/// week after it last changed, as Stoplight's metadata does. A breaker Redis
+/// cannot be asked about lets the delivery through.
 #[derive(Clone)]
 pub struct RedisBreakers {
     redis: redis::aio::ConnectionManager,
     keys: crate::redis_keys::RedisKeyspace,
 }
+
+/// How long Stoplight keeps a light's metadata after it last changed.
+const BREAKER_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
 impl RedisBreakers {
     pub fn new(
@@ -1145,35 +1150,121 @@ impl RedisBreakers {
         Self { redis, keys }
     }
 
-    fn keys_for(&self, key: &str) -> (String, String) {
-        (
-            self.keys.key(format!("stoplight:{key}:failures")),
-            self.keys.key(format!("stoplight:{key}:last_failure")),
-        )
+    fn failures_key(&self, inbox: &str) -> String {
+        self.keys.key(format!("stoplight:{inbox}:failures"))
     }
 
-    /// How long deliveries to `inbox` are held, if its breaker is open.
-    pub async fn held_for(
+    fn recovery_key(&self, inbox: &str) -> String {
+        self.keys.key(format!("stoplight:{inbox}:recovery_after"))
+    }
+
+    /// `Light#run`'s choice of strategy: closed (green) lets the delivery
+    /// through; open (red) holds it until the cool-off has passed; half-open
+    /// (yellow) lets it through as the probe if it takes the recovery lock,
+    /// which starts the count of failures again, and holds it otherwise.
+    pub async fn admit(
         &self,
         breaker: &ojak::deliverer::CircuitBreaker,
         inbox: &str,
-    ) -> Option<Duration> {
-        let (failures, last) = self.keys_for(inbox);
+    ) -> ojak::deliverer::Admission {
+        use ojak::deliverer::Admission;
+
         let mut redis = self.redis.clone();
-        let (failures, last): (Option<u32>, Option<u64>) = redis::cmd("MGET")
-            .arg(&failures)
-            .arg(&last)
+        let recovery_after: redis::RedisResult<Option<u64>> = redis::cmd("GET")
+            .arg(self.recovery_key(inbox))
             .query_async(&mut redis)
-            .await
-            .ok()?;
-        if failures? < breaker.threshold.max(1) {
-            return None;
+            .await;
+        let Ok(Some(recovery_after)) = recovery_after else {
+            return Admission::Pass;
+        };
+        let now = now_millis();
+        if now < recovery_after {
+            return Admission::Held(Duration::from_millis(recovery_after - now));
         }
-        let since = now_millis().saturating_sub(last?);
-        breaker
-            .cool_off
-            .checked_sub(Duration::from_millis(since))
-            .filter(|left| !left.is_zero())
+        let ttl = usize::try_from(breaker.cool_off.as_millis()).unwrap_or(usize::MAX);
+        let Some(lock) = crate::redis_lock::try_acquire_on(
+            &self.redis,
+            &self.keys,
+            &format!("stoplight:{inbox}:probe"),
+            ttl.max(1),
+        )
+        .await
+        else {
+            return Admission::Held(breaker.cool_off);
+        };
+        // `YellowRunStrategy#enter_recovery`: `metrics_store.clear`.
+        let _: redis::RedisResult<()> = redis::cmd("DEL")
+            .arg(self.failures_key(inbox))
+            .query_async(&mut redis)
+            .await;
+        Admission::Probe(ojak::deliverer::Probe::new(lock))
+    }
+
+    /// `Tracker::Request` for a delivery let through closed, and
+    /// `Tracker::RecoveryProbe` for the probe, whose lock is released after.
+    pub async fn record(
+        &self,
+        breaker: &ojak::deliverer::CircuitBreaker,
+        inbox: &str,
+        failed: bool,
+        probe: Option<ojak::deliverer::Probe>,
+    ) -> redis::RedisResult<()> {
+        let mut redis = self.redis.clone();
+        let failures = self.failures_key(inbox);
+        let recovery = self.recovery_key(inbox);
+        let reopen = || {
+            let mut cmd = redis::cmd("SET");
+            cmd.arg(&recovery)
+                .arg(now_millis().saturating_add(
+                    u64::try_from(breaker.cool_off.as_millis()).unwrap_or(u64::MAX),
+                ))
+                .arg("EX")
+                .arg(BREAKER_TTL_SECS);
+            cmd
+        };
+        let recorded = match (probe.is_some(), failed) {
+            // The probe failed: red for another cool-off.
+            (true, true) => reopen().query_async(&mut redis).await,
+            // The probe succeeded: green.
+            (true, false) => {
+                redis::cmd("DEL")
+                    .arg(&recovery)
+                    .query_async(&mut redis)
+                    .await
+            }
+            // A success starts the count of failures again, and only that.
+            (false, false) => {
+                redis::pipe()
+                    .cmd("DEL")
+                    .arg(&failures)
+                    .ignore()
+                    .cmd("EXPIRE")
+                    .arg(&recovery)
+                    .arg(BREAKER_TTL_SECS)
+                    .ignore()
+                    .query_async(&mut redis)
+                    .await
+            }
+            (false, true) => {
+                let (count,): (u32,) = redis::pipe()
+                    .cmd("INCRBY")
+                    .arg(&failures)
+                    .arg(1)
+                    .cmd("EXPIRE")
+                    .arg(&failures)
+                    .arg(BREAKER_TTL_SECS)
+                    .ignore()
+                    .query_async(&mut redis)
+                    .await?;
+                if count >= breaker.threshold.max(1) {
+                    reopen().query_async(&mut redis).await
+                } else {
+                    Ok(())
+                }
+            }
+        };
+        drop(probe);
+        recorded
     }
 }
 
@@ -1184,12 +1275,12 @@ fn now_millis() -> u64 {
 }
 
 impl ojak::deliverer::BreakerStore for RedisBreakers {
-    fn held<'a>(
+    fn admit<'a>(
         &'a self,
         breaker: &'a ojak::deliverer::CircuitBreaker,
         key: &'a str,
-    ) -> ojak::deliverer::BreakerFuture<'a, Option<Duration>> {
-        Box::pin(self.held_for(breaker, key))
+    ) -> ojak::deliverer::BreakerFuture<'a, ojak::deliverer::Admission> {
+        Box::pin(RedisBreakers::admit(self, breaker, key))
     }
 
     fn record<'a>(
@@ -1197,39 +1288,10 @@ impl ojak::deliverer::BreakerStore for RedisBreakers {
         breaker: &'a ojak::deliverer::CircuitBreaker,
         key: &'a str,
         failed: bool,
+        probe: Option<ojak::deliverer::Probe>,
     ) -> ojak::deliverer::BreakerFuture<'a, ()> {
         Box::pin(async move {
-            let (failures, last) = self.keys_for(key);
-            let mut redis = self.redis.clone();
-            let recorded: redis::RedisResult<()> = if failed {
-                // Forgotten once nobody has failed there for ten cool-offs.
-                let ttl = (breaker.cool_off.as_secs() * 10).max(600);
-                redis::pipe()
-                    .atomic()
-                    .cmd("INCRBY")
-                    .arg(&failures)
-                    .arg(1)
-                    .ignore()
-                    .cmd("EXPIRE")
-                    .arg(&failures)
-                    .arg(ttl)
-                    .ignore()
-                    .cmd("SET")
-                    .arg(&last)
-                    .arg(now_millis())
-                    .arg("EX")
-                    .arg(ttl)
-                    .ignore()
-                    .query_async(&mut redis)
-                    .await
-            } else {
-                redis::cmd("DEL")
-                    .arg(&failures)
-                    .arg(&last)
-                    .query_async(&mut redis)
-                    .await
-            };
-            if let Err(error) = recorded {
+            if let Err(error) = RedisBreakers::record(self, breaker, key, failed, probe).await {
                 tracing::warn!(%error, "could not record a delivery in its circuit breaker");
             }
         })

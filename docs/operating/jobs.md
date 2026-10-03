@@ -108,10 +108,17 @@ taken only when nothing else is due, as Mastodon's `pull` queue is. The
 delivered, or refused for good, the old account is unfollowed by a job queued
 here.
 
-Each inbox's circuit breaker — ten failures in a row hold its deliveries back
-for a minute — is kept in Redis under the instance's prefix, so every process
-delivering for the instance counts the same failures, as Mastodon's
-Stoplights are counted across Sidekiq processes.
+Each inbox's circuit breaker is Mastodon's Stoplight: ten failures in a row
+open it, and its deliveries are held, each counted as a failed attempt and
+retried, for a minute. Then one delivery at a time is let through as a probe,
+the others held while it is under way; a probe that succeeds closes the
+breaker, and one that fails opens it for another minute. A success that is not
+a probe only starts the count of failures again. The breaker is kept in Redis
+under the instance's prefix (`stoplight:<inbox>:failures`,
+`stoplight:<inbox>:recovery_after` and the probe's lock,
+`stoplight:<inbox>:probe`), so every process delivering for the instance counts
+the same failures and lets one probe through between them, as Mastodon's
+Stoplights are shared across Sidekiq processes.
 
 
 Seeing whether the queue moves

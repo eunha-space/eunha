@@ -243,12 +243,15 @@ fn a_delivery_is_retried_on_mastodons_schedule() {
 }
 
 /// The breaker on deliveries is kept in Redis, as Mastodon's Stoplights are:
-/// failures counted by one process hold back another's deliveries, and an
-/// instance with another key prefix keeps breakers of its own.
+/// failures counted by one process hold back another's deliveries, an
+/// instance with another key prefix keeps breakers of its own, and once the
+/// cool-off has passed one delivery among them all is let through as the
+/// probe, as Stoplight's yellow light lets through the one that takes its
+/// recovery lock.
 #[tokio::test]
 async fn test_the_delivery_breaker_is_shared_through_redis() {
     use eunha::federation::delivery::{RedisBreakers, BREAKER};
-    use ojak::deliverer::BreakerStore as _;
+    use ojak::deliverer::{Admission, CircuitBreaker};
 
     let ctx = TestContext::new("breaker-shared").await;
     let inbox = format!("https://{}.invalid/inbox", ctx.domain);
@@ -268,19 +271,60 @@ async fn test_the_delivery_breaker_is_shared_through_redis() {
         ))
         .unwrap(),
     );
+    let pass = |admission: Admission| matches!(admission, Admission::Pass);
+    let held = |admission: Admission| matches!(admission, Admission::Held(_));
 
     for _ in 0..BREAKER.threshold - 1 {
-        one.record(&BREAKER, &inbox, true).await;
+        one.record(&BREAKER, &inbox, true, None).await.unwrap();
     }
-    assert_eq!(another.held(&BREAKER, &inbox).await, None);
-    another.record(&BREAKER, &inbox, true).await;
-    let held = one.held(&BREAKER, &inbox).await.expect("open after ten");
-    assert!(held <= BREAKER.cool_off && held > Duration::from_secs(55));
-    assert_eq!(elsewhere.held(&BREAKER, &inbox).await, None);
+    assert!(pass(another.admit(&BREAKER, &inbox).await));
+    another.record(&BREAKER, &inbox, true, None).await.unwrap();
+    let Admission::Held(left) = one.admit(&BREAKER, &inbox).await else {
+        panic!("open after ten");
+    };
+    assert!(left <= BREAKER.cool_off && left > Duration::from_secs(55));
+    assert!(pass(elsewhere.admit(&BREAKER, &inbox).await));
 
-    // One success anywhere closes it.
-    another.record(&BREAKER, &inbox, false).await;
-    assert_eq!(one.held(&BREAKER, &inbox).await, None);
+    // A success that is not a probe, sent before it opened, does not close
+    // it.
+    another.record(&BREAKER, &inbox, false, None).await.unwrap();
+    assert!(held(one.admit(&BREAKER, &inbox).await));
+
+    // The same breaker with a short cool-off, to watch it turn half-open.
+    let inbox = format!("https://{}.invalid/other-inbox", ctx.domain);
+    let breaker = CircuitBreaker {
+        cool_off: Duration::from_millis(400),
+        ..BREAKER
+    };
+    for _ in 0..breaker.threshold {
+        one.record(&breaker, &inbox, true, None).await.unwrap();
+    }
+    assert!(held(another.admit(&breaker, &inbox).await));
+    tokio::time::sleep(breaker.cool_off).await;
+    let Admission::Probe(probe) = one.admit(&breaker, &inbox).await else {
+        panic!("one delivery probes once the cool-off has passed");
+    };
+    assert!(
+        held(another.admit(&breaker, &inbox).await),
+        "the others are held while the probe is under way, in every process"
+    );
+    // A failed probe opens it for another cool-off.
+    one.record(&breaker, &inbox, true, Some(probe))
+        .await
+        .unwrap();
+    assert!(held(another.admit(&breaker, &inbox).await));
+    tokio::time::sleep(breaker.cool_off).await;
+    let Admission::Probe(probe) = another.admit(&breaker, &inbox).await else {
+        panic!("probed again after another cool-off");
+    };
+    // A successful one closes it, and the count of failures starts again.
+    another
+        .record(&breaker, &inbox, false, Some(probe))
+        .await
+        .unwrap();
+    assert!(pass(one.admit(&breaker, &inbox).await));
+    one.record(&breaker, &inbox, true, None).await.unwrap();
+    assert!(pass(one.admit(&breaker, &inbox).await));
 }
 
 /// `unsalvageable_authorization_failure?`: a 401 is final for a delivery

@@ -52,21 +52,33 @@ impl Drop for RedisLock {
 /// instance's key prefix exactly as given. `None` when someone else holds it
 /// or Redis cannot be reached.
 pub async fn try_acquire(state: &AppState, name: &str, ttl_ms: usize) -> Option<RedisLock> {
-    let key = state.redis_keys.key(name);
+    try_acquire_on(&state.redis_coordination, &state.redis_keys, name, ttl_ms).await
+}
+
+/// [`try_acquire`] on the given coordination Redis and keyspace, for what
+/// holds those rather than the instance's state, such as the delivery
+/// breakers.
+pub async fn try_acquire_on(
+    redis: &redis::aio::ConnectionManager,
+    keys: &crate::redis_keys::RedisKeyspace,
+    name: &str,
+    ttl_ms: usize,
+) -> Option<RedisLock> {
+    let key = keys.key(name);
     let token = crate::snowflake::next_id().to_string();
-    let mut redis = state.redis_coordination.clone();
+    let mut connection = redis.clone();
     let acquired: redis::RedisResult<Option<String>> = redis::cmd("SET")
         .arg(&key)
         .arg(&token)
         .arg("NX")
         .arg("PX")
         .arg(ttl_ms)
-        .query_async(&mut redis)
+        .query_async(&mut connection)
         .await;
     matches!(acquired, Ok(Some(_))).then(|| RedisLock {
-        redis: state.redis_coordination.clone(),
+        redis: redis.clone(),
         key,
         token,
-        use_pooled_function: state.redis_keys.is_shared(),
+        use_pooled_function: keys.is_shared(),
     })
 }
