@@ -770,3 +770,25 @@ evidence = "tests/remote_actors.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 
+
+[[divergence]]
+id = "stricter-private-address-ranges"
+kind = "behaviour"
+summary = "Refuses to fetch IPv4-compatible and site-local IPv6 addresses"
+mastodon = """
+`PrivateAddressCheck` judges an IPv4-compatible address (`::a.b.c.d`) by the \
+IPv4 address inside it, and has no entry for the deprecated site-local \
+`fec0::/10`, so it fetches from both when they are otherwise public."""
+eunha = """
+Fetches through ojak's guarded client, which refuses every IPv4-compatible \
+address and all of `fec0::/10`, unless the operator allows them in \
+`allowed_private_networks`."""
+why = """
+Both ranges are deprecated (RFC 4291, RFC 3879) and no public server is \
+reached through them; a guard that refuses them cannot be steered at an \
+internal host by the embedded IPv4 address or by a network that still \
+routes site-local addresses. The guard lives in ojak, which other \
+applications share."""
+evidence = "tests/integration/federation/private_addresses.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

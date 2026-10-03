@@ -14,6 +14,7 @@ mod linked_data_signatures;
 mod moves;
 mod objects;
 mod ownership;
+mod private_addresses;
 mod quote;
 mod serving;
 mod signature;

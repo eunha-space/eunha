@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are thirty-one. They cover:
+At the time of writing there are thirty-two. They cover:
 
  -  integrity proofs on outgoing activities;
  -  the invite tree, and the two ways eunha's invite API goes beyond
@@ -29,6 +29,7 @@ At the time of writing there are thirty-one. They cover:
  -  the admin custom emoji API;
  -  the private metrics listener;
  -  how a link preview card reads a page's character set;
+ -  which private addresses are refused;
  -  the email subscription API, and unsubscribe links;
  -  how a remote thread's replies are fetched, and how async refresh ids are
     signed;
