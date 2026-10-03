@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id FROM users\n           WHERE confirmed_at IS NULL\n             AND confirmation_sent_at <= now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1aeea1feae6ed4f6ec4ddef898e0038fca0a0e65c510ea0791e6e1ff4f855753"
+}

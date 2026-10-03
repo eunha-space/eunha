@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email, a.id AS account_id, a.username, a.memorial,\n                  (a.display_name <> '' OR a.note <> ''\n                   OR COALESCE(a.avatar_file_name, '') <> '') AS \"has_profile!\",\n                  EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id) AS \"has_follows!\",\n                  EXISTS (SELECT 1 FROM statuses s WHERE s.account_id = a.id) AS \"has_statuses!\"\n           FROM users u JOIN accounts a ON a.id = u.account_id\n           WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "memorial",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "has_profile!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "has_follows!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "has_statuses!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "808f2ad7c8b5f6f9aad9eee64329992ea68fe968ef1adbe8d1209c61a5a5dceb"
+}

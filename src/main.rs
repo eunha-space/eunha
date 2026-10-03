@@ -240,19 +240,28 @@ fn parse_index(name: &str) -> Result<eunha::search::elasticsearch::Index, String
 enum AccountsCommand {
     /// Create a new user account, and print the random password it was given.
     ///
-    /// `tootctl accounts create`: sign-ups need not be open, and the account is
-    /// active straight away. eunha has no unconfirmed accounts outside the
-    /// sign-up flow, so `--confirmed` is required.
+    /// `tootctl accounts create`: sign-ups need not be open. Without
+    /// `--confirmed` the account waits for its owner to follow the link mailed
+    /// to them.
     Create {
         username: String,
         #[arg(long)]
         email: String,
-        /// Mark the e-mail as confirmed instead of mailing a link. Required.
+        /// Mark the e-mail as confirmed instead of mailing a link, so that the
+        /// account is active straight away.
         #[arg(long)]
         confirmed: bool,
         /// Give the account this role, by name — for example `Owner`.
         #[arg(long)]
         role: Option<String>,
+        /// Give the new user the existing account with this username, whose
+        /// user is gone, as a deleted account's is.
+        #[arg(long)]
+        reattach: bool,
+        /// With `--reattach`, delete the user still holding the account first,
+        /// and the account with it.
+        #[arg(long)]
+        force: bool,
         /// Approve the account even where sign-ups need approval.
         #[arg(long)]
         approve: bool,
@@ -348,14 +357,37 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
-    /// Modify a user account.
-    ///
-    /// `tootctl accounts modify`, of which eunha implements `--reset-password`.
+    /// Modify a user account, as `tootctl accounts modify` does.
     Modify {
         username: String,
+        /// Give the user this role, by name.
+        #[arg(long)]
+        role: Option<String>,
+        /// Take the user's role away, leaving it an ordinary member.
+        #[arg(long)]
+        remove_role: bool,
+        /// Change the user's address, once the link mailed to it is followed
+        /// (or at once, with `--confirm`).
+        #[arg(long)]
+        email: Option<String>,
+        /// Mark the user's address as confirmed.
+        #[arg(long)]
+        confirm: bool,
+        /// Let a disabled user sign in again.
+        #[arg(long)]
+        enable: bool,
+        /// Lock the user out of their account.
+        #[arg(long)]
+        disable: bool,
+        /// Approve a user awaiting approval.
+        #[arg(long)]
+        approve: bool,
+        /// Turn the user's two-factor authentication off.
+        #[arg(long = "disable-2fa")]
+        disable_2fa: bool,
         /// Give the account a new random password, print it, and sign the
         /// account out of every session and app.
-        #[arg(long, required = true)]
+        #[arg(long)]
         reset_password: bool,
         /// With `--tenants`, the instance the account is on, by its domain or
         /// one of its aliases.
@@ -400,39 +432,77 @@ async fn main() -> anyhow::Result<()> {
                     email,
                     confirmed,
                     role,
+                    reattach,
+                    force,
                     approve,
                     instance,
                 },
         }) => {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
-            let password = create_account(
-                config,
+            let state = command_state(config).await?;
+            let created = accounts::create_from_command(
+                &state,
                 accounts::CreateOptions {
                     username,
                     email,
                     role,
                     confirmed,
                     approve,
+                    reattach,
+                    force,
                 },
             )
             .await?;
-            println!("OK");
-            println!("New password: {password}");
+            match created {
+                accounts::Created::Account(password) => {
+                    println!("OK");
+                    println!("New password: {password}");
+                }
+                accounts::Created::UsernameInUse => {
+                    println!("The chosen username is currently in use");
+                    println!("Use --force to reattach it anyway and delete the other user");
+                }
+            }
             return Ok(());
         }
         Some(Command::Accounts {
             command:
                 AccountsCommand::Modify {
                     username,
-                    reset_password: _,
+                    role,
+                    remove_role,
+                    email,
+                    confirm,
+                    enable,
+                    disable,
+                    approve,
+                    disable_2fa,
+                    reset_password,
                     instance,
                 },
         }) => {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
-            let db = command_database(&config).await?;
-            let password = accounts::reset_password(&db, &username).await?;
+            let state = command_state(config).await?;
+            let password = accounts::modify_from_command(
+                &state,
+                &username,
+                accounts::ModifyOptions {
+                    role,
+                    remove_role,
+                    email,
+                    confirm,
+                    enable,
+                    disable,
+                    approve,
+                    disable_2fa,
+                    reset_password,
+                },
+            )
+            .await?;
             println!("OK");
-            println!("New password: {password}");
+            if let Some(password) = password {
+                println!("New password: {password}");
+            }
             return Ok(());
         }
         Some(Command::Accounts {
@@ -1021,15 +1091,12 @@ fn command_config(
         .with_context(|| format!("no tenant in {} answers to {instance}", dir.display()))
 }
 
-async fn create_account(
-    config: config::Config,
-    options: accounts::CreateOptions,
-) -> anyhow::Result<String> {
-    let db = command_database(&config).await?;
-    let encryptor = config.active_record_encryption.as_ref().map(|keys| {
-        eunha::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
-    });
-    accounts::create_from_command(&db, encryptor.as_ref(), &config.instance, options).await
+/// The instance a one-off command acts for, as a server would: its mail goes
+/// into the job queue for the running server to send, and what it publishes
+/// reaches that server's streams through Redis.
+async fn command_state(config: config::Config) -> anyhow::Result<eunha::state::AppState> {
+    let db = command_database_sized(&config, 4).await?;
+    eunha::state::AppState::new(db, config).await
 }
 
 /// A one-off command's connection to its instance's database, once the schema

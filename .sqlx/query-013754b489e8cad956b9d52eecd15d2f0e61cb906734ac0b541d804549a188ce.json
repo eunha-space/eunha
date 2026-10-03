@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET\n             role_id = CASE WHEN $2 THEN $3 ELSE role_id END,\n             disabled = COALESCE($4, disabled),\n             approved = approved OR $5,\n             updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int8",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "013754b489e8cad956b9d52eecd15d2f0e61cb906734ac0b541d804549a188ce"
+}

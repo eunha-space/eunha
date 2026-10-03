@@ -236,7 +236,7 @@ the webhook is enabled and subscribed to the event:
 
 | Event              | When                                               |
 | ------------------ | -------------------------------------------------- |
-| `account.created`  | a sign-up becomes an account                       |
+| `account.created`  | a sign-up or `eunha accounts create` makes a user  |
 | `account.approved` | an account is approved                             |
 | `account.updated`  | a profile is edited, or a moderator acts on it     |
 | `report.created`   | a report is filed, locally or by another server    |
@@ -403,7 +403,8 @@ For a local account:
     outranks the user's. The new role may not be positioned above the
     moderator's own. `/api/v1/admin/roles` lists the roles to choose from.
  -  `POST …/reset` signs the user out everywhere with a random password, and
-    mails a link to choose a new one.
+    mails a link to choose a new one, along with the notice that the password
+    changed.
  -  `DELETE …/two_factor_authentication` clears the user's two-factor
     authentication and security keys, and tells the user by mail, for a member
     locked out of their second factor (see [Account security](accounts.md)).

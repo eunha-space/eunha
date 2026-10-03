@@ -254,33 +254,25 @@ since = "4.7.0"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "command-line-accounts-are-confirmed"
+id = "command-line-force-checks-before-deleting"
 kind = "behaviour"
-summary = "`eunha accounts` creates confirmed accounts quietly, and only resets passwords"
+summary = "`eunha accounts create --reattach --force` deletes nothing for an account it would refuse"
 mastodon = """
-`tootctl accounts create` saves the user unconfirmed unless given \
-`--confirmed`, and mails a confirmation link. A confirmed, approved account \
-then runs `User#prepare_new_user!`: a welcome e-mail an hour later, and an \
-`admin.sign_up` notification to everyone who may manage users. It also takes \
-`--reattach` and `--force` to hand an existing username to the new user. \
-`tootctl accounts modify --reset-password` runs `User#change_password!`, which \
-also publishes `kill` for each revoked token so open streaming connections \
-close."""
+`tootctl accounts create --reattach --force` runs `DeleteAccountService` on the \
+account holding the username, user and all, before it validates the new user; \
+a new user then refused for its address or format still leaves the old account \
+deleted."""
 eunha = """
-`accounts create` refuses to run without `--confirmed`, sends no mail, notifies \
-nobody, and has no `--reattach` or `--force`; the account, its role and its \
-approval are otherwise decided as upstream decides them. `accounts modify` \
-takes only `--reset-password`, which changes the password and revokes sessions, \
-grants, tokens and push subscriptions as upstream does, but leaves a streaming \
-connection a running server already holds open until it reconnects."""
+Every validation the new user has to pass — the username's format and length, \
+the address's format, uniqueness and blocks, the role — is checked first, and \
+the old account is deleted only once the new one is known to be valid; the \
+address the deleted user held counts as free. What follows the deletion is \
+upstream's."""
 why = """
-An unconfirmed account in eunha is a row in `eunha.pending_signups` keyed by \
-the link it mails, so there is nothing to create without sending mail — and the \
-command is how a new instance gets its first account, before mail may be set \
-up. The first account's staff notification would go to itself. Reattaching \
-deletes an account in use, which a command meant for provisioning should not \
-be able to do by mistake. Streaming connections live on an in-process bus the \
-command, a separate process, cannot reach."""
+`--force` destroys an account someone is using, statuses and all, and cannot \
+be undone. Doing it for a command that then fails over a typo in the address \
+would lose the account for nothing; checking first changes no outcome of a \
+command that succeeds."""
 evidence = "tests/integration/surfaces/accounts_commands.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

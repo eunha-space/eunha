@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_moderation_notes WHERE target_account_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdd6aab554c9d46d67ba7207924034c2fbc8ad30ab51cc432eb2cc60d1672673"
+}

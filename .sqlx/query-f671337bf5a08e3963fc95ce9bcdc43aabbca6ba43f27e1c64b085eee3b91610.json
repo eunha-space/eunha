@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webauthn_credentials WHERE user_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f671337bf5a08e3963fc95ce9bcdc43aabbca6ba43f27e1c64b085eee3b91610"
+}

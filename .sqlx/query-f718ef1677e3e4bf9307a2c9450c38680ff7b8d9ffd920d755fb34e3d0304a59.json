@@ -1,10 +1,15 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT invite_id FROM users WHERE account_id = $1",
+  "query": "SELECT id, invite_id FROM users WHERE account_id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
         "name": "invite_id",
         "type_info": "Int8"
       }
@@ -15,8 +20,9 @@
       ]
     },
     "nullable": [
+      false,
       true
     ]
   },
-  "hash": "005f094cc6f4a592bae6060b0d6cc167564ad2057392ff4e784c4df1278466c9"
+  "hash": "f718ef1677e3e4bf9307a2c9450c38680ff7b8d9ffd920d755fb34e3d0304a59"
 }

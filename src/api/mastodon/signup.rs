@@ -660,6 +660,8 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
             sign_up_ip,
             invite_request: pending.reason.as_deref(),
             time_zone: pending.time_zone.as_deref(),
+            confirmed: true,
+            account_id: None,
         },
     )
     .await

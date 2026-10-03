@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.email, (u.confirmed_at IS NOT NULL) AS \"confirmed!\"\n           FROM users u JOIN accounts a ON a.id = u.account_id\n           WHERE lower(a.username) = lower($1) AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "358e5faadcc1bc86f56d69b8eceb7b8063ae1f9b99af0e29bde81fa9ea23b8b4"
+}

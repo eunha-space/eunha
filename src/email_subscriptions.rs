@@ -885,9 +885,14 @@ pub async fn clean_unconfirmed(state: &AppState) -> anyhow::Result<u64> {
     .rows_affected())
 }
 
-/// The daily pass of [`clean_unconfirmed`].
+/// The daily pass of `Scheduler::UserCleanupScheduler`: unconfirmed accounts
+/// ([`crate::accounts::clean_unconfirmed`]) and [`clean_unconfirmed`]
+/// subscriptions.
 pub async fn run_cleanup(state: AppState) {
     while !state.stop.is_cancelled() {
+        if let Err(error) = crate::accounts::clean_unconfirmed(&state.db).await {
+            tracing::error!(%error, "unconfirmed account cleanup failed");
+        }
         if let Err(error) = clean_unconfirmed(&state).await {
             tracing::error!(%error, "unconfirmed email subscription cleanup failed");
         }

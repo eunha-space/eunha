@@ -25,7 +25,7 @@ At the time of writing there are thirty-two. They cover:
  -  when the local-keypair migration is recorded;
  -  the moderation tools API, and the server administration API;
  -  the account move API;
- -  how command-line accounts are created;
+ -  what `eunha accounts create --force` checks before it deletes;
  -  the admin custom emoji API;
  -  the private metrics listener;
  -  how a link preview card reads a page's character set;

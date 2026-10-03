@@ -27,7 +27,6 @@ fn require_scope(auth: &AuthenticatedUser) -> AppResult<()> {
 
 struct UserRow {
     id: i64,
-    account_id: i64,
     email: String,
     confirmed: bool,
     approved: bool,
@@ -58,7 +57,7 @@ async fn subject(
     .ok_or(AppError::NotFound)?;
     let user = sqlx::query_as!(
         UserRow,
-        r#"SELECT id, account_id, email, (confirmed_at IS NOT NULL) AS "confirmed!", approved,
+        r#"SELECT id, email, (confirmed_at IS NOT NULL) AS "confirmed!", approved,
                   disabled
            FROM users WHERE account_id = $1"#,
         account_id
@@ -285,9 +284,7 @@ pub async fn reset_user_password(
     let s = subject(&state, &auth, id).await?;
     // `UserPolicy#reset_password?`
     authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
-    crate::accounts::change_password(&state.db, s.user.id).await?;
-    // `revoke_access!` kills the user's streaming connections.
-    state.streaming.kill_account(s.user.account_id).await;
+    crate::accounts::change_password(&state, s.user.id).await?;
     crate::accounts::send_reset_password_instructions(&state, s.user.id).await?;
     action_log::log(&state.db, auth.account_id, "reset_password", &s.target).await?;
     render(&state, id).await

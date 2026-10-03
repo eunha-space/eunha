@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, EXISTS (SELECT 1 FROM users u WHERE u.account_id = a.id) AS \"has_user!\"\n           FROM accounts a WHERE lower(a.username) = lower($1) AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "has_user!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "fa435798d67a5b1327006e32fd6606851ea4e47e3e217f49f22b6459005548c0"
+}

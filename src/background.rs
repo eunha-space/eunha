@@ -39,7 +39,7 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         until_stopped(&state, "trends review", run_trends_review(state.clone())),
         until_stopped(
             &state,
-            "email subscription cleanup",
+            "user cleanup",
             crate::email_subscriptions::run_cleanup(state.clone()),
         ),
         until_stopped(

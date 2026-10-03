@@ -383,15 +383,7 @@ pub async fn create_and_push(
 ) {
     let db = state.db.clone();
 
-    // Don't notify yourself — except for types Mastodon exempts from its
-    // self-notification block (NotifyService#blocked?), notably `poll`, so the
-    // poll owner is still told when their own poll ends.
-    const SELF_NOTIFIABLE_TYPES: &[&str] = &[
-        "poll",
-        "severed_relationships",
-        "moderation_warning",
-        "annual_report",
-    ];
+    // Don't notify yourself — except for the types exempt from it.
     if recipient_id == from_account_id && !SELF_NOTIFIABLE_TYPES.contains(&notification_type) {
         return;
     }
@@ -681,6 +673,16 @@ pub async fn create_and_push(
     .await;
 }
 
+/// The types Mastodon exempts from its self-notification block
+/// (`NotifyService::DropCondition#drop?`), notably `poll`, so that the poll
+/// owner is still told when their own poll ends.
+const SELF_NOTIFIABLE_TYPES: &[&str] = &[
+    "poll",
+    "severed_relationships",
+    "moderation_warning",
+    "annual_report",
+];
+
 /// `LocalNotificationWorker` and `NotifyService` for the notification types
 /// that are about the recipient's own standing or staff work rather than
 /// someone's post — `admin.report`, `admin.sign_up`, `moderation_warning` —
@@ -698,6 +700,11 @@ pub async fn notify_local(
     activity_id: i64,
     from_account_id: i64,
 ) {
+    // `DropCondition#drop?`: nobody is told of their own doing — of their own
+    // sign-up, say, when they may manage users — but for the types exempt.
+    if recipient_id == from_account_id && !SELF_NOTIFIABLE_TYPES.contains(&notification_type) {
+        return;
+    }
     let result: anyhow::Result<()> = async {
         // `return if recipient.user.nil?`
         let has_user = sqlx::query_scalar!(

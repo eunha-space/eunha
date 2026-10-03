@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET suspended_at = NULL, requested_deletion_at = NULL,\n                      updated_at = now()\n               WHERE id = $1 AND domain IS NULL\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9bf34754c2238694a2314ec73f0a83d4f6668438941e36e2b12052f81d026af2"
+}

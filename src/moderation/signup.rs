@@ -225,6 +225,58 @@ pub struct Checked {
     pub requires_approval: bool,
 }
 
+/// `EmailMxValidator`: the address's domain resolves to a mail server, and
+/// neither it nor its mail servers are blocked. Returns the MX hosts.
+async fn email_mx(
+    state: &AppState,
+    domain: &str,
+    sign_up_ip: Option<IpAddr>,
+) -> Result<Vec<String>, Refusal> {
+    if SKIP_MX_CHECK.load(Ordering::Relaxed) {
+        return Ok(vec![]);
+    }
+    let mx = resolve_mx(domain).await;
+    if mx.ips.is_empty() {
+        return Err(Refusal::EmailUnreachable);
+    }
+    let mut domains = vec![domain.to_owned()];
+    domains.extend(mx.records.iter().cloned());
+    if email_domain_blocked(state, &domains, false, sign_up_ip).await {
+        return Err(Refusal::EmailBlocked);
+    }
+    Ok(mx.records)
+}
+
+/// `UserEmailValidator`: the address's domain is not blocked, nor the address
+/// itself (`CanonicalEmailBlock`).
+async fn user_email(
+    state: &AppState,
+    email: &str,
+    domain: &str,
+    sign_up_ip: Option<IpAddr>,
+) -> Result<(), Refusal> {
+    if email_domain_blocked(state, &[domain.to_owned()], false, sign_up_ip).await {
+        return Err(Refusal::EmailBlocked);
+    }
+    if canonical_email_blocked(state, email).await {
+        return Err(Refusal::EmailTaken);
+    }
+    Ok(())
+}
+
+/// The email validations a user made outside the sign-up flow still meets —
+/// `tootctl accounts create`'s, which bypasses the registration checks:
+/// `EmailMxValidator` always, and `UserEmailValidator` while the user is
+/// unconfirmed.
+pub async fn check_email(state: &AppState, email: &str, confirmed: bool) -> Result<(), Refusal> {
+    let domain = email_domain(email).ok_or(Refusal::EmailInvalid)?;
+    email_mx(state, &domain, None).await?;
+    if !confirmed {
+        user_email(state, email, &domain, None).await?;
+    }
+    Ok(())
+}
+
 /// The sign-up validations that are about moderation. `valid_invitation`
 /// skips the email provider checks, as `UserEmailValidator` does.
 pub async fn check(
@@ -239,30 +291,9 @@ pub async fn check(
         return Err(Refusal::UsernameReserved);
     }
     let domain = email_domain(email).ok_or(Refusal::EmailInvalid)?;
-
-    // `EmailMxValidator`
-    let mut mx_records = vec![];
-    if !SKIP_MX_CHECK.load(Ordering::Relaxed) {
-        let mx = resolve_mx(&domain).await;
-        if mx.ips.is_empty() {
-            return Err(Refusal::EmailUnreachable);
-        }
-        let mut domains = vec![domain.clone()];
-        domains.extend(mx.records.iter().cloned());
-        if email_domain_blocked(state, &domains, false, sign_up_ip).await {
-            return Err(Refusal::EmailBlocked);
-        }
-        mx_records = mx.records;
-    }
-
-    // `UserEmailValidator`
+    let mx_records = email_mx(state, &domain, sign_up_ip).await?;
     if !valid_invitation {
-        if email_domain_blocked(state, std::slice::from_ref(&domain), false, sign_up_ip).await {
-            return Err(Refusal::EmailBlocked);
-        }
-        if canonical_email_blocked(state, email).await {
-            return Err(Refusal::EmailTaken);
-        }
+        user_email(state, email, &domain, sign_up_ip).await?;
     }
 
     // `requires_approval?`

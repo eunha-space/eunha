@@ -42,6 +42,7 @@ fn workers() -> Vec<Entry> {
         entry::<super::UniqueProbe>(),
         entry::<crate::email::MailDeliveryJob>(),
         entry::<crate::notification_mail::NotificationMailJob>(),
+        entry::<crate::accounts::WelcomeMailJob>(),
         entry::<crate::email_subscriptions::EmailDistributionWorker>(),
         entry::<crate::fasp::workers::AnnounceAccountLifecycleEventWorker>(),
         entry::<crate::fasp::workers::AnnounceContentLifecycleEventWorker>(),

@@ -602,6 +602,132 @@ impl EmailSender {
         self.send(to, &subject, &body).await
     }
 
+    /// `UserMailer#welcome`, in `user_mailer.welcome`'s words: the welcome
+    /// checklist, accounts to follow, trending hashtags, and what Mastodon is
+    /// for.
+    pub async fn send_welcome(&self, to: &str, mail: &WelcomeMail) -> anyhow::Result<()> {
+        let domain = &mail.domain;
+        let web = |path: &str| format!("https://{domain}/{path}");
+        let checklist = [
+            (
+                mail.has_profile,
+                "Personalize your profile",
+                "Boost your interactions by having a comprehensive profile.",
+                Some(("Personalize", web("start/profile"))),
+            ),
+            (
+                mail.has_follows,
+                "Personalize your home feed",
+                "Following interesting people is what Mastodon is all about.",
+                Some(("Follow", web("start/follows"))),
+            ),
+            (
+                mail.has_statuses,
+                "Make your first post",
+                "Say hello to the world with text, photos, videos, or polls.",
+                Some(("Compose", web(""))),
+            ),
+            (false, "Mastodon apps", "Download our official apps.", None),
+        ]
+        .into_iter()
+        .map(|(done, title, step, action)| {
+            let mark = if done { "&#9745;" } else { "&#9744;" };
+            let action = match action {
+                // A step already done has nothing left to press.
+                Some(_) if done => String::new(),
+                Some((text, url)) => format!("<p><a href=\"{url}\">{text}</a></p>"),
+                None => format!(
+                    "<p><a href=\"{APP_STORE_URL_IOS}\">Download on the App Store</a> · \
+                     <a href=\"{APP_STORE_URL_ANDROID}\">Get it on Google Play</a></p>"
+                ),
+            };
+            format!("<h3>{mark} {title}</h3><p>{step}</p>{action}")
+        })
+        .collect::<String>();
+        let follows = mail
+            .suggestions
+            .iter()
+            .map(|(name, acct)| {
+                format!(
+                    "<li><strong>{}</strong> @{} · <a href=\"{}\">Follow</a></li>",
+                    html_escape(name),
+                    html_escape(acct),
+                    web(&format!("@{acct}"))
+                )
+            })
+            .collect::<String>();
+        let tags = mail
+            .tags
+            .iter()
+            .map(|(name, people)| {
+                let count = if *people == 1 {
+                    "1 person in the past 2 days".to_string()
+                } else {
+                    format!("{people} people in the past 2 days")
+                };
+                format!(
+                    "<li><a href=\"{}\">#{}</a> · {count}</li>",
+                    web(&format!("tags/{name}")),
+                    html_escape(name)
+                )
+            })
+            .collect::<String>();
+        let features = [
+            (
+                "Stay in control of your own timeline",
+                "You know best what you want to see on your home feed. No algorithms or ads to \
+                 waste your time. Follow anyone across any Mastodon server from a single account \
+                 and receive their posts in chronological order, and make your corner of the \
+                 internet a little more like you.",
+            ),
+            (
+                "Build your audience in confidence",
+                "Mastodon provides you with a unique possibility of managing your audience \
+                 without middlemen. Mastodon deployed on your own infrastructure allows you to \
+                 follow and be followed from any other Mastodon server online and is under no \
+                 one's control but yours.",
+            ),
+            (
+                "Moderating the way it should be",
+                "Mastodon puts decision making back in your hands. Each server creates their own \
+                 rules and regulations, which are enforced locally and not top-down like \
+                 corporate social media, making it the most flexible in responding to the needs \
+                 of different groups of people. Join a server with the rules you agree with, or \
+                 host your own.",
+            ),
+            (
+                "Unparalleled creativity",
+                "Mastodon supports audio, video and picture posts, accessibility descriptions, \
+                 polls, content warnings, animated avatars, custom emojis, thumbnail crop \
+                 control, and more, to help you express yourself online. Whether you're \
+                 publishing your art, your music, or your podcast, Mastodon is there for you.",
+            ),
+        ]
+        .into_iter()
+        .map(|(title, text)| format!("<h3>{title}</h3><p>{text}</p>"))
+        .collect::<String>();
+        let body = format!(
+            "<h1>Welcome aboard, {username}!</h1>\
+             <p>Here are some tips to get you started</p>\
+             <p><strong>{domain}</strong></p>\
+             <p><a href=\"{sign_in}\">Sign in</a></p>\
+             <h2>Welcome Checklist</h2>\
+             <p>Let's get you started on this new social frontier:</p>\
+             {checklist}\
+             <h2>Who to follow</h2><p>Follow well-known accounts</p><ul>{follows}</ul>\
+             <p><a href=\"{more_follows}\">View more people to follow</a></p>\
+             <h2>Trending hashtags</h2><p>Explore what’s trending since past 2 days</p>\
+             <ul>{tags}</ul>\
+             <p><a href=\"{more_tags}\">View more trending hashtags</a></p>\
+             {features}",
+            username = html_escape(&mail.username),
+            sign_in = web("account/login"),
+            more_follows = web("explore/suggestions"),
+            more_tags = web("explore/tags"),
+        );
+        self.send(to, "Welcome to Mastodon", &body).await
+    }
+
     /// `AdminMailer#new_trends`.
     pub async fn send_new_trends(
         &self,
@@ -1122,6 +1248,32 @@ impl EmailSender {
             .map(|o| o.lock().expect("outbox lock").clone())
             .unwrap_or_default()
     }
+}
+
+/// `ApplicationHelper#app_store_url_ios`.
+const APP_STORE_URL_IOS: &str =
+    "https://apps.apple.com/app/mastodon-for-iphone-and-ipad/id1571998974";
+/// `ApplicationHelper#app_store_url_android`.
+const APP_STORE_URL_ANDROID: &str =
+    "https://play.google.com/store/apps/details?id=org.joinmastodon.android";
+
+/// What [`EmailSender::send_welcome`] says, as `UserMailer#welcome` finds it
+/// when it is sent.
+#[derive(Debug, Clone, Default)]
+pub struct WelcomeMail {
+    pub domain: String,
+    pub username: String,
+    /// `@has_account_fields`: a display name, a note or an avatar.
+    pub has_profile: bool,
+    /// `@has_active_relationships`: follows someone.
+    pub has_follows: bool,
+    /// `@has_statuses`.
+    pub has_statuses: bool,
+    /// `AccountSuggestions#get(5)`: each one's name and acct.
+    pub suggestions: Vec<(String, String)>,
+    /// `Trends.tags.query.allowed.limit(5)`: each tag's name, and how many
+    /// people used it in the past two days (`recent_tag_usage`).
+    pub tags: Vec<(String, i64)>,
 }
 
 /// Escape text for an HTML email body.

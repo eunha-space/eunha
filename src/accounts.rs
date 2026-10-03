@@ -10,7 +10,6 @@ use sqlx::PgPool;
 
 use crate::{
     api::ap::serving::{AccountUris, Own},
-    config::InstanceConfig,
     rails_encryption::Encryptor,
 };
 
@@ -34,6 +33,12 @@ pub struct NewLocalUser<'a> {
     pub invite_request: Option<&'a str>,
     /// `users.time_zone`, already normalized.
     pub time_zone: Option<&'a str>,
+    /// Write `confirmed_at` now. Otherwise the user waits for the link
+    /// [`send_confirmation_instructions`] mails, as Devise's confirmable does.
+    pub confirmed: bool,
+    /// An existing local account, holding no user, to attach the user to
+    /// instead of making a new one: `tootctl accounts create --reattach`.
+    pub account_id: Option<i64>,
 }
 
 /// The rows a new local account was written as.
@@ -42,7 +47,8 @@ pub struct LocalUser {
     pub user_id: i64,
 }
 
-/// Write a confirmed local account and its user, with a fresh signing key.
+/// Write a local account and its user, with a fresh signing key, or attach the
+/// user to an account that has none ([`NewLocalUser::account_id`]).
 ///
 /// The account, its key and its user are written in one transaction, so a
 /// failure part way leaves no account without a user holding the username.
@@ -52,66 +58,49 @@ pub async fn create_local(
     domain: &str,
     user: NewLocalUser<'_>,
 ) -> Result<LocalUser> {
-    // A 2048-bit key is on the order of a hundred milliseconds of CPU.
-    let (private_key, public_key) = crate::tenants::spawn_blocking(|| {
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
-    })
-    .await
-    .context("generating a signing key did not finish")??;
-
-    let url = format!("https://{}/@{}", domain, user.username);
-    let new_account_id = crate::snowflake::next_id();
-    // New local accounts use Mastodon's default `numeric_ap_id` scheme: the
-    // ActivityPub actor is served at /ap/users/{id}. Build the canonical URI
-    // (and its inbox/outbox) from the new account id.
-    let uris = crate::api::ap::serving::uris(domain)?;
-    let own = AccountUris::new(
-        &uris,
-        new_account_id,
-        Some(crate::federation::tag::NUMERIC_AP_ID),
-        user.username,
-    );
-    let uri = own.actor()?.to_string();
-    let inbox_url = own.uri(Own::Inbox)?;
-    let outbox_url = own.uri(Own::Outbox)?;
-    let shared_inbox_url = uris.shared_inbox_uri()?;
-
-    let mut tx = db.begin().await?;
-    let account_id = sqlx::query_scalar!(
-        r#"INSERT INTO accounts
-             (id, username, url, uri, private_key, public_key,
-              inbox_url, outbox_url, shared_inbox_url, id_scheme, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, 1, now(), now())
-           RETURNING id"#,
-        new_account_id,
-        user.username,
-        url,
-        uri,
-        private_key,
-        public_key,
-        inbox_url.as_str(),
-        outbox_url.as_str(),
-        shared_inbox_url.as_str(),
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    // Written to `accounts` above so that the account is never keyless; move it
-    // to `keypairs` when this instance keeps signing keys there.
-    if let Some(encryptor) = encryptor {
-        crate::federation::keypair::store_sealed(
-            &mut tx,
-            encryptor,
-            account_id,
-            &private_key,
-            &public_key,
-        )
-        .await?;
-    }
-
+    let keys = match user.account_id {
+        Some(_) => None,
+        // A 2048-bit key is on the order of a hundred milliseconds of CPU.
+        None => Some(
+            crate::tenants::spawn_blocking(|| {
+                ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+            })
+            .await
+            .context("generating a signing key did not finish")??,
+        ),
+    };
     // `User#set_age_verified_at`: when the instance asks for an age, every
     // user it creates has had theirs checked.
     let age_verified = crate::settings::min_age(db).await.is_some();
+
+    let mut tx = db.begin().await?;
+    let account_id = match (user.account_id, keys) {
+        // `account.suspended_at = nil; account.requested_deletion_at = nil`:
+        // the account keeps its id, actor and keys.
+        (Some(id), _) => sqlx::query_scalar!(
+            r#"UPDATE accounts SET suspended_at = NULL, requested_deletion_at = NULL,
+                      updated_at = now()
+               WHERE id = $1 AND domain IS NULL
+               RETURNING id"#,
+            id,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| anyhow!("the account to reattach is gone"))?,
+        (None, Some((private_key, public_key))) => {
+            insert_local_account(
+                &mut tx,
+                encryptor,
+                domain,
+                user.username,
+                &private_key,
+                &public_key,
+            )
+            .await?
+        }
+        (None, None) => unreachable!("a key is made for every new account"),
+    };
+
     let user_id = sqlx::query_scalar!(
         r#"INSERT INTO users
              (account_id, email, encrypted_password, role_id,
@@ -119,7 +108,7 @@ pub async fn create_local(
               locale, created_by_application_id, sign_up_ip, age_verified_at,
               time_zone, created_at, updated_at)
            VALUES ($1,$2,$3,$4,
-                   now(), $5, $6,
+                   CASE WHEN $12 THEN now() END, $5, $6,
                    $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,
                    $11, now(), now())
            RETURNING id"#,
@@ -134,6 +123,7 @@ pub async fn create_local(
         user.sign_up_ip.map(|ip| ip.to_string()),
         age_verified,
         user.time_zone,
+        user.confirmed,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -156,6 +146,66 @@ pub async fn create_local(
     })
 }
 
+/// A new local account row for `username`, signing with the given key.
+async fn insert_local_account(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    encryptor: Option<&Encryptor>,
+    domain: &str,
+    username: &str,
+    private_key: &str,
+    public_key: &str,
+) -> Result<i64> {
+    let url = format!("https://{domain}/@{username}");
+    let new_account_id = crate::snowflake::next_id();
+    // New local accounts use Mastodon's default `numeric_ap_id` scheme: the
+    // ActivityPub actor is served at /ap/users/{id}. Build the canonical URI
+    // (and its inbox/outbox) from the new account id.
+    let uris = crate::api::ap::serving::uris(domain)?;
+    let own = AccountUris::new(
+        &uris,
+        new_account_id,
+        Some(crate::federation::tag::NUMERIC_AP_ID),
+        username,
+    );
+    let uri = own.actor()?.to_string();
+    let inbox_url = own.uri(Own::Inbox)?;
+    let outbox_url = own.uri(Own::Outbox)?;
+    let shared_inbox_url = uris.shared_inbox_uri()?;
+
+    let account_id = sqlx::query_scalar!(
+        r#"INSERT INTO accounts
+             (id, username, url, uri, private_key, public_key,
+              inbox_url, outbox_url, shared_inbox_url, id_scheme, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, 1, now(), now())
+           RETURNING id"#,
+        new_account_id,
+        username,
+        url,
+        uri,
+        private_key,
+        public_key,
+        inbox_url.as_str(),
+        outbox_url.as_str(),
+        shared_inbox_url.as_str(),
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+
+    // Written to `accounts` above so that the account is never keyless; move it
+    // to `keypairs` when this instance keeps signing keys there.
+    if let Some(encryptor) = encryptor {
+        crate::federation::keypair::store_sealed(
+            tx,
+            encryptor,
+            account_id,
+            private_key,
+            public_key,
+        )
+        .await?;
+    }
+    Ok(account_id)
+}
+
 /// What `eunha accounts create` was asked for.
 pub struct CreateOptions {
     pub username: String,
@@ -163,30 +213,38 @@ pub struct CreateOptions {
     pub role: Option<String>,
     pub confirmed: bool,
     pub approve: bool,
+    /// Give the user the existing local account holding the username, if
+    /// there is one: one whose user is gone, as a deleted account's is.
+    pub reattach: bool,
+    /// With `reattach`, delete the user still holding the account first.
+    pub force: bool,
 }
 
-/// `tootctl accounts create`: make a local account outside the sign-up flow,
-/// and return the random password it was given.
+/// What `eunha accounts create` did.
+#[derive(Debug)]
+pub enum Created {
+    /// The account, and the random password it was given.
+    Account(String),
+    /// `--reattach` found the username held by a user, and without `--force`
+    /// left it alone.
+    UsernameInUse,
+}
+
+/// `tootctl accounts create`: make a local account outside the sign-up flow.
 ///
 /// Like upstream it bypasses the registration checks — whether sign-ups are
 /// open, and the username and email blocks — but not the account's own
 /// validations: the username's format, length and uniqueness, and the email's.
-/// Without `approve`, the account is approved exactly when a sign-up would be,
-/// which is `User#set_approved` on an open, approval-free instance.
+/// The account is approved exactly when a sign-up would be, which is
+/// `User#set_approved` on an open, approval-free instance, and then, as the
+/// command goes on: confirmed with `confirmed`, which welcomes it in or puts it
+/// before the staff as `User#mark_email_as_confirmed!` does, or else mailed a
+/// confirmation link; then approved with `approve`, as `User#approve!` does.
 pub async fn create_from_command(
-    db: &PgPool,
-    encryptor: Option<&Encryptor>,
-    instance: &InstanceConfig,
+    state: &crate::state::AppState,
     options: CreateOptions,
-) -> Result<String> {
-    // Mastodon leaves an account created without `--confirmed` unconfirmed and
-    // mails its owner a confirmation link. eunha holds unconfirmed sign-ups in
-    // `eunha.pending_signups` rather than `users`, keyed by the link it mails,
-    // so there is no such account to make without sending mail.
-    if !options.confirmed {
-        bail!("eunha can only create confirmed accounts; pass --confirmed");
-    }
-
+) -> Result<Created> {
+    let db = &state.db;
     let username = options.username.trim();
     if username.is_empty()
         || !username
@@ -204,6 +262,9 @@ pub async fn create_from_command(
     if !valid_email(&email) {
         bail!("email is invalid");
     }
+    crate::moderation::signup::check_email(state, &email, options.confirmed)
+        .await
+        .map_err(|refusal| anyhow!(refusal.message()))?;
 
     let role_id = match options.role.as_deref() {
         None => None,
@@ -215,20 +276,30 @@ pub async fn create_from_command(
         ),
     };
 
-    let username_taken = sqlx::query_scalar!(
-        r#"SELECT EXISTS (
-             SELECT 1 FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL
-           ) AS "exists!""#,
+    let existing = sqlx::query!(
+        r#"SELECT a.id, EXISTS (SELECT 1 FROM users u WHERE u.account_id = a.id) AS "has_user!"
+           FROM accounts a WHERE lower(a.username) = lower($1) AND a.domain IS NULL"#,
         username,
     )
-    .fetch_one(db)
+    .fetch_optional(db)
     .await?;
-    if username_taken {
-        bail!("username has already been taken");
-    }
+    // The account to attach the user to, and the one whose user `--force`
+    // deletes.
+    let (reattach, replace) = match existing {
+        None => (None, None),
+        Some(_) if !options.reattach => bail!("username has already been taken"),
+        Some(account) if !account.has_user => (Some(account.id), None),
+        Some(_) if !options.force => return Ok(Created::UsernameInUse),
+        Some(account) => (None, Some(account.id)),
+    };
+
+    // The user `--force` deletes gives up its address with it.
     let email_taken = sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1) AS "exists!""#,
+        r#"SELECT EXISTS (
+             SELECT 1 FROM users WHERE lower(email) = $1 AND account_id IS DISTINCT FROM $2
+           ) AS "exists!""#,
         email,
+        replace,
     )
     .fetch_one(db)
     .await?;
@@ -236,68 +307,226 @@ pub async fn create_from_command(
         bail!("email has already been taken");
     }
 
+    if let Some(account_id) = replace {
+        // `DeleteAccountService.new.call(account, reserve_email: false,
+        // reserve_username: false)`: the user and the account both go.
+        crate::delete_account::call(state, account_id, crate::delete_account::Options::purge())
+            .await?;
+    }
+
     // `SecureRandom.hex`: 16 random bytes, written as 32 hex digits.
     let password = crate::crypto::generate_token(16);
     let password_hash = crate::crypto::hash_password(&password)
         .await
         .map_err(|e| anyhow!("hashing the password: {e}"))?;
 
-    create_local(
+    let LocalUser {
+        account_id,
+        user_id,
+    } = create_local(
         db,
-        encryptor,
-        &instance.domain,
+        state.encryptor.as_ref(),
+        &state.instance.domain,
         NewLocalUser {
             username,
             email: &email,
             password_hash: &password_hash,
             role_id,
-            approved: options.approve
-                || crate::settings::registrations_mode_in(db, instance)
-                    .await
-                    .open(),
+            // `User#set_approved`; `--approve` comes after the save.
+            approved: crate::settings::registrations_mode(state).await.open()
+                && !crate::moderation::signup::requires_approval(state, username, &email, None)
+                    .await,
             invite_id: None,
             locale: None,
             app_id: None,
             sign_up_ip: None,
             invite_request: None,
             time_zone: None,
+            confirmed: false,
+            account_id: reattach,
         },
     )
     .await?;
 
-    Ok(password)
+    // `User#trigger_webhooks` and the account's `after_commit`s.
+    crate::moderation::webhooks::trigger(
+        state,
+        "account.created",
+        crate::moderation::webhooks::Object::Account(account_id),
+    )
+    .await;
+    if reattach.is_some() {
+        crate::fasp::events::account_updated(state, account_id, false).await;
+    } else {
+        crate::fasp::events::account_created(state, account_id).await;
+    }
+
+    if options.confirmed {
+        // `user.confirmed_at = nil; user.mark_email_as_confirmed!`.
+        confirm_user(state, user_id, false).await?;
+    } else {
+        // Devise's `send_on_create_confirmation_instructions`.
+        send_confirmation_instructions(state, user_id).await?;
+    }
+    if options.approve {
+        approve(state, account_id).await?;
+    }
+
+    Ok(Created::Account(password))
 }
 
 /// `tootctl accounts modify --reset-password`: give a local account a new
 /// random password, sign it out everywhere, and return the password.
-///
-/// This is `User#change_password!`, as upstream's command runs it: the password
-/// and the account's session activations change together, then every
-/// authorization it granted is revoked and the push subscriptions made through
-/// them go. A streaming connection already open in a running server stays open
-/// until it next reconnects, since the server that holds it is another process.
-pub async fn reset_password(db: &PgPool, username: &str) -> Result<String> {
+pub async fn reset_password(state: &crate::state::AppState, username: &str) -> Result<String> {
     let user_id = sqlx::query_scalar!(
         r#"SELECT u.id FROM users u JOIN accounts a ON a.id = u.account_id
+           WHERE lower(a.username) = lower($1) AND a.domain IS NULL"#,
+        username,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| anyhow!("no user with such username"))?;
+    change_password(state, user_id).await
+}
+
+/// What `eunha accounts modify` was asked for.
+#[derive(Debug, Default)]
+pub struct ModifyOptions {
+    pub role: Option<String>,
+    pub remove_role: bool,
+    pub email: Option<String>,
+    pub confirm: bool,
+    pub enable: bool,
+    pub disable: bool,
+    pub approve: bool,
+    pub disable_2fa: bool,
+    pub reset_password: bool,
+}
+
+/// `tootctl accounts modify`: change a local user, and return the new random
+/// password when asked for one.
+///
+/// Each option writes what upstream's assigns, in its order: a role (which
+/// wins over `remove_role`), an address that waits in `unconfirmed_email` for
+/// the link mailed to it as Devise's reconfirmable has it, `disabled` (where
+/// `disable` wins over `enable`), `approved`, then `User#disable_two_factor!`
+/// and `User#change_password!`; last, `User#confirm`, which confirms the
+/// address waiting and welcomes a user confirmed for the first time. Setting
+/// `disabled` or `approved` is only the column, as upstream's assignments are:
+/// a disabled user's open streams stay open, and an approved one is not
+/// welcomed.
+pub async fn modify_from_command(
+    state: &crate::state::AppState,
+    username: &str,
+    options: ModifyOptions,
+) -> Result<Option<String>> {
+    let db = &state.db;
+    let user = sqlx::query!(
+        r#"SELECT u.id, u.email, (u.confirmed_at IS NOT NULL) AS "confirmed!"
+           FROM users u JOIN accounts a ON a.id = u.account_id
            WHERE lower(a.username) = lower($1) AND a.domain IS NULL"#,
         username,
     )
     .fetch_optional(db)
     .await?
     .ok_or_else(|| anyhow!("no user with such username"))?;
-    change_password(db, user_id).await
+
+    // `UserRole.find_by(name:)`, or `--remove-role`'s nil; untouched otherwise.
+    let role = match (options.role.as_deref(), options.remove_role) {
+        (Some(name), _) => Some(Some(
+            sqlx::query_scalar!("SELECT id FROM user_roles WHERE name = $1 LIMIT 1", name)
+                .fetch_optional(db)
+                .await?
+                .ok_or_else(|| anyhow!("cannot find user role with that name"))?,
+        )),
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
+    // Devise strips and downcases the address; one that does not change it is
+    // no change.
+    let email = options
+        .email
+        .as_deref()
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| *e != user.email);
+    if let Some(email) = &email {
+        if !valid_email(email) {
+            bail!("email is invalid");
+        }
+        crate::moderation::signup::check_email(state, email, user.confirmed)
+            .await
+            .map_err(|refusal| anyhow!(refusal.message()))?;
+        let taken = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1 AND id <> $2) AS "e!""#,
+            email,
+            user.id,
+        )
+        .fetch_one(db)
+        .await?;
+        if taken {
+            bail!("email has already been taken");
+        }
+    }
+    let disabled = if options.disable {
+        Some(true)
+    } else if options.enable {
+        Some(false)
+    } else {
+        None
+    };
+
+    let mut tx = db.begin().await?;
+    sqlx::query!(
+        r#"UPDATE users SET
+             role_id = CASE WHEN $2 THEN $3 ELSE role_id END,
+             disabled = COALESCE($4, disabled),
+             approved = approved OR $5,
+             updated_at = now()
+           WHERE id = $1"#,
+        user.id,
+        role.is_some(),
+        role.flatten(),
+        disabled,
+        options.approve,
+    )
+    .execute(&mut *tx)
+    .await?;
+    if let Some(email) = &email {
+        set_unconfirmed_email(&mut *tx, user.id, email).await?;
+    }
+    if options.disable_2fa {
+        crate::two_factor::disable(&mut tx, user.id).await?;
+    }
+    tx.commit().await?;
+    if email.is_some() {
+        // `send_reconfirmation_instructions`, after the save.
+        send_confirmation_instructions(state, user.id).await?;
+    }
+
+    let password = if options.reset_password {
+        Some(change_password(state, user.id).await?)
+    } else {
+        None
+    };
+    if options.confirm {
+        confirm_user(state, user.id, true).await?;
+    }
+    Ok(password)
 }
 
 /// `User#change_password!(SecureRandom.hex)`: a new random password, every
-/// session and authorization of the user gone with it. Returns the password.
-pub async fn change_password(db: &PgPool, user_id: i64) -> Result<String> {
+/// session and authorization of the user gone with it, and each open stream
+/// made with one of its tokens told `kill`. Returns the password.
+pub async fn change_password(state: &crate::state::AppState, user_id: i64) -> Result<String> {
     // `SecureRandom.hex`: 16 random bytes, written as 32 hex digits.
     let password = crate::crypto::generate_token(16);
     let password_hash = crate::crypto::hash_password(&password)
         .await
         .map_err(|e| anyhow!("hashing the password: {e}"))?;
 
-    let mut tx = db.begin().await?;
+    // `update(password:)`, which clears a mailed reset token
+    // (`clear_reset_password_token`), then `session_activations.destroy_all`,
+    // whose access tokens go with them and close their streams.
     sqlx::query!(
         r#"UPDATE users
            SET encrypted_password = $1,
@@ -307,34 +536,22 @@ pub async fn change_password(db: &PgPool, user_id: i64) -> Result<String> {
         password_hash,
         user_id,
     )
-    .execute(&mut *tx)
+    .execute(&state.db)
     .await?;
-    sqlx::query!(
-        "DELETE FROM session_activations WHERE user_id = $1",
-        user_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        "UPDATE oauth_access_grants SET revoked_at = now() WHERE resource_owner_id = $1 AND revoked_at IS NULL",
-        user_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        r#"DELETE FROM web_push_subscriptions
-           WHERE access_token_id IN (SELECT id FROM oauth_access_tokens WHERE resource_owner_id = $1)"#,
-        user_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        "UPDATE oauth_access_tokens SET revoked_at = now() WHERE resource_owner_id = $1 AND revoked_at IS NULL",
-        user_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    let tokens = crate::sessions::destroy_all(&state.db, user_id).await?;
+    crate::sessions::kill_streams(state, tokens).await;
+    // `revoke_access!`: grants and tokens revoked, the push subscriptions made
+    // through them deleted, and `kill` for each token.
+    crate::sessions::revoke_access(state, user_id).await?;
+    // Devise's `send_password_change_notification`.
+    if let Ok(Some(user)) = crate::two_factor::load(&state.db, user_id).await {
+        crate::two_factor::notify_now(
+            state,
+            &user,
+            crate::two_factor::NoticeKind::Security(crate::two_factor::OwnedNotice::PasswordChange),
+        )
+        .await;
+    }
 
     Ok(password)
 }
@@ -932,19 +1149,30 @@ pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<
 }
 
 /// `User#prepare_new_user!`, the part eunha has: `BootstrapTimelineWorker`,
-/// which follows the inviter when the invite says to and tells staff.
+/// which follows the inviter when the invite says to and tells staff, the
+/// welcome mail an hour later, and the `account.approved` webhook.
 pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
     // Approved and confirmed, the account joins `Account.searchable`.
     crate::search::elasticsearch::indexing::account(state, account_id).await;
-    let invite_id = sqlx::query_scalar!(
-        "SELECT invite_id FROM users WHERE account_id = $1",
+    let user = sqlx::query!(
+        "SELECT id, invite_id FROM users WHERE account_id = $1",
         account_id
     )
     .fetch_optional(&state.db)
     .await
     .ok()
-    .flatten()
     .flatten();
+    let invite_id = user.as_ref().and_then(|u| u.invite_id);
+    // `ActivityTracker.increment('activity:accounts:local')` and
+    // `ActivityTracker.record('activity:logins', id)`.
+    crate::middleware::record_activity(state, "activity:accounts:local", None).await;
+    if let Some(user) = &user {
+        crate::middleware::record_activity(state, "activity:logins", Some(user.id)).await;
+    }
+    // `UserMailer.welcome(self).deliver_later(wait: 1.hour)`.
+    if let Some(user) = &user {
+        crate::jobs::push_in(state, WELCOME_DELAY, WelcomeMailJob { user_id: user.id }).await;
+    }
     // `TriggerWebhookWorker.perform_async('account.approved', ...)`
     crate::moderation::webhooks::trigger(
         state,
@@ -979,6 +1207,144 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
         }
     }
     .await;
+}
+
+/// How long after a new user is prepared its welcome mail goes.
+pub const WELCOME_DELAY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// `UserMailer.welcome(user).deliver_later`: rendered when it is sent, an
+/// hour on, so that its checklist shows what the user has done since.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct WelcomeMailJob {
+    pub user_id: i64,
+}
+
+impl crate::jobs::Job for WelcomeMailJob {
+    const KIND: &'static str = "ActionMailer::MailDeliveryJob(UserMailer#welcome)";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Mailers);
+
+    async fn perform(self, state: &crate::state::AppState) -> anyhow::Result<()> {
+        send_welcome(state, self.user_id).await
+    }
+}
+
+/// `UserMailer#welcome`: nothing for a user gone in the meantime, nor, as
+/// `active_for_authentication?` holds it back, for a memorial account.
+pub async fn send_welcome(state: &crate::state::AppState, user_id: i64) -> Result<()> {
+    let Some(user) = sqlx::query!(
+        r#"SELECT u.email, a.id AS account_id, a.username, a.memorial,
+                  (a.display_name <> '' OR a.note <> ''
+                   OR COALESCE(a.avatar_file_name, '') <> '') AS "has_profile!",
+                  EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id) AS "has_follows!",
+                  EXISTS (SELECT 1 FROM statuses s WHERE s.account_id = a.id) AS "has_statuses!"
+           FROM users u JOIN accounts a ON a.id = u.account_id
+           WHERE u.id = $1"#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    if user.memorial {
+        return Ok(());
+    }
+    // `AccountSuggestions.new(account).get(5)`.
+    let suggested: Vec<i64> = crate::suggestions::get(state, user.account_id, 5, 0)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    let mut suggestions = Vec::new();
+    for id in suggested {
+        if let Some(account) = sqlx::query!(
+            "SELECT username, domain, display_name FROM accounts WHERE id = $1",
+            id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            let acct = match account.domain {
+                Some(domain) => format!("{}@{domain}", account.username),
+                None => account.username.clone(),
+            };
+            let name = if account.display_name.is_empty() {
+                account.username
+            } else {
+                account.display_name
+            };
+            suggestions.push((name, acct));
+        }
+    }
+    // `Trends.tags.query.allowed.limit(5)`, and `recent_tag_usage` of each.
+    let trending = sqlx::query!(
+        r#"SELECT t.id, COALESCE(NULLIF(t.display_name, ''), t.name) AS "name!"
+           FROM tags t JOIN tag_trends tt ON tt.tag_id = t.id
+           WHERE tt.allowed
+           ORDER BY tt.score DESC
+           LIMIT 5"#
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut tags = Vec::with_capacity(trending.len());
+    for tag in trending {
+        let people = crate::moderation::history::aggregate_accounts(state, "tags", tag.id, 2).await;
+        tags.push((tag.name, people));
+    }
+    let mail = crate::email::WelcomeMail {
+        domain: state.instance.domain.clone(),
+        username: user.username,
+        has_profile: user.has_profile,
+        has_follows: user.has_follows,
+        has_statuses: user.has_statuses,
+        suggestions,
+        tags,
+    };
+    state.email.send_welcome(&user.email, &mail).await
+}
+
+/// `Scheduler::UserCleanupScheduler#clean_unconfirmed_accounts!`: users who
+/// were mailed a confirmation link a week ago or more and never followed it go,
+/// with their accounts. Returns how many.
+pub async fn clean_unconfirmed(db: &PgPool) -> Result<u64> {
+    let mut tx = db.begin().await?;
+    let gone = sqlx::query!(
+        r#"SELECT id, account_id FROM users
+           WHERE confirmed_at IS NULL
+             AND confirmation_sent_at <= now() - make_interval(days => $1)"#,
+        crate::email_subscriptions::UNCONFIRMED_MAX_AGE_DAYS as i32,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    if gone.is_empty() {
+        return Ok(0);
+    }
+    let user_ids: Vec<i64> = gone.iter().map(|u| u.id).collect();
+    let account_ids: Vec<i64> = gone.iter().map(|u| u.account_id).collect();
+    // Removed on their own, for want of database constraints, as upstream
+    // removes them.
+    sqlx::query!(
+        "DELETE FROM account_moderation_notes WHERE target_account_id = ANY($1)",
+        &account_ids
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM webauthn_credentials WHERE user_id = ANY($1)",
+        &user_ids
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!("DELETE FROM accounts WHERE id = ANY($1)", &account_ids)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query!("DELETE FROM users WHERE id = ANY($1)", &user_ids)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(gone.len() as u64)
 }
 
 /// `User#notify_staff_about_pending_account!`: mail those who may manage users

@@ -389,25 +389,30 @@ pub async fn disable(conn: &mut sqlx::PgConnection, user_id: i64) -> sqlx::Resul
 /// Mail one of the security notices, unless `UserMailer`'s
 /// `active_for_authentication?` guard would keep it back.
 pub fn notify(state: &AppState, user: &UserTwoFactor, notice: NoticeKind) {
+    let state = state.clone();
+    let user = user.clone();
+    crate::tenants::spawn(async move { notify_now(&state, &user, notice).await });
+}
+
+/// [`notify`], queued before it returns: for a command, whose process may be
+/// gone before a task it spawned has run.
+pub async fn notify_now(state: &AppState, user: &UserTwoFactor, notice: NoticeKind) {
     if user.memorial {
         return;
     }
     let email = state.mailer();
-    let to = user.email.clone();
-    let domain = state.instance.domain.clone();
-    crate::tenants::spawn(async move {
-        let result = match &notice {
-            NoticeKind::TwoFactorDisabled => email.send_two_factor_disabled(&to, &domain).await,
-            NoticeKind::Security(kind) => {
-                email
-                    .send_security_notice(&to, &domain, kind.as_notice())
-                    .await
-            }
-        };
-        if let Err(error) = result {
-            tracing::warn!(%error, "could not send an account security email");
+    let domain = &state.instance.domain;
+    let result = match &notice {
+        NoticeKind::TwoFactorDisabled => email.send_two_factor_disabled(&user.email, domain).await,
+        NoticeKind::Security(kind) => {
+            email
+                .send_security_notice(&user.email, domain, kind.as_notice())
+                .await
         }
-    });
+    };
+    if let Err(error) = result {
+        tracing::warn!(%error, "could not send an account security email");
+    }
 }
 
 /// What [`notify`] sends.

@@ -92,7 +92,9 @@ Mail Mastodon sends with `deliver_later` is queued as
 `ActionMailer::MailDeliveryJob` on the `mailers` queue, rendered when it is
 queued. A notification email is queued two minutes ahead and rendered when
 it is sent, so that nothing is mailed about a notification or post that has
-gone in the meantime, or to a member who can no longer sign in.
+gone in the meantime, or to a member who can no longer sign in. The welcome
+mail a new user is sent goes an hour after the account is ready, and is
+rendered then, so that its checklist shows what the user has done since.
 
 
 Deliveries
