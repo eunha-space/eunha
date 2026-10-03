@@ -2062,7 +2062,7 @@ dependencies = [
  "redis",
  "regex",
  "reqwest",
- "roxmltree",
+ "roxmltree 0.21.1",
  "rsa 0.9.10",
  "scraper",
  "serde",
@@ -2946,7 +2946,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -3812,7 +3812,7 @@ dependencies = [
 [[package]]
 name = "ojak"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3827,6 +3827,7 @@ dependencies = [
  "percent-encoding",
  "rand_core 0.6.4",
  "reqwest",
+ "roxmltree 0.20.0",
  "scraper",
  "serde_json",
  "sha2 0.10.9",
@@ -3837,7 +3838,7 @@ dependencies = [
 [[package]]
 name = "ojak-axum"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "axum",
  "ojak",
@@ -3846,7 +3847,7 @@ dependencies = [
 [[package]]
 name = "ojak-jsonld"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "iri-string",
  "serde_json",
@@ -3856,7 +3857,7 @@ dependencies = [
 [[package]]
 name = "ojak-postgres"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "ojak",
  "serde_json",
@@ -3866,7 +3867,7 @@ dependencies = [
 [[package]]
 name = "ojak-redis"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "ojak",
  "redis",
@@ -3876,7 +3877,7 @@ dependencies = [
 [[package]]
 name = "ojak-sig"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3896,7 +3897,7 @@ dependencies = [
 [[package]]
 name = "ojak-vocab"
 version = "0.1.0"
-source = "git+https://github.com/eunha-space/ojak.git#8eba5b19d7f07e7de929ed48ea05ea7d87183f8f"
+source = "git+https://github.com/eunha-space/ojak.git#bbed1e69cb8eea00473ac3ab4aa9861aeeedda66"
 dependencies = [
  "iri-string",
  "ojak-jsonld",
@@ -4573,7 +4574,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.40",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4610,7 +4611,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -4942,6 +4943,12 @@ dependencies = [
  "typeid",
  "unicode-ident",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "roxmltree"
