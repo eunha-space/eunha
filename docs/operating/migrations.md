@@ -66,12 +66,12 @@ read one, it says so, migrates anyway, and leaves the import for the next
 gains no settings.
 
 
-Sign-ups waiting before migration 026
+Sign-ups waiting before migration 025
 -------------------------------------
 
-Until migration 026, a sign-up waited in `eunha.pending_signups` for its link
+Until migration 025, a sign-up waited in `eunha.pending_signups` for its link
 to be followed, and only then became a `users` row. It is now a `users` row
-with no `confirmed_at` from the start, as Mastodon writes it, and migration 026
+with no `confirmed_at` from the start, as Mastodon writes it, and migration 025
 drops the table. Before applying it, `eunha migrate` turns each sign-up still
 within its day into such a user: the account with a new signing key, the user
 with the address, password, locale, reason, app and time zone it was made with,
