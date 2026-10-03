@@ -1788,46 +1788,15 @@ fn property_values(json: &Value) -> Option<Value> {
 
 /// `Multibase.decode_key_to_pem`: a `Multikey` as a key type and its PEM.
 fn key_from_multikey(value: Option<&Value>) -> Option<(i32, String)> {
-    use base64::Engine as _;
     use ojak::sig::integrity::PublicKey;
 
-    const ED25519_PUB_DER_HEADER: [u8; 12] = [
-        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
-    ];
-    const ML_DSA_44_PUB_DER_HEADER: [u8; 22] = [
-        0x30, 0x82, 0x05, 0x32, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04,
-        0x03, 0x11, 0x03, 0x82, 0x05, 0x21, 0x00,
-    ];
-    let base64 = base64::engine::general_purpose::STANDARD;
-    match ojak::sig::integrity::decode_multikey(value?.as_str()?).ok()? {
-        PublicKey::Ed25519(key) => {
-            let der = [ED25519_PUB_DER_HEADER.as_slice(), key.as_slice()].concat();
-            Some((
-                key_type::ED25519,
-                format!(
-                    "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
-                    base64.encode(der)
-                ),
-            ))
-        }
-        PublicKey::MlDsa44(key) if key.len() == 1312 => {
-            let der = [ML_DSA_44_PUB_DER_HEADER.as_slice(), &key].concat();
-            let encoded = base64.encode(der);
-            let lines: Vec<&str> = encoded
-                .as_bytes()
-                .chunks(64)
-                .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
-                .collect();
-            Some((
-                key_type::ML_DSA_44,
-                format!(
-                    "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
-                    lines.join("\n")
-                ),
-            ))
-        }
-        _ => None,
-    }
+    let key = ojak::sig::integrity::decode_multikey(value?.as_str()?).ok()?;
+    let kind = match key {
+        PublicKey::Ed25519(_) => key_type::ED25519,
+        PublicKey::MlDsa44(_) => key_type::ML_DSA_44,
+    };
+    // An ML-DSA-44 key of any other length than 1312 bytes is not one.
+    Some((kind, key.to_spki_pem().ok()?))
 }
 
 #[cfg(test)]

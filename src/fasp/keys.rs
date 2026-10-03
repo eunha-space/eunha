@@ -7,13 +7,8 @@
 
 use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use ojak::sig::integrity::PublicKey;
 use sha2::{Digest as _, Sha256};
-
-/// The DER of an Ed25519 `SubjectPublicKeyInfo` before its 32 key bytes:
-/// the algorithm identifier `1.3.101.112` and the bit string's header.
-const SPKI_PREFIX: [u8; 12] = [
-    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
-];
 
 /// `OpenSSL::PKey.generate_key('ed25519').private_to_pem`.
 pub fn generate_private_key_pem() -> anyhow::Result<String> {
@@ -28,29 +23,17 @@ pub fn parse_private_key_pem(pem: &str) -> anyhow::Result<([u8; 32], [u8; 32])> 
 
 /// `OpenSSL::PKey.new_raw_public_key('ed25519', raw).public_to_pem`.
 pub fn public_key_to_pem(raw: &[u8; 32]) -> String {
-    let mut der = SPKI_PREFIX.to_vec();
-    der.extend_from_slice(raw);
-    format!(
-        "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
-        BASE64.encode(der)
-    )
+    PublicKey::Ed25519(Box::new(*raw))
+        .to_spki_pem()
+        .expect("an Ed25519 key always encodes")
 }
 
 /// The raw key of an SPKI PEM Ed25519 public key (`raw_public_key`).
 pub fn public_key_from_pem(pem: &str) -> anyhow::Result<[u8; 32]> {
-    let body: String = pem
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.starts_with("-----"))
-        .collect();
-    let der = BASE64
-        .decode(body.as_bytes())
-        .context("the public key is not base64")?;
-    let raw = der
-        .strip_prefix(&SPKI_PREFIX)
-        .context("not an Ed25519 public key")?;
-    raw.try_into()
-        .map_err(|_| anyhow::anyhow!("an Ed25519 public key of {} bytes", raw.len()))
+    match PublicKey::from_spki_pem(pem).map_err(|e| anyhow::anyhow!("{e}"))? {
+        PublicKey::Ed25519(raw) => Ok(*raw),
+        PublicKey::MlDsa44(_) => anyhow::bail!("not an Ed25519 public key"),
+    }
 }
 
 /// `Base64.strict_decode64` of a raw public key, refused unless it is one.
