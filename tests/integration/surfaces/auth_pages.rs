@@ -151,19 +151,20 @@ async fn test_auth_pages_use_shared_stylesheet() {
 async fn test_email_confirmation_redirects_to_sign_in() {
     let ctx = TestContext::new("auth-confirm-redirect").await;
 
-    sqlx::query(
-        r#"INSERT INTO eunha.pending_signups
-             (username, email, email_normalized, password_hash, locale, confirmation_token)
-           VALUES ('confirmee', 'confirmee@example.com', 'confirmee@example.com',
-                   '$2b$04$abcdefghijklmnopqrstuv', 'en', 'confirm-token-1')"#,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    let signup = ctx
+        .sign_up(&serde_json::json!({
+            "username": "confirmee",
+            "email": "confirmee@example.com",
+            "password": "a-long-enough-password",
+            "agreement": true,
+        }))
+        .await;
+    assert_eq!(signup.status(), StatusCode::OK);
+    let token = ctx.confirmation_token("confirmee").await;
 
     let ok = ctx
         .api
-        .get("/auth/confirm?token=confirm-token-1", None)
+        .get(&format!("/auth/confirm?token={token}"), None)
         .await;
     assert_eq!(ok.status(), StatusCode::SEE_OTHER);
     assert_eq!(
@@ -193,7 +194,7 @@ async fn test_email_confirmation_redirects_to_sign_in() {
     // The same link a second time: used up, but still not a dead end.
     let again = ctx
         .api
-        .get("/auth/confirm?token=confirm-token-1", None)
+        .get(&format!("/auth/confirm?token={token}"), None)
         .await;
     assert_eq!(again.status(), StatusCode::SEE_OTHER);
     assert_eq!(

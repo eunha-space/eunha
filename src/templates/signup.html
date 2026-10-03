@@ -29,7 +29,7 @@
        data-server-error="{{ t_err_server }}"></div>
   <div id="signup-form-wrap">
     <form
-      hx-post="/api/v1/accounts"
+      hx-post="/auth"
       hx-swap="none"
       hx-on::before-request="signupBeforeRequest(event)"
       hx-on::after-request="signupAfterRequest(event)"
@@ -88,13 +88,8 @@ function signupBeforeRequest(evt) {
 function signupAfterRequest(evt) {
   document.getElementById('signup-btn').disabled = false;
   if (evt.detail.successful) {
-    var data = JSON.parse(evt.detail.xhr.responseText);
-    if (data.scope === 'profile') {
-      document.getElementById('signup-form-wrap').style.display = 'none';
-      document.getElementById('signup-check-email').style.display = 'block';
-    } else {
-      window.location.href = '/auth/sign_in';
-    }
+    // Signed in and on to /auth/setup, by the HX-Redirect that answered.
+    return;
   } else {
     try {
       var err = JSON.parse(evt.detail.xhr.responseText);

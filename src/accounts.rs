@@ -36,6 +36,9 @@ pub struct NewLocalUser<'a> {
     /// Write `confirmed_at` now. Otherwise the user waits for the link
     /// [`send_confirmation_instructions`] mails, as Devise's confirmable does.
     pub confirmed: bool,
+    /// `users.confirmation_token`, written with `confirmation_sent_at` now:
+    /// what Devise's `generate_confirmation_token` writes on create.
+    pub confirmation_token: Option<&'a str>,
     /// An existing local account, holding no user, to attach the user to
     /// instead of making a new one: `tootctl accounts create --reattach`.
     pub account_id: Option<i64>,
@@ -58,22 +61,50 @@ pub async fn create_local(
     domain: &str,
     user: NewLocalUser<'_>,
 ) -> Result<LocalUser> {
-    let keys = match user.account_id {
-        Some(_) => None,
+    let prepared = prepare_local(db, user.account_id.is_none()).await?;
+    let mut tx = db.begin().await?;
+    let created = insert_local(&mut tx, encryptor, domain, user, prepared).await?;
+    tx.commit().await?;
+    Ok(created)
+}
+
+/// What [`insert_local`] needs worked out before its transaction opens.
+pub struct PreparedLocal {
+    keys: Option<(String, String)>,
+    age_verified: bool,
+}
+
+/// A fresh signing key, when the user needs a new account, and whether the
+/// instance asks for an age.
+pub async fn prepare_local(db: &PgPool, new_account: bool) -> Result<PreparedLocal> {
+    let keys = if new_account {
         // A 2048-bit key is on the order of a hundred milliseconds of CPU.
-        None => Some(
+        Some(
             crate::tenants::spawn_blocking(|| {
                 ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
             })
             .await
             .context("generating a signing key did not finish")??,
-        ),
+        )
+    } else {
+        None
     };
     // `User#set_age_verified_at`: when the instance asks for an age, every
     // user it creates has had theirs checked.
     let age_verified = crate::settings::min_age(db).await.is_some();
+    Ok(PreparedLocal { keys, age_verified })
+}
 
-    let mut tx = db.begin().await?;
+/// [`create_local`] inside a transaction the caller holds, so that what else
+/// a sign-up writes — the invite's use, its access token — commits with it.
+pub async fn insert_local(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    encryptor: Option<&Encryptor>,
+    domain: &str,
+    user: NewLocalUser<'_>,
+    prepared: PreparedLocal,
+) -> Result<LocalUser> {
+    let PreparedLocal { keys, age_verified } = prepared;
     let account_id = match (user.account_id, keys) {
         // `account.suspended_at = nil; account.requested_deletion_at = nil`:
         // the account keeps its id, actor and keys.
@@ -84,12 +115,12 @@ pub async fn create_local(
                RETURNING id"#,
             id,
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(|| anyhow!("the account to reattach is gone"))?,
         (None, Some((private_key, public_key))) => {
             insert_local_account(
-                &mut tx,
+                tx,
                 encryptor,
                 domain,
                 user.username,
@@ -98,7 +129,7 @@ pub async fn create_local(
             )
             .await?
         }
-        (None, None) => unreachable!("a key is made for every new account"),
+        (None, None) => bail!("no signing key was made for the new account"),
     };
 
     let user_id = sqlx::query_scalar!(
@@ -106,11 +137,13 @@ pub async fn create_local(
              (account_id, email, encrypted_password, role_id,
               confirmed_at, invite_id, approved,
               locale, created_by_application_id, sign_up_ip, age_verified_at,
-              time_zone, created_at, updated_at)
+              time_zone, confirmation_token, confirmation_sent_at,
+              created_at, updated_at)
            VALUES ($1,$2,$3,$4,
                    CASE WHEN $12 THEN now() END, $5, $6,
                    $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,
-                   $11, now(), now())
+                   $11, $13::varchar, CASE WHEN $13::varchar IS NOT NULL THEN now() END,
+                   now(), now())
            RETURNING id"#,
         account_id,
         user.email,
@@ -124,8 +157,9 @@ pub async fn create_local(
         age_verified,
         user.time_zone,
         user.confirmed,
+        user.confirmation_token,
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
     if let Some(text) = user.invite_request.filter(|t| !t.is_empty()) {
@@ -135,11 +169,10 @@ pub async fn create_local(
             user_id,
             text,
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    tx.commit().await?;
     Ok(LocalUser {
         account_id,
         user_id,
@@ -343,6 +376,7 @@ pub async fn create_from_command(
             invite_request: None,
             time_zone: None,
             confirmed: false,
+            confirmation_token: None,
             account_id: reattach,
         },
     )
@@ -717,15 +751,27 @@ pub async fn send_confirmation_instructions(
     state: &crate::state::AppState,
     user_id: i64,
 ) -> Result<()> {
-    let token = crate::crypto::generate_token(32);
+    // `generate_confirmation_token`: the token already mailed while it is
+    // still good (`confirmation_period_expired?`), a new one otherwise.
+    let fresh = crate::crypto::generate_token(32);
     let Some(user) = sqlx::query!(
-        r#"UPDATE users u SET confirmation_token = $2, confirmation_sent_at = now()
+        r#"UPDATE users u SET
+             confirmation_token = CASE
+                 WHEN u.confirmation_token IS NOT NULL
+                      AND u.confirmation_sent_at > now() - make_interval(days => $3)
+                 THEN u.confirmation_token ELSE $2 END,
+             confirmation_sent_at = CASE
+                 WHEN u.confirmation_token IS NOT NULL
+                      AND u.confirmation_sent_at > now() - make_interval(days => $3)
+                 THEN u.confirmation_sent_at ELSE now() END
            FROM accounts a
            WHERE u.id = $1 AND a.id = u.account_id
-           RETURNING COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS "to!", u.locale,
+           RETURNING u.confirmation_token AS "token!",
+                     COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS "to!", u.locale,
                      a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!""#,
         user_id,
-        token,
+        fresh,
+        CONFIRM_WITHIN_DAYS,
     )
     .fetch_optional(&state.db)
     .await?
@@ -733,8 +779,8 @@ pub async fn send_confirmation_instructions(
         return Ok(());
     };
     let url = format!(
-        "https://{}/auth/confirm?token={token}",
-        state.instance.domain
+        "https://{}/auth/confirm?token={}",
+        state.instance.domain, user.token
     );
     let locale = user.locale.unwrap_or_else(|| "en".into());
     let domain = &state.instance.domain;
@@ -753,6 +799,10 @@ pub async fn send_confirmation_instructions(
     }
     Ok(())
 }
+
+/// Devise's `confirm_within`, as Mastodon configures it: a confirmation link
+/// is good for two days after it was sent.
+pub const CONFIRM_WITHIN_DAYS: i32 = 2;
 
 /// Devise's reconfirmable, short of the mail: a new address waits in
 /// `unconfirmed_email`, the old confirmation token dropped, until the link
@@ -784,18 +834,42 @@ pub async fn confirm_user(
     user_id: i64,
     reconfirm: bool,
 ) -> Result<()> {
+    // `grant_approval_on_confirmation?`: a user still awaiting approval is
+    // approved on confirming once registrations are open to all, unless a
+    // block asks for approval (`requires_approval?`).
+    let Some(user) = sqlx::query!(
+        r#"SELECT u.email, u.approved, host(u.sign_up_ip) AS sign_up_ip, a.username
+           FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1"#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let grant = !user.approved
+        && crate::settings::registrations_mode(state).await.open()
+        && !crate::moderation::signup::requires_approval(
+            state,
+            &user.username,
+            &user.email,
+            user.sign_up_ip.as_deref().and_then(|ip| ip.parse().ok()),
+        )
+        .await;
     let row = sqlx::query!(
         r#"UPDATE users u SET
              email = CASE WHEN $2 THEN COALESCE(lower(btrim(u.unconfirmed_email)), u.email) ELSE u.email END,
              unconfirmed_email = CASE WHEN $2 THEN NULL ELSE u.unconfirmed_email END,
              confirmed_at = COALESCE(u.confirmed_at, now()),
              confirmation_token = NULL,
+             approved = u.approved OR $3,
              updated_at = now()
            FROM users before
            WHERE u.id = $1 AND before.id = u.id
            RETURNING u.account_id, u.approved, (before.confirmed_at IS NULL) AS "new_user!""#,
         user_id,
         reconfirm,
+        grant,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -1303,6 +1377,171 @@ pub async fn send_welcome(state: &crate::state::AppState, user_id: i64) -> Resul
         tags,
     };
     state.email.send_welcome(&user.email, &mail).await
+}
+
+/// What [`convert_pending_signups`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct PendingSignupConversion {
+    /// Sign-ups made unconfirmed users, their links still good.
+    pub converted: u64,
+    /// Sign-ups past their day, or whose username or address someone else
+    /// has taken since, left to go with the table.
+    pub dropped: u64,
+}
+
+/// How many sign-ups wait in `eunha.pending_signups`, while it is there.
+pub async fn pending_signups_waiting(db: &PgPool) -> Result<u64> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('eunha.pending_signups') IS NOT NULL")
+            .fetch_one(db)
+            .await?;
+    if !exists {
+        return Ok(0);
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM eunha.pending_signups")
+        .fetch_one(db)
+        .await?;
+    Ok(count as u64)
+}
+
+/// Sign-ups made before eunha wrote them as Mastodon does, waiting in
+/// `eunha.pending_signups` for their link to be followed, turned into what a
+/// sign-up writes now: an account and an unconfirmed user, with the invite's
+/// use counted. Each keeps the confirmation token its mail carries, sent when
+/// the sign-up was made, so the link still confirms it within
+/// [`CONFIRM_WITHIN_DAYS`]. Approval is what `User#set_approved` gives on the
+/// instance's registrations and the invite; a block asking for approval is
+/// weighed again on confirming (`grant_approval_on_confirmation?`). `eunha
+/// migrate` runs this before the migration that drops the table; nothing
+/// happens once it is gone.
+pub async fn convert_pending_signups(
+    db: &PgPool,
+    encryptor: Option<&Encryptor>,
+    instance: &crate::config::InstanceConfig,
+) -> Result<PendingSignupConversion> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('eunha.pending_signups') IS NOT NULL")
+            .fetch_one(db)
+            .await?;
+    let mut report = PendingSignupConversion::default();
+    if !exists {
+        return Ok(report);
+    }
+    // Read without the query macros: the table is gone from the schema they
+    // are checked against.
+    type Row = (
+        String,
+        String,
+        String,
+        Option<i64>,
+        Option<String>,
+        String,
+        Option<i64>,
+        String,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        bool,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT username, email, password_hash, invite_id, reason, locale, app_id,
+                confirmation_token, host(sign_up_ip), time_zone, created_at,
+                expires_at > now()
+         FROM eunha.pending_signups ORDER BY created_at",
+    )
+    .fetch_all(db)
+    .await?;
+    let open = crate::settings::registrations_mode_in(db, instance)
+        .await
+        .open();
+    for (
+        username,
+        email,
+        password_hash,
+        invite_id,
+        reason,
+        locale,
+        app_id,
+        token,
+        sign_up_ip,
+        time_zone,
+        created_at,
+        live,
+    ) in rows
+    {
+        let taken: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL)
+                 OR EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($2))",
+        )
+        .bind(&username)
+        .bind(&email)
+        .fetch_one(db)
+        .await?;
+        if !live || taken {
+            report.dropped += 1;
+            continue;
+        }
+        // `valid_bypassing_invitation?`: an invite still good for use, written
+        // by someone whose role may waive approval.
+        let bypass: bool = match invite_id {
+            None => false,
+            Some(id) => sqlx::query_scalar(
+                "SELECT COALESCE((
+                   SELECT ((COALESCE(r.permissions, 0) | COALESCE(e.permissions, 0)) & ($2 | 1)) <> 0
+                   FROM invites i
+                   JOIN users u ON u.id = i.user_id
+                   LEFT JOIN user_roles r ON r.id = u.role_id
+                   LEFT JOIN user_roles e ON e.id = -99
+                   WHERE i.id = $1
+                     AND (i.max_uses IS NULL OR i.uses < i.max_uses)
+                     AND (i.expires_at IS NULL OR i.expires_at > now())
+                 ), false)",
+            )
+            .bind(id)
+            .bind(crate::moderation::role::flag::INVITE_BYPASS_APPROVAL)
+            .fetch_one(db)
+            .await?,
+        };
+        let created = create_local(
+            db,
+            encryptor,
+            &instance.domain,
+            NewLocalUser {
+                username: &username,
+                email: &email,
+                password_hash: &password_hash,
+                role_id: None,
+                approved: open || bypass,
+                invite_id,
+                locale: Some(&locale),
+                app_id,
+                sign_up_ip: sign_up_ip.as_deref().and_then(|ip| ip.parse().ok()),
+                invite_request: reason.as_deref(),
+                time_zone: time_zone.as_deref(),
+                confirmed: false,
+                confirmation_token: Some(&token),
+                account_id: None,
+            },
+        )
+        .await?;
+        sqlx::query("UPDATE users SET confirmation_sent_at = $2 WHERE id = $1")
+            .bind(created.user_id)
+            .bind(created_at.naive_utc())
+            .execute(db)
+            .await?;
+        if let Some(id) = invite_id {
+            sqlx::query("UPDATE invites SET uses = uses + 1 WHERE id = $1")
+                .bind(id)
+                .execute(db)
+                .await?;
+        }
+        sqlx::query("DELETE FROM eunha.pending_signups WHERE confirmation_token = $1")
+            .bind(&token)
+            .execute(db)
+            .await?;
+        report.converted += 1;
+    }
+    Ok(report)
 }
 
 /// `Scheduler::UserCleanupScheduler#clean_unconfirmed_accounts!`: users who

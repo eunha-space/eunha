@@ -59,6 +59,31 @@ impl Locale {
             (Self::Ko, "check_email") => {
                 "이메일을 확인하여 인증 링크를 클릭해 계정을 활성화하세요."
             }
+            // ── auth.setup ───────────────────────────────────────────────────
+            (Self::En, "setup_title") => "Check your inbox",
+            (Self::Ko, "setup_title") => "수신함 확인하기",
+            (Self::En, "setup_email_hint") => {
+                "Click the link we sent to %{email} to begin using Mastodon. We'll wait right here."
+            }
+            (Self::Ko, "setup_email_hint") => {
+                "%{email}로 보낸 링크를 클릭해 마스토돈을 시작하세요. 기다리고 있겠습니다."
+            }
+            (Self::En, "setup_link_not_received") => "Didn't get a link?",
+            (Self::Ko, "setup_link_not_received") => "링크를 못 받으셨나요?",
+            (Self::En, "setup_below_hint") => {
+                "Check your spam folder, or request another one. You can correct your email address if it's wrong."
+            }
+            (Self::Ko, "setup_below_hint") => {
+                "스팸 폴더를 체크해보거나, 새로 요청할 수 있습니다. 이메일을 잘못 입력한 경우 수정할 수 있습니다."
+            }
+            (Self::En, "setup_sent") => {
+                "You will receive a new email with the confirmation link in a few minutes!"
+            }
+            (Self::Ko, "setup_sent") => {
+                "확인 링크가 담긴 이메일이 몇 분 안에 도착할것입니다!"
+            }
+            (Self::En, "resend_confirmation") => "Resend confirmation link",
+            (Self::Ko, "resend_confirmation") => "확인 링크 다시 보내기",
             (Self::En, "no_account") => "Don't have an account?",
             (Self::Ko, "no_account") => "계정이 없으신가요?",
             (Self::En, "sign_up") => "Sign up",

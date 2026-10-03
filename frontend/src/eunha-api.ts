@@ -136,8 +136,10 @@ export async function deleteInvite(token: string, id: string): Promise<void> {
 }
 
 // ── Sign up ─────────────────────────────────────────────────────────────────
-// POST /api/v1/accounts is unauthenticated and always requires email
-// confirmation, so it returns a placeholder token; we just need success/failure.
+// POST /auth is the web sign-up, Mastodon's Auth::RegistrationsController: the
+// new user is saved unconfirmed and signed in, and waits on /auth/setup for the
+// link mailed to them. (POST /api/v1/accounts is for apps, with a
+// client-credentials token.)
 
 export interface SignUpParams {
   username: string
@@ -153,7 +155,7 @@ export interface SignUpParams {
 }
 
 export async function signUp(params: SignUpParams): Promise<void> {
-  const res = await fetch(`${window.location.origin}/api/v1/accounts`, {
+  const res = await fetch(`${window.location.origin}/auth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),

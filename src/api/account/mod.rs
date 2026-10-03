@@ -26,6 +26,11 @@ pub fn router() -> Router {
     Router::new()
         .route("/account", get(account_home))
         .route("/account/login", get(login_page).post(login_post))
+        .route("/auth", post(registration_post))
+        .route(
+            "/auth/setup",
+            get(setup_page).post(setup_post).put(setup_post),
+        )
         .route("/account/logout", post(logout_post))
         .route("/account/sso", post(sso_post))
         .route("/backups/{id}/download", get(backup_download))
@@ -139,6 +144,10 @@ pub async fn account_home(
     let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
         return Redirect::to("/account/login").into_response();
     };
+    // `require_functional!`: an unconfirmed user is sent to confirm.
+    if !user_confirmed(&state, session.user_id).await {
+        return Redirect::to("/auth/setup").into_response();
+    }
 
     let domain = instance.domain.clone();
 
@@ -271,7 +280,6 @@ pub async fn login_post(
                FROM users u
                JOIN accounts a ON a.id = u.account_id
                WHERE lower(u.email) = lower($1)
-                 AND u.confirmed_at IS NOT NULL
                  AND u.disabled = false
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.domain IS NULL"#,
@@ -345,9 +353,15 @@ pub async fn login_post(
     };
 
     // `after_sign_in_path_for`: where the browser was sent here from, when
-    // it was, and the account page otherwise.
+    // it was, and the account page otherwise — unless the address is still
+    // unconfirmed, where `require_functional!` sends the user on to
+    // `auth/setup`.
     let stored = stored_location(&headers);
-    let target = stored.clone().unwrap_or_else(|| "/account".to_owned());
+    let target = if user_confirmed(&state, user_id).await {
+        stored.clone().unwrap_or_else(|| "/account".to_owned())
+    } else {
+        "/auth/setup".to_owned()
+    };
     let mut h = HeaderMap::new();
     h.append(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
     if stored.is_some() {
@@ -868,3 +882,221 @@ pub async fn delete_post(
 // The instance invite tree now lives in the SPA (`/invite-tree`, backed by
 // `GET /api/eunha/v1/invite_tree`); the old server-rendered `/account/invites`
 // page was removed to avoid maintaining a second implementation.
+
+// ── Sign-up and its confirmation ───────────────────────────────────────────────
+
+/// Whether the user has confirmed their address.
+async fn user_confirmed(state: &AppState, user_id: i64) -> bool {
+    sqlx::query_scalar!(
+        r#"SELECT confirmed_at IS NOT NULL AS "confirmed!" FROM users WHERE id = $1"#,
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false)
+}
+
+/// `POST /auth`: `Auth::RegistrationsController#create`. The user is saved
+/// as a sign-up through the API saves it, signed in (Devise's `sign_up`, as
+/// `active_for_authentication?` lets an unconfirmed user in), and sent to
+/// `auth/setup` (`after_sign_up_path_for`) to wait for the link.
+pub async fn registration_post(
+    state: AppState,
+    axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
+        ResolvedInstance,
+    >,
+    client_ip: ClientIpExt,
+    headers: HeaderMap,
+    crate::api::mastodon::extractors::FormOrJson(form): crate::api::mastodon::extractors::FormOrJson<
+        crate::api::mastodon::signup::ApiCreateAccountForm,
+    >,
+) -> Response {
+    let ip = client_addr(client_ip);
+    let instance = crate::settings::Snapshot::load(&state)
+        .await
+        .amend(&instance);
+    let registered =
+        match crate::api::mastodon::signup::register(&state, &instance, &form, ip, None).await {
+            Ok(registered) => registered,
+            Err(error) => return error.into_response(),
+        };
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
+    let session_id =
+        match crate::sessions::activate(&state.db, registered.user_id, ip, user_agent).await {
+            Ok(id) => id,
+            Err(error) => {
+                tracing::error!(%error, "could not activate a session");
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
+    let mut h = HeaderMap::new();
+    h.append(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
+    if is_htmx(&headers) {
+        h.insert(
+            HeaderName::from_static("hx-redirect"),
+            HeaderValue::from_static("/auth/setup"),
+        );
+        return (h, "").into_response();
+    }
+    (h, Redirect::to("/auth/setup")).into_response()
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct SetupQuery {
+    pub sent: Option<String>,
+}
+
+/// `GET /auth/setup`: `Auth::SetupController#show`, for a signed-in user
+/// still unconfirmed or awaiting approval: the address the link went to, and
+/// a form to put it right and have the link sent again.
+pub async fn setup_page(
+    state: AppState,
+    axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
+        ResolvedInstance,
+    >,
+    client_ip: ClientIpExt,
+    headers: HeaderMap,
+    Query(query): Query<SetupQuery>,
+) -> Response {
+    render_setup(
+        &state,
+        &instance,
+        client_ip,
+        &headers,
+        query.sent.as_deref() == Some("1"),
+        None,
+    )
+    .await
+}
+
+async fn render_setup(
+    state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    client_ip: ClientIpExt,
+    headers: &HeaderMap,
+    sent: bool,
+    error: Option<String>,
+) -> Response {
+    let locale = Locale::detect(None, accept_language(headers));
+    // `authenticate_user!`.
+    let Some(session) = get_session(headers, state, client_addr(client_ip)).await else {
+        return redirect_to_sign_in("/auth/setup");
+    };
+    let Some(user) = sqlx::query!(
+        r#"SELECT email, confirmed_at IS NOT NULL AS "confirmed!", approved
+           FROM users WHERE id = $1"#,
+        session.user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten() else {
+        return Redirect::to("/account/login").into_response();
+    };
+    // `require_unconfirmed_or_pending!`.
+    if user.confirmed && user.approved {
+        return Redirect::to("/").into_response();
+    }
+    let html = templates::render(
+        "auth_setup.html",
+        minijinja::context! {
+            lang => locale.as_str(),
+            domain => instance.domain.clone(),
+            email => user.email.clone(),
+            sent,
+            error,
+            email_hint => locale.t("setup_email_hint").replace("%{email}", &user.email),
+            t_setup_title => locale.t("setup_title"),
+            t_setup_sent => locale.t("setup_sent"),
+            t_link_not_received => locale.t("setup_link_not_received"),
+            t_below_hint => locale.t("setup_below_hint"),
+            t_email => locale.t("email"),
+            t_resend_confirmation => locale.t("resend_confirmation"),
+            t_sign_out => locale.t("sign_out"),
+        },
+    );
+    Html(html).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetupForm {
+    pub email: String,
+}
+
+/// `PUT /auth/setup`: `Auth::SetupController#update`. The address is updated
+/// without the password the settings ask for, as only a user not yet
+/// confirmed may: Devise's reconfirmable holds a new one in
+/// `unconfirmed_email`. Then the link goes out again
+/// (`resend_confirmation_instructions unless @user.confirmed?`).
+pub async fn setup_post(
+    state: AppState,
+    axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<
+        ResolvedInstance,
+    >,
+    client_ip: ClientIpExt,
+    headers: HeaderMap,
+    Form(form): Form<SetupForm>,
+) -> Response {
+    let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
+        return redirect_to_sign_in("/auth/setup");
+    };
+    let Some(user) = sqlx::query!(
+        r#"SELECT email, confirmed_at IS NOT NULL AS "confirmed!", approved
+           FROM users WHERE id = $1"#,
+        session.user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten() else {
+        return Redirect::to("/account/login").into_response();
+    };
+    if user.confirmed && user.approved {
+        return Redirect::to("/").into_response();
+    }
+    let email = form.email.trim().to_lowercase();
+    if email != user.email {
+        let problem = if !crate::accounts::valid_email(&email) {
+            Some("E-mail address is invalid".to_owned())
+        } else if sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1 AND id <> $2) AS "e!""#,
+            email,
+            session.user_id,
+        )
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(true)
+        {
+            Some("E-mail address has already been taken".to_owned())
+        } else if let Err(refusal) =
+            crate::moderation::signup::check_email(&state, &email, user.confirmed).await
+        {
+            let (_, label, _, message) = refusal.detail();
+            Some(format!("{label} {message}"))
+        } else {
+            None
+        };
+        if let Some(problem) = problem {
+            return render_setup(&state, &instance, client_ip, &headers, false, Some(problem))
+                .await;
+        }
+        if let Err(error) =
+            crate::accounts::set_unconfirmed_email(&state.db, session.user_id, &email).await
+        {
+            tracing::error!(%error, "could not change the address awaiting confirmation");
+            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    if !user.confirmed {
+        if let Err(error) =
+            crate::accounts::send_confirmation_instructions(&state, session.user_id).await
+        {
+            tracing::error!(error = %format!("{error:#}"), "could not resend confirmation instructions");
+        }
+    }
+    Redirect::to("/auth/setup?sent=1").into_response()
+}

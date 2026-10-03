@@ -193,6 +193,13 @@ sign-up through into the approval queue instead. A sign-up through a valid
 invite skips the email provider checks. The reason given for joining
 becomes the account's invite request, which the admin API shows.
 
+A sign-up is a user awaiting confirmation from the moment it is sent, so the
+admin API lists it (`confirmed: false`) and its account before its link is
+followed, and staff hear of a sign-up awaiting approval once it is confirmed,
+as on Mastodon. On an instance with open registrations, a user awaiting
+approval who confirms is approved then, unless a block asks for approval
+(`grant_approval_on_confirmation?`).
+
 Eunha records the address each account signed up from (`users.sign_up_ip`)
 and each password sign-in to the web (`login_activities`), which the admin
 API reports and filters by. A `no_access` IP block answers every request

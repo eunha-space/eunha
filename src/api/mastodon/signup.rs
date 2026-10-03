@@ -344,7 +344,12 @@ async fn validate_registration(
         );
     }
     if !form.agreement.0 {
-        errors.add("agreement", "accepted", "must be accepted");
+        errors.add_as(
+            "agreement",
+            "Service agreement",
+            "accepted",
+            "must be accepted",
+        );
     }
     if let Some(min_age) = crate::settings::min_age(&state.db).await {
         match form.date_of_birth.as_deref().and_then(parse_date_of_birth) {
@@ -358,12 +363,12 @@ async fn validate_registration(
     let reason = form.reason.as_deref().map(str::trim).unwrap_or("");
     if reason.is_empty() {
         if reason_required {
-            errors.add_as("reason", "Invite request text", "blank", "can't be blank");
+            errors.add_as("reason", "Reason", "blank", "can't be blank");
         }
     } else if reason.chars().count() > REASON_SIZE_LIMIT {
         errors.add_as(
             "reason",
-            "Invite request text",
+            "Reason",
             "too_long",
             "is too long (maximum is 420 characters)",
         );
@@ -401,6 +406,294 @@ async fn reason_required(
     }
 }
 
+/// A user made by a sign-up, and the access token its app was given.
+pub struct Registered {
+    pub user_id: i64,
+    pub account_id: i64,
+    pub token: Option<super::types::Token>,
+}
+
+/// The app a sign-up came through: `doorkeeper_token.application`, and the
+/// scopes its token is issued with (`@app.scopes`).
+pub struct SignUpApp {
+    pub id: i64,
+    pub scopes: String,
+}
+
+/// `AppSignUpService#call` and `Auth::RegistrationsController#create`: the
+/// user and its account saved together, unconfirmed, as `User.create!` saves
+/// them — the account with its signing key, the user with its
+/// `confirmation_token`, approval (`set_approved`), address and reason
+/// (`user_invite_requests`), the invite's use counted (`counter_cache: :uses`),
+/// and, for an app, the access token it is handed back — in one transaction;
+/// then, as the commit's callbacks do, `account.created` and the confirmation
+/// mail.
+pub async fn register(
+    state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    form: &ApiCreateAccountForm,
+    sign_up_ip: Option<std::net::IpAddr>,
+    app: Option<SignUpApp>,
+) -> Result<Registered, SignupError> {
+    // `User#invite_code=`: the invite with that code, whatever its state.
+    let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
+    let invite_id: Option<i64> = if invite_code.is_empty() {
+        None
+    } else {
+        sqlx::query_scalar!("SELECT id FROM invites WHERE code = $1", invite_code)
+            .fetch_optional(&state.db)
+            .await?
+    };
+    let valid_invitation =
+        !invite_code.is_empty() && validate_invite(state, &invite_code).await.is_ok();
+    // `check_enabled_registrations`: `allowed_registration?` — registrations
+    // open, or an invite good for use, and no IP block on signing up.
+    if !(instance.registrations_open || valid_invitation)
+        || crate::remote_ip::sign_up_blocked(state, sign_up_ip).await
+    {
+        return Err(AppError::Forbidden.into());
+    }
+
+    let username = form.username.trim().to_lowercase();
+    let email = form.email.trim().to_lowercase();
+    let locale = form.locale.clone().unwrap_or_else(|| "en".into());
+    let mut errors = validate_registration(
+        state,
+        form,
+        reason_required(state, instance, invite_id.filter(|_| valid_invitation)).await,
+    )
+    .await;
+
+    // `Account`'s validations, filed under `username` (`'account.username':
+    // :username`).
+    if username.is_empty() {
+        errors.add_as("username", "Username", "blank", "can't be blank");
+    } else if !username
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        errors.add_as(
+            "username",
+            "Username",
+            "invalid",
+            "must contain only letters, numbers and underscores",
+        );
+    } else if username.chars().count() > 30 {
+        errors.add_as(
+            "username",
+            "Username",
+            "too_long",
+            "is too long (maximum is 30 characters)",
+        );
+    } else {
+        // `UniqueUsernameValidator`, which ignores case.
+        let taken = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL
+               ) AS "e!""#,
+            username,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            errors.add_as("username", "Username", "taken", "has already been taken");
+        }
+    }
+    // Devise's validatable: present, shaped like an address, and unique
+    // among users confirmed or not.
+    if email.is_empty() {
+        errors.add_as("email", "E-mail address", "blank", "can't be blank");
+    } else if !crate::accounts::valid_email(&email) {
+        errors.add_as("email", "E-mail address", "invalid", "is invalid");
+    } else {
+        let taken = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1) AS "e!""#,
+            email,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            errors.add_as("email", "E-mail address", "taken", "has already been taken");
+        }
+    }
+
+    // The validations that are about moderation: reserved usernames
+    // (`UnreservedUsernameValidator`), unreachable or blocked addresses
+    // (`EmailMxValidator`, `UserEmailValidator`).
+    let mut requires_approval = false;
+    if errors.is_empty() {
+        match crate::moderation::signup::check(
+            state,
+            &username,
+            &email,
+            sign_up_ip,
+            valid_invitation,
+        )
+        .await
+        {
+            Ok(checked) => requires_approval = checked.requires_approval,
+            Err(refusal) => {
+                let (attribute, label, key, message) = refusal.detail();
+                errors.add_as(attribute, label, key, message);
+            }
+        }
+    }
+    if !errors.is_empty() {
+        return Err(SignupError::Invalid(errors));
+    }
+
+    // `User#set_approved`.
+    let approved = !requires_approval
+        && (crate::settings::registrations_mode(state).await.open()
+            || match invite_id.filter(|_| valid_invitation) {
+                Some(id) => invite_bypasses_approval(state, id).await,
+                None => false,
+            });
+
+    let password_hash = crypto::hash_password(&form.password)
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("password hashing failed")))?;
+    let reason = form
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let confirmation_token = crypto::generate_token(32);
+    let time_zone = crate::time_zones::normalize(form.time_zone.as_deref());
+
+    let prepared = crate::accounts::prepare_local(&state.db, true)
+        .await
+        .map_err(AppError::Internal)?;
+    let mut tx = state.db.begin().await?;
+    let created = crate::accounts::insert_local(
+        &mut tx,
+        state.encryptor.as_ref(),
+        &state.instance.domain,
+        crate::accounts::NewLocalUser {
+            username: &username,
+            email: &email,
+            password_hash: &password_hash,
+            role_id: None,
+            approved,
+            invite_id,
+            locale: Some(locale.as_str()),
+            app_id: app.as_ref().map(|a| a.id),
+            sign_up_ip,
+            invite_request: reason,
+            time_zone: time_zone.as_deref(),
+            confirmed: false,
+            confirmation_token: Some(&confirmation_token),
+            account_id: None,
+        },
+        prepared,
+    )
+    .await
+    .map_err(|e| match e.downcast_ref::<sqlx::Error>() {
+        // Saved by someone else between the check and the insert:
+        // `ActiveRecord::RecordNotUnique`.
+        Some(sqlx::Error::Database(db)) if db.is_unique_violation() => {
+            let mut errors = crate::email_subscriptions::ValidationErrors::default();
+            errors.add_as("username", "Username", "taken", "has already been taken");
+            SignupError::Invalid(errors)
+        }
+        _ => SignupError::App(AppError::Internal(e)),
+    })?;
+    if let Some(id) = invite_id {
+        sqlx::query!(
+            "UPDATE invites SET uses = uses + 1, updated_at = now() WHERE id = $1",
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    // `AppSignUpService#create_access_token!`.
+    let token = match &app {
+        Some(app) => {
+            let access_token = crypto::generate_token(64);
+            sqlx::query!(
+                r#"INSERT INTO oauth_access_tokens
+                     (application_id, resource_owner_id, token, scopes, created_at)
+                   VALUES ($1, $2, $3, $4, now())"#,
+                app.id,
+                created.user_id,
+                access_token,
+                app.scopes,
+            )
+            .execute(&mut *tx)
+            .await?;
+            Some(super::types::Token {
+                access_token,
+                token_type: "Bearer".to_string(),
+                scope: app.scopes.clone(),
+                created_at: chrono::Utc::now().timestamp(),
+            })
+        }
+        None => None,
+    };
+    tx.commit().await?;
+
+    // `User#trigger_webhooks` and the account's `after_commit`, then Devise's
+    // `send_on_create_confirmation_instructions`.
+    crate::moderation::webhooks::trigger(
+        state,
+        "account.created",
+        crate::moderation::webhooks::Object::Account(created.account_id),
+    )
+    .await;
+    crate::fasp::events::account_created(state, created.account_id).await;
+    if let Err(error) =
+        crate::accounts::send_confirmation_instructions(state, created.user_id).await
+    {
+        tracing::error!(error = %format!("{error:#}"), "could not send confirmation instructions");
+    }
+
+    Ok(Registered {
+        user_id: created.user_id,
+        account_id: created.account_id,
+        token,
+    })
+}
+
+/// The bearer token's app, when the token is one the client-credentials grant
+/// gave it, with its scopes.
+async fn app_token(state: &AppState, headers: &HeaderMap) -> Option<(Option<i64>, String, i64)> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let token = value.strip_prefix("Bearer ")?.trim();
+    let row = sqlx::query!(
+        r#"SELECT t.application_id, t.resource_owner_id, t.scopes,
+                  t.revoked_at IS NOT NULL AS "revoked!",
+                  (t.expires_in IS NOT NULL
+                   AND t.created_at + make_interval(secs => t.expires_in) < now()) AS "expired!"
+           FROM oauth_access_tokens t WHERE t.token = $1"#,
+        token
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()??;
+    if row.revoked || row.expired {
+        return None;
+    }
+    Some((
+        row.resource_owner_id,
+        row.scopes.unwrap_or_default(),
+        row.application_id?,
+    ))
+}
+
+/// Whether `scopes` grant `write:accounts`, as `doorkeeper_authorize!(:write,
+/// :'write:accounts')` asks.
+fn grants_write_accounts(scopes: &str) -> bool {
+    scopes
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .any(|s| s == "write" || s == "write:accounts")
+}
+
+/// `POST /api/v1/accounts`: `Api::V1::AccountsController#create`, for an app
+/// with a client-credentials token carrying `write:accounts`. Answers with the
+/// new user's access token, as `Doorkeeper::OAuth::TokenResponse` does.
 pub async fn api_create_account(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -408,161 +701,46 @@ pub async fn api_create_account(
     req_headers: HeaderMap,
     super::extractors::FormOrJson(form): super::extractors::FormOrJson<ApiCreateAccountForm>,
 ) -> Result<Json<super::types::Token>, SignupError> {
-    let sign_up_ip = client_ip.and_then(|Extension(c)| c.0);
-    let settings = crate::settings::Snapshot::load(&state).await;
-    let instance = settings.amend(&instance);
-    let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
-    let invite_id: Option<i64> = if !invite_code.is_empty() {
-        Some(
-            validate_invite(&state, &invite_code)
-                .await
-                .map_err(|_| AppError::Unprocessable("Invalid or expired invite code".into()))?,
-        )
-    } else if !instance.registrations_open {
-        return Err(
-            AppError::Unprocessable("This instance is not open for registration".into()).into(),
-        );
-    } else {
-        None
+    // `doorkeeper_authorize!` and `require_client_credentials!`.
+    let Some((owner, scopes, app_id)) = app_token(&state, &req_headers).await else {
+        return Err(AppError::UnauthorizedMsg("The access token is invalid".into()).into());
     };
-    // `allowed_registration?`: an address under a sign-up block may not
-    // register at all.
-    if crate::remote_ip::sign_up_blocked(&state, sign_up_ip).await {
-        return Err(AppError::Forbidden.into());
+    if !grants_write_accounts(&scopes) {
+        return Err(AppError::ForbiddenScope.into());
     }
-    let username = form.username.trim().to_lowercase();
-    let email = form.email.trim().to_string();
-    let password = &form.password;
-    let locale_str = form.locale.clone().unwrap_or_else(|| "en".into());
-
-    if username.is_empty()
-        || !username
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
-        return Err(AppError::Unprocessable(
-            "Username can only contain letters, numbers, and underscores".into(),
+    if owner.is_some() {
+        return Err(AppError::ForbiddenMsg(
+            "This method requires an client credentials authentication".into(),
         )
         .into());
     }
-    if !email.contains('@') {
-        return Err(AppError::Unprocessable("Invalid email address".into()).into());
-    }
-    let errors = validate_registration(
+    // The app's own scopes, which the new token is issued with.
+    let app_scopes = sqlx::query_scalar!(
+        "SELECT scopes FROM oauth_applications WHERE id = $1",
+        app_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or_default();
+    let sign_up_ip = client_ip.and_then(|Extension(c)| c.0);
+    let instance = crate::settings::Snapshot::load(&state)
+        .await
+        .amend(&instance);
+    let registered = register(
         &state,
+        &instance,
         &form,
-        reason_required(&state, &instance, invite_id).await,
+        sign_up_ip,
+        Some(SignUpApp {
+            id: app_id,
+            scopes: app_scopes,
+        }),
     )
-    .await;
-    if !errors.is_empty() {
-        return Err(SignupError::Invalid(errors));
-    }
-
-    // Reject if email already belongs to a confirmed account.
-    let email_confirmed = sqlx::query_scalar!(
-        "SELECT 1 FROM users WHERE lower(email) = lower($1) AND confirmed_at IS NOT NULL",
-        email,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .is_some();
-    if email_confirmed {
-        return Err(AppError::Unprocessable("Email is already taken".into()).into());
-    }
-
-    // Reject if username is taken by a confirmed account or a pending signup for a different email.
-    let username_taken = sqlx::query_scalar!(
-        r#"SELECT 1 FROM accounts WHERE username = $1 AND domain IS NULL
-           UNION ALL
-           SELECT 1 FROM eunha.pending_signups
-             WHERE username = $1
-               AND lower(email) != lower($2)
-               AND expires_at > now()
-           LIMIT 1"#,
-        username,
-        email,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .is_some();
-    if username_taken {
-        return Err(AppError::Unprocessable("Username is already taken".into()).into());
-    }
-
-    // The moderation validations: reserved usernames, blocked email
-    // providers and addresses, and unreachable email domains.
-    crate::moderation::signup::check(&state, &username, &email, sign_up_ip, invite_id.is_some())
-        .await
-        .map_err(|refusal| AppError::Unprocessable(refusal.message().into()))?;
-
-    let password_hash = crypto::hash_password(password)
-        .await
-        .map_err(|_| AppError::Internal(anyhow::anyhow!("password hashing failed")))?;
-    let reason = form
-        .reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    let confirmation_token = api_generate_token();
-    let app_id = extract_app_from_bearer(&state, &req_headers).await;
-
-    sqlx::query!(
-        r#"INSERT INTO eunha.pending_signups
-             (username, email, email_normalized, password_hash,
-              invite_id, reason, locale, app_id, confirmation_token, sign_up_ip, time_zone)
-           VALUES ($1,$2,lower($2),$3,$4,$5,$6,$7,$8,$9::text::inet,$10)
-           ON CONFLICT (email_normalized) DO UPDATE SET
-             username           = EXCLUDED.username,
-             password_hash      = EXCLUDED.password_hash,
-             invite_id          = EXCLUDED.invite_id,
-             reason             = EXCLUDED.reason,
-             locale             = EXCLUDED.locale,
-             app_id             = EXCLUDED.app_id,
-             confirmation_token = EXCLUDED.confirmation_token,
-             sign_up_ip         = EXCLUDED.sign_up_ip,
-             time_zone          = EXCLUDED.time_zone,
-             expires_at         = now() + interval '24 hours'"#,
-        username,
-        email,
-        password_hash,
-        invite_id,
-        reason,
-        locale_str,
-        app_id,
-        confirmation_token,
-        sign_up_ip.map(|ip| ip.to_string()),
-        crate::time_zones::normalize(form.time_zone.as_deref()),
-    )
-    .execute(&state.db)
-    .await
-    .map_err(|_| AppError::Internal(anyhow::anyhow!("pending signup failed")))?;
-
-    let confirm_url = format!(
-        "https://{}/auth/confirm?token={}",
-        instance.domain, confirmation_token
-    );
-    let email_sender = state.mailer();
-    let to = email.clone();
-    let uname = username.clone();
-    let locale_for_email = locale_str.clone();
-    {
-        if let Err(e) = email_sender
-            .send_confirmation(&to, &uname, "", &confirm_url, &locale_for_email)
-            .await
-        {
-            tracing::error!(error = %e, "failed to send confirmation email");
-        }
-    }
-
-    // Return a profile-scoped token placeholder. The token is not stored — it cannot
-    // be used to authenticate. A real token is issued after email confirmation.
-    Ok(Json(super::types::Token {
-        access_token: api_generate_token(),
-        token_type: "Bearer".to_string(),
-        scope: "profile".to_string(),
-        created_at: chrono::Utc::now().timestamp(),
-    }))
+    .await?;
+    registered
+        .token
+        .map(Json)
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("no token was issued")).into())
 }
 
 // ── GET /auth/confirm ──────────────────────────────────────────────────────
@@ -572,135 +750,39 @@ pub struct ConfirmQuery {
     pub token: String,
 }
 
+/// `Auth::ConfirmationsController#show`: Devise's `confirm_by_token`, for a
+/// link sent within `confirm_within`. A user confirmed for the first time who
+/// signed up through an app is sent back to it with an authorization code;
+/// anyone else to sign in.
 pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Response {
-    let pending = sqlx::query!(
-        r#"DELETE FROM eunha.pending_signups
-           WHERE confirmation_token = $1 AND expires_at > now()
-           RETURNING username, email, email_normalized,
-                     password_hash, invite_id, reason, locale, app_id,
-                     host(sign_up_ip) AS sign_up_ip, time_zone"#,
+    let user = sqlx::query!(
+        r#"SELECT id, confirmed_at IS NULL AS "new_user!", approved, created_by_application_id
+           FROM users
+           WHERE confirmation_token = $1
+             AND confirmation_sent_at > now() - make_interval(days => $2)"#,
         q.token,
+        crate::accounts::CONFIRM_WITHIN_DAYS,
     )
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten();
-
-    // Not a sign-up: a user's own confirmation token, from an address a
-    // moderator changed or a confirmation mail sent again. Devise's `confirm`
-    // within `confirm_within` (two days) of sending.
-    if pending.is_none() {
-        let user_id = sqlx::query_scalar!(
-            r#"SELECT id FROM users
-               WHERE confirmation_token = $1
-                 AND confirmation_sent_at > now() - interval '2 days'"#,
-            q.token,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
-        if let Some(user_id) = user_id {
-            return match crate::accounts::confirm_user(&state, user_id, true).await {
-                Ok(()) => Redirect::to("/account/login?confirmed=1").into_response(),
-                Err(e) => {
-                    tracing::error!(error = %format!("{e:#}"), "could not confirm a user");
-                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
-                }
-            };
-        }
-    }
-
-    let Some(pending) = pending else {
+    let Some(user) = user else {
         // A dead end told someone their link was broken and left them there. The
         // usual reason a link is dead is that it already worked, so send them to
         // the place they were headed anyway and say so there.
         return Redirect::to("/account/login?confirmed=invalid").into_response();
     };
-
-    // Mastodon `User#set_approved`: an invite skips approval only when its
-    // creator may bypass it — `Invite#bypass_approval?` asks the inviting
-    // user's role for `invite_bypass_approval`, not merely whether an invite
-    // was used. eunha's everyone role carries `Flags::DEFAULT`, which is
-    // `invite_users` alone, so an ordinary member's invite gets its holder
-    // reviewed like anyone else until the instance says otherwise.
-    let sign_up_ip: Option<std::net::IpAddr> =
-        pending.sign_up_ip.as_deref().and_then(|ip| ip.parse().ok());
-    // `User#set_approved`: an IP, email domain or username block asking for
-    // approval wins; otherwise open registrations or a bypassing invite.
-    let requires_approval = crate::moderation::signup::requires_approval(
-        &state,
-        &pending.username,
-        &pending.email,
-        sign_up_ip,
-    )
-    .await;
-    let needs_approval = requires_approval
-        || (!crate::settings::registrations_mode(&state).await.open()
-            && !match pending.invite_id {
-                Some(id) => invite_bypasses_approval(&state, id).await,
-                None => false,
-            });
-    let crate::accounts::LocalUser {
-        account_id,
-        user_id,
-    } = match crate::accounts::create_local(
-        &state.db,
-        state.encryptor.as_ref(),
-        &state.instance.domain,
-        crate::accounts::NewLocalUser {
-            username: &pending.username,
-            email: &pending.email,
-            password_hash: &pending.password_hash,
-            role_id: None,
-            approved: !needs_approval,
-            invite_id: pending.invite_id,
-            locale: Some(pending.locale.as_str()),
-            app_id: pending.app_id,
-            sign_up_ip,
-            invite_request: pending.reason.as_deref(),
-            time_zone: pending.time_zone.as_deref(),
-            confirmed: true,
-            account_id: None,
-        },
-    )
-    .await
-    {
-        Ok(created) => created,
-        Err(e) => {
-            tracing::error!(error = %format!("{e:#}"), "could not create the confirmed account");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    if let Some(id) = pending.invite_id {
-        let _ = sqlx::query!("UPDATE invites SET uses = uses + 1 WHERE id = $1", id)
-            .execute(&state.db)
-            .await;
+    if let Err(e) = crate::accounts::confirm_user(&state, user.id, true).await {
+        tracing::error!(error = %format!("{e:#}"), "could not confirm a user");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    // `User#trigger_webhooks`: `after_create_commit`.
-    crate::moderation::webhooks::trigger(
-        &state,
-        "account.created",
-        crate::moderation::webhooks::Object::Account(account_id),
-    )
-    .await;
-    crate::fasp::events::account_created(&state, account_id).await;
+    let approved = sqlx::query_scalar!("SELECT approved FROM users WHERE id = $1", user.id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(user.approved);
 
-    // `User#after_confirmation_tasks`: an approved user is prepared (the
-    // inviter followed, staff told with `admin.sign_up`); one awaiting
-    // approval is mailed to the staff who can approve it.
-    if needs_approval {
-        let state2 = state.clone();
-        async move {
-            crate::accounts::notify_staff_about_pending_account(&state2, account_id).await;
-        }
-        .await;
-    } else {
-        crate::accounts::prepare_new_user(&state, account_id).await;
-    }
-
-    if let Some(app_id) = pending.app_id {
+    if let (true, Some(app_id)) = (user.new_user, user.created_by_application_id) {
         if let Ok(Some(app)) = sqlx::query!(
             "SELECT redirect_uri, scopes FROM oauth_applications WHERE id = $1",
             app_id,
@@ -710,12 +792,12 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         {
             let redirect_uri = app.redirect_uri.lines().next().unwrap_or("").to_string();
             if !redirect_uri.is_empty() && redirect_uri != "urn:ietf:wg:oauth:2.0:oob" {
-                let code = api_generate_token();
+                let code = crypto::generate_token(64);
                 if sqlx::query!(
                     r#"INSERT INTO oauth_access_grants
                          (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
                        VALUES ($1, $2, $3, $4, $5, 600, now())"#,
-                    app_id, user_id, code, redirect_uri, app.scopes,
+                    app_id, user.id, code, redirect_uri, app.scopes,
                 ).execute(&state.db).await.is_ok() {
                     let sep = if redirect_uri.contains('?') { '&' } else { '?' };
                     return Redirect::to(&format!("{}{}code={}", redirect_uri, sep, code))
@@ -727,50 +809,126 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
 
     // No app to hand back to — a signup from eunha's own form, or one whose app
     // registered no redirect. Sign-in is the next step either way.
-    if needs_approval {
-        Redirect::to("/account/login?confirmed=pending").into_response()
-    } else {
+    if approved {
         Redirect::to("/account/login?confirmed=1").into_response()
+    } else {
+        Redirect::to("/account/login?confirmed=pending").into_response()
     }
+}
+
+// ── POST /api/v1/emails/confirmations ────────────────────────────────────
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ResendConfirmationForm {
+    pub email: Option<String>,
+}
+
+/// `Api::V1::Emails::ConfirmationsController#create`: for the app the user
+/// signed up through, while the address awaits confirmation, an address put
+/// right (`update!(email:)`, which Devise's reconfirmable holds in
+/// `unconfirmed_email`) and the confirmation mailed again
+/// (`resend_confirmation_instructions`).
+pub async fn resend_email_confirmation(
+    state: AppState,
+    auth: Option<Extension<crate::middleware::AuthenticatedUser>>,
+    super::extractors::FormOrJson(form): super::extractors::FormOrJson<ResendConfirmationForm>,
+) -> AppResult<Json<serde_json::Value>> {
+    // `doorkeeper_authorize! :write, :'write:accounts'`.
+    let Some(Extension(auth)) = auth else {
+        return Err(AppError::UnauthorizedMsg(
+            "The access token is invalid".into(),
+        ));
+    };
+    auth.require_scope("write:accounts")?;
+    let user = match auth.user_id {
+        Some(user_id) => {
+            sqlx::query!(
+                r#"SELECT id, email, confirmed_at IS NOT NULL AS "confirmed!",
+                      COALESCE(unconfirmed_email, '') <> '' AS "reconfirming!",
+                      created_by_application_id
+               FROM users WHERE id = $1"#,
+                user_id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+        }
+        None => None,
+    };
+    // `require_user_owned_by_application!`.
+    let Some(user) = user.filter(|u| {
+        u.created_by_application_id.is_some() && u.created_by_application_id == auth.application_id
+    }) else {
+        return Err(AppError::ForbiddenMsg(
+            "This method is only available to the application the user originally signed-up with"
+                .into(),
+        ));
+    };
+    // `require_user_not_confirmed!`.
+    if user.confirmed && !user.reconfirming {
+        return Err(AppError::ForbiddenMsg(
+            "This method is only available while the e-mail is awaiting confirmation".into(),
+        ));
+    }
+    if let Some(email) = form.email.as_deref() {
+        let email = email.trim().to_lowercase();
+        if email != user.email {
+            if !crate::accounts::valid_email(&email) {
+                return Err(AppError::Unprocessable(
+                    "Validation failed: E-mail address is invalid".into(),
+                ));
+            }
+            let taken = sqlx::query_scalar!(
+                r#"SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1 AND id <> $2) AS "e!""#,
+                email,
+                user.id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if taken {
+                return Err(AppError::Unprocessable(
+                    "Validation failed: E-mail address has already been taken".into(),
+                ));
+            }
+            if let Err(refusal) =
+                crate::moderation::signup::check_email(&state, &email, user.confirmed).await
+            {
+                let (_, label, _, message) = refusal.detail();
+                return Err(AppError::Unprocessable(format!(
+                    "Validation failed: {label} {message}"
+                )));
+            }
+            crate::accounts::set_unconfirmed_email(&state.db, user.id, &email).await?;
+        }
+    }
+    crate::accounts::send_confirmation_instructions(&state, user.id).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 // ── GET /api/v1/emails/check_confirmation ────────────────────────────────
 
+/// `Api::V1::Emails::ConfirmationsController#check`: whether the user has
+/// confirmed their address, for any token of theirs carrying
+/// `read:accounts`.
 pub async fn check_email_confirmation(
     state: AppState,
-    Extension(auth): Extension<crate::middleware::AuthenticatedUser>,
+    auth: Option<Extension<crate::middleware::AuthenticatedUser>>,
 ) -> AppResult<Json<bool>> {
+    // `require_authenticated_user!`.
+    let Some(Extension(auth)) = auth.filter(|Extension(a)| a.user_id.is_some()) else {
+        return Err(AppError::UnauthorizedMsg(
+            "This method requires an authenticated user".into(),
+        ));
+    };
+    // `authorize_if_got_token! :read, :'read:accounts'`.
+    auth.require_scope("read:accounts")?;
     let confirmed = sqlx::query_scalar!(
-        "SELECT confirmed_at IS NOT NULL FROM users WHERE account_id = $1",
-        auth.account_id,
+        r#"SELECT confirmed_at IS NOT NULL AS "confirmed!" FROM users WHERE id = $1"#,
+        auth.user_id,
     )
     .fetch_optional(&state.db)
     .await?
-    .flatten()
     .unwrap_or(false);
     Ok(Json(confirmed))
-}
-
-// ── helpers ────────────────────────────────────────────────────────────────
-
-async fn extract_app_from_bearer(state: &AppState, headers: &HeaderMap) -> Option<i64> {
-    let val = headers
-        .get(axum::http::header::AUTHORIZATION)?
-        .to_str()
-        .ok()?;
-    let token = val.strip_prefix("Bearer ")?.trim();
-    sqlx::query_scalar!(
-        "SELECT application_id FROM oauth_access_tokens WHERE token = $1 AND resource_owner_id IS NULL",
-        token
-    ).fetch_optional(&state.db).await.ok().flatten().flatten()
-}
-
-fn api_generate_token() -> String {
-    use rand::RngCore;
-    let mut rng = rand::rng();
-    (0..64)
-        .map(|_| format!("{:02x}", rng.next_u32() as u8))
-        .collect()
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

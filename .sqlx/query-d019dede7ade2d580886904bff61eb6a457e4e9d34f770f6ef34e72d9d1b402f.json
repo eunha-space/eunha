@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT confirmed_at IS NOT NULL FROM users WHERE account_id = $1",
+  "query": "SELECT confirmed_at IS NOT NULL AS \"confirmed!\" FROM users WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "?column?",
+        "name": "confirmed!",
         "type_info": "Bool"
       }
     ],
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "a6005b1487733e2293ad71b957606396471546955f3e7700cab2e3955a55e3f1"
+  "hash": "d019dede7ade2d580886904bff61eb6a457e4e9d34f770f6ef34e72d9d1b402f"
 }

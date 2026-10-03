@@ -748,15 +748,27 @@ fn reload_on_hangup(tenants: Arc<tenants::Tenants>, dir: PathBuf) -> anyhow::Res
 /// bucket, which has no bearing on whether the schema can be brought up to
 /// date.
 async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> anyhow::Result<()> {
-    type Target = (String, String, anyhow::Result<config::InstanceConfig>);
+    type Target = (
+        String,
+        String,
+        anyhow::Result<config::InstanceConfig>,
+        Option<eunha::rails_encryption::Encryptor>,
+    );
+    let encryptor = |config: &config::Config| {
+        config.active_record_encryption.as_ref().map(|keys| {
+            eunha::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
+        })
+    };
     let targets: Vec<Target> = match tenants {
         Some(dir) => tenants::load_dir(dir)?
             .into_iter()
             .map(|tenant| {
+                let encryptor = encryptor(&tenant.config);
                 (
                     format!("{}: ", tenant.source),
                     tenant.config.database_url,
                     Ok(tenant.config.instance),
+                    encryptor,
                 )
             })
             .collect(),
@@ -764,11 +776,12 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
             String::new(),
             migration_database_url()?,
             config::Config::instance_from_env(),
+            config::Config::from_env().ok().as_ref().and_then(encryptor),
         )],
     };
 
     let mut behind = false;
-    for (label, database_url, instance) in targets {
+    for (label, database_url, instance, encryptor) in targets {
         let db = tenants::connect(
             &database_url,
             &config::DatabasePoolConfig {
@@ -784,6 +797,37 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
                 behind = true;
             }
             (false, _) => {
+                // Sign-ups still waiting in `eunha.pending_signups` become
+                // unconfirmed users before the migration that drops it.
+                match &instance {
+                    Ok(instance) => {
+                        let report =
+                            accounts::convert_pending_signups(&db, encryptor.as_ref(), instance)
+                                .await?;
+                        if report.converted > 0 {
+                            println!(
+                                "{label}{} sign-up(s) awaiting confirmation kept as unconfirmed users.",
+                                report.converted
+                            );
+                        }
+                        if report.dropped > 0 {
+                            println!(
+                                "{label}{} expired or conflicting sign-up(s) dropped.",
+                                report.dropped
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        let waiting = accounts::pending_signups_waiting(&db).await?;
+                        if waiting > 0 {
+                            println!(
+                                "{label}{waiting} sign-up(s) awaiting confirmation dropped, for \
+                                 want of an [instance] configuration ({error:#}); they can sign \
+                                 up again."
+                            );
+                        }
+                    }
+                }
                 migrate::run(&db).await?;
                 println!("{label}Migrations applied.");
                 // The one-time `eunha settings import-config` an instance that

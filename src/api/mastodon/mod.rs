@@ -47,7 +47,7 @@ use axum::{
     http::HeaderMap,
     middleware,
     routing::{delete, get, patch, post, put},
-    Json, Router,
+    Router,
 };
 
 /// The locale a status falls back to when neither the request nor the author
@@ -486,8 +486,11 @@ pub fn router() -> Router {
         .route("/api/v1/invites/{id}", delete(invites::delete_invite))
         // Account deletion
         .route("/api/v1/accounts", delete(accounts::delete_account))
-        // Email confirmation resend stub (accounts are confirmed immediately; this is a no-op)
-        .route("/api/v1/emails/confirmations", post(empty_object))
+        // Email confirmation, while an address awaits it
+        .route(
+            "/api/v1/emails/confirmations",
+            post(signup::resend_email_confirmation),
+        )
         .route(
             "/api/v1/emails/check_confirmation",
             get(signup::check_email_confirmation),
@@ -1430,10 +1433,6 @@ pub fn streaming_router() -> Router {
         .route("/api/v1/streaming/health", get(streaming::health))
         .route("/api/v1/streaming", get(streaming::handler))
         .route("/api/v1/streaming/{*path}", get(streaming::handler))
-}
-
-async fn empty_object() -> Json<serde_json::Value> {
-    Json(serde_json::json!({}))
 }
 
 async fn require_auth(

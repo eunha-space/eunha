@@ -21,6 +21,7 @@ mod preferences;
 mod preview_cards;
 mod schema_compatibility;
 mod sessions;
+mod sign_up;
 mod signup_approval;
 mod signup_requirements;
 mod software_updates;

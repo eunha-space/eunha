@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO oauth_access_tokens\n                     (application_id, resource_owner_id, token, scopes, created_at)\n                   VALUES ($1, $2, $3, $4, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30537c151d722ce020d8c8fc7ea0ca462f08a6d48fde812f50824febdacb785d"
+}

@@ -66,6 +66,33 @@ read one, it says so, migrates anyway, and leaves the import for the next
 gains no settings.
 
 
+Sign-ups waiting before migration 026
+-------------------------------------
+
+Until migration 026, a sign-up waited in `eunha.pending_signups` for its link
+to be followed, and only then became a `users` row. It is now a `users` row
+with no `confirmed_at` from the start, as Mastodon writes it, and migration 026
+drops the table. Before applying it, `eunha migrate` turns each sign-up still
+within its day into such a user: the account with a new signing key, the user
+with the address, password, locale, reason, app and time zone it was made with,
+approved as registrations and its invite allow, and the invite's use counted.
+The user keeps the confirmation token its mail carries and the time it was
+sent, so the link already in its inbox confirms it within two days of sign-up.
+
+~~~~ console
+$ eunha migrate
+1 sign-up(s) awaiting confirmation kept as unconfirmed users.
+1 expired or conflicting sign-up(s) dropped.
+Migrations applied.
+~~~~
+
+A sign-up past its day, or whose username or address has been taken since, is
+dropped with the table. So are all of them when `eunha migrate` cannot read the
+instance configuration, which it says; `eunha rehearse-migration` and a
+database migrated by the tests have none either. Whoever is dropped can sign up
+again.
+
+
 Domain blocks written before migration 015
 ------------------------------------------
 

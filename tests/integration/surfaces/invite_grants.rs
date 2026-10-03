@@ -120,27 +120,17 @@ async fn test_granted_code_nests_the_signup_under_its_holder() {
         .to_string();
 
     let signup = ctx
-        .api
-        .post_json(
-            "/api/v1/accounts",
-            None,
-            &json!({
-                "username": "carol",
-                "email": "carol@example.com",
-                "password": "a-long-enough-password",
-                "agreement": true,
-                "invite_code": code,
-            }),
-        )
+        .sign_up(&json!({
+            "username": "carol",
+            "email": "carol@example.com",
+            "password": "a-long-enough-password",
+            "agreement": true,
+            "invite_code": code,
+        }))
         .await;
     assert_eq!(signup.status(), StatusCode::OK);
 
-    let token: String = sqlx::query_scalar(
-        "SELECT confirmation_token FROM eunha.pending_signups WHERE username = 'carol'",
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
+    let token = ctx.confirmation_token("carol").await;
     let confirmed = ctx
         .api
         .get(&format!("/auth/confirm?token={token}"), None)

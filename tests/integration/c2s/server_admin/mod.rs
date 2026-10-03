@@ -237,7 +237,7 @@ async fn test_settings_drive_the_instance() {
     assert!(about["updated_at"].is_string());
 
     let signup = |username: &'static str, reason: Option<&'static str>| {
-        let api = &ctx.api;
+        let ctx = &ctx;
         async move {
             let mut body = json!({
                 "username": username,
@@ -248,13 +248,11 @@ async fn test_settings_drive_the_instance() {
             if let Some(reason) = reason {
                 body["reason"] = json!(reason);
             }
-            api.post_json("/api/v1/accounts", None, &body).await
+            ctx.sign_up(&body).await
         }
     };
-    assert_eq!(
-        signup("carol", None).await.status(),
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
+    // `check_enabled_registrations`: closed, and no invite.
+    assert_eq!(signup("carol", None).await.status(), StatusCode::FORBIDDEN);
 
     // Approval with a reason required.
     json_ok(
@@ -276,7 +274,7 @@ async fn test_settings_drive_the_instance() {
             StatusCode::UNPROCESSABLE_ENTITY
         )
         .await,
-        "Validation failed: Invite request text can't be blank"
+        "Validation failed: Reason can't be blank"
     );
     assert_eq!(
         signup("carol", Some("I like stars")).await.status(),
@@ -335,19 +333,14 @@ async fn test_site_settings_default_to_mastodons() {
     .await;
     assert_eq!(about, json!({"updated_at": null, "content": ""}));
     let signup = ctx
-        .api
-        .post_json(
-            "/api/v1/accounts",
-            None,
-            &json!({
-                "username": "carol",
-                "email": "carol@example.com",
-                "password": "a-long-enough-password",
-                "agreement": true,
-            }),
-        )
+        .sign_up(&json!({
+            "username": "carol",
+            "email": "carol@example.com",
+            "password": "a-long-enough-password",
+            "agreement": true,
+        }))
         .await;
-    assert_eq!(signup.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(signup.status(), StatusCode::FORBIDDEN);
 }
 
 /// `eunha settings import-config` copies the configured identity and

@@ -26,6 +26,7 @@ At the time of writing there are thirty-two. They cover:
  -  the moderation tools API, and the server administration API;
  -  the account move API;
  -  what `eunha accounts create --force` checks before it deletes;
+ -  where confirming a sign-up made through an app sends the browser;
  -  the admin custom emoji API;
  -  the private metrics listener;
  -  how a link preview card reads a page's character set;

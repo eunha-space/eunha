@@ -144,11 +144,55 @@ with `max_id` and `limit`: each attempt's method (`password`, `otp`,
 Signing up
 ----------
 
-`POST /api/v1/accounts`, and the sign-up forms in front of it, check what
-Mastodon 4.7's `User` validates, and answer a refusal as
-`ValidationErrorFormatter` does: `Validation failed: …` with per-attribute
-`ERR_*` codes in `details`.
+A sign-up is saved the moment it is sent, as Mastodon's `AppSignUpService` and
+`Auth::RegistrationsController` save it: the account with its signing key, and
+a `users` row with no `confirmed_at`, its `confirmation_token` and
+`confirmation_sent_at`, whether it is approved (`User#set_approved`), the
+address it came from (`sign_up_ip`), its reason (`user_invite_requests`) and
+the app it came through (`created_by_application_id`). An invite's use is
+counted then, and the `account.created` webhook goes out. The username and the
+address are taken from that moment, by a user confirmed or not. The link the
+mail carries confirms the user within two days of being sent (Devise's
+`confirm_within`); confirming welcomes an approved user in (the welcome mail,
+`admin.sign_up` to staff) or puts one awaiting approval before the staff. A
+user whose link went out a week ago and was never followed is removed by the
+daily user cleanup, as Mastodon's `Scheduler::UserCleanupScheduler` removes it.
 
+There are two ways in, as on Mastodon:
+
+ -  `POST /api/v1/accounts`, for an app with a client-credentials token
+    carrying `write:accounts` (a user's token is refused with Mastodon's
+    `This method requires an client credentials authentication`). It answers
+    with an access token for the new user, with the app's scopes. Until the
+    address is confirmed that token authenticates, but where Mastodon's
+    `require_user!` runs it is refused with `403` and
+    `Your login is missing a confirmed e-mail address`. Following the link
+    sends a user who signed up through an app with a redirect URI back to it
+    with an authorization code.
+ -  `POST /auth`, which the sign-up page posts to (form-encoded or JSON, no
+    token). The new user is signed in and sent to `/auth/setup`, Mastodon's
+    `Auth::SetupController`: it names the address the link went to and lets the
+    user correct it and have the link sent again. An unconfirmed user who signs
+    in later is sent there too, and so is one who opens the account pages.
+
+`POST /api/v1/emails/confirmations` is Mastodon's: for the app the user signed
+up through, while the address awaits confirmation, it sends the link again,
+and with `email` it puts the address right first; the new address waits in
+`unconfirmed_email` and the link goes to it.
+`GET /api/v1/emails/check_confirmation` answers whether the address is
+confirmed.
+
+Both check what Mastodon 4.7's `User` validates, and answer a refusal as
+`ValidationErrorFormatter` does: `Validation failed: …` with per-attribute
+`ERR_*` codes in `details`, the attribute named in the message as Mastodon's
+locale names it (`E-mail address`, `Service agreement`, `Reason`).
+
+ -  The username is letters, digits and underscores, at most 30 characters,
+    and not taken by another local account in any case (`ERR_TAKEN`), nor
+    reserved by a username block (`ERR_RESERVED`).
+ -  The address is not taken by another user, confirmed or not (`ERR_TAKEN`),
+    resolves to a mail server, and is not under an email domain block or a
+    canonical email block.
  -  `agreement` must be accepted: `true`, `"true"` or `"1"`. The forms ask for
     it with a checkbox linking the terms of service (when there are any) and the
     privacy policy.
@@ -166,9 +210,14 @@ Mastodon 4.7's `User` validates, and answer a refusal as
     when it names a zone Rails knows (see [Time zones](#time-zones)); any
     other value is dropped rather than refused.
 
-Eunha writes the account when its email address is confirmed rather than when
-the form is sent, so `age_verified_at` follows `Setting.min_age` as it stands
-at confirmation.
+Registrations closed with no invite good for use, or an IP block on signing
+up, refuse the sign-up with `403`, as `check_enabled_registrations` does.
+
+Eunha used to keep sign-ups in a table of its own, `eunha.pending_signups`,
+until their link was followed. `eunha migrate` turns those still within their
+day into unconfirmed users before the migration that drops the table, keeping
+the token their mail carries, so the link they were sent still works; the rest
+go with it (see [Migrations](./migrations.md)).
 
 
 Passwords

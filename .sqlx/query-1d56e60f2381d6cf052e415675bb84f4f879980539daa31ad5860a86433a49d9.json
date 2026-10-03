@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users u SET\n             email = CASE WHEN $2 THEN COALESCE(lower(btrim(u.unconfirmed_email)), u.email) ELSE u.email END,\n             unconfirmed_email = CASE WHEN $2 THEN NULL ELSE u.unconfirmed_email END,\n             confirmed_at = COALESCE(u.confirmed_at, now()),\n             confirmation_token = NULL,\n             approved = u.approved OR $3,\n             updated_at = now()\n           FROM users before\n           WHERE u.id = $1 AND before.id = u.id\n           RETURNING u.account_id, u.approved, (before.confirmed_at IS NULL) AS \"new_user!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "approved",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "new_user!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "1d56e60f2381d6cf052e415675bb84f4f879980539daa31ad5860a86433a49d9"
+}

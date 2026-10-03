@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.encrypted_password\n               FROM users u\n               JOIN accounts a ON a.id = u.account_id\n               WHERE lower(u.email) = lower($1)\n                 AND u.disabled = false\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "encrypted_password",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4972c91a27c1dfe562915f4d2902527d2ccc4a65edae90679943708ad0ccc8c8"
+}

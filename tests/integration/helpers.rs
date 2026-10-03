@@ -508,6 +508,65 @@ impl Drop for TestContext {
 }
 
 impl TestContext {
+    /// A new app's client-credentials token, as an app signing somebody up
+    /// holds: the app's id and the token.
+    pub async fn app_token(&self, scopes: &str) -> (i64, String) {
+        let app: serde_json::Value = self
+            .api
+            .post_json(
+                "/api/v1/apps",
+                None,
+                &serde_json::json!({
+                    "client_name": "Sign-up client",
+                    "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+                    "scopes": scopes,
+                }),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        let token: serde_json::Value = self
+            .api
+            .post_json(
+                "/oauth/token",
+                None,
+                &serde_json::json!({
+                    "grant_type": "client_credentials",
+                    "client_id": app["client_id"],
+                    "client_secret": app["client_secret"],
+                }),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        (
+            app["id"].as_str().unwrap().parse().unwrap(),
+            token["access_token"].as_str().unwrap().to_string(),
+        )
+    }
+
+    /// `POST /api/v1/accounts` with `body`, as an app with `read write`.
+    pub async fn sign_up(&self, body: &serde_json::Value) -> reqwest::Response {
+        let (_, token) = self.app_token("read write").await;
+        self.api
+            .post_json("/api/v1/accounts", Some(&token), body)
+            .await
+    }
+
+    /// The confirmation token mailed to the sign-up for `username`.
+    pub async fn confirmation_token(&self, username: &str) -> String {
+        sqlx::query_scalar(
+            "SELECT u.confirmation_token FROM users u JOIN accounts a ON a.id = u.account_id
+             WHERE a.username = $1 AND a.domain IS NULL",
+        )
+        .bind(username)
+        .fetch_one(&self.db)
+        .await
+        .unwrap()
+    }
+
     /// The mail this instance has sent to `address`, oldest first.
     pub fn sent_to(&self, address: &str) -> Vec<eunha::email::SentMail> {
         self.state

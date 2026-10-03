@@ -785,11 +785,13 @@ async fn test_instance_domain_blocks_follow_settings() {
 /// Sign up from `ip`, returning the response, and confirm the sign-up when it
 /// was taken.
 async fn sign_up(ctx: &TestContext, username: &str, email: &str, ip: &str) -> StatusCode {
+    let (_, app) = ctx.app_token("read write").await;
     let resp = ctx
         .api
         .http
         .post(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
+        .bearer_auth(&app)
         .header("x-forwarded-for", ip)
         .json(&json!({
             "username": username,
@@ -803,13 +805,7 @@ async fn sign_up(ctx: &TestContext, username: &str, email: &str, ip: &str) -> St
         .unwrap();
     let status = resp.status();
     if status == StatusCode::OK {
-        let token: String = sqlx::query_scalar(
-            "SELECT confirmation_token FROM eunha.pending_signups WHERE username = $1",
-        )
-        .bind(username)
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap();
+        let token = ctx.confirmation_token(username).await;
         ctx.api
             .get(&format!("/auth/confirm?token={token}"), None)
             .await;

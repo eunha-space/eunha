@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM users\n               WHERE confirmation_token = $1\n                 AND confirmation_sent_at > now() - interval '2 days'",
+  "query": "SELECT id FROM invites WHERE code = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "03fef167a17d58952360bf119bec160aaca964ed297cf02258c6244436ef9fcc"
+  "hash": "8ddce819ae24cda6496ad98af9910901c0d9556d36b6a2ac1ae075200456b0f4"
 }

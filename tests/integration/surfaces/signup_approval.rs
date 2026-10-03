@@ -23,30 +23,19 @@ async fn signup_through_bobs_invite(ctx: &TestContext, username: &str) -> bool {
     let code = invite["code"].as_str().expect("bob may invite").to_string();
 
     let signup = ctx
-        .api
-        .post_json(
-            "/api/v1/accounts",
-            None,
-            &json!({
+        .sign_up(&json!({
                 "username": username,
                 "email": format!("{username}@example.com"),
                 "password": "a-long-enough-password",
                 "agreement": true,
                 "invite_code": code,
-            }),
-        )
+        }))
         .await;
     assert_eq!(signup.status(), StatusCode::OK);
 
-    // Approval is decided when the confirmation lands and the row is written,
-    // so the pending signup has to be confirmed before there is anything to ask.
-    let token: String = sqlx::query_scalar(
-        "SELECT confirmation_token FROM eunha.pending_signups WHERE username = $1",
-    )
-    .bind(username)
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
+    // Approval is decided when the user is saved (`User#set_approved`);
+    // confirming it is what an approved user is welcomed on.
+    let token = ctx.confirmation_token(username).await;
     let confirmed = ctx
         .api
         .get(&format!("/auth/confirm?token={token}"), None)
@@ -101,26 +90,16 @@ async fn test_an_uninvited_signup_is_still_reviewed() {
     let ctx = TestContext::with_approval_required("signup-approval-none").await;
 
     let signup = ctx
-        .api
-        .post_json(
-            "/api/v1/accounts",
-            None,
-            &json!({
+        .sign_up(&json!({
                 "username": "carol",
                 "email": "carol@example.com",
                 "password": "a-long-enough-password",
                 "agreement": true,
-            }),
-        )
+        }))
         .await;
     assert_eq!(signup.status(), StatusCode::OK);
 
-    let token: String = sqlx::query_scalar(
-        "SELECT confirmation_token FROM eunha.pending_signups WHERE username = 'carol'",
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
+    let token = ctx.confirmation_token("carol").await;
     ctx.api
         .get(&format!("/auth/confirm?token={token}"), None)
         .await;

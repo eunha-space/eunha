@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email, u.approved, host(u.sign_up_ip) AS sign_up_ip, a.username\n           FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "approved",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "sign_up_ip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "0a7ae53a47c4f7b16737140dd7745c53fe2b04569c5b168bca1263133da1ca19"
+}

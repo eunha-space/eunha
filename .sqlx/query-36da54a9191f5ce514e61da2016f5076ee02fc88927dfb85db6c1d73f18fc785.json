@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.application_id, t.resource_owner_id, t.scopes,\n                  t.revoked_at IS NOT NULL AS \"revoked!\",\n                  (t.expires_in IS NOT NULL\n                   AND t.created_at + make_interval(secs => t.expires_in) < now()) AS \"expired!\"\n           FROM oauth_access_tokens t WHERE t.token = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "resource_owner_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "scopes",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "revoked!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "expired!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "36da54a9191f5ce514e61da2016f5076ee02fc88927dfb85db6c1d73f18fc785"
+}

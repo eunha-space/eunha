@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, email, confirmed_at IS NOT NULL AS \"confirmed!\",\n                      COALESCE(unconfirmed_email, '') <> '' AS \"reconfirming!\",\n                      created_by_application_id\n               FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "reconfirming!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_by_application_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      true
+    ]
+  },
+  "hash": "4696304d0ce1710780092e899e4b0c002aaa53ace1943bd7a7101971233aa390"
+}

@@ -205,6 +205,29 @@ pub enum Refusal {
 }
 
 impl Refusal {
+    /// The validation error, as `(details key, attribute name in the full
+    /// message, error key, message)`: what `ValidationErrorFormatter` files
+    /// it under.
+    pub fn detail(&self) -> (&'static str, &'static str, &'static str, &'static str) {
+        match self {
+            Refusal::UsernameReserved => ("username", "Username", "reserved", "is reserved"),
+            Refusal::EmailBlocked => (
+                "email",
+                "E-mail address",
+                "blocked",
+                "uses a disallowed e-mail provider",
+            ),
+            Refusal::EmailTaken => ("email", "E-mail address", "taken", "has already been taken"),
+            Refusal::EmailUnreachable => (
+                "email",
+                "E-mail address",
+                "unreachable",
+                "does not seem to exist",
+            ),
+            Refusal::EmailInvalid => ("email", "E-mail address", "invalid", "is invalid"),
+        }
+    }
+
     pub fn message(&self) -> &'static str {
         match self {
             Refusal::UsernameReserved => "Validation failed: Username is reserved",

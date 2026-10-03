@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ t_setup_title }} · {{ domain }}</title>
+<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+<script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="topbar-domain">{{ domain }}</span>
+  <div class="topbar-right">
+    <button class="signout-btn"
+            hx-post="/account/logout"
+            hx-swap="none"
+            hx-on::after-request="location.replace('/')">{{ t_sign_out }}</button>
+  </div>
+</div>
+<div class="content">
+  <h1>{{ t_setup_title }}</h1>
+  {% if sent %}<div class="success">{{ t_setup_sent }}</div>{% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <p>{{ email_hint }}</p>
+  <details>
+    <summary><strong>{{ t_link_not_received }}</strong></summary>
+    <p>{{ t_below_hint }}</p>
+    <form method="POST" action="/auth/setup">
+      <label for="email">{{ t_email }}</label>
+      <input type="email" id="email" name="email" value="{{ email }}" required autocomplete="off">
+      <button type="submit">{{ t_resend_confirmation }}</button>
+    </form>
+  </details>
+</div>
+</body>
+</html>

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users\n             (account_id, email, encrypted_password, role_id,\n              confirmed_at, invite_id, approved,\n              locale, created_by_application_id, sign_up_ip, age_verified_at,\n              time_zone, confirmation_token, confirmation_sent_at,\n              created_at, updated_at)\n           VALUES ($1,$2,$3,$4,\n                   CASE WHEN $12 THEN now() END, $5, $6,\n                   $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,\n                   $11, $13::varchar, CASE WHEN $13::varchar IS NOT NULL THEN now() END,\n                   now(), now())\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Varchar",
+        "Int8",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2aa841d53c9ab74c9a7940ba508c2af28198f9efbb46110d7b5eb9a8b0450fac"
+}

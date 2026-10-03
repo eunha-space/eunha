@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::helpers::{set_setting, TestContext};
 
 async fn sign_up(ctx: &TestContext, body: Value) -> reqwest::Response {
-    ctx.api.post_json("/api/v1/accounts", None, &body).await
+    ctx.sign_up(&body).await
 }
 
 fn details(body: &Value, attribute: &str) -> Vec<String> {
@@ -35,18 +35,19 @@ async fn test_sign_up_requires_the_agreement_and_a_sound_password() {
     let body: Value = refused.json().await.unwrap();
     assert_eq!(
         body["error"],
-        "Validation failed: Password is too short (minimum is 8 characters), Agreement must be accepted"
+        "Validation failed: Password is too short (minimum is 8 characters), Service agreement must be accepted"
     );
     assert_eq!(details(&body, "agreement"), ["ERR_ACCEPTED"]);
     assert_eq!(details(&body, "password"), ["ERR_TOO_SHORT"]);
 
     // Devise's upper bound, and an agreement given as a form would give it.
     let long = "x".repeat(73);
+    let (_, app) = ctx.app_token("read write").await;
     let refused = ctx
         .api
         .post_form(
             "/api/v1/accounts",
-            None,
+            Some(&app),
             &[
                 ("username", "carol"),
                 ("email", "carol@example.com"),
@@ -140,12 +141,7 @@ async fn test_a_minimum_age_asks_for_a_date_of_birth() {
     assert_eq!(sign_up(&ctx, body).await.status(), StatusCode::OK);
 
     // `User#set_age_verified_at`.
-    let token: String = sqlx::query_scalar(
-        "SELECT confirmation_token FROM eunha.pending_signups WHERE username = 'dana'",
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
+    let token = ctx.confirmation_token("dana").await;
     ctx.api
         .get(&format!("/auth/confirm?token={token}"), None)
         .await;
@@ -185,10 +181,7 @@ async fn test_the_invite_request_text_can_be_required() {
                        "password": "a-long-enough-password", "agreement": true });
     let missing: Value = sign_up(&ctx, base.clone()).await.json().await.unwrap();
     assert_eq!(details(&missing, "reason"), ["ERR_BLANK"]);
-    assert_eq!(
-        missing["error"],
-        "Validation failed: Invite request text can't be blank"
-    );
+    assert_eq!(missing["error"], "Validation failed: Reason can't be blank");
 
     let mut body = base.clone();
     body["reason"] = json!("x".repeat(421));
@@ -212,13 +205,7 @@ async fn test_sign_up_keeps_a_time_zone_rails_knows() {
         )
         .await;
         assert_eq!(accepted.status(), StatusCode::OK);
-        let token: String = sqlx::query_scalar(
-            "SELECT confirmation_token FROM eunha.pending_signups WHERE username = $1",
-        )
-        .bind(username)
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap();
+        let token = ctx.confirmation_token(username).await;
         ctx.api
             .get(&format!("/auth/confirm?token={token}"), None)
             .await;

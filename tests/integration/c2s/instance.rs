@@ -154,7 +154,9 @@ async fn test_trending_links() {
     let _: Vec<Value> = resp.json().await.unwrap();
 }
 
-/// POST /api/v1/emails/confirmations returns 200 (no-op stub).
+/// POST /api/v1/emails/confirmations is for the app a user signed up
+/// through (`require_user_owned_by_application!`); alice's token is not one.
+/// The rest is in `surfaces::sign_up`.
 #[tokio::test]
 async fn test_email_confirmations_endpoint() {
     let ctx = TestContext::new("email-confirm").await;
@@ -167,7 +169,12 @@ async fn test_email_confirmations_endpoint() {
             &json!({}),
         )
         .await;
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "This method is only available to the application the user originally signed-up with"
+    );
 }
 
 /// GET /api/v1/announcements returns read=false before dismissal, read=true after.
