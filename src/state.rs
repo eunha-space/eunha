@@ -29,6 +29,11 @@ pub struct AppState {
     /// ojak's guarded client: each redirect is checked and signed again,
     /// and a document is trusted only from its own origin.
     pub fetcher: Arc<ojak::fetch::Fetcher>,
+    /// What ojak caches for this instance — activities seen and forwarded,
+    /// keys eunha does not store, JSON-LD contexts — in Redis behind the
+    /// instance's key prefix, on the evictable `redis` pool: losing an entry
+    /// costs a refetch, or a redelivery processed again.
+    pub federation_kv: Arc<ojak_redis::RedisKvStore<redis::aio::ConnectionManager>>,
     pub email: EmailSender,
     pub streaming: StreamBus,
     pub storage: Arc<Storage>,
@@ -125,6 +130,11 @@ impl AppState {
             redis.clone()
         };
 
+        let federation_kv = Arc::new(ojak_redis::RedisKvStore::new(
+            redis.clone(),
+            redis_keys.key(""),
+        ));
+
         let encryptor = config.active_record_encryption.as_ref().map(|keys| {
             crate::rails_encryption::Encryptor::new(&keys.primary_key, &keys.key_derivation_salt)
         });
@@ -188,6 +198,7 @@ impl AppState {
             http,
             fetch,
             fetcher,
+            federation_kv,
             email,
             streaming,
             storage,

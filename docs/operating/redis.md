@@ -24,7 +24,11 @@ emailed to an account's subscribers, the users who signed in each day
 (`activity:logins:<day>`), sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
 the translation service, the JSON-LD contexts fetched to check Linked Data
-signatures (`jsonld:context:<url>`), the search index queues
+signatures (`jsonld:context:<url>`), what ojak remembers for the inbox (the
+activities already processed, `ojak:inbox:<origin>:<id>:<digest>`, for a day;
+those already forwarded, `ojak:forwarded:*`, for a week; and the remote keys
+eunha does not store in `accounts`, `ojak:key:<key id>`, for an hour), the
+search index queues
 (`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
 new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
@@ -71,17 +75,20 @@ one performance and failure boundary and needs monitoring, bounded feed
 retention, admission controls, and a path for moving heavy tenants to dedicated
 Redis.
 
-Feeds, their population markers and the remembered oEmbed endpoints use
-`redis_url`; they are bounded cache state. Set `redis_coordination_url` to
-route locks, ActivityPub deletion tombstones, posting idempotency,
-notification grouping, async refreshes (see
+Feeds, their population markers, the remembered oEmbed endpoints, and
+ojak's JSON-LD contexts and inbox records use `redis_url`; they are bounded
+cache state. Losing one of ojak's costs a refetch, or a redelivered activity
+processed again, which processing an activity tolerates; Mastodon keeps no
+such record at all. Kept in Redis rather than in each process's memory, a
+redelivery is recognised whichever process it reaches. Set
+`redis_coordination_url` to route locks, ActivityPub deletion tombstones,
+posting idempotency, notification grouping, async refreshes (see
 [Remote replies](./remote-replies.md)) and the batches of posts waiting for
 [email subscribers](./email-subscriptions.md) to a separate non-evicting Redis
-pool, along with the
-days each server failed deliveries on, `exhausted_deliveries:<host>` as
-Mastodon names them, which mark a server unavailable once there are seven. If
-it is absent, both classes use `redis_url` as they did before this option
-existed. Both endpoints use the same `redis_key_prefix` and tenant credentials
-may differ by embedding them in their respective URLs. Process-wide memory is
-omitted from tenant-facing admin responses whenever a prefix or separate
-coordination endpoint is configured.
+pool, along with the days each server failed deliveries on,
+`exhausted_deliveries:<host>` as Mastodon names them, which mark a server
+unavailable once there are seven. If it is absent, both classes use `redis_url`
+as they did before this option existed. Both endpoints use the same
+`redis_key_prefix` and tenant credentials may differ by embedding them in their
+respective URLs. Process-wide memory is omitted from tenant-facing admin
+responses whenever a prefix or separate coordination endpoint is configured.

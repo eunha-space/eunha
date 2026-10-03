@@ -33,13 +33,6 @@ use crate::db::models::Account;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-/// How many entries ojak's in-memory store may hold, for the whole process.
-/// Nearly all are the IDs of activities received, which ojak remembers for a
-/// day to drop a redelivery; past this it forgets the ones nearest to expiry
-/// first, and a redelivery it no longer recognises is processed again, which
-/// every activity's effect on the database already tolerates.
-const KV_CAPACITY: usize = 100_000;
-
 type Ctx = Context<AppState>;
 
 /// The URIs of what [`federation`] serves, in some origin: its templates,
@@ -144,21 +137,22 @@ pub fn federation() -> Federation<AppState> {
         .inbox("actor", "/users/{username}/inbox")
         .inbox("actor_by_id", "/ap/users/{id}/inbox")
         .shared_inbox("/inbox")
-        // Every tenant fetches with its own fetcher (`fetcher_for`); this
-        // one is only what the builder needs to be given. The keys of
-        // accounts eunha knows come from `accounts`, where a new actor's is
-        // stored as it is fetched, so ojak caches only what eunha does not
-        // keep. What it does cache — the IDs of activities seen, replies
-        // forwarded, keys eunha did not store — is one store for the process,
-        // bounded so that a day of every tenant's traffic is not all held in
-        // memory at once.
+        // Every tenant fetches with its own fetcher (`fetcher_for`) and
+        // caches in its own Redis namespace (`kv_for`); the fetcher and store
+        // given here are only what the builder needs to be given. The keys
+        // of accounts eunha knows come from `accounts`, where a new actor's
+        // is stored as it is fetched, so ojak caches only what eunha does not
+        // keep: the IDs of activities seen, replies forwarded, keys eunha did
+        // not store. In Redis, every process serving the instance shares
+        // them, so a redelivery that reaches another process is still
+        // dropped (docs/operating/redis.md).
         .signed_fetch(
             std::sync::Arc::new(ojak::fetch::Fetcher::new(
                 ojak::client::Client::new(ojak::client::ClientConfig::default())
                     .expect("an HTTP client"),
                 ojak::sig::Scheme::DraftCavage,
             )),
-            ojak::kv::MemoryKvStore::with_capacity(KV_CAPACITY),
+            ojak::kv::MemoryKvStore::with_capacity(1),
             std::time::Duration::from_secs(60 * 60),
             // Signed as the instance actor, for peers in authorized-fetch mode.
             |ctx: Ctx| async move {
@@ -168,6 +162,7 @@ pub fn federation() -> Federation<AppState> {
             },
         )
         .fetcher_for(|state: &AppState| state.fetcher.clone())
+        .kv_for(|state: &AppState| state.federation_kv.clone())
         .known_key(|ctx: Ctx, key_id: String| async move { known_key(&ctx, &key_id).await })
         // An actor seen for the first time is created from the document
         // fetched for its key, as Mastodon does, rather than fetched again

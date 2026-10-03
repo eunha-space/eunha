@@ -125,6 +125,9 @@ ojak-jsonld = { git = "https://github.com/eunha-space/ojak.git" }
 # delivery, with its queue in `eunha.ojak_queue`.
 ojak = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-postgres = { git = "https://github.com/eunha-space/ojak.git" }
+# ojak's cache (keys, activities seen, JSON-LD contexts) in each instance's
+# own Redis namespace.
+ojak-redis = { git = "https://github.com/eunha-space/ojak.git" }
 # Serving what other servers fetch (src/api/ap/serving.rs).
 ojak-axum = { git = "https://github.com/eunha-space/ojak.git" }
 
