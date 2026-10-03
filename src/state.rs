@@ -148,10 +148,10 @@ impl AppState {
         })
         .map_err(|e| anyhow::anyhow!("{e}"))?;
         let fetch = federation_client.clone();
-        let fetcher = Arc::new(ojak::fetch::Fetcher::new(
-            federation_client.clone(),
-            ojak::sig::Scheme::DraftCavage,
-        ));
+        let fetcher = Arc::new(
+            ojak::fetch::Fetcher::new(federation_client.clone(), ojak::sig::Scheme::DraftCavage)
+                .with_plain_http_webfinger(crate::federation::webfinger::plain_http()),
+        );
         let delivery_failures = crate::federation::delivery_failures::DeliveryFailureTracker::new(
             db.clone(),
             redis_coordination.clone(),

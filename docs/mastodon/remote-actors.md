@@ -66,7 +66,7 @@ Columns
 | `header_remote_url`, `header_description`                   | `image`, likewise                                                                                                                 |
 | `account_stats` counts                                      | the `totalItems` of `outbox`, `following` and `followers`                                                                         |
 | `hide_collections`                                          | whether `following` or `followers` has no `first` page                                                                            |
-| `moved_to_account_id`                                       | `movedTo`, fetched if unknown, unless it has moved on itself                                                                      |
+| `moved_to_account_id`                                       | `movedTo`, fetched if unknown; its own `id` marks it as moved to itself                                                           |
 | `last_webfingered_at`                                       | now, unless only the keys were refreshed                                                                                          |
 | `protocol`                                                  | `activitypub`                                                                                                                     |
 | `public_key`                                                | `''`: keys live in `keypairs`                                                                                                     |
@@ -116,8 +116,15 @@ their own retries and unique locks:
 
 A `Create` or `Update` from an account not refreshed for a week schedules a
 refresh some time in the next six hours (`schedule_refresh_if_stale!`). The
-first refresh of an account eunha stored before this was written fills in
-everything above.
+refresh is `ResolveAccountService`'s: WebFinger is asked about the account's
+handle, following one redirect to a handle that names itself, and the actor
+its `self` link names is fetched and processed, so an account whose handle now
+names another `id` moves to it. An account whose handle was taken from it is
+fetched by its `id` instead. A `410 Gone` from WebFinger suspends the account
+as its server's doing and queues its deletion, as a `410` to the actor's own
+fetch does; any other failure is dropped, except a server that cannot be
+reached, which retries the job. The first refresh of an account eunha stored
+before this was written fills in everything above.
 
 
 Differences
@@ -128,9 +135,6 @@ Differences
     media. When an image's URL changes, the copy a
     Mastodon sharing the database made of the old one is forgotten, so that it
     downloads the new one.
- -  An account whose `movedTo` is its own `id` is not marked as moved.
  -  An RSA key published as a `Multikey` is not read.
- -  A refresh fetches the actor by its `id` rather than looking its handle up
-    first; `ProcessAccountService` asks WebFinger either way.
  -  Hashtags are compared in lower case without the Unicode compatibility
     folding `HashtagNormalizer` applies.

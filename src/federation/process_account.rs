@@ -114,7 +114,7 @@ async fn process_inner(
 
     // `extract_username_and_domain!`.
     let (mut username, mut domain) = match json.get("webfinger").and_then(Value::as_str) {
-        Some(acct) if !acct.trim().is_empty() => crate::federation::webfinger::split_acct(acct),
+        Some(acct) if !acct.trim().is_empty() => ojak::webfinger::split_acct(acct),
         _ => (String::new(), String::new()),
     };
     if username.trim().is_empty() || domain.trim().is_empty() {
@@ -867,15 +867,15 @@ impl Processor<'_> {
         info
     }
 
-    /// `moved_account`: the account `movedTo` names, fetched if unknown —
-    /// unless it has moved on itself.
+    /// `moved_account`: the account `movedTo` names, fetched if unknown.
     async fn moved_account(&self, moved: &Value) -> Option<i64> {
         let uri = value_or_id_owned(moved)?;
-        // An account redirecting to itself is no redirect.
-        if uri == self.uri {
-            return None;
-        }
-        if let Some(id) = crate::federation::local_uri::account(self.state, &uri).await {
+        // `TagManager#uri_to_resource`, which looks a remote account up by
+        // its `uri` without the fragment: an actor whose `movedTo` is its
+        // own `id` is marked as moved to itself, as Mastodon marks it.
+        let without_fragment = uri.split('#').next().unwrap_or_default();
+        if let Some(id) = crate::federation::local_uri::account(self.state, without_fragment).await
+        {
             return Some(id);
         }
         fetch_remote_actor(self.state, &uri, true, Some(self.request_id))
@@ -1000,7 +1000,13 @@ pub async fn fetch_remote_actor(
     if let Some(id) = local_account(state, uri).await {
         return Ok(Some(id));
     }
-    let json = crate::federation::fetch::signed_get_json(state, uri).await?;
+    let json = match crate::federation::fetch::signed_get_json(state, uri).await {
+        Ok(json) => json,
+        Err(error) => {
+            queue_deletion_if_gone(state, uri, &error).await?;
+            return Err(error);
+        }
+    };
     process_fetched_actor(state, uri, &json, break_on_redirect, false, request_id).await
 }
 
@@ -1131,14 +1137,173 @@ impl crate::jobs::Job for AccountRefreshWorker {
         if !needs_background_refresh(&account) {
             return Ok(());
         }
+        resolve_account(state, &account, self.request_id.as_deref())
+            .await
+            .map_err(|error| anyhow!("could not refresh account {}: {error:?}", self.account_id))
+    }
+}
+
+/// `ResolveAccountService#call(account, request_id:)`, with its default
+/// `suppress_errors: true`: refresh a remote account by asking WebFinger
+/// about its handle, following one redirect, then fetching the actor the
+/// answer names. What Mastodon suppresses is logged and dropped; an `Err`
+/// is what it would raise, a server that could not be reached or the
+/// database, so that the job is retried.
+pub async fn resolve_account(
+    state: &AppState,
+    account: &Account,
+    request_id: Option<&str>,
+) -> Result<()> {
+    // An account whose handle was taken from it is fetched by its `uri`.
+    if !account.is_local() && account.username.starts_with("! ") {
         let Some(uri) = account.stored_uri() else {
             return Ok(());
         };
-        fetch_remote_actor(state, uri, false, self.request_id.as_deref())
-            .await
-            .map(drop)
-            .map_err(|error| anyhow!("could not refresh account {}: {error:?}", self.account_id))
+        return fetch_remote_account_suppressed(state, uri, request_id).await;
     }
+    let Some(domain) = account.domain.as_deref() else {
+        return Ok(());
+    };
+    let domain = normalize_domain(domain);
+    if is_local_domain(state, &domain)
+        || crate::federation::moderation::domain_not_allowed(state, &domain).await
+    {
+        return Ok(());
+    }
+    // `return @account if … !webfinger_update_due?`.
+    if !possibly_stale(account) {
+        return Ok(());
+    }
+
+    // `process_webfinger!`: a `410 Gone` is `gone_from_origin?`, any other
+    // failure a `Webfinger::Error`.
+    let resolved =
+        crate::federation::webfinger::resolve_handle(&state.fetcher, &account.username, &domain)
+            .await;
+    let resolved = match resolved {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            let gone = error
+                .downcast_ref::<ojak::webfinger::ResolveError>()
+                .and_then(ojak::webfinger::ResolveError::status)
+                == Some(410);
+            if gone {
+                // `gone_from_origin? && not_yet_deleted?`: `queue_deletion!`.
+                queue_deletion(state, account.id).await?;
+            } else {
+                tracing::debug!(
+                    account_id = account.id,
+                    "Webfinger query for {}@{domain} failed: {error:#}",
+                    account.username
+                );
+            }
+            return Ok(());
+        }
+    };
+    let username = resolved.address.user();
+    let domain = resolved.address.host();
+    if !is_local_domain(state, domain)
+        && crate::federation::moderation::domain_not_allowed(state, domain).await
+    {
+        return Ok(());
+    }
+
+    // `fetch_account!`, which does not pass the request id on.
+    let _lock = acquire_lock(state, &format!("resolve:{username}@{domain}")).await;
+    fetch_remote_account_suppressed(state, resolved.actor.as_str(), None).await
+}
+
+/// The status a fetch was answered with, if it failed on one.
+fn fetch_status(error: &anyhow::Error) -> Option<u16> {
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<ojak::fetch::FetchError>())
+        .find_map(ojak::fetch::FetchError::status)
+}
+
+/// `TagManager#local_domain?`.
+fn is_local_domain(state: &AppState, domain: &str) -> bool {
+    domain.eq_ignore_ascii_case(&state.instance.domain)
+        || state
+            .instance
+            .aliases
+            .iter()
+            .any(|alias| domain.eq_ignore_ascii_case(alias))
+}
+
+/// `ActivityPub::FetchRemoteAccountService#call(uri, suppress_errors: true)`:
+/// [`fetch_remote_actor`], with what Mastodon rescues logged and dropped. A
+/// server that could not be reached, and a database error, are raised.
+async fn fetch_remote_account_suppressed(
+    state: &AppState,
+    uri: &str,
+    request_id: Option<&str>,
+) -> Result<()> {
+    let from_database =
+        |error: &anyhow::Error| error.chain().any(|cause| cause.is::<sqlx::Error>());
+    if crate::federation::moderation::domain_not_allowed(state, uri).await
+        || local_account(state, uri).await.is_some()
+    {
+        return Ok(());
+    }
+    let json = match crate::federation::fetch::signed_get_json(state, uri).await {
+        Ok(json) => json,
+        Err(error) => {
+            queue_deletion_if_gone(state, uri, &error).await?;
+            let unreachable = error.chain().any(|cause| {
+                matches!(
+                    cause.downcast_ref::<ojak::fetch::FetchError>(),
+                    Some(ojak::fetch::FetchError::Request(_))
+                )
+            });
+            if unreachable || from_database(&error) {
+                return Err(error);
+            }
+            tracing::debug!("Fetching actor {uri} failed: {error:#}");
+            return Ok(());
+        }
+    };
+    match process_fetched_actor(state, uri, &json, false, false, request_id).await {
+        Ok(_) => Ok(()),
+        // What `ProcessAccountService` fetches it rescues, its WebFinger
+        // query included, however the request failed.
+        Err(error) if from_database(&error) => Err(error),
+        Err(error) => {
+            tracing::debug!("Fetching actor {uri} failed: {error:#}");
+            Ok(())
+        }
+    }
+}
+
+/// `FetchRemoteActorService#queue_deletion!`, for a fetch answered with
+/// `410 Gone`: the remote account at `uri`, if there is one, is suspended
+/// and deleted.
+async fn queue_deletion_if_gone(state: &AppState, uri: &str, error: &anyhow::Error) -> Result<()> {
+    if fetch_status(error) != Some(410) {
+        return Ok(());
+    }
+    if let Some(account) = find_by_uri(state, uri).await? {
+        queue_deletion(state, account.id).await?;
+    }
+    Ok(())
+}
+
+/// `queue_deletion!`: `account.suspend!(origin: :remote)`, then
+/// `AccountDeletionWorker` with `reserve_username: false` and
+/// `skip_activitypub: true`.
+async fn queue_deletion(state: &AppState, account_id: i64) -> Result<()> {
+    crate::delete_account::suspend(state, account_id, suspension_origin::REMOTE, true).await?;
+    crate::delete_account::call_later(
+        state,
+        account_id,
+        crate::delete_account::Options {
+            reserve_username: false,
+            skip_activitypub: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    Ok(())
 }
 
 /// `create_account`. A blocked domain's new account starts out suspended or

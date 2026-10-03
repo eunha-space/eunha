@@ -45,6 +45,12 @@ impl Remote {
 async fn serve(State(remote): State<Remote>, uri: Uri) -> axum::response::Response {
     use axum::response::IntoResponse;
     match remote.documents.lock().unwrap().get(uri.path()) {
+        // A path that answers with a bare status, such as `410 Gone`.
+        Some(document) if document.get("status").is_some_and(Value::is_u64) => {
+            StatusCode::from_u16(document["status"].as_u64().unwrap() as u16)
+                .unwrap()
+                .into_response()
+        }
         Some(document) => (
             [("content-type", "application/activity+json")],
             document.to_string(),
@@ -647,4 +653,147 @@ async fn test_a_confirmed_rename_takes_the_handle() {
         .await
         .unwrap();
     assert_eq!(squatter_name, format!("! {squatter}"));
+}
+
+/// Runs `AccountRefreshWorker` for `account_id` after making the account a
+/// week and a day stale.
+async fn refresh(ctx: &TestContext, account_id: i64) {
+    use eunha::jobs::Job as _;
+    sqlx::query(
+        "UPDATE accounts SET last_webfingered_at = now() - interval '8 days' WHERE id = $1",
+    )
+    .bind(account_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    eunha::federation::process_account::AccountRefreshWorker {
+        account_id,
+        request_id: None,
+    }
+    .perform(&ctx.state)
+    .await
+    .unwrap();
+}
+
+/// A stale account is refreshed as `ResolveAccountService` refreshes it:
+/// WebFinger is asked about its handle first, and the actor the answer
+/// names is fetched — here a new `id` for the same handle, which the
+/// account then takes, though its old `id` still serves the old document.
+#[tokio::test]
+async fn test_a_refresh_asks_webfinger_for_the_actor() {
+    let (ctx, server) = spawn_server("actors-refresh").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .unwrap();
+
+    let moved = format!("{}/actors/eve", server.base);
+    server.remote.put(
+        "/actors/eve",
+        json!({
+            "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+            "id": moved,
+            "type": "Person",
+            "preferredUsername": "eve",
+            // The port is part of the handle's domain, not of the host.
+            "webfinger": format!("eve@{}", server.host),
+            "name": "Eve, moved house",
+            "inbox": format!("{moved}/inbox"),
+            "publicKey": {
+                "id": format!("{moved}#main-key"),
+                "owner": moved,
+                "publicKeyPem": server.public_pem,
+            },
+        }),
+    );
+    server.webfinger(&moved);
+    refresh(&ctx, id).await;
+
+    let (uri, display_name): (String, String) =
+        sqlx::query_as("SELECT uri, display_name FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(uri, moved);
+    assert_eq!(display_name, "Eve, moved house");
+}
+
+/// WebFinger answering `410 Gone` for a stale account's handle suspends it,
+/// as from its own server, and queues its deletion.
+#[tokio::test]
+async fn test_a_refresh_webfinger_says_is_gone_suspends_the_account() {
+    let (ctx, server) = spawn_server("actors-refresh-gone").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .unwrap();
+
+    server
+        .remote
+        .put("/.well-known/webfinger", json!({"status": 410}));
+    refresh(&ctx, id).await;
+
+    let row: Option<(Option<chrono::NaiveDateTime>, Option<i32>)> =
+        sqlx::query_as("SELECT suspended_at, suspension_origin FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&ctx.db)
+            .await
+            .unwrap();
+    // The deletion may already have run; until then the account is
+    // suspended as its server's doing (`suspension_origin: :remote`).
+    if let Some((suspended_at, origin)) = row {
+        assert!(suspended_at.is_some());
+        assert_eq!(origin, Some(1));
+    }
+}
+
+/// A refresh whose WebFinger query fails leaves the account as it was, and
+/// the job is not retried.
+#[tokio::test]
+async fn test_a_refresh_webfinger_cannot_answer_changes_nothing() {
+    let (ctx, server) = spawn_server("actors-refresh-404").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .unwrap();
+    let mut changed = server.full_actor();
+    changed["name"] = json!("Not fetched");
+    server.remote.put("/users/eve", changed);
+    server
+        .remote
+        .put("/.well-known/webfinger", json!({"status": 404}));
+    refresh(&ctx, id).await;
+
+    let name: String = sqlx::query_scalar("SELECT display_name FROM accounts WHERE id = $1")
+        .bind(id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(name, "Eve :blobcat:");
+}
+
+/// An actor whose `movedTo` is its own `id` is marked as moved to itself,
+/// as Mastodon's `ProcessAccountService` finds the account by that `uri`.
+#[tokio::test]
+async fn test_an_actor_moved_to_itself_is_marked_as_moved() {
+    let (ctx, server) = spawn_server("actors-moved-self").await;
+    let actor = server.actor();
+    let mut document = server.full_actor();
+    document["movedTo"] = json!(actor);
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account_prefetched(
+        &ctx.state, &actor, document,
+    )
+    .await
+    .unwrap();
+    let moved: Option<i64> =
+        sqlx::query_scalar("SELECT moved_to_account_id FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(moved, Some(id));
 }

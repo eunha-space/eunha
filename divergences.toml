@@ -795,23 +795,3 @@ evidence = "tests/remote_actors.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
 
-[[divergence]]
-id = "account-refresh-fetches-by-id"
-kind = "behaviour"
-summary = "Refreshes a stale remote account by fetching its actor, not its handle"
-mastodon = """
-`AccountRefreshWorker` refreshes a stale account that sends a `Create` or \
-`Update` with `ResolveAccountService`, which resolves the account's handle \
-through WebFinger before fetching the actor it names."""
-eunha = """
-The same worker, queued as Mastodon queues it, fetches the actor by its \
-`id`; `ProcessAccountService` then asks WebFinger about its handle either \
-way. An actor whose `movedTo` is its own `id` is not marked as moved."""
-why = """
-Asking WebFinger first and then fetching the actor it names reaches the same \
-document by a longer road; the handle is confirmed by the processing that \
-follows. An account redirecting to itself is not a redirect, and following \
-it would loop."""
-evidence = "tests/remote_actors.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
