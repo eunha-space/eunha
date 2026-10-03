@@ -380,6 +380,11 @@ one is answered the same way after their first follow, until that account's
 posts are merged into the feed — for a follow request, once it is accepted, or
 for a day at most.
 
+What may enter a feed is decided as it is written, by Mastodon's
+`FeedManager` filters (blocks, mutes, domain blocks, hidden boosts, exclusive
+lists, languages and replies); reading the home or a list timeline answers
+the posts the feed holds that are not deleted, filtering nothing more.
+
 Nothing else rebuilds a feed. Reading one never fills it: a new member's empty
 feed is answered `200` and empty, and a feed Redis lost stays empty, apart from
 what is posted afterwards, until the member's next return after a week away.
