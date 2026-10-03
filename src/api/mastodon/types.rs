@@ -375,7 +375,7 @@ pub struct InstanceRegistrations {
 #[derive(Debug, Serialize)]
 pub struct InstanceContact {
     pub email: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// `has_one :account`, `null` while no contact account is set.
     pub account: Option<Account>,
 }
 

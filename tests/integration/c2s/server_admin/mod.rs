@@ -321,7 +321,8 @@ async fn test_site_settings_default_to_mastodons() {
     assert_eq!(v2["title"], "Mastodon");
     assert_eq!(v2["description"], "");
     assert_eq!(v2["contact"]["email"], "");
-    assert_eq!(v2["contact"]["account"], Value::Null);
+    // `has_one :account` with none set is sent as `null`, not left out.
+    assert_eq!(v2["contact"].get("account"), Some(&Value::Null));
     assert_eq!(v2["registrations"]["enabled"], false);
     let v1 = json_ok(ctx.api.get("/api/v1/instance", None).await).await;
     assert_eq!(v1["title"], "Mastodon");
