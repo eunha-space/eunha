@@ -97,26 +97,52 @@ async fn upload(
         .unwrap()
 }
 
-/// Upload a CSV and confirm it, which runs it to the end while background
-/// work is inline. Returns the finished import.
-async fn import(ctx: &TestContext, kind: &str, mode: &str, filename: &str, csv: &str) -> Value {
-    let resp = upload(ctx, &ctx.alice_token, kind, mode, filename, "text/csv", csv).await;
-    assert_eq!(resp.status(), StatusCode::OK, "{csv}");
-    let created: Value = resp.json().await.unwrap();
-    assert_eq!(created["state"], "unconfirmed");
+/// Run every job to the end: `BulkImportWorker`, the row jobs it queues, and
+/// each retry of a row that raised, made due at once, until none is left.
+async fn run_jobs(ctx: &TestContext) {
+    loop {
+        ctx.state.jobs.settle().await;
+        eunha::jobs::make_due(&ctx.state).await.unwrap();
+        eunha::jobs::drain(&ctx.state).await.unwrap();
+        ctx.state.jobs.settle().await;
+        let left = count(
+            ctx,
+            "SELECT count(*) FROM eunha.jobs WHERE dead_at IS NULL",
+            &[],
+        )
+        .await;
+        if left == 0 {
+            return;
+        }
+    }
+}
+
+/// Confirm an uploaded import, run its jobs to the end, and return it.
+async fn confirm(ctx: &TestContext, created: &Value) -> Value {
+    let path = format!("/api/eunha/v1/imports/{}", created["id"].as_str().unwrap());
     let resp = ctx
         .api
         .post_json(
-            &format!(
-                "/api/eunha/v1/imports/{}/confirm",
-                created["id"].as_str().unwrap()
-            ),
+            &format!("{path}/confirm"),
             Some(&ctx.alice_token),
             &json!({}),
         )
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let finished: Value = resp.json().await.unwrap();
+    run_jobs(ctx).await;
+    let resp = ctx.api.get(&path, Some(&ctx.alice_token)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    resp.json().await.unwrap()
+}
+
+/// Upload a CSV, confirm it and run it to the end. Returns the finished
+/// import.
+async fn import(ctx: &TestContext, kind: &str, mode: &str, filename: &str, csv: &str) -> Value {
+    let resp = upload(ctx, &ctx.alice_token, kind, mode, filename, "text/csv", csv).await;
+    assert_eq!(resp.status(), StatusCode::OK, "{csv}");
+    let created: Value = resp.json().await.unwrap();
+    assert_eq!(created["state"], "unconfirmed");
+    let finished = confirm(ctx, &created).await;
     assert_eq!(finished["state"], "finished", "{finished}");
     finished
 }
@@ -444,6 +470,35 @@ async fn following_imports_merge_and_overwrite() {
     assert!(!follows(&ctx, alice, bob).await);
     assert!(follows(&ctx, alice, carol).await);
     assert!(follows(&ctx, alice, erin).await);
+
+    // `BulkImportService` indexes the rows by handle, so a handle listed
+    // twice is queued once, for its last row; the first is never run, and
+    // the import never finishes.
+    let resp = upload(
+        &ctx,
+        &ctx.alice_token,
+        "following",
+        "merge",
+        "follows.csv",
+        "text/csv",
+        format!("bob@{d}\nbob\n"),
+    )
+    .await;
+    let created: Value = resp.json().await.unwrap();
+    let stuck = confirm(&ctx, &created).await;
+    assert_eq!(stuck["state"], "in_progress");
+    assert_eq!(stuck["total_items"], 2);
+    assert_eq!(stuck["processed_items"], 1);
+    assert_eq!(stuck["imported_items"], 1);
+    assert!(follows(&ctx, alice, bob).await);
+    let left = sqlx::query_scalar::<_, Value>(
+        "SELECT data FROM bulk_import_rows WHERE bulk_import_id = $1",
+    )
+    .bind(id(created["id"].as_str().unwrap()))
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(left, vec![json!({ "acct": format!("bob@{d}") })]);
 }
 
 #[tokio::test]
@@ -692,20 +747,11 @@ async fn custom_filter_imports_read_the_export() {
     let created: Value = resp.json().await.unwrap();
     assert_eq!(created["total_items"], 2);
     assert_eq!(created["missing_status"], true);
-    let done: Value = ctx
-        .api
-        .post_json(
-            &format!(
-                "/api/eunha/v1/imports/{}/confirm",
-                created["id"].as_str().unwrap()
-            ),
-            Some(&ctx.alice_token),
-            &json!({}),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
+    // The bad filter's row raises on every run, and counts as failed once
+    // its retries are spent.
+    let done = confirm(&ctx, &created).await;
+    assert_eq!(done["state"], "finished");
+    assert_eq!(done["processed_items"], 2);
     assert_eq!(done["imported_items"], 1);
     let filters = sqlx::query_as::<_, (String, Vec<String>, i32, Option<chrono::NaiveDateTime>)>(
         "SELECT phrase, context, action, expires_at FROM custom_filters WHERE account_id = $1",
@@ -729,6 +775,43 @@ async fn custom_filter_imports_read_the_export() {
         failed,
         r#"{"custom_filters":[{"title":"bad","action":"warn","context":["nowhere"],"statuses":[],"keywords_attributes":[]}]}"#
     );
+
+    // Upstream saves the filter, and its keywords, before the action is
+    // checked: a bad action leaves a filter behind on each of the row's
+    // seven runs, and the row still fails.
+    let oops = json!({ "custom_filters": [{
+        "title": "oops",
+        "context": ["home"],
+        "action": "nuke",
+        "keywords_attributes": [{ "keyword": "x", "whole_word": true }],
+        "statuses": [],
+    }]})
+    .to_string();
+    let resp = upload(
+        &ctx,
+        &ctx.alice_token,
+        "custom_filters",
+        "merge",
+        "custom_filters.json",
+        "application/json",
+        oops,
+    )
+    .await;
+    let created: Value = resp.json().await.unwrap();
+    let done = confirm(&ctx, &created).await;
+    assert_eq!(done["state"], "finished");
+    assert_eq!(done["processed_items"], 1);
+    assert_eq!(done["imported_items"], 0);
+    let left = sqlx::query_as::<_, (i32, i64)>(
+        "SELECT f.action, count(k.id) FROM custom_filters f
+         JOIN custom_filter_keywords k ON k.custom_filter_id = f.id
+         WHERE f.account_id = $1 AND f.phrase = 'oops' GROUP BY f.id",
+    )
+    .bind(alice)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(left, vec![(0, 1); 7]);
 
     // A filters file is refused for any other type.
     let resp = upload(
@@ -855,79 +938,62 @@ async fn uploads_are_validated_as_mastodon_validates_them() {
 }
 
 #[tokio::test]
-async fn imports_resume_where_they_stopped_and_are_vacuumed() {
-    let ctx = TestContext::new("import-resume").await;
+async fn imports_run_on_the_job_queue_and_are_vacuumed() {
+    let ctx = TestContext::new("import-jobs").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
     let alice = id(&ctx.alice_id);
-    let bob = id(&ctx.bob_id);
-    let (carol, _) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
-    let (erin, _) = seed_user(&ctx.db, &ctx.domain, "erin", "erin@test.invalid").await;
+    seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
 
-    // An import a crashed worker had got one row into: its first row was
-    // handled, and its lease has gone stale.
-    let import_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO bulk_imports (type, state, total_items, processed_items, imported_items, account_id, created_at, updated_at)
-         VALUES (0, 2, 3, 1, 1, $1, now(), now()) RETURNING id",
-    )
-    .bind(alice)
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
-    let mut rows = Vec::new();
-    for acct in ["bob", "carol", "erin"] {
-        rows.push(
-            sqlx::query_scalar::<_, i64>(
-                "INSERT INTO bulk_import_rows (bulk_import_id, data, created_at, updated_at)
-                 VALUES ($1, jsonb_build_object('acct', $2::text), now(), now()) RETURNING id",
-            )
-            .bind(import_id)
-            .bind(acct)
-            .fetch_one(&ctx.db)
-            .await
-            .unwrap(),
-        );
-    }
-    exec(
+    // Confirming queues `BulkImportWorker` on the `pull` queue, never
+    // retried.
+    let resp = upload(
         &ctx,
-        "INSERT INTO eunha.bulk_import_progress (bulk_import_id, prepared, last_row_id, locked_at, locked_by)
-         VALUES ($1, true, $2, now() - interval '1 hour', 'crashed')",
-        &[import_id, rows[0]],
+        &ctx.alice_token,
+        "blocking",
+        "merge",
+        "x.csv",
+        "text/csv",
+        "bob\ncarol\n",
     )
     .await;
-    // And one Mastodon's own workers had scheduled and never started.
-    let scheduled = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO bulk_imports (type, state, total_items, account_id, created_at, updated_at)
-         VALUES (1, 1, 1, $1, now(), now()) RETURNING id",
+    let created: Value = resp.json().await.unwrap();
+    let import_id = id(created["id"].as_str().unwrap());
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/eunha/v1/imports/{import_id}/confirm"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let scheduled: Value = resp.json().await.unwrap();
+    assert_eq!(scheduled["state"], "scheduled");
+    let queued = sqlx::query_as::<_, (String, String, Value, i32, bool)>(
+        "SELECT queue, kind, args, max_retries, keep_dead FROM eunha.jobs ORDER BY id",
     )
-    .bind(alice)
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
-    exec(
-        &ctx,
-        "INSERT INTO bulk_import_rows (bulk_import_id, data, created_at, updated_at)
-         VALUES ($1, '{\"acct\": \"bob\"}', now(), now())",
-        &[scheduled],
-    )
-    .await;
-
-    eunha::portability::import::drain(&ctx.state, None)
-        .await
-        .unwrap();
-
-    assert!(
-        !follows(&ctx, alice, bob).await,
-        "the handled row is not run again"
-    );
-    assert!(follows(&ctx, alice, carol).await);
-    assert!(follows(&ctx, alice, erin).await);
-    let states = sqlx::query_as::<_, (i32, i32, i32)>(
-        "SELECT state, processed_items, imported_items FROM bulk_imports WHERE id = ANY($1) ORDER BY id",
-    )
-    .bind(vec![import_id, scheduled])
     .fetch_all(&ctx.db)
     .await
     .unwrap();
-    assert_eq!(states, vec![(3, 3, 3), (3, 1, 1)]);
+    assert_eq!(
+        queued,
+        vec![(
+            "pull".into(),
+            "BulkImportWorker".into(),
+            json!({ "bulk_import_id": import_id }),
+            -1,
+            false
+        )]
+    );
+    // It queues a row job for each row, which runs them.
+    assert_eq!(eunha::jobs::drain(&ctx.state).await.unwrap(), 3);
+    let states = sqlx::query_as::<_, (i32, i32, i32)>(
+        "SELECT state, processed_items, imported_items FROM bulk_imports WHERE id = $1",
+    )
+    .bind(import_id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(states, vec![(3, 2, 2)]);
     assert_eq!(
         count(
             &ctx,
@@ -935,12 +1001,62 @@ async fn imports_resume_where_they_stopped_and_are_vacuumed() {
             &[alice]
         )
         .await,
-        1
+        2
     );
-    assert_eq!(
-        count(&ctx, "SELECT count(*) FROM eunha.bulk_import_progress", &[]).await,
-        0
-    );
+
+    // A row that raises is retried six times, `Import::RowWorker`'s
+    // `retry: 6`, and then counted as processed and not imported; its job
+    // is not kept (`dead: false`).
+    let file = json!({ "custom_filters": [
+        { "title": "bad", "context": ["nowhere"], "action": "warn", "keywords_attributes": [], "statuses": [] },
+    ]})
+    .to_string();
+    let resp = upload(
+        &ctx,
+        &ctx.alice_token,
+        "custom_filters",
+        "merge",
+        "custom_filters.json",
+        "application/json",
+        file,
+    )
+    .await;
+    let created: Value = resp.json().await.unwrap();
+    let scheduled = id(created["id"].as_str().unwrap());
+    ctx.api
+        .post_json(
+            &format!("/api/eunha/v1/imports/{scheduled}/confirm"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(eunha::jobs::drain(&ctx.state).await.unwrap(), 2);
+    let progress = || async {
+        sqlx::query_as::<_, (i32, i32, i32)>(
+            "SELECT state, processed_items, imported_items FROM bulk_imports WHERE id = $1",
+        )
+        .bind(scheduled)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+    };
+    assert_eq!(progress().await, (2, 0, 0));
+    for retry in 1..=6 {
+        let job = sqlx::query_as::<_, (String, String, i32, i32, bool)>(
+            "SELECT queue, kind, attempts, max_retries, keep_dead FROM eunha.jobs",
+        )
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        assert_eq!(
+            job,
+            ("pull".into(), "Import::RowWorker".into(), retry, 6, false)
+        );
+        eunha::jobs::make_due(&ctx.state).await.unwrap();
+        assert_eq!(eunha::jobs::drain(&ctx.state).await.unwrap(), 1);
+    }
+    assert_eq!(progress().await, (3, 1, 0));
+    assert_eq!(count(&ctx, "SELECT count(*) FROM eunha.jobs", &[]).await, 0);
 
     // `Vacuum::ImportsVacuum`: unconfirmed ones after ten minutes, the rest
     // after a week.

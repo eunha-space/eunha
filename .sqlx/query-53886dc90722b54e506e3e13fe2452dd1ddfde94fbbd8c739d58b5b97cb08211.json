@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_filter_statuses (custom_filter_id, status_id, created_at, updated_at)\n                 VALUES ($1, $2, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53886dc90722b54e506e3e13fe2452dd1ddfde94fbbd8c739d58b5b97cb08211"
+}

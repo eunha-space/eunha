@@ -108,22 +108,44 @@ Then each row is `BulkImportRowService`: the handle is resolved, over
 WebFinger when the account is not known (not on a server deliveries have
 given up on), and followed, blocked or muted through the same services the
 API uses; a post is found or fetched, and bookmarked if the account may see
-it; a list member is followed, then added to the list, which fails if they
-are on it already, as upstream's validation does. A row that imported is
-deleted; one that did not stays, and is what the failures file lists.
+it; a list member is followed, then added to the list. A row that imported
+is deleted; one that did not stays, and is what the failures file lists.
+
+A custom filter row is carried out in upstream's order: the filter is
+created with its title and context, then given its keywords, its action,
+its expiry and its posts, and saved again. What a step saved stays when a
+later step fails, so a filter whose action is not `warn`, `hide` or `blur`
+is left behind, with its keywords, every time its row runs.
 
 ### The queue
 
-Upstream runs rows as Sidekiq jobs. Each eunha instance runs an import
-queue instead (*src/portability/import.rs*), which takes a confirmed import,
-runs fifty of its rows in row order, and moves on to the import that has
-waited longest. Where it got to — whether the first pass is done, and the
-last row handled — is kept in `eunha.bulk_import_progress`, under a lease, so
-an import interrupted by a restart carries on from the next row, and an
-import Mastodon's own workers had scheduled is taken up as well. A row that
-errors fails at once rather than being retried, and an import whose rows
-have all been run is finished (the `bulk-imports-run-in-process`
-divergence).
+Imports run on the [job queue](./jobs.md) as upstream runs them on Sidekiq
+(*src/portability/import.rs*). Confirming an import queues
+`BulkImportWorker` on the `pull` queue, never retried, which marks it in
+progress and runs `BulkImportService`; that queues an `Import::RowWorker`
+for each row it leaves, all at once, and the job loops run them
+concurrently, `[workers] job_concurrency` at a time.
+
+A row job counts its row as processed, and as imported if it was, and the
+import is finished once as many rows are processed as it has. A row that
+raises — a list member already on the list, or not followed; a filter
+upstream's validations refuse; a follow the target forbids — is retried six
+times, on Sidekiq's schedule, and then counted as processed and not
+imported. A row that simply finds nothing to act on, such as a handle that
+does not resolve, fails at once.
+
+`BulkImportService` indexes account rows by handle and bookmark rows by
+URI, so when a file lists the same account or post twice only the last of
+those rows is queued. The earlier one is never run, and the import stays in
+progress, as upstream's does, until it is deleted with the rest.
+
+An import `BulkImportService` fails on — a domain that cannot be blocked, a
+list that cannot be made — is finished as it stands, as upstream's `rescue`
+finishes it.
+
+Migration 024 handed the imports eunha's earlier import loop was carrying
+out to the queue, and with them any that Mastodon's own workers had
+scheduled or started.
 
 Imports, finished or not, are deleted a week after they were made.
 

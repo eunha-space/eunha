@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.username, a.domain FROM blocks b\n                 JOIN accounts a ON a.id = b.target_account_id WHERE b.account_id = $1",
+  "query": "SELECT a.id, a.username, a.domain FROM mutes m\n                     JOIN accounts a ON a.id = m.target_account_id WHERE m.account_id = $1",
   "describe": {
     "columns": [
       {
@@ -30,5 +30,5 @@
       true
     ]
   },
-  "hash": "7d70d758eefebc06c3cda8e5cb5df484f9151041f8cf62baebb6c17e5fb0d0d2"
+  "hash": "942abad50a9ed88d3d2d627571fd235a2909ad3afd5f19844698510be74e2c18"
 }

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.jobs (queue, kind, args, max_retries, keep_dead)\n           SELECT $1, $2, a.args, $4, $5\n           FROM unnest($3::jsonb[]) WITH ORDINALITY AS a(args, n)\n           ORDER BY a.n\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "JsonbArray",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5dd03890ffaa4c8cdd3dadbb3c4ecc097883f3774846a2a3ffcc0ebe2c7f0a5e"
+}

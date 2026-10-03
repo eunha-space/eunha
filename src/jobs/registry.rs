@@ -66,6 +66,8 @@ fn workers() -> Vec<Entry> {
         entry::<crate::preview_card::LinkCrawlWorker>(),
         entry::<crate::announcements::PublishScheduledAnnouncementWorker>(),
         entry::<crate::announcements::PublishAnnouncementReactionWorker>(),
+        entry::<crate::portability::import::BulkImportWorker>(),
+        entry::<crate::portability::import::RowWorker>(),
         entry::<crate::moves::MoveWorker>(),
         entry::<crate::moves::UnfollowMigratedWorker>(),
         entry::<crate::push::PushNotificationWorker>(),

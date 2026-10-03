@@ -59,11 +59,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             &state,
-            "import queue",
-            crate::portability::import::run_queue(state.clone()),
-        ),
-        until_stopped(
-            &state,
             "archive queue",
             crate::portability::backup::run_queue(state.clone()),
         ),
@@ -189,8 +184,6 @@ pub struct QueueWakes {
     pub media: tokio::sync::Notify,
     /// A job was queued (crate::jobs).
     pub jobs: tokio::sync::Notify,
-    /// A data import was confirmed.
-    pub imports: tokio::sync::Notify,
     /// An archive takeout was requested.
     pub backups: tokio::sync::Notify,
     /// A scheduled status was created or moved.

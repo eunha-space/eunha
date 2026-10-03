@@ -326,23 +326,84 @@ pub async fn perform_async_in<J: Job>(db: &sqlx::PgPool, job: J) -> anyhow::Resu
     insert(db, J::KIND, &J::OPTIONS, &args, Duration::ZERO).await
 }
 
+/// `Worker.perform_bulk` (`Sidekiq::Client.push_bulk`): queue a job for each
+/// of `jobs` at once, in order. Returns how many were queued.
+pub async fn perform_bulk<J: Job>(
+    state: &AppState,
+    jobs: impl IntoIterator<Item = J>,
+) -> anyhow::Result<usize> {
+    let jobs: Vec<J> = jobs.into_iter().collect();
+    if jobs.is_empty() {
+        return Ok(0);
+    }
+    if J::OPTIONS.lock != Lock::None {
+        // Each job takes its own lock, as sidekiq-unique-jobs' client
+        // middleware sees each pushed job.
+        let mut queued = 0;
+        for job in jobs {
+            if enqueue(state, Duration::ZERO, job).await?.is_some() {
+                queued += 1;
+            }
+        }
+        return Ok(queued);
+    }
+    let args = jobs
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<Value>, _>>()?;
+    let (max_retries, keep_dead) = retry_columns(&J::OPTIONS);
+    let ids = sqlx::query_scalar!(
+        r#"INSERT INTO eunha.jobs (queue, kind, args, max_retries, keep_dead)
+           SELECT $1, $2, a.args, $4, $5
+           FROM unnest($3::jsonb[]) WITH ORDINALITY AS a(args, n)
+           ORDER BY a.n
+           RETURNING id"#,
+        J::OPTIONS.queue.name(),
+        J::KIND,
+        &args,
+        max_retries,
+        keep_dead,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for &id in &ids {
+        wake(state, id);
+    }
+    Ok(ids.len())
+}
+
 async fn enqueue<J: Job>(state: &AppState, delay: Duration, job: J) -> anyhow::Result<Option<i64>> {
     let args = serde_json::to_value(&job)?;
     let id = insert(&state.db, J::KIND, &J::OPTIONS, &args, delay).await?;
     if let Some(id) = id {
-        state.queues.jobs.notify_one();
-        if state.jobs.mode() == Mode::Immediate {
-            let state = state.clone();
-            let running = Running::start(&state.jobs);
-            crate::tenants::spawn(async move {
-                let _running = running;
-                if let Err(error) = run_one(&state, id).await {
-                    tracing::warn!(id, %error, "could not run a job");
-                }
-            });
-        }
+        wake(state, id);
     }
     Ok(id)
+}
+
+/// Wake the job loops for job `id`, which has just been queued, or run it
+/// at once under [`Mode::Immediate`].
+fn wake(state: &AppState, id: i64) {
+    state.queues.jobs.notify_one();
+    if state.jobs.mode() == Mode::Immediate {
+        let state = state.clone();
+        let running = Running::start(&state.jobs);
+        crate::tenants::spawn(async move {
+            let _running = running;
+            if let Err(error) = run_one(&state, id).await {
+                tracing::warn!(id, %error, "could not run a job");
+            }
+        });
+    }
+}
+
+/// `max_retries` and `keep_dead` for a worker's options: `retry: false` is
+/// stored as `-1`, and never kept.
+fn retry_columns(options: &Options) -> (i32, bool) {
+    match options.retry {
+        Retry::Count(n) => (i32::try_from(n).unwrap_or(i32::MAX), options.dead),
+        Retry::Never => (-1, false),
+    }
 }
 
 /// The unique lock of a job of `kind` with `args`: sidekiq-unique-jobs'
@@ -374,10 +435,7 @@ async fn insert(
         .execute(db)
         .await?;
     }
-    let (max_retries, keep_dead) = match options.retry {
-        Retry::Count(n) => (i32::try_from(n).unwrap_or(i32::MAX), options.dead),
-        Retry::Never => (-1, false),
-    };
+    let (max_retries, keep_dead) = retry_columns(options);
     let delay = delay.as_secs_f64();
     let id = sqlx::query_scalar!(
         r#"INSERT INTO eunha.jobs

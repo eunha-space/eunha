@@ -16,7 +16,7 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are thirty-four. They cover:
+At the time of writing there are thirty-three. They cover:
 
  -  integrity proofs on outgoing activities;
  -  the invite tree, and the two ways eunha's invite API goes beyond
@@ -34,7 +34,7 @@ At the time of writing there are thirty-four. They cover:
  -  how a remote thread's replies are fetched, and how async refresh ids are
     signed;
  -  the terms of service admin API and interstitial;
- -  the data export, import and archive takeout API, and how imports are run;
+ -  the data export, import and archive takeout API;
  -  the two-factor authentication API, and where a sign-in waits for its
     second factor;
  -  the sessions, authorized apps and sign-in history API, and how a password

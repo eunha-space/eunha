@@ -2,25 +2,23 @@
 //! `bulk_imports` row and its `bulk_import_rows`, the member confirms it, and
 //! `BulkImportService` then `BulkImportRowService` carry it out, row by row.
 //!
-//! Upstream runs the rows as Sidekiq jobs (`Import::RowWorker`). Eunha runs
-//! them in [`run_queue`], a loop each instance runs, which keeps where it got
-//! to in `eunha.bulk_import_progress`: whether `BulkImportService`'s first
-//! pass is done, and the last row handled. Rows are handled in id order, so
-//! an import interrupted by a restart carries on from the row after.
+//! Both run on the job queue as upstream runs them on Sidekiq: confirming
+//! queues a [`BulkImportWorker`], whose `BulkImportService` queues an
+//! [`RowWorker`] (`Import::RowWorker`) for each row it leaves, retried six
+//! times before it counts as processed and not imported.
 //!
 //! A row that imported is deleted, as upstream deletes it; one that did not
 //! stays, which is what the failures file lists.
 
-use std::collections::HashMap;
-use std::time::Duration;
-
-use serde::Serialize;
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::csv::{self, Field};
 use crate::api::mastodon::accounts as relationships;
 use crate::db::models::Account;
 use crate::error::{AppError, AppResult};
+use crate::jobs::{Job, Options, Queue};
 use crate::state::AppState;
 
 /// `Form::Import::FILE_SIZE_LIMIT`.
@@ -41,11 +39,6 @@ const LIST_PER_ACCOUNT_LIMIT: i64 = 50;
 const LIST_TITLE_MAX: usize = 256;
 /// `CustomFilterKeyword::KEYWORD_LENGTH_LIMIT`.
 const KEYWORD_MAX: usize = 512;
-/// Rows handled before the queue moves on to another import.
-const ROWS_PER_PASS: i64 = 50;
-/// How long a claimed import stays claimed by a worker that stopped
-/// reporting progress.
-const STALE_LEASE: &str = "10 minutes";
 
 /// `BulkImport#type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -726,11 +719,7 @@ pub async fn confirm(state: &AppState, account_id: i64, id: i64) -> AppResult<Bu
     if confirmed.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    if crate::feed::sync_fanout() {
-        drain(state, Some(id)).await?;
-    } else {
-        state.queues.imports.notify_one();
-    }
+    crate::jobs::perform_async(state, BulkImportWorker { bulk_import_id: id }).await?;
     show(state, account_id, id).await
 }
 
@@ -857,118 +846,73 @@ pub async fn failures(
     Ok((filename, "text/csv", out))
 }
 
-// ── The queue ───────────────────────────────────────────────────────────
+// ── BulkImportWorker ────────────────────────────────────────────────────
 
-/// Work through confirmed imports, a batch of rows at a time, until the
-/// instance stops.
-pub async fn run_queue(state: AppState) {
-    let worker = format!("imports-{}", std::process::id());
-    let mut idle = crate::background::IdleBackoff::new(
-        Duration::from_secs(1),
-        state.config.workers.sanitized().queue_idle_poll(),
-    );
-    while !state.stop.is_cancelled() {
-        match work_once(&state, &worker, None).await {
-            Ok(true) => idle.reset(),
-            Ok(false) => idle.idle(&state.queues.imports, &state.stop).await,
-            Err(error) => {
-                tracing::error!(%error, "import queue pass failed");
-                crate::background::rest(&state.stop, Duration::from_secs(30)).await;
+/// `BulkImportWorker`: a confirmed import's first pass, `BulkImportService`,
+/// which queues a [`RowWorker`] for each row it leaves.
+#[derive(Serialize, Deserialize)]
+pub struct BulkImportWorker {
+    pub bulk_import_id: i64,
+}
+
+impl Job for BulkImportWorker {
+    const KIND: &'static str = "BulkImportWorker";
+    // `sidekiq_options queue: 'pull', retry: false`.
+    const OPTIONS: Options = Options::DEFAULT.queue(Queue::Pull).no_retry();
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        bulk_import_worker(state, self.bulk_import_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
+}
+
+/// `BulkImportWorker#perform`, then `BulkImportService#call`.
+async fn bulk_import_worker(state: &AppState, id: i64) -> AppResult<()> {
+    // `BulkImport.find`, which raises for an import that has gone.
+    let record = load_record(state, id).await?.ok_or(AppError::NotFound)?;
+    sqlx::query!(
+        "UPDATE bulk_imports SET state = $2, updated_at = now() WHERE id = $1",
+        id,
+        import_state::IN_PROGRESS,
+    )
+    .execute(&state.db)
+    .await?;
+    let result = match load_account(state, record.account_id).await {
+        Ok(Some(account)) => bulk_import_service(state, &record, &account).await,
+        Ok(None) => Err(AppError::NotFound),
+        Err(error) => Err(error),
+    };
+    match result {
+        // `processing_complete?`, of the service's own copy of the import,
+        // which counts only what the service itself settled: rows run by
+        // the jobs it queued finish the import themselves.
+        Ok(processed) => {
+            if processed == record.total_items {
+                finish(state, id).await?;
             }
+            Ok(())
+        }
+        // `rescue`: the import is finished as it stands, and the error
+        // raised again.
+        Err(error) => {
+            finish(state, id).await?;
+            Err(error)
         }
     }
 }
 
-/// Run imports — `only` the one named, if it is given — until none is
-/// left to work on. The tests, and a confirmation while background work is
-/// inline, use this in place of the queue.
-pub async fn drain(state: &AppState, only: Option<i64>) -> AppResult<()> {
-    while work_once(state, "inline", only).await? {}
-    Ok(())
-}
-
-struct Claim {
-    bulk_import_id: i64,
-    prepared: bool,
-    last_row_id: i64,
-}
-
-/// Claim one import and work a batch of its rows. Returns whether there was
-/// one to claim.
-pub async fn work_once(state: &AppState, worker: &str, only: Option<i64>) -> AppResult<bool> {
-    // An import left scheduled or in progress by Mastodon's own workers has
-    // no progress yet; its claim records how far it had got.
-    let claim = sqlx::query_as!(
-        Claim,
-        r#"INSERT INTO eunha.bulk_import_progress AS p (bulk_import_id, prepared, locked_at, locked_by)
-           SELECT b.id, b.state = 2, now(), $1
-           FROM bulk_imports b
-           LEFT JOIN eunha.bulk_import_progress q ON q.bulk_import_id = b.id
-           WHERE b.state IN (1, 2)
-             AND ($2::bigint IS NULL OR b.id = $2)
-             AND (q.locked_at IS NULL OR q.locked_at < now() - $3::text::interval)
-           ORDER BY q.updated_at NULLS FIRST, b.id
-           LIMIT 1
-           ON CONFLICT (bulk_import_id) DO UPDATE
-             SET locked_at = now(), locked_by = EXCLUDED.locked_by
-             WHERE p.locked_at IS NULL OR p.locked_at < now() - $3::text::interval
-           RETURNING p.bulk_import_id, p.prepared, p.last_row_id"#,
-        worker,
-        only,
-        STALE_LEASE,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    let Some(claim) = claim else {
-        return Ok(false);
-    };
-    let id = claim.bulk_import_id;
-    if let Err(error) = work(state, claim).await {
-        // `BulkImportService`'s `rescue`: the import is finished as it stands.
-        tracing::warn!(bulk_import_id = id, %error, "import failed");
-        finish(state, id).await?;
-    }
-    sqlx::query!(
-        "UPDATE eunha.bulk_import_progress SET locked_at = NULL, locked_by = NULL, updated_at = now()
-         WHERE bulk_import_id = $1",
-        id,
-    )
-    .execute(&state.db)
-    .await?;
-    Ok(true)
-}
-
+/// `@import.update!(state: :finished, finished_at: Time.now.utc)`.
 async fn finish(state: &AppState, id: i64) -> AppResult<()> {
     sqlx::query!(
         "UPDATE bulk_imports SET state = $2, finished_at = now(), updated_at = now()
-         WHERE id = $1 AND state <> $2",
+         WHERE id = $1",
         id,
         import_state::FINISHED,
     )
     .execute(&state.db)
     .await?;
-    sqlx::query!(
-        "DELETE FROM eunha.bulk_import_progress WHERE bulk_import_id = $1",
-        id
-    )
-    .execute(&state.db)
-    .await?;
     Ok(())
-}
-
-/// `processing_complete?`, finishing the import if it is.
-async fn finish_if_complete(state: &AppState, id: i64) -> AppResult<bool> {
-    let complete = sqlx::query_scalar!(
-        r#"SELECT processed_items >= total_items AS "complete!" FROM bulk_imports WHERE id = $1"#,
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .unwrap_or(true);
-    if complete {
-        finish(state, id).await?;
-    }
-    Ok(complete)
 }
 
 async fn load_account(state: &AppState, id: i64) -> AppResult<Option<Account>> {
@@ -979,111 +923,31 @@ async fn load_account(state: &AppState, id: i64) -> AppResult<Option<Account>> {
     )
 }
 
-async fn work(state: &AppState, claim: Claim) -> AppResult<()> {
-    let id = claim.bulk_import_id;
-    let Some(record) = load_record(state, id).await? else {
-        return Ok(());
-    };
-    let Some(account) = load_account(state, record.account_id).await? else {
-        return finish(state, id).await;
-    };
-    let import_type = record.import_type();
-
-    if !claim.prepared {
-        // `BulkImportWorker#perform`, then `BulkImportService#call`.
-        sqlx::query!(
-            "UPDATE bulk_imports SET state = $2, updated_at = now() WHERE id = $1",
-            id,
-            import_state::IN_PROGRESS,
-        )
-        .execute(&state.db)
-        .await?;
-        prepare(state, &record, &account).await?;
-        sqlx::query!(
-            "UPDATE eunha.bulk_import_progress SET prepared = true, locked_at = now()
-             WHERE bulk_import_id = $1",
-            id,
-        )
-        .execute(&state.db)
-        .await?;
-        if finish_if_complete(state, id).await? {
-            return Ok(());
-        }
-    }
-
-    let rows = sqlx::query!(
-        r#"SELECT id, data FROM bulk_import_rows
-           WHERE bulk_import_id = $1 AND id > $2 ORDER BY id LIMIT $3"#,
-        id,
-        claim.last_row_id,
-        ROWS_PER_PASS,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let exhausted = (rows.len() as i64) < ROWS_PER_PASS;
-    for row in rows {
-        let data = row.data.unwrap_or(Value::Null);
-        let imported = match import_row(state, &account, import_type, &data).await {
-            Ok(imported) => imported,
-            Err(error) => {
-                // `Import::RowWorker`'s retries running out: processed,
-                // not imported.
-                tracing::warn!(bulk_import_id = id, row_id = row.id, %error, "import row failed");
-                false
-            }
-        };
-        if record_row(state, id, row.id, imported).await? {
-            return Ok(());
-        }
-        if state.stop.is_cancelled() {
-            return Ok(());
-        }
-    }
-    if exhausted {
-        // Every row has been seen; whatever is left uncounted was never
-        // going to be.
-        finish(state, id).await?;
-    }
-    Ok(())
-}
-
-/// `Import::RowWorker#mark_as_processed!` and `BulkImport.progress!`.
-/// Returns whether that finished the import.
-async fn record_row(state: &AppState, id: i64, row_id: i64, imported: bool) -> AppResult<bool> {
-    let mut tx = state.db.begin().await?;
-    if imported {
-        sqlx::query!("DELETE FROM bulk_import_rows WHERE id = $1", row_id)
-            .execute(&mut *tx)
-            .await?;
-    }
+/// `BulkImport.progress!`: one more row processed, and imported if it was;
+/// the import is finished once as many rows have been processed as it has.
+async fn progress(state: &AppState, id: i64, imported: bool) -> AppResult<()> {
+    // `increment_counter`, atomically, as upstream does.
     let complete = sqlx::query_scalar!(
         r#"UPDATE bulk_imports
            SET processed_items = processed_items + 1,
                imported_items = imported_items + (CASE WHEN $2 THEN 1 ELSE 0 END)
            WHERE id = $1
-           RETURNING processed_items >= total_items AS "complete!""#,
+           RETURNING processed_items = total_items AS "complete!""#,
         id,
         imported,
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&state.db)
     .await?
-    .unwrap_or(true);
-    sqlx::query!(
-        "UPDATE eunha.bulk_import_progress SET last_row_id = $2, locked_at = now()
-         WHERE bulk_import_id = $1",
-        id,
-        row_id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    // `BulkImport.find`, which raises for an import that has gone.
+    .ok_or(AppError::NotFound)?;
     if complete {
         finish(state, id).await?;
     }
-    Ok(complete)
+    Ok(())
 }
 
-/// A row the first pass settled: it counts as imported, and goes.
+/// A row the first pass settled: it goes, and counts as processed and
+/// imported.
 async fn settle_row(state: &AppState, id: i64, row_id: i64) -> AppResult<()> {
     let mut tx = state.db.begin().await?;
     sqlx::query!("DELETE FROM bulk_import_rows WHERE id = $1", row_id)
@@ -1137,22 +1001,26 @@ fn data_languages(data: &Value) -> Option<Vec<String>> {
     })
 }
 
-/// `BulkImportService#extract_rows_by_acct`: the rows by handle, a local
-/// one without its domain; a repeated handle keeps its last row.
-fn rows_by_acct(state: &AppState, rows: Vec<Row>) -> HashMap<String, Row> {
+/// Ruby's `NoMethodError` for a method called on a value that is not there.
+fn undefined_method(method: &str) -> AppError {
+    AppError::Unrescued(format!("undefined method '{method}' for nil"))
+}
+
+/// `BulkImportService#extract_rows_by_acct`: `index_by` the handle, a local
+/// one without its domain. A repeated handle keeps the place of its first
+/// row and the last row itself, so the rows before it are never queued.
+fn rows_by_acct(state: &AppState, rows: Vec<Row>) -> AppResult<IndexMap<String, Row>> {
     let suffix = format!("@{}", state.instance.domain);
-    let mut map = HashMap::new();
+    let mut map = IndexMap::new();
     for row in rows {
-        let Some(acct) = data_str(&row.data, "acct") else {
-            continue;
-        };
+        let acct = data_str(&row.data, "acct").ok_or_else(|| undefined_method("delete_suffix"))?;
         let acct = acct
             .strip_suffix(suffix.as_str())
             .unwrap_or(acct)
             .to_owned();
         map.insert(acct, row);
     }
-    map
+    Ok(map)
 }
 
 /// `Account#acct`.
@@ -1163,87 +1031,108 @@ fn raw_acct(username: &str, domain: Option<&str>) -> String {
     }
 }
 
-/// `BulkImportService#call`'s work before the rows: in overwrite mode, what
-/// the file does not list is undone and what it does list is settled.
-async fn prepare(state: &AppState, record: &ImportRecord, account: &Account) -> AppResult<()> {
+/// `BulkImportService#call`'s work: in overwrite mode, what the file does
+/// not list is undone and what it does list is settled; the rows left are
+/// queued, one [`RowWorker`] each. Returns `processed_items` as the
+/// service's own copy of the import has it once it is done.
+async fn bulk_import_service(
+    state: &AppState,
+    record: &ImportRecord,
+    account: &Account,
+) -> AppResult<i32> {
     let id = record.id;
-    match record.import_type() {
-        ImportType::Following if record.overwrite => {
-            let mut rows = rows_by_acct(state, all_rows(state, id).await?);
-            let followees = sqlx::query_as!(
-                Account,
-                "SELECT a.* FROM follows f JOIN accounts a ON a.id = f.target_account_id
-                 WHERE f.account_id = $1",
-                account.id,
-            )
-            .fetch_all(&state.db)
-            .await?;
-            for followee in followees {
-                let acct = raw_acct(&followee.username, followee.domain.as_deref());
-                match rows.remove(&acct) {
-                    None => relationships::unfollow(state, account.id, followee.id, false).await?,
-                    Some(row) => {
-                        settle_row(state, id, row.id).await?;
-                        relationships::follow(
-                            state,
-                            account,
-                            &followee,
-                            relationships::FollowOptions {
-                                reblogs: data_bool(&row.data, "show_reblogs"),
-                                notify: data_bool(&row.data, "notify"),
-                                languages: data_languages(&row.data),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+    let mut processed = record.processed_items;
+    let queued: Vec<i64> = match record.import_type() {
+        ImportType::Following => {
+            let mut rows = rows_by_acct(state, all_rows(state, id).await?)?;
+            if record.overwrite {
+                let followees = sqlx::query_as!(
+                    Account,
+                    "SELECT a.* FROM follows f JOIN accounts a ON a.id = f.target_account_id
+                     WHERE f.account_id = $1",
+                    account.id,
+                )
+                .fetch_all(&state.db)
+                .await?;
+                for followee in followees {
+                    let acct = raw_acct(&followee.username, followee.domain.as_deref());
+                    match rows.shift_remove(&acct) {
+                        None => {
+                            relationships::unfollow(state, account.id, followee.id, false).await?
+                        }
+                        Some(row) => {
+                            settle_row(state, id, row.id).await?;
+                            processed += 1;
+                            relationships::follow(
+                                state,
+                                account,
+                                &followee,
+                                relationships::FollowOptions {
+                                    reblogs: data_bool(&row.data, "show_reblogs"),
+                                    notify: data_bool(&row.data, "notify"),
+                                    languages: data_languages(&row.data),
+                                    ..Default::default()
+                                },
+                            )
+                            .await?;
+                        }
                     }
                 }
             }
+            rows.values().map(|row| row.id).collect()
         }
-        ImportType::Blocking if record.overwrite => {
-            let mut rows = rows_by_acct(state, all_rows(state, id).await?);
-            let blocked = sqlx::query!(
-                "SELECT a.id, a.username, a.domain FROM blocks b
-                 JOIN accounts a ON a.id = b.target_account_id WHERE b.account_id = $1",
-                account.id,
-            )
-            .fetch_all(&state.db)
-            .await?;
-            for target in blocked {
-                match rows.remove(&raw_acct(&target.username, target.domain.as_deref())) {
-                    None => relationships::unblock(state, account.id, target.id).await?,
-                    Some(row) => {
-                        settle_row(state, id, row.id).await?;
-                        relationships::block(state, account.id, target.id).await?;
+        ImportType::Blocking => {
+            let mut rows = rows_by_acct(state, all_rows(state, id).await?)?;
+            if record.overwrite {
+                let blocked = sqlx::query!(
+                    "SELECT a.id, a.username, a.domain FROM blocks b
+                     JOIN accounts a ON a.id = b.target_account_id WHERE b.account_id = $1",
+                    account.id,
+                )
+                .fetch_all(&state.db)
+                .await?;
+                for target in blocked {
+                    match rows.shift_remove(&raw_acct(&target.username, target.domain.as_deref())) {
+                        None => relationships::unblock(state, account.id, target.id).await?,
+                        Some(row) => {
+                            settle_row(state, id, row.id).await?;
+                            processed += 1;
+                            relationships::block(state, account.id, target.id).await?;
+                        }
                     }
                 }
             }
+            rows.values().map(|row| row.id).collect()
         }
-        ImportType::Muting if record.overwrite => {
-            let mut rows = rows_by_acct(state, all_rows(state, id).await?);
-            let muted = sqlx::query!(
-                "SELECT a.id, a.username, a.domain FROM mutes m
-                 JOIN accounts a ON a.id = m.target_account_id WHERE m.account_id = $1",
-                account.id,
-            )
-            .fetch_all(&state.db)
-            .await?;
-            for target in muted {
-                match rows.remove(&raw_acct(&target.username, target.domain.as_deref())) {
-                    None => relationships::unmute(state, account.id, target.id).await?,
-                    Some(row) => {
-                        settle_row(state, id, row.id).await?;
-                        relationships::mute(
-                            state,
-                            account.id,
-                            target.id,
-                            data_bool(&row.data, "hide_notifications").unwrap_or(true),
-                            0,
-                        )
-                        .await?;
+        ImportType::Muting => {
+            let mut rows = rows_by_acct(state, all_rows(state, id).await?)?;
+            if record.overwrite {
+                let muted = sqlx::query!(
+                    "SELECT a.id, a.username, a.domain FROM mutes m
+                     JOIN accounts a ON a.id = m.target_account_id WHERE m.account_id = $1",
+                    account.id,
+                )
+                .fetch_all(&state.db)
+                .await?;
+                for target in muted {
+                    match rows.shift_remove(&raw_acct(&target.username, target.domain.as_deref())) {
+                        None => relationships::unmute(state, account.id, target.id).await?,
+                        Some(row) => {
+                            settle_row(state, id, row.id).await?;
+                            processed += 1;
+                            relationships::mute(
+                                state,
+                                account.id,
+                                target.id,
+                                data_bool(&row.data, "hide_notifications").unwrap_or(true),
+                                0,
+                            )
+                            .await?;
+                        }
                     }
                 }
             }
+            rows.values().map(|row| row.id).collect()
         }
         ImportType::DomainBlocking => {
             // `import_domain_blocks!`: no rows are queued; every domain is
@@ -1282,55 +1171,69 @@ async fn prepare(state: &AppState, record: &ImportRecord, account: &Account) -> 
             )
             .execute(&state.db)
             .await?;
+            processed = record.total_items;
+            Vec::new()
         }
-        ImportType::Bookmarks if record.overwrite => {
-            let mut rows: HashMap<String, Row> = HashMap::new();
+        ImportType::Bookmarks => {
+            // `index_by { |row| row.data['uri'] }`: a repeated post keeps
+            // only its last row, as a repeated handle does.
+            let mut rows: IndexMap<Option<String>, Row> = IndexMap::new();
             for row in all_rows(state, id).await? {
-                if let Some(uri) = data_str(&row.data, "uri") {
-                    rows.insert(uri.to_owned(), row);
-                }
+                rows.insert(data_str(&row.data, "uri").map(str::to_owned), row);
             }
-            let bookmarks = sqlx::query!(
-                r#"SELECT b.id AS bookmark_id, s.id AS "status_id?", s.uri,
-                          (s.reblog_of_id IS NOT NULL) AS "reblog?",
-                          a.id AS "account_id?", a.id_scheme, a.username AS "username?", a.domain
-                   FROM bookmarks b
-                   LEFT JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL
-                   LEFT JOIN accounts a ON a.id = s.account_id
-                   WHERE b.account_id = $1"#,
-                account.id,
-            )
-            .fetch_all(&state.db)
-            .await?;
-            for bookmark in bookmarks {
-                let uri = match (bookmark.status_id, bookmark.account_id, &bookmark.username) {
-                    (Some(status_id), Some(account_id), Some(username)) => Some(super::status_uri(
-                        state,
-                        super::StatusUriParts {
-                            status_id,
-                            uri: bookmark.uri.as_deref(),
-                            reblog: bookmark.reblog.unwrap_or(false),
-                            account_id,
-                            account_id_scheme: bookmark.id_scheme,
-                            account_username: username,
-                            account_domain: bookmark.domain.as_deref(),
-                        },
-                    )),
-                    _ => None,
-                };
-                match uri.and_then(|uri| rows.remove(&uri)) {
-                    Some(row) => settle_row(state, id, row.id).await?,
-                    None => {
-                        sqlx::query!("DELETE FROM bookmarks WHERE id = $1", bookmark.bookmark_id)
+            if record.overwrite {
+                let bookmarks = sqlx::query!(
+                    r#"SELECT b.id AS bookmark_id, s.id AS "status_id?", s.uri,
+                              (s.reblog_of_id IS NOT NULL) AS "reblog?",
+                              a.id AS "account_id?", a.id_scheme, a.username AS "username?", a.domain
+                       FROM bookmarks b
+                       LEFT JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL
+                       LEFT JOIN accounts a ON a.id = s.account_id
+                       WHERE b.account_id = $1"#,
+                    account.id,
+                )
+                .fetch_all(&state.db)
+                .await?;
+                for bookmark in bookmarks {
+                    let uri = match (bookmark.status_id, bookmark.account_id, &bookmark.username) {
+                        (Some(status_id), Some(account_id), Some(username)) => {
+                            Some(super::status_uri(
+                                state,
+                                super::StatusUriParts {
+                                    status_id,
+                                    uri: bookmark.uri.as_deref(),
+                                    reblog: bookmark.reblog.unwrap_or(false),
+                                    account_id,
+                                    account_id_scheme: bookmark.id_scheme,
+                                    account_username: username,
+                                    account_domain: bookmark.domain.as_deref(),
+                                },
+                            ))
+                        }
+                        _ => None,
+                    };
+                    match uri.and_then(|uri| rows.shift_remove(&Some(uri))) {
+                        Some(row) => {
+                            settle_row(state, id, row.id).await?;
+                            processed += 1;
+                        }
+                        None => {
+                            sqlx::query!(
+                                "DELETE FROM bookmarks WHERE id = $1",
+                                bookmark.bookmark_id
+                            )
                             .execute(&state.db)
                             .await?;
+                        }
                     }
                 }
             }
+            rows.values().map(|row| row.id).collect()
         }
         ImportType::Lists => {
+            let rows = all_rows(state, id).await?;
             let mut titles: Vec<String> = Vec::new();
-            for row in all_rows(state, id).await? {
+            for row in &rows {
                 let title = data_str(&row.data, "list_name")
                     .map(str::to_owned)
                     .ok_or_else(|| AppError::Unprocessable("Title can't be blank".into()))?;
@@ -1362,19 +1265,106 @@ async fn prepare(state: &AppState, record: &ImportRecord, account: &Account) -> 
             for title in &titles {
                 find_or_create_list(state, account.id, title).await?;
             }
+            rows.iter().map(|row| row.id).collect()
         }
-        ImportType::CustomFilters if record.overwrite => {
-            sqlx::query!(
-                "DELETE FROM custom_filters WHERE account_id = $1",
-                account.id
-            )
+        ImportType::CustomFilters => {
+            let rows = all_rows(state, id).await?;
+            if record.overwrite {
+                sqlx::query!(
+                    "DELETE FROM custom_filters WHERE account_id = $1",
+                    account.id
+                )
+                .execute(&state.db)
+                .await?;
+                crate::api::mastodon::filters::publish_filters_changed(state, account.id).await;
+            }
+            rows.iter().map(|row| row.id).collect()
+        }
+    };
+    // `Import::RowWorker.push_bulk`.
+    crate::jobs::perform_bulk(
+        state,
+        queued
+            .into_iter()
+            .map(|bulk_import_row_id| RowWorker { bulk_import_row_id }),
+    )
+    .await?;
+    Ok(processed)
+}
+
+// ── Import::RowWorker ───────────────────────────────────────────────────
+
+/// `Import::RowWorker`: one row of an import, `BulkImportRowService`.
+#[derive(Serialize, Deserialize)]
+pub struct RowWorker {
+    pub bulk_import_row_id: i64,
+}
+
+impl Job for RowWorker {
+    const KIND: &'static str = "Import::RowWorker";
+    // `sidekiq_options queue: 'pull', retry: 6, dead: false`.
+    const OPTIONS: Options = Options::DEFAULT.queue(Queue::Pull).retry(6).dead(false);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        row_worker(state, self.bulk_import_row_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
+
+    /// `sidekiq_retries_exhausted`: the row counts as processed, not
+    /// imported, and may finish its import.
+    async fn retries_exhausted(self, state: &AppState, _error: &str) {
+        let bulk_import_id = sqlx::query_scalar!(
+            "SELECT bulk_import_id FROM bulk_import_rows WHERE id = $1",
+            self.bulk_import_row_id,
+        )
+        .fetch_optional(&state.db)
+        .await;
+        let result = match bulk_import_id {
+            Ok(Some(id)) => progress(state, id, false).await,
+            Ok(None) => Ok(()),
+            Err(error) => Err(error.into()),
+        };
+        if let Err(error) = result {
+            tracing::warn!(
+                row_id = self.bulk_import_row_id,
+                %error,
+                "could not count a failed import row"
+            );
+        }
+    }
+}
+
+/// `Import::RowWorker#perform`.
+async fn row_worker(state: &AppState, row_id: i64) -> AppResult<()> {
+    let row = sqlx::query!(
+        r#"SELECT r.bulk_import_id, r.data, b.type AS "import_type", b.account_id
+           FROM bulk_import_rows r JOIN bulk_imports b ON b.id = r.bulk_import_id
+           WHERE r.id = $1"#,
+        row_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(row) = row else {
+        return Ok(());
+    };
+    let Some(account) = load_account(state, row.account_id).await? else {
+        return Ok(());
+    };
+    let import_type = ImportType::from_i32(row.import_type).unwrap_or(ImportType::Following);
+    let data = row.data.unwrap_or(Value::Null);
+    let imported = match import_row(state, &account, import_type, &data).await {
+        // `rescue ActiveRecord::RecordNotFound`.
+        Err(AppError::NotFound) => false,
+        result => result?,
+    };
+    // `mark_as_processed!`.
+    if imported {
+        sqlx::query!("DELETE FROM bulk_import_rows WHERE id = $1", row_id)
             .execute(&state.db)
             .await?;
-            crate::api::mastodon::filters::publish_filters_changed(state, account.id).await;
-        }
-        _ => {}
     }
-    Ok(())
+    progress(state, row.bulk_import_id, imported).await
 }
 
 /// `account.owned_lists.find_or_create_by!(title:)`.
@@ -1460,9 +1450,8 @@ async fn import_row(
 ) -> AppResult<bool> {
     match import_type {
         ImportType::Following | ImportType::Blocking | ImportType::Muting | ImportType::Lists => {
-            let Some(acct) = data_str(data, "acct") else {
-                return Ok(false);
-            };
+            // `domain(target_acct)` splits the handle, and raises without one.
+            let acct = data_str(data, "acct").ok_or_else(|| undefined_method("split"))?;
             let Some(target) = resolve_target(state, acct).await? else {
                 return Ok(false);
             };
@@ -1499,15 +1488,14 @@ async fn import_row(
                         )
                         .await?;
                     }
-                    return add_to_list(state, account.id, list_id, target.id).await;
+                    add_to_list(state, account.id, list_id, target.id).await?;
                 }
             }
             Ok(true)
         }
         ImportType::Bookmarks => {
-            let Some(uri) = data_str(data, "uri") else {
-                return Ok(false);
-            };
+            // `Addressable::URI.parse(nil).normalized_host` raises.
+            let uri = data_str(data, "uri").ok_or_else(|| undefined_method("normalized_host"))?;
             let local = url::Url::parse(uri).ok().is_some_and(|url| {
                 url.host_str()
                     .is_some_and(|host| host.eq_ignore_ascii_case(&state.instance.domain))
@@ -1555,14 +1543,14 @@ async fn import_row(
 
 /// `list.accounts << target`: the owner's follow of the target, or request
 /// to follow it, ties it to the list (`ListAccount#set_follow`). Not
-/// following it, or having it on the list already, fails the row as
-/// upstream's validations do.
+/// following it, or having it on the list already, raises as upstream's
+/// validations do.
 async fn add_to_list(
     state: &AppState,
     owner_id: i64,
     list_id: i64,
     target_id: i64,
-) -> AppResult<bool> {
+) -> AppResult<()> {
     let (follow_id, follow_request_id) = if owner_id == target_id {
         (None, None)
     } else {
@@ -1586,7 +1574,9 @@ async fn add_to_list(
             }
         };
         if follow_id.is_none() && follow_request_id.is_none() {
-            return Ok(false);
+            return Err(AppError::Unprocessable(
+                "Validation failed: Account must be following".into(),
+            ));
         }
         (follow_id, follow_request_id)
     };
@@ -1601,7 +1591,12 @@ async fn add_to_list(
     )
     .fetch_optional(&state.db)
     .await?;
-    Ok(inserted.is_some())
+    match inserted {
+        Some(_) => Ok(()),
+        None => Err(AppError::Unprocessable(
+            "Validation failed: Account has already been taken".into(),
+        )),
+    }
 }
 
 /// A time as Rails reads one assigned as a string: what `JSON.generate`
@@ -1614,57 +1609,161 @@ fn parse_time(value: &str) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").ok()
 }
 
-/// `BulkImportRowService`'s custom filter: the filter with its keywords,
-/// action, expiry and whichever of its posts are known here. One that
-/// `CustomFilter`'s validations refuse fails the row.
+/// What a string attribute holds once a JSON value is assigned to it: nil
+/// is blank, as is a missing value.
+fn string_attribute(value: Option<&Value>) -> String {
+    match value {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Bool(true)) => "t".into(),
+        Some(Value::Bool(false)) => "f".into(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// What a boolean attribute holds once a JSON value is assigned to it
+/// (`ActiveModel::Type::Boolean#cast`): nil for nil or an empty string.
+fn boolean_attribute(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Null => None,
+        Value::Bool(b) => Some(*b),
+        Value::String(s) if s.is_empty() => None,
+        Value::String(s) => Some(!matches!(
+            s.as_str(),
+            "0" | "f" | "F" | "false" | "FALSE" | "off" | "OFF"
+        )),
+        Value::Number(n) => Some(n.as_i64() != Some(0)),
+        _ => Some(true),
+    }
+}
+
+/// `BulkImportRowService`'s custom filter, in upstream's order: the filter
+/// is created with its title and context, then given its keywords, action,
+/// expiry and posts, and saved again. Each step that raises leaves what the
+/// steps before it saved, so a row whose action is bad leaves its filter
+/// and keywords behind, and leaves another each time it is retried.
 async fn create_filter(state: &AppState, account_id: i64, data: &Value) -> AppResult<bool> {
     use crate::api::mastodon::filters::{FILTER_TITLE_MAX, VALID_FILTER_CONTEXTS};
 
-    let title = data_str(data, "title").unwrap_or_default();
-    // `normalizes :context`.
-    let context: Vec<String> = data
-        .get("context")
-        .and_then(Value::as_array)
-        .map(|c| {
-            c.iter()
-                .filter_map(Value::as_str)
-                .map(|c| ruby_strip(c).to_owned())
-                .filter(|c| !c.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
-    let action = match data_str(data, "action") {
-        Some("warn") => crate::db::models::filter_action::WARN,
-        Some("hide") => crate::db::models::filter_action::HIDE,
-        Some("blur") => crate::db::models::filter_action::BLUR,
-        _ => return Ok(false),
+    // `@account.custom_filters.create!(title:, context:)`.
+    let title = string_attribute(data.get("title"));
+    // `normalizes :context`, which calls `strip` on every value.
+    let context: Vec<String> = match data.get("context") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|c| {
+                c.as_str()
+                    .map(|c| ruby_strip(c).to_owned())
+                    .ok_or_else(|| undefined_method("strip"))
+            })
+            .collect::<AppResult<Vec<_>>>()?
+            .into_iter()
+            .filter(|c| !c.is_empty())
+            .collect(),
+        Some(_) => return Err(undefined_method("map")),
     };
-    if ruby_strip(title).is_empty()
-        || title.chars().count() > FILTER_TITLE_MAX
-        || context.is_empty()
+    let mut errors = Vec::new();
+    if ruby_strip(&title).is_empty() {
+        errors.push("Title can't be blank".to_owned());
+    }
+    if context.is_empty() {
+        errors.push("Context can't be blank".to_owned());
+    }
+    if title.chars().count() > FILTER_TITLE_MAX {
+        errors.push(format!(
+            "Title is too long (maximum is {FILTER_TITLE_MAX} characters)"
+        ));
+    }
+    if context.is_empty()
         || context
             .iter()
             .any(|c| !VALID_FILTER_CONTEXTS.contains(&c.as_str()))
     {
-        return Ok(false);
+        errors.push("Context None or invalid context supplied".to_owned());
     }
+    if !errors.is_empty() {
+        return Err(AppError::Unprocessable(format!(
+            "Validation failed: {}",
+            errors.join(", ")
+        )));
+    }
+    let filter_id = sqlx::query_scalar!(
+        r#"INSERT INTO custom_filters (account_id, phrase, context, action, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, now(), now()) RETURNING id"#,
+        account_id,
+        title,
+        &context,
+        crate::db::models::filter_action::WARN,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let result = complete_filter(state, account_id, filter_id, data).await;
+    // `invalidate_cache!`, after each commit.
+    crate::api::mastodon::filters::publish_filters_changed(state, account_id).await;
+    result.map(|()| true)
+}
+
+/// The rest of the custom filter row, once the filter has been created.
+async fn complete_filter(
+    state: &AppState,
+    account_id: i64,
+    filter_id: i64,
+    data: &Value,
+) -> AppResult<()> {
+    // `filter.keywords = …`, which saves them at once: one that is invalid
+    // raises, and none is kept.
+    let Some(Value::Array(items)) = data.get("keywords_attributes") else {
+        return Err(undefined_method("map"));
+    };
+    let not_saved = || {
+        AppError::Unprocessable(
+            "Failed to replace keywords because one or more of the new records could not be saved."
+                .into(),
+        )
+    };
     let mut keywords = Vec::new();
-    for keyword in data
-        .get("keywords_attributes")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let text = keyword.get("keyword").and_then(Value::as_str).unwrap_or("");
-        if ruby_strip(text).is_empty() || text.chars().count() > KEYWORD_MAX {
-            return Ok(false);
+    for keyword in items {
+        let Value::Object(keyword) = keyword else {
+            return Err(not_saved());
+        };
+        let text = string_attribute(keyword.get("keyword"));
+        if ruby_strip(&text).is_empty() || text.chars().count() > KEYWORD_MAX {
+            return Err(not_saved());
         }
-        let whole_word = keyword
-            .get("whole_word")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        keywords.push((text.to_owned(), whole_word));
+        // `whole_word: nil` is written as NULL, which the column refuses.
+        let whole_word = boolean_attribute(keyword.get("whole_word")).ok_or_else(|| {
+            AppError::Unprocessable(
+                "PG::NotNullViolation: null value in column \"whole_word\"".into(),
+            )
+        })?;
+        keywords.push((text, whole_word));
     }
+    let mut tx = state.db.begin().await?;
+    for (keyword, whole_word) in keywords {
+        sqlx::query!(
+            "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at)
+             VALUES ($1, $2, $3, now(), now())",
+            filter_id,
+            keyword,
+            whole_word,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+
+    // `filter.action = @data['action'].to_sym`. The enum validates rather
+    // than raising, so a bad action is only refused when the filter is saved.
+    let action = match data.get("action") {
+        Some(Value::String(action)) => match action.as_str() {
+            "warn" => Some(crate::db::models::filter_action::WARN),
+            "hide" => Some(crate::db::models::filter_action::HIDE),
+            "blur" => Some(crate::db::models::filter_action::BLUR),
+            _ => None,
+        },
+        _ => return Err(undefined_method("to_sym")),
+    };
     let expires_at = data_str(data, "expires_at").and_then(parse_time);
 
     // `Status.where(uri: @data['statuses'])`, which finds a local post by
@@ -1683,43 +1782,51 @@ async fn create_filter(state: &AppState, account_id: i64, data: &Value) -> AppRe
             }
         }
     }
+    if !status_ids.is_empty() {
+        // `filter.statuses = …`, saved at once; `CustomFilterStatus`
+        // refuses a post the account may not see.
+        for &status_id in &status_ids {
+            if crate::api::mastodon::resolve_url::authorized_status(
+                state,
+                status_id,
+                Some(account_id),
+            )
+            .await?
+            .is_none()
+            {
+                return Err(AppError::Unprocessable(
+                    "Failed to replace statuses because one or more of the new records could not be saved."
+                        .into(),
+                ));
+            }
+        }
+        let mut tx = state.db.begin().await?;
+        for status_id in status_ids {
+            sqlx::query!(
+                "INSERT INTO custom_filter_statuses (custom_filter_id, status_id, created_at, updated_at)
+                 VALUES ($1, $2, now(), now())",
+                filter_id,
+                status_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+    }
 
-    let mut tx = state.db.begin().await?;
-    let filter_id = sqlx::query_scalar!(
-        r#"INSERT INTO custom_filters (account_id, phrase, context, action, expires_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING id"#,
-        account_id,
-        title,
-        &context,
+    // `filter.save!`.
+    let action = action.ok_or_else(|| {
+        AppError::Unprocessable("Validation failed: Action is not included in the list".into())
+    })?;
+    sqlx::query!(
+        "UPDATE custom_filters SET action = $2, expires_at = $3, updated_at = now() WHERE id = $1",
+        filter_id,
         action,
         expires_at,
     )
-    .fetch_one(&mut *tx)
+    .execute(&state.db)
     .await?;
-    for (keyword, whole_word) in keywords {
-        sqlx::query!(
-            "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at)
-             VALUES ($1, $2, $3, now(), now())",
-            filter_id,
-            keyword,
-            whole_word,
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
-    for status_id in status_ids {
-        sqlx::query!(
-            "INSERT INTO custom_filter_statuses (custom_filter_id, status_id, created_at, updated_at)
-             VALUES ($1, $2, now(), now())",
-            filter_id,
-            status_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
-    tx.commit().await?;
-    crate::api::mastodon::filters::publish_filters_changed(state, account_id).await;
-    Ok(true)
+    Ok(())
 }
 
 // ── Vacuum::ImportsVacuum ────────────────────────────────────────────────

@@ -590,34 +590,6 @@ since = "4.7.1"
 reviewed_for = "4.7.1"
 
 [[divergence]]
-id = "bulk-imports-run-in-process"
-kind = "behaviour"
-summary = "Runs a confirmed import's rows in order on eunha's own queue"
-mastodon = """
-Queues `BulkImportWorker`, then one `Import::RowWorker` Sidekiq job per row, \
-run concurrently and each retried six times before it counts as failed. \
-`BulkImportService` indexes the rows by handle or URI, so a repeated row is \
-never queued and its import never reaches `finished`. A custom filter row \
-saves the filter before its action is checked, so a bad action leaves the \
-filter behind and fails the row."""
-eunha = """
-Runs each confirmed import in an instance's import queue, a batch of rows at \
-a time, in row order, keeping its place in `eunha.bulk_import_progress` so \
-that a restart carries on from the next row. A row that errors fails at \
-once. A repeated row is run like any other, and an import whose rows have \
-all been run is finished. A custom filter row is checked whole before \
-anything is saved."""
-why = """
-An import's place, kept as one row id, survives a restart without a job per \
-row in the job queue, and running rows in order is what lets the place be \
-one row id. An import that can never finish, or a half-made filter, helps \
-nobody; upstream's retries guard against transient failures that its own \
-row service already swallows when resolving accounts."""
-evidence = "tests/integration/surfaces/portability.rs"
-since = "4.7.1"
-reviewed_for = "4.7.1"
-
-[[divergence]]
 id = "pending-sign-in-in-redis"
 kind = "behaviour"
 summary = "Keeps a sign-in waiting on its second factor in Redis, for an hour"

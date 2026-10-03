@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO custom_filters (account_id, phrase, context, action, expires_at, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), now()) RETURNING id",
+  "query": "INSERT INTO custom_filters (account_id, phrase, context, action, created_at, updated_at)\n           VALUES ($1, $2, $3, $4, now(), now()) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -14,13 +14,12 @@
         "Int8",
         "Text",
         "VarcharArray",
-        "Int4",
-        "Timestamp"
+        "Int4"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "f2951f9f7e45aa32be94d7f99207c28c09b87120942f6f8cef267d9967b2a6ff"
+  "hash": "9e9b4b0c43148149436d69e9d3ffcfc2702875d05214c288b0cfbdbbe740cd95"
 }

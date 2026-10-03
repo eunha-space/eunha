@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.id AS bookmark_id, s.id AS \"status_id?\", s.uri,\n                          (s.reblog_of_id IS NOT NULL) AS \"reblog?\",\n                          a.id AS \"account_id?\", a.id_scheme, a.username AS \"username?\", a.domain\n                   FROM bookmarks b\n                   LEFT JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL\n                   LEFT JOIN accounts a ON a.id = s.account_id\n                   WHERE b.account_id = $1",
+  "query": "SELECT b.id AS bookmark_id, s.id AS \"status_id?\", s.uri,\n                              (s.reblog_of_id IS NOT NULL) AS \"reblog?\",\n                              a.id AS \"account_id?\", a.id_scheme, a.username AS \"username?\", a.domain\n                       FROM bookmarks b\n                       LEFT JOIN statuses s ON s.id = b.status_id AND s.deleted_at IS NULL\n                       LEFT JOIN accounts a ON a.id = s.account_id\n                       WHERE b.account_id = $1",
   "describe": {
     "columns": [
       {
@@ -60,5 +60,5 @@
       true
     ]
   },
-  "hash": "36ff8781db74e06d6c55b7dc60fc7a7f8d30ba3b1f15cf564dc5cd1ecf3e2ea7"
+  "hash": "921ac6ed99c1fa512db2c93ee4be65fe4e99548312520603007aab955ac4b3ad"
 }
