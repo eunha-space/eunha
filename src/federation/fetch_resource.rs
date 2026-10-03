@@ -10,6 +10,13 @@
 //! `/@author/{id}` to people and `/ap/posts/{id}` to servers, advertising the
 //! second from the first with nothing but a `<link>` tag.
 //!
+//! Finding the alternate link is ojak's (`ojak::fetch::link_header_alternate`
+//! and `html_alternate`); which objects count, and what to do with them, is
+//! Mastodon's and stays here. The "served from elsewhere" step is not ojak's
+//! `Fetcher::lookup`: Mastodon asks the `id` again whenever it differs from
+//! where the object was served, same origin or not, with this `Accept`, and
+//! keeps the response code for `ResolveURLService`.
+//!
 //! Two follow-ups are allowed, each `terminal` — the alternate link, and an
 //! object whose `id` is not the URL it was served from — so a server cannot
 //! walk us around an unbounded chain of redirections of its own choosing.
@@ -25,13 +32,6 @@ const AS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 /// lowest possible priority, because the HTML is what carries the link to the
 /// object on servers that do not content-negotiate.
 const ACCEPT: &str = "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\", application/activity+json, text/html;q=0.1";
-
-/// `FetchResourceService::ACTIVITY_STREAM_LINK_TYPES` — the `type` an alternate
-/// link must carry for us to follow it.
-const ACTIVITY_STREAM_LINK_TYPES: [&str; 2] = [
-    "application/activity+json",
-    "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"",
-];
 
 /// `ActivityPub::FetchRemoteActorService::SUPPORTED_TYPES`.
 pub const ACTOR_TYPES: [&str; 5] = ["Application", "Group", "Organization", "Person", "Service"];
@@ -120,13 +120,13 @@ async fn process(
     }
 
     // Not ActivityPub. Follow the alternate link, if the page names one.
-    if let Some(href) = link_header_alternate(&resp.headers) {
+    if let Some(href) = ojak::fetch::link_header_alternate(&resp.headers) {
         return Box::pin(process(state, &href, true, code)).await;
     }
     if mime_type(&content_type) != "text/html" {
         return None;
     }
-    let href = html_alternate(&String::from_utf8_lossy(&resp.body), &resp.url)?;
+    let href = ojak::fetch::html_alternate(&String::from_utf8_lossy(&resp.body), &resp.url)?;
     Box::pin(process(state, &href, true, code)).await
 }
 
@@ -194,110 +194,6 @@ pub fn type_matches(json: &Value, types: &[&str]) -> bool {
             .any(|s| types.contains(&s)),
         _ => false,
     }
-}
-
-/// The href of a `Link:` header advertising the ActivityPub representation.
-fn link_header_alternate(headers: &reqwest::header::HeaderMap) -> Option<String> {
-    // Mastodon parses only the first `Link` header when several are present,
-    // and looks for `application/activity+json` across all of them before
-    // settling for the JSON-LD spelling — so the order of the types decides,
-    // not the order of the links.
-    let raw = headers.get("link")?.to_str().ok()?;
-    let links = parse_link_header(raw);
-    ACTIVITY_STREAM_LINK_TYPES.iter().find_map(|wanted| {
-        links
-            .iter()
-            .find(|link| link.rel_includes("alternate") && link.param("type") == Some(*wanted))
-            .map(|link| link.href.clone())
-    })
-}
-
-/// One entry of a `Link:` header.
-struct WebLink {
-    href: String,
-    params: Vec<(String, String)>,
-}
-
-impl WebLink {
-    fn param(&self, name: &str) -> Option<&str> {
-        self.params
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_str())
-    }
-
-    /// `rel` is a space-separated token list, so `rel="alternate me"` counts.
-    fn rel_includes(&self, token: &str) -> bool {
-        self.param("rel")
-            .is_some_and(|rel| rel.split_whitespace().any(|t| t == token))
-    }
-}
-
-/// Split a `Link:` header into its entries. Commas inside `<…>` and inside
-/// quoted parameter values do not separate entries.
-fn parse_link_header(raw: &str) -> Vec<WebLink> {
-    let mut links = Vec::new();
-    for entry in split_outside_quotes(raw, ',') {
-        let entry = entry.trim();
-        let Some(rest) = entry.strip_prefix('<') else {
-            continue;
-        };
-        let Some((href, params)) = rest.split_once('>') else {
-            continue;
-        };
-        let params = split_outside_quotes(params, ';')
-            .into_iter()
-            .filter_map(|p| {
-                let (k, v) = p.trim().split_once('=')?;
-                Some((
-                    k.trim().to_ascii_lowercase(),
-                    v.trim().trim_matches('"').to_owned(),
-                ))
-            })
-            .collect();
-        links.push(WebLink {
-            href: href.trim().to_owned(),
-            params,
-        });
-    }
-    links
-}
-
-fn split_outside_quotes(raw: &str, sep: char) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let (mut start, mut in_quotes, mut in_angles) = (0, false, false);
-    for (i, c) in raw.char_indices() {
-        match c {
-            '"' => in_quotes = !in_quotes,
-            '<' if !in_quotes => in_angles = true,
-            '>' if !in_quotes => in_angles = false,
-            c if c == sep && !in_quotes && !in_angles => {
-                parts.push(&raw[start..i]);
-                start = i + c.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    parts.push(&raw[start..]);
-    parts
-}
-
-/// The href of an HTML `<link rel="alternate">` advertising the ActivityPub
-/// representation, resolved against the page it was found on — Mastodon only
-/// ever meets absolute hrefs here, and resolving a relative one costs nothing.
-fn html_alternate(html: &str, base: &url::Url) -> Option<String> {
-    let document = scraper::Html::parse_document(html);
-    // `rel` is a token list; `~=` is the selector for "contains this token".
-    let selector = scraper::Selector::parse(r#"link[rel~="alternate"]"#).ok()?;
-    let href = document
-        .select(&selector)
-        .find(|link| {
-            link.value()
-                .attr("type")
-                .is_some_and(|t| ACTIVITY_STREAM_LINK_TYPES.contains(&t))
-        })
-        .and_then(|link| link.value().attr("href"))?;
-    base.join(href).ok().map(String::from)
 }
 
 #[cfg(test)]
@@ -396,107 +292,5 @@ mod tests {
             read_activitypub("https://a.test/1", b"<html>not json</html>"),
             ApBody::Unusable
         );
-    }
-
-    #[test]
-    fn finds_the_alternate_link_in_a_page() {
-        // The shape oeee.cafe serves: a human page for `/@author/{id}` whose
-        // only pointer to the object is this tag.
-        let html = r#"
-            <html><head>
-              <link rel="stylesheet" href="/static/style.css" type="text/css" />
-              <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
-              <link rel="alternate"
-                    type="application/activity+json"
-                    href="https://oeee.cafe/ap/posts/75fbf20d" />
-            </head><body>drawing</body></html>"#;
-        let base = url::Url::parse("https://oeee.cafe/@pokemon/75fbf20d").unwrap();
-        assert_eq!(
-            html_alternate(html, &base).as_deref(),
-            Some("https://oeee.cafe/ap/posts/75fbf20d")
-        );
-    }
-
-    #[test]
-    fn alternate_link_href_may_be_relative() {
-        let html = r#"<link rel="alternate" type="application/activity+json" href="/ap/posts/1">"#;
-        let base = url::Url::parse("https://oeee.cafe/@pokemon/1").unwrap();
-        assert_eq!(
-            html_alternate(html, &base).as_deref(),
-            Some("https://oeee.cafe/ap/posts/1")
-        );
-    }
-
-    #[test]
-    fn rel_is_a_token_list() {
-        let html =
-            r#"<link rel="me alternate" type="application/activity+json" href="https://a.test/1">"#;
-        let base = url::Url::parse("https://a.test/page").unwrap();
-        assert_eq!(
-            html_alternate(html, &base).as_deref(),
-            Some("https://a.test/1")
-        );
-    }
-
-    #[test]
-    fn a_page_naming_no_object_resolves_to_nothing() {
-        let html = r#"<html><head><title>a page</title></head></html>"#;
-        let base = url::Url::parse("https://a.test/page").unwrap();
-        assert_eq!(html_alternate(html, &base), None);
-    }
-
-    #[test]
-    fn finds_the_alternate_link_in_a_link_header() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "link",
-            r#"<https://a.test/style.css>; rel="preload", <https://a.test/ap/1>; rel="alternate"; type="application/activity+json""#
-                .parse()
-                .unwrap(),
-        );
-        assert_eq!(
-            link_header_alternate(&headers).as_deref(),
-            Some("https://a.test/ap/1")
-        );
-    }
-
-    /// `application/activity+json` wins over the JSON-LD spelling wherever each
-    /// appears in the header, because that is the order Mastodon asks in.
-    #[test]
-    fn link_header_prefers_activity_json_over_ld_json() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "link",
-            concat!(
-                r#"<https://a.test/ld>; rel="alternate"; type="application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"", "#,
-                r#"<https://a.test/ap>; rel="alternate"; type="application/activity+json""#
-            )
-            .parse()
-            .unwrap(),
-        );
-        assert_eq!(
-            link_header_alternate(&headers).as_deref(),
-            Some("https://a.test/ap")
-        );
-    }
-
-    #[test]
-    fn link_header_alternate_needs_an_activitystreams_type() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "link",
-            r#"<https://a.test/feed.xml>; rel="alternate"; type="application/rss+xml""#
-                .parse()
-                .unwrap(),
-        );
-        assert_eq!(link_header_alternate(&headers), None);
-    }
-
-    #[test]
-    fn link_header_commas_inside_quotes_do_not_split_entries() {
-        let links = parse_link_header(r#"<https://a.test/1>; rel="alternate"; title="one, two""#);
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].href, "https://a.test/1");
-        assert_eq!(links[0].param("title"), Some("one, two"));
     }
 }
