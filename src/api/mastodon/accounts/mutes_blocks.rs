@@ -89,13 +89,28 @@ pub async fn unmute_account(
 
 /// Mastodon's `UnmuteService`.
 pub async fn unmute(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
-    sqlx::query!(
+    let unmuted = sqlx::query!(
         "DELETE FROM mutes WHERE account_id = $1 AND target_account_id = $2",
         account_id,
         target_id
     )
     .execute(&state.db)
     .await?;
+    // `MergeWorker`s into the home feed and the lists holding the account,
+    // when it is followed.
+    if unmuted.rows_affected() > 0 {
+        let following = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM follows
+                              WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+            account_id,
+            target_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if following {
+            crate::home_feed::merge_into_home_and_lists(state, target_id, account_id).await;
+        }
+    }
     Ok(())
 }
 

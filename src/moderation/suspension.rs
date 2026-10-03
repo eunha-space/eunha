@@ -141,42 +141,36 @@ async fn distribute_update_actor(state: &AppState, account: &Account) -> Result<
     Ok(())
 }
 
-/// `merge_into_home_timelines!`.
+/// `merge_into_home_timelines!`: `FeedManager#merge_into_home` for each
+/// follower who signed in recently.
 async fn merge_into_home_timelines(state: &AppState, account_id: i64) -> Result<()> {
-    let followers: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT f.account_id FROM follows f
-           JOIN accounts a ON a.id = f.account_id
-           WHERE f.target_account_id = $1 AND a.domain IS NULL"#,
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
     let mut redis = state.redis.clone();
-    for follower in followers {
-        crate::feed::backfill_follow(
+    for follower in crate::feed::followers_for_local_distribution(&state.db, account_id).await {
+        crate::feed::merge_into_home(
             &mut redis,
             &state.redis_keys,
             &state.db,
-            follower,
             account_id,
+            follower,
         )
         .await;
     }
     Ok(())
 }
 
-/// `merge_into_list_timelines!`. A list feed rebuilds itself from the database
-/// when it is next read, so dropping it is the merge.
+/// `merge_into_list_timelines!`: `FeedManager#merge_into_list` for each list
+/// of `lists_for_local_distribution`.
 async fn merge_into_list_timelines(state: &AppState, account_id: i64) -> Result<()> {
-    let lists: Vec<i64> = sqlx::query_scalar!(
-        "SELECT list_id FROM list_accounts WHERE account_id = $1",
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
     let mut redis = state.redis.clone();
-    for list_id in lists {
-        crate::feed::delete_list_feed(&mut redis, &state.redis_keys, list_id).await;
+    for list_id in crate::feed::list_ids_for_local_distribution(&state.db, account_id).await {
+        crate::feed::merge_into_list(
+            &mut redis,
+            &state.redis_keys,
+            &state.db,
+            account_id,
+            list_id,
+        )
+        .await;
     }
     Ok(())
 }

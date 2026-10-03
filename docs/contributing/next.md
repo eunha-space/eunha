@@ -25,12 +25,14 @@ the fixture — its Mastodon had no Sidekiq, so the rows `unfavourite` and
 back. See [differential testing](../mastodon/differential-testing.md); the
 harness now refuses to compare without a live worker.
 
-**`/api/v1/timelines/home` answering 206 on Mastodon and 200 on eunha** has not
-been seen since. It was the same dead worker — a feed with nothing to regenerate
-it stays `regenerating?` forever. Eunha now regenerates feeds as Mastodon does
-and answers 206 while it does, so a feed rebuilding on either side can still
-show up as a difference; the harness should skip the comparison while one
-rebuilds rather than report it.
+**`/api/v1/timelines/home` answering 206 on one side and 200 on the other** is
+fixed. The first was the same dead worker — a feed with nothing to regenerate
+it stays `regenerating?` forever. The second, eunha 206 and Mastodon 200, was
+eunha's own: it regenerated any feed without an eunha-only `:populated` marker
+the first time it was read, so a new user's empty feed read as rebuilding. The
+feeds are now Mastodon's model throughout — no markers, nothing built on read,
+regenerated only for a returning user or held partial by a first follow — so
+both sides answer 200 for a new user.
 
 **The 503 on `/ap/users/:id/collections/featured` is fixed.** It was a missing
 route, not an error: under the numeric AP-ID scheme only `followers` and

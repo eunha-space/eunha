@@ -217,7 +217,7 @@ pub async fn authorize(
     .await?
     .unwrap_or(false);
     if requester_is_local {
-        crate::home_feed::enqueue_merge_into_home(state, target_id, requester_id).await;
+        crate::home_feed::merge_into_home_and_lists(state, target_id, requester_id).await;
     }
 
     Ok(Some(request.uri))

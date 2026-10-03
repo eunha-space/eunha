@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM statuses WHERE account_id = $1 AND id = ANY($2::bigint[])",
+  "query": "SELECT target_account_id FROM mutes\n             WHERE account_id = $1 AND target_account_id = ANY($2)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "target_account_id",
         "type_info": "Int8"
       }
     ],
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "87ce701d609a278c14e1d08b1a50224f8cbd606920aa1ff8f794f711977861ac"
+  "hash": "daa2ea93d97cb8e968c363e0e2705b3563a5e2141b0b17452d689ac066526fef"
 }

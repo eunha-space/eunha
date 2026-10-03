@@ -240,15 +240,8 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
         avatar,
     )
     .await;
-    let mut redis = state.redis.clone();
-    crate::feed::backfill_follow(
-        &mut redis,
-        &state.redis_keys,
-        &state.db,
-        follower_account_id,
-        target_id,
-    )
-    .await;
+    // `FollowService#direct_follow!`'s `MergeWorker`s.
+    crate::home_feed::merge_into_home_and_lists(state, target_id, follower_account_id).await;
 }
 
 // ── POST /api/v1/accounts ──────────────────────────────────────────────────

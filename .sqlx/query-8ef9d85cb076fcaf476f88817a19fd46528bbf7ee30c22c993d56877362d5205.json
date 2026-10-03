@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.account_id FROM users u\n           WHERE u.account_id = $1\n              OR (u.current_sign_in_at >= now() - make_interval(days => $2)\n                  AND EXISTS (SELECT 1 FROM follows f\n                              WHERE f.account_id = u.account_id AND f.target_account_id = $1))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8ef9d85cb076fcaf476f88817a19fd46528bbf7ee30c22c993d56877362d5205"
+}

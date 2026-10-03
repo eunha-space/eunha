@@ -575,7 +575,7 @@ async fn test_list_timeline() {
 }
 
 /// A list member's boost of a muted account is hidden from the list timeline,
-/// including on the cold DB path (first read before the feed is warmed).
+/// as the fan-out wrote it.
 #[tokio::test]
 async fn test_list_timeline_hides_boost_of_muted() {
     let ctx = TestContext::new("list-tl-mute").await;
@@ -1705,15 +1705,27 @@ async fn test_list_fanout_followed_excludes_reply_to_non_followed() {
     let _ = stranger_id;
 }
 
-// ── DB vs Redis parity tests for list timelines ───────────────────────────────
+// ── Fan-out vs regeneration for list timelines ────────────────────────────────
 //
-// Verify that the cold-start DB path and the Redis fanout path return the same
-// status IDs.  Pattern: post statuses BEFORE the first GET so they go through
-// the cold-start populate; second GET hits Redis.
+// A list feed is written by the fan-out as statuses are posted, and by
+// `RegenerationWorker` (`FeedManager#populate_list`) when its owner returns.
+// These tests read what the fan-out wrote, then drop the feed and regenerate
+// it, and check the two agree.
+
+/// The list's timeline after its feed was dropped and Alice's feeds were
+/// regenerated.
+async fn regenerated_list(ctx: &TestContext, list_id: &str) -> Vec<Value> {
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut redis = ctx.state.redis.clone();
+    eunha::feed::delete_list_feed(&mut redis, &ctx.state.redis_keys, list_id.parse().unwrap())
+        .await;
+    eunha::home_feed::regenerate(&ctx.state, alice).await;
+    list_timeline(ctx, list_id).await
+}
 
 /// Basic parity: plain posts from the list member appear on both paths.
 #[tokio::test]
-async fn test_db_and_redis_list_timelines_agree_basic() {
+async fn test_fanned_out_and_regenerated_list_timelines_agree_basic() {
     let ctx = TestContext::new("list-parity-basic").await;
     let (list_id, _) = setup_list_with_bob(&ctx, "list-parity-basic", "list").await;
 
@@ -1724,22 +1736,22 @@ async fn test_db_and_redis_list_timelines_agree_basic() {
         .post_status(&ctx.bob_token, "list parity 2", "public")
         .await;
 
-    let db_tl = list_timeline(&ctx, &list_id).await;
-    let db_ids = extract_ids(&db_tl);
-    assert!(!db_ids.is_empty(), "DB path should return statuses");
+    let fanned_tl = list_timeline(&ctx, &list_id).await;
+    let fanned_ids = extract_ids(&fanned_tl);
+    assert!(!fanned_ids.is_empty(), "the fan-out delivered the posts");
 
-    let redis_tl = list_timeline(&ctx, &list_id).await;
-    let redis_ids = extract_ids(&redis_tl);
+    let regenerated_tl = regenerated_list(&ctx, &list_id).await;
+    let regenerated_ids = extract_ids(&regenerated_tl);
 
     assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis list timeline paths must agree on basic posts"
+        fanned_ids, regenerated_ids,
+        "fanned-out and regenerated list timelines must agree on basic posts"
     );
 }
 
 /// Parity with replies_policy=none: only non-replies (and replies to list owner) appear on both paths.
 #[tokio::test]
-async fn test_db_and_redis_list_timelines_agree_replies_policy_none() {
+async fn test_fanned_out_and_regenerated_list_timelines_agree_replies_policy_none() {
     let ctx = TestContext::new("list-parity-none").await;
     let (charlie_id, charlie_token) = seed_user(
         &ctx.db,
@@ -1801,24 +1813,24 @@ async fn test_db_and_redis_list_timelines_agree_replies_policy_none() {
         &json!({"status": "bob replies to charlie parity", "visibility": "public", "in_reply_to_id": charlie_post_id}),
     ).await;
 
-    // First GET: cold-start DB path.
-    let db_tl = list_timeline(&ctx, list_id).await;
-    let db_ids = extract_ids(&db_tl);
+    // What the fan-out wrote.
+    let fanned_tl = list_timeline(&ctx, list_id).await;
+    let fanned_ids = extract_ids(&fanned_tl);
 
-    // Second GET: Redis path.
-    let redis_tl = list_timeline(&ctx, list_id).await;
-    let redis_ids = extract_ids(&redis_tl);
+    // What a regeneration writes.
+    let regenerated_tl = regenerated_list(&ctx, list_id).await;
+    let regenerated_ids = extract_ids(&regenerated_tl);
 
     assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis list timelines must agree with replies_policy=none",
+        fanned_ids, regenerated_ids,
+        "fanned-out and regenerated list timelines must agree with replies_policy=none",
     );
 }
 
 /// Parity with replies_policy=list: replies to list members appear on both paths;
 /// replies to non-members are absent from both.
 #[tokio::test]
-async fn test_db_and_redis_list_timelines_agree_replies_policy_list() {
+async fn test_fanned_out_and_regenerated_list_timelines_agree_replies_policy_list() {
     let ctx = TestContext::new("list-parity-list").await;
     let (charlie_id, charlie_token) = seed_user(
         &ctx.db,
@@ -1885,22 +1897,22 @@ async fn test_db_and_redis_list_timelines_agree_replies_policy_list() {
         &json!({"status": "bob replies to eve list parity", "visibility": "public", "in_reply_to_id": eve_post_id}),
     ).await;
 
-    let db_tl = list_timeline(&ctx, list_id).await;
-    let db_ids = extract_ids(&db_tl);
+    let fanned_tl = list_timeline(&ctx, list_id).await;
+    let fanned_ids = extract_ids(&fanned_tl);
 
-    let redis_tl = list_timeline(&ctx, list_id).await;
-    let redis_ids = extract_ids(&redis_tl);
+    let regenerated_tl = regenerated_list(&ctx, list_id).await;
+    let regenerated_ids = extract_ids(&regenerated_tl);
 
     assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis list timelines must agree with replies_policy=list",
+        fanned_ids, regenerated_ids,
+        "fanned-out and regenerated list timelines must agree with replies_policy=list",
     );
 }
 
 /// Parity with replies_policy=followed: replies to followed accounts appear on both paths;
 /// replies to non-followed accounts are absent from both.
 #[tokio::test]
-async fn test_db_and_redis_list_timelines_agree_replies_policy_followed() {
+async fn test_fanned_out_and_regenerated_list_timelines_agree_replies_policy_followed() {
     let ctx = TestContext::new("list-parity-followed").await;
     let (eve_id, eve_token) = seed_user(
         &ctx.db,
@@ -1966,22 +1978,22 @@ async fn test_db_and_redis_list_timelines_agree_replies_policy_followed() {
         &json!({"status": "bob replies to stranger parity", "visibility": "public", "in_reply_to_id": stranger_post_id}),
     ).await;
 
-    let db_tl = list_timeline(&ctx, list_id).await;
-    let db_ids = extract_ids(&db_tl);
+    let fanned_tl = list_timeline(&ctx, list_id).await;
+    let fanned_ids = extract_ids(&fanned_tl);
 
-    let redis_tl = list_timeline(&ctx, list_id).await;
-    let redis_ids = extract_ids(&redis_tl);
+    let regenerated_tl = regenerated_list(&ctx, list_id).await;
+    let regenerated_ids = extract_ids(&regenerated_tl);
 
     assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis list timelines must agree with replies_policy=followed",
+        fanned_ids, regenerated_ids,
+        "fanned-out and regenerated list timelines must agree with replies_policy=followed",
     );
     let _ = (stranger_id, eve_id, stranger_post_id);
 }
 
 // ── List timeline mute filtering ──────────────────────────────────────────────
 
-/// List timeline (DB cold-start path) hides statuses from muted accounts.
+/// The list timeline hides statuses from muted accounts.
 #[tokio::test]
 async fn test_list_timeline_hides_muted_accounts() {
     let ctx = TestContext::new("list-tl-muted").await;
@@ -2013,7 +2025,7 @@ async fn test_list_timeline_hides_muted_accounts() {
         .await;
     let status_id = status["id"].as_str().unwrap();
 
-    // Visible before mute (cold-start DB path).
+    // Visible before the mute.
     let before = list_timeline(&ctx, list_id).await;
     assert!(
         before.iter().any(|s| s["id"].as_str() == Some(status_id)),
@@ -2029,17 +2041,17 @@ async fn test_list_timeline_hides_muted_accounts() {
         )
         .await;
 
-    // Cold-start DB path: status should be hidden.
+    // Hidden once muted.
     let after = list_timeline(&ctx, list_id).await;
     assert!(
         !after.iter().any(|s| s["id"].as_str() == Some(status_id)),
-        "muted account's status should be hidden from list timeline (DB path)",
+        "muted account's status should be hidden from list timeline",
     );
 }
 
-/// DB cold-start and Redis paths agree when a list member is muted.
+/// The fan-out and a regeneration agree when a list member is muted.
 #[tokio::test]
-async fn test_db_and_redis_list_timelines_agree_with_muted_member() {
+async fn test_fanned_out_and_regenerated_list_timelines_agree_with_muted_member() {
     let ctx = TestContext::new("list-parity-mute").await;
     let (carol_id, carol_token) = seed_user(
         &ctx.db,
@@ -2094,22 +2106,22 @@ async fn test_db_and_redis_list_timelines_agree_with_muted_member() {
         .post_status(&carol_token, "carol list parity muted", "public")
         .await;
 
-    // Cold-start DB path.
-    let db_tl = list_timeline(&ctx, list_id).await;
-    let db_ids = extract_ids(&db_tl);
+    // What the fan-out wrote.
+    let fanned_tl = list_timeline(&ctx, list_id).await;
+    let fanned_ids = extract_ids(&fanned_tl);
 
-    // Redis path (feed populated from DB).
-    let redis_tl = list_timeline(&ctx, list_id).await;
-    let redis_ids = extract_ids(&redis_tl);
+    // What a regeneration writes.
+    let regenerated_tl = regenerated_list(&ctx, list_id).await;
+    let regenerated_ids = extract_ids(&regenerated_tl);
 
     assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis list timelines must agree when a muted member is present",
+        fanned_ids, regenerated_ids,
+        "fanned-out and regenerated list timelines must agree when a muted member is present",
     );
     // Carol's status must be absent from both paths.
     assert!(
-        db_ids.iter().all(|id| {
-            db_tl
+        fanned_ids.iter().all(|id| {
+            fanned_tl
                 .iter()
                 .find(|s| s["id"].as_str() == Some(id.as_str()))
                 .map(|s| s["account"]["id"].as_str() != Some(carol_id.as_str()))

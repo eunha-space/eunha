@@ -1,17 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, replies_policy FROM lists WHERE id = $1 AND account_id = $2",
+  "query": "SELECT l.id FROM lists l JOIN list_accounts la ON la.list_id = l.id\n         WHERE l.account_id = $1 AND la.account_id = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "id",
         "type_info": "Int8"
-      },
-      {
-        "ordinal": 1,
-        "name": "replies_policy",
-        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -21,9 +16,8 @@
       ]
     },
     "nullable": [
-      false,
       false
     ]
   },
-  "hash": "f8163686c1e1359522a92db483d13ab78a1ca51b6656d41031ec46fa88fabb1b"
+  "hash": "357ca5cf83c3c0c8e8b77a6a65d11612e06981ea61ad2adfc22071cd94acc9aa"
 }

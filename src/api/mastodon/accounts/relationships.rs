@@ -415,7 +415,7 @@ pub async fn follow(
     )
     .await;
 
-    crate::home_feed::enqueue_merge_into_home(state, target_id, source.id).await;
+    crate::home_feed::merge_into_home_and_lists(state, target_id, source.id).await;
 
     Ok(FollowOutcome::Followed)
 }
@@ -443,6 +443,13 @@ pub async fn unfollow(
     target_id: i64,
     skip_unmerge: bool,
 ) -> AppResult<()> {
+    // List members go with the follow, so the lists holding the followee are
+    // read first.
+    let list_ids = if skip_unmerge {
+        Vec::new()
+    } else {
+        crate::home_feed::lists_with_account(state, follower_id, target_id).await
+    };
     let deleted = sqlx::query!(
         "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
         follower_id,
@@ -480,20 +487,12 @@ pub async fn unfollow(
         cancelled.and_then(|r| r.uri)
     };
 
-    // Strip the ex-followee's posts from the home feed (Mastodon UnfollowService
-    // → FeedManager#unmerge_from_home). Only when an accepted follow was removed;
-    // a cancelled request never fanned anything out.
+    // `UnmergeWorker`s of the ex-followee's posts out of the home feed and the
+    // lists that held it. Only when an accepted follow was removed; a
+    // cancelled request never fanned anything out.
     if deleted.is_some() && !skip_unmerge {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        if feed::sync_fanout() {
-            feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, follower_id).await;
-        } else {
-            crate::tenants::spawn(async move {
-                feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, follower_id).await;
-            });
-        }
+        crate::home_feed::unmerge_from_home_and_lists(state, target_id, follower_id, list_ids)
+            .await;
     }
 
     // Send Undo(Follow) to remote target

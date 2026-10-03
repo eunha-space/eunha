@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM statuses WHERE account_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT 20",
+  "query": "SELECT id FROM statuses\n         WHERE account_id = $1 AND id = ANY($2::bigint[]) AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,13 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Int8Array"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "bf667b92fc87df56b5522ad4de0df266c0e1f428978ca1684683f43532a288ae"
+  "hash": "e9bd9b9052ad2e03ed56bc9a0a153a80118fdb57268c927c0d0b95f8488026c1"
 }

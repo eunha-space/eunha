@@ -304,14 +304,13 @@ async fn test_home_timeline_excludes_non_followed_accounts() {
     );
 }
 
-/// Unfollowing strips the ex-followee's posts from the already-populated home
-/// feed (Mastodon UnfollowService → FeedManager#unmerge_from_home), rather than
-/// leaving them cached until the next full repopulate.
+/// Unfollowing strips the ex-followee's posts from the home feed (Mastodon
+/// UnfollowService → `UnmergeWorker` → FeedManager#unmerge_from_home).
 #[tokio::test]
 async fn test_unfollow_removes_posts_from_home_timeline() {
     let ctx = TestContext::new("home-unmerge").await;
 
-    // Alice follows Bob; Bob posts; Alice's home feed gets populated with it.
+    // Alice follows Bob; Bob posts; the fan-out puts it in Alice's feed.
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
     let status = ctx
         .api
@@ -1996,34 +1995,26 @@ async fn test_public_timeline_excludes_reply_with_deleted_parent() {
     );
 }
 
-// ── Redis fan-out tests ────────────────────────────────────────────────────────
+// ── Fan-out tests ──────────────────────────────────────────────────────────────
 
-/// Fan-out: a new status from a followed account is delivered to an already-initialized feed.
-///
-/// The first GET initializes the Redis feed (cold-start populate). The subsequent
-/// post should be pushed via fan-out so the second GET sees it without a DB query.
+/// Fan-out: a new status from a followed account is delivered to the
+/// follower's feed.
 #[tokio::test]
-async fn test_fanout_delivers_new_status_to_initialized_feed() {
+async fn test_fanout_delivers_new_status_to_a_followers_feed() {
     let ctx = TestContext::new("fanout-deliver").await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
 
-    // Initialize Alice's home feed; wait for the background feed_populate to finish.
-    let _ = ctx.api.home_timeline(&ctx.alice_token).await;
-
-    // Bob posts after Alice's feed is initialized.
     let status = ctx
         .api
         .post_status(&ctx.bob_token, "fanout test post", "public")
         .await;
     let status_id = status["id"].as_str().unwrap();
 
-    // Give the async fan-out task time to complete.
-
     let home = ctx.api.home_timeline(&ctx.alice_token).await;
     assert!(
         home.iter().any(|s| s["id"].as_str() == Some(status_id)),
-        "fan-out should deliver Bob's new post to Alice's initialized feed",
+        "fan-out should deliver Bob's new post to Alice's feed",
     );
 }
 
@@ -2033,9 +2024,6 @@ async fn test_fanout_removes_deleted_status_from_feed() {
     let ctx = TestContext::new("fanout-remove").await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
-
-    // Initialize Alice's home feed; wait for the background feed_populate to finish.
-    let _ = ctx.api.home_timeline(&ctx.alice_token).await;
 
     // Bob posts; fan-out delivers it to Alice.
     let status = ctx
@@ -2062,9 +2050,10 @@ async fn test_fanout_removes_deleted_status_from_feed() {
     );
 }
 
-/// Backfill on follow: following someone after their posts were made adds recent posts to the feed.
+/// `MergeWorker` on follow: following someone after their posts were made
+/// merges their recent posts into the feed.
 #[tokio::test]
-async fn test_backfill_on_follow_adds_recent_posts_to_initialized_feed() {
+async fn test_follow_merges_recent_posts_into_the_feed() {
     let ctx = TestContext::new("fanout-backfill").await;
 
     // Bob posts before Alice follows him.
@@ -2074,46 +2063,63 @@ async fn test_backfill_on_follow_adds_recent_posts_to_initialized_feed() {
         .await;
     let status_id = status["id"].as_str().unwrap();
 
-    // Initialize Alice's home feed (cold start with no follows).
-    let _ = ctx.api.home_timeline(&ctx.alice_token).await;
+    let home = ctx.api.home_timeline(&ctx.alice_token).await;
+    assert!(home.is_empty());
 
-    // Alice follows Bob; backfill should add Bob's recent posts.
+    // Alice follows Bob; the merge adds Bob's recent posts.
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
 
     let home = ctx.api.home_timeline(&ctx.alice_token).await;
     assert!(
         home.iter().any(|s| s["id"].as_str() == Some(status_id)),
-        "backfill on follow should add Bob's pre-follow posts to Alice's initialized feed",
+        "the follow should merge Bob's pre-follow posts into Alice's feed",
     );
 }
 
-/// Fan-out skips accounts with uninitialized feeds (never loaded home timeline).
-/// The status still appears via DB cold-start when the feed is first loaded.
+/// `push_to_home` skips a follower who has not signed in recently, and
+/// reading the feed afterwards does not rebuild it: only a regeneration
+/// would, and a first sign-in is not a return.
 #[tokio::test]
-async fn test_fanout_skips_uninitialized_feed_but_db_fallback_works() {
+async fn test_fanout_skips_a_follower_who_has_not_signed_in_recently() {
     let ctx = TestContext::new("fanout-uninit").await;
 
-    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    // Alice follows Bob without a request of her own, so she has never
+    // signed in.
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
 
-    // Alice never loads her home timeline → feed is uninitialized.
-    // Bob posts → fan-out skips Alice (feed not initialized).
     let status = ctx
         .api
-        .post_status(&ctx.bob_token, "post to uninitialized feed", "public")
+        .post_status(&ctx.bob_token, "post to a follower away", "public")
         .await;
     let status_id = status["id"].as_str().unwrap();
 
-    // Alice loads home timeline → cold-start DB populate, status appears.
     let home = ctx.api.home_timeline(&ctx.alice_token).await;
     assert!(
-        home.iter().any(|s| s["id"].as_str() == Some(status_id)),
-        "cold-start DB fallback should include Bob's post even though fan-out was skipped",
+        !home.iter().any(|s| s["id"].as_str() == Some(status_id)),
+        "the fan-out skipped Alice, and reading the feed did not fill it",
     );
+
+    // Signed in now, she is fanned out to.
+    let next = ctx
+        .api
+        .post_status(&ctx.bob_token, "post to a follower back", "public")
+        .await;
+    let next_id = next["id"].as_str().unwrap();
+    let home = ctx.api.home_timeline(&ctx.alice_token).await;
+    assert!(home.iter().any(|s| s["id"].as_str() == Some(next_id)));
 }
 
-/// Hashtag fan-out: a public status with a followed tag reaches a non-follower's initialized feed.
+/// Hashtag fan-out: a public status with a followed tag reaches a non-follower's feed.
 #[tokio::test]
-async fn test_fanout_hashtag_delivers_to_initialized_feed() {
+async fn test_fanout_hashtag_delivers_to_a_tag_followers_feed() {
     let ctx = TestContext::new("fanout-hashtag").await;
 
     // Alice follows #fanouthashtag, not Bob.
@@ -2125,9 +2131,6 @@ async fn test_fanout_hashtag_delivers_to_initialized_feed() {
         )
         .await;
 
-    // Initialize Alice's home feed; wait for the background feed_populate to finish.
-    let _ = ctx.api.home_timeline(&ctx.alice_token).await;
-
     // Bob posts with the followed hashtag.
     let status = ctx
         .api
@@ -2138,7 +2141,7 @@ async fn test_fanout_hashtag_delivers_to_initialized_feed() {
     let home = ctx.api.home_timeline(&ctx.alice_token).await;
     assert!(
         home.iter().any(|s| s["id"].as_str() == Some(status_id)),
-        "hashtag fan-out should deliver Bob's public post to Alice's initialized feed",
+        "hashtag fan-out should deliver Bob's public post to Alice's feed",
     );
 }
 
@@ -2355,15 +2358,15 @@ async fn test_home_timeline_excludes_statuses_from_exclusive_list_members() {
     );
 }
 
-// ── DB vs Redis parity tests ───────────────────────────────────────────────────
+// ── Fan-out vs regeneration ────────────────────────────────────────────────────
 //
-// These tests verify that the query-based (cold-start DB) home timeline and the
-// Redis fan-out home timeline produce identical results.  For each scenario:
-//
-//   1. Post statuses so they exist in the DB.
-//   2. First GET → cold-start DB path (populates Redis in background).
-//   3. Second GET → Redis path.
-//   4. Assert both responses contain the same status IDs.
+// A home feed is written two ways: by the fan-out as statuses are posted, and
+// by `RegenerationWorker` (`FeedManager#populate_home`) when a returning user's
+// feed is rebuilt. These tests read the feed the fan-out wrote, then drop it
+// and regenerate it, and compare: the two agree, except where Mastodon's do
+// not — a regeneration reads only public, unlisted and private statuses of
+// the accounts followed, so neither direct messages nor followed hashtags'
+// statuses come back.
 
 fn extract_ids(timeline: &[Value]) -> std::collections::HashSet<String> {
     timeline
@@ -2372,14 +2375,23 @@ fn extract_ids(timeline: &[Value]) -> std::collections::HashSet<String> {
         .collect()
 }
 
-/// Basic parity: own posts and followed-account posts appear in both paths.
+/// Alice's home timeline after her feed was dropped, as the vacuum drops it,
+/// and regenerated.
+async fn regenerated_home(ctx: &TestContext) -> Vec<Value> {
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut redis = ctx.state.redis.clone();
+    eunha::feed::delete_home_feed(&mut redis, &ctx.state.redis_keys, alice).await;
+    eunha::home_feed::regenerate(&ctx.state, alice).await;
+    ctx.api.home_timeline(&ctx.alice_token).await
+}
+
+/// Own posts and followed accounts' posts come back from a regeneration.
 #[tokio::test]
-async fn test_db_and_redis_home_timelines_agree_on_followed_posts() {
+async fn test_fanned_out_and_regenerated_home_timelines_agree_on_followed_posts() {
     let ctx = TestContext::new("parity-basic").await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
 
-    // Bob posts a few statuses before Alice ever loads her timeline.
     ctx.api
         .post_status(&ctx.bob_token, "parity post 1", "public")
         .await;
@@ -2390,26 +2402,16 @@ async fn test_db_and_redis_home_timelines_agree_on_followed_posts() {
         .post_status(&ctx.alice_token, "alice own post", "public")
         .await;
 
-    // First GET: cold-start DB path.
-    let db_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let db_ids = extract_ids(&db_timeline);
-    assert!(!db_ids.is_empty(), "DB path should return statuses");
+    let fanned = extract_ids(&ctx.api.home_timeline(&ctx.alice_token).await);
+    assert_eq!(fanned.len(), 3, "the fan-out delivered all three");
 
-    // Wait for background feed_populate to finish.
-
-    // Second GET: Redis fan-out path.
-    let redis_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let redis_ids = extract_ids(&redis_timeline);
-
-    assert_eq!(
-        db_ids, redis_ids,
-        "DB-path and Redis-path home timelines must return the same status IDs",
-    );
+    let regenerated = extract_ids(&regenerated_home(&ctx).await);
+    assert_eq!(fanned, regenerated);
 }
 
-/// Parity with blocks: muted accounts are excluded on both paths.
+/// A muted account's posts are absent either way.
 #[tokio::test]
-async fn test_db_and_redis_home_timelines_agree_with_muted_accounts() {
+async fn test_fanned_out_and_regenerated_home_timelines_agree_with_muted_accounts() {
     let ctx = TestContext::new("parity-mute").await;
 
     let (carol_id, carol_token) =
@@ -2434,35 +2436,30 @@ async fn test_db_and_redis_home_timelines_agree_with_muted_accounts() {
         .await;
 
     // Both Bob and Carol post.
-    ctx.api
+    let bob_status = ctx
+        .api
         .post_status(&ctx.bob_token, "bob parity post", "public")
         .await;
-    ctx.api
+    let carol_status = ctx
+        .api
         .post_status(&carol_token, "carol muted post", "public")
         .await;
+    let bob_status_id = bob_status["id"].as_str().unwrap().to_owned();
+    let carol_status_id = carol_status["id"].as_str().unwrap().to_owned();
 
-    // Cold-start DB path.
-    let db_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let db_ids = extract_ids(&db_timeline);
+    let fanned = extract_ids(&ctx.api.home_timeline(&ctx.alice_token).await);
+    assert!(fanned.contains(&bob_status_id));
+    assert!(!fanned.contains(&carol_status_id), "Carol is muted");
 
-    // Redis path.
-    let redis_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let redis_ids = extract_ids(&redis_timeline);
-
-    assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis paths must agree when muted accounts are present",
-    );
-    // Carol's status should be absent from both (muted).
-    let carol_status_in_any = db_ids.iter().any(|_| false); // placeholder
-    let _ = carol_status_in_any;
-    let _ = carol_token;
+    let regenerated = extract_ids(&regenerated_home(&ctx).await);
+    assert_eq!(fanned, regenerated);
 }
 
-/// Parity with hashtag follows: followed-tag statuses from non-followed accounts
-/// appear in both paths.
+/// A followed hashtag's status from an account not followed is fanned out,
+/// and does not come back from a regeneration, which reads only the accounts
+/// followed.
 #[tokio::test]
-async fn test_db_and_redis_home_timelines_agree_with_hashtag_follows() {
+async fn test_a_followed_hashtags_status_is_fanned_out_but_not_regenerated() {
     let ctx = TestContext::new("parity-hashtag").await;
 
     // Alice follows #paritytest but NOT Bob.
@@ -2474,37 +2471,26 @@ async fn test_db_and_redis_home_timelines_agree_with_hashtag_follows() {
         )
         .await;
 
-    // Bob posts with the followed tag before Alice loads her timeline.
     let tagged = ctx
         .api
         .post_status(&ctx.bob_token, "tagged #paritytest post", "public")
         .await;
     let tagged_id = tagged["id"].as_str().unwrap().to_owned();
 
-    // Brief pause to let the hashtag extraction write commit under parallel test load.
-
-    // Cold-start DB path.
-    let db_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let db_ids = extract_ids(&db_timeline);
+    let fanned = extract_ids(&ctx.api.home_timeline(&ctx.alice_token).await);
     assert!(
-        db_ids.contains(&tagged_id),
-        "DB path must include hashtag-followed status"
+        fanned.contains(&tagged_id),
+        "the fan-out delivers a followed hashtag's status"
     );
 
-    // Redis path (feed populated from DB, should contain the tagged status).
-    let redis_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let redis_ids = extract_ids(&redis_timeline);
-
-    assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis paths must agree when hashtag follows are involved",
-    );
+    let regenerated = extract_ids(&regenerated_home(&ctx).await);
+    assert!(!regenerated.contains(&tagged_id));
 }
 
-/// Parity with visibility: private statuses from followed accounts appear in
-/// both the DB and Redis paths.
+/// Public, unlisted and private statuses of an account followed come back
+/// from a regeneration.
 #[tokio::test]
-async fn test_db_and_redis_home_timelines_agree_on_visibility() {
+async fn test_fanned_out_and_regenerated_home_timelines_agree_on_visibility() {
     let ctx = TestContext::new("parity-visibility").await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
@@ -2526,36 +2512,20 @@ async fn test_db_and_redis_home_timelines_agree_on_visibility() {
     let unl_id = unl_s["id"].as_str().unwrap().to_owned();
     let prv_id = prv_s["id"].as_str().unwrap().to_owned();
 
-    // Cold-start DB path.
-    let db_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let db_ids = extract_ids(&db_timeline);
-    assert!(
-        db_ids.contains(&pub_id),
-        "DB path must include public status"
-    );
-    assert!(
-        db_ids.contains(&unl_id),
-        "DB path must include unlisted status"
-    );
-    assert!(
-        db_ids.contains(&prv_id),
-        "DB path must include private status from followee"
-    );
+    let fanned = extract_ids(&ctx.api.home_timeline(&ctx.alice_token).await);
+    assert!(fanned.contains(&pub_id), "public status fanned out");
+    assert!(fanned.contains(&unl_id), "unlisted status fanned out");
+    assert!(fanned.contains(&prv_id), "private status fanned out");
 
-    // Redis path.
-    let redis_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let redis_ids = extract_ids(&redis_timeline);
-
-    assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis paths must include the same statuses across all visibility levels",
-    );
+    let regenerated = extract_ids(&regenerated_home(&ctx).await);
+    assert_eq!(fanned, regenerated);
 }
 
-/// Parity: direct messages addressed to the viewer appear in both paths;
-/// unaddressed DMs are absent from both.
+/// A direct message to the viewer is fanned out to them, and one to no one
+/// else is not; neither comes back from a regeneration, which reads no
+/// direct messages.
 #[tokio::test]
-async fn test_db_and_redis_home_timelines_agree_on_direct_messages() {
+async fn test_a_direct_message_is_fanned_out_but_not_regenerated() {
     let ctx = TestContext::new("parity-direct").await;
 
     ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
@@ -2580,26 +2550,19 @@ async fn test_db_and_redis_home_timelines_agree_on_direct_messages() {
         .await;
     let unaddressed_id = unaddressed["id"].as_str().unwrap().to_owned();
 
-    // Cold-start DB path.
-    let db_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let db_ids = extract_ids(&db_timeline);
+    let fanned = extract_ids(&ctx.api.home_timeline(&ctx.alice_token).await);
     assert!(
-        db_ids.contains(&addressed_id),
-        "DB path must include DM addressed to viewer"
+        fanned.contains(&addressed_id),
+        "a DM addressed to the viewer is fanned out to them"
     );
     assert!(
-        !db_ids.contains(&unaddressed_id),
-        "DB path must exclude unaddressed DM"
+        !fanned.contains(&unaddressed_id),
+        "an unaddressed DM is not"
     );
 
-    // Redis path.
-    let redis_timeline = ctx.api.home_timeline(&ctx.alice_token).await;
-    let redis_ids = extract_ids(&redis_timeline);
-
-    assert_eq!(
-        db_ids, redis_ids,
-        "DB and Redis paths must agree on direct message visibility",
-    );
+    let regenerated = extract_ids(&regenerated_home(&ctx).await);
+    assert!(!regenerated.contains(&addressed_id));
+    assert!(!regenerated.contains(&unaddressed_id));
 }
 
 /// GET /api/v1/timelines/list/:id returns 404 when list belongs to a different user.

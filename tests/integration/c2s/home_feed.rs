@@ -1,6 +1,6 @@
 //! Home feed regeneration: `HomeFeed#regenerating?`, `User#regenerate_feed!`
 //! on a returning user's sign-in, `FollowService#mark_home_feed_as_partial!`
-//! and `Vacuum::FeedsVacuum`.
+//! and `Vacuum::FeedsVacuum`; and that reading a feed never fills it.
 
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -27,7 +27,7 @@ async fn feed_holds(ctx: &TestContext, status_id: &str) -> bool {
 async fn feed_exists(ctx: &TestContext) -> bool {
     let mut redis = ctx.state.redis.clone();
     let exists: i64 = redis::cmd("EXISTS")
-        .arg(home_key(ctx, ":populated"))
+        .arg(home_key(ctx, ""))
         .query_async(&mut redis)
         .await
         .unwrap();
@@ -265,4 +265,110 @@ async fn test_a_first_follow_leaves_the_feed_partial_until_merged() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(contents(&body).iter().any(|t| t.contains("locked away")));
+}
+
+/// A new account's home feed is empty, and reading it answers `200` with
+/// nothing in it: `HomeController#show` regenerates nothing, and only a
+/// running regeneration makes the answer partial.
+#[tokio::test]
+async fn test_an_empty_feed_is_read_as_it_is() {
+    let ctx = TestContext::new("home-feed-empty").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let resp = ctx
+        .api
+        .get("/api/v1/timelines/home", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().get("mastodon-async-refresh").is_none());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body, serde_json::json!([]));
+    assert!(!feed_exists(&ctx).await, "reading built nothing");
+    let refresh = eunha::home_feed::async_refresh(&ctx.state, alice).await;
+    assert!(!refresh.is_running() && !refresh.is_finished());
+}
+
+/// A feed Redis lost is not rebuilt by reading it: what was in it is gone
+/// until a regeneration, and what is posted from then on goes in.
+#[tokio::test]
+async fn test_a_lost_feed_is_not_rebuilt_by_reading_it() {
+    let ctx = TestContext::new("home-feed-lost").await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    let lost = ctx
+        .api
+        .post_status(&ctx.bob_token, "lost with the feed", "public")
+        .await;
+    assert!(feed_holds(&ctx, lost["id"].as_str().unwrap()).await);
+    let mut redis = ctx.state.redis.clone();
+    let _: () = redis::cmd("DEL")
+        .arg(home_key(&ctx, ""))
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+
+    let resp = ctx
+        .api
+        .get("/api/v1/timelines/home", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body, serde_json::json!([]));
+
+    let after = ctx
+        .api
+        .post_status(&ctx.bob_token, "after the loss", "public")
+        .await;
+    assert!(feed_holds(&ctx, after["id"].as_str().unwrap()).await);
+    let body: Value = ctx
+        .api
+        .get("/api/v1/timelines/home", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(contents(&body).len(), 1);
+    assert!(contents(&body)[0].contains("after the loss"));
+}
+
+/// A feed another process built under Mastodon's keys alone is read and fed
+/// as eunha's own: there is nothing else to mark it.
+#[tokio::test]
+async fn test_a_feed_built_elsewhere_is_fed_and_read() {
+    let ctx = TestContext::new("home-feed-shared").await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    let older = ctx
+        .api
+        .post_status(&ctx.bob_token, "built elsewhere", "public")
+        .await;
+    let older_id: i64 = older["id"].as_str().unwrap().parse().unwrap();
+    // Rebuild the feed as a Mastodon sharing the Redis would leave it.
+    let mut redis = ctx.state.redis.clone();
+    let _: () = redis::cmd("DEL")
+        .arg(home_key(&ctx, ""))
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("ZADD")
+        .arg(home_key(&ctx, ""))
+        .arg(older_id)
+        .arg(older_id)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+
+    let newer = ctx
+        .api
+        .post_status(&ctx.bob_token, "fanned out here", "public")
+        .await;
+    assert!(feed_holds(&ctx, newer["id"].as_str().unwrap()).await);
+    let body: Value = ctx
+        .api
+        .get("/api/v1/timelines/home", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let texts = contents(&body);
+    assert_eq!(texts.len(), 2, "{texts:?}");
+    assert!(texts[0].contains("fanned out here"));
+    assert!(texts[1].contains("built elsewhere"));
 }

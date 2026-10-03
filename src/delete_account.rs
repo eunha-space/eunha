@@ -195,17 +195,11 @@ async fn create_deletion_request(
 /// `StatusPolicy#show?`) — so the work here is clearing it out of the caches
 /// that would otherwise keep serving it.
 pub async fn suspend_side_effects(state: &AppState, account_id: i64) -> Result<()> {
-    // `unmerge_from_home_timelines!`
-    let followers: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT f.account_id FROM follows f
-           JOIN accounts a ON a.id = f.account_id
-           WHERE f.target_account_id = $1 AND a.domain IS NULL"#,
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    // `unmerge_from_home_timelines!` and `unmerge_from_list_timelines!`, for
+    // the followers who signed in recently and the lists of
+    // `lists_for_local_distribution`.
     let mut redis = state.redis.clone();
-    for follower in followers {
+    for follower in crate::feed::followers_for_local_distribution(&state.db, account_id).await {
         crate::feed::unmerge_from_home(
             &mut redis,
             &state.redis_keys,
@@ -215,18 +209,15 @@ pub async fn suspend_side_effects(state: &AppState, account_id: i64) -> Result<(
         )
         .await;
     }
-
-    // `unmerge_from_list_timelines!`. Dropping the cached feed is enough: it is
-    // repopulated from the database on the next read, which skips suspended
-    // authors.
-    let lists: Vec<i64> = sqlx::query_scalar!(
-        "SELECT list_id FROM list_accounts WHERE account_id = $1",
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    for list_id in lists {
-        crate::feed::delete_list_feed(&mut redis, &state.redis_keys, list_id).await;
+    for list_id in crate::feed::list_ids_for_local_distribution(&state.db, account_id).await {
+        crate::feed::unmerge_from_list(
+            &mut redis,
+            &state.redis_keys,
+            &state.db,
+            account_id,
+            list_id,
+        )
+        .await;
     }
 
     // `remove_from_trends!`

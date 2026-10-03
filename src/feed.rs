@@ -1,11 +1,32 @@
+//! Mastodon's `FeedManager`: the home and list feeds kept in Redis.
+//!
+//! The keys are Mastodon's, under the instance's key prefix, so that a feed
+//! one process built is the feed the other reads:
+//!
+//!  -  `feed:home:<account id>` and `feed:list:<list id>`, sorted sets of
+//!     status ids scored by the id;
+//!  -  `<feed>:reblogs`, the boosted posts with a boost in the feed, scored by
+//!     that boost;
+//!  -  `<feed>:reblogs:<boosted id>`, a set of the other boosts of one post
+//!     held back while the first is in the feed.
+//!
+//! A feed exists only for a user who signed in recently
+//! (`User.signed_in_recently`): the fan-out and the merges skip everyone
+//! else, the daily vacuum removes their feeds, and the feed is rebuilt only
+//! by `RegenerationWorker` ([`crate::home_feed`]), which `User#regenerate_feed!`
+//! queues for a returning user. An empty feed is an empty feed: reading one
+//! never fills it.
+
 use crate::redis_keys::RedisKeyspace;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::PgPool;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// `FeedManager::MAX_ITEMS`.
 const FEED_MAX_ITEMS: isize = 800;
 
-// When true, fanout/populate/backfill run inline (no tokio::spawn).
+// When true, fanout/populate/merge run inline (no task, no queued job).
 // Set by integration tests to eliminate timing races.
 static SYNC_FANOUT: AtomicBool = AtomicBool::new(false);
 
@@ -18,7 +39,11 @@ pub fn sync_fanout() -> bool {
 }
 
 fn feed_key(keys: &RedisKeyspace, account_id: i64) -> String {
-    keys.key(format!("feed:home:{}", account_id))
+    keys.key(format!("feed:home:{account_id}"))
+}
+
+fn list_feed_key(keys: &RedisKeyspace, list_id: i64) -> String {
+    keys.key(format!("feed:list:{list_id}"))
 }
 
 // ── Reblog aggregation ────────────────────────────────────────────────────
@@ -64,7 +89,7 @@ pub fn aggregates_reblogs(settings: Option<&str>) -> bool {
 
 /// [`aggregates_reblogs`] for each of `account_ids` that has a user who
 /// turned it off.
-async fn not_aggregating(db: &PgPool, account_ids: &[i64]) -> std::collections::HashSet<i64> {
+async fn not_aggregating(db: &PgPool, account_ids: &[i64]) -> HashSet<i64> {
     sqlx::query!(
         "SELECT account_id, settings FROM users WHERE account_id = ANY($1)",
         account_ids,
@@ -78,8 +103,15 @@ async fn not_aggregating(db: &PgPool, account_ids: &[i64]) -> std::collections::
     .collect()
 }
 
+/// `account.user&.aggregates_reblogs?` for one account.
+async fn aggregates(db: &PgPool, account_id: i64) -> bool {
+    !not_aggregating(db, &[account_id])
+        .await
+        .contains(&account_id)
+}
+
 /// The `reblog_of_id` of each of `ids` that is a boost.
-async fn reblogs_of(db: &PgPool, ids: &[i64]) -> std::collections::HashMap<i64, i64> {
+async fn reblogs_of(db: &PgPool, ids: &[i64]) -> HashMap<i64, i64> {
     sqlx::query!(
         r#"SELECT id, reblog_of_id AS "reblog_of_id!" FROM statuses
            WHERE id = ANY($1) AND reblog_of_id IS NOT NULL"#,
@@ -271,15 +303,550 @@ async fn push(
     }
 }
 
+/// `redis.zcard(timeline_key)`.
+async fn timeline_size(redis: &mut ConnectionManager, timeline: &Timeline) -> i64 {
+    redis.zcard(&timeline.key).await.unwrap_or(0)
+}
+
+/// `redis.zrange(timeline_key, 0, 0, with_scores: true).first.last.to_i`:
+/// the score of the oldest entry, as Mastodon reads it (a float, truncated).
+async fn oldest_score(redis: &mut ConnectionManager, timeline: &Timeline) -> Option<i64> {
+    let oldest: Vec<(i64, f64)> = redis
+        .zrange_withscores(&timeline.key, 0, 0)
+        .await
+        .unwrap_or_default();
+    oldest.first().map(|(_, score)| *score as i64)
+}
+
+/// `Mastodon::Snowflake.id_at(timestamp, with_random: false)`; a missing
+/// timestamp is nought, as `nil.to_i` is.
+fn id_at(timestamp: Option<chrono::NaiveDateTime>) -> i64 {
+    (timestamp.map_or(0, |t| t.and_utc().timestamp()) * 1000) << 16
+}
+
+// ── Filtering (`FeedManager#filter_from_home`) ────────────────────────────
+
+/// A status as `FeedManager#filter_from_home` reads it.
+struct Candidate {
+    id: i64,
+    account_id: i64,
+    reply: bool,
+    in_reply_to_id: Option<i64>,
+    in_reply_to_account_id: Option<i64>,
+    language: Option<String>,
+    reblog_of_id: Option<i64>,
+    /// The boosted status, when it is kept: its author and their domain.
+    reblog: Option<(i64, Option<String>)>,
+}
+
+/// Which feed a status is being filtered for: the home feed, or a list (its
+/// id and `replies_policy`).
+#[derive(Clone, Copy)]
+enum Receiver {
+    Home,
+    List { id: i64, replies_policy: i32 },
+}
+
+/// `account.statuses.list_eligible_visibility.includes(reblog: :account)`,
+/// newest first: `limit` of `account_id`'s kept public, unlisted and private
+/// statuses, those newer than `after` when it is given.
+async fn eligible_statuses(
+    db: &PgPool,
+    account_id: i64,
+    after: Option<i64>,
+    limit: i64,
+) -> Vec<Candidate> {
+    sqlx::query!(
+        r#"SELECT s.id, s.account_id, s.reply, s.in_reply_to_id, s.in_reply_to_account_id,
+                  s.language, s.reblog_of_id,
+                  r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?"
+           FROM statuses s
+           LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
+           LEFT JOIN accounts ra ON ra.id = r.account_id
+           WHERE s.account_id = $1
+             AND s.deleted_at IS NULL
+             AND s.visibility IN (0, 1, 2)
+             AND ($2::bigint IS NULL OR s.id > $2)
+           ORDER BY s.id DESC
+           LIMIT $3"#,
+        account_id,
+        after,
+        limit,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|s| Candidate {
+        id: s.id,
+        account_id: s.account_id,
+        reply: s.reply,
+        in_reply_to_id: s.in_reply_to_id,
+        in_reply_to_account_id: s.in_reply_to_account_id,
+        language: s.language,
+        reblog_of_id: s.reblog_of_id,
+        reblog: s.reblog_account_id.map(|id| (id, s.reblog_domain)),
+    })
+    .collect()
+}
+
+/// `FeedManager#build_crutches`: what [`filter_from_home`] needs to know
+/// about the receiver and the accounts of `statuses`, read at once.
+#[derive(Default)]
+struct Crutches {
+    active_mentions: HashMap<i64, Vec<i64>>,
+    following: HashSet<i64>,
+    /// Only the follows that name languages.
+    languages: HashMap<i64, Vec<String>>,
+    hiding_reblogs: HashSet<i64>,
+    blocking: HashSet<i64>,
+    muting: HashSet<i64>,
+    domain_blocking: HashSet<String>,
+    blocked_by: HashSet<i64>,
+    exclusive_list_users: HashSet<i64>,
+}
+
+impl Crutches {
+    async fn build(
+        db: &PgPool,
+        receiver_id: i64,
+        statuses: &[Candidate],
+        receiver: Receiver,
+    ) -> sqlx::Result<Self> {
+        let mentioned_ids: Vec<i64> = statuses
+            .iter()
+            .flat_map(|s| std::iter::once(s.id).chain(s.reblog_of_id))
+            .collect();
+        let mut active_mentions: HashMap<i64, Vec<i64>> = HashMap::new();
+        for m in sqlx::query!(
+            "SELECT status_id, account_id FROM mentions WHERE status_id = ANY($1) AND NOT silent",
+            &mentioned_ids,
+        )
+        .fetch_all(db)
+        .await?
+        {
+            active_mentions
+                .entry(m.status_id)
+                .or_default()
+                .push(m.account_id);
+        }
+
+        let mut check_for_blocks: Vec<i64> = Vec::new();
+        for s in statuses {
+            check_for_blocks.extend(active_mentions.get(&s.id).into_iter().flatten());
+            check_for_blocks.push(s.account_id);
+            if let (Some(reblog_of_id), Some((reblog_account_id, _))) = (s.reblog_of_id, &s.reblog)
+            {
+                check_for_blocks.push(*reblog_account_id);
+                check_for_blocks.extend(active_mentions.get(&reblog_of_id).into_iter().flatten());
+            }
+        }
+        let account_ids: Vec<i64> = statuses.iter().map(|s| s.account_id).collect();
+        let reblogger_ids: Vec<i64> = statuses
+            .iter()
+            .filter(|s| s.reblog_of_id.is_some())
+            .map(|s| s.account_id)
+            .collect();
+        let in_reply_to_ids: Vec<i64> = statuses
+            .iter()
+            .filter_map(|s| s.in_reply_to_account_id)
+            .collect();
+        let domains: Vec<String> = statuses
+            .iter()
+            .filter_map(|s| s.reblog.as_ref().and_then(|(_, d)| d.clone()))
+            .collect();
+        let authors_and_boosted: Vec<i64> = statuses
+            .iter()
+            .flat_map(|s| std::iter::once(s.account_id).chain(s.reblog.as_ref().map(|r| r.0)))
+            .collect();
+
+        let following: HashSet<i64> = match receiver {
+            Receiver::Home
+            | Receiver::List {
+                replies_policy: crate::db::models::replies::FOLLOWED,
+                ..
+            } => sqlx::query_scalar!(
+                "SELECT target_account_id FROM follows
+                 WHERE account_id = $1 AND target_account_id = ANY($2)",
+                receiver_id,
+                &in_reply_to_ids,
+            )
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .collect(),
+            Receiver::List {
+                id,
+                replies_policy: crate::db::models::replies::LIST,
+            } => sqlx::query_scalar!(
+                "SELECT account_id FROM list_accounts WHERE list_id = $1 AND account_id = ANY($2)",
+                id,
+                &in_reply_to_ids,
+            )
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .collect(),
+            Receiver::List { .. } => HashSet::new(),
+        };
+
+        let languages = sqlx::query!(
+            "SELECT target_account_id, languages FROM follows
+             WHERE account_id = $1 AND target_account_id = ANY($2)",
+            receiver_id,
+            &account_ids,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .filter_map(|f| {
+            f.languages
+                .filter(|l| !l.is_empty())
+                .map(|l| (f.target_account_id, l))
+        })
+        .collect();
+
+        let hiding_reblogs = sqlx::query_scalar!(
+            "SELECT target_account_id FROM follows
+             WHERE account_id = $1 AND target_account_id = ANY($2) AND NOT show_reblogs",
+            receiver_id,
+            &reblogger_ids,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
+
+        let blocking = sqlx::query_scalar!(
+            "SELECT target_account_id FROM blocks
+             WHERE account_id = $1 AND target_account_id = ANY($2)",
+            receiver_id,
+            &check_for_blocks,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
+
+        let muting = sqlx::query_scalar!(
+            "SELECT target_account_id FROM mutes
+             WHERE account_id = $1 AND target_account_id = ANY($2)",
+            receiver_id,
+            &check_for_blocks,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
+
+        let domain_blocking = sqlx::query_scalar!(
+            "SELECT domain FROM account_domain_blocks
+             WHERE account_id = $1 AND domain = ANY($2)",
+            receiver_id,
+            &domains,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
+
+        let blocked_by = sqlx::query_scalar!(
+            "SELECT account_id FROM blocks
+             WHERE target_account_id = $1 AND account_id = ANY($2)",
+            receiver_id,
+            &authors_and_boosted,
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
+
+        let exclusive_list_users = match receiver {
+            Receiver::Home => sqlx::query_scalar!(
+                "SELECT la.account_id FROM list_accounts la
+                 JOIN lists l ON l.id = la.list_id
+                 WHERE l.account_id = $1 AND l.exclusive AND la.account_id = ANY($2)",
+                receiver_id,
+                &account_ids,
+            )
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .collect(),
+            Receiver::List { .. } => HashSet::new(),
+        };
+
+        Ok(Self {
+            active_mentions,
+            following,
+            languages,
+            hiding_reblogs,
+            blocking,
+            muting,
+            domain_blocking,
+            blocked_by,
+            exclusive_list_users,
+        })
+    }
+}
+
+/// `FeedManager#filter_from_home`: whether `status` stays out of the
+/// receiver's home feed, or out of one of its lists.
+fn filter_from_home(
+    status: &Candidate,
+    receiver_id: i64,
+    crutches: &Crutches,
+    receiver: Receiver,
+) -> bool {
+    if receiver_id == status.account_id {
+        return false;
+    }
+    if status.reply && (status.in_reply_to_id.is_none() || status.in_reply_to_account_id.is_none())
+    {
+        return true;
+    }
+    // `:skip_home`
+    if matches!(receiver, Receiver::Home)
+        && crutches.exclusive_list_users.contains(&status.account_id)
+    {
+        return true;
+    }
+    if let (Some(languages), Some(language)) = (
+        crutches.languages.get(&status.account_id),
+        status.language.as_deref().filter(|l| !l.is_empty()),
+    ) {
+        if !languages.iter().any(|l| l == language) {
+            return true;
+        }
+    }
+    if status.reblog_of_id.is_some() && status.reblog.is_none() {
+        return true;
+    }
+
+    let mut check_for_blocks: Vec<i64> = crutches
+        .active_mentions
+        .get(&status.id)
+        .cloned()
+        .unwrap_or_default();
+    check_for_blocks.push(status.account_id);
+    if let (Some(reblog_of_id), Some((reblog_account_id, _))) =
+        (status.reblog_of_id, &status.reblog)
+    {
+        check_for_blocks.push(*reblog_account_id);
+        check_for_blocks.extend(
+            crutches
+                .active_mentions
+                .get(&reblog_of_id)
+                .into_iter()
+                .flatten(),
+        );
+    }
+    if check_for_blocks
+        .iter()
+        .any(|id| crutches.blocking.contains(id) || crutches.muting.contains(id))
+    {
+        return true;
+    }
+    if crutches.blocked_by.contains(&status.account_id) {
+        return true;
+    }
+
+    match (status.in_reply_to_account_id, &status.reblog) {
+        (Some(in_reply_to), _) if status.reply => {
+            !crutches.following.contains(&in_reply_to)
+                && receiver_id != in_reply_to
+                && status.account_id != in_reply_to
+        }
+        (_, Some((reblog_account_id, reblog_domain))) => {
+            crutches.hiding_reblogs.contains(&status.account_id)
+                || crutches.blocked_by.contains(reblog_account_id)
+                || reblog_domain
+                    .as_ref()
+                    .is_some_and(|d| crutches.domain_blocking.contains(d))
+        }
+        _ => false,
+    }
+}
+
+/// The statuses of `statuses` that [`filter_from_home`] lets in, in order.
+async fn unfiltered(
+    db: &PgPool,
+    receiver_id: i64,
+    statuses: Vec<Candidate>,
+    receiver: Receiver,
+) -> Vec<Candidate> {
+    if statuses.is_empty() {
+        return statuses;
+    }
+    match Crutches::build(db, receiver_id, &statuses, receiver).await {
+        Ok(crutches) => statuses
+            .into_iter()
+            .filter(|s| !filter_from_home(s, receiver_id, &crutches, receiver))
+            .collect(),
+        Err(error) => {
+            tracing::warn!(%error, receiver_id, "could not read what filters a feed");
+            Vec::new()
+        }
+    }
+}
+
+/// `User#signed_in_recently?` for the user of `account_id`.
+async fn is_signed_in_recently(db: &PgPool, account_id: i64) -> bool {
+    !signed_in_recently(db, &[account_id]).await.is_empty()
+}
+
+/// Those of `account_ids` whose user signed in within
+/// [`crate::home_feed::ACTIVE_DAYS`] (`User.signed_in_recently`), in order.
+async fn signed_in_recently(db: &PgPool, account_ids: &[i64]) -> Vec<i64> {
+    if account_ids.is_empty() {
+        return Vec::new();
+    }
+    let active: HashSet<i64> = sqlx::query_scalar!(
+        r#"SELECT account_id FROM users
+           WHERE account_id = ANY($1)
+             AND current_sign_in_at >= now() - make_interval(days => $2)"#,
+        account_ids,
+        crate::home_feed::ACTIVE_DAYS,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+    account_ids
+        .iter()
+        .copied()
+        .filter(|id| active.contains(id))
+        .collect()
+}
+
+// ── Reading (`Feed#get`) ──────────────────────────────────────────────────
+
+/// `Feed#from_redis`: up to `limit` ids, newest first below `max_id` and
+/// above `since_id`, or, given `min_id`, the oldest above it (and below
+/// `max_id`), oldest first.
+async fn get(
+    redis: &mut ConnectionManager,
+    key: &str,
+    max_id: Option<i64>,
+    since_id: Option<i64>,
+    min_id: Option<i64>,
+    limit: isize,
+) -> Vec<i64> {
+    let max = max_id.map_or_else(|| "+inf".to_owned(), |id| id.to_string());
+    let read = match min_id {
+        Some(min_id) => {
+            redis::cmd("ZRANGEBYSCORE")
+                .arg(key)
+                .arg(format!("({min_id}"))
+                .arg(format!("({max}"))
+                .arg("LIMIT")
+                .arg(0i64)
+                .arg(limit)
+                .query_async(redis)
+                .await
+        }
+        None => {
+            let since = since_id.map_or_else(|| "-inf".to_owned(), |id| id.to_string());
+            redis::cmd("ZREVRANGEBYSCORE")
+                .arg(key)
+                .arg(format!("({max}"))
+                .arg(format!("({since}"))
+                .arg("LIMIT")
+                .arg(0i64)
+                .arg(limit)
+                .query_async(redis)
+                .await
+        }
+    };
+    read.unwrap_or_else(|error| {
+        tracing::warn!(%error, key, "could not read a feed");
+        Vec::new()
+    })
+}
+
+/// `HomeFeed#get`.
+pub async fn feed_get(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    account_id: i64,
+    max_id: Option<i64>,
+    since_id: Option<i64>,
+    min_id: Option<i64>,
+    limit: isize,
+) -> Vec<i64> {
+    get(
+        redis,
+        &feed_key(keys, account_id),
+        max_id,
+        since_id,
+        min_id,
+        limit,
+    )
+    .await
+}
+
+/// `ListFeed#get`.
+pub async fn list_feed_get(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    list_id: i64,
+    max_id: Option<i64>,
+    since_id: Option<i64>,
+    min_id: Option<i64>,
+    limit: isize,
+) -> Vec<i64> {
+    get(
+        redis,
+        &list_feed_key(keys, list_id),
+        max_id,
+        since_id,
+        min_id,
+        limit,
+    )
+    .await
+}
+
+/// What `FeedManager#remove_from_feed` will answer for the status, asked
+/// before the feed lets go of it: whether the home feed holds it.
+pub async fn home_holds(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    account_id: i64,
+    status_id: i64,
+) -> bool {
+    redis
+        .zscore::<_, _, Option<f64>>(feed_key(keys, account_id), status_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+/// [`home_holds`] for a list's feed.
+pub async fn list_holds(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    list_id: i64,
+    status_id: i64,
+) -> bool {
+    redis
+        .zscore::<_, _, Option<f64>>(list_feed_key(keys, list_id), status_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+// ── Fan-out ───────────────────────────────────────────────────────────────
+
 /// What `FeedManager#add_to_feed` answered for a status in each home feed
 /// (by account) and list feed (by list) the fan-out delivered it to, which is
-/// what decides whether `push_to_home` and `push_to_list` stream it. A feed
-/// Redis does not hold yet, which eunha builds when it is first read, answers
-/// as `add_to_feed` answers on an empty one: the status goes in.
+/// what decides whether `push_to_home` and `push_to_list` stream it.
 #[derive(Debug, Default, Clone)]
 pub struct Pushed {
-    pub homes: std::collections::HashMap<i64, bool>,
-    pub lists: std::collections::HashMap<i64, bool>,
+    pub homes: HashMap<i64, bool>,
+    pub lists: HashMap<i64, bool>,
 }
 
 impl Pushed {
@@ -328,424 +895,10 @@ pub async fn fanout_status(
     Pushed { homes, lists }
 }
 
-/// `FeedManager#merge_into_home` and `#merge_into_list`: [`add_to_feed`] for
-/// each of `newest_first`, oldest first, then one [`trim`].
-async fn merge(
-    redis: &mut ConnectionManager,
-    db: &PgPool,
-    timeline: &Timeline,
-    newest_first: &[i64],
-    aggregate: bool,
-) {
-    let reblogs = reblogs_of(db, newest_first).await;
-    let merged = async {
-        for &id in newest_first.iter().rev() {
-            add_to_feed(redis, timeline, id, reblogs.get(&id).copied(), aggregate).await?;
-        }
-        trim(redis, timeline).await
-    }
-    .await;
-    if let Err(error) = merged {
-        tracing::warn!(%error, key = %timeline.key, "could not merge statuses into a feed");
-    }
-}
-
-/// What [`add_to_feed`] and [`trim`], run over `candidates` oldest first on an
-/// empty feed, leave: the feed, the boosts tracked (`(boosted, boost)`), and
-/// the boosts held back. How a feed is filled from the database.
-#[derive(Debug, Default, PartialEq)]
-pub struct Aggregated {
-    pub feed: Vec<i64>,
-    pub tracked: Vec<(i64, i64)>,
-    pub held_back: Vec<(i64, i64)>,
-}
-
-/// [`Aggregated`] for `candidates`, each a status and what it boosts, oldest
-/// first.
-pub fn aggregate(candidates: &[(i64, Option<i64>)], aggregate: bool) -> Aggregated {
-    use std::collections::{BTreeMap, HashMap};
-    let mut feed: Vec<i64> = Vec::new();
-    let mut position: HashMap<i64, usize> = HashMap::new();
-    let mut tracked: BTreeMap<i64, i64> = BTreeMap::new();
-    let mut held_back: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
-    for &(id, reblog_of_id) in candidates {
-        match reblog_of_id.filter(|_| aggregate) {
-            Some(boosted) => {
-                let rank = position.get(&boosted).map(|&p| feed.len() - 1 - p);
-                if rank.is_some_and(|rank| rank < REBLOG_FALLOFF) {
-                    continue;
-                }
-                if tracked.contains_key(&boosted) {
-                    held_back.entry(boosted).or_default().push(id);
-                    continue;
-                }
-                tracked.insert(boosted, id);
-            }
-            None => {
-                if tracked.contains_key(&id) {
-                    continue;
-                }
-            }
-        }
-        position.insert(id, feed.len());
-        feed.push(id);
-        // `trim`
-        if feed.len() > REBLOG_FALLOFF {
-            let falloff = feed[feed.len() - 1 - REBLOG_FALLOFF];
-            tracked.retain(|boosted, boost| {
-                let keep = *boost > falloff;
-                if !keep {
-                    held_back.remove(boosted);
-                }
-                keep
-            });
-        }
-    }
-    let keep_from = feed.len().saturating_sub(FEED_MAX_ITEMS as usize);
-    Aggregated {
-        feed: feed.split_off(keep_from),
-        tracked: tracked.into_iter().collect(),
-        held_back: held_back
-            .into_iter()
-            .flat_map(|(boosted, boosts)| boosts.into_iter().map(move |b| (boosted, b)))
-            .collect(),
-    }
-}
-
-/// Write `candidates` (newest first, as the database lists them) into an
-/// emptied feed, aggregated as [`aggregate`] says.
-async fn fill(
-    redis: &mut ConnectionManager,
-    db: &PgPool,
-    timeline: &Timeline,
-    newest_first: &[i64],
-    aggregate_reblogs: bool,
-) {
-    let reblogs = reblogs_of(db, newest_first).await;
-    let candidates: Vec<(i64, Option<i64>)> = newest_first
-        .iter()
-        .rev()
-        .map(|id| (*id, reblogs.get(id).copied()))
-        .collect();
-    let plan = aggregate(&candidates, aggregate_reblogs);
-    let mut pipe = redis::pipe();
-    for &id in &plan.feed {
-        pipe.zadd(&timeline.key, id, id as f64).ignore();
-    }
-    for &(boosted, boost) in &plan.tracked {
-        pipe.zadd(&timeline.reblogs, boosted, boost as f64).ignore();
-    }
-    for &(boosted, boost) in &plan.held_back {
-        let set = timeline.reblog_set(boosted);
-        pipe.sadd(&set, boost).ignore();
-    }
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
-}
-
-/// `FeedManager#clean_feeds!` for one feed's boost tracking: the tracked set
-/// and every set of boosts held back.
-async fn clean_reblogs(redis: &mut ConnectionManager, timeline: &Timeline) {
-    let tracked: Vec<i64> = redis
-        .zrange(&timeline.reblogs, 0, -1)
-        .await
-        .unwrap_or_default();
-    let mut pipe = redis::pipe();
-    pipe.del(&timeline.reblogs).ignore();
-    for boosted in tracked {
-        pipe.del(timeline.reblog_set(boosted)).ignore();
-    }
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
-}
-
-/// Those of `account_ids` whose user signed in within
-/// [`crate::home_feed::ACTIVE_DAYS`] (`User.signed_in_recently`), in order.
-async fn signed_in_recently(db: &PgPool, account_ids: &[i64]) -> Vec<i64> {
-    if account_ids.is_empty() {
-        return Vec::new();
-    }
-    let active: std::collections::HashSet<i64> = sqlx::query_scalar!(
-        r#"SELECT account_id FROM users
-           WHERE account_id = ANY($1)
-             AND current_sign_in_at >= now() - make_interval(days => $2)"#,
-        account_ids,
-        crate::home_feed::ACTIVE_DAYS,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .collect();
-    account_ids
-        .iter()
-        .copied()
-        .filter(|id| active.contains(id))
-        .collect()
-}
-
-/// `Vacuum::FeedsVacuum`: remove the home feeds and list feeds of confirmed
-/// users who have not signed in within [`crate::home_feed::ACTIVE_DAYS`]
-/// (`User.confirmed.not_signed_in_recently`), so that they are regenerated
-/// when those users return.
-pub async fn vacuum_inactive_feeds(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    db: &PgPool,
-) -> sqlx::Result<()> {
-    const BATCH: i64 = 1000;
-    let mut after = 0i64;
-    loop {
-        let users = sqlx::query!(
-            r#"SELECT id, account_id FROM users
-               WHERE confirmed_at IS NOT NULL
-                 AND current_sign_in_at < now() - make_interval(days => $1)
-                 AND id > $2
-               ORDER BY id LIMIT $3"#,
-            crate::home_feed::ACTIVE_DAYS,
-            after,
-            BATCH,
-        )
-        .fetch_all(db)
-        .await?;
-        let Some(last) = users.last() else {
-            return Ok(());
-        };
-        after = last.id;
-        let account_ids: Vec<i64> = users.iter().map(|u| u.account_id).collect();
-        for &account_id in &account_ids {
-            delete_home_feed(redis, keys, account_id).await;
-        }
-        let lists: Vec<i64> = sqlx::query_scalar!(
-            "SELECT id FROM lists WHERE account_id = ANY($1)",
-            &account_ids,
-        )
-        .fetch_all(db)
-        .await?;
-        for list_id in lists {
-            delete_list_feed(redis, keys, list_id).await;
-        }
-    }
-}
-
-fn populated_key(keys: &RedisKeyspace, account_id: i64) -> String {
-    keys.key(format!("feed:home:{}:populated", account_id))
-}
-
-pub async fn is_feed_populated(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-) -> bool {
-    redis
-        .exists::<_, bool>(populated_key(keys, account_id))
-        .await
-        .unwrap_or(false)
-}
-
-/// What `FeedManager#remove_from_feed` will answer for the status, asked
-/// before the feed lets go of it: whether the home feed holds it. A feed
-/// Redis does not hold yet took everything the fan-out offered it (see
-/// [`Pushed`]), so it answers that it holds the status.
-pub async fn home_holds(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-    status_id: i64,
-) -> bool {
-    if !is_feed_populated(redis, keys, account_id).await {
-        return true;
-    }
-    redis
-        .zscore::<_, _, Option<f64>>(feed_key(keys, account_id), status_id)
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-}
-
-/// [`home_holds`] for a list's feed.
-pub async fn list_holds(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    list_id: i64,
-    status_id: i64,
-) -> bool {
-    if !is_list_feed_populated(redis, keys, list_id).await {
-        return true;
-    }
-    redis
-        .zscore::<_, _, Option<f64>>(list_feed_key(keys, list_id), status_id)
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-}
-
-pub async fn feed_push(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-    status_id: i64,
-) {
-    let key = feed_key(keys, account_id);
-    let result: redis::RedisResult<()> = redis::pipe()
-        .zadd(&key, status_id, status_id as f64)
-        .zremrangebyrank(&key, 0, -(FEED_MAX_ITEMS + 1))
-        .ignore()
-        .query_async(redis)
-        .await;
-    if let Err(e) = result {
-        tracing::warn!("feed_push error for account {}: {}", account_id, e);
-    }
-}
-
-pub async fn feed_remove(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-    status_id: i64,
-) {
-    let result: redis::RedisResult<()> = redis.zrem(feed_key(keys, account_id), status_id).await;
-    if let Err(e) = result {
-        tracing::warn!("feed_remove error for account {}: {}", account_id, e);
-    }
-}
-
-/// Fetch status IDs from the Redis feed, honouring Mastodon-style pagination.
-/// Returns None if the feed has never been populated (cold start signal).
-pub async fn feed_get(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-    max_id: Option<i64>,
-    since_id: Option<i64>,
-    min_id: Option<i64>,
-    limit: isize,
-) -> Option<Vec<i64>> {
-    if !is_feed_populated(redis, keys, account_id).await {
-        return None;
-    }
-
-    let key = feed_key(keys, account_id);
-
-    let ids: Vec<i64> = if let Some(min_id) = min_id {
-        let min_score = format!("({min_id}");
-        redis::cmd("ZRANGEBYSCORE")
-            .arg(&key)
-            .arg(&min_score)
-            .arg("+inf")
-            .arg("LIMIT")
-            .arg(0i64)
-            .arg(limit)
-            .query_async(redis)
-            .await
-            .unwrap_or_default()
-    } else {
-        let max_score = max_id
-            .map(|id| format!("({}", id))
-            .unwrap_or_else(|| "+inf".to_string());
-        let min_score = since_id
-            .map(|id| format!("({}", id))
-            .unwrap_or_else(|| "-inf".to_string());
-        redis::cmd("ZREVRANGEBYSCORE")
-            .arg(&key)
-            .arg(&max_score)
-            .arg(&min_score)
-            .arg("LIMIT")
-            .arg(0i64)
-            .arg(limit)
-            .query_async(redis)
-            .await
-            .unwrap_or_default()
-    };
-
-    Some(ids)
-}
-
-/// Populate the Redis feed from DB (called on first timeline load).
-pub async fn feed_populate(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-    db: &PgPool,
-) {
-    let _: redis::RedisResult<()> = redis.set(populated_key(keys, account_id), 1i64).await;
-
-    // The reply clause mirrors Mastodon's FeedManager#filter_from_home: a reply
-    // is only kept when it is the viewer's own post, a reply to the viewer, a
-    // self-reply, or a reply to someone the viewer follows. Orphan replies (no
-    // in_reply_to_account_id) are dropped.
-    let status_ids: Vec<i64> = sqlx::query_scalar!(
-        r#"WITH candidate_ids AS (
-               SELECT s.id FROM statuses s
-               WHERE s.account_id IN (
-                   SELECT target_account_id FROM follows
-                   WHERE account_id = $1
-                   UNION ALL SELECT $1
-               )
-               AND s.deleted_at IS NULL
-               AND (
-                   NOT s.reply
-                   OR s.account_id = $1
-                   OR (
-                       s.in_reply_to_account_id IS NOT NULL
-                       AND (
-                           s.in_reply_to_account_id = $1
-                           OR s.in_reply_to_account_id = s.account_id
-                           OR EXISTS (
-                               SELECT 1 FROM follows f
-                               WHERE f.account_id = $1
-                                 AND f.target_account_id = s.in_reply_to_account_id
-                           )
-                       )
-                   )
-               )
-               -- Per-follow language filter (Mastodon crutches[:languages]):
-               -- drop a followee's status whose language isn't in the language
-               -- subset the viewer chose for that follow.
-               AND (
-                   s.language IS NULL
-                   OR s.account_id = $1
-                   OR NOT EXISTS (
-                       SELECT 1 FROM follows fl
-                       WHERE fl.account_id = $1
-                         AND fl.target_account_id = s.account_id
-                         AND fl.languages IS NOT NULL
-                         AND array_length(fl.languages, 1) >= 1
-                         AND NOT (s.language = ANY(fl.languages))
-                   )
-               )
-               UNION
-               SELECT st.status_id FROM statuses_tags st
-               JOIN tag_follows tf ON tf.tag_id = st.tag_id
-               JOIN statuses s ON s.id = st.status_id
-               WHERE tf.account_id = $1
-               AND s.visibility = 0
-               AND s.deleted_at IS NULL
-           )
-           SELECT id FROM candidate_ids ORDER BY id DESC LIMIT $2"#,
-        account_id,
-        FEED_MAX_ITEMS as i64,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .flatten()
-    .collect();
-
-    let timeline = Timeline::home(keys, account_id);
-    clean_reblogs(redis, &timeline).await;
-    if !status_ids.is_empty() {
-        let aggregate = !not_aggregating(db, &[account_id])
-            .await
-            .contains(&account_id);
-        fill(redis, db, &timeline, &status_ids, aggregate).await;
-    }
-}
-
-/// Fan-out a newly posted status to all followers' initialized feeds,
-/// plus accounts following any of the status's hashtags: for each of them,
-/// whether it went in ([`Pushed::homes`]).
+/// Fan a newly posted status out to its author's and followers' home feeds,
+/// plus those of accounts following any of its hashtags: for each of them,
+/// whether it went in ([`Pushed::homes`]). `push_to_home` skips everyone who
+/// has not signed in recently.
 pub async fn fanout_new_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -753,7 +906,7 @@ pub async fn fanout_new_status(
     author_id: i64,
     status_id: i64,
     tag_ids: &[i64],
-) -> std::collections::HashMap<i64, bool> {
+) -> HashMap<i64, bool> {
     // Look up the status's reply shape and language so it is only fanned to
     // followers who should see it (Mastodon FeedManager#filter_from_home).
     let reply_meta = sqlx::query!(
@@ -821,7 +974,7 @@ pub async fn fanout_new_status(
             .await
             .unwrap_or_default();
             if !excluded.is_empty() {
-                let ex: std::collections::HashSet<i64> = excluded.into_iter().collect();
+                let ex: HashSet<i64> = excluded.into_iter().collect();
                 follower_ids.retain(|id| !ex.contains(id));
             }
         }
@@ -852,43 +1005,18 @@ pub async fn fanout_new_status(
         .chain(hashtag_recipients)
         .collect();
 
-    let mut pushed = std::collections::HashMap::new();
+    let mut pushed = HashMap::new();
+    // `push_to_home` returns unless `account.user&.signed_in_recently?`.
+    let recipients = signed_in_recently(db, &recipients).await;
     if recipients.is_empty() {
         return pushed;
     }
-
-    let pop_keys: Vec<String> = recipients
-        .iter()
-        .map(|&id| populated_key(keys, id))
-        .collect();
-    let initialized: Vec<Option<i64>> = match redis.mget(&pop_keys).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("fanout mget error: {}", e);
-            return pushed;
-        }
-    };
-    let initialized_of: std::collections::HashMap<i64, Option<i64>> =
-        recipients.iter().copied().zip(initialized).collect();
-
-    // `push_to_home` returns unless `account.user&.signed_in_recently?`.
-    let recipients = signed_in_recently(db, &recipients).await;
-    let mut ready = Vec::new();
-    for &id in &recipients {
-        if initialized_of.get(&id).is_some_and(Option::is_some) {
-            ready.push(id);
-        } else {
-            // Regenerated from the database when first read; `add_to_feed`
-            // on an empty feed takes the status.
-            pushed.insert(id, true);
-        }
-    }
     let separate = if reblog_of_id.is_some() {
-        not_aggregating(db, &ready).await
+        not_aggregating(db, &recipients).await
     } else {
         Default::default()
     };
-    for id in ready {
+    for id in recipients {
         let timeline = Timeline::home(keys, id);
         let added = push(
             redis,
@@ -903,9 +1031,9 @@ pub async fn fanout_new_status(
     pushed
 }
 
-/// Remove a deleted status from all followers' initialized feeds. The status
-/// row must still be there to say whether it was a boost; for one already
-/// gone, use [`fanout_remove_boost`].
+/// Remove a deleted status from its author's and followers' home feeds. The
+/// status row must still be there to say whether it was a boost; for one
+/// already gone, use [`fanout_remove_boost`].
 pub async fn fanout_remove_status(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -956,8 +1084,10 @@ pub async fn unpush_boost(
     }
 }
 
-/// `FeedManager#unpush_from_home` for every follower of `author_id`:
-/// [`fanout_remove_status`] for a status that boosted `reblog_of_id`.
+/// `RemoveStatusService#remove_from_self` and `#remove_from_followers`:
+/// `FeedManager#unpush_from_home` for the author, when local, and each
+/// follower who signed in recently (`followers_for_local_distribution`), for
+/// a status that boosted `reblog_of_id`.
 pub async fn fanout_remove_boost(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -966,39 +1096,24 @@ pub async fn fanout_remove_boost(
     status_id: i64,
     reblog_of_id: Option<i64>,
 ) {
-    let follower_ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT account_id FROM follows WHERE target_account_id = $1",
+    let recipients: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT u.account_id FROM users u
+           WHERE u.account_id = $1
+              OR (u.current_sign_in_at >= now() - make_interval(days => $2)
+                  AND EXISTS (SELECT 1 FROM follows f
+                              WHERE f.account_id = u.account_id AND f.target_account_id = $1))"#,
         author_id,
+        crate::home_feed::ACTIVE_DAYS,
     )
     .fetch_all(db)
     .await
     .unwrap_or_default();
-
-    let recipients: Vec<i64> = std::iter::once(author_id).chain(follower_ids).collect();
-    let pop_keys: Vec<String> = recipients
-        .iter()
-        .map(|&id| populated_key(keys, id))
-        .collect();
-    let initialized: Vec<Option<i64>> = match redis.mget(&pop_keys).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("fanout_remove mget error: {}", e);
-            return;
-        }
-    };
-
-    let ready: Vec<i64> = recipients
-        .iter()
-        .zip(initialized.iter())
-        .filter(|(_, init)| init.is_some())
-        .map(|(&id, _)| id)
-        .collect();
     let separate = if reblog_of_id.is_some() {
-        not_aggregating(db, &ready).await
+        not_aggregating(db, &recipients).await
     } else {
         Default::default()
     };
-    for id in ready {
+    for id in recipients {
         let timeline = Timeline::home(keys, id);
         let aggregate = !separate.contains(&id);
         if let Err(error) =
@@ -1009,158 +1124,56 @@ pub async fn fanout_remove_boost(
     }
 }
 
-// ── List feed ─────────────────────────────────────────────────────────────
-
-fn list_feed_key(keys: &RedisKeyspace, list_id: i64) -> String {
-    keys.key(format!("feed:list:{}", list_id))
+/// `Account#followers_for_local_distribution`: the local followers of
+/// `account_id` who signed in recently.
+pub async fn followers_for_local_distribution(db: &PgPool, account_id: i64) -> Vec<i64> {
+    sqlx::query_scalar!(
+        r#"SELECT u.account_id FROM users u
+           JOIN follows f ON f.account_id = u.account_id
+           WHERE f.target_account_id = $1
+             AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
+        account_id,
+        crate::home_feed::ACTIVE_DAYS,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
 }
 
-fn list_populated_key(keys: &RedisKeyspace, list_id: i64) -> String {
-    keys.key(format!("feed:list:{}:populated", list_id))
-}
-
-pub async fn is_list_feed_populated(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    list_id: i64,
-) -> bool {
-    redis
-        .exists::<_, bool>(list_populated_key(keys, list_id))
+/// The ids of [`lists_for_local_distribution`].
+pub async fn list_ids_for_local_distribution(db: &PgPool, account_id: i64) -> Vec<i64> {
+    lists_for_local_distribution(db, account_id)
         .await
-        .unwrap_or(false)
+        .into_iter()
+        .map(|(id, _, _)| id)
+        .collect()
 }
 
-/// Fetch status IDs from a list's Redis feed.
-pub async fn list_feed_get(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    list_id: i64,
-    max_id: Option<i64>,
-    since_id: Option<i64>,
-    min_id: Option<i64>,
-    limit: isize,
-) -> Option<Vec<i64>> {
-    if !is_list_feed_populated(redis, keys, list_id).await {
-        return None;
-    }
-    let key = list_feed_key(keys, list_id);
-    let ids: Vec<i64> = if let Some(min_id) = min_id {
-        let min_score = format!("({min_id}");
-        redis::cmd("ZRANGEBYSCORE")
-            .arg(&key)
-            .arg(&min_score)
-            .arg("+inf")
-            .arg("LIMIT")
-            .arg(0i64)
-            .arg(limit)
-            .query_async(redis)
-            .await
-            .unwrap_or_default()
-    } else {
-        let max_score = max_id
-            .map(|id| format!("({}", id))
-            .unwrap_or_else(|| "+inf".to_string());
-        let min_score = since_id
-            .map(|id| format!("({}", id))
-            .unwrap_or_else(|| "-inf".to_string());
-        redis::cmd("ZREVRANGEBYSCORE")
-            .arg(&key)
-            .arg(&max_score)
-            .arg(&min_score)
-            .arg("LIMIT")
-            .arg(0i64)
-            .arg(limit)
-            .query_async(redis)
-            .await
-            .unwrap_or_default()
-    };
-    Some(ids)
+/// `Account#lists_for_local_distribution`: the lists holding `author_id`
+/// whose owner signed in recently, and which follow it or are its own, with
+/// their owners and reply policies.
+async fn lists_for_local_distribution(db: &PgPool, author_id: i64) -> Vec<(i64, i64, i32)> {
+    sqlx::query!(
+        r#"SELECT DISTINCT l.id, l.account_id, l.replies_policy FROM lists l
+           JOIN list_accounts la ON la.list_id = l.id
+           JOIN users u ON u.account_id = l.account_id
+           WHERE la.account_id = $1
+             AND (la.follow_id IS NOT NULL OR l.account_id = $1)
+             AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
+        author_id,
+        crate::home_feed::ACTIVE_DAYS,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|l| (l.id, l.account_id, l.replies_policy))
+    .collect()
 }
 
-/// Populate a list's Redis feed from DB (called on first list timeline access).
-pub async fn list_feed_populate(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    list_id: i64,
-    owner_id: i64,
-    replies_policy: &str,
-    db: &PgPool,
-) {
-    let _: redis::RedisResult<()> = redis.set(list_populated_key(keys, list_id), 1i64).await;
-
-    let status_ids: Vec<i64> = match replies_policy {
-        "none" => sqlx::query_scalar!(
-            r#"SELECT s.id FROM statuses s
-               JOIN list_accounts la ON la.account_id = s.account_id
-               WHERE la.list_id = $1
-                 AND s.deleted_at IS NULL
-                 AND s.visibility != 3
-                 AND (s.in_reply_to_id IS NULL
-                      OR s.in_reply_to_account_id = s.account_id
-                      OR s.in_reply_to_account_id = $2)
-               ORDER BY s.id DESC LIMIT $3"#,
-            list_id,
-            owner_id,
-            FEED_MAX_ITEMS as i64,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
-        "list" => sqlx::query_scalar!(
-            r#"SELECT s.id FROM statuses s
-               JOIN list_accounts la ON la.account_id = s.account_id
-               WHERE la.list_id = $1
-                 AND s.deleted_at IS NULL
-                 AND s.visibility != 3
-                 AND (s.in_reply_to_id IS NULL
-                      OR s.in_reply_to_account_id = $2
-                      OR EXISTS (
-                          SELECT 1 FROM statuses s2
-                          JOIN list_accounts la2 ON la2.account_id = s2.account_id
-                          WHERE s2.id = s.in_reply_to_id AND la2.list_id = $1
-                      ))
-               ORDER BY s.id DESC LIMIT $3"#,
-            list_id,
-            owner_id,
-            FEED_MAX_ITEMS as i64,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
-        _ => sqlx::query_scalar!(
-            r#"SELECT s.id FROM statuses s
-               JOIN list_accounts la ON la.account_id = s.account_id
-               WHERE la.list_id = $1
-                 AND s.deleted_at IS NULL
-                 AND s.visibility != 3
-                 -- `FeedManager#filter_from_list?` with `show_followed?`.
-                 AND (s.in_reply_to_id IS NULL
-                      OR s.in_reply_to_account_id = s.account_id
-                      OR s.in_reply_to_account_id = $2
-                      OR EXISTS (
-                          SELECT 1 FROM follows f
-                          WHERE f.account_id = $2 AND f.target_account_id = s.in_reply_to_account_id
-                      ))
-               ORDER BY s.id DESC LIMIT $3"#,
-            list_id,
-            owner_id,
-            FEED_MAX_ITEMS as i64,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
-    };
-
-    let timeline = Timeline::list(keys, list_id);
-    clean_reblogs(redis, &timeline).await;
-    if !status_ids.is_empty() {
-        let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
-        fill(redis, db, &timeline, &status_ids, aggregate).await;
-    }
-}
-
-/// Fan out a newly posted status to all initialized list feeds that contain
-/// the author: for each list it passes, whether it went in
+/// `FanOutOnWriteService#deliver_to_lists!`: `push_to_list` for each list of
+/// [`lists_for_local_distribution`] the status passes
+/// (`FeedManager#filter_from_list?`), and whether it went in
 /// ([`Pushed::lists`]).
 pub async fn fanout_to_lists(
     redis: &mut ConnectionManager,
@@ -1170,62 +1183,35 @@ pub async fn fanout_to_lists(
     status_id: i64,
     in_reply_to_account_id: Option<i64>,
     visibility: &str,
-) -> std::collections::HashMap<i64, bool> {
-    let mut pushed = std::collections::HashMap::new();
+) -> HashMap<i64, bool> {
+    let mut pushed = HashMap::new();
     if visibility == "direct" {
         return pushed;
     }
 
-    let lists = sqlx::query!(
-        r#"SELECT l.id, l.account_id,
-                  CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
-           FROM lists l
-           JOIN list_accounts la ON la.list_id = l.id
-           -- `push_to_list` returns unless `list.account.user&.signed_in_recently?`.
-           JOIN users u ON u.account_id = l.account_id
-           WHERE la.account_id = $1
-             AND u.current_sign_in_at >= now() - make_interval(days => $2)"#,
-        author_id,
-        crate::home_feed::ACTIVE_DAYS,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
-
+    let lists = lists_for_local_distribution(db, author_id).await;
     if lists.is_empty() {
         return pushed;
     }
 
-    let pop_keys: Vec<String> = lists
-        .iter()
-        .map(|l| list_populated_key(keys, l.id))
-        .collect();
-    let initialized: Vec<Option<i64>> = match redis.mget(&pop_keys).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("fanout_to_lists mget error: {}", e);
-            return pushed;
-        }
-    };
-
     let reblog_of_id = reblogs_of(db, &[status_id]).await.get(&status_id).copied();
-    let owners: Vec<i64> = lists.iter().map(|l| l.account_id).collect();
+    let owners: Vec<i64> = lists.iter().map(|l| l.1).collect();
     let separate = if reblog_of_id.is_some() {
         not_aggregating(db, &owners).await
     } else {
         Default::default()
     };
 
-    for (list, init) in lists.iter().zip(initialized.iter()) {
+    for (list_id, owner_id, replies_policy) in lists {
         let passes = if let Some(reply_author) = in_reply_to_account_id {
-            if reply_author == author_id || reply_author == list.account_id {
+            if reply_author == author_id || reply_author == owner_id {
                 true
             } else {
-                match list.replies_policy.as_str() {
-                    "none" => false,
-                    "list" => sqlx::query_scalar!(
+                match replies_policy {
+                    crate::db::models::replies::NONE => false,
+                    crate::db::models::replies::LIST => sqlx::query_scalar!(
                         "SELECT 1 FROM list_accounts WHERE list_id = $1 AND account_id = $2",
-                        list.id,
+                        list_id,
                         reply_author,
                     )
                     .fetch_optional(db)
@@ -1234,7 +1220,7 @@ pub async fn fanout_to_lists(
                     .is_some(),
                     _ => sqlx::query_scalar!(
                         "SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2",
-                        list.account_id,
+                        owner_id,
                         reply_author,
                     )
                     .fetch_optional(db)
@@ -1250,21 +1236,18 @@ pub async fn fanout_to_lists(
         if !passes {
             continue;
         }
-        if init.is_none() {
-            pushed.insert(list.id, true);
-            continue;
-        }
-        let timeline = Timeline::list(keys, list.id);
-        let aggregate = !separate.contains(&list.account_id);
+        let timeline = Timeline::list(keys, list_id);
+        let aggregate = !separate.contains(&owner_id);
         let added = push(redis, &timeline, status_id, reblog_of_id, aggregate).await;
-        pushed.insert(list.id, added);
+        pushed.insert(list_id, added);
     }
     pushed
 }
 
-/// Remove a deleted status from all initialized list feeds that contain the
-/// author. As with [`fanout_remove_status`], the row must still be there; for
-/// one already gone, use [`fanout_remove_boost_from_lists`].
+/// Remove a deleted status from the lists of
+/// [`lists_for_local_distribution`]. As with [`fanout_remove_status`], the
+/// row must still be there; for one already gone, use
+/// [`fanout_remove_boost_from_lists`].
 pub async fn fanout_remove_from_lists(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1276,7 +1259,8 @@ pub async fn fanout_remove_from_lists(
     fanout_remove_boost_from_lists(redis, keys, db, author_id, status_id, reblog_of_id).await;
 }
 
-/// `FeedManager#unpush_from_list` for every list holding `author_id`.
+/// `RemoveStatusService#remove_from_lists`: `FeedManager#unpush_from_list`
+/// for each list of [`lists_for_local_distribution`].
 pub async fn fanout_remove_boost_from_lists(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1285,198 +1269,274 @@ pub async fn fanout_remove_boost_from_lists(
     status_id: i64,
     reblog_of_id: Option<i64>,
 ) {
-    let lists = sqlx::query!(
-        "SELECT l.id, l.account_id FROM lists l JOIN list_accounts la ON la.list_id = l.id WHERE la.account_id = $1",
-        author_id,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
-    let list_ids: Vec<i64> = lists.iter().map(|l| l.id).collect();
-
-    if list_ids.is_empty() {
+    let lists = lists_for_local_distribution(db, author_id).await;
+    if lists.is_empty() {
         return;
     }
-
-    let pop_keys: Vec<String> = list_ids
-        .iter()
-        .map(|&id| list_populated_key(keys, id))
-        .collect();
-    let initialized: Vec<Option<i64>> = match redis.mget(&pop_keys).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("fanout_remove_from_lists mget error: {}", e);
-            return;
-        }
-    };
-
-    let owners: Vec<i64> = lists.iter().map(|l| l.account_id).collect();
+    let owners: Vec<i64> = lists.iter().map(|l| l.1).collect();
     let separate = if reblog_of_id.is_some() {
         not_aggregating(db, &owners).await
     } else {
         Default::default()
     };
-    for (list, init) in lists.iter().zip(initialized.iter()) {
-        if init.is_none() {
-            continue;
-        }
-        let timeline = Timeline::list(keys, list.id);
-        let aggregate = !separate.contains(&list.account_id);
+    for (list_id, owner_id, _) in lists {
+        let timeline = Timeline::list(keys, list_id);
+        let aggregate = !separate.contains(&owner_id);
         if let Err(error) =
             remove_from_feed(redis, &timeline, status_id, reblog_of_id, aggregate).await
         {
-            tracing::warn!(%error, list_id = list.id, "could not remove a status from a list feed");
+            tracing::warn!(%error, list_id, "could not remove a status from a list feed");
         }
     }
 }
 
-/// Backfill a list feed with recent statuses from a newly-added member.
-pub async fn backfill_list_member(
+// ── Populating and merging ────────────────────────────────────────────────
+
+/// A list as the feed work needs it: its owner and `replies_policy`.
+async fn find_list(db: &PgPool, list_id: i64) -> Option<(i64, i32)> {
+    sqlx::query!(
+        "SELECT account_id, replies_policy FROM lists WHERE id = $1",
+        list_id,
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .map(|l| (l.account_id, l.replies_policy))
+}
+
+/// Add each of `statuses`, in order, then [`trim`] once: the loop
+/// `populate_home`, `populate_list` and the merges share.
+async fn add_all(
+    redis: &mut ConnectionManager,
+    timeline: &Timeline,
+    statuses: &[Candidate],
+    aggregate: bool,
+) -> redis::RedisResult<()> {
+    for status in statuses {
+        add_to_feed(redis, timeline, status.id, status.reblog_of_id, aggregate).await?;
+    }
+    trim(redis, timeline).await
+}
+
+/// The followed accounts' part of `populate_home` and `populate_list`: for
+/// each of `targets` (an account and its `last_status_at`), the newest
+/// [`FEED_MAX_ITEMS`]` / 2` of its eligible statuses the filter lets in,
+/// skipping, once the feed holds that many, an account that has posted
+/// nothing newer than the feed's oldest entry, and reading only what is
+/// newer than that.
+async fn populate_from(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    timeline: &Timeline,
+    receiver_id: i64,
+    receiver: Receiver,
+    targets: Vec<(i64, Option<chrono::NaiveDateTime>)>,
+    aggregate: bool,
+) -> redis::RedisResult<()> {
+    let limit = (FEED_MAX_ITEMS / 2) as i64;
+    let mut over_limit = false;
+    for (target_id, last_status_at) in targets {
+        over_limit = over_limit || timeline_size(redis, timeline).await >= limit;
+        let mut after = None;
+        if over_limit {
+            if let Some(oldest) = oldest_score(redis, timeline).await {
+                // None of its statuses would stay on the feed.
+                if id_at(last_status_at) < oldest {
+                    continue;
+                }
+                // `where(id: oldest_home_score...)`
+                after = Some(oldest - 1);
+            }
+        }
+        let statuses = eligible_statuses(db, target_id, after, limit).await;
+        if statuses.is_empty() {
+            continue;
+        }
+        let statuses = unfiltered(db, receiver_id, statuses, receiver).await;
+        add_all(redis, timeline, &statuses, aggregate).await?;
+    }
+    Ok(())
+}
+
+/// `FeedManager#populate_home`: fill a home feed from scratch with the
+/// account's own statuses and those of the accounts it follows.
+pub async fn populate_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    account_id: i64,
+) {
+    let limit = (FEED_MAX_ITEMS / 2) as i64;
+    let aggregate = aggregates(db, account_id).await;
+    let timeline = Timeline::home(keys, account_id);
+    let populated = async {
+        // `account.statuses.limit(limit)`, unfiltered.
+        let own = sqlx::query!(
+            "SELECT id, reblog_of_id FROM statuses
+             WHERE account_id = $1 AND deleted_at IS NULL
+             ORDER BY id DESC LIMIT $2",
+            account_id,
+            limit,
+        )
+        .fetch_all(db)
+        .await
+        .unwrap_or_default();
+        for status in own {
+            add_to_feed(redis, &timeline, status.id, status.reblog_of_id, aggregate).await?;
+        }
+        // `account.following.includes(:account_stat).reorder(nil).find_each`
+        let targets = sqlx::query!(
+            r#"SELECT a.id, st.last_status_at AS "last_status_at?" FROM follows f
+               JOIN accounts a ON a.id = f.target_account_id
+               LEFT JOIN account_stats st ON st.account_id = a.id
+               WHERE f.account_id = $1
+               ORDER BY a.id"#,
+            account_id,
+        )
+        .fetch_all(db)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| (t.id, t.last_status_at))
+        .collect();
+        populate_from(
+            redis,
+            db,
+            &timeline,
+            account_id,
+            Receiver::Home,
+            targets,
+            aggregate,
+        )
+        .await
+    }
+    .await;
+    if let Err(error) = populated {
+        tracing::warn!(%error, account_id, "could not populate a home feed");
+    }
+}
+
+/// `FeedManager#populate_list`: fill a list feed from scratch with the
+/// statuses of its active members (those followed).
+pub async fn populate_list(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
     list_id: i64,
-    member_id: i64,
-    owner_id: i64,
-    replies_policy: &str,
 ) {
-    if !is_list_feed_populated(redis, keys, list_id).await {
+    let Some((owner_id, replies_policy)) = find_list(db, list_id).await else {
         return;
-    }
-
-    let recent: Vec<i64> = match replies_policy {
-        "none" => sqlx::query_scalar!(
-            r#"SELECT id FROM statuses
-               WHERE account_id = $1 AND deleted_at IS NULL AND visibility != 3
-                 AND (in_reply_to_id IS NULL
-                      OR in_reply_to_account_id = $1
-                      OR in_reply_to_account_id = $2)
-               ORDER BY id DESC LIMIT 20"#,
-            member_id,
-            owner_id,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
-        "list" => sqlx::query_scalar!(
-            r#"SELECT s.id FROM statuses s
-               WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility != 3
-                 AND (s.in_reply_to_id IS NULL
-                      OR s.in_reply_to_account_id = $3
-                      OR EXISTS (
-                          SELECT 1 FROM statuses s2
-                          JOIN list_accounts la ON la.account_id = s2.account_id
-                          WHERE s2.id = s.in_reply_to_id AND la.list_id = $2
-                      ))
-               ORDER BY s.id DESC LIMIT 20"#,
-            member_id,
-            list_id,
-            owner_id,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
-        _ => sqlx::query_scalar!(
-            r#"SELECT s.id FROM statuses s
-               WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility != 3
-                 -- `FeedManager#filter_from_list?` with `show_followed?`.
-                 AND (s.in_reply_to_id IS NULL
-                      OR s.in_reply_to_account_id = s.account_id
-                      OR s.in_reply_to_account_id = $2
-                      OR EXISTS (
-                          SELECT 1 FROM follows f
-                          WHERE f.account_id = $2 AND f.target_account_id = s.in_reply_to_account_id
-                      ))
-               ORDER BY s.id DESC LIMIT 20"#,
-            member_id,
-            owner_id,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default(),
     };
+    let aggregate = aggregates(db, owner_id).await;
+    let timeline = Timeline::list(keys, list_id);
+    // `list.active_accounts.includes(:account_stat).reorder(nil).find_each`
+    let targets = sqlx::query!(
+        r#"SELECT a.id, st.last_status_at AS "last_status_at?" FROM list_accounts la
+           JOIN accounts a ON a.id = la.account_id
+           LEFT JOIN account_stats st ON st.account_id = a.id
+           WHERE la.list_id = $1 AND la.follow_id IS NOT NULL
+           ORDER BY a.id"#,
+        list_id,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|t| (t.id, t.last_status_at))
+    .collect();
+    let receiver = Receiver::List {
+        id: list_id,
+        replies_policy,
+    };
+    if let Err(error) =
+        populate_from(redis, db, &timeline, owner_id, receiver, targets, aggregate).await
+    {
+        tracing::warn!(%error, list_id, "could not populate a list feed");
+    }
+}
 
-    if recent.is_empty() {
+/// The merges' part of `merge_into_home` and `merge_into_list`: the newest
+/// [`FEED_MAX_ITEMS`]` / 4` of `from_account_id`'s eligible statuses, only
+/// those newer than the feed's oldest entry once it holds that many, that the
+/// filter lets in.
+async fn merge(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    timeline: &Timeline,
+    from_account_id: i64,
+    receiver_id: i64,
+    receiver: Receiver,
+) {
+    let limit = (FEED_MAX_ITEMS / 4) as i64;
+    let aggregate = aggregates(db, receiver_id).await;
+    let after = if timeline_size(redis, timeline).await >= limit {
+        oldest_score(redis, timeline).await
+    } else {
+        None
+    };
+    let statuses = eligible_statuses(db, from_account_id, after, limit).await;
+    let statuses = unfiltered(db, receiver_id, statuses, receiver).await;
+    if let Err(error) = add_all(redis, timeline, &statuses, aggregate).await {
+        tracing::warn!(%error, key = %timeline.key, "could not merge statuses into a feed");
+    }
+}
+
+/// `FeedManager#merge_into_home`: fill `into_account_id`'s home feed with
+/// `from_account_id`'s statuses, unless its user has not signed in recently.
+pub async fn merge_into_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    from_account_id: i64,
+    into_account_id: i64,
+) {
+    if !is_signed_in_recently(db, into_account_id).await {
         return;
     }
+    merge(
+        redis,
+        db,
+        &Timeline::home(keys, into_account_id),
+        from_account_id,
+        into_account_id,
+        Receiver::Home,
+    )
+    .await;
+}
 
-    let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
+/// `FeedManager#merge_into_list`: fill a list feed with `from_account_id`'s
+/// statuses, unless the list's owner has not signed in recently.
+pub async fn merge_into_list(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    from_account_id: i64,
+    list_id: i64,
+) {
+    let Some((owner_id, replies_policy)) = find_list(db, list_id).await else {
+        return;
+    };
+    if !is_signed_in_recently(db, owner_id).await {
+        return;
+    }
     merge(
         redis,
         db,
         &Timeline::list(keys, list_id),
-        &recent,
-        aggregate,
+        from_account_id,
+        owner_id,
+        Receiver::List {
+            id: list_id,
+            replies_policy,
+        },
     )
     .await;
 }
 
-/// Delete an account's home feed keys (Mastodon's `FeedManager#clean_feeds!`,
-/// called when the account is deleted).
-pub async fn delete_home_feed(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    account_id: i64,
-) {
-    clean_reblogs(redis, &Timeline::home(keys, account_id)).await;
-    let _: redis::RedisResult<()> = redis::pipe()
-        .del(feed_key(keys, account_id))
-        .del(populated_key(keys, account_id))
-        .query_async(redis)
-        .await;
-}
-
-/// Delete a list's Redis feed keys (called when the list itself is deleted).
-pub async fn delete_list_feed(redis: &mut ConnectionManager, keys: &RedisKeyspace, list_id: i64) {
-    clean_reblogs(redis, &Timeline::list(keys, list_id)).await;
-    let _: redis::RedisResult<()> = redis::pipe()
-        .del(list_feed_key(keys, list_id))
-        .del(list_populated_key(keys, list_id))
-        .query_async(redis)
-        .await;
-}
-
-/// Backfill the follower's feed with recent statuses from the newly-followed account.
-pub async fn backfill_follow(
-    redis: &mut ConnectionManager,
-    keys: &RedisKeyspace,
-    db: &PgPool,
-    follower_id: i64,
-    followed_id: i64,
-) {
-    if !is_feed_populated(redis, keys, follower_id).await {
-        return;
-    }
-
-    let recent: Vec<i64> = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE account_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT 20",
-        followed_id,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
-
-    if recent.is_empty() {
-        return;
-    }
-
-    let aggregate = !not_aggregating(db, &[follower_id])
-        .await
-        .contains(&follower_id);
-    merge(
-        redis,
-        db,
-        &Timeline::home(keys, follower_id),
-        &recent,
-        aggregate,
-    )
-    .await;
-}
-
-/// Remove the (former) followee's statuses from the follower's home feed.
-/// Mirrors Mastodon's `FeedManager#unmerge_from_home`, called on unfollow and
-/// block so an ex-followee's posts (and their own reblogs) stop lingering in
-/// the cached timeline until the next full repopulate.
+/// `FeedManager#unmerge_from_home`: take `from_account_id`'s statuses out of
+/// `into_account_id`'s home feed, as an unfollow, a block or a suspension
+/// does.
 pub async fn unmerge_from_home(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1484,45 +1544,68 @@ pub async fn unmerge_from_home(
     from_account_id: i64,
     into_account_id: i64,
 ) {
-    if !is_feed_populated(redis, keys, into_account_id).await {
-        return;
-    }
+    unmerge_account(
+        redis,
+        db,
+        from_account_id,
+        into_account_id,
+        &Timeline::home(keys, into_account_id),
+    )
+    .await;
+}
 
-    let key = feed_key(keys, into_account_id);
-    // The feed's *members* are exact status ids (only the ZSET scores are lossy
-    // f64s), so read the members and keep the ones authored by the ex-followee.
-    // This both bounds the DB scan (the feed holds at most FEED_MAX_ITEMS) and
-    // avoids the snowflake-precision pitfall of comparing against a float score.
+/// `FeedManager#unmerge_from_list`.
+pub async fn unmerge_from_list(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    from_account_id: i64,
+    list_id: i64,
+) {
+    let Some((owner_id, _)) = find_list(db, list_id).await else {
+        return;
+    };
+    unmerge_account(
+        redis,
+        db,
+        from_account_id,
+        owner_id,
+        &Timeline::list(keys, list_id),
+    )
+    .await;
+}
+
+/// `from_account.statuses.where(id: timeline_status_ids)`, each removed.
+async fn unmerge_account(
+    redis: &mut ConnectionManager,
+    db: &PgPool,
+    from_account_id: i64,
+    owner_id: i64,
+    timeline: &Timeline,
+) {
+    // The feed's *members* are exact status ids (only the scores are lossy
+    // f64s), so read the members and keep the ones the account wrote.
     let members: Vec<i64> = redis
-        .zrange::<_, Vec<i64>>(&key, 0, -1)
+        .zrange::<_, Vec<i64>>(&timeline.key, 0, -1)
         .await
         .unwrap_or_default();
     if members.is_empty() {
         return;
     }
-
     let ids: Vec<i64> = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE account_id = $1 AND id = ANY($2::bigint[])",
+        "SELECT id FROM statuses
+         WHERE account_id = $1 AND id = ANY($2::bigint[]) AND deleted_at IS NULL",
         from_account_id,
         &members,
     )
     .fetch_all(db)
     .await
     .unwrap_or_default();
-
-    unmerge(
-        redis,
-        db,
-        into_account_id,
-        &Timeline::home(keys, into_account_id),
-        &ids,
-    )
-    .await;
+    unmerge(redis, db, owner_id, timeline, &ids).await;
 }
 
 /// Remove every home-feed entry authored by an account on `domain`, used when a
-/// user blocks a domain (Mastodon AfterBlockDomainFromAccountService clears the
-/// blocker's timelines of that domain's content).
+/// user blocks a domain.
 pub async fn unmerge_domain_from_home(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1530,12 +1613,9 @@ pub async fn unmerge_domain_from_home(
     domain: &str,
     into_account_id: i64,
 ) {
-    if !is_feed_populated(redis, keys, into_account_id).await {
-        return;
-    }
-    let key = feed_key(keys, into_account_id);
+    let timeline = Timeline::home(keys, into_account_id);
     let members: Vec<i64> = redis
-        .zrange::<_, Vec<i64>>(&key, 0, -1)
+        .zrange::<_, Vec<i64>>(&timeline.key, 0, -1)
         .await
         .unwrap_or_default();
     if members.is_empty() {
@@ -1551,14 +1631,7 @@ pub async fn unmerge_domain_from_home(
     .fetch_all(db)
     .await
     .unwrap_or_default();
-    unmerge(
-        redis,
-        db,
-        into_account_id,
-        &Timeline::home(keys, into_account_id),
-        &ids,
-    )
-    .await;
+    unmerge(redis, db, into_account_id, &timeline, &ids).await;
 }
 
 /// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it.
@@ -1573,7 +1646,7 @@ async fn unmerge(
         return;
     }
     let reblogs = reblogs_of(db, ids).await;
-    let aggregate = !not_aggregating(db, &[owner_id]).await.contains(&owner_id);
+    let aggregate = aggregates(db, owner_id).await;
     for &id in ids {
         let reblog_of_id = reblogs.get(&id).copied();
         if let Err(error) = remove_from_feed(redis, timeline, id, reblog_of_id, aggregate).await {
@@ -1583,50 +1656,192 @@ async fn unmerge(
     }
 }
 
+// ── Cleaning ──────────────────────────────────────────────────────────────
+
+/// `FeedManager#clean_feeds!` for one feed: the feed, its tracked boosts, and
+/// every set of boosts held back.
+async fn clean_feed(redis: &mut ConnectionManager, timeline: &Timeline) {
+    let tracked: Vec<i64> = redis
+        .zrange(&timeline.reblogs, 0, -1)
+        .await
+        .unwrap_or_default();
+    let mut pipe = redis::pipe();
+    pipe.del(&timeline.key)
+        .ignore()
+        .del(&timeline.reblogs)
+        .ignore();
+    for boosted in tracked {
+        pipe.del(timeline.reblog_set(boosted)).ignore();
+    }
+    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+}
+
+/// `FeedManager#clean_feeds!(:home, [account_id])`.
+pub async fn delete_home_feed(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    account_id: i64,
+) {
+    clean_feed(redis, &Timeline::home(keys, account_id)).await;
+}
+
+/// `FeedManager#clean_feeds!(:list, [list_id])`.
+pub async fn delete_list_feed(redis: &mut ConnectionManager, keys: &RedisKeyspace, list_id: i64) {
+    clean_feed(redis, &Timeline::list(keys, list_id)).await;
+}
+
+/// `Vacuum::FeedsVacuum`: remove the home feeds and list feeds of confirmed
+/// users who have not signed in within [`crate::home_feed::ACTIVE_DAYS`]
+/// (`User.confirmed.not_signed_in_recently`), so that they are regenerated
+/// when those users return.
+pub async fn vacuum_inactive_feeds(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+) -> sqlx::Result<()> {
+    const BATCH: i64 = 1000;
+    let mut after = 0i64;
+    loop {
+        let users = sqlx::query!(
+            r#"SELECT id, account_id FROM users
+               WHERE confirmed_at IS NOT NULL
+                 AND current_sign_in_at < now() - make_interval(days => $1)
+                 AND id > $2
+               ORDER BY id LIMIT $3"#,
+            crate::home_feed::ACTIVE_DAYS,
+            after,
+            BATCH,
+        )
+        .fetch_all(db)
+        .await?;
+        let Some(last) = users.last() else {
+            return Ok(());
+        };
+        after = last.id;
+        let account_ids: Vec<i64> = users.iter().map(|u| u.account_id).collect();
+        for &account_id in &account_ids {
+            delete_home_feed(redis, keys, account_id).await;
+        }
+        let lists: Vec<i64> = sqlx::query_scalar!(
+            "SELECT id FROM lists WHERE account_id = ANY($1)",
+            &account_ids,
+        )
+        .fetch_all(db)
+        .await?;
+        for list_id in lists {
+            delete_list_feed(redis, keys, list_id).await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{aggregate, Aggregated, REBLOG_FALLOFF};
+    use super::{filter_from_home, id_at, Candidate, Crutches, Receiver};
 
-    #[test]
-    fn a_second_boost_is_held_back() {
-        // 1 is a post from someone not followed; 10 and 11 boost it.
-        let plan = aggregate(&[(10, Some(1)), (11, Some(1)), (12, None)], true);
-        assert_eq!(
-            plan,
-            Aggregated {
-                feed: vec![10, 12],
-                tracked: vec![(1, 10)],
-                held_back: vec![(1, 11)],
-            }
-        );
-        // Not aggregating, every boost goes in.
-        assert_eq!(
-            aggregate(&[(10, Some(1)), (11, Some(1))], false).feed,
-            vec![10, 11]
-        );
+    fn post(id: i64, account_id: i64) -> Candidate {
+        Candidate {
+            id,
+            account_id,
+            reply: false,
+            in_reply_to_id: None,
+            in_reply_to_account_id: None,
+            language: None,
+            reblog_of_id: None,
+            reblog: None,
+        }
     }
 
     #[test]
-    fn a_boost_of_a_recent_post_stays_out() {
-        let plan = aggregate(&[(1, None), (10, Some(1))], true);
-        assert_eq!(plan.feed, vec![1]);
-        assert!(plan.tracked.is_empty());
+    fn a_reply_to_someone_not_followed_stays_out() {
+        let mut reply = post(10, 2);
+        reply.reply = true;
+        reply.in_reply_to_id = Some(9);
+        reply.in_reply_to_account_id = Some(3);
+        let crutches = Crutches::default();
+        assert!(filter_from_home(&reply, 1, &crutches, Receiver::Home));
+        let following = Crutches {
+            following: [3].into(),
+            ..Default::default()
+        };
+        assert!(!filter_from_home(&reply, 1, &following, Receiver::Home));
+        // A reply to the receiver, and the receiver's own, go in.
+        reply.in_reply_to_account_id = Some(1);
+        assert!(!filter_from_home(&reply, 1, &crutches, Receiver::Home));
+        // One whose parent is gone stays out.
+        reply.in_reply_to_id = None;
+        assert!(filter_from_home(&reply, 1, &crutches, Receiver::Home));
+        assert!(!filter_from_home(&reply, 2, &crutches, Receiver::Home));
     }
 
     #[test]
-    fn tracking_falls_off_after_eighty_entries() {
-        let mut candidates = vec![(1000, None), (1001, Some(1000))];
-        candidates.extend((0..REBLOG_FALLOFF as i64).map(|i| (2000 + i, None)));
-        // The post is now further down than the falloff: a new boost goes in.
-        candidates.push((3000, Some(1000)));
-        let plan = aggregate(&candidates, true);
-        assert_eq!(plan.feed.last(), Some(&3000));
-        assert_eq!(plan.tracked, vec![(1000, 3000)]);
-        // A boost of something tracked within the falloff is held back.
-        let mut candidates = vec![(10, Some(1))];
-        candidates.extend((0..(REBLOG_FALLOFF as i64 - 1)).map(|i| (100 + i, None)));
-        candidates.push((500, Some(1)));
-        let plan = aggregate(&candidates, true);
-        assert_eq!(plan.held_back, vec![(1, 500)]);
+    fn an_exclusive_list_keeps_its_members_off_home_only() {
+        let crutches = Crutches {
+            exclusive_list_users: [2].into(),
+            ..Default::default()
+        };
+        assert!(filter_from_home(&post(10, 2), 1, &crutches, Receiver::Home));
+        let list = Receiver::List {
+            id: 5,
+            replies_policy: 0,
+        };
+        assert!(!filter_from_home(&post(10, 2), 1, &crutches, list));
+    }
+
+    #[test]
+    fn a_boost_is_filtered_by_its_original() {
+        let mut boost = post(10, 2);
+        boost.reblog_of_id = Some(9);
+        // The boosted post is gone.
+        assert!(filter_from_home(
+            &boost,
+            1,
+            &Crutches::default(),
+            Receiver::Home
+        ));
+        boost.reblog = Some((3, Some("example.com".into())));
+        assert!(!filter_from_home(
+            &boost,
+            1,
+            &Crutches::default(),
+            Receiver::Home
+        ));
+        let muting = Crutches {
+            muting: [3].into(),
+            ..Default::default()
+        };
+        assert!(filter_from_home(&boost, 1, &muting, Receiver::Home));
+        let domain = Crutches {
+            domain_blocking: ["example.com".to_owned()].into(),
+            ..Default::default()
+        };
+        assert!(filter_from_home(&boost, 1, &domain, Receiver::Home));
+        let hiding = Crutches {
+            hiding_reblogs: [2].into(),
+            ..Default::default()
+        };
+        assert!(filter_from_home(&boost, 1, &hiding, Receiver::Home));
+    }
+
+    #[test]
+    fn a_follow_limited_to_languages_filters_others() {
+        let crutches = Crutches {
+            languages: [(2, vec!["en".to_owned()])].into(),
+            ..Default::default()
+        };
+        let mut status = post(10, 2);
+        assert!(!filter_from_home(&status, 1, &crutches, Receiver::Home));
+        status.language = Some("ko".into());
+        assert!(filter_from_home(&status, 1, &crutches, Receiver::Home));
+        status.language = Some("en".into());
+        assert!(!filter_from_home(&status, 1, &crutches, Receiver::Home));
+    }
+
+    #[test]
+    fn id_at_is_a_snowflake_without_its_random_part() {
+        let at = chrono::DateTime::from_timestamp(1_700_000_000, 0)
+            .unwrap()
+            .naive_utc();
+        assert_eq!(id_at(Some(at)), 1_700_000_000_000 << 16);
+        assert_eq!(id_at(None), 0);
     }
 }

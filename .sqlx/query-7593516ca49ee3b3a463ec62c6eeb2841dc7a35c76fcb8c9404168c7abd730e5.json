@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, st.last_status_at AS \"last_status_at?\" FROM list_accounts la\n           JOIN accounts a ON a.id = la.account_id\n           LEFT JOIN account_stats st ON st.account_id = a.id\n           WHERE la.list_id = $1 AND la.follow_id IS NOT NULL\n           ORDER BY a.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_status_at?",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "7593516ca49ee3b3a463ec62c6eeb2841dc7a35c76fcb8c9404168c7abd730e5"
+}

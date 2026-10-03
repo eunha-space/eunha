@@ -379,8 +379,16 @@ Redis under Mastodon's key, `account:<id>:regeneration`. A member who follows no
 one is answered the same way after their first follow, until that account's
 posts are merged into the feed — for a follow request, once it is accepted, or
 for a day at most.
-A feed Redis does not hold at all, because Redis lost it or it was never built,
-is rebuilt the same way the first time it is read.
+
+Nothing else rebuilds a feed. Reading one never fills it: a new member's empty
+feed is answered `200` and empty, and a feed Redis lost stays empty, apart from
+what is posted afterwards, until the member's next return after a week away.
+The feeds are kept under Mastodon's keys alone (`feed:home:<id>`,
+`feed:list:<id>`), so a Mastodon process sharing the Redis reads and feeds
+the same ones. A follow merges the followed account's recent posts into the
+home feed and the lists that hold it (`MergeWorker`), an unmute does the same,
+and an unfollow takes them out again (`UnmergeWorker`), as does removing an
+account from a list; these run on the [job queue](./jobs.md).
 
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:

@@ -278,13 +278,8 @@ pub async fn home_timeline(
     let since_id = q.since_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let min_id = q.min_id.as_deref().and_then(|s| s.parse::<i64>().ok());
 
-    // A feed Redis does not hold is regenerated, as `User#regenerate_feed!`
-    // regenerates a returning user's; until then the page is what the feed
-    // holds, answered as partial.
+    // `HomeFeed#get`: what the feed holds, which reading never changes.
     let mut redis = state.redis.clone();
-    if !feed::is_feed_populated(&mut redis, &state.redis_keys, auth.account_id).await {
-        crate::home_feed::regenerate_feed(&state, auth.account_id).await;
-    }
     let ids = feed::feed_get(
         &mut redis,
         &state.redis_keys,
@@ -295,8 +290,7 @@ pub async fn home_timeline(
         // Over-fetch to account for rows filtered at read time
         (limit * 3) as isize,
     )
-    .await
-    .unwrap_or_default();
+    .await;
     let statuses =
         hydrate_home_statuses(&state, &ids, auth.account_id, min_id.is_some(), limit).await?;
 
@@ -422,8 +416,8 @@ pub async fn list_timeline(
     Query(q): Query<PaginationParams>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("read:statuses")?;
-    let list = sqlx::query!(
-        "SELECT id, replies_policy FROM lists WHERE id = $1 AND account_id = $2",
+    sqlx::query_scalar!(
+        "SELECT id FROM lists WHERE id = $1 AND account_id = $2",
         list_id,
         auth.account_id,
     )
@@ -435,11 +429,10 @@ pub async fn list_timeline(
     let max_id = q.max_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let since_id = q.since_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let min_id = q.min_id.as_deref().and_then(|s| s.parse::<i64>().ok());
-    let replies_policy = crate::db::models::replies::to_str(list.replies_policy);
 
-    // Try Redis feed first; fall back to DB on cold start.
+    // `ListFeed#get`: what the feed holds, which reading never changes.
     let mut redis = state.redis.clone();
-    let redis_ids = feed::list_feed_get(
+    let ids = feed::list_feed_get(
         &mut redis,
         &state.redis_keys,
         list_id,
@@ -449,49 +442,8 @@ pub async fn list_timeline(
         (limit * 3) as isize,
     )
     .await;
-
-    let statuses = if let Some(ids) = redis_ids {
-        hydrate_list_statuses(&state, &ids, auth.account_id, min_id.is_some(), limit).await?
-    } else {
-        // Cold start: populate feed in background, use DB for this request.
-        {
-            let mut redis2 = state.redis.clone();
-            let redis_keys = state.redis_keys.clone();
-            let db = state.db.clone();
-            let owner_id = auth.account_id;
-            let policy = replies_policy.to_string();
-            if feed::sync_fanout() {
-                feed::list_feed_populate(&mut redis2, &redis_keys, list_id, owner_id, &policy, &db)
-                    .await;
-            } else {
-                crate::tenants::spawn(async move {
-                    feed::list_feed_populate(
-                        &mut redis2,
-                        &redis_keys,
-                        list_id,
-                        owner_id,
-                        &policy,
-                        &db,
-                    )
-                    .await;
-                });
-            }
-        }
-        newest_first(
-            min_id,
-            list_timeline_from_db(
-                &state,
-                list_id,
-                auth.account_id,
-                replies_policy,
-                max_id,
-                since_id,
-                min_id,
-                limit,
-            )
-            .await?,
-        )
-    };
+    let statuses =
+        hydrate_list_statuses(&state, &ids, auth.account_id, min_id.is_some(), limit).await?;
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
     let resp = with_pagination_link(&req_headers, &uri, result);
@@ -563,143 +515,6 @@ async fn hydrate_list_statuses(
         statuses.reverse();
     }
     Ok(statuses)
-}
-
-// DB fallback used on cold start.
-#[allow(clippy::too_many_arguments)]
-async fn list_timeline_from_db(
-    state: &AppState,
-    list_id: i64,
-    owner_id: i64,
-    replies_policy: &str,
-    max_id: Option<i64>,
-    since_id: Option<i64>,
-    min_id: Option<i64>,
-    limit: i64,
-) -> AppResult<Vec<DbStatus>> {
-    // replies_policy values:
-    //   "none"     — exclude all replies
-    //   "list"     — include replies only when the in-reply-to author is also in this list
-    //   "followed" — include replies only when the in-reply-to author is followed by the viewer
-    // replies_policy filter: $5 is owner_id in all query variants.
-    // Replies to the list owner always appear regardless of policy (matching Mastodon).
-    let reply_filter = match replies_policy {
-        "none" => {
-            "AND (s.in_reply_to_id IS NULL
-                        OR s.in_reply_to_account_id = s.account_id
-                        OR s.in_reply_to_account_id = $5)"
-        }
-        "list" => {
-            "AND (s.in_reply_to_id IS NULL
-                        OR s.in_reply_to_account_id = s.account_id
-                        OR s.in_reply_to_account_id = $5
-                        OR EXISTS (
-                            SELECT 1 FROM list_accounts la2
-                            WHERE la2.list_id = $1 AND la2.account_id = s.in_reply_to_account_id))"
-        }
-        // `FeedManager#filter_from_list?` with `show_followed?`.
-        _ => {
-            "AND (s.in_reply_to_id IS NULL
-                        OR s.in_reply_to_account_id = s.account_id
-                        OR s.in_reply_to_account_id = $5
-                        OR EXISTS (
-                            SELECT 1 FROM follows f
-                            WHERE f.account_id = $5 AND f.target_account_id = s.in_reply_to_account_id))"
-        }
-    };
-
-    // Suspended authors, blocked/muted authors (direct and reblogged), and
-    // domain-blocked reblog authors are filtered here too, matching the warm
-    // hydrate path and Mastodon's list filter. $5 is the viewer (list owner).
-    let moderation_filter = r#"
-                 AND NOT EXISTS (SELECT 1 FROM accounts sa WHERE sa.id = s.account_id
-                                  AND (sa.suspended_at IS NOT NULL OR sa.requested_deletion_at IS NOT NULL))
-                 AND (s.account_id = $5 OR NOT EXISTS (
-                     SELECT 1 FROM blocks b
-                     WHERE (b.account_id = $5 AND b.target_account_id = s.account_id)
-                        OR (b.account_id = s.account_id AND b.target_account_id = $5)
-                 ))
-                 AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM statuses orig JOIN blocks b ON (
-                         (b.account_id = $5 AND b.target_account_id = orig.account_id)
-                         OR (b.account_id = orig.account_id AND b.target_account_id = $5)
-                     ) WHERE orig.id = s.reblog_of_id
-                 ))
-                 AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM statuses orig
-                     JOIN mutes m2 ON m2.account_id = $5 AND m2.target_account_id = orig.account_id
-                         AND (m2.expires_at IS NULL OR m2.expires_at > now())
-                     WHERE orig.id = s.reblog_of_id
-                 ))
-                 AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                     SELECT 1 FROM statuses orig
-                     JOIN accounts orig_a ON orig_a.id = orig.account_id
-                     JOIN account_domain_blocks adb ON adb.account_id = $5 AND adb.domain = orig_a.domain
-                     WHERE orig.id = s.reblog_of_id
-                 ))"#;
-
-    if min_id.is_some() {
-        let sql = format!(
-            r#"SELECT s.* FROM statuses s
-               JOIN list_accounts la ON la.account_id = s.account_id
-               WHERE la.list_id = $1
-                 AND s.deleted_at IS NULL
-                 AND ($2::bigint IS NULL OR s.id > $2)
-                 AND (s.text != ''
-                      OR s.reblog_of_id IS NOT NULL
-                      OR s.poll_id IS NOT NULL
-                      OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))
-                 AND (NOT EXISTS (
-                     SELECT 1 FROM mutes mu
-                     WHERE mu.account_id = $5 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
-                 ))
-                 {moderation_filter}
-                 {reply_filter}
-               ORDER BY s.id ASC
-               LIMIT $3"#
-        );
-        sqlx::query_as::<_, DbStatus>(&sql)
-            .bind(list_id)
-            .bind(min_id)
-            .bind(limit)
-            .bind(Option::<i64>::None)
-            .bind(owner_id)
-            .fetch_all(&state.db)
-            .await
-            .map_err(crate::error::AppError::from)
-    } else {
-        let sql = format!(
-            r#"SELECT s.* FROM statuses s
-               JOIN list_accounts la ON la.account_id = s.account_id
-               WHERE la.list_id = $1
-                 AND s.deleted_at IS NULL
-                 AND ($2::bigint IS NULL OR s.id < $2)
-                 AND ($3::bigint IS NULL OR s.id > $3)
-                 AND (s.text != ''
-                      OR s.reblog_of_id IS NOT NULL
-                      OR s.poll_id IS NOT NULL
-                      OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = s.id))
-                 AND (NOT EXISTS (
-                     SELECT 1 FROM mutes mu
-                     WHERE mu.account_id = $5 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
-                 ))
-                 {moderation_filter}
-                 {reply_filter}
-               ORDER BY s.id DESC
-               LIMIT $4"#
-        );
-        sqlx::query_as::<_, DbStatus>(&sql)
-            .bind(list_id)
-            .bind(max_id)
-            .bind(since_id)
-            .bind(limit)
-            .bind(owner_id)
-            .fetch_all(&state.db)
-            .await
-            .map_err(crate::error::AppError::from)
-    }
 }
 
 // ── GET /api/v1/timelines/tag/:hashtag ───────────────────────────────────

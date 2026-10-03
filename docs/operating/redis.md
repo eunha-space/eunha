@@ -12,8 +12,8 @@ redis_key_prefix = "tenant-example"
 
 The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
 adds the separating colon, so the ACL key pattern for the example is
-`~tenant-example:*`. Every Redis key Eunha owns — feeds, feed population
-markers and the boosts each feed tracks (`feed:home:<id>:reblogs` and
+`~tenant-example:*`. Every Redis key Eunha owns — feeds (`feed:home:<id>`,
+`feed:list:<id>`) and the boosts each feed tracks (`feed:home:<id>:reblogs` and
 `feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
 preview card locks, tombstones, the oEmbed endpoints
 remembered for each domain, posting idempotency, notification
@@ -49,7 +49,7 @@ Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands Eunha uses:
 
 ~~~~
-+get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem
++get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem +zcard
 +zrange +zrangebyscore +zrevrangebyscore +zrevrank +zscore +mget +del
 +sadd +scard +incrby +pfadd +pfcount +expire +smembers +srem +hset +hget
 +hincrby
@@ -77,12 +77,18 @@ one performance and failure boundary and needs monitoring, bounded feed
 retention, admission controls, and a path for moving heavy tenants to dedicated
 Redis.
 
-Feeds, their population markers, the remembered oEmbed endpoints, and
-ojak's JSON-LD contexts and inbox records use `redis_url`; they are bounded
-cache state. Losing one of ojak's costs a refetch, or a redelivered activity
-processed again, which processing an activity tolerates; Mastodon keeps no
-such record at all. Kept in Redis rather than in each process's memory, a
-redelivery is recognised whichever process it reaches. Set
+Feeds, the remembered oEmbed endpoints, and ojak's JSON-LD contexts and inbox
+records use `redis_url`; they are bounded cache state. The feeds are Mastodon's
+keys and nothing else, so a Mastodon process given the same Redis and prefix
+reads and writes the same feeds. Eunha once also kept a marker beside each feed
+it had built, `feed:home:<id>:populated` and `feed:list:<id>:populated`;
+nothing reads those any more, and each is a few bytes, so they can be left, or
+removed with
+`redis-cli --scan --pattern '<prefix>:feed:*:populated' | xargs redis-cli del`.
+Losing one of ojak's costs a refetch, or a redelivered activity processed
+again, which processing an activity tolerates; Mastodon keeps no such record
+at all. Kept in Redis rather than in each process's memory, a redelivery is
+recognised whichever process it reaches. Set
 `redis_coordination_url` to route locks, ActivityPub deletion tombstones,
 posting idempotency, notification grouping, async refreshes (see
 [Remote replies](./remote-replies.md)) and the batches of posts waiting for

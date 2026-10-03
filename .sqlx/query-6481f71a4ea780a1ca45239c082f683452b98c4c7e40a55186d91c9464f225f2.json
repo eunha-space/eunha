@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.reply, s.in_reply_to_id, s.in_reply_to_account_id,\n                  s.language, s.reblog_of_id,\n                  r.account_id AS \"reblog_account_id?\", ra.domain AS \"reblog_domain?\"\n           FROM statuses s\n           LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL\n           LEFT JOIN accounts ra ON ra.id = r.account_id\n           WHERE s.account_id = $1\n             AND s.deleted_at IS NULL\n             AND s.visibility IN (0, 1, 2)\n             AND ($2::bigint IS NULL OR s.id > $2)\n           ORDER BY s.id DESC\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "reply",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "reblog_account_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_domain?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "6481f71a4ea780a1ca45239c082f683452b98c4c7e40a55186d91c9464f225f2"
+}

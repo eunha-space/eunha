@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target_account_id, languages FROM follows\n             WHERE account_id = $1 AND target_account_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "languages",
+        "type_info": "VarcharArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "b9df009bc3057404edfa2787237139f749ab80a305111a3ee3a3f0012e1eb58b"
+}

@@ -246,8 +246,9 @@ pub async fn add_list_accounts(
     Json(form): Json<ListAccountsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:lists")?;
-    let list = fetch_list(&state, id, auth.account_id).await?;
+    fetch_list(&state, id, auth.account_id).await?;
 
+    let mut added: Vec<i64> = Vec::new();
     for id_str in &form.account_ids {
         if let Ok(account_id) = id_str.parse::<i64>() {
             // Mastodon ListAccount#validate_relationship: you may add an account
@@ -270,45 +271,40 @@ pub async fn add_list_accounts(
                     "Account must be followed before adding to a list".into(),
                 ));
             }
+            // `ListAccount#set_follow`: the follow, or else the follow
+            // request, the membership hangs on; the owner's own has neither.
             sqlx::query!(
-                "INSERT INTO list_accounts (list_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                id, account_id,
+                "INSERT INTO list_accounts (list_id, account_id, follow_id, follow_request_id)
+                 SELECT $1, $2, f.id, CASE WHEN f.id IS NULL THEN fr.id END
+                 FROM (SELECT 1) one
+                 LEFT JOIN follows f
+                   ON f.account_id = $3 AND f.target_account_id = $2 AND $2 <> $3
+                 LEFT JOIN follow_requests fr
+                   ON fr.account_id = $3 AND fr.target_account_id = $2 AND $2 <> $3
+                 ON CONFLICT DO NOTHING",
+                id,
+                account_id,
+                auth.account_id,
             )
             .execute(&state.db)
             .await?;
-            {
-                let mut redis = state.redis.clone();
-                let redis_keys = state.redis_keys.clone();
-                let db = state.db.clone();
-                let owner_id = auth.account_id;
-                let policy = models::replies::to_str(list.replies_policy).to_owned();
-                if feed::sync_fanout() {
-                    feed::backfill_list_member(
-                        &mut redis,
-                        &redis_keys,
-                        &db,
-                        id,
-                        account_id,
-                        owner_id,
-                        &policy,
-                    )
-                    .await;
-                } else {
-                    crate::tenants::spawn(async move {
-                        feed::backfill_list_member(
-                            &mut redis,
-                            &redis_keys,
-                            &db,
-                            id,
-                            account_id,
-                            owner_id,
-                            &policy,
-                        )
-                        .await;
-                    });
-                }
-            }
+            added.push(account_id);
         }
+    }
+
+    // `AddAccountsToListService#merge_into_list!`: a `MergeWorker` for each
+    // added account the owner follows.
+    let merge_ids: Vec<i64> = sqlx::query_scalar!(
+        "SELECT account_id FROM list_accounts
+         WHERE list_id = $1 AND account_id = ANY($2) AND follow_id IS NOT NULL",
+        id,
+        &added,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for account_id in merge_ids {
+        crate::home_feed::enqueue_merge(&state, account_id, id, crate::home_feed::FeedType::List)
+            .await;
     }
 
     Ok(Json(serde_json::json!({})))
@@ -325,17 +321,32 @@ pub async fn remove_list_accounts(
     auth.require_scope("write:lists")?;
     fetch_list(&state, id, auth.account_id).await?;
 
-    for id_str in &form.account_ids {
-        if let Ok(account_id) = id_str.parse::<i64>() {
-            sqlx::query!(
-                "DELETE FROM list_accounts WHERE list_id = $1 AND account_id = $2",
-                id,
-                account_id,
-            )
-            .execute(&state.db)
-            .await?;
-        }
+    let account_ids: Vec<i64> = form
+        .account_ids
+        .iter()
+        .filter_map(|id| id.parse::<i64>().ok())
+        .collect();
+    // `RemoveAccountsFromListService#unmerge_from_list!`: an `UnmergeWorker`
+    // for each followed member, queued before the memberships go.
+    let unmerge_ids: Vec<i64> = sqlx::query_scalar!(
+        "SELECT account_id FROM list_accounts
+         WHERE list_id = $1 AND account_id = ANY($2) AND follow_id IS NOT NULL",
+        id,
+        &account_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for account_id in unmerge_ids {
+        crate::home_feed::enqueue_unmerge(&state, account_id, id, crate::home_feed::FeedType::List)
+            .await;
     }
+    sqlx::query!(
+        "DELETE FROM list_accounts WHERE list_id = $1 AND account_id = ANY($2)",
+        id,
+        &account_ids,
+    )
+    .execute(&state.db)
+    .await?;
 
     Ok(Json(serde_json::json!({})))
 }

@@ -668,8 +668,7 @@ pub async fn remove_boost(state: &AppState, boost_id: i64, booster_id: i64) {
 /// `remove_from_self if @account.local?`, `remove_from_followers` and
 /// `remove_from_lists`: `FeedManager#unpush_from_home` and
 /// `#unpush_from_list`, which publish `delete` only where `remove_from_feed`
-/// takes the status out: a feed that holds it, which a feed Redis does not
-/// hold yet answers as it answered the fan-out (`crate::feed::home_holds`).
+/// takes the status out: a feed that holds it (`crate::feed::home_holds`).
 async fn unpush(
     state: &AppState,
     status_id: i64,
