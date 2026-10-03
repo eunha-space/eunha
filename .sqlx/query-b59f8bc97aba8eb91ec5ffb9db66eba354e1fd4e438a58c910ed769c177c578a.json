@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, reblog_of_id, account_id FROM statuses\n         WHERE id = ANY($1) AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b59f8bc97aba8eb91ec5ffb9db66eba354e1fd4e438a58c910ed769c177c578a"
+}

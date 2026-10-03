@@ -70,6 +70,8 @@ fn workers() -> Vec<Entry> {
         entry::<crate::portability::import::BulkImportWorker>(),
         entry::<crate::portability::import::RowWorker>(),
         entry::<crate::home_feed::RegenerationWorker>(),
+        entry::<crate::api::mastodon::accounts::BlockWorker>(),
+        entry::<crate::api::mastodon::accounts::MuteWorker>(),
         entry::<crate::home_feed::MergeWorker>(),
         entry::<crate::home_feed::UnmergeWorker>(),
         entry::<crate::moves::MoveWorker>(),

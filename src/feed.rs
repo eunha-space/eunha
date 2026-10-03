@@ -185,14 +185,15 @@ async fn add_to_feed(
 }
 
 /// `FeedManager#remove_from_feed`: take the status out, and when it was a
-/// boost standing in for others, put the oldest boost held back in its place.
+/// boost standing in for others, put the oldest boost held back in its place;
+/// whether the feed held it.
 async fn remove_from_feed(
     redis: &mut ConnectionManager,
     timeline: &Timeline,
     status_id: i64,
     reblog_of_id: Option<i64>,
     aggregate: bool,
-) -> redis::RedisResult<()> {
+) -> redis::RedisResult<bool> {
     match reblog_of_id.filter(|_| aggregate) {
         Some(reblog_of_id) => {
             let rank: Option<usize> = redis::cmd("ZREVRANK")
@@ -201,7 +202,7 @@ async fn remove_from_feed(
                 .query_async(redis)
                 .await?;
             if rank.is_none() {
-                return Ok(());
+                return Ok(false);
             }
             let set = timeline.reblog_set(reblog_of_id);
             let (others,): (Vec<i64>,) = redis::pipe()
@@ -219,21 +220,21 @@ async fn remove_from_feed(
                     .zadd(&timeline.reblogs, reblog_of_id, other as f64)
                     .ignore();
             }
-            pipe.zrem(&timeline.key, status_id)
-                .ignore()
-                .query_async::<()>(redis)
-                .await
+            let (removed,): (i64,) = pipe
+                .zrem(&timeline.key, status_id)
+                .query_async(redis)
+                .await?;
+            Ok(removed > 0)
         }
         None => {
-            redis::pipe()
-                .del(timeline.reblog_set(status_id))
+            let mut pipe = redis::pipe();
+            pipe.del(timeline.reblog_set(status_id))
                 .ignore()
                 .zrem(&timeline.reblogs, status_id)
                 .ignore()
-                .zrem(&timeline.key, status_id)
-                .ignore()
-                .query_async::<()>(redis)
-                .await
+                .zrem(&timeline.key, status_id);
+            let (removed,): (i64,) = pipe.query_async(redis).await?;
+            Ok(removed > 0)
         }
     }
 }
@@ -1899,6 +1900,132 @@ async fn unmerge(
             tracing::warn!(%error, key = %timeline.key, "could not remove a status from a feed");
             return;
         }
+    }
+}
+
+/// `FeedManager#clear_from_home` and `#clear_from_list`: take out of the
+/// feed every status it holds that `target_account_id` wrote, that boosts
+/// one it wrote, or that mentions it (or boosts one that does), each by
+/// `unpush_from_home` / `unpush_from_list`, which streams a `delete` on
+/// `channel` for each status the feed held.
+async fn clear_from(
+    state: &crate::state::AppState,
+    timeline: &Timeline,
+    owner_id: i64,
+    target_account_id: i64,
+    channel: &str,
+) {
+    let mut redis = state.redis.clone();
+    let db = &state.db;
+    let members: Vec<i64> = redis
+        .zrange::<_, Vec<i64>>(&timeline.key, 0, -1)
+        .await
+        .unwrap_or_default();
+    if members.is_empty() {
+        return;
+    }
+    let statuses = sqlx::query!(
+        "SELECT id, reblog_of_id, account_id FROM statuses
+         WHERE id = ANY($1) AND deleted_at IS NULL",
+        &members,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    let reblog_of_ids: Vec<i64> = statuses.iter().filter_map(|s| s.reblog_of_id).collect();
+    let reblogged: HashSet<i64> = sqlx::query_scalar!(
+        "SELECT id FROM statuses
+         WHERE id = ANY($1) AND account_id = $2 AND deleted_at IS NULL",
+        &reblog_of_ids,
+        target_account_id,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+    let mentioning_ids: Vec<i64> = statuses
+        .iter()
+        .flat_map(|s| std::iter::once(s.id).chain(s.reblog_of_id))
+        .collect();
+    let with_mentions: HashSet<i64> = sqlx::query_scalar!(
+        "SELECT status_id FROM mentions
+         WHERE status_id = ANY($1) AND account_id = $2 AND NOT silent",
+        &mentioning_ids,
+        target_account_id,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+    let aggregate = aggregates(db, owner_id).await;
+    for status in statuses {
+        let boosts_target = status
+            .reblog_of_id
+            .is_some_and(|r| reblogged.contains(&r) || with_mentions.contains(&r));
+        if status.account_id != target_account_id
+            && !boosts_target
+            && !with_mentions.contains(&status.id)
+        {
+            continue;
+        }
+        match remove_from_feed(
+            &mut redis,
+            timeline,
+            status.id,
+            status.reblog_of_id,
+            aggregate,
+        )
+        .await
+        {
+            Ok(true) => state.streaming.delete(channel, status.id).await,
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(%error, key = %timeline.key, "could not clear a feed");
+                return;
+            }
+        }
+    }
+}
+
+/// `FeedManager#clear_from_home`.
+pub async fn clear_from_home(
+    state: &crate::state::AppState,
+    account_id: i64,
+    target_account_id: i64,
+) {
+    clear_from(
+        state,
+        &Timeline::home(&state.redis_keys, account_id),
+        account_id,
+        target_account_id,
+        &format!("timeline:{account_id}"),
+    )
+    .await;
+}
+
+/// `FeedManager#clear_from_lists`: [`clear_from`] for each of the account's
+/// lists.
+pub async fn clear_from_lists(
+    state: &crate::state::AppState,
+    account_id: i64,
+    target_account_id: i64,
+) {
+    let lists: Vec<i64> =
+        sqlx::query_scalar!("SELECT id FROM lists WHERE account_id = $1", account_id)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+    for list_id in lists {
+        clear_from(
+            state,
+            &Timeline::list(&state.redis_keys, list_id),
+            account_id,
+            target_account_id,
+            &format!("timeline:list:{list_id}"),
+        )
+        .await;
     }
 }
 

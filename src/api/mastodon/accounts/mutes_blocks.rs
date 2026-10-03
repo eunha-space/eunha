@@ -70,6 +70,13 @@ pub async fn mute(
     )
     .execute(&state.db)
     .await?;
+    // `BlockWorker` when the notifications are muted too, `MuteWorker`
+    // otherwise.
+    if hide_notifications {
+        queue_block_worker(state, account_id, target_id).await;
+    } else {
+        queue_mute_worker(state, account_id, target_id).await;
+    }
     Ok(())
 }
 
@@ -143,6 +150,10 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     .execute(&state.db)
     .await?;
 
+    // `UnfollowService` for each direction unmerges from the lists that held
+    // the other account, whose memberships go with the follow.
+    let blocker_lists = crate::home_feed::lists_with_account(state, account_id, target_id).await;
+    let target_lists = crate::home_feed::lists_with_account(state, target_id, account_id).await;
     // Remove accepted follows in both directions and update counts. Capture the
     // direction + Follow activity uri so we can federate the termination.
     let deleted = sqlx::query!(
@@ -178,21 +189,24 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     .execute(&state.db)
     .await?;
 
-    // Strip the blocked account's posts from the blocker's home feed
-    // (Mastodon BlockWorker → FeedManager#clear_from_home).
-    {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        let blocker_id = account_id;
-        if feed::sync_fanout() {
-            feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, blocker_id).await;
+    // `UnfollowService`'s `UnmergeWorker`s, for each follow that went.
+    for row in &deleted {
+        let lists = if row.account_id == account_id {
+            blocker_lists.clone()
         } else {
-            crate::tenants::spawn(async move {
-                feed::unmerge_from_home(&mut redis, &redis_keys, &db, target_id, blocker_id).await;
-            });
-        }
+            target_lists.clone()
+        };
+        crate::home_feed::unmerge_from_home_and_lists(
+            state,
+            row.target_account_id,
+            row.account_id,
+            lists,
+        )
+        .await;
     }
+
+    // `BlockWorker.perform_async(account.id, target_account.id)`.
+    queue_block_worker(state, account_id, target_id).await;
 
     // Federate to a remote target (Mastodon BlockService#handle_following_relationships
     // + the Block itself): Undo(Follow) for our follow, Reject(Follow) for their
@@ -553,4 +567,109 @@ pub async fn get_mutes(
         bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
     );
     Ok((resp_headers, Json(api_accounts)))
+}
+
+// ── BlockWorker and MuteWorker ─────────────────────────────────────────────
+
+/// `BlockWorker`, which is `AfterBlockService`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BlockWorker {
+    pub account_id: i64,
+    pub target_account_id: i64,
+}
+
+impl crate::jobs::Job for BlockWorker {
+    const KIND: &'static str = "BlockWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        after_block(state, self.account_id, self.target_account_id).await?;
+        Ok(())
+    }
+}
+
+/// `MuteWorker`: the muted account's posts out of the home feed and the
+/// lists.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MuteWorker {
+    pub account_id: i64,
+    pub target_account_id: i64,
+}
+
+impl crate::jobs::Job for MuteWorker {
+    const KIND: &'static str = "MuteWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        crate::feed::clear_from_home(state, self.account_id, self.target_account_id).await;
+        crate::feed::clear_from_lists(state, self.account_id, self.target_account_id).await;
+        Ok(())
+    }
+}
+
+/// `AfterBlockService#call`: the target out of the home feed and the lists,
+/// and its notification requests, notifications and the conversations it
+/// is in, gone.
+pub async fn after_block(state: &AppState, account_id: i64, target_id: i64) -> sqlx::Result<()> {
+    crate::feed::clear_from_home(state, account_id, target_id).await;
+    crate::feed::clear_from_lists(state, account_id, target_id).await;
+    sqlx::query!(
+        "DELETE FROM notification_requests WHERE account_id = $1 AND from_account_id = $2",
+        account_id,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2",
+        account_id,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM account_conversations
+         WHERE account_id = $1 AND $2 = ANY(participant_account_ids)",
+        account_id,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// `BlockWorker.perform_async`, or the worker at once when the tests ask
+/// for background work inline.
+async fn queue_block_worker(state: &AppState, account_id: i64, target_id: i64) {
+    if feed::sync_fanout() {
+        if let Err(error) = after_block(state, account_id, target_id).await {
+            tracing::warn!(%error, account_id, target_id, "AfterBlockService failed");
+        }
+    } else {
+        crate::jobs::push(
+            state,
+            BlockWorker {
+                account_id,
+                target_account_id: target_id,
+            },
+        )
+        .await;
+    }
+}
+
+/// `MuteWorker.perform_async`, or the worker at once.
+async fn queue_mute_worker(state: &AppState, account_id: i64, target_id: i64) {
+    if feed::sync_fanout() {
+        crate::feed::clear_from_home(state, account_id, target_id).await;
+        crate::feed::clear_from_lists(state, account_id, target_id).await;
+    } else {
+        crate::jobs::push(
+            state,
+            MuteWorker {
+                account_id,
+                target_account_id: target_id,
+            },
+        )
+        .await;
+    }
 }

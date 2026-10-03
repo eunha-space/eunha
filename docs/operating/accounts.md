@@ -388,7 +388,11 @@ The feeds are kept under Mastodon's keys alone (`feed:home:<id>`,
 the same ones. A follow merges the followed account's recent posts into the
 home feed and the lists that hold it (`MergeWorker`), an unmute does the same,
 and an unfollow takes them out again (`UnmergeWorker`), as does removing an
-account from a list; these run on the [job queue](./jobs.md).
+account from a list; these run on the [job queue](./jobs.md). Muting an account
+takes its posts, boosts of them and posts mentioning it out of the home feed
+and every list (`MuteWorker`); blocking it, or muting its notifications too,
+does that and also deletes its notifications, notification requests and the
+conversations it is in (`BlockWorker`).
 
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:

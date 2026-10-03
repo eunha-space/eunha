@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_conversations\n         WHERE account_id = $1 AND $2 = ANY(participant_account_ids)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1da6d6e12d1cdd8249617531b7c0ff0702fa7de19e7904fd6438421f7c700860"
+}

@@ -469,3 +469,106 @@ async fn test_the_fan_out_filters_before_writing() {
         "the exclusive list takes its member's post"
     );
 }
+
+/// Muting clears the feed as `MuteWorker` does with
+/// `FeedManager#clear_from_home`: the muted account's posts, boosts of them
+/// and posts mentioning it go, others stay.
+#[tokio::test]
+async fn test_muting_clears_the_feed_of_the_account() {
+    let ctx = TestContext::new("home-feed-clear-mute").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let carol_id = carol_id.to_string();
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    ctx.api.follow(&ctx.alice_token, &carol_id).await;
+
+    let carol_post = ctx
+        .api
+        .post_status(&carol_token, "carol's post", "public")
+        .await;
+    let carol_post_id = carol_post["id"].as_str().unwrap().to_owned();
+    // Bob mentions Carol, then posts about no one.
+    let mention = ctx
+        .api
+        .post_status(&ctx.bob_token, "hello @carol", "public")
+        .await;
+    let plain = ctx
+        .api
+        .post_status(&ctx.bob_token, "nothing about anyone", "public")
+        .await;
+    for id in [
+        &carol_post_id,
+        mention["id"].as_str().unwrap(),
+        plain["id"].as_str().unwrap(),
+    ] {
+        assert!(feed_holds(&ctx, id).await, "{id} fanned out");
+    }
+
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/mute"),
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "notifications": false }),
+        )
+        .await;
+    assert!(!feed_holds(&ctx, &carol_post_id).await);
+    assert!(!feed_holds(&ctx, mention["id"].as_str().unwrap()).await);
+    assert!(feed_holds(&ctx, plain["id"].as_str().unwrap()).await);
+}
+
+/// Blocking runs `AfterBlockService`: the blocked account's posts and boosts
+/// of them leave the feed, and its notifications go.
+#[tokio::test]
+async fn test_blocking_clears_the_feed_and_notifications() {
+    let ctx = TestContext::new("home-feed-clear-block").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let carol_id = carol_id.to_string();
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+
+    // Carol, whom Alice does not follow, posts; Bob boosts it into Alice's
+    // feed; Carol mentions Alice, which notifies her.
+    let carol_post = ctx
+        .api
+        .post_status(&carol_token, "carol's post", "public")
+        .await;
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/reblog",
+                carol_post["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boost_id = boost["id"].as_str().unwrap().to_owned();
+    assert!(feed_holds(&ctx, &boost_id).await);
+    ctx.api
+        .post_status(&carol_token, "hello @alice", "public")
+        .await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let notifications_from_carol = || {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notifications WHERE account_id = $1 AND from_account_id = $2",
+        )
+        .bind(alice)
+        .bind(carol_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+    };
+    assert!(notifications_from_carol().await.unwrap() > 0);
+
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/block"),
+            Some(&ctx.alice_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    assert!(!feed_holds(&ctx, &boost_id).await);
+    assert_eq!(notifications_from_carol().await.unwrap(), 0);
+}
