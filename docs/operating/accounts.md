@@ -130,6 +130,11 @@ Authorized apps and sign-in history
 member has not revoked (Doorkeeper's `authorized_for`), with its scopes and when
 a token of it was last used. Eunha records that as Mastodon does, at most once a
 day per token (`oauth_access_tokens.last_used_at` and `last_used_ip`).
+The “Authorized on” date is the application's creation date, as on Mastodon's
+page. Application creation records both Rails timestamps. Migration 027 repairs
+older Eunha rows that omitted them, using the earliest recorded token when
+possible; the original creation time cannot be recovered exactly.
+
 `DELETE /api/eunha/v1/authorized_applications/:id` revokes the app's tokens and
 grants for the member, removes their web push subscriptions and closes their
 streaming connections; the instance's own web app (`superapp`) is not offered,

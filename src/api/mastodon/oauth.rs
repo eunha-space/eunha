@@ -86,8 +86,8 @@ pub async fn register_app(
     let app = sqlx::query_as!(
         OauthApplication,
         r#"INSERT INTO oauth_applications
-             (name, uid, secret, redirect_uri, scopes, website)
-           VALUES ($1,$2,$3,$4,$5,$6)
+             (name, uid, secret, redirect_uri, scopes, website, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,now(),now())
            RETURNING *"#,
         form.client_name,
         client_id,
@@ -460,8 +460,8 @@ pub async fn elk_login(
             sqlx::query_as!(
                 OauthApplication,
                 r#"INSERT INTO oauth_applications
-                     (name, uid, secret, redirect_uri, scopes)
-                   VALUES ('Elk', $1, $2, $3, $4)
+                     (name, uid, secret, redirect_uri, scopes, created_at, updated_at)
+                   VALUES ('Elk', $1, $2, $3, $4, now(), now())
                    RETURNING *"#,
                 client_id,
                 client_secret,

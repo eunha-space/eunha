@@ -313,3 +313,44 @@ async fn test_login_activities_are_listed() {
         .unwrap();
     assert_eq!(older.len(), 1);
 }
+
+#[tokio::test]
+async fn test_oauth_application_timestamp_repair_preserves_known_dates() {
+    let ctx = TestContext::new("app-timestamps").await;
+    let app_id: i64 =
+        sqlx::query_scalar("SELECT application_id FROM oauth_access_tokens WHERE token=$1")
+            .bind(&ctx.alice_token)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE oauth_applications SET created_at=NULL,updated_at=NULL WHERE id=$1")
+        .bind(app_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/027_oauth_application_timestamps.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let repaired: bool = sqlx::query_scalar("SELECT a.created_at=(SELECT min(t.created_at) FROM oauth_access_tokens t WHERE t.application_id=a.id) AND a.updated_at IS NOT NULL FROM oauth_applications a WHERE a.id=$1")
+        .bind(app_id).fetch_one(&ctx.db).await.unwrap();
+    assert!(repaired);
+    sqlx::query(
+        "UPDATE oauth_applications SET created_at='2020-01-01',updated_at='2020-02-01' WHERE id=$1",
+    )
+    .bind(app_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/027_oauth_application_timestamps.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let preserved: bool = sqlx::query_scalar("SELECT created_at='2020-01-01'::timestamp AND updated_at='2020-02-01'::timestamp FROM oauth_applications WHERE id=$1")
+        .bind(app_id).fetch_one(&ctx.db).await.unwrap();
+    assert!(preserved);
+}

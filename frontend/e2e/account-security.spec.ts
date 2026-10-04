@@ -106,6 +106,9 @@ test('sessions and authorized apps can be revoked', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByText('Firefox on macOS')).toBeVisible()
   await expect(page.getByText('Ivory')).toBeVisible()
+  const authorizedDate = await page.evaluate(() => new Date('2026-09-01T00:00:00.000Z').toLocaleDateString())
+  await expect(page.getByText(`Authorized on ${authorizedDate}`, { exact: false })).toBeVisible()
+  await expect(page.getByText('Invalid Date', { exact: false })).toHaveCount(0)
   await page
     .locator('section', { hasText: 'Sessions' })
     .getByRole('button', { name: 'Revoke' })

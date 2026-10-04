@@ -29,6 +29,9 @@ async fn test_register_app_returns_credentials() {
         "missing client_secret"
     );
     assert_eq!(body["name"].as_str(), Some("Test App"));
+    let timestamps: (bool, bool) = sqlx::query_as("SELECT created_at IS NOT NULL, updated_at IS NOT NULL FROM oauth_applications WHERE uid=$1")
+        .bind(body["client_id"].as_str().unwrap()).fetch_one(&ctx.db).await.unwrap();
+    assert_eq!(timestamps, (true, true));
 }
 
 /// GET /oauth/authorize rejects a scope broader than the app registered

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO oauth_applications\n                     (name, uid, secret, redirect_uri, scopes)\n                   VALUES ('Elk', $1, $2, $3, $4)\n                   RETURNING *",
+  "query": "INSERT INTO oauth_applications\n                     (name, uid, secret, redirect_uri, scopes, created_at, updated_at)\n                   VALUES ('Elk', $1, $2, $3, $4, now(), now())\n                   RETURNING *",
   "describe": {
     "columns": [
       {
@@ -93,5 +93,5 @@
       false
     ]
   },
-  "hash": "116f9ab847e23669489cd727d3ee3d39cfa143dd0984e78c6ec940a9c8badefb"
+  "hash": "cf336a16d494d3ed21935f0fd19339401c4602323caa31663ccee85e3243751c"
 }
