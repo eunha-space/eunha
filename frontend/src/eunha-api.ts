@@ -41,6 +41,7 @@ export interface InviteTreeAccount {
   display_name: string
   avatar: string
   invited_at: string
+  root_reason?: 'no_recorded_inviter' | 'inviter_unavailable' | 'lineage_unavailable'
 }
 
 export interface InviteNode extends InviteTreeAccount {

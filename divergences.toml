@@ -55,7 +55,10 @@ summary = "Exposes who invited whom"
 mastodon = "Records `users.invite_id` but offers no API for the resulting tree."
 eunha = """
 Serves `/api/eunha/v1/invite_tree`, and keeps `eunha.invite_lineage` so the \
-lineage survives the inviter's account being deleted."""
+lineage survives the inviter's account being deleted. Roots explain missing \
+ancestry without identifying excluded inviters; cyclic lineage retains every \
+visible member. The web client supports branch navigation and ancestry-preserving \
+search."""
 why = """
 An instance that grew by invitation has a shape worth seeing. It is served under \
 `/api/eunha/` rather than `/api/v1/`, so no Mastodon client can mistake it for \
@@ -117,8 +120,9 @@ Creates, lists and revokes invites from its web UI alone. The REST API has no \
 invite endpoints at all."""
 eunha = """
 Serves `/api/v1/invites`: list, create, and revoke. The authorization is \
-upstream's own `InvitePolicy` — `invite_users` to create or list, and owning \
-the invite or holding `manage_invites` to revoke."""
+upstream's own `InvitePolicy` — `invite_users` to create, and owning the \
+invite or holding `manage_invites` to revoke. Listing owned codes remains \
+available to members receiving admin-granted invites."""
 why = """
 Eunha's client is a single-page app with no server-rendered admin to inherit, \
 so its invite page needs an API to call. The risk this entry records is the \
@@ -788,5 +792,23 @@ mastodon = "The web client uses one signed-in account per browser session."
 eunha = "The web client saves OAuth logins for multiple accounts on the same origin and switches between them from its account menu."
 why = "Members can use personal and staff accounts without separate browser profiles."
 evidence = "frontend/e2e/account-switcher.spec.ts"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+
+[[divergence]]
+id = "invite-resolution-api"
+kind = "addition"
+summary = "Resolves public signup invites for the web client"
+mastodon = "Validates codes and resolves the inviter and approval bypass inside its server-rendered signup form."
+eunha = """
+Serves `/api/eunha/v1/invite?invite=CODE` without authentication. Valid codes \
+return the inviter, autofollow setting and current approval bypass permission; \
+invalid codes return a reason without revealing the inviter."""
+why = """
+The single-page signup form needs the same information before collecting an \
+application. It cannot infer approval bypass from the presence of a code. \
+Registration still validates the invite again when submitted."""
+evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

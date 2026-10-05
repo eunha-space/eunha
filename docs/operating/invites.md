@@ -88,3 +88,22 @@ supports username search, reports loading failures with a retry, and summarizes
 how many links and admissions will be created before submission. Granting in a
 member's name also means approval bypass follows that member's role, not the
 staff member performing the grant.
+
+
+Exploring the tree
+------------------
+
+The invite tree is available to signed-in members. It starts with **My branch**,
+showing the member's ancestors and invitees; **Whole instance** shows the full
+forest. **Find me** reveals and focuses the signed-in member. Branch controls
+are separate from profile links, and **Collapse all** folds the view. Searching
+usernames and display names keeps matching members' ancestors visible and
+searches the selected view.
+
+Each member shows a direct invitee count and their join date. A root is labeled
+**No inviter recorded**, **Inviter is unavailable in this view**, or **Earlier
+lineage is unavailable**; it does not necessarily mean an uninvited signup.
+Pending, unconfirmed, suspended and deleted members remain excluded. Cyclic
+lineage from damaged or imported data is broken into visible branches so no
+member silently disappears. Staff with `manage_invites` can open a preselected
+grant form from a member's row; both pages link to each other.

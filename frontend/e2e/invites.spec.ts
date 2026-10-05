@@ -111,3 +111,64 @@ test('admin invite list exposes URLs and respects validity', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'Copy link' }).last()).toBeDisabled()
   await expect(page.getByRole('link', { name: 'Create invite', exact: true })).toBeVisible()
 })
+
+const tree = { total: 5, roots: [{ ...member, id: '0', acct: 'founder', username: 'founder', display_name: 'Founder',
+  root_reason: 'no_recorded_inviter', children: [{ ...member, children: [
+    { ...member, id: '2', acct: 'bob', username: 'bob', display_name: 'Bob', children: [
+      { ...member, id: '4', acct: 'carol', username: 'carol', display_name: 'Carol' },
+    ] },
+  ] }, { ...member, id: '3', acct: 'sibling', username: 'sibling', display_name: 'Sibling' }] }] }
+
+test('tree starts with my ancestry and supports collapse, search and finding me', async ({ page }) => {
+  await signIn(page)
+  await page.route('**/api/eunha/v1/invite_tree', r => r.fulfill({ json: tree }))
+  await page.goto('/invite-tree')
+  const lineage = page.getByRole('list', { name: 'Invite lineage' })
+  await expect(lineage.getByRole('link', { name: 'Founder @founder' })).toBeVisible()
+  await expect(lineage.getByRole('link', { name: 'Bob @bob' })).toBeVisible()
+  await expect(lineage.getByRole('link', { name: 'Sibling @sibling' })).toHaveCount(0)
+  await expect(lineage.getByRole('link', { name: 'Carol @carol' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Expand @bob' }).click()
+  await expect(lineage.getByRole('link', { name: 'Carol @carol' })).toBeVisible()
+  await page.getByRole('button', { name: 'Collapse all' }).click()
+  await expect(lineage.getByRole('link', { name: 'Bob @bob' })).toHaveCount(0)
+  await page.getByLabel('Search members').fill('carol')
+  await expect(lineage.getByRole('link', { name: 'Carol @carol' })).toBeVisible()
+  await expect(lineage.getByRole('link', { name: 'Founder @founder' })).toBeVisible()
+  await page.getByRole('button', { name: 'Find me' }).click()
+  await expect(page.getByLabel('Search members')).toHaveValue('')
+  await expect(page.locator('#invite-member-1')).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Whole instance' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(lineage.getByRole('link', { name: 'Sibling @sibling' })).toBeVisible()
+  await lineage.getByRole('link', { name: 'Hand out invites to @alice' }).click()
+  await expect(page).toHaveURL(/\/invites\?grant_to=1$/)
+})
+
+test('tree explains unavailable ancestry and keeps a deep search usable on mobile', async ({ page }) => {
+  await signIn(page, 1 << 16)
+  await page.setViewportSize({ width: 390, height: 844 })
+  let chain = { ...member, id: '20', acct: 'last', username: 'last', display_name: 'Last' }
+  for (let i = 19; i >= 0; i--) chain = { ...member, id: String(i), acct: `member${i}`, username: `member${i}`, display_name: `Member ${i}`, children: [chain] }
+  await page.route('**/api/eunha/v1/invite_tree', r => r.fulfill({ json: { total: 21, roots: [{ ...chain, root_reason: 'inviter_unavailable' }] } }))
+  await page.goto('/invite-tree')
+  await expect(page.getByText('Inviter is unavailable in this view', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Whole instance' }).click()
+  await page.getByLabel('Search members').fill('last')
+  await expect(page.getByRole('link', { name: 'Last @last' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Hand out invites to/ })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: '/tmp/eunha-invite-tree-mobile.png', fullPage: true })
+})
+
+test('tree empty search and load failure have clear recovery states', async ({ page }) => {
+  await signIn(page)
+  let failed = true
+  await page.route('**/api/eunha/v1/invite_tree', r => failed ? r.fulfill({ status: 500 }) : r.fulfill({ json: tree }))
+  await page.goto('/invite-tree')
+  await expect(page.getByRole('alert')).toContainText('Could not load the invite tree')
+  failed = false
+  await page.getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('button', { name: 'My branch' })).toBeEnabled()
+  await page.getByLabel('Search members').fill('nobody')
+  await expect(page.getByText('No matching members in this view.')).toBeVisible()
+})

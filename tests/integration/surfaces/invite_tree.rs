@@ -62,6 +62,7 @@ async fn test_invite_tree_nests_invitees() {
             .any(|n| n["id"].as_str() == Some(ctx.bob_id.as_str())),
         "bob should not be a root",
     );
+    assert_eq!(alice["root_reason"], "no_recorded_inviter");
     let children = alice["children"].as_array().unwrap();
     assert!(
         children
@@ -102,4 +103,59 @@ async fn test_invite_tree_excludes_unapproved() {
         !contains(roots, &ctx.bob_id),
         "unapproved bob should not appear anywhere in the tree",
     );
+}
+
+#[tokio::test]
+async fn test_invite_tree_explains_excluded_inviter() {
+    let ctx = TestContext::new("invite-tree-missing-parent").await;
+    sqlx::query(
+        "INSERT INTO eunha.invite_lineage (account_id, inviter_account_id) VALUES ($1, $2)",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET approved = false WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let body: Value = ctx
+        .api
+        .get("/api/eunha/v1/invite_tree", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["total"], 1);
+    assert_eq!(body["roots"][0]["id"], ctx.alice_id);
+    assert_eq!(body["roots"][0]["root_reason"], "inviter_unavailable");
+    assert!(body["roots"][0].get("inviter_account_id").is_none());
+}
+
+#[tokio::test]
+async fn test_invite_tree_retains_cyclic_lineage_members_once() {
+    let ctx = TestContext::new("invite-tree-cycle").await;
+    let alice = ctx.alice_id.parse::<i64>().unwrap();
+    let bob = ctx.bob_id.parse::<i64>().unwrap();
+    sqlx::query("INSERT INTO eunha.invite_lineage (account_id, inviter_account_id) VALUES ($1, $2), ($2, $1)")
+        .bind(alice).bind(bob).execute(&ctx.db).await.unwrap();
+    let body: Value = ctx
+        .api
+        .get("/api/eunha/v1/invite_tree", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["total"], 2);
+    assert_eq!(body["roots"].as_array().unwrap().len(), 1);
+    let root = &body["roots"][0];
+    assert_eq!(root["root_reason"], "lineage_unavailable");
+    assert_eq!(root["children"].as_array().unwrap().len(), 1);
+    assert_ne!(root["id"], root["children"][0]["id"]);
+    assert!(root["children"][0]["children"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }

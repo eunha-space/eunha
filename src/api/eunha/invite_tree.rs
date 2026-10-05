@@ -18,6 +18,9 @@ pub struct TreeAccount {
     pub avatar: String,
     /// When the account joined (its user row's created_at), ISO 8601.
     pub invited_at: String,
+    /// Why this member is shown without a parent; never exposes a hidden inviter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_reason: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -100,6 +103,7 @@ pub async fn invite_tree(
                     r.avatar_remote_url.as_deref(),
                 ),
                 invited_at: convert::mastodon_date(r.created_at),
+                root_reason: None,
             },
         );
     }
@@ -108,14 +112,29 @@ pub async fn invite_tree(
     // order. An inviter that was filtered out (unapproved/suspended) isn't in
     // the member set, so its invitees are promoted to roots rather than lost.
     let mut children: HashMap<Option<i64>, Vec<i64>> = HashMap::new();
-    for (id, invited_by) in order {
+    for &(id, invited_by) in &order {
         let parent = invited_by.filter(|pid| accounts.contains_key(pid));
+        if parent.is_none() {
+            accounts.get_mut(&id).unwrap().root_reason = Some(if invited_by.is_some() {
+                "inviter_unavailable"
+            } else {
+                "no_recorded_inviter"
+            });
+        }
         children.entry(parent).or_default().push(id);
     }
 
     let root_ids = children.get(&None).cloned().unwrap_or_default();
     let mut visited = std::collections::HashSet::new();
-    let roots = build_nodes(&root_ids, &mut accounts, &children, &mut visited);
+    let mut roots = build_nodes(&root_ids, &mut accounts, &children, &mut visited);
+    // Imported or damaged lineage may contain a cycle without a root. Preserve
+    // every member rather than reporting a total larger than the visible forest.
+    for (id, _) in order {
+        if let Some(account) = accounts.get_mut(&id) {
+            account.root_reason = Some("lineage_unavailable");
+            roots.extend(build_nodes(&[id], &mut accounts, &children, &mut visited));
+        }
+    }
 
     Ok(Json(InviteTreeResponse { roots, total }))
 }
