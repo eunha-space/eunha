@@ -68,3 +68,7 @@ run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- check"
 [tasks."site:images"]
 description = "Regenerate site/og.png and site/apple-touch-icon.png from the brand symbol"
 run = "node scripts/build_site_images.mjs"
+
+[tasks."container:build"]
+description = "Build the eunha container image locally"
+run = "docker build --tag eunha:local ."

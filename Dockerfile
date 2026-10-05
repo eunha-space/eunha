@@ -29,7 +29,7 @@ FROM chef AS cacher
 COPY --from=planner /app/recipe.json recipe.json
 # Dependencies don't contain sqlx queries so offline mode is fine here.
 ENV SQLX_OFFLINE=true
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # ── Stage 2d: Build application ─────────────────────────────────────────────
 FROM chef AS rust-builder
@@ -38,7 +38,7 @@ ENV SQLX_OFFLINE=true
 COPY --from=cacher /app/target target
 COPY --from=cacher $CARGO_HOME $CARGO_HOME
 COPY . .
-RUN cargo build --release --bin eunha
+RUN cargo build --release --locked --bin eunha
 
 # ── Stage 4: Runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

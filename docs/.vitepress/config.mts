@@ -19,6 +19,7 @@ export default defineConfig({
       {
         text: "Running eunha",
         items: [
+          { text: "Container images", link: "/operating/containers" },
           { text: "The first account", link: "/operating/first-account" },
           { text: "Migrations", link: "/operating/migrations" },
           { text: "Importing a Mastodon instance", link: "/operating/importing" },

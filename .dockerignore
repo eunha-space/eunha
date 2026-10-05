@@ -5,3 +5,11 @@ frontend/dist
 media
 *.rdb
 .DS_Store
+docs/node_modules
+docs/.vitepress/cache
+docs/.vitepress/dist
+frontend/test-results
+frontend/playwright-report
+.env
+.env.*
+config.toml

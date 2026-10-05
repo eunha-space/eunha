@@ -16,6 +16,8 @@ implementation detail, and Eunha may contain behavioral differences.
 Running eunha
 -------------
 
+ -  [Container images](./operating/containers.md): GitHub Actions builds,
+    image tags and running the image.
  -  [The first account](./operating/first-account.md): creating an instance's
     owner from the command line, as `tootctl accounts create` does.
  -  [Migrations](./operating/migrations.md): `eunha migrate`, and why starting
