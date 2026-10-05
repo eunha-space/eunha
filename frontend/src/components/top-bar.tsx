@@ -200,9 +200,9 @@ function AccountCard({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Account menu"
-          className="text-muted-foreground hover:text-foreground shrink-0 px-1"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring flex size-11 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2"
         >
-          <MoreHorizontal className="size-4" />
+          <MoreHorizontal className="size-5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {getSavedAccounts().map((saved) => (
