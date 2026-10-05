@@ -58,6 +58,8 @@ export async function getInviteTree(token: string): Promise<InviteTree> {
   return res.json() as Promise<InviteTree>
 }
 
+export const INVITES_CHANGED = 'eunha:invites-changed'
+
 // ── Invites ────────────────────────────────────────────────────────────────
 // Served by eunha's /api/v1/invites (a non-standard extension: Mastodon exposes
 // invite CRUD only through its web UI, never the REST API).
@@ -97,7 +99,9 @@ export async function createInvite(
     method: 'POST',
     body: JSON.stringify(params),
   })
-  return res.json() as Promise<Invite>
+  const invite = await res.json() as Invite
+  window.dispatchEvent(new Event(INVITES_CHANGED))
+  return invite
 }
 
 export interface GrantInvitesParams {
@@ -131,11 +135,14 @@ export async function grantInvites(
     method: 'POST',
     body: JSON.stringify(params),
   })
-  return res.json() as Promise<GrantInvitesResult>
+  const result = await res.json() as GrantInvitesResult
+  window.dispatchEvent(new Event(INVITES_CHANGED))
+  return result
 }
 
 export async function deleteInvite(token: string, id: string): Promise<void> {
   await eunhaFetch(`/api/v1/invites/${id}`, token, { method: 'DELETE' })
+  window.dispatchEvent(new Event(INVITES_CHANGED))
 }
 
 // ── Sign up ─────────────────────────────────────────────────────────────────

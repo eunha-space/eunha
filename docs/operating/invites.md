@@ -13,8 +13,8 @@ computes to every permission there is, and any other role's permissions are
 unioned with the everyone role's — Mastodon's `UserRole#computed_permissions`,
 which is why upstream's Admin role does not list `invite_users` and an admin can
 still invite. `verify_credentials` reports that computed set rather than the raw
-column, so a client hides the invite page for exactly the accounts the server
-would refuse.
+column, so a client shows the creation form for exactly the accounts the server
+would allow.
 
 Roles are edited there as in Mastodon, which lets the everyone role hold only
 `Flags::SAFE`: `invite_users` and `invite_bypass_approval`.
@@ -107,3 +107,16 @@ Pending, unconfirmed, suspended and deleted members remain excluded. Cyclic
 lineage from damaged or imported data is broken into visible branches so no
 member silently disappears. Staff with `manage_invites` can open a preselected
 grant form from a member's row; both pages link to each other.
+
+
+Finding your invites
+--------------------
+
+Signed-in members have an invite link beside **Local** in the desktop sidebar
+and mobile navigation drawer. It reads **Invite people** when the member may
+create codes, and **Your invites** otherwise, including for members receiving
+admin-granted codes. A small badge counts usable links, not remaining
+admissions; expired, fully used and unavailable codes do not count. The badge
+refreshes after creating, revoking or granting invites, and when a link expires
+while the page is open. The invite tree remains a related action on the invite
+page.

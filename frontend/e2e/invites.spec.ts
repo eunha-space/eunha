@@ -58,12 +58,15 @@ const member = { id: '1', username: 'alice', acct: 'alice', display_name: 'Alice
 
 test('personal invites retain revoked history and distinguish fully used links', async ({ page }) => {
   await signIn(page, 1 << 16)
-  await page.route('**/api/v1/invites', r => r.fulfill({ json: [invite, { ...invite, id: '11', uses: 1, valid_for_use: false }] }))
-  await page.route('**/api/v1/invites/10', r => r.fulfill({ status: 204 }))
+  let revoked = false
+  await page.route('**/api/v1/invites', r => r.fulfill({ json: [{ ...invite, expired: revoked, valid_for_use: !revoked }, { ...invite, id: '11', uses: 1, valid_for_use: false }] }))
+  await page.route('**/api/v1/invites/10', r => { revoked = true; return r.fulfill({ status: 204 }) })
   await page.goto('/invites')
   await expect(page.getByText('Fully used', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Revoke invite' })).toHaveCount(1)
+  await expect(page.locator('aside').getByLabel('1 available invite link')).toBeVisible()
   await page.getByRole('button', { name: 'Revoke invite' }).click()
+  await expect(page.locator('aside').getByLabel('1 available invite link')).toHaveCount(0)
   await expect(page.getByText('Expired', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Invite link')).toHaveCount(2)
   await expect(page.getByRole('button', { name: 'Revoke invite' })).toHaveCount(0)
@@ -171,4 +174,52 @@ test('tree empty search and load failure have clear recovery states', async ({ p
   await expect(page.getByRole('button', { name: 'My branch' })).toBeEnabled()
   await page.getByLabel('Search members').fill('nobody')
   await expect(page.getByText('No matching members in this view.')).toBeVisible()
+})
+
+for (const permissions of [0, 1 << 16]) {
+  for (const mobile of [false, true]) {
+    test(`invite navigation is visible with permission ${permissions} on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
+      await signIn(page, permissions)
+      if (mobile) await page.setViewportSize({ width: 390, height: 844 })
+      await page.route('**/api/v1/invites', r => r.fulfill({ json: [
+        invite,
+        { ...invite, id: '11', valid_for_use: false, uses: 1 },
+        { ...invite, id: '12', valid_for_use: false, expired: true },
+        { ...invite, id: '13', valid_for_use: false },
+      ] }))
+      await page.goto('/about')
+      if (mobile) await page.getByRole('button', { name: 'Open menu' }).click()
+      const navigation = mobile ? page.getByRole('dialog') : page.locator('aside')
+      const name = permissions ? 'Invite people' : 'Your invites'
+      const link = navigation.getByRole('link', { name: new RegExp(name) })
+      await expect(link).toBeVisible()
+      await expect(link.getByLabel('1 available invite link')).toBeVisible()
+      await link.click()
+      await expect(page).toHaveURL(/\/invites$/)
+      if (mobile) await expect(page.getByRole('dialog')).toHaveCount(0)
+    })
+  }
+}
+
+test('invite badge expires without navigating or refetching', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-05T00:00:00Z') })
+  await signIn(page)
+  let requests = 0
+  await page.route('**/api/v1/invites', r => {
+    requests++
+    return r.fulfill({ json: [{ ...invite, expires_at: '2026-10-05T00:00:02' }] })
+  })
+  await page.goto('/about')
+  const badge = page.locator('aside').getByLabel('1 available invite link')
+  await expect(badge).toBeVisible()
+  const initialRequests = requests
+  await page.clock.runFor(3000)
+  await expect(badge).toHaveCount(0)
+  expect(requests).toBe(initialRequests)
+})
+
+test('visitors do not see invite navigation', async ({ page }) => {
+  await page.route('**/api/v2/instance', r => r.fulfill({ json: instance }))
+  await page.goto('/about')
+  await expect(page.locator('aside').getByRole('link', { name: /Invite people|Your invites/ })).toHaveCount(0)
 })

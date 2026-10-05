@@ -4,6 +4,7 @@
 // dashboard), as eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
 import { json, query, request, type Account, type Measure, type Permission } from './admin-api.ts'
+import { INVITES_CHANGED } from './eunha-api.ts'
 
 // ── Server settings ─────────────────────────────────────────────────────────
 
@@ -692,13 +693,16 @@ export function listAdminInvites(
   )
 }
 
-export function deactivateAllInvites(token: string) {
-  return json<Record<string, never>>(token, 'POST', '/api/v1/admin/invites/deactivate_all')
+export async function deactivateAllInvites(token: string) {
+  const result = await json<Record<string, never>>(token, 'POST', '/api/v1/admin/invites/deactivate_all')
+  window.dispatchEvent(new Event(INVITES_CHANGED))
+  return result
 }
 
 /** `DELETE /api/v1/invites/:id`, which a role with `manage_invites` may call on any. */
 export async function expireInvite(token: string, id: string) {
   await request(token, 'DELETE', `/api/v1/invites/${id}`)
+  window.dispatchEvent(new Event(INVITES_CHANGED))
 }
 
 export function distributeAnnouncement(token: string, id: string) {
