@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -9,6 +9,7 @@ import {
   type Status,
 } from '../../admin-api.ts'
 import { errorMessage } from '@/lib/utils.ts'
+import { ImageViewer } from '@/components/image-viewer.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
@@ -167,6 +168,11 @@ export function ConfirmButton({
  */
 export function AdminStatus({ status }: { status: Status }) {
   const s = status.reblog ?? status
+  const [selected, setSelected] = useState<number | null>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
+  const images = s.media_attachments.filter(m => m.type === 'image').map(m => ({
+    id: m.id, url: m.url || m.preview_url || '', description: m.description,
+  })).filter(image => !!image.url)
   return (
     <article className="space-y-1.5 rounded-lg border p-3">
       <div className="flex items-center gap-2 text-xs">
@@ -192,7 +198,19 @@ export function AdminStatus({ status }: { status: Status }) {
       {s.media_attachments.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {s.media_attachments.map((m) =>
-            m.preview_url ? (
+            m.preview_url && m.type === 'image' ? (
+              <Button key={m.id} variant="ghost" className="size-20 overflow-hidden rounded p-0"
+                aria-label={m.description ? `View image: ${m.description}` : 'View image attachment'}
+                onClick={event => {
+                  const index = images.findIndex(image => image.id === m.id)
+                  if (index < 0) return
+                  returnFocus.current = event.currentTarget
+                  setSelected(index)
+                }}>
+                <img src={m.preview_url} alt={m.description ?? ''}
+                  className={`size-20 object-cover ${s.sensitive ? 'blur-sm hover:blur-none' : ''}`} />
+              </Button>
+            ) : m.preview_url ? (
               <a key={m.id} href={m.url ?? m.preview_url} target="_blank" rel="noreferrer">
                 <img
                   src={m.preview_url}
@@ -208,6 +226,8 @@ export function AdminStatus({ status }: { status: Status }) {
           )}
         </div>
       )}
+      <ImageViewer images={images} selected={selected} onSelect={setSelected}
+        onClose={() => setSelected(null)} returnFocus={returnFocus} />
     </article>
   )
 }

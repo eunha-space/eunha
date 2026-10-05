@@ -36,6 +36,7 @@ export default defineConfig({
           { text: "Account moves", link: "/operating/account-moves" },
           { text: "Data export and import", link: "/operating/import-export" },
           { text: "Preview cards", link: "/operating/preview-cards" },
+          { text: "Image viewer", link: "/operating/media-viewer" },
           { text: "Remote replies", link: "/operating/remote-replies" },
           { text: "Translation", link: "/operating/translation" },
           { text: "Auxiliary service providers", link: "/operating/fasp" },
