@@ -22,6 +22,8 @@ pub struct InviteResponse {
     pub autofollow: bool,
     pub comment: Option<String>,
     pub created_at: NaiveDateTime,
+    pub expired: bool,
+    pub valid_for_use: bool,
 }
 
 pub async fn list_invites(
@@ -45,6 +47,8 @@ pub async fn list_invites(
     .fetch_all(&state.db)
     .await?;
 
+    let functional = inviter_functional(&state, auth.account_id).await?;
+    let now = chrono::Utc::now().naive_utc();
     let invites = rows
         .into_iter()
         .map(|r| InviteResponse {
@@ -57,6 +61,10 @@ pub async fn list_invites(
             autofollow: r.autofollow,
             comment: r.comment,
             created_at: r.created_at,
+            expired: r.expires_at.is_some_and(|e| e < now),
+            valid_for_use: functional
+                && r.max_uses.is_none_or(|m| r.uses < m)
+                && r.expires_at.is_none_or(|e| e >= now),
         })
         .collect();
 
@@ -126,6 +134,14 @@ pub async fn create_invite(
         autofollow: row.autofollow,
         comment: row.comment,
         created_at: row.created_at,
+        expired: row
+            .expires_at
+            .is_some_and(|e| e < chrono::Utc::now().naive_utc()),
+        valid_for_use: row.max_uses.is_none_or(|m| row.uses < m)
+            && row
+                .expires_at
+                .is_none_or(|e| e >= chrono::Utc::now().naive_utc())
+            && inviter_functional(&state, auth.account_id).await?,
     }))
 }
 
@@ -192,4 +208,17 @@ pub fn generate_code() -> String {
 
 pub fn invite_url(domain: &str, code: &str) -> String {
     format!("https://{domain}/signup?invite={code}")
+}
+
+async fn inviter_functional(state: &AppState, account_id: i64) -> AppResult<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        "SELECT u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled
+                AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+                AND NOT a.memorial AND a.moved_to_account_id IS NULL
+         FROM users u JOIN accounts a ON a.id = u.account_id WHERE a.id = $1",
+    )
+    .bind(account_id)
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false))
 }

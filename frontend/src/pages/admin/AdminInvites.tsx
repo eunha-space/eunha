@@ -28,6 +28,7 @@ const FILTERS = { all: 'All', available: 'Available', expired: 'Expired' }
  */
 export default function AdminInvites() {
   const token = getToken()
+  const [pending, setPending] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<keyof typeof FILTERS>('all')
   const [page, setPage] = useState(1)
   const [invites, setInvites] = useState<AdminInvite[] | null>(null)
@@ -76,9 +77,10 @@ export default function AdminInvites() {
         </>
       }
     >
-      <p className="text-muted-foreground mb-3 text-sm">
-        New invites are made on the <Link to="/invites">invite page</Link>.
-      </p>
+      <div className="mb-3 flex gap-3">
+        <Button render={<Link to="/invites" />}>Create invite</Button>
+        <Button variant="outline" render={<Link to="/invite-tree" />}>Invite tree</Button>
+      </div>
       <AdminError error={error} />
       {invites === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
       {invites?.length === 0 && <p className="text-muted-foreground text-sm">No invites.</p>}
@@ -86,7 +88,13 @@ export default function AdminInvites() {
         {invites?.map((invite) => (
           <div key={invite.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
             <div className="min-w-0 flex-1 space-y-1">
-              <code className="text-sm">{invite.code}</code>
+              <div className="flex min-w-0 items-center gap-2">
+                <a href={invite.url} className="min-w-0 truncate font-mono text-xs">{invite.url}</a>
+                <Button size="xs" variant="secondary" disabled={!invite.valid_for_use} onClick={async () => {
+                  try { await navigator.clipboard.writeText(invite.url); toast.success('Invite link copied') }
+                  catch { toast.error('Could not copy link') }
+                }}>Copy link</Button>
+              </div>
               {invite.account && <AdminAccountLink account={invite.account} size="sm" />}
               {invite.comment && (
                 <p className="text-muted-foreground text-xs">{invite.comment}</p>
@@ -96,8 +104,11 @@ export default function AdminInvites() {
               {invite.uses}
               {invite.max_uses !== null ? ` / ${invite.max_uses}` : ''} uses
             </span>
+            {invite.valid_for_use && <Badge variant="outline">Available</Badge>}
             {invite.expired ? (
               <Badge variant="outline">Expired</Badge>
+            ) : !invite.valid_for_use ? (
+              <Badge variant="outline">{invite.max_uses !== null && invite.uses >= invite.max_uses ? 'Fully used' : 'Unavailable'}</Badge>
             ) : invite.expires_at ? (
               <span className="text-muted-foreground text-xs">
                 Expires {formatDate(invite.expires_at)}
@@ -105,17 +116,21 @@ export default function AdminInvites() {
             ) : (
               <span className="text-muted-foreground text-xs">Never expires</span>
             )}
-            {!invite.expired && (
+            {invite.valid_for_use && (
               <Button
                 size="xs"
                 variant="outline"
+                disabled={pending.has(invite.id)}
                 onClick={async () => {
+                  setPending(cur => new Set(cur).add(invite.id))
                   try {
                     await expireInvite(token ?? '', invite.id)
                     toast.success('Invite expired.')
                     load()
                   } catch (e) {
                     toast.error(errorMessage(e))
+                  } finally {
+                    setPending(cur => { const next = new Set(cur); next.delete(invite.id); return next })
                   }
                 }}
               >

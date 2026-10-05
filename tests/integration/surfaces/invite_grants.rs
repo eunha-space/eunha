@@ -256,3 +256,48 @@ async fn test_public_invite_resolution_tracks_owner_permissions_and_validity() {
         assert_eq!(resolved["reason"], "err_invite_maxed");
     }
 }
+
+#[tokio::test]
+async fn test_personal_invite_status_and_expiration_history() {
+    let ctx = TestContext::new("invite-status").await;
+    let invite: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/invites",
+            Some(&ctx.alice_token),
+            &json!({"max_uses": 1}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(invite["valid_for_use"], true);
+    let id = invite["id"].as_str().unwrap().parse::<i64>().unwrap();
+    sqlx::query("UPDATE invites SET uses = 1 WHERE id = $1")
+        .bind(id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let list = invites_of(&ctx, &ctx.alice_token).await;
+    assert_eq!(list[0]["valid_for_use"], false);
+    assert_eq!(list[0]["expired"], false);
+    let response = ctx
+        .api
+        .delete(&format!("/api/v1/invites/{id}"), &ctx.alice_token)
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let list = invites_of(&ctx, &ctx.alice_token).await;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["expired"], true);
+    assert_eq!(list[0]["uses"], 1);
+    ctx.api
+        .post_json("/api/v1/invites", Some(&ctx.bob_token), &json!({}))
+        .await;
+    sqlx::query("UPDATE users SET disabled = true WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let list = invites_of(&ctx, &ctx.bob_token).await;
+    assert_eq!(list[0]["valid_for_use"], false);
+}

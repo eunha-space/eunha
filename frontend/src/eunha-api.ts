@@ -64,6 +64,8 @@ export async function getInviteTree(token: string): Promise<InviteTree> {
 export interface Invite {
   id: string
   code: string
+  expired: boolean
+  valid_for_use: boolean
   url: string
   max_uses: number | null
   uses: number

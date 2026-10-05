@@ -73,3 +73,18 @@ field follow the inviter's current bypass permission, not merely the presence
 of a code. `/api/eunha/v1/invite?invite=CODE` serves this public resolution;
 registration checks the code again when submitted. New links open the web
 client at `/signup?invite=CODE`; existing `/auth/signup` links continue to work.
+
+
+Managing links
+--------------
+
+Personal and admin lists distinguish available, fully used, expired and
+unavailable codes using the server's validity checks. Expiring a personal link
+retains its row, note and usage history. Only usable links offer Copy and Expire
+(or Revoke); admin lists expose the complete signup URL as well.
+
+Handing out codes requires choosing a recipient explicitly. The member picker
+supports username search, reports loading failures with a retry, and summarizes
+how many links and admissions will be created before submission. Granting in a
+member's name also means approval bypass follows that member's role, not the
+staff member performing the grant.
