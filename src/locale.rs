@@ -66,7 +66,7 @@ impl Locale {
                 "Click the link we sent to %{email}. We'll wait right here."
             }
             (Self::Ko, "setup_email_hint") => {
-                "%{email}로 보낸 링크를 클릭해 마스토돈을 시작하세요. 기다리고 있겠습니다."
+                "%{email}로 보낸 링크를 클릭해 시작하세요. 기다리고 있겠습니다."
             }
             (Self::En, "setup_link_not_received") => "Didn't get a link?",
             (Self::Ko, "setup_link_not_received") => "링크를 못 받으셨나요?",
