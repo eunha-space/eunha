@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { completeLogin } from '../auth.ts'
+
+const logins = new Map<string, Promise<void>>()
+
+function loginOnce(code: string) {
+  let login = logins.get(code)
+  if (!login) {
+    login = completeLogin(code)
+    logins.set(code, login)
+  }
+  return login
+}
 
 export default function Callback() {
   const [params] = useSearchParams()
-  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -13,10 +23,10 @@ export default function Callback() {
       setError(params.get('error_description') ?? 'No authorization code returned.')
       return
     }
-    completeLogin(code)
-      .then(() => navigate('/', { replace: true }))
+    loginOnce(code)
+      .then(() => window.location.replace('/'))
       .catch((e) => setError(String(e)))
-  }, [params, navigate])
+  }, [params])
 
   return (
     <div className="page-frame">

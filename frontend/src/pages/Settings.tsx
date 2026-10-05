@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowLeftRight, Ban, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -44,7 +44,6 @@ const WARNINGS = [
 ]
 
 function DeleteAccount({ token }: { token: string }) {
-  const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -60,7 +59,7 @@ function DeleteAccount({ token }: { token: string }) {
       clearMe()
       setConfirming(false)
       toast.success('Your account was successfully deleted')
-      navigate('/')
+      window.location.assign('/')
     } catch (e) {
       setConfirming(false)
       toast.error(

@@ -101,6 +101,26 @@ authorization, as Mastodon's `require_functional!` sends the person to the setup
 first. The settings page says so too, and its setup works for such a member.
 
 
+Multiple accounts in the web client
+-----------------------------------
+
+The account menu in the desktop sidebar and mobile drawer lists accounts signed
+in on this instance in this browser. Choose **Add account** to sign in through
+OAuth without removing the current account, then choose an account in the menu
+to switch to it. Signing in again to the same account replaces its saved token.
+Existing single-account logins are saved automatically once their profile loads.
+
+Accounts and their OAuth tokens are kept in this browser's local storage, scoped
+to the instance's origin. Switching reloads the home page and clears the
+previous account's cached profile, open composer and streaming connections.
+Other tabs on the same origin follow the switch. Theme and layout preferences
+remain shared.
+
+**Sign out** removes only the current account from this browser and selects a
+remaining account, if there is one. It does not revoke the OAuth authorization;
+use **Authorized apps** to revoke it on the server.
+
+
 Sessions
 --------
 

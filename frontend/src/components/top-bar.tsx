@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
+  Check,
   Bookmark,
   Compass,
   Globe,
@@ -23,8 +24,9 @@ import {
   Users,
 } from 'lucide-react'
 
+import { toast } from 'sonner'
 import { getInstance } from '../api.ts'
-import { beginLogin, getToken, logout } from '../auth.ts'
+import { beginLogin, getSavedAccounts, getToken, logout, switchAccount } from '../auth.ts'
 import { clearMe, getMeAccount, loadMe, type MeAccount } from '../me.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
@@ -32,6 +34,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
 import { useTheme } from '@/components/theme-provider.tsx'
@@ -202,6 +205,20 @@ function AccountCard({
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {getSavedAccounts().map((saved) => (
+            <DropdownMenuItem
+              key={saved.account.id}
+              disabled={saved.account.id === account.id}
+              onClick={() => switchAccount(saved.account.id)}
+            >
+              {saved.account.id === account.id ? <Check /> : <User />}
+              @{saved.account.acct}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuItem onClick={() => beginLogin(true).catch(() => toast.error('Could not start sign-in'))}>
+            <UserPlus /> Add account
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem render={<Link to={`/@${account.acct}`} />}>
             <User /> Profile
           </DropdownMenuItem>
