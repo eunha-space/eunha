@@ -197,6 +197,7 @@ export interface Account {
   created_at: string
   followers_count?: number
   following_count?: number
+  suspended?: boolean
   statuses_count?: number
   last_status_at?: string | null
 }
@@ -217,14 +218,14 @@ export interface AdminAccount {
   created_at: string
   email: string | null
   ip: string | null
-  ips: { ip: string; used_at: string }[]
+  ips: { ip: string; used_at: string | null }[] | null
   role: Role | null
-  confirmed: boolean
+  confirmed: boolean | null
   suspended: boolean
   silenced: boolean
   sensitized: boolean
-  disabled: boolean
-  approved: boolean
+  disabled: boolean | null
+  approved: boolean | null
   locale: string | null
   invite_request: string | null
   created_by_application_id?: string

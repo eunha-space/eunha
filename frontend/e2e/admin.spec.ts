@@ -147,6 +147,49 @@ test('a remote account is offered no warning or freeze', async ({ page }) => {
   await expect(dialog.getByText('Freeze', { exact: true })).toHaveCount(0)
 })
 
+test('a deleted local account renders without IP history or sign-in controls', async ({ page }) => {
+  await signIn(page, ADMINISTRATOR)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('**/api/v1/admin/accounts/9', (r) =>
+    r.fulfill({ json: adminAccount('9', 'deleted', {
+      email: null, ip: null, ips: null, role: null,
+      confirmed: null, disabled: null, approved: null, suspended: true,
+    }) }),
+  )
+  await page.route('**/api/v1/admin/account_moderation_notes?target_account_id=9', (r) => r.fulfill({ json: [] }))
+  await page.goto('/admin/accounts/9')
+  await expect(page.getByRole('heading', { name: '@deleted', exact: true })).toBeVisible()
+  await expect(page.getByText('Recent IPs', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Sign-in and role', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Reject', exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the account list distinguishes deleted, suspended, remote and pending accounts', async ({ page }) => {
+  await signIn(page, ADMINISTRATOR)
+  await page.route('**/api/v2/admin/accounts**', (r) => r.fulfill({ json: [
+    adminAccount('9', 'deleted', { email: null, ips: null, approved: null, confirmed: null }),
+    adminAccount('10', 'suspended', { suspended: true, approved: null, confirmed: null }),
+    adminAccount('11', 'far@remote.example', { approved: null, confirmed: null }),
+    adminAccount('12', 'pending', { approved: false, confirmed: false }),
+    adminAccount('13', 'deleting', { account: { ...account('13', 'deleting'), suspended: true } }),
+  ] }))
+  await page.goto('/admin/accounts')
+  const row = (id: string) => page.locator(`a[href="/admin/accounts/${id}"]`).locator('../..')
+  await expect(row('9').getByText('Deleted', { exact: true })).toBeVisible()
+  await expect(row('9').getByText('Pending', { exact: true })).toHaveCount(0)
+  await expect(row('9').getByText('Unconfirmed', { exact: true })).toHaveCount(0)
+  await expect(row('9')).toHaveClass(/opacity-60/)
+  await expect(row('10').getByText('Suspended', { exact: true })).toBeVisible()
+  await expect(row('10').getByText('Deleted', { exact: true })).toHaveCount(0)
+  await expect(row('11').getByText('Deleted', { exact: true })).toHaveCount(0)
+  await expect(row('12').getByText('Pending', { exact: true })).toBeVisible()
+  await expect(row('12').getByText('Unconfirmed', { exact: true })).toBeVisible()
+  await expect(row('13').getByText('Deleted', { exact: true })).toBeVisible()
+})
+
 test('the account filters reach the v2 admin account list', async ({ page }) => {
   await signIn(page, ADMINISTRATOR)
   const queries: string[] = []

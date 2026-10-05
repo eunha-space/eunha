@@ -91,7 +91,7 @@ export default function AccountDetail() {
   const a = account
   const pub = a?.account
   const local = a?.domain === null
-  const pending = !!a && local && !a.approved
+  const pending = !!a && local && a.approved === false
   // Which lifting calls apply, given what has been done. Approval and
   // unfreezing need a local user, as upstream's `require_local_account!` says.
   const undos: AccountUndo[] = a
@@ -238,7 +238,7 @@ export default function AccountDetail() {
             </Field>
           </dl>
 
-          {local && a.ips.length > 0 && (
+          {local && a.ips && a.ips.length > 0 && (
             <section className="space-y-1">
               <h2 className="text-sm font-semibold">Recent IPs</h2>
               <ul className="text-sm">
@@ -252,7 +252,7 @@ export default function AccountDetail() {
             </section>
           )}
 
-          {local && (
+          {local && a.approved !== null && (
             <UserManagement
               account={a}
               permissions={permissions}

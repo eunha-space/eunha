@@ -38,7 +38,11 @@ const TEXT_FILTERS: { key: keyof AccountFilters; label: string; remoteOnly?: boo
 
 function AccountRowItem({ account }: { account: AdminAccount }) {
   return (
-    <div className="hover:bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border p-2">
+    <div className={`hover:bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border p-2 ${
+        account.suspended || account.account.suspended ||
+        (account.domain === null && (account.approved === null || account.confirmed === false))
+          ? 'opacity-60' : ''
+      }`}>
       <div className="min-w-0 flex-1">
         <AdminAccountLink account={account} />
       </div>
@@ -56,7 +60,7 @@ function AccountRowItem({ account }: { account: AdminAccount }) {
           Joined <RelativeTime value={account.created_at} />
         </span>
       </div>
-      {account.domain === null && !account.approved && account.invite_request && (
+      {account.domain === null && account.approved === false && account.invite_request && (
         <p className="text-muted-foreground w-full text-sm italic">
           “{account.invite_request}”
         </p>

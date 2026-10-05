@@ -75,11 +75,14 @@ export function AdminAccountLink({
 export function AccountStateBadges({ account }: { account: AdminAccount }) {
   const badges: { label: string; destructive?: boolean }[] = []
   if (account.suspended) badges.push({ label: 'Suspended', destructive: true })
+  else if (account.account.suspended || (account.domain === null && account.approved === null)) {
+    badges.push({ label: 'Deleted', destructive: true })
+  }
   if (account.disabled) badges.push({ label: 'Frozen', destructive: true })
   if (account.silenced) badges.push({ label: 'Limited', destructive: true })
   if (account.sensitized) badges.push({ label: 'Sensitive' })
-  if (account.domain === null && !account.approved) badges.push({ label: 'Pending' })
-  if (account.domain === null && !account.confirmed) badges.push({ label: 'Unconfirmed' })
+  if (account.domain === null && account.approved === false) badges.push({ label: 'Pending' })
+  if (account.domain === null && account.confirmed === false) badges.push({ label: 'Unconfirmed' })
   if (account.role && account.role.name && account.role.id !== '-99') {
     badges.push({ label: account.role.name })
   }

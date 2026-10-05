@@ -75,6 +75,14 @@ Eunha used to serve `/silence`, `/suspend` and `/sensitive` routes of its
 own. They are gone: Mastodon has no such routes, and clients use the action
 endpoint.
 
+A deleted local account can still be inspected in the admin account page.
+When its user record is gone, the API returns `null` for its IP history and
+sign-in state. The page omits the IP history and sign-in controls, and does
+not treat the account as a pending sign-up. The account list dims unavailable
+accounts as Mastodon does. Account status badges show `Deleted` for an
+unavailable account that is not suspended, including a local account with no
+user record; suspension takes precedence.
+
 
 What a held-back login can still do
 -----------------------------------
