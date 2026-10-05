@@ -20,6 +20,31 @@ pub struct SignUpQuery {
     lang: Option<String>,
 }
 
+/// Resolve an invite for the SPA using the same checks as registration.
+pub async fn invite_lookup(
+    state: AppState,
+    Query(q): Query<SignUpQuery>,
+) -> AppResult<Json<serde_json::Value>> {
+    use sqlx::Row;
+    let code = q.invite.as_deref().unwrap_or("").trim();
+    let id = match validate_invite(&state, code).await {
+        Ok(id) => id,
+        Err(reason) => return Ok(Json(serde_json::json!({"valid": false, "reason": reason}))),
+    };
+    let row = sqlx::query("SELECT i.autofollow, a.id, a.username, a.display_name FROM invites i JOIN users u ON u.id = i.user_id JOIN accounts a ON a.id = u.account_id WHERE i.id = $1")
+        .bind(id).fetch_one(&state.db).await?;
+    Ok(Json(serde_json::json!({
+        "valid": true,
+        "bypass_approval": invite_bypasses_approval(&state, id).await,
+        "autofollow": row.get::<bool, _>("autofollow"),
+        "inviter": {
+            "id": row.get::<i64, _>("id").to_string(),
+            "acct": row.get::<String, _>("username"),
+            "display_name": row.get::<String, _>("display_name"),
+        }
+    })))
+}
+
 pub async fn signup_get(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,

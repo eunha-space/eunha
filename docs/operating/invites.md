@@ -61,3 +61,15 @@ still be used, and such a role may expire any one invite with
 `DELETE /api/v1/invites/:id`. This is Mastodon's `Admin::InvitesController`,
 which logs nothing, and the web client's *Invites* page under `/admin`; new
 invites are still made on the invite page.
+
+
+Joining through an invite
+-------------------------
+
+The signup page checks the code before submission and explains whether it is
+expired, fully used, or unavailable. A valid code identifies its inviter and
+explains automatic following when enabled. Approval guidance and the reason
+field follow the inviter's current bypass permission, not merely the presence
+of a code. `/api/eunha/v1/invite?invite=CODE` serves this public resolution;
+registration checks the code again when submitted. New links open the web
+client at `/signup?invite=CODE`; existing `/auth/signup` links continue to work.

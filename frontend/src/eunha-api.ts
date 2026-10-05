@@ -383,3 +383,17 @@ export async function confirmImport(token: string, id: string): Promise<BulkImpo
 export async function cancelImport(token: string, id: string): Promise<void> {
   await eunhaFetch(`/api/eunha/v1/imports/${id}`, token, { method: 'DELETE' })
 }
+
+export interface InviteResolution {
+  valid: boolean
+  reason?: string
+  bypass_approval?: boolean
+  autofollow?: boolean
+  inviter?: { id: string; acct: string; display_name: string }
+}
+
+export async function resolveInvite(code: string, signal?: AbortSignal): Promise<InviteResolution> {
+  const res = await fetch(`/api/eunha/v1/invite?invite=${encodeURIComponent(code)}`, { signal })
+  if (!res.ok) throw new Error('Could not check this invite. Please try again.')
+  return res.json()
+}

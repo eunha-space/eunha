@@ -16,6 +16,10 @@ pub mod two_factor;
 pub fn router() -> Router {
     Router::new()
         .route("/api/eunha/v1/health", get(health::health))
+        .route(
+            "/api/eunha/v1/invite",
+            get(crate::api::mastodon::signup::invite_lookup),
+        )
         .route("/api/eunha/v1/invite_tree", get(invite_tree::invite_tree))
         .route(
             "/api/eunha/v1/terms_of_service/interstitial",

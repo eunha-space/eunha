@@ -221,3 +221,38 @@ async fn test_grant_bounds_and_unknown_account() {
         StatusCode::NOT_FOUND,
     );
 }
+
+#[tokio::test]
+async fn test_public_invite_resolution_tracks_owner_permissions_and_validity() {
+    let ctx = TestContext::new("invite-resolution").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    for (token, bypass) in [(&ctx.alice_token, true), (&ctx.bob_token, false)] {
+        let invite: Value = ctx
+            .api
+            .post_json(
+                "/api/v1/invites",
+                Some(token),
+                &json!({"max_uses": 1, "autofollow": true}),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        let path = format!(
+            "/api/eunha/v1/invite?invite={}",
+            invite["code"].as_str().unwrap()
+        );
+        let resolved: Value = ctx.api.get(&path, None).await.json().await.unwrap();
+        assert_eq!(resolved["valid"], true);
+        assert_eq!(resolved["bypass_approval"], bypass);
+        assert_eq!(resolved["autofollow"], true);
+        sqlx::query("UPDATE invites SET uses = 1 WHERE id = $1")
+            .bind(invite["id"].as_str().unwrap().parse::<i64>().unwrap())
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+        let resolved: Value = ctx.api.get(&path, None).await.json().await.unwrap();
+        assert_eq!(resolved["valid"], false);
+        assert_eq!(resolved["reason"], "err_invite_maxed");
+    }
+}

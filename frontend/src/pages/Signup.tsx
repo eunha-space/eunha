@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { getInstance } from '../api.ts'
-import { signUp } from '../eunha-api.ts'
+import { signUp, resolveInvite, type InviteResolution } from '../eunha-api.ts'
 import { beginLogin } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -52,11 +52,26 @@ export default function Signup() {
       .catch(() => setRegistrationsOpen(false))
   }, [])
 
+  const [resolution, setResolution] = useState<{ code: string; result: InviteResolution } | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  useEffect(() => {
+    setInviteError(null)
+    if (!invite.trim()) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      resolveInvite(invite.trim(), controller.signal)
+        .then((result) => setResolution({ code: invite.trim(), result }))
+        .catch((e) => { if (!controller.signal.aborted) setInviteError(String(e)) })
+    }, 250)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [invite])
+  const resolved = resolution?.code === invite.trim() ? resolution.result : null
+  const bypassApproval = resolved?.valid === true && resolved.bypass_approval === true
   const hasInvite = invite.trim().length > 0
   // Closed instances require an invite; approval-required instances ask for a
   // reason unless the invite bypasses approval.
   const inviteRequired = registrationsOpen === false && !hasInvite
-  const needsReason = approvalRequired && !hasInvite
+  const needsReason = approvalRequired && !bypassApproval
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -97,7 +112,7 @@ export default function Signup() {
               Almost there — we sent a confirmation link to{' '}
               <span className="font-medium">{email}</span>. Click it to activate
               your account.
-              {approvalRequired && !hasInvite && (
+              {approvalRequired && !bypassApproval && (
                 <>
                   {' '}
                   After confirming, an admin will review your application.
@@ -121,14 +136,14 @@ export default function Signup() {
             <p className="text-muted-foreground text-sm">
               {inviteRequired
                 ? 'This instance is invite-only. Enter your invite code to continue.'
-                : approvalRequired && !hasInvite
+                : approvalRequired && !bypassApproval
                   ? 'Registrations are open by approval — tell us a bit about yourself.'
                   : 'Join this instance.'}
             </p>
 
             {error && <p className="text-destructive text-sm">{error}</p>}
 
-            {registrationsOpen === false && (
+            {(registrationsOpen === false || hasInvite) && (
               <div className="space-y-1">
                 <Label htmlFor="invite">Invite code</Label>
                 <Input
@@ -140,6 +155,15 @@ export default function Signup() {
                 />
               </div>
             )}
+
+            {hasInvite && <div className="rounded-lg border p-3 text-sm" role="status">
+              {inviteError ?? (!resolved ? 'Checking invite…' : !resolved.valid
+                ? resolved.reason === 'err_invite_maxed' ? 'This invite has been fully used.'
+                  : resolved.reason === 'err_invite_expired' ? 'This invite has expired.' : 'This invite is unavailable.'
+                : <>Invited by @{resolved.inviter?.acct}.
+                    {resolved.autofollow && ' You will automatically follow your inviter (or send a follow request if their account is locked).'}
+                    {approvalRequired && !bypassApproval && ' An admin will review your application.'}</>)}
+            </div>}
 
             <div className="space-y-1">
               <Label htmlFor="username">Username</Label>
@@ -239,7 +263,7 @@ export default function Signup() {
               </span>
             </Label>
 
-            <Button type="submit" className="w-full" disabled={submitting || !agreement}>
+            <Button type="submit" className="w-full" disabled={submitting || !agreement || (hasInvite && (!resolved?.valid || !!inviteError))}>
               {submitting
                 ? 'Creating…'
                 : needsReason
