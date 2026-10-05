@@ -2,8 +2,17 @@
 // third-party mobile apps; this frontend is just one client.
 import { restClient, type mastodon } from './masto.ts'
 
-export function getInstance(): Promise<mastodon.v2.Instance> {
-  return restClient().v2.instance.fetch()
+let cachedInstance: mastodon.v2.Instance | null = null
+
+// Keep branding available synchronously when navigation remounts the sidebar.
+export function getCachedInstance(): mastodon.v2.Instance | null {
+  return cachedInstance
+}
+
+export async function getInstance(): Promise<mastodon.v2.Instance> {
+  const instance = await restClient().v2.instance.fetch()
+  cachedInstance = instance
+  return instance
 }
 
 // The instance's own policy documents. masto types neither, and both are plain

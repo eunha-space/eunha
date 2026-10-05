@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 
 import { toast } from 'sonner'
-import { getInstance } from '../api.ts'
+import { getCachedInstance, getInstance } from '../api.ts'
 import { beginLogin, getSavedAccounts, getToken, logout, switchAccount } from '../auth.ts'
 import { clearMe, getMeAccount, loadMe, type MeAccount } from '../me.ts'
 import { Button } from '@/components/ui/button.tsx'
@@ -595,42 +595,29 @@ function TopBarInner({
 
 export function TopBar({ title }: { title?: string }) {
   const token = getToken()
-  const [instanceTitle, setInstanceTitle] = useState<string | null>(() =>
+  const [instance, setInstance] = useState(getCachedInstance)
+  const [instanceTitle] = useState<string | null>(() =>
     document.title === 'eunha' ? null : document.title,
   )
   const [account, setAccount] = useState<MeAccount | null>(() => getMeAccount())
-  const [registrationsOpen, setRegistrationsOpen] = useState(false)
-  const [domain, setDomain] = useState('')
-  const [icon, setIcon] = useState<string | null>(null)
-  const displayTitle = title ?? instanceTitle ?? ''
+  const registrationsOpen = instance?.registrations.enabled ?? false
+  const domain = instance?.domain ?? ''
+  // `icon` is a list of sizes; the largest still fits the 36px box.
+  const icons = instance?.icon as { src?: string }[] | undefined
+  const icon = icons?.at(-1)?.src ?? null
+  const displayTitle = title ?? instance?.title ?? instanceTitle ?? ''
 
   useEffect(() => {
-    getInstance()
-      .then((instance) => {
-        if (!title) setInstanceTitle(instance.title)
-        setDomain(instance.domain)
-        // `icon` is a list of sizes; the largest is still small enough to sit
-        // in a 36px box, and an instance that has set none sends an empty one.
-        const icons = instance.icon as { src?: string }[] | undefined
-        setIcon(icons?.at(-1)?.src ?? null)
-      })
-      .catch(() => {})
-  }, [title])
-
-  // Only logged-out users see the sign-up affordance, so only they need the
-  // instance's registration status.
-  useEffect(() => {
-    if (token) return
     let cancelled = false
     getInstance()
       .then((instance) => {
-        if (!cancelled) setRegistrationsOpen(instance.registrations.enabled)
+        if (!cancelled) setInstance(instance)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [])
 
   useEffect(() => {
     if (!token) {

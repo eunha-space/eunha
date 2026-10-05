@@ -40,6 +40,10 @@ size, the favicon at 16, 32 and 48 pixels.
 
 ### What the settings drive
 
+The web client keeps the last loaded instance branding while navigating,
+so the sidebar's domain, title and icon stay visible while it refreshes the
+instance details.
+
 | Setting                                                          | What reads it                                                                          |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title             |

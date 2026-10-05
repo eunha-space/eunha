@@ -1,5 +1,31 @@
 import { expect, test } from '@playwright/test'
 
+test('the sidebar retains its domain while instance details refresh after navigation', async ({ page }) => {
+  await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v2/instance', (r) => r.fulfill({
+    json: { domain: 'community.example', title: 'Community', icon: [], registrations: { enabled: false } },
+  }))
+  await page.goto('/')
+  const domain = page.locator('aside.sidebar-frame').getByText('community.example', { exact: true })
+  await expect(domain).toBeVisible()
+
+  // Hold the refresh open: a remounted sidebar must render its cached domain
+  // before the request finishes, including when that request fails.
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/v2/instance', async (r) => {
+    await held
+    await r.abort()
+  })
+  const refresh = page.waitForRequest('**/api/v2/instance')
+  await page.locator('aside.sidebar-frame').getByRole('link', { name: 'Federated' }).click()
+  await refresh
+  await expect(page).toHaveURL(/\/public$/)
+  await expect(domain).toBeVisible()
+  release()
+  await expect(domain).toBeVisible()
+})
+
 // The three timelines used to be a tab strip inside the column. They are rows
 // in the rail now, which is the whole point of the change — so the test is
 // that they navigate from there, and that the strip is gone.
