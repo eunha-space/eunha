@@ -588,7 +588,11 @@ pub(crate) async fn remove_status(
     if let Some(original_id) = status.reblog_of_id {
         let _ = sqlx::query!(
             r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
-                 untrusted_reblogs_count = GREATEST(untrusted_reblogs_count - 1, 0),
+                 untrusted_reblogs_count = CASE
+                   WHEN untrusted_reblogs_count IS NULL
+                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))
+                   THEN untrusted_reblogs_count
+                   ELSE GREATEST(untrusted_reblogs_count - 1, 0) END,
                  updated_at = now()
                WHERE status_id = $1"#,
             original_id
@@ -989,7 +993,11 @@ pub async fn reblog_status(
            VALUES ($1, 1, now(), now())
            ON CONFLICT (status_id) DO UPDATE
              SET reblogs_count = status_stats.reblogs_count + 1,
-                 untrusted_reblogs_count = LEAST(status_stats.untrusted_reblogs_count + 1, 100000000),
+                 untrusted_reblogs_count = CASE
+                   WHEN status_stats.untrusted_reblogs_count IS NULL
+                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))
+                   THEN status_stats.untrusted_reblogs_count
+                   ELSE LEAST(GREATEST(status_stats.untrusted_reblogs_count + 1, 0), 100000000) END,
                  updated_at = now()"#,
         original_id
     )
@@ -1166,7 +1174,11 @@ pub async fn unreblog_status(
     if let Some(ref del) = deleted {
         sqlx::query!(
             r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
-                 untrusted_reblogs_count = GREATEST(untrusted_reblogs_count - 1, 0),
+                 untrusted_reblogs_count = CASE
+                   WHEN untrusted_reblogs_count IS NULL
+                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))
+                   THEN untrusted_reblogs_count
+                   ELSE GREATEST(untrusted_reblogs_count - 1, 0) END,
                  updated_at = now()
                WHERE status_id = $1"#,
             original_id

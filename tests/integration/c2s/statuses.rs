@@ -7499,3 +7499,85 @@ async fn test_reblog_answers_quote_approval_for_the_original() {
         .unwrap();
     assert_eq!(seen["quote_approval"], seen["reblog"]["quote_approval"]);
 }
+
+/// Mastodon keeps an absent remote count absent, increments known remote
+/// counts with a cap, and ignores remote counts on local statuses.
+#[tokio::test]
+async fn test_reblog_preserves_unknown_remote_count() {
+    let ctx = TestContext::new("reblog-remote-count").await;
+    for (local, reported, boosted, undone) in [
+        (false, None, 1, 0),
+        (false, Some(10_i64), 11, 10),
+        (false, Some(100_000_000), 100_000_000, 99_999_999),
+        (true, Some(10), 1, 0),
+    ] {
+        let status = ctx
+            .api
+            .post_status(&ctx.alice_token, "boost count", "public")
+            .await;
+        let id = status["id"].as_str().unwrap();
+        let status_id: i64 = id.parse().unwrap();
+        if !local {
+            sqlx::query("UPDATE statuses SET local = false, uri = $2 WHERE id = $1")
+                .bind(status_id)
+                .bind(format!("https://remote.{}/statuses/{id}", ctx.domain))
+                .execute(&ctx.db)
+                .await
+                .unwrap();
+        }
+        sqlx::query("INSERT INTO status_stats (status_id, untrusted_reblogs_count, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT (status_id) DO UPDATE SET untrusted_reblogs_count = $2")
+            .bind(status_id).bind(reported).execute(&ctx.db).await.unwrap();
+        let response = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{id}/reblog"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: Value = response.json().await.unwrap();
+        assert_eq!(response["reblog"]["reblogs_count"], boosted);
+        let stored: Option<i64> = sqlx::query_scalar(
+            "SELECT untrusted_reblogs_count FROM status_stats WHERE status_id = $1",
+        )
+        .bind(status_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            if local {
+                reported
+            } else {
+                reported.map(|n| (n + 1).min(100_000_000))
+            }
+        );
+        let response = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{id}/unreblog"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: Value = response.json().await.unwrap();
+        assert_eq!(response["reblogs_count"], undone);
+        let stored: Option<i64> = sqlx::query_scalar(
+            "SELECT untrusted_reblogs_count FROM status_stats WHERE status_id = $1",
+        )
+        .bind(status_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            if local {
+                reported
+            } else {
+                reported.map(|n| ((n + 1).min(100_000_000) - 1).max(0))
+            }
+        );
+    }
+}

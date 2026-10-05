@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_stats (status_id, reblogs_count, created_at, updated_at)\n           VALUES ($1, 1, now(), now())\n           ON CONFLICT (status_id) DO UPDATE\n             SET reblogs_count = status_stats.reblogs_count + 1,\n                 untrusted_reblogs_count = CASE\n                   WHEN status_stats.untrusted_reblogs_count IS NULL\n                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))\n                   THEN status_stats.untrusted_reblogs_count\n                   ELSE LEAST(GREATEST(status_stats.untrusted_reblogs_count + 1, 0), 100000000) END,\n                 updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8776a3aa53b2e9911989884cadab9e8c653c9b38399f9e894dac6d4e2129409d"
+}

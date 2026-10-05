@@ -884,7 +884,11 @@ async fn decrement_interaction_counters(state: &AppState, ids: &[i64]) -> Result
     sqlx::query!(
         r#"UPDATE status_stats ss
            SET reblogs_count = GREATEST(0, ss.reblogs_count - c.n),
-               untrusted_reblogs_count = GREATEST(0, ss.untrusted_reblogs_count - c.n),
+               untrusted_reblogs_count = CASE
+                 WHEN ss.untrusted_reblogs_count IS NULL
+                   OR EXISTS (SELECT 1 FROM statuses WHERE id = ss.status_id AND (COALESCE(local, false) OR uri IS NULL))
+                 THEN ss.untrusted_reblogs_count
+                 ELSE GREATEST(0, ss.untrusted_reblogs_count - c.n) END,
                updated_at = now()
            FROM (SELECT reblog_of_id AS status_id, count(*) AS n FROM statuses
                  WHERE id = ANY($1::bigint[]) AND reblog_of_id IS NOT NULL

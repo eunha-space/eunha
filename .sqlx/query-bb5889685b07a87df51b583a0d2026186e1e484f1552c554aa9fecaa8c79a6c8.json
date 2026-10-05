@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),\n                 untrusted_reblogs_count = CASE\n                   WHEN untrusted_reblogs_count IS NULL\n                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))\n                   THEN untrusted_reblogs_count\n                   ELSE GREATEST(untrusted_reblogs_count - 1, 0) END,\n                 updated_at = now()\n               WHERE status_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb5889685b07a87df51b583a0d2026186e1e484f1552c554aa9fecaa8c79a6c8"
+}
