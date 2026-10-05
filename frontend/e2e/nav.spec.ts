@@ -18,15 +18,15 @@ test('the sidebar retains its domain while instance details refresh after naviga
     await r.abort()
   })
   const refresh = page.waitForRequest('**/api/v2/instance')
-  await page.locator('aside.sidebar-frame').getByRole('link', { name: 'Federated' }).click()
+  await page.locator('aside.sidebar-frame').getByRole('link', { name: 'Local' }).click()
   await refresh
-  await expect(page).toHaveURL(/\/public$/)
+  await expect(page).toHaveURL(/\/local$/)
   await expect(domain).toBeVisible()
   release()
   await expect(domain).toBeVisible()
 })
 
-// The three timelines used to be a tab strip inside the column. They are rows
+// The home and local timelines used to be a tab strip inside the column. They are rows
 // in the rail now, which is the whole point of the change — so the test is
 // that they navigate from there, and that the strip is gone.
 test('the rail carries the timelines, and no tab strip remains', async ({ page }) => {
@@ -53,12 +53,11 @@ test('the rail carries the timelines, and no tab strip remains', async ({ page }
 
   await page.goto('/')
   const rail = page.locator('aside')
-  for (const label of ['Home', 'Local', 'Federated', 'Messages', 'Saved']) {
+  for (const label of ['Home', 'Local', 'Messages', 'Saved']) {
     await expect(rail.getByRole('link', { name: label })).toBeVisible()
   }
 
-  await rail.getByRole('link', { name: 'Federated' }).click()
-  await expect(page).toHaveURL(/\/public$/)
+  await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(0)
   await rail.getByRole('link', { name: 'Local' }).click()
   await expect(page).toHaveURL(/\/local$/)
 })
@@ -69,6 +68,7 @@ test('signed out, the local row owns the root path', async ({ page }) => {
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
   await page.goto('/')
 
+  await expect(page.locator('aside').getByRole('link', { name: 'Federated' })).toHaveCount(0)
   const local = page.locator('aside').getByRole('link', { name: 'Local' })
   await expect(local).toHaveClass(/bg-muted/)
   // And there is still a way to change the theme without an account menu.

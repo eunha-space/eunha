@@ -5,7 +5,6 @@ import {
   Check,
   Bookmark,
   Compass,
-  Globe,
   MessageCircle,
   Home,
   Info,
@@ -104,14 +103,13 @@ function useNavItems(
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds; eunha has none, and copying the shape around an absent
   // feature leaves a rail that is mostly empty. What eunha has instead is
-  // three timelines, which were a tab strip inside the column — a leftover
+  // home and local timelines, which were a tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
   // is the community rather than a curiosity. So they live here.
   if (!token) {
     return [
       // Signed out, "/" *is* the local timeline, so that row owns both paths.
       { to: '/local', icon: Users, label: 'Local', matchAlso: (p) => p === '/' },
-      { to: '/public', icon: Globe, label: 'Federated' },
       { to: '/explore', icon: Compass, label: 'Explore' },
       { to: '/about', icon: Info, label: 'About' },
     ]
@@ -137,7 +135,6 @@ function useNavItems(
       to: '/invites', icon: Ticket,
       label: 'Invite people', inviteCount: invites.count,
     }] : []),
-    { to: '/public', icon: Globe, label: 'Federated' },
     { to: '/search', icon: Search, label: 'Search' },
     { to: '/explore', icon: Compass, label: 'Explore' },
     { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
