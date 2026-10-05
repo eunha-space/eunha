@@ -172,6 +172,13 @@ with `max_id` and `limit`: each attempt's method (`password`, `otp`,
 Signing up
 ----------
 
+The sign-up and sign-in forms mark the email field with
+`autocomplete="username"`, because the email address is the login identifier
+password managers should save. The public handle on the sign-up form uses
+`autocomplete="off"`, and both password fields use `new-password`. Password
+managers may apply their own heuristics, so these hints cannot guarantee what
+every manager saves.
+
 A sign-up is saved the moment it is sent, as Mastodon's `AppSignUpService` and
 `Auth::RegistrationsController` save it: the account with its signing key, and
 a `users` row with no `confirmed_at`, its `confirmation_token` and

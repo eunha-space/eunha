@@ -18,7 +18,7 @@
   </div>
   <form hx-post="/account/login" hx-target="#msg" hx-swap="innerHTML">
     <label for="email">{{ t_email }}</label>
-    <input type="email" id="email" name="email" required autocomplete="email">
+    <input type="email" id="email" name="email" required autocomplete="username">
     <label for="password">{{ t_password }}</label>
     <input type="password" id="password" name="password" required autocomplete="current-password">
     <button type="submit">{{ t_sign_in }}</button>

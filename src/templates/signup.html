@@ -37,10 +37,10 @@
       <input type="hidden" name="locale" value="{{ lang }}">
       {% if invite %}<input type="hidden" name="invite_code" value="{{ invite }}">{% endif %}
       <label for="username">{{ t_username }}</label>
-      <input type="text" id="username" name="username" required autocomplete="username"
+      <input type="text" id="username" name="username" required autocomplete="off"
              pattern="[a-zA-Z0-9_]+" title="Letters, numbers, and underscores only">
       <label for="email">{{ t_email }}</label>
-      <input type="email" id="email" name="email" required autocomplete="email">
+      <input type="email" id="email" name="email" required autocomplete="username">
       <label for="password">{{ t_password }}</label>
       <input type="password" id="password" name="password" required
              minlength="8" autocomplete="new-password">
