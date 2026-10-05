@@ -63,7 +63,7 @@ impl Locale {
             (Self::En, "setup_title") => "Check your inbox",
             (Self::Ko, "setup_title") => "수신함 확인하기",
             (Self::En, "setup_email_hint") => {
-                "Click the link we sent to %{email} to begin using Mastodon. We'll wait right here."
+                "Click the link we sent to %{email}. We'll wait right here."
             }
             (Self::Ko, "setup_email_hint") => {
                 "%{email}로 보낸 링크를 클릭해 마스토돈을 시작하세요. 기다리고 있겠습니다."
