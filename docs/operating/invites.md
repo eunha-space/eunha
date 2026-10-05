@@ -127,11 +127,17 @@ Finding your invites
 --------------------
 
 Signed-in members have **Invite people** beside **Local** in the desktop sidebar
-and mobile navigation drawer. A quiet count means **available single-use invite
-links**. It appears only when every available link admits one person, hides at
-zero or when any usable link has multiple or unlimited uses, and is distinct
-from the unread-notifications badge. It refreshes on navigation, focus, invite
-changes and once a minute; local expiry also removes links from the count.
+and mobile navigation drawer when they have a usable invite link. Moderators
+and admins with access to Moderation always see the entry, including when no
+links are usable or availability cannot be loaded. For regular members the
+entry is hidden while availability is unknown or no links can be used, even
+when the member may create links; `/invites` remains directly accessible.
+Multiple-use and unlimited-use links still make the entry visible. A quiet
+count means **available single-use invite links**. It appears only when every
+available link admits one person, hides at zero or when any usable link has
+multiple or unlimited uses, and is distinct from the unread-notifications
+badge. It refreshes on navigation, focus, invite changes and once a minute;
+local expiry also removes links from the count.
 
 **Your invites** leads with the available links and a Copy invite link action.
 When all available links are single-use it says how many people they admit;

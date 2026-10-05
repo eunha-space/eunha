@@ -262,6 +262,7 @@ test('unlimited links hide the sidebar count and do not imply a people allowance
   await expect(page.getByRole('heading', { name: '1 invite link available' })).toBeVisible()
   await expect(page.getByText('This link allows unlimited signups.', { exact: false })).toBeVisible()
   await expect(page.locator('aside span[aria-label$="available single-use invite links"]')).toHaveCount(0)
+  await expect(page.locator('aside').getByRole('link', { name: 'Invite people', exact: true })).toBeVisible()
 })
 
 test('available link expires while open and removes the sidebar count', async ({ page }) => {
@@ -272,6 +273,7 @@ test('available link expires while open and removes the sidebar count', async ({
   await expect(page.getByRole('heading', { name: 'Invite 1 person' })).toBeVisible()
   await page.clock.fastForward(3000)
   await expect(page.getByRole('heading', { name: 'No invites available' })).toBeVisible()
+  await expect(page.locator('aside').getByRole('link', { name: /Invite people/ })).toHaveCount(0)
   await expect(page.locator('aside span[aria-label$="available single-use invite links"]')).toHaveCount(0)
 })
 
@@ -293,3 +295,42 @@ test('failed grant can be retried from review without changing the recipient', a
   await grant.click()
   await expect(page.getByRole('heading', { name: '3 invites granted to 1 local user' })).toBeVisible()
 })
+
+
+for (const mobile of [false, true]) {
+  test(`invite menu hides without usable links and appears after a grant on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
+    await signIn(page, 1 << 16)
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 })
+    let granted = false
+    await page.route('**/api/v1/invites', r => r.fulfill({ json: granted ? [invite] : [
+      { ...invite, id: '11', uses: 1, valid_for_use: false },
+      { ...invite, id: '12', expired: true, valid_for_use: false },
+      { ...invite, id: '13', valid_for_use: false },
+    ] }))
+    await page.goto('/about')
+    if (mobile) await page.getByRole('button', { name: 'Open menu' }).click()
+    const navigation = mobile ? page.getByRole('dialog') : page.locator('aside')
+    const link = navigation.getByRole('link', { name: /Invite people/ })
+    await expect(link).toHaveCount(0)
+    granted = true
+    await page.evaluate(() => window.dispatchEvent(new Event('eunha:invites-changed')))
+    await expect(link).toBeVisible()
+    granted = false
+    await page.evaluate(() => window.dispatchEvent(new Event('eunha:invites-changed')))
+    await expect(link).toHaveCount(0)
+  })
+}
+
+
+for (const mobile of [false, true]) {
+  test(`moderator keeps invite menu without usable links on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
+    await signIn(page, 1 << 4)
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 })
+    await page.route('**/api/v1/invites', r => r.fulfill({ json: [] }))
+    await page.goto('/about')
+    if (mobile) await page.getByRole('button', { name: 'Open menu' }).click()
+    const navigation = mobile ? page.getByRole('dialog') : page.locator('aside')
+    await expect(navigation.getByRole('link', { name: 'Invite people', exact: true })).toBeVisible()
+    await expect(navigation.locator('span[aria-label$="available single-use invite links"]')).toHaveCount(0)
+  })
+}

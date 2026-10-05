@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { getInvites, INVITES_CHANGED, type Invite } from '../eunha-api.ts'
-import { availableInviteCount, inviteDate } from '../lib/invites.ts'
+import { availableInviteCount, inviteDate, inviteStatus } from '../lib/invites.ts'
 
-export function useAvailableInvites(token: string | null): number | null {
+export function useAvailableInvites(token: string | null): { count: number | null; hasAvailable: boolean } {
   const pathname = useLocation().pathname
   const [snapshot, setSnapshot] = useState<{
     token: string
@@ -51,7 +51,9 @@ export function useAvailableInvites(token: string | null): number | null {
     )
     return () => window.clearTimeout(timer)
   })
-  return token && snapshot?.token === token
-    ? availableInviteCount(snapshot.invites)
-    : null
+  const invites = token && snapshot?.token === token ? snapshot.invites : []
+  return {
+    count: availableInviteCount(invites),
+    hasAvailable: invites.some(i => inviteStatus(i) === 'Available'),
+  }
 }

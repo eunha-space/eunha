@@ -99,7 +99,7 @@ function useNavItems(
   token: string | null,
   unread: number,
   account: MeAccount | null,
-  inviteCount: number | null,
+  invites: { count: number | null; hasAvailable: boolean },
 ): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds; eunha has none, and copying the shape around an absent
@@ -133,10 +133,10 @@ function useNavItems(
   return [
     { to: '/', end: true, icon: Home, label: 'Home' },
     { to: '/local', icon: Users, label: 'Local' },
-    {
+    ...(invites.hasAvailable || moderation.length > 0 ? [{
       to: '/invites', icon: Ticket,
-      label: 'Invite people', inviteCount,
-    },
+      label: 'Invite people', inviteCount: invites.count,
+    }] : []),
     { to: '/public', icon: Globe, label: 'Federated' },
     { to: '/search', icon: Search, label: 'Search' },
     { to: '/explore', icon: Compass, label: 'Explore' },
