@@ -11,6 +11,7 @@ import {
   type AdminAccount,
   type AssignableRole,
 } from '../../admin-api.ts'
+import { getCurrentAccount } from '../../api.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { ChoiceSelect, ConfirmButton } from '@/components/admin/admin-common.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -47,6 +48,7 @@ export function UserManagement({
 }) {
   const manageRoles = can(permissions, 'manage_roles')
   const manageAccess = can(permissions, 'manage_user_access')
+  const [actingRoleId, setActingRoleId] = useState<string | null>(null)
   const [roles, setRoles] = useState<AssignableRole[]>([])
   const [roleId, setRoleId] = useState<string>(NO_ROLE)
   const [emailOpen, setEmailOpen] = useState(false)
@@ -60,7 +62,13 @@ export function UserManagement({
 
   useEffect(() => {
     if (!manageRoles) return
-    listAssignableRoles(token).then(setRoles).catch(() => {})
+    let cancelled = false
+    Promise.all([listAssignableRoles(token), getCurrentAccount(token)]).then(([roles, me]) => {
+      if (cancelled) return
+      setRoles(roles)
+      setActingRoleId((me as unknown as { role?: { id: string } }).role?.id ?? '-99')
+    }).catch(() => {})
+    return () => { cancelled = true }
   }, [manageRoles, token])
 
   if (!manageRoles && !manageAccess) return null
@@ -78,8 +86,15 @@ export function UserManagement({
     }
   }
 
+  const actingPosition = roles.find((r) => r.id === actingRoleId)?.position
+  const targetPosition = currentRole === NO_ROLE ? -1 : roles.find((r) => r.id === currentRole)?.position
+  const canChangeRole = manageRoles && actingPosition !== undefined && targetPosition !== undefined
+    && actingPosition > targetPosition
+
   const roleItems: Record<string, string> = { [NO_ROLE]: 'No role' }
-  for (const r of roles) roleItems[r.id] = r.name
+  for (const r of roles) {
+    if (actingPosition !== undefined && r.position <= actingPosition) roleItems[r.id] = r.name
+  }
 
   const submitEmail = async (e: FormEvent) => {
     e.preventDefault()
@@ -90,7 +105,12 @@ export function UserManagement({
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">Sign-in and role</h2>
-      {manageRoles && (
+      {manageRoles && actingPosition !== undefined && targetPosition !== undefined && !canChangeRole && (
+        <p className="text-muted-foreground text-sm">
+          You can only change roles for users whose role is below yours.
+        </p>
+      )}
+      {canChangeRole && (
         <div className="flex flex-wrap items-center gap-2">
           <ChoiceSelect
             label="Role"

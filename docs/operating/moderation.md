@@ -409,6 +409,10 @@ For a local account:
  -  `PUT …/role` changes the role, for a role with `manage_roles` that
     outranks the user's. The new role may not be positioned above the
     moderator's own. `/api/v1/admin/roles` lists the roles to choose from.
+    The web client offers the change only for users with a lower role, and
+    explains the restriction for equal or higher roles, including another
+    owner. Demoting an equal-ranked owner requires
+    `eunha accounts modify USERNAME --remove-role` on the server.
  -  `POST …/reset` signs the user out everywhere with a random password, and
     mails a link to choose a new one, along with the notice that the password
     changed.

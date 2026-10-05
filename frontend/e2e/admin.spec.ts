@@ -336,3 +336,36 @@ test('a user appeals a strike against them', async ({ page }) => {
   await expect.poll(() => appealed).toMatchObject({ text: 'I was quiet' })
   await expect(page.getByRole('heading', { name: 'Appeal', exact: true })).toBeVisible()
 })
+
+for (const [name, position] of [['equal', 100], ['higher', 200], ['lower', 10]] as const) {
+  test(`role changes respect the ${name}-ranked user's current role`, async ({ page }) => {
+    await signIn(page, ADMINISTRATOR)
+    const targetRole = { id: '4', name: 'Target role', position }
+    await page.route('**/api/v1/admin/accounts/3', (r) =>
+      r.fulfill({ json: adminAccount('3', 'bob', { role: targetRole }) }),
+    )
+    await page.route('**/api/v1/admin/account_moderation_notes**', (r) => r.fulfill({ json: [] }))
+    await page.route('**/api/v1/admin/roles', (r) => r.fulfill({ json: [
+      { id: '3', name: 'Owner', position: 100 },
+      targetRole,
+      { id: '5', name: 'Higher role', position: 300 },
+    ] }))
+    await page.goto('/admin/accounts/3')
+    if (name !== 'lower') {
+      await expect(page.getByText('You can only change roles for users whose role is below yours.')).toBeVisible()
+      await expect(page.getByRole('combobox', { name: 'Role', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Change role', exact: true })).toHaveCount(0)
+    } else {
+      await page.getByRole('combobox', { name: 'Role', exact: true }).click()
+      await expect(page.getByRole('option', { name: 'Higher role', exact: true })).toHaveCount(0)
+      await page.getByRole('option', { name: 'No role', exact: true }).click()
+      await page.route('**/api/v1/admin/accounts/3/role', (r) => {
+        expect(r.request().method()).toBe('PUT')
+        expect(r.request().postDataJSON()).toEqual({ role_id: '' })
+        return r.fulfill({ json: adminAccount('3', 'bob') })
+      })
+      await page.getByRole('button', { name: 'Change role', exact: true }).click()
+      await expect(page.getByText('Role changed.', { exact: true })).toBeVisible()
+    }
+  })
+}
