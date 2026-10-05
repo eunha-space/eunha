@@ -8,6 +8,7 @@ import {
   listAdminInvites,
   type AdminInvite,
 } from '../../admin-server-api.ts'
+import { InviteGrantForm } from '@/components/invite-grant-form.tsx'
 import { getToken } from '../../auth.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
@@ -77,6 +78,7 @@ export default function AdminInvites() {
         </>
       }
     >
+      <InviteGrantForm onGranted={load} />
       <div className="mb-3 flex gap-3">
         <Button render={<Link to="/invites" />}>Create invite</Button>
         <Button variant="outline" render={<Link to="/invite-tree" />}>Invite tree</Button>

@@ -1,52 +1,57 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { getInvites, INVITES_CHANGED, type Invite } from '../eunha-api.ts'
+import { availableInviteCount, inviteDate } from '../lib/invites.ts'
 
-function expiry(invite: Invite): number {
-  if (!invite.expires_at) return Infinity
-  const value = invite.expires_at
-  return new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`).getTime()
-}
-
-/** One shared count for the desktop rail and mobile drawer, refreshed on mutations. */
-export function useAvailableInvites(token: string | null): number {
-  const [loaded, setLoaded] = useState<{ token: string; invites: Invite[] } | null>(null)
-  const [now, setNow] = useState(Date.now)
-
+export function useAvailableInvites(token: string | null): number | null {
+  const pathname = useLocation().pathname
+  const [snapshot, setSnapshot] = useState<{
+    token: string
+    invites: Invite[]
+  } | null>(null)
+  const [, tick] = useState(0)
   useEffect(() => {
     if (!token) return
-    let active = true
-    let revision = 0
-    const refresh = () => {
-      const request = ++revision
-      getInvites(token).then(invites => {
-        if (active && request === revision) {
-          setLoaded({ token, invites })
-          setNow(Date.now())
-        }
-      }).catch(() => {
-        if (active && request === revision) setLoaded(null)
-      })
+    let cancelled = false
+    let sequence = 0
+    const load = async () => {
+      const request = ++sequence
+      try {
+        const invites = await getInvites(token)
+        if (!cancelled && request === sequence) setSnapshot({ token, invites })
+      } catch {
+        if (!cancelled && request === sequence) setSnapshot(null)
+      }
     }
-    refresh()
-    window.addEventListener(INVITES_CHANGED, refresh)
+    void load()
+    const timer = window.setInterval(load, 60_000)
+    window.addEventListener(INVITES_CHANGED, load)
+    window.addEventListener('focus', load)
     return () => {
-      active = false
-      window.removeEventListener(INVITES_CHANGED, refresh)
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener(INVITES_CHANGED, load)
+      window.removeEventListener('focus', load)
     }
-  }, [token])
-
+  }, [token, pathname])
   useEffect(() => {
-    if (loaded?.token !== token) return
-    const next = loaded.invites.reduce((soonest, invite) => {
-      const time = expiry(invite)
-      return invite.valid_for_use && time > now ? Math.min(soonest, time) : soonest
-    }, Infinity)
-    if (!Number.isFinite(next)) return
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(next - Date.now() + 1, 2_147_483_647))
-    return () => clearTimeout(timer)
-  }, [loaded, token, now])
-
-  if (loaded?.token !== token) return 0
-  return loaded.invites.filter(invite => invite.valid_for_use && !invite.expired
-    && (invite.max_uses === null || invite.uses < invite.max_uses) && expiry(invite) > now).length
+    if (snapshot?.token !== token) return
+    const expiries = snapshot.invites
+      .flatMap((i) =>
+        i.expires_at ? [inviteDate(i.expires_at).getTime()] : [],
+      )
+      .filter((t) => t > Date.now())
+    if (!expiries.length) return
+    const timer = window.setTimeout(
+      () => tick((n) => n + 1),
+      Math.min(
+        2_147_483_647,
+        Math.max(1, Math.min(...expiries) - Date.now() + 1),
+      ),
+    )
+    return () => window.clearTimeout(timer)
+  })
+  return token && snapshot?.token === token
+    ? availableInviteCount(snapshot.invites)
+    : null
 }

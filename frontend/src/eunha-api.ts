@@ -58,11 +58,11 @@ export async function getInviteTree(token: string): Promise<InviteTree> {
   return res.json() as Promise<InviteTree>
 }
 
-export const INVITES_CHANGED = 'eunha:invites-changed'
-
 // ── Invites ────────────────────────────────────────────────────────────────
 // Served by eunha's /api/v1/invites (a non-standard extension: Mastodon exposes
 // invite CRUD only through its web UI, never the REST API).
+
+export const INVITES_CHANGED = 'eunha:invites-changed'
 
 export interface Invite {
   id: string
@@ -76,6 +76,8 @@ export interface Invite {
   autofollow: boolean
   comment: string | null
   created_at: string
+  bypass_approval: boolean
+  grant: { id: string; created_at: string; granted_by: string | null } | null
 }
 
 export interface CreateInviteParams {
@@ -112,7 +114,11 @@ export interface GrantInvitesParams {
   max_uses?: number
   /** Seconds until expiry; omit for never. */
   expires_in?: number
-  comment?: string
+}
+
+export async function getGrantRecipients(token: string): Promise<{ id: string; acct: string }[]> {
+  const res = await eunhaFetch('/api/eunha/v1/invite_grants/recipients', token)
+  return res.json()
 }
 
 export interface GrantInvitesResult {

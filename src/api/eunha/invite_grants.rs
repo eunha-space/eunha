@@ -11,7 +11,10 @@
 //! admin who minted it. The count is the limit — there is no allowance to keep
 //! books on, because the codes themselves are the allowance.
 
-use axum::{routing::post, Extension, Json, Router};
+use axum::{
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -26,8 +29,6 @@ use crate::{
 const MAX_COUNT: i32 = 25;
 /// The largest of Mastodon's `Invite::MAX_USES_COUNTS`.
 const MAX_USES: i32 = 100;
-/// Mastodon's `Invite::COMMENT_SIZE_LIMIT`.
-const COMMENT_SIZE_LIMIT: usize = 420;
 
 #[derive(Debug, Deserialize)]
 pub struct GrantRequest {
@@ -39,7 +40,6 @@ pub struct GrantRequest {
     pub max_uses: Option<i32>,
     /// Seconds until the codes expire; absent for never.
     pub expires_in: Option<i64>,
-    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,46 +76,25 @@ pub async fn grant_invites(
             "Uses per invite must be between 1 and {MAX_USES}"
         )));
     }
-    let comment = req
-        .comment
-        .map(|c| c.trim().to_string())
-        .filter(|c| !c.is_empty());
-    if comment
-        .as_ref()
-        .is_some_and(|c| c.chars().count() > COMMENT_SIZE_LIMIT)
-    {
-        return Err(AppError::Unprocessable(format!(
-            "Validation failed: Comment is too long (maximum is {COMMENT_SIZE_LIMIT} characters)"
-        )));
-    }
     let account_id: Option<i64> = match req.account_id.as_deref().map(str::trim) {
-        None | Some("") => None,
+        None => None,
         Some(id) => Some(
             id.parse()
                 .map_err(|_| AppError::Unprocessable("Invalid account id".into()))?,
         ),
     };
+    if req.expires_in.is_some_and(|s| s <= 0 || s > 31_536_000) {
+        return Err(AppError::Unprocessable(
+            "Expiry must be between 1 second and 1 year".into(),
+        ));
+    }
     let expires_at = req
         .expires_in
         .map(|s| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(s));
 
-    // Members only: the same set the invite tree counts. An unconfirmed or
+    // Functional local members only. An unconfirmed or
     // unapproved signup has not joined yet, and a suspended one has left.
-    let targets: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT u.id
-           FROM users u
-           JOIN accounts a ON a.id = u.account_id
-           WHERE a.domain IS NULL
-             AND u.approved
-             AND u.confirmed_at IS NOT NULL
-             AND a.suspended_at IS NULL
-             AND a.requested_deletion_at IS NULL
-             AND ($1::bigint IS NULL OR a.id = $1)
-           ORDER BY u.id"#,
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let targets = eligible_members(&state, account_id).await?;
 
     if targets.is_empty() {
         return Err(match account_id {
@@ -130,29 +109,47 @@ pub async fn grant_invites(
     let mut codes = Vec::with_capacity(targets.len() * req.count as usize);
     for user_id in &targets {
         for _ in 0..req.count {
-            user_ids.push(*user_id);
+            user_ids.push(user_id.0);
             codes.push(generate_code());
         }
     }
 
-    // `ON CONFLICT DO NOTHING` for the same reason Mastodon's `set_code` loops
-    // until the code is free: the codes are random, and a collision should cost
-    // one code rather than the whole grant. `granted` counts what landed.
-    let granted = sqlx::query!(
-        r#"INSERT INTO invites
-             (user_id, code, max_uses, expires_at, autofollow, comment, created_at, updated_at)
-           SELECT t.user_id, t.code, $3, $4, false, $5, now(), now()
-           FROM unnest($1::bigint[], $2::text[]) AS t(user_id, code)
-           ON CONFLICT (code) DO NOTHING"#,
-        &user_ids,
-        &codes,
-        max_uses,
-        expires_at,
-        comment,
+    // Membership, ownership, and bypass metadata are committed together. If a
+    // random code collides, roll back rather than report a partial allowance.
+    let mut tx = state.db.begin().await?;
+    let grant_id: i64 = sqlx::query_scalar(
+        "INSERT INTO eunha.invite_grants (granted_by_account_id) VALUES ($1) RETURNING id",
     )
-    .execute(&state.db)
-    .await?
-    .rows_affected() as i64;
+    .bind(auth.account_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let inserted: Vec<i64> = sqlx::query_scalar(
+        r#"INSERT INTO public.invites
+             (user_id, code, max_uses, expires_at, autofollow, created_at, updated_at)
+           SELECT t.user_id, t.code, $3, $4, false, now(), now()
+           FROM unnest($1::bigint[], $2::text[]) AS t(user_id, code)
+           ON CONFLICT (code) DO NOTHING RETURNING id"#,
+    )
+    .bind(&user_ids)
+    .bind(&codes)
+    .bind(max_uses)
+    .bind(expires_at)
+    .fetch_all(&mut *tx)
+    .await?;
+    if inserted.len() != codes.len() {
+        return Err(AppError::Unprocessable(
+            "An invite code collided. Please retry the grant.".into(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO eunha.granted_invites (invite_id, grant_id) SELECT unnest($1::bigint[]), $2",
+    )
+    .bind(&inserted)
+    .bind(grant_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let granted = inserted.len() as i64;
 
     Ok(Json(GrantResponse {
         granted,
@@ -161,5 +158,48 @@ pub async fn grant_invites(
 }
 
 pub fn routes() -> Router {
-    Router::new().route("/api/eunha/v1/invite_grants", post(grant_invites))
+    Router::new()
+        .route("/api/eunha/v1/invite_grants", post(grant_invites))
+        .route("/api/eunha/v1/invite_grants/recipients", get(recipients))
+}
+
+// Shared by the picker and the write: all functional local members, including staff.
+async fn eligible_members(
+    state: &AppState,
+    account_id: Option<i64>,
+) -> AppResult<Vec<(i64, i64, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT u.id, a.id, a.username FROM public.users u JOIN public.accounts a ON a.id = u.account_id
+         WHERE a.domain IS NULL AND u.approved AND u.confirmed_at IS NOT NULL AND NOT u.disabled
+           AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+           AND NOT a.memorial AND a.moved_to_account_id IS NULL
+           AND ($1::bigint IS NULL OR a.id = $1) ORDER BY a.username",
+    ).bind(account_id).fetch_all(&state.db).await?)
+}
+
+#[derive(Serialize)]
+struct Recipient {
+    id: String,
+    acct: String,
+}
+
+async fn recipients(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<Vec<Recipient>>> {
+    let Some(Extension(auth)) = auth else {
+        return Err(AppError::Unauthorized);
+    };
+    auth.require_scope("read:accounts")?;
+    admin::require_permission(&state, auth.account_id, admin::perm::MANAGE_INVITES).await?;
+    Ok(Json(
+        eligible_members(&state, None)
+            .await?
+            .into_iter()
+            .map(|(_, id, acct)| Recipient {
+                id: id.to_string(),
+                acct,
+            })
+            .collect(),
+    ))
 }

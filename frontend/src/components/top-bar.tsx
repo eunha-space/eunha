@@ -71,33 +71,35 @@ type NavItem = {
   end?: boolean
   icon: IconType
   label: string
+  inviteCount?: number | null
   badge?: number
-  badgeLabel?: string
   // For a row that owns more than its own path — signed out, Local owns "/".
   matchAlso?: (pathname: string) => boolean
 }
 
 // The unread count, capped by the server. Past 99 the exact number stops
 // meaning anything a badge can use.
-function Badge({ count, label }: { count: number; label?: string }) {
+function Badge({ count }: { count: number }) {
   if (count <= 0) return null
   return (
     <span
-      className={cn('ml-auto rounded-full px-1.5 py-0.5 text-xs leading-none font-medium',
-        label ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground')}
-      title={label}
-      aria-label={label ?? `${count} unread`}
+      className="bg-primary text-primary-foreground ml-auto rounded-full px-1.5 py-0.5 text-xs leading-none font-medium"
+      aria-label={`${count} unread`}
     >
       {count > 99 ? '99+' : count}
     </span>
   )
 }
 
+function InviteCount({ count }: { count?: number | null }) {
+  return count ? <span className="bg-muted text-muted-foreground ml-auto rounded-md px-1.5 py-0.5 text-xs tabular-nums" aria-label={`${count} available single-use invite links`}>{count}</span> : null
+}
+
 function useNavItems(
   token: string | null,
   unread: number,
   account: MeAccount | null,
-  availableInvites: number,
+  inviteCount: number | null,
 ): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds; eunha has none, and copying the shape around an absent
@@ -133,9 +135,7 @@ function useNavItems(
     { to: '/local', icon: Users, label: 'Local' },
     {
       to: '/invites', icon: Ticket,
-      label: ((account?.permissions ?? 0) & (1 << 16)) !== 0 ? 'Invite people' : 'Your invites',
-      badge: availableInvites,
-      badgeLabel: `${availableInvites} available invite ${availableInvites === 1 ? 'link' : 'links'}`,
+      label: 'Invite people', inviteCount,
     },
     { to: '/public', icon: Globe, label: 'Federated' },
     { to: '/search', icon: Search, label: 'Search' },
@@ -320,7 +320,6 @@ function DesktopRail({
   icon,
   account,
   registrationsOpen,
-  availableInvites,
 }: {
   token: string | null
   title: string
@@ -328,11 +327,11 @@ function DesktopRail({
   icon: string | null
   account: MeAccount | null
   registrationsOpen: boolean
-  availableInvites: number
 }) {
   const { openCompose } = useComposeModal()
   const unread = useUnreadNotifications(token)
-  const navItems = useNavItems(token, unread, account, availableInvites)
+  const inviteCount = useAvailableInvites(token)
+  const navItems = useNavItems(token, unread, account, inviteCount)
   const { pathname } = useLocation()
 
   return (
@@ -361,9 +360,10 @@ function DesktopRail({
             }
           >
             <item.icon className="size-5" /> {item.label}
+            <InviteCount count={item.inviteCount} />
             {item.badge ? (
               <span className="ml-auto">
-                <Badge count={item.badge} label={item.badgeLabel} />
+                <Badge count={item.badge} />
               </span>
             ) : null}
           </NavLink>
@@ -398,7 +398,6 @@ function MobileDrawer({
   icon,
   account,
   registrationsOpen,
-  availableInvites,
 }: {
   token: string | null
   title: string
@@ -406,13 +405,13 @@ function MobileDrawer({
   icon: string | null
   account: MeAccount | null
   registrationsOpen: boolean
-  availableInvites: number
 }) {
   const { openCompose } = useComposeModal()
   const { setOpenMobile } = useSidebar()
   const location = useLocation()
   const unread = useUnreadNotifications(token)
-  const navItems = useNavItems(token, unread, account, availableInvites)
+  const inviteCount = useAvailableInvites(token)
+  const navItems = useNavItems(token, unread, account, inviteCount)
   const close = () => setOpenMobile(false)
   const isActive = (to: string, end?: boolean) =>
     end
@@ -451,7 +450,8 @@ function MobileDrawer({
                 >
                   <item.icon />
                   <span>{item.label}</span>
-                  {item.badge ? <Badge count={item.badge} label={item.badgeLabel} /> : null}
+                  <InviteCount count={item.inviteCount} />
+                  {item.badge ? <Badge count={item.badge} /> : null}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
@@ -551,7 +551,6 @@ function TopBarInner({
   icon,
   account,
   registrationsOpen,
-  availableInvites,
 }: {
   token: string | null
   title: string
@@ -559,7 +558,6 @@ function TopBarInner({
   icon: string | null
   account: MeAccount | null
   registrationsOpen: boolean
-  availableInvites: number
 }) {
   const { isMobile } = useSidebar()
 
@@ -572,7 +570,6 @@ function TopBarInner({
         icon={icon}
         account={account}
         registrationsOpen={registrationsOpen}
-        availableInvites={availableInvites}
       />
       <MobileHeader
         token={token}
@@ -590,7 +587,6 @@ function TopBarInner({
           icon={icon}
           account={account}
           registrationsOpen={registrationsOpen}
-          availableInvites={availableInvites}
         />
       )}
     </>
@@ -599,7 +595,6 @@ function TopBarInner({
 
 export function TopBar({ title }: { title?: string }) {
   const token = getToken()
-  const availableInvites = useAvailableInvites(token)
   const [instanceTitle, setInstanceTitle] = useState<string | null>(() =>
     document.title === 'eunha' ? null : document.title,
   )
@@ -671,7 +666,6 @@ export function TopBar({ title }: { title?: string }) {
         icon={icon}
         account={account}
         registrationsOpen={registrationsOpen}
-        availableInvites={availableInvites}
       />
     </SidebarProvider>
   )

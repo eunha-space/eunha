@@ -20,15 +20,18 @@ Roles are edited there as in Mastodon, which lets the everyone role hold only
 `Flags::SAFE`: `invite_users` and `invite_bypass_approval`.
 
 The other half of `SAFE` is what an invite does to the approval queue. On an
-instance whose sign-ups need approval, an invite skips review only when whoever
-wrote it holds `invite_bypass_approval`, which is Mastodon's
-`Invite#bypass_approval?` — a question about the inviter, not about whether an
-invite was used. The everyone role does not carry it, so an ordinary member may
-bring someone and the admin still sees them first. An instance that would rather
-an invite be the whole of the decision grants *Invite Users without review* to
-the base role.
+instance whose sign-ups need approval, a self-created or legacy invite skips
+review only when whoever wrote it holds `invite_bypass_approval`, which is
+Mastodon's `Invite#bypass_approval?` — a question about the inviter, not about
+whether an invite was used. The everyone role does not carry it, so an ordinary
+member may bring someone and the admin still sees them first. An instance that
+would rather an invite be the whole of the decision grants *Invite Users
+without review* to the base role.
 
-Staff invites bypass already, through the `administrator` flag.
+Staff-created invites bypass through the `administrator` flag. Staff-granted
+invites also bypass review, independently of the receiving member’s role: the
+grant is staff’s approval to admit those people. Email confirmation is still
+required; expired, exhausted or unavailable invites cannot admit anyone.
 
 
 Handing them out
@@ -38,9 +41,19 @@ That leaves an instance where only staff may invite, which on its own would
 flatten the invite tree: every arrival would be a child of the admin rather than
 of whoever actually brought them. So an admin can mint codes **into a member's
 own account** instead — `POST /api/eunha/v1/invite_grants`, and the “Hand out
-invites” panel on the invite page, for one member or for the whole userbase at
-once. They appear on that member's page to copy and pass on, and a signup
-through one lands under them.
+invites” form under **Moderation → Invites**, for one member or all eligible
+local users at once. They appear on that member's page to copy and pass on, and
+a signup through one lands under them. The form creates one single-use link per
+person, accepts 1–25 people per member, defaults to seven days, and asks staff
+to review the recipients, total links and expiry before granting. It has no
+member note or approval selector. Bulk grants include confirmed, approved,
+functional local users, staff included, at submission time; remote, disabled,
+suspended, deleted, memorial and moved accounts are excluded. Future users need
+another grant.
+
+Repeated grants add links without replacing earlier ones. Each handout has its
+own identity, grant date, staff sender and expiry. A transaction writes all
+invite rows and their grant metadata together; no partial allowance is reported.
 
 The count is the limit; there is no allowance to keep books on, because the
 codes themselves are the allowance. `manage_invites` is what it takes to hand
@@ -70,7 +83,8 @@ The signup page checks the code before submission and explains whether it is
 expired, fully used, or unavailable. A valid code identifies its inviter and
 explains automatic following when enabled. Approval guidance and the reason
 field follow the inviter's current bypass permission, not merely the presence
-of a code. `/api/eunha/v1/invite?invite=CODE` serves this public resolution;
+of a code, except that staff-granted links always bypass review.
+`/api/eunha/v1/invite?invite=CODE` serves this public resolution;
 registration checks the code again when submitted. New links open the web
 client at `/signup?invite=CODE`; existing `/auth/signup` links continue to work.
 
@@ -86,8 +100,8 @@ retains its row, note and usage history. Only usable links offer Copy and Expire
 Handing out codes requires choosing a recipient explicitly. The member picker
 supports username search, reports loading failures with a retry, and summarizes
 how many links and admissions will be created before submission. Granting in a
-member's name also means approval bypass follows that member's role, not the
-staff member performing the grant.
+member’s name preserves their place in the tree; the staff grant itself
+authorizes admission without changing the member’s permissions.
 
 
 Exploring the tree
@@ -112,11 +126,39 @@ grant form from a member's row; both pages link to each other.
 Finding your invites
 --------------------
 
-Signed-in members have an invite link beside **Local** in the desktop sidebar
-and mobile navigation drawer. It reads **Invite people** when the member may
-create codes, and **Your invites** otherwise, including for members receiving
-admin-granted codes. A small badge counts usable links, not remaining
-admissions; expired, fully used and unavailable codes do not count. The badge
-refreshes after creating, revoking or granting invites, and when a link expires
-while the page is open. The invite tree remains a related action on the invite
-page.
+Signed-in members have **Invite people** beside **Local** in the desktop sidebar
+and mobile navigation drawer. A quiet count means **available single-use invite
+links**. It appears only when every available link admits one person, hides at
+zero or when any usable link has multiple or unlimited uses, and is distinct
+from the unread-notifications badge. It refreshes on navigation, focus, invite
+changes and once a minute; local expiry also removes links from the count.
+
+**Your invites** leads with the available links and a Copy invite link action.
+When all available links are single-use it says how many people they admit;
+otherwise it reports links and the selected link’s remaining uses. Members who
+may create links also see Create invite link, so a grant is not presented as a
+total quota on their account. Copying leaves uses unchanged. Choose another link
+prefers one not copied during the current visit. The default selection expires
+soonest; an explicit selection stays selected as new grants arrive, until it
+becomes unavailable.
+
+The sharing panel shows expiry and admission details for the selected link.
+**Manage links** groups Available,
+Fully used, Expired and Unavailable links by grant, retaining history. The
+invite tree remains a related action. Staff open grants from Moderation or a
+member’s tree row.
+
+
+Database compatibility
+----------------------
+
+Migration 028 adds only `eunha.invite_grants` and `eunha.granted_invites`.
+Mastodon’s `public.invites`, `users.invite_id` and role tables remain unchanged.
+No previous invites are backfilled: existing rows cannot reliably distinguish
+staff grants from self-created codes, so legacy invites retain role-based
+review.
+
+Switching back to Mastodon preserves codes, ownership, usage, expiry and
+lineage. Mastodon ignores Eunha’s grant metadata and determines approval from
+the inviter’s current role again. The public schema stays compatible; the
+automatic approval of staff-granted codes is a deliberate behavioral divergence.

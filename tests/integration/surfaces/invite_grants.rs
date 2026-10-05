@@ -81,7 +81,7 @@ async fn test_grant_to_everyone() {
         .post_json(
             "/api/eunha/v1/invite_grants",
             Some(&ctx.alice_token),
-            &json!({"count": 1, "max_uses": 5, "comment": "one each"}),
+            &json!({"count": 1, "max_uses": 5}),
         )
         .await
         .json()
@@ -94,7 +94,9 @@ async fn test_grant_to_everyone() {
         let invites = invites_of(&ctx, token).await;
         assert_eq!(invites.len(), 1);
         assert_eq!(invites[0]["max_uses"].as_i64(), Some(5));
-        assert_eq!(invites[0]["comment"].as_str(), Some("one each"));
+        assert!(invites[0]["comment"].is_null());
+        assert_eq!(invites[0]["bypass_approval"], true);
+        assert!(invites[0]["grant"]["id"].is_string());
     }
 }
 
@@ -197,7 +199,9 @@ async fn test_grant_bounds_and_unknown_account() {
         json!({"count": 26}),
         json!({"count": 1, "max_uses": 0}),
         json!({"count": 1, "max_uses": 101}),
-        json!({"count": 1, "comment": "x".repeat(421)}),
+        json!({"count": 1, "expires_in": -1}),
+        json!({"count": 1, "expires_in": i64::MAX}),
+        json!({"account_id": "", "count": 1}),
     ] {
         assert_eq!(
             ctx.api
@@ -300,4 +304,179 @@ async fn test_personal_invite_status_and_expiration_history() {
         .unwrap();
     let list = invites_of(&ctx, &ctx.bob_token).await;
     assert_eq!(list[0]["valid_for_use"], false);
+}
+
+/// Staff grants approve admission without adding bypass permission to the owner.
+/// Self-created/legacy codes remain role-based, including after subsequent grants.
+#[tokio::test]
+async fn test_staff_grants_bypass_review_and_preserve_batches() {
+    let ctx = TestContext::with_approval_required("grant-admission").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    let legacy: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/invites",
+            Some(&ctx.bob_token),
+            &json!({"max_uses": 1}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    close_invites(&ctx).await;
+    for expiry in [86400, 604800] {
+        let response = ctx
+            .api
+            .post_json(
+                "/api/eunha/v1/invite_grants",
+                Some(&ctx.alice_token),
+                &json!({"account_id": ctx.bob_id, "count": 2, "expires_in": expiry}),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    let invites = invites_of(&ctx, &ctx.bob_token).await;
+    assert_eq!(invites.len(), 5);
+    let grants: std::collections::HashSet<_> = invites
+        .iter()
+        .filter_map(|i| i["grant"]["id"].as_str())
+        .collect();
+    assert_eq!(grants.len(), 2);
+    let granted = invites.iter().find(|i| !i["grant"].is_null()).unwrap();
+    assert_eq!(granted["grant"]["granted_by"], "alice");
+    assert_eq!(granted["bypass_approval"], true);
+    let code = granted["code"].as_str().unwrap();
+    let resolved: Value = ctx
+        .api
+        .get(&format!("/api/eunha/v1/invite?invite={code}"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(resolved["bypass_approval"], true);
+    let legacy_code = legacy["code"].as_str().unwrap();
+    let resolved: Value = ctx
+        .api
+        .get(&format!("/api/eunha/v1/invite?invite={legacy_code}"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(resolved["bypass_approval"], false);
+    let signup = ctx
+        .sign_up(&json!({"username": "carol", "email": "carol@example.com",
+        "password": "a-long-enough-password", "agreement": true, "invite_code": code}))
+        .await;
+    assert_eq!(signup.status(), StatusCode::OK);
+    let (approved, confirmed, invite_id): (bool, bool, i64) = sqlx::query_as(
+        "SELECT u.approved, u.confirmed_at IS NOT NULL, u.invite_id FROM users u JOIN accounts a ON a.id = u.account_id WHERE a.username = 'carol'")
+        .fetch_one(&ctx.db).await.unwrap();
+    assert!(approved);
+    assert!(
+        !confirmed,
+        "staff approval does not replace email confirmation"
+    );
+    assert_eq!(invite_id.to_string(), granted["id"].as_str().unwrap());
+    let maxed: Value = ctx
+        .api
+        .get(&format!("/api/eunha/v1/invite?invite={code}"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(maxed["valid"], false);
+    assert_eq!(maxed["reason"], "err_invite_maxed");
+    assert_eq!(
+        invites_of(&ctx, &ctx.bob_token)
+            .await
+            .iter()
+            .filter(|i| i["uses"] == 1)
+            .count(),
+        1
+    );
+    let suspended = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/invite_grants",
+            Some(&ctx.alice_token),
+            &json!({"account_id": ctx.bob_id, "count": 1}),
+        )
+        .await;
+    assert_eq!(suspended.status(), StatusCode::OK);
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let other = invites
+        .iter()
+        .find(|i| !i["grant"].is_null() && i["code"] != code)
+        .unwrap()["code"]
+        .as_str()
+        .unwrap();
+    let invalid: Value = ctx
+        .api
+        .get(&format!("/api/eunha/v1/invite?invite={other}"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        invalid["valid"], false,
+        "grant bypass must still validate the owner"
+    );
+}
+
+#[tokio::test]
+async fn test_grant_recipients_match_bulk_eligibility_and_require_staff() {
+    let ctx = TestContext::new("grant-recipients").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    assert_eq!(
+        ctx.api
+            .get(
+                "/api/eunha/v1/invite_grants/recipients",
+                Some(&ctx.bob_token)
+            )
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        ctx.api
+            .get("/api/eunha/v1/invite_grants/recipients", None)
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    sqlx::query("UPDATE users SET disabled = true WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let recipients: Vec<Value> = ctx
+        .api
+        .get(
+            "/api/eunha/v1/invite_grants/recipients",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(recipients.len(), 1);
+    assert_eq!(recipients[0]["id"], ctx.alice_id);
+    let response: Value = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/invite_grants",
+            Some(&ctx.alice_token),
+            &json!({"count": 3}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(response["accounts"], 1);
+    assert_eq!(response["granted"], 3);
+    assert!(invites_of(&ctx, &ctx.bob_token).await.is_empty());
 }

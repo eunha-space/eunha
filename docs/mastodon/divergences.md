@@ -16,11 +16,11 @@ may have adopted the same idea, changed what is being diverged from, or ruled it
 out. `mise run mastodon:plan` prints them when adopting, so the question is
 asked at the moment it can be answered.
 
-At the time of writing there are thirty-four. They cover:
+The recorded decisions cover:
 
  -  integrity proofs on outgoing activities;
  -  the invite tree, invite management and grants, and public signup invite
-    resolution;
+    resolution and the admission approval carried by staff grants;
  -  what the update check asks about;
  -  when the local-keypair migration is recorded;
  -  the moderation tools API, and the server administration API;

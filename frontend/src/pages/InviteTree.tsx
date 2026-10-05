@@ -74,7 +74,7 @@ function TreeNode({ node, expanded, toggle, counts, searching, canGrant, me, foc
           <span>{count} direct {count === 1 ? 'invitee' : 'invitees'}</span>
           <time dateTime={node.invited_at}>Joined {new Date(node.invited_at).toLocaleDateString()}</time>
           {node.root_reason && <span>{ROOT_REASONS[node.root_reason]}</span>}
-          {canGrant && <Link to={`/invites?grant_to=${encodeURIComponent(node.id)}`} className="underline"
+          {canGrant && <Link to={`/admin/invites?grant_to=${encodeURIComponent(node.id)}`} className="underline"
             aria-label={`Hand out invites to @${node.acct}`}>Hand out invites</Link>}
         </div>
       </div>

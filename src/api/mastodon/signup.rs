@@ -152,7 +152,8 @@ async fn validate_invite(state: &AppState, code: &str) -> Result<i64, &'static s
     Ok(inv.id)
 }
 
-/// Mastodon `Invite#bypass_approval?`: `user&.role&.can?(:invite_bypass_approval)`.
+/// Staff grants authorize admission; other codes use Mastodon's
+/// `Invite#bypass_approval?`: `user&.role&.can?(:invite_bypass_approval)`.
 ///
 /// The permission is the invite *creator's*, computed the way `UserRole` does
 /// — the everyone role unioned in, and `administrator` granting everything —
@@ -160,7 +161,19 @@ async fn validate_invite(state: &AppState, code: &str) -> Result<i64, &'static s
 /// whose creator has since gone is not a bypass; `validate_invite` has already
 /// refused those, and treating a missing row as `false` keeps the failure in
 /// the safe direction.
-async fn invite_bypasses_approval(state: &AppState, invite_id: i64) -> bool {
+pub(crate) async fn invite_bypasses_approval(state: &AppState, invite_id: i64) -> bool {
+    // Staff grants authorize admission irrespective of the holder's role.
+    // Legacy and self-created codes keep Mastodon's role-based decision.
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM eunha.granted_invites WHERE invite_id = $1)",
+    )
+    .bind(invite_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false)
+    {
+        return true;
+    }
     let account_id = sqlx::query_scalar!(
         r#"SELECT u.account_id FROM invites i JOIN users u ON u.id = i.user_id WHERE i.id = $1"#,
         invite_id,

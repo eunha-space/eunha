@@ -253,9 +253,10 @@ way to give somebody an invite, and `InvitesController#index` refuses the list \
 to anyone who may not create one."""
 eunha = """
 Serves `POST /api/eunha/v1/invite_grants`, which creates codes owned by a named \
-member — or by every member — for anyone holding `manage_invites`. Listing your \
-own invites needs no permission, so a member who may not create one can still \
-read what they were given."""
+member — or by every eligible local member — for anyone holding `manage_invites`. \
+Each new grant has metadata in the eunha schema and bypasses staff approval, \
+without changing the member’s role. Listing owned invites needs no permission. \
+Legacy and self-created codes retain role-based approval."""
 why = """
 An instance that wants to say 'you may bring two people' has nothing in \
 Mastodon to say it with. Taking `invite_users` away leaves the admin as the \
@@ -820,6 +821,18 @@ why = """
 The single-page signup form needs the same information before collecting an \
 application. It cannot infer approval bypass from the presence of a code. \
 Registration still validates the invite again when submitted."""
+evidence = "tests/integration/surfaces/invite_grants.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+
+[[divergence]]
+id = "staff-granted-invite-admission"
+kind = "behaviour"
+summary = "Staff grants authorize admission independently of the receiving member’s role"
+mastodon = "Invite#bypass_approval? checks the inviter’s current invite_bypass_approval permission; invites have no per-grant admission decision."
+eunha = "New staff grants always bypass review, keep email confirmation and invite validity checks, and attach batch provenance in the eunha schema. Existing and self-created codes keep Mastodon’s role-based decision."
+why = "A staff grant is permission to admit the granted number of people. Requiring another staff decision contradicts that action; changing the receiving member’s role would affect unrelated links. Keeping metadata outside public preserves Mastodon’s database schema."
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"

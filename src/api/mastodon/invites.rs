@@ -24,6 +24,15 @@ pub struct InviteResponse {
     pub created_at: NaiveDateTime,
     pub expired: bool,
     pub valid_for_use: bool,
+    pub bypass_approval: bool,
+    pub grant: Option<InviteGrant>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InviteGrant {
+    pub id: String,
+    pub created_at: NaiveDateTime,
+    pub granted_by: Option<String>,
 }
 
 pub async fn list_invites(
@@ -49,9 +58,39 @@ pub async fn list_invites(
 
     let functional = inviter_functional(&state, auth.account_id).await?;
     let now = chrono::Utc::now().naive_utc();
+    let role_bypass = super::admin::computed_permissions(&state, auth.account_id)
+        .await?
+        .1
+        & super::admin::perm::INVITE_BYPASS_APPROVAL
+        != 0;
+    let grants: Vec<(i64, String, NaiveDateTime, Option<String>)> = sqlx::query_as(
+        "SELECT gi.invite_id, g.id::text, g.created_at, a.username
+         FROM eunha.granted_invites gi JOIN eunha.invite_grants g ON g.id = gi.grant_id
+         LEFT JOIN public.accounts a ON a.id = g.granted_by_account_id
+         JOIN public.invites i ON i.id = gi.invite_id
+         WHERE i.user_id = (SELECT id FROM public.users WHERE account_id = $1)",
+    )
+    .bind(auth.account_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut grants: std::collections::HashMap<i64, InviteGrant> = grants
+        .into_iter()
+        .map(|(invite_id, id, created_at, granted_by)| {
+            (
+                invite_id,
+                InviteGrant {
+                    id,
+                    created_at,
+                    granted_by,
+                },
+            )
+        })
+        .collect();
     let invites = rows
         .into_iter()
         .map(|r| InviteResponse {
+            bypass_approval: role_bypass || grants.contains_key(&r.id),
+            grant: grants.remove(&r.id),
             url: invite_url(&instance.domain, &r.code),
             id: r.id.to_string(),
             code: r.code,
@@ -125,6 +164,8 @@ pub async fn create_invite(
     .await?;
 
     Ok(Json(InviteResponse {
+        grant: None,
+        bypass_approval: super::signup::invite_bypasses_approval(&state, row.id).await,
         url: invite_url(&instance.domain, &row.code),
         id: row.id.to_string(),
         code: row.code,
