@@ -4,7 +4,8 @@ import { expect, test } from '@playwright/test'
 // request they make stubbed here.
 const signedIn = async (page: import('@playwright/test').Page) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
     localStorage.setItem(
       'eunha:me-account',
       JSON.stringify({ id: '1', acct: 'alice', defaultVisibility: 'public' }),

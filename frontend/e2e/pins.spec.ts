@@ -62,7 +62,8 @@ const status = (id: string, content: string, pinned: boolean) => ({
 // pins must not grow an empty heading.
 test('a profile shows pinned posts above the timeline', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
   await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
   await page.route('**/api/v1/accounts/verify_credentials**', (route) =>
@@ -103,7 +104,8 @@ test('a profile with no pins has no pinned heading', async ({ page }) => {
 // shows what it says rather than inventing a message.
 test('the pin cap is reported in the server’s own words', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
   await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
   await page.route('**/api/v1/accounts/verify_credentials**', (route) =>

@@ -4,7 +4,10 @@ import { expect, test } from '@playwright/test'
 // in the rail now, which is the whole point of the change — so the test is
 // that they navigate from there, and that the strip is gone.
 test('the rail carries the timelines, and no tab strip remains', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('eunha:token', 'test-token'))
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
   await page.route('**/api/v1/accounts/verify_credentials**', (r) =>
     r.fulfill({

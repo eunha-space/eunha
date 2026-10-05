@@ -1,7 +1,7 @@
 // Standard Mastodon OAuth `authorization_code` flow, run client-side via
 // masto.js against eunha's existing endpoints. No backend changes required.
 import { oauthClient, restClient } from './masto.ts'
-import { clearMe, getMeAccount, loadMe, type MeAccount } from './me.ts'
+import { clearMe, loadMe, type MeAccount } from './me.ts'
 
 // `admin:read` and `admin:write` are what the moderation pages call the admin
 // API with. Every account asks for them, as Mastodon's own web client does: the
@@ -9,7 +9,7 @@ import { clearMe, getMeAccount, loadMe, type MeAccount } from './me.ts'
 // the account's role before it answers an admin request.
 const SCOPES = 'read write follow push admin:read admin:write'
 const CLIENT_KEY = 'eunha:client'
-const TOKEN_KEY = 'eunha:token'
+const ACTIVE_ACCOUNT_KEY = 'eunha:active-account'
 const ACCOUNTS_KEY = 'eunha:accounts'
 
 export interface SavedAccount {
@@ -39,14 +39,14 @@ export function switchAccount(id: string) {
   const saved = getSavedAccounts().find((entry) => entry.account.id === id)
   if (!saved) return
   clearMe()
-  setToken(saved.token)
+  localStorage.setItem(ACTIVE_ACCOUNT_KEY, id)
   window.location.assign('/')
 }
 
 // All tabs share the active token. Reset mounted user state when another tab
 // switches or signs out, including its streaming connections and drafts.
 window.addEventListener('storage', (event) => {
-  if (event.key === TOKEN_KEY || event.key === null) {
+  if (event.key === ACTIVE_ACCOUNT_KEY || event.key === ACCOUNTS_KEY || event.key === null) {
     clearMe()
     window.location.assign('/')
   }
@@ -63,21 +63,18 @@ interface ClientCreds {
 const redirectUri = () => `${window.location.origin}/auth/callback`
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token)
+  const id = localStorage.getItem(ACTIVE_ACCOUNT_KEY)
+  return getSavedAccounts().find((entry) => entry.account.id === id)?.token ?? null
 }
 
 export function logout() {
-  const token = getToken()
+  const id = localStorage.getItem(ACTIVE_ACCOUNT_KEY)
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(
-    getSavedAccounts().filter((entry) => entry.token !== token),
+    getSavedAccounts().filter((entry) => entry.account.id !== id),
   ))
   const remaining = getSavedAccounts()[0]
-  if (remaining) setToken(remaining.token)
-  else localStorage.removeItem(TOKEN_KEY)
+  if (remaining) localStorage.setItem(ACTIVE_ACCOUNT_KEY, remaining.account.id)
+  else localStorage.removeItem(ACTIVE_ACCOUNT_KEY)
   clearMe()
 }
 
@@ -112,9 +109,6 @@ async function ensureClient(): Promise<ClientCreds> {
 // Kick off login: register (or reuse) the app, then send the browser to the
 // server-rendered authorize page. (masto.js doesn't navigate the browser.)
 export async function beginLogin(addAccount = false) {
-  const current = getMeAccount()
-  const token = getToken()
-  if (current && token) rememberAccount(token, current)
   const { client_id } = await ensureClient()
   const params = new URLSearchParams({
     client_id,
@@ -147,6 +141,6 @@ export async function completeLogin(code: string): Promise<void> {
   }
   rememberAccount(token.accessToken, account)
   clearMe()
-  setToken(token.accessToken)
+  localStorage.setItem(ACTIVE_ACCOUNT_KEY, account.id)
   await loadMe(token.accessToken)
 }

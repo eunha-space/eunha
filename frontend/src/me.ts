@@ -1,6 +1,6 @@
 // Caches the signed-in account so UI can synchronously render current-user
 // affordances without a request per component mount.
-import { getToken, rememberAccount } from './auth.ts'
+import { getToken } from './auth.ts'
 import { getCurrentAccount } from './api.ts'
 import type { mastodon } from './masto.ts'
 
@@ -92,7 +92,6 @@ export async function loadMe(token: string): Promise<MeAccount | null> {
     }
     localStorage.setItem(ID_KEY, me.id)
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(cachedAccount))
-    rememberAccount(token, cachedAccount)
     return cachedAccount
   } catch {
     // ignore — controls just won't render until known

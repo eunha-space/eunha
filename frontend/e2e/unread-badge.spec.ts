@@ -7,7 +7,10 @@ import { expect, test } from '@playwright/test'
 test('the notification badge shows a count, and reading marks the timeline', async ({
   page,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('eunha:token', 'test-token'))
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
 
   let marked: Record<string, unknown> | null = null
   let unread = 3

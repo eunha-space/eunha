@@ -5,7 +5,8 @@ import { expect, test } from '@playwright/test'
 // load — which is not what any of this asserts.
 const signedInWithAdvancedOn = async (page: import('@playwright/test').Page) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'e2e-layout-only')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'e2e-layout-only', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
     localStorage.setItem('eunha:panes', 'on')
   })
 }

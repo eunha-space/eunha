@@ -108,7 +108,10 @@ The account menu in the desktop sidebar and mobile drawer lists accounts signed
 in on this instance in this browser. Choose **Add account** to sign in through
 OAuth without removing the current account, then choose an account in the menu
 to switch to it. Signing in again to the same account replaces its saved token.
-Existing single-account logins are saved automatically once their profile loads.
+Only completed OAuth logins are saved in the switcher. Legacy `eunha:token`
+logins are no longer read or migrated; sign in again. Tokens live only in
+`eunha:accounts`, and `eunha:active-account` selects the account used for API
+requests.
 
 Accounts and their OAuth tokens are kept in this browser's local storage, scoped
 to the instance's origin. Switching reloads the home page and clears the

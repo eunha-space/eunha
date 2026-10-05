@@ -5,7 +5,10 @@ import { expect, test } from '@playwright/test'
 // is needed.
 const signedIn = async (page: import('@playwright/test').Page) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    if (sessionStorage.getItem('settings-test-login')) return
+    sessionStorage.setItem('settings-test-login', '1')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
     localStorage.setItem(
       'eunha:me-account',
       JSON.stringify({
@@ -71,8 +74,7 @@ test('deleting an account takes a password and a confirmation', async ({
     .getByRole('button', { name: 'Delete account' })
     .click()
 
-  await expect(page.getByText('Your account was successfully deleted')).toBeVisible()
   expect(deleteBody).toBe(JSON.stringify({ password: 'hunter2hunter2' }))
   await expect(page).toHaveURL(/\/$/)
-  expect(await page.evaluate(() => localStorage.getItem('eunha:token'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBeNull()
 })

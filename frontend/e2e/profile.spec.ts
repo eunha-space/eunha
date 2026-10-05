@@ -94,7 +94,8 @@ const relationship = (muting: boolean, blocking = false) => ({
 
 test('a profile can be muted, and says what a mute does', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
 
   let muted = false
@@ -142,7 +143,8 @@ test('blocking a profile asks first, and says what the block undoes', async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
 
   let blocked = false
@@ -192,7 +194,8 @@ test('cancelling the block confirmation leaves the account unblocked', async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
 
   let blockCalls = 0

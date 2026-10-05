@@ -58,7 +58,10 @@ const privateStatus = {
 }
 
 async function signedIn(page: import('@playwright/test').Page, timeline: unknown[] = []) {
-  await page.addInitScript(() => localStorage.setItem('eunha:token', 'test-token'))
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
   await page.route('**/api/v1/accounts/verify_credentials**', (r) =>
     r.fulfill({ json: { ...me, source: { privacy: 'public' } } }),
   )

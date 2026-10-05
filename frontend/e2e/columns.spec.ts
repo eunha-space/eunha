@@ -10,7 +10,10 @@ const me = {
 }
 
 async function signedIn(page: import('@playwright/test').Page) {
-  await page.addInitScript(() => localStorage.setItem('eunha:token', 'test-token'))
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
   await page.route('**/api/v1/accounts/verify_credentials**', (r) => r.fulfill({ json: me }))
   await page.route('**/api/v1/notifications/unread_count**', (r) =>
     r.fulfill({ json: { count: 0 } }),

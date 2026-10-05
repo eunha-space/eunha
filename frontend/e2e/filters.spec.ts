@@ -70,7 +70,8 @@ const result = (title: string, action: string, context: string[]) => ({
 // context does nothing.
 test('filters hide or fold posts in their own context', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('eunha:token', 'test-token')
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
   })
   await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
   await page.route('**/api/v1/accounts/verify_credentials**', (route) =>

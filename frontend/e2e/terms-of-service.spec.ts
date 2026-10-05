@@ -5,7 +5,10 @@ const MANAGE_SETTINGS = 1 << 6
 const MANAGE_REPORTS = 1 << 4
 
 async function signIn(page: Page, permissions: number) {
-  await page.addInitScript(() => localStorage.setItem('eunha:token', 'test-token'))
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
   await page.route('**/api/v1/accounts/verify_credentials**', (r) =>
     r.fulfill({
       json: {
