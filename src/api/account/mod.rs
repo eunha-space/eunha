@@ -1108,16 +1108,6 @@ pub async fn setup_post(
     Redirect::to("/auth/setup?sent=1").into_response()
 }
 
-/// Whether the browser holds a session of a user who may sign in, for the
-/// pages outside this module that answer a signed-in browser differently.
-pub async fn signed_in(
-    state: &AppState,
-    headers: &HeaderMap,
-    ip: Option<std::net::IpAddr>,
-) -> bool {
-    get_session(headers, state, ip).await.is_some()
-}
-
 /// Devise's `sign_in(user)` from a page outside this module, then on to
 /// `target`, with `return_to` kept as the page to come back to after signing
 /// in (`store_location_for`).

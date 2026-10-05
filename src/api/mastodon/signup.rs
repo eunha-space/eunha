@@ -800,14 +800,9 @@ pub struct ConfirmQuery {
 /// `Auth::ConfirmationsController#show`: Devise's `confirm_by_token`, for a
 /// link sent within `confirm_within`, then `after_confirmation_path_for`: the
 /// app the user signed up through, at its first redirect URI as it stands,
-/// when the link asks to go back to it (`redirect_to_app`); the web app for a
-/// browser already signed in; the sign-in page otherwise.
-pub async fn confirm_email(
-    state: AppState,
-    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
-    headers: HeaderMap,
-    Query(q): Query<ConfirmQuery>,
-) -> Response {
+/// when the link asks to go back to it (`redirect_to_app`); otherwise the
+/// sign-in page with the confirmation result, even with a browser session.
+pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Response {
     let user = sqlx::query!(
         r#"SELECT u.id, a.redirect_uri AS "redirect_uri?"
            FROM users u
@@ -843,11 +838,6 @@ pub async fn confirm_email(
             )
                 .into_response();
         }
-    }
-    if crate::api::account::signed_in(&state, &headers, client_ip.and_then(|Extension(c)| c.0))
-        .await
-    {
-        return Redirect::to("/").into_response();
     }
     let approved = sqlx::query_scalar!("SELECT approved FROM users WHERE id = $1", user.id)
         .fetch_one(&state.db)

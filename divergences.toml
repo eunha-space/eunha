@@ -24,6 +24,17 @@
 #   reviewed_for the Mastodon release it was last judged correct for
 
 [[divergence]]
+id = "email-confirmation-result-with-browser-session"
+kind = "behaviour"
+summary = "Show the email confirmation result even when an account is signed in"
+mastodon = "Browser email confirmations redirect to the web app when a browser session exists."
+eunha = "Browser email confirmations show the result on the sign-in page regardless of the existing session; explicit redirects to signup applications are preserved."
+why = "An account switcher can have a different account active, hiding the newly registered account's confirmation result on the timeline."
+evidence = "tests/integration/surfaces/auth_pages.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"
+
+[[divergence]]
 id = "integrity-proofs-on-outgoing-activities"
 kind = "addition"
 summary = "Signs FEP-8b32 integrity proofs, and issues the Ed25519 keys to do it"

@@ -199,8 +199,10 @@ There are two ways in, as on Mastodon:
     following it sends the browser to the app's first redirect URI as it
     stands; the app learns the address is confirmed by asking
     `GET /api/v1/emails/check_confirmation` with its token. Without an app
-    the link leads to the web app for a browser already signed in, and to
-    the sign-in page otherwise.
+    the link leads to the sign-in page with a confirmation result, even when
+    another account is already signed in. This keeps the account switcher's
+    current account from hiding the result and lets the user sign in to the
+    newly confirmed account.
  -  `POST /auth`, which the sign-up page posts to (form-encoded or JSON, no
     token). The new user is signed in and sent to `/auth/setup`, Mastodon's
     `Auth::SetupController`: it names the address the link went to and lets the

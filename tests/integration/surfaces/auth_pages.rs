@@ -150,6 +150,10 @@ async fn test_auth_pages_use_shared_stylesheet() {
 #[tokio::test]
 async fn test_email_confirmation_redirects_to_sign_in() {
     let ctx = TestContext::new("auth-confirm-redirect").await;
+    // The account switcher may have left another account signed in.
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", "testpassword123")
+            .await;
 
     let signup = ctx
         .sign_up(&serde_json::json!({
@@ -164,8 +168,13 @@ async fn test_email_confirmation_redirects_to_sign_in() {
 
     let ok = ctx
         .api
-        .get(&format!("/auth/confirm?token={token}"), None)
-        .await;
+        .http
+        .get(ctx.api.url(&format!("/auth/confirm?token={token}")))
+        .header("host", &ctx.api.host)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(ok.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         ok.headers().get("location").and_then(|v| v.to_str().ok()),
@@ -183,7 +192,15 @@ async fn test_email_confirmation_redirects_to_sign_in() {
         "the account should have been created and confirmed"
     );
 
-    let page = ctx.api.get("/account/login?confirmed=1", None).await;
+    let page = ctx
+        .api
+        .http
+        .get(ctx.api.url("/account/login?confirmed=1"))
+        .header("host", &ctx.api.host)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(page.status(), StatusCode::OK);
     let body = page.text().await.unwrap();
     assert!(
