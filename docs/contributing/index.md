@@ -23,3 +23,18 @@ hostname. It is a design record rather than a description of what eunha does
 today, and it says which is which.
 
 [ojak]: https://github.com/eunha-space/ojak
+
+
+Web client navigation
+---------------------
+
+Back and forward navigation restore the window's scroll position for each
+history entry. New navigation starts at the top. Restoration waits for
+asynchronously loaded content and stops when the reader interacts with the page.
+
+Timeline and profile post feeds retain their loaded pages and pagination state
+when opening a post, so returning can restore a position beyond the first page
+without fetching those pages again. These snapshots are scoped to the history
+entry, account token and feed parameters, live only in memory, and retain at
+most thirty feeds. A fresh visit loads current posts; reloading the browser
+clears the snapshots. Profile details and pinned posts still refresh on return.

@@ -81,6 +81,7 @@ import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { getToken } from './auth.ts'
 import { loadMe } from './me.ts'
+import { NavigationScroll } from './components/navigation-scroll.tsx'
 import './styles.css'
 
 // Warm the current-user id cache for edit/delete controls.
@@ -92,7 +93,7 @@ if (token) void loadMe(token)
 // captures the `@username` (or `@username@domain`) segment of Mastodon-style
 // permalinks — bare words like `/local` never collide because profiles carry
 // the `@` prefix.
-const router = createBrowserRouter([
+const routes = [
   { path: '/', element: <Home /> },
   { path: '/auth/callback', element: <Callback /> },
   { path: '/local', element: <PublicTimeline /> },
@@ -195,7 +196,9 @@ const router = createBrowserRouter([
   { path: '/:acct/:id/reblogs', element: <StatusReactions /> },
   { path: '/:acct/:id/history', element: <StatusHistory /> },
   { path: '*', element: <Home /> },
-])
+]
+
+const router = createBrowserRouter([{ element: <NavigationScroll />, children: routes }])
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

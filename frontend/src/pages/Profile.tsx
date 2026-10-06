@@ -622,6 +622,7 @@ export default function Profile() {
     (maxId) =>
       account ? getAccountStatuses(account.id, token ?? undefined, maxId) : Promise.resolve([]),
     [account?.id, token],
+    `profile:${handle}`,
   )
   const statuses = withoutMessages(feed.items)
 

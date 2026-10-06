@@ -41,6 +41,7 @@ export function StatusFeed({
           : Promise.resolve([])
         : getPublicTimeline(kind === 'local', token ?? undefined, maxId),
     [kind, token],
+    `timeline:${kind}`,
   )
 
   const subscribe = useCallback(
