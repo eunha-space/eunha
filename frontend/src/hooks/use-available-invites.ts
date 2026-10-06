@@ -3,24 +3,36 @@ import { useLocation } from 'react-router-dom'
 import { getInvites, INVITES_CHANGED, type Invite } from '../eunha-api.ts'
 import { availableInviteCount, inviteDate, inviteStatus } from '../lib/invites.ts'
 
+type InviteSnapshot = { token: string; invites: Invite[] }
+
+// Pages remount the navigation. Keep the last successful result so a refresh
+// does not hide the entry while the new page is loading.
+let cachedSnapshot: InviteSnapshot | null = null
+
 export function useAvailableInvites(token: string | null): { count: number | null; hasAvailable: boolean } {
   const pathname = useLocation().pathname
-  const [snapshot, setSnapshot] = useState<{
-    token: string
-    invites: Invite[]
-  } | null>(null)
+  const [snapshot, setSnapshot] = useState<InviteSnapshot | null>(() =>
+    cachedSnapshot?.token === token ? cachedSnapshot : null,
+  )
   const [, tick] = useState(0)
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      cachedSnapshot = null
+      return
+    }
     let cancelled = false
     let sequence = 0
     const load = async () => {
       const request = ++sequence
       try {
         const invites = await getInvites(token)
-        if (!cancelled && request === sequence) setSnapshot({ token, invites })
+        if (!cancelled && request === sequence) {
+          cachedSnapshot = { token, invites }
+          setSnapshot(cachedSnapshot)
+        }
       } catch {
-        if (!cancelled && request === sequence) setSnapshot(null)
+        // A failed refresh says nothing about the links already loaded.
+        // Their local expiry checks still apply while the server is unavailable.
       }
     }
     void load()

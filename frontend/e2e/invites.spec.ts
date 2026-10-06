@@ -334,3 +334,37 @@ for (const mobile of [false, true]) {
     await expect(navigation.locator('span[aria-label$="available single-use invite links"]')).toHaveCount(0)
   })
 }
+
+
+test('invite menu survives navigation and failed refreshes, then updates availability', async ({ page }) => {
+  await signIn(page, 0)
+  let mode: 'available' | 'pending' | 'failed' | 'empty' = 'available'
+  let pendingRequests = 0
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/v1/invites', async r => {
+    if (mode === 'pending') {
+      pendingRequests++
+      await pending
+    }
+    if (mode === 'failed') return r.fulfill({ status: 500 })
+    return r.fulfill({ json: mode === 'empty' ? [] : [invite] })
+  })
+  await page.goto('/about')
+  const link = page.locator('aside').getByRole('link', { name: /Invite people/ })
+  await expect(link).toBeVisible()
+  mode = 'pending'
+  await page.locator('aside').getByRole('link', { name: 'Search', exact: true }).click()
+  await expect(page).toHaveURL(/\/search$/)
+  await expect.poll(() => pendingRequests).toBeGreaterThan(0)
+  await expect(link).toBeVisible()
+  await expect(link).toContainText('1')
+  mode = 'failed'
+  const failedResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/invites') && r.status() === 500)
+  release()
+  await failedResponse
+  await expect(link).toBeVisible()
+  mode = 'empty'
+  await page.evaluate(() => window.dispatchEvent(new Event('eunha:invites-changed')))
+  await expect(link).toHaveCount(0)
+})

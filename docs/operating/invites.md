@@ -137,7 +137,9 @@ count means **available single-use invite links**. It appears only when every
 available link admits one person, hides at zero or when any usable link has
 multiple or unlimited uses, and is distinct from the unread-notifications
 badge. It refreshes on navigation, focus, invite changes and once a minute;
-local expiry also removes links from the count.
+local expiry also removes links from the count. Navigation and failed refreshes
+retain the last successfully loaded availability for the signed-in account,
+so the entry does not disappear while checking again.
 
 **Your invites** leads with the available links and a Copy invite link action.
 When all available links are single-use it says how many people they admit;

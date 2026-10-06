@@ -142,6 +142,16 @@ server filters `update` and `status.update` for each connection, in this order:
     descriptions as the browser would read them.
 
 
+Web client notification count
+-----------------------------
+
+The web client's navigation badge reads the notifications marker's unread
+count on navigation and once a minute. It retains the last successful count
+for the signed-in account while refreshing, including failed refreshes, so
+navigation does not briefly remove the badge. Opening Notifications marks the
+loaded timeline read; its delayed refresh then updates the badge.
+
+
 Differences
 -----------
 

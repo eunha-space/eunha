@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { getNotificationsUnreadCount } from '../api.ts'
 
 const POLL_MS = 60_000
+let cachedCount: { token: string; count: number } | null = null
 
 /**
  * How many notifications have arrived since the reader last marked the
@@ -16,21 +17,31 @@ const POLL_MS = 60_000
  */
 export function useUnreadNotifications(token: string | null): number {
   const pathname = useLocation().pathname
-  const [count, setCount] = useState(0)
+  const [snapshot, setSnapshot] = useState(() =>
+    cachedCount?.token === token ? cachedCount : null,
+  )
 
   useEffect(() => {
     if (!token) {
-      setCount(0)
+      cachedCount = null
+      setSnapshot(null)
       return
     }
     let cancelled = false
     // The marker is moved by the notifications page after it renders, so a
     // read taken the instant we land there would still see the old one.
     const delay = pathname === '/notifications' ? 1_200 : 0
-    const load = () =>
-      getNotificationsUnreadCount(token)
-        .then((n) => !cancelled && setCount(n))
+    let sequence = 0
+    const load = () => {
+      const request = ++sequence
+      return getNotificationsUnreadCount(token)
+        .then((count) => {
+          if (cancelled || request !== sequence) return
+          cachedCount = { token, count }
+          setSnapshot(cachedCount)
+        })
         .catch(() => {})
+    }
 
     const first = window.setTimeout(load, delay)
     const timer = window.setInterval(load, POLL_MS)
@@ -41,5 +52,5 @@ export function useUnreadNotifications(token: string | null): number {
     }
   }, [token, pathname])
 
-  return count
+  return token && snapshot?.token === token ? snapshot.count : 0
 }

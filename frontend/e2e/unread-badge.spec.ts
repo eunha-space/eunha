@@ -76,3 +76,31 @@ test('the notification badge shows a count, and reading marks the timeline', asy
   await expect.poll(() => marked).toEqual({ notifications: { last_read_id: '42' } })
   await expect(page.getByLabel(/unread/)).toHaveCount(0)
 })
+
+
+test('notification count survives a remount and a failed refresh', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
+  await page.route('**/api/v1/timelines/**', r => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/invites', r => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/notifications/unread_count**', r => r.fulfill({ json: { count: 3 } }))
+  await page.goto('/local')
+  const badge = page.locator('aside').getByLabel('3 unread')
+  await expect(badge).toBeVisible()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/v1/notifications/unread_count**', async r => {
+    await held
+    await r.fulfill({ status: 500 })
+  })
+  const refresh = page.waitForRequest('**/api/v1/notifications/unread_count**')
+  await page.locator('aside').getByRole('link', { name: 'Search', exact: true }).click()
+  await refresh
+  await expect(badge).toBeVisible()
+  const failed = page.waitForResponse(r => r.url().includes('/notifications/unread_count') && r.status() === 500)
+  release()
+  await failed
+  await expect(badge).toBeVisible()
+})
