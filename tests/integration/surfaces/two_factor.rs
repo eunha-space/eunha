@@ -435,17 +435,25 @@ async fn test_second_factor_attempts_are_rate_limited() {
     )
     .await;
     let attempt = attempt_token(&page.text().await.unwrap());
+    // Attempts are counted per UTC hour, as Mastodon keys them; a run that
+    // crosses the hour starts counting again, so it tries once more.
     let mut last = String::new();
-    for _ in 0..10 {
-        last = authorize(
-            &ctx,
-            &client_id,
-            &[("attempt", &attempt), ("otp_attempt", "000001")],
-        )
-        .await
-        .text()
-        .await
-        .unwrap();
+    for _ in 0..2 {
+        let hour = chrono::Timelike::hour(&chrono::Utc::now());
+        for _ in 0..10 {
+            last = authorize(
+                &ctx,
+                &client_id,
+                &[("attempt", &attempt), ("otp_attempt", "000001")],
+            )
+            .await
+            .text()
+            .await
+            .unwrap();
+        }
+        if chrono::Timelike::hour(&chrono::Utc::now()) == hour {
+            break;
+        }
     }
     assert!(last.contains("Too many authentication attempts"));
 }
