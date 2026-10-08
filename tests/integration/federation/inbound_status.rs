@@ -573,3 +573,104 @@ async fn test_the_media_proxy_shows_what_the_viewer_may_see() {
     .await;
     assert_eq!(resp.status(), reqwest::StatusCode::FOUND);
 }
+
+/// `ProcessStatusUpdateService#create_edits!`: a significant edit records the
+/// original (stamped with the post's `created_at`) when the post has no
+/// history yet, then the version the edit made, stamped with its `updated`;
+/// an update that changes nothing significant records nothing and leaves
+/// `edited_at` alone. `/history` serves exactly those rows.
+#[tokio::test]
+async fn test_remote_edits_snapshot_each_version() {
+    let ctx = TestContext::new("inbound-edit-history").await;
+    let (remy_id, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    let note_uri = format!("{remy}/statuses/1");
+    let published = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let note = |content: &str, updated: Option<chrono::DateTime<chrono::Utc>>| {
+        json!({
+            "id": note_uri, "type": "Note", "attributedTo": remy,
+            "content": format!("<p>{content}</p>"), "to": [PUBLIC],
+            "cc": [format!("https://{}/users/alice", ctx.domain)],
+            "published": published.to_rfc3339(),
+            "updated": updated.map(|u| u.to_rfc3339()),
+        })
+    };
+    send(&ctx, &remy, &key, &create(&remy, note("first", None))).await;
+    let id = status_id(&ctx, &note_uri).await.unwrap();
+    let first_edit = published + chrono::Duration::minutes(5);
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(&remy, note("second", Some(first_edit)), 1),
+    )
+    .await;
+    // Newer, but the same text: not significant.
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(
+            &remy,
+            note("second", Some(published + chrono::Duration::minutes(7))),
+            2,
+        ),
+    )
+    .await;
+    let edited_at: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT edited_at FROM statuses WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(edited_at, Some(first_edit.naive_utc()));
+    let second_edit = published + chrono::Duration::minutes(10);
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(&remy, note("third", Some(second_edit)), 3),
+    )
+    .await;
+
+    let rows: Vec<(String, Option<i64>, chrono::NaiveDateTime)> = sqlx::query_as(
+        "SELECT text, account_id, created_at FROM status_edits WHERE status_id = $1 ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        [
+            (
+                "<p>first</p>".to_owned(),
+                Some(remy_id),
+                published.naive_utc()
+            ),
+            (
+                "<p>second</p>".to_owned(),
+                Some(remy_id),
+                first_edit.naive_utc()
+            ),
+            (
+                "<p>third</p>".to_owned(),
+                Some(remy_id),
+                second_edit.naive_utc()
+            ),
+        ]
+    );
+    let history: Vec<Value> = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}/history"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let contents: Vec<&str> = history
+        .iter()
+        .map(|v| v["content"].as_str().unwrap())
+        .collect();
+    assert_eq!(contents, ["<p>first</p>", "<p>second</p>", "<p>third</p>"]);
+}

@@ -1319,7 +1319,11 @@ async fn test_edit_status_changes_content() {
     );
 }
 
-/// GET /api/v1/statuses/:id/history returns at least two entries after an edit.
+/// `UpdateStatusService`: the first edit snapshots the original, stamped
+/// with the post's `created_at`, and every edit snapshots the version it
+/// made, stamped with the new `edited_at`. The rows are the whole history,
+/// the current version last, and `/history` serves exactly them; a post never
+/// edited has a single version built on the spot.
 #[tokio::test]
 async fn test_status_history_after_edit() {
     let ctx = TestContext::new("edit-history").await;
@@ -1329,14 +1333,53 @@ async fn test_status_history_after_edit() {
         .post_status(&ctx.alice_token, "v1 text", "public")
         .await;
     let id = status["id"].as_str().unwrap();
+    let history: Vec<Value> = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}/history"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["created_at"], status["created_at"]);
+    let none: i64 = sqlx::query_scalar("SELECT count(*) FROM status_edits WHERE status_id = $1")
+        .bind(id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(none, 0, "reading the history writes nothing");
 
-    ctx.api
-        .put_json(
-            &format!("/api/v1/statuses/{id}"),
-            Some(&ctx.alice_token),
-            &json!({"status": "v2 text", "visibility": "public"}),
-        )
-        .await;
+    for text in ["v2 text", "v3 text"] {
+        let resp = ctx
+            .api
+            .put_json(
+                &format!("/api/v1/statuses/{id}"),
+                Some(&ctx.alice_token),
+                &json!({"status": text}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let rows: Vec<(String, i64, chrono::NaiveDateTime)> = sqlx::query_as(
+        "SELECT text, account_id, created_at FROM status_edits WHERE status_id = $1 ORDER BY id",
+    )
+    .bind(id.parse::<i64>().unwrap())
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    let (created_at, edited_at): (chrono::NaiveDateTime, chrono::NaiveDateTime) =
+        sqlx::query_as("SELECT created_at, edited_at FROM statuses WHERE id = $1")
+            .bind(id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let texts: Vec<&str> = rows.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert_eq!(texts, ["v1 text", "v2 text", "v3 text"]);
+    assert!(rows.iter().all(|(_, a, _)| *a == alice));
+    assert_eq!(rows[0].2, created_at);
+    assert_eq!(rows[2].2, edited_at);
 
     let resp = ctx
         .api
@@ -1344,11 +1387,86 @@ async fn test_status_history_after_edit() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let history: Vec<Value> = resp.json().await.unwrap();
-    assert!(
-        history.len() >= 2,
-        "expected at least 2 history entries, got {}",
-        history.len()
+    let contents: Vec<&str> = history
+        .iter()
+        .map(|v| v["content"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        contents,
+        ["<p>v1 text</p>", "<p>v2 text</p>", "<p>v3 text</p>"]
     );
+    assert_eq!(history[0]["account"]["id"], json!(ctx.alice_id));
+}
+
+/// Migration 034: a local post's history as eunha wrote it — each edit
+/// recording the version it replaced, stamped with that version's own time —
+/// gains its current version as the last row; a history as Mastodon wrote
+/// it, ending with the current version at `edited_at`, is left alone.
+#[tokio::test]
+async fn test_migration_appends_the_current_version_to_eunha_histories() {
+    let ctx = TestContext::new("edit-history-migration").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut ids = vec![];
+    for text in ["eunha v3", "mastodon v2"] {
+        let status = ctx.api.post_status(&ctx.alice_token, text, "public").await;
+        ids.push(status["id"].as_str().unwrap().parse::<i64>().unwrap());
+    }
+    let (eunha_written, mastodon_written) = (ids[0], ids[1]);
+    sqlx::query(
+        "UPDATE statuses SET edited_at = created_at + interval '2 hours' WHERE id = ANY($1)",
+    )
+    .bind(&ids)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    // Eunha's shape: v1 at created_at, v2 at the first edit; v3 is the post.
+    // Mastodon's: v1 at created_at, v2 at edited_at, which is the post.
+    for (status_id, text, after) in [
+        (eunha_written, "eunha v1", "0 hours"),
+        (eunha_written, "eunha v2", "1 hour"),
+        (mastodon_written, "mastodon v1", "0 hours"),
+        (mastodon_written, "mastodon v2", "2 hours"),
+    ] {
+        sqlx::query(
+            "INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive,
+                                       ordered_media_attachment_ids, created_at, updated_at)
+             SELECT id, account_id, $2, '', false, '{}', created_at + $3::interval, now()
+             FROM statuses WHERE id = $1",
+        )
+        .bind(status_id)
+        .bind(text)
+        .bind(after)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/034_status_edit_current_version.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    for (status_id, expected) in [
+        (eunha_written, vec!["eunha v1", "eunha v2", "eunha v3"]),
+        (mastodon_written, vec!["mastodon v1", "mastodon v2"]),
+    ] {
+        let rows: Vec<(String, i64, bool)> = sqlx::query_as(
+            "SELECT e.text, e.account_id, e.created_at = s.edited_at
+             FROM status_edits e JOIN statuses s ON s.id = e.status_id
+             WHERE e.status_id = $1 ORDER BY e.id",
+        )
+        .bind(status_id)
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap();
+        let texts: Vec<&str> = rows.iter().map(|(t, _, _)| t.as_str()).collect();
+        assert_eq!(texts, expected);
+        let (_, account_id, at_edited_at) = rows.last().unwrap();
+        assert_eq!(*account_id, alice);
+        assert!(at_edited_at, "the last version is stamped with edited_at");
+    }
 }
 
 /// Mastodon records an attachment without a description as NULL inside an
@@ -1381,10 +1499,12 @@ async fn test_status_history_keeps_each_versions_descriptions() {
         .execute(&ctx.db)
         .await
         .unwrap();
-    // Two past versions as Mastodon writes them: undescribed, then described.
+    // The versions as Mastodon writes them: undescribed, described, then
+    // as the post is now.
     for (text, description, ago) in [
         ("first", None::<&str>, 2),
         ("second", Some("described then"), 1),
+        ("with a picture", Some("described now"), 0),
     ] {
         sqlx::query(
             "INSERT INTO status_edits (status_id, account_id, text, spoiler_text, ordered_media_attachment_ids, media_descriptions, created_at, updated_at)

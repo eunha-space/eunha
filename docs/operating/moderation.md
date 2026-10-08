@@ -371,7 +371,8 @@ for a role with `manage_reports`. Its `moderation_action` is one of:
     destroyed at once;
  -  `mark_as_sensitive`, which marks those carrying media or a link preview
     sensitive, as an edit when the account is local, and the reported
-    collections too;
+    collections too; the edit is the instance actor's, and is the version
+    the post's edit history shows last;
  -  `silence` or `suspend`, which is the account action of that type.
 
 The first two resolve the report and strike the account citing the posts. A
@@ -419,7 +420,8 @@ unless they turned appeal emails off, and decide it at
 
 Approving an appeal undoes the strike as far as it can be undone: it unfreezes
 the login, lifts a limit, a suspension or forced sensitivity, and marks cited
-posts not sensitive again. Removed posts stay removed. The strike is marked
+posts with media not sensitive again, as an edit by the instance actor.
+Removed posts stay removed. The strike is marked
 overruled. Rejecting changes nothing. Either way the account is mailed and the
 decision logged.
 

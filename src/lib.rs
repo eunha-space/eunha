@@ -61,6 +61,7 @@ pub mod site_uploads;
 pub mod snowflake;
 pub mod software_updates;
 pub mod state;
+pub mod status_snapshot;
 pub mod statuses_cleanup;
 pub mod streaming;
 pub mod suggestions;

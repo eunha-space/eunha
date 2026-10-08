@@ -617,7 +617,8 @@ pub struct StatusEdit {
     pub spoiler_text: String,
     pub sensitive: bool,
     pub created_at: String,
-    pub account: Account,
+    /// The account that made this version; `null` when it is gone.
+    pub account: Option<Account>,
     pub media_attachments: Vec<MediaAttachment>,
     pub emojis: Vec<CustomEmoji>,
     pub poll: Option<serde_json::Value>,

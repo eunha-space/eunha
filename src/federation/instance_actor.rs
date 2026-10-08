@@ -22,6 +22,13 @@ pub fn key_id(domain: &str) -> String {
     format!("https://{domain}/actor#main-key")
 }
 
+/// `Account.representative`: the instance actor's account id, the row made
+/// first if it is not there yet.
+pub async fn representative(state: &AppState) -> anyhow::Result<i64> {
+    get_or_create(state).await?;
+    Ok(INSTANCE_ACTOR_ID)
+}
+
 /// Return the instance actor's (private_pem, public_pem), generating and
 /// persisting a keypair on first use.
 pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)> {

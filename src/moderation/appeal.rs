@@ -312,19 +312,46 @@ async fn unmark_statuses_as_sensitive(state: &AppState, strike: &Strike) -> AppR
         .flatten()
         .filter_map(|id| id.parse().ok())
         .collect();
-    let statuses = sqlx::query_as!(
-        crate::db::models::Status,
-        r#"UPDATE statuses SET sensitive = false, updated_at = now()
-           WHERE id = ANY($1) AND deleted_at IS NULL
+    // `UpdateStatusService.new.call(status, representative_account.id,
+    // sensitive: false)`: a post not sensitive is left alone
+    // (`NoChangesSubmittedError`), and each other one gets its original into
+    // the history if it has none, then its new version, edited by the
+    // instance's representative.
+    let candidates: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT id FROM statuses
+           WHERE id = ANY($1) AND deleted_at IS NULL AND sensitive
              -- `status.with_media?`: its `ordered_media_attachments`.
              AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id
                          AND (statuses.ordered_media_attachment_ids IS NULL
                               OR m.id = ANY(statuses.ordered_media_attachment_ids)))
-           RETURNING *"#,
+           ORDER BY id"#,
         &ids,
     )
     .fetch_all(&state.db)
     .await?;
+    let mut statuses = Vec::with_capacity(candidates.len());
+    let representative = if candidates.is_empty() {
+        crate::federation::instance_actor::INSTANCE_ACTOR_ID
+    } else {
+        crate::federation::instance_actor::representative(state)
+            .await
+            .map_err(AppError::Internal)?
+    };
+    for id in candidates {
+        let mut tx = state.db.begin().await?;
+        crate::status_snapshot::create_previous_edit(&mut tx, id).await?;
+        let status = sqlx::query_as!(
+            crate::db::models::Status,
+            r#"UPDATE statuses SET sensitive = false, edited_at = now(), updated_at = now()
+               WHERE id = $1 RETURNING *"#,
+            id,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        crate::status_snapshot::create_edit(&mut tx, id, representative).await?;
+        tx.commit().await?;
+        statuses.push(status);
+    }
     for status in statuses {
         // `UpdateStatusService` saved it: `status.updated` for a local post.
         super::webhooks::status_updated(state, status.id).await;

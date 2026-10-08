@@ -783,12 +783,11 @@ pub(super) async fn handle_update(
                 None => None,
             };
             let previous = sqlx::query!(
-                "SELECT text, spoiler_text, edited_at FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+                "SELECT id, text, spoiler_text, edited_at FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
                 note_uri
             )
             .fetch_optional(&state.db)
             .await?;
-            let previous_text: Option<String> = previous.as_ref().map(|p| p.text.clone());
             // `handle_explicit_update!` when the post says it was edited
             // since we last had it, `handle_implicit_update!` otherwise.
             let explicit = match (edited_at, previous.as_ref().and_then(|p| p.edited_at)) {
@@ -819,16 +818,51 @@ pub(super) async fn handle_update(
             let text_changed = previous
                 .as_ref()
                 .is_some_and(|p| p.text != text || p.spoiler_text != spoiler_text);
+            // `record_previous_edit!`: the original as it is before this
+            // edit, kept for the history if the post has none yet and the
+            // edit turns out significant.
+            let previous_edit = match &previous {
+                Some(p) => {
+                    let mut conn = state.db.acquire().await?;
+                    if crate::status_snapshot::has_edits(&mut conn, p.id).await? {
+                        None
+                    } else {
+                        crate::status_snapshot::build(&mut conn, p.id).await?
+                    }
+                }
+                None => None,
+            };
+            // `update_poll!`'s `poll_parser.significantly_changes?`, or a
+            // poll the edit takes away.
+            let poll_changed = match &previous {
+                Some(p) => {
+                    let before = sqlx::query!(
+                        "SELECT options, multiple FROM polls WHERE status_id = $1",
+                        p.id
+                    )
+                    .fetch_optional(&state.db)
+                    .await?;
+                    match (super::poll_parser::PollParser::parse(object), before) {
+                        (Some(poll), Some(before)) => {
+                            poll.options != before.options || poll.multiple != before.multiple
+                        }
+                        (Some(poll), None) => !poll.options.is_empty() || poll.multiple,
+                        (None, before) => before.is_some(),
+                    }
+                }
+                None => false,
+            };
+            // `edited_at` waits for `significant_changes?`.
             let updated = sqlx::query!(
                 r#"UPDATE statuses
                    SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,
-                       edited_at = COALESCE($6, edited_at), updated_at = now(),
-                       quote_approval_policy = COALESCE($8, quote_approval_policy)
+                       updated_at = now(),
+                       quote_approval_policy = COALESCE($7, quote_approval_policy)
                    WHERE uri = $1 AND deleted_at IS NULL
                      -- Only the sender's own status: any server could
                      -- otherwise rewrite any status it named.
                      AND account_id = (
-                         SELECT id FROM accounts WHERE uri = $7 AND domain IS NOT NULL
+                         SELECT id FROM accounts WHERE uri = $6 AND domain IS NOT NULL
                      )
                    RETURNING id, account_id"#,
                 note_uri,
@@ -836,7 +870,6 @@ pub(super) async fn handle_update(
                 spoiler_text,
                 sensitive,
                 language,
-                edited_at,
                 activity
                     .get("actor")
                     .and_then(|a| a.as_str())
@@ -862,11 +895,21 @@ pub(super) async fn handle_update(
             // recorded.
             let attachments = super::attachment::attachments_of(object);
             let previous_media = sqlx::query!(
-                "SELECT id, remote_url FROM media_attachments WHERE status_id = $1",
+                r#"SELECT id, remote_url, thumbnail_remote_url, description
+                   FROM media_attachments WHERE status_id = $1 ORDER BY id"#,
                 row.id
             )
             .fetch_all(&state.db)
             .await?;
+            // `ordered_media_attachment_ids || previous_media_attachments.map(&:id)`.
+            let previous_media_ids: Vec<i64> = sqlx::query_scalar!(
+                "SELECT ordered_media_attachment_ids FROM statuses WHERE id = $1",
+                row.id
+            )
+            .fetch_one(&state.db)
+            .await?
+            .unwrap_or_else(|| previous_media.iter().map(|m| m.id).collect());
+            let mut media_changed = false;
             let skip_download =
                 crate::federation::moderation::account_media_rejected(state, row.account_id).await;
             let mut media_ids: Vec<i64> = Vec::new();
@@ -893,6 +936,12 @@ pub(super) async fn handle_update(
                     .iter()
                     .find(|m| m.remote_url == media.remote_url && !media_ids.contains(&m.id))
                 {
+                    // `media_attachment_parser.significantly_changes?`.
+                    if previous.thumbnail_remote_url != media.thumbnail_remote_url
+                        || previous.description != media.description
+                    {
+                        media_changed = true;
+                    }
                     sqlx::query!(
                         r#"UPDATE media_attachments
                            SET description = $2, thumbnail_remote_url = $3, blurhash = $4,
@@ -925,18 +974,13 @@ pub(super) async fn handle_update(
             )
             .execute(&state.db)
             .await?;
-
-            // `reset_preview_card!`, when the text changed: the card is
-            // fetched again, from the `Link` attachment if there is one.
-            if previous_text.as_deref() != Some(text.as_str()) {
-                crate::preview_card::reset(state, row.id).await;
-                crate::preview_card::crawl_later(
-                    state,
-                    row.id,
-                    preview_card_link(&attachments).map(str::to_owned),
-                )
-                .await;
+            if media_ids != previous_media_ids {
+                media_changed = true;
             }
+            // `update_immediate_attributes!`: `@significant_changes`, the
+            // text, content warning, attachments or poll changed. (A quote
+            // changed only later, in `update_metadata!`, so it never counts.)
+            let significant = text_changed || media_changed || poll_changed;
 
             // Replace hashtags
             let previous_tags: Vec<i64> = sqlx::query_scalar!(
@@ -1068,13 +1112,41 @@ pub(super) async fn handle_update(
                 explicit,
             )
             .await?;
-            if quote_moved || (explicit && text_changed) {
+            if significant {
+                // `@status.edited_at = @status_parser.edited_at if
+                // significant_changes?`, then `create_edits!`: the original
+                // into the history if it had none, then this version, by
+                // its author.
+                let mut conn = state.db.acquire().await?;
+                let created_at = sqlx::query_scalar!(
+                    "UPDATE statuses SET edited_at = COALESCE($2, edited_at) WHERE id = $1 RETURNING created_at",
+                    row.id,
+                    edited_at,
+                )
+                .fetch_one(&mut *conn)
+                .await?;
+                if let Some(original) = &previous_edit {
+                    original.save(&mut conn, row.id, None, created_at).await?;
+                }
+                crate::status_snapshot::create_edit(&mut conn, row.id, row.account_id).await?;
+                drop(conn);
+                // `reset_preview_card!`: the card is fetched again, from the
+                // `Link` attachment if there is one.
+                crate::preview_card::reset(state, row.id).await;
+                crate::preview_card::crawl_later(
+                    state,
+                    row.id,
+                    preview_card_link(&attachments).map(str::to_owned),
+                )
+                .await;
+            }
+            if quote_moved || (explicit && significant) {
                 crate::quotes::distribute_update(state, row.id, false).await;
             }
             // `forward_activity! if significant_changes? &&
             // @status_parser.edited_at > last_edit_date`.
             if explicit
-                && (text_changed || quote_moved)
+                && (significant || quote_moved)
                 && crate::federation::forwarder::forwardable(state, activity, row.id).await
             {
                 crate::federation::forwarder::forward(state, row.account_id, activity, row.id)

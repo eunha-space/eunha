@@ -146,6 +146,25 @@ or named by its name rather than its display name, and a top post chosen
 among originals only. A schema 1
 report Mastodon made has `most_reblogged_accounts` and is left as it is.
 
+Edit histories written before migration 034
+-------------------------------------------
+
+Mastodon keeps every version of an edited post in `status_edits`, the
+current one included: the first edit records the original, stamped with the
+post's `created_at`, and every edit records the version it made, stamped with
+the post's new `edited_at`. `GET /api/v1/statuses/:id/history` serves exactly
+those rows. Until migration 034, eunha recorded only the version each edit
+replaced, stamped with that version's own time, and added the post as it is
+when serving the history. Mastodon serving such a database would leave the
+current version out of each history.
+
+Migration 034 gives each local post whose last recorded version is older than
+its `edited_at` its current version as the last row, by its author, stamped
+with its `edited_at`. A history Mastodon wrote ends with that row already and
+is left as it is; so is every remote post's, which eunha never recorded.
+Remote posts edited before then have no history until their next edit, and
+show only their current version until then.
+
 
 Notifications written before migration 032
 ------------------------------------------

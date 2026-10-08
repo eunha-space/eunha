@@ -165,6 +165,15 @@ order they are shown in. An edit keeps an attachment it still lists at its
 URL, updated in place, records the new order, and leaves one it no longer
 lists attached to the status, where the edit history can still show it.
 
+An edit counts (`significant_changes?`) when it changes the text, the content
+warning, the attachments or their descriptions or thumbnails, or the poll's
+options or multiplicity. Only then is the status's `edited_at` moved to the
+object's `updated`, and its edit history written as Mastodon writes it: the
+original, stamped with the status's `created_at`, if it has no history yet,
+then the version the edit made, stamped with its `updated`. Whoever the edit
+no longer mentions stays mentioned, silently, keeping access to a private
+post.
+
 An attachment's description is its `summary`, or else its `name`, the first
 not blank, stripped and cut to ten thousand characters; its blurhash is kept
 only when Mastodon could use it (`supported_blurhash?`: the characters a

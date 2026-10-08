@@ -1139,12 +1139,21 @@ async fn test_report_moderation_actions() {
             (id(plain["id"].as_str().unwrap()), false),
         ]
     );
-    let edits: i64 = sqlx::query_scalar("SELECT count(*) FROM status_edits WHERE status_id = $1")
-        .bind(id(with_media["id"].as_str().unwrap()))
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap();
-    assert_eq!(edits, 1, "the version before is kept");
+    // `UpdateStatusService.new.call(status, representative_account.id,
+    // sensitive: true)`: the original by its author, then the sensitive
+    // version by the instance's representative.
+    let edits: Vec<(i64, Option<bool>)> = sqlx::query_as(
+        "SELECT account_id, sensitive FROM status_edits WHERE status_id = $1 ORDER BY id",
+    )
+    .bind(id(with_media["id"].as_str().unwrap()))
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        edits,
+        [(id(&ctx.bob_id), Some(false)), (-99, Some(true))],
+        "the original and the sensitive version are kept"
+    );
 
     json_ok(
         ctx.api

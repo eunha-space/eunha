@@ -106,6 +106,14 @@ pub async fn save(
     };
     let mut to_remove: Vec<Status> = vec![];
     let mut to_update: Vec<Status> = vec![];
+    // `Account.representative`, who edits a local post marked sensitive.
+    let representative = if kind != "delete" && target.is_local() && !statuses.is_empty() {
+        crate::federation::instance_actor::representative(state)
+            .await
+            .map_err(AppError::Internal)?
+    } else {
+        crate::federation::instance_actor::INSTANCE_ACTOR_ID
+    };
     let mut tx = state.db.begin().await?;
     if kind == "delete" {
         if !statuses.is_empty() || !collections.is_empty() {
@@ -165,29 +173,23 @@ pub async fn save(
             }
             authorize(may)?;
             if target.is_local() {
-                // `UpdateStatusService`, as the instance: the version before
-                // goes into the history, as an edit by the author does.
-                sqlx::query!(
-                    r#"INSERT INTO status_edits
-                         (status_id, account_id, text, spoiler_text, sensitive,
-                          ordered_media_attachment_ids, created_at, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, now())"#,
-                    status.id,
-                    status.account_id,
-                    status.text,
-                    status.spoiler_text,
-                    status.sensitive,
-                    status.ordered_media_attachment_ids.as_deref(),
-                    status.edited_at.unwrap_or(status.created_at),
-                )
-                .execute(&mut *tx)
-                .await?;
-                sqlx::query!(
-                    "UPDATE statuses SET sensitive = true, edited_at = now(), updated_at = now() WHERE id = $1",
-                    status.id
-                )
-                .execute(&mut *tx)
-                .await?;
+                // `UpdateStatusService.new.call(status,
+                // representative_account.id, sensitive: true)`: the original
+                // into the history if it has none, then the sensitive
+                // version, edited by the instance's representative. A post
+                // already sensitive is not changed (`NoChangesSubmittedError`):
+                // no edit, and nothing is sent.
+                if !status.sensitive {
+                    crate::status_snapshot::create_previous_edit(&mut tx, status.id).await?;
+                    sqlx::query!(
+                        "UPDATE statuses SET sensitive = true, edited_at = now(), updated_at = now() WHERE id = $1",
+                        status.id
+                    )
+                    .execute(&mut *tx)
+                    .await?;
+                    crate::status_snapshot::create_edit(&mut tx, status.id, representative).await?;
+                    to_update.push(status.clone());
+                }
                 to_update.push(status.clone());
             } else {
                 sqlx::query!(

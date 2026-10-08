@@ -200,65 +200,18 @@ pub async fn edit_status(
         ));
     }
 
-    // Save the current version to the edit history before updating. The snapshot
-    // is stamped with the version's own creation time (Mastodon snapshots with
-    // `at_time: edited_at || created_at`), not the moment it is superseded, and
-    // carries that version's media order and poll options so `/history` renders
-    // each past version faithfully.
-    let snapshot_at = status.edited_at.unwrap_or(status.created_at);
-    // `ordered_media_attachment_ids&.dup || media_attachments.pluck(:id)`.
-    let snapshot_media = match status.ordered_media_attachment_ids.clone() {
-        Some(ids) => ids,
-        None => {
-            sqlx::query_scalar!(
-                "SELECT id FROM media_attachments WHERE status_id = $1 ORDER BY id",
-                id,
-            )
-            .fetch_all(&state.db)
-            .await?
-        }
-    };
-    let snapshot_poll = existing_poll.as_ref().map(|p| p.options.clone());
-    // Each attachment's description as it is now, before this edit changes
-    // any: Mastodon's `media_descriptions`
-    // (`ordered_media_attachments.map(&:description)`), which `/history`
-    // shows each past version with.
-    let snapshot_descriptions: Vec<Option<String>> = previous_media
-        .iter()
-        .map(|m| m.description.clone())
-        .collect();
+    // `rate_limit by: :account, family: :statuses` on the edit
+    // `create_edit!` saves.
     crate::rate_limit::record(&state, auth.account_id, crate::rate_limit::STATUSES).await?;
-    sqlx::query!(
-        r#"INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive, ordered_media_attachment_ids, media_descriptions, poll_options, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())"#,
-        id, auth.account_id, status.text, status.spoiler_text, status.sensitive,
-        &snapshot_media, &snapshot_descriptions as &[Option<String>],
-        snapshot_poll.as_deref(), snapshot_at,
-    )
-    .execute(&state.db)
-    .await?;
-
     let hashtags = extract_hashtags(&new_text);
     let mention_handles = extract_mention_handles(&new_text);
     let resolved = resolve_mention_accounts(&state, &mention_handles, &instance_domain).await;
 
-    sqlx::query!(
-        "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, quote_approval_policy = $6, edited_at = now() WHERE id = $5",
-        new_text, new_spoiler, new_sensitive, new_language, id, new_quote_policy,
-    )
-    .execute(&state.db)
-    .await?;
-
-    store_statuses_tags(&state, id, auth.account_id, &hashtags).await?;
-    store_status_mentions(&state, id, &resolved).await?;
-    // `update_index('statuses', :proper)`.
-    crate::search::elasticsearch::indexing::status(&state, id).await;
-    // `UpdateStatusService#reset_preview_card!`: a changed text gets its card
-    // afresh.
-    if new_text != status.text {
-        crate::preview_card::reset(&state, id).await;
-        crate::preview_card::crawl(&state, id).await;
-    }
+    // `Status.transaction do create_previous_edit! … create_edit! end`: the
+    // original goes into the history first if the post has none, then the
+    // edit changes the post, then the version it made goes in too.
+    let mut tx = state.db.begin().await?;
+    crate::status_snapshot::create_previous_edit(&mut tx, id).await?;
 
     // `update_media_attachments!`: the descriptions given for the next
     // attachments, the added ones attached, and the order recorded. An
@@ -271,7 +224,7 @@ pub async fn edit_status(
                 description,
                 media_id,
             )
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
         }
         sqlx::query!(
@@ -279,19 +232,20 @@ pub async fn edit_status(
             id,
             next,
         )
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
         sqlx::query!(
             "UPDATE statuses SET ordered_media_attachment_ids = $2 WHERE id = $1",
             id,
             next,
         )
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
     }
 
-    // Apply the poll change (Mastodon resets votes when options change; an
-    // explicit poll:null removes the poll).
+    // `update_poll!`: a poll in the request creates or updates one, and
+    // changing its options resets the votes; an explicit `poll: null`
+    // removes it.
     match &form.poll {
         Some(Some(pf)) => {
             let expires_at = pf
@@ -303,13 +257,13 @@ pub async fn edit_status(
                     let options_changed =
                         ep.options != opts || ep.multiple != pf.multiple.unwrap_or(false);
                     if options_changed {
-                        let _ = sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
-                            .execute(&state.db)
-                            .await;
+                        sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
+                            .execute(&mut *tx)
+                            .await?;
                     }
-                    // `UpdateStatusService#update_poll!`: `reset_votes!` when
-                    // the options changed, the tallies kept otherwise.
-                    let _ = sqlx::query!(
+                    // `reset_votes!` when the options changed, the tallies
+                    // kept otherwise.
+                    sqlx::query!(
                         r#"UPDATE polls
                              SET options = $2, multiple = $3, hide_totals = $4, expires_at = $5,
                                  cached_tallies = CASE WHEN $6
@@ -326,17 +280,18 @@ pub async fn edit_status(
                         expires_at,
                         options_changed,
                     )
-                    .execute(&state.db)
-                    .await;
+                    .execute(&mut *tx)
+                    .await?;
                 }
                 None => {
-                    if let Ok(poll_id) = sqlx::query_scalar!(
-                        // `polls.new(votes_count: 0)`, a zero tally for each
-                        // option, and no `voters_count`.
+                    // `polls.new(votes_count: 0)`, then `reset_votes!` as its
+                    // options changed from none: a zero tally for each
+                    // option, and no voters.
+                    let poll_id = sqlx::query_scalar!(
                         r#"INSERT INTO polls (status_id, account_id, options, multiple, hide_totals, expires_at,
-                                              cached_tallies, votes_count, created_at, updated_at)
+                                              cached_tallies, votes_count, voters_count, created_at, updated_at)
                            VALUES ($1, $2, $3, $4, $5, $6,
-                                   ARRAY(SELECT 0::bigint FROM unnest($3::varchar[])), 0, now(), now())
+                                   ARRAY(SELECT 0::bigint FROM unnest($3::varchar[])), 0, 0, now(), now())
                            RETURNING id"#,
                         id,
                         auth.account_id,
@@ -345,35 +300,55 @@ pub async fn edit_status(
                         pf.hide_totals.unwrap_or(false),
                         expires_at,
                     )
-                    .fetch_one(&state.db)
-                    .await
-                    {
-                            let _ = sqlx::query!(
-                            "UPDATE statuses SET poll_id = $1 WHERE id = $2",
-                            poll_id, id,
-                        )
-                        .execute(&state.db)
-                        .await;
-                    }
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    sqlx::query!(
+                        "UPDATE statuses SET poll_id = $1 WHERE id = $2",
+                        poll_id,
+                        id
+                    )
+                    .execute(&mut *tx)
+                    .await?;
                 }
             }
         }
         Some(None) => {
             if let Some(ep) = &existing_poll {
-                let _ = sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
-                    .execute(&state.db)
-                    .await;
-                let _ = sqlx::query!("UPDATE statuses SET poll_id = NULL WHERE id = $1", id)
-                    .execute(&state.db)
-                    .await;
-                let _ = sqlx::query!("DELETE FROM polls WHERE id = $1", ep.id)
-                    .execute(&state.db)
-                    .await;
+                sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query!("UPDATE statuses SET poll_id = NULL WHERE id = $1", id)
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query!("DELETE FROM polls WHERE id = $1", ep.id)
+                    .execute(&mut *tx)
+                    .await?;
             }
         }
         None => {}
     }
 
+    // `update_immediate_attributes!`.
+    sqlx::query!(
+        "UPDATE statuses SET text = $1, spoiler_text = $2, sensitive = $3, language = $4, quote_approval_policy = $6, edited_at = now() WHERE id = $5",
+        new_text, new_spoiler, new_sensitive, new_language, id, new_quote_policy,
+    )
+    .execute(&mut *tx)
+    .await?;
+    crate::status_snapshot::create_edit(&mut tx, id, auth.account_id).await?;
+    tx.commit().await?;
+
+    // `update_metadata!`.
+    store_statuses_tags(&state, id, auth.account_id, &hashtags).await?;
+    store_status_mentions(&state, id, &resolved).await?;
+    // `update_index('statuses', :proper)`.
+    crate::search::elasticsearch::indexing::status(&state, id).await;
+    // `UpdateStatusService#reset_preview_card!`: a changed text gets its card
+    // afresh.
+    if new_text != status.text {
+        crate::preview_card::reset(&state, id).await;
+        crate::preview_card::crawl(&state, id).await;
+    }
     // `queue_poll_notifications!`, with the poll's end before the edit when
     // the edit gave a poll (`@previous_expires_at`).
     let previous_expires_at = match &form.poll {
@@ -445,14 +420,17 @@ pub async fn get_status_history(
     Ok(Json(status_edits(&state, &status).await?))
 }
 
-/// Every version of `status`, oldest first and the current one last, as
-/// `REST::StatusEditSerializer` renders `status.edits` and the status itself.
+/// `HistoriesController#status_edits`: the post's `status_edits` rows,
+/// oldest first (`ordered`, by id), the last one the post as it is; or, for
+/// a post never edited, a snapshot of it built on the spot at its
+/// `edited_at || created_at`. Each rendered as `REST::StatusEditSerializer`
+/// does, with the account that made that version.
 pub(crate) async fn status_edits(
     state: &AppState,
     status: &DbStatus,
 ) -> AppResult<Vec<StatusEdit>> {
     let id = status.id;
-    let account = sqlx::query_as!(
+    let author = sqlx::query_as!(
         Account,
         "SELECT * FROM accounts WHERE id = $1",
         status.account_id,
@@ -463,59 +441,90 @@ pub(crate) async fn status_edits(
     // Named columns: `media_descriptions` holds NULL for an attachment that
     // had no description, which a `SELECT *` would read as `Vec<String>`
     // and refuse, failing the whole history.
-    let edits = sqlx::query_as!(
+    let mut edits = sqlx::query_as!(
         crate::db::models::StatusEdit,
         r#"SELECT id, status_id, account_id, text, spoiler_text, sensitive, created_at,
                   media_descriptions AS "media_descriptions: Vec<Option<String>>",
                   ordered_media_attachment_ids, poll_options, quote_id, updated_at
-           FROM status_edits WHERE status_id = $1 ORDER BY created_at ASC"#,
+           FROM status_edits WHERE status_id = $1 ORDER BY id ASC"#,
         id,
     )
     .fetch_all(&state.db)
     .await?;
+    if edits.is_empty() {
+        // `[@status.build_snapshot(at_time: @status.edited_at ||
+        // @status.created_at)]`.
+        let mut conn = state.db.acquire().await?;
+        if let Some(snapshot) = crate::status_snapshot::build(&mut conn, id).await? {
+            let at = status.edited_at.unwrap_or(status.created_at);
+            edits.push(crate::db::models::StatusEdit {
+                id: 0,
+                status_id: id,
+                account_id: Some(snapshot.account_id),
+                text: snapshot.text,
+                spoiler_text: snapshot.spoiler_text,
+                sensitive: Some(snapshot.sensitive),
+                created_at: at,
+                media_descriptions: Some(snapshot.media_descriptions),
+                ordered_media_attachment_ids: Some(snapshot.ordered_media_attachment_ids),
+                poll_options: snapshot.poll_options,
+                quote_id: snapshot.quote_id,
+                updated_at: at,
+            });
+        }
+    }
 
-    // Every version is rendered the same way, current and historical alike:
-    // upstream's serializer runs `status_content_format` over each edit just
-    // as it does over a status. A `StatusEdit` does not respond to
-    // `active_mentions`, so the only account preloaded for its mentions is the
-    // author's, and a mention of anyone else stays text.
+    // Every version is rendered the same way: upstream's serializer runs
+    // `status_content_format` over each edit just as it does over a status.
+    // A `StatusEdit` does not respond to `active_mentions`, so the only
+    // account preloaded for its mentions is the author's, and a mention of
+    // anyone else stays text.
     let local_domain = state.urls.local_domain.clone();
     let render = |text: &str| -> String {
-        crate::api::mastodon::formatting::status_content(&local_domain, text, &account, &[])
+        crate::api::mastodon::formatting::status_content(&local_domain, text, &author, &[])
     };
-    let current_content = render(&status.text);
 
-    let account_emojis = batch_account_emojis(state, std::slice::from_ref(&account)).await;
-    let account_roles = batch_account_roles(state, std::slice::from_ref(&account)).await;
-    let mut api_account = account_from_db(&state.urls, &account);
-    api_account.emojis = account_emojis.get(&account.id).cloned().unwrap_or_default();
-    api_account.roles = account_roles.get(&account.id).cloned().unwrap_or_default();
-    crate::api::mastodon::accounts::apply_account_stats(state, &mut api_account, account.id).await;
-
-    // Collect all media attachment IDs needed across all edits, then batch-fetch them.
-    let all_media_ids: Vec<i64> = edits
+    // `has_one :account`: whoever made each version — the author, or the
+    // instance's representative for a moderator's change — and none for an
+    // edit whose account is gone.
+    let account_ids: Vec<i64> = edits
         .iter()
-        .filter_map(|e| e.ordered_media_attachment_ids.as_ref())
-        .flat_map(|ids| ids.iter().copied())
+        .filter_map(|e| e.account_id)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
+    let editors = sqlx::query_as!(
+        Account,
+        "SELECT * FROM accounts WHERE id = ANY($1)",
+        &account_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let editor_emojis = batch_account_emojis(state, &editors).await;
+    let editor_roles = batch_account_roles(state, &editors).await;
+    let mut api_editors = std::collections::HashMap::new();
+    for editor in &editors {
+        let mut api_account = account_from_db(&state.urls, editor);
+        api_account.emojis = editor_emojis.get(&editor.id).cloned().unwrap_or_default();
+        api_account.roles = editor_roles.get(&editor.id).cloned().unwrap_or_default();
+        crate::api::mastodon::accounts::apply_account_stats(state, &mut api_account, editor.id)
+            .await;
+        api_editors.insert(editor.id, api_account);
+    }
 
-    let fetched_media: Vec<crate::db::models::MediaAttachment> = if all_media_ids.is_empty() {
-        vec![]
-    } else {
-        sqlx::query_as!(
-            crate::db::models::MediaAttachment,
-            "SELECT * FROM media_attachments WHERE id = ANY($1)",
-            &all_media_ids,
-        )
-        .fetch_all(&state.db)
-        .await?
-    };
+    // `status.media_attachments.index_by(&:id)`: the post's attachments,
+    // those taken off by an edit included.
+    let fetched_media: Vec<crate::db::models::MediaAttachment> = sqlx::query_as!(
+        crate::db::models::MediaAttachment,
+        "SELECT * FROM media_attachments WHERE status_id = $1",
+        id,
+    )
+    .fetch_all(&state.db)
+    .await?;
     let media_map: std::collections::HashMap<i64, &crate::db::models::MediaAttachment> =
         fetched_media.iter().map(|m| (m.id, m)).collect();
 
-    // A past version's attachments carry the descriptions they had then, as
+    // A version's attachments carry the descriptions they had then, as
     // Mastodon's `PreservedMediaAttachment` does: `descriptions[i]` for the
     // attachment at position `i`, none where it had none. An edit recorded
     // without them keeps each attachment's description as it is now.
@@ -536,75 +545,36 @@ pub(crate) async fn status_edits(
                 .filter(|m| {
                     m.url.is_some() || m.remote_url.as_deref().is_some_and(|u| !u.is_empty())
                 })
+                .take(4)
                 .collect()
         })
         .unwrap_or_default()
     };
 
-    let mut result: Vec<StatusEdit> = edits.iter().map(|e| {
-        let poll = e.poll_options.as_ref().filter(|o| !o.is_empty()).map(|opts| {
-            serde_json::json!({ "options": opts.iter().map(|t| serde_json::json!({"title": t})).collect::<Vec<_>>() })
-        });
-        StatusEdit {
-            content: render(&e.text),
-            spoiler_text: e.spoiler_text.clone(),
-            sensitive: e.sensitive.unwrap_or(false),
-            created_at: crate::api::mastodon::convert::mastodon_date(e.created_at),
-            account: api_account.clone(),
-            media_attachments: ordered_media(
-                e.ordered_media_attachment_ids.as_ref(),
-                e.media_descriptions.as_ref(),
-            ),
-            emojis: vec![],
-            poll,
-            quote: None,
-        }
-    }).collect();
-
-    // Current version poll — render its options so the latest history entry
-    // matches Mastodon (which snapshots poll_options on every edit).
-    let current_poll = if status.poll_id.is_some() {
-        sqlx::query_scalar!(
-            "SELECT options FROM polls WHERE status_id = $1",
-            id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|opts: Vec<String>| {
-            serde_json::json!({
-                "options": opts.iter().map(|t| serde_json::json!({ "title": t })).collect::<Vec<_>>()
-            })
-        })
-    } else {
-        None
-    };
-
-    // The current version, as `build_snapshot` has it: the status's
-    // `ordered_media_attachments`, every attachment by id when it has no
-    // order recorded.
-    let current_media = crate::api::mastodon::status_serialize::fetch_status_media(state, id)
-        .await?
+    Ok(edits
         .iter()
-        .map(|m| crate::api::mastodon::convert::media_from_db(&state.urls, m))
-        .filter(|m| m.url.is_some() || m.remote_url.as_deref().is_some_and(|u| !u.is_empty()))
-        .collect();
-
-    // Append current version
-    result.push(StatusEdit {
-        content: current_content,
-        spoiler_text: status.spoiler_text.clone(),
-        sensitive: status.sensitive,
-        created_at: crate::api::mastodon::convert::mastodon_date(
-            status.edited_at.unwrap_or(status.created_at),
-        ),
-        account: api_account,
-        media_attachments: current_media,
-        emojis: vec![],
-        poll: current_poll,
-        quote: None,
-    });
-
-    Ok(result)
+        .map(|e| {
+            let poll = e.poll_options.as_ref().filter(|o| !o.is_empty()).map(|opts| {
+                serde_json::json!({
+                    "options": opts.iter().map(|t| serde_json::json!({ "title": t })).collect::<Vec<_>>()
+                })
+            });
+            StatusEdit {
+                content: render(&e.text),
+                spoiler_text: e.spoiler_text.clone(),
+                sensitive: e.sensitive.unwrap_or(false),
+                created_at: crate::api::mastodon::convert::mastodon_date(e.created_at),
+                account: e.account_id.and_then(|a| api_editors.get(&a).cloned()),
+                media_attachments: ordered_media(
+                    e.ordered_media_attachment_ids.as_ref(),
+                    e.media_descriptions.as_ref(),
+                ),
+                emojis: vec![],
+                poll,
+                quote: None,
+            }
+        })
+        .collect())
 }
 
 // ── GET /api/v1/statuses/:id/source ───────────────────────────────────────
