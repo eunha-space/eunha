@@ -122,6 +122,16 @@ copy. `DELETE /oauth/authorize`, from a signed-in browser, turns the client
 away: it is sent `access_denied`, with its `state`, at a redirect URI it
 registered (an unregistered one is refused, where Doorkeeper would follow it).
 
+`POST /oauth/revoke` is RFC 7009 revocation as Doorkeeper answers it. The
+request names its client, by HTTP Basic or in the request, with the client's
+secret unless the application is a public one (`confidential` false); without
+that it is refused with 403 `unauthorized_client`, and a secret given both ways
+is 400 `invalid_request`. A token issued to another client is refused the same
+way; one issued to no client may be revoked by any. A token nobody holds, or
+one already revoked, is a 200 `{}`. The token is looked up as an access token,
+then as a refresh token, or only as a refresh token with
+`token_type_hint=refresh_token`.
+
 `GET /oauth/token/info` describes the bearer token as Doorkeeper does (its
 scopes, owner, application and remaining lifetime), or answers 401
 `invalid_token` saying whether it is unknown, revoked or expired.

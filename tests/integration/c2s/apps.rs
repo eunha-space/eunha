@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-use crate::helpers::TestContext;
+use crate::helpers::{client_of, TestContext};
 
 /// POST /api/v1/apps with valid params returns client_id and client_secret.
 #[tokio::test]
@@ -241,13 +241,18 @@ async fn test_revoke_token() {
         "token should be valid before revocation"
     );
 
-    // Revoke it.
+    // Revoke it, as the client it was issued to.
+    let (client_id, client_secret) = client_of(&ctx, &ctx.alice_token).await;
     let revoke_resp = ctx
         .api
         .post_json(
             "/oauth/revoke",
             None,
-            &serde_json::json!({"token": ctx.alice_token}),
+            &serde_json::json!({
+                "token": ctx.alice_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }),
         )
         .await;
     assert_eq!(revoke_resp.status(), StatusCode::OK);
@@ -265,6 +270,116 @@ async fn test_revoke_token() {
         StatusCode::UNAUTHORIZED,
         "revoked token should return 401"
     );
+}
+
+/// Whether `token` still works.
+async fn token_works(ctx: &TestContext, token: &str) -> bool {
+    ctx.api
+        .get("/api/v1/accounts/verify_credentials", Some(token))
+        .await
+        .status()
+        == StatusCode::OK
+}
+
+/// Doorkeeper's `validate_presence_of_client` and `authorized?`: a request
+/// naming no client, or a confidential client without its secret, or a
+/// client the token was not issued to, is refused with `403
+/// unauthorized_client`, and the token keeps working.
+#[tokio::test]
+async fn test_revoke_requires_the_tokens_client() {
+    let ctx = TestContext::new("apps-revoke-client").await;
+    let (client_id, _) = client_of(&ctx, &ctx.alice_token).await;
+    let (other_id, other_secret) = client_of(&ctx, &ctx.bob_token).await;
+    let refusals = [
+        json!({ "token": ctx.alice_token }),
+        json!({ "token": ctx.alice_token, "client_id": client_id }),
+        json!({ "token": ctx.alice_token, "client_id": client_id, "client_secret": "wrong" }),
+        json!({ "token": ctx.alice_token, "client_id": other_id, "client_secret": other_secret }),
+    ];
+    for body in refusals {
+        let resp = ctx.api.post_json("/oauth/revoke", None, &body).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{body}");
+        let answer: Value = resp.json().await.unwrap();
+        assert_eq!(answer["error"], "unauthorized_client");
+        assert_eq!(
+            answer["error_description"],
+            "You are not authorized to revoke this token"
+        );
+    }
+    assert!(token_works(&ctx, &ctx.alice_token).await);
+
+    // A token nobody holds is a `200` for an authenticated client.
+    let resp = ctx
+        .api
+        .post_json(
+            "/oauth/revoke",
+            None,
+            &json!({ "token": "nonexistent", "client_id": other_id, "client_secret": other_secret }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.json::<Value>().await.unwrap(), json!({}));
+}
+
+/// `client_secret_basic` authenticates as well as the parameters; a
+/// public client (`confidential = false`) names itself without a secret;
+/// a secret by two methods is `400 invalid_request`.
+#[tokio::test]
+async fn test_revoke_client_authentication_methods() {
+    let ctx = TestContext::new("apps-revoke-basic").await;
+    let (client_id, client_secret) = client_of(&ctx, &ctx.alice_token).await;
+
+    let both = ctx
+        .api
+        .http
+        .post(ctx.api.url("/oauth/revoke"))
+        .header("host", &ctx.api.host)
+        .basic_auth(&client_id, Some(&client_secret))
+        .form(&[
+            ("token", ctx.alice_token.as_str()),
+            ("client_id", &client_id),
+            ("client_secret", &client_secret),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(both.status(), StatusCode::BAD_REQUEST);
+    let answer: Value = both.json().await.unwrap();
+    assert_eq!(answer["error"], "invalid_request");
+    assert!(token_works(&ctx, &ctx.alice_token).await);
+
+    let basic = ctx
+        .api
+        .http
+        .post(ctx.api.url("/oauth/revoke"))
+        .header("host", &ctx.api.host)
+        .basic_auth(&client_id, Some(&client_secret))
+        .form(&[("token", ctx.alice_token.as_str())])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(basic.status(), StatusCode::OK);
+    assert!(!token_works(&ctx, &ctx.alice_token).await);
+
+    // A public client.
+    let (bob_client, _) = client_of(&ctx, &ctx.bob_token).await;
+    sqlx::query!(
+        "UPDATE oauth_applications SET confidential = false WHERE uid = $1",
+        bob_client
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let public = ctx
+        .api
+        .post_form(
+            "/oauth/revoke",
+            None,
+            &[("token", &ctx.bob_token), ("client_id", &bob_client)],
+        )
+        .await;
+    assert_eq!(public.status(), StatusCode::OK);
+    assert!(!token_works(&ctx, &ctx.bob_token).await);
 }
 
 // ── POST /oauth/token — grant type tests ──────────────────────────────────────

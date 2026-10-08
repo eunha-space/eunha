@@ -357,31 +357,178 @@ pub async fn issue_token(
 pub struct RevokeRequest {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
-    pub token: String,
+    pub token: Option<String>,
+    pub token_type_hint: Option<String>,
 }
 
+/// What `Client::Credentials.from_request(request, :from_basic, :from_params)`
+/// makes of a request: the one client it names, with its secret if it
+/// gave one, or `Err` for `MultipleClientAuthMethods` — a secret by two
+/// methods, or two different clients.
+fn revocation_credentials(
+    headers: &axum::http::HeaderMap,
+    form: &RevokeRequest,
+) -> Result<Option<(String, Option<String>)>, ()> {
+    use base64::Engine as _;
+    let present = |s: Option<String>| s.filter(|s| !s.trim().is_empty());
+    // `from_basic`: `Base64.decode64`, which skips what is not Base64, then
+    // `split(/:/, 2)`, nothing decoded further.
+    let basic = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| v.len() > 6 && v[..6].eq_ignore_ascii_case("basic "))
+        .map(|v| {
+            let encoded: String = v[6..]
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/'))
+                .collect();
+            let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
+                .decode(&encoded)
+                .unwrap_or_default();
+            let decoded = String::from_utf8_lossy(&decoded).into_owned();
+            match decoded.split_once(':') {
+                Some((id, secret)) => (id.to_owned(), Some(secret.to_owned())),
+                None => (decoded, None),
+            }
+        });
+    let params = Some((form.client_id.clone(), form.client_secret.clone()));
+    // `extract`: credentials without a uid are none at all.
+    let credentials: Vec<(String, Option<String>)> =
+        [basic.map(|(id, secret)| (Some(id), secret)), params]
+            .into_iter()
+            .flatten()
+            .filter_map(|(id, secret)| Some((present(id)?, present(secret))))
+            .collect();
+    if credentials.iter().filter(|(_, s)| s.is_some()).count() > 1 {
+        return Err(());
+    }
+    if credentials.iter().any(|(id, _)| *id != credentials[0].0) {
+        return Err(());
+    }
+    Ok(credentials.into_iter().next())
+}
+
+/// `ActiveSupport::SecurityUtils.secure_compare`.
+fn secure_compare(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
+}
+
+/// `Oauth::TokensController#revoke`, Doorkeeper's `TokensController#revoke`
+/// beneath it (RFC 7009).
+///
+/// `validate_presence_of_client` comes first: the request names a client,
+/// with its secret unless it is a public one (`by_uid_and_secret`), or it
+/// is refused with `403 unauthorized_client`. A token nobody holds is a
+/// `200`; one issued to another client is refused, `403` again; a token
+/// issued to no client may be revoked by any.
 pub async fn revoke_token(
     state: AppState,
+    headers: axum::http::HeaderMap,
     FormOrJson(form): FormOrJson<RevokeRequest>,
-) -> AppResult<Json<serde_json::Value>> {
-    let revoked: Vec<i64> = sqlx::query_scalar!(
-        r#"UPDATE oauth_access_tokens SET revoked_at = now()
-           WHERE token = $1 AND revoked_at IS NULL
-           RETURNING id"#,
-        form.token,
+) -> AppResult<Response> {
+    let refused = || {
+        (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "unauthorized_client",
+                "error_description": "You are not authorized to revoke this token",
+            })),
+        )
+            .into_response()
+    };
+    let credentials = match revocation_credentials(&headers, &form) {
+        Ok(credentials) => credentials,
+        Err(()) => {
+            // `handle_token_exception` with an `InvalidRequestResponse`.
+            let description =
+                "The request utilizes more than one mechanism for authenticating the client.";
+            let mut response = oauth_error("invalid_request", description);
+            let headers = response.headers_mut();
+            headers.insert(
+                axum::http::header::CACHE_CONTROL,
+                axum::http::HeaderValue::from_static("no-store, no-cache"),
+            );
+            headers.insert(
+                axum::http::header::WWW_AUTHENTICATE,
+                axum::http::HeaderValue::from_str(&format!(
+                    "Bearer realm=\"Doorkeeper\", error=\"invalid_request\", error_description=\"{description}\""
+                ))
+                .expect("the description is a valid header value"),
+            );
+            return Ok(response);
+        }
+    };
+    // `Client.authenticate`: the application by its uid, then
+    // `by_uid_and_secret`.
+    let client_id = match credentials {
+        None => None,
+        Some((uid, secret)) => sqlx::query!(
+            "SELECT id, secret, confidential FROM oauth_applications WHERE uid = $1",
+            uid
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .filter(|app| match &secret {
+            None => !app.confidential,
+            Some(secret) => secure_compare(&app.secret, secret),
+        })
+        .map(|app| app.id),
+    };
+    let Some(client_id) = client_id else {
+        return Ok(refused());
+    };
+
+    // `revocable_token`: the access token, then the refresh token, unless
+    // the hint says it is a refresh token. Revoked and expired tokens are
+    // found too.
+    let token = form.token.as_deref().unwrap_or("");
+    let by_access = form.token_type_hint.as_deref() != Some("refresh_token");
+    let found = sqlx::query!(
+        r#"SELECT id, application_id,
+                  (revoked_at IS NULL OR revoked_at > now())
+                  AND (expires_in IS NULL OR created_at + expires_in * interval '1 second' > now())
+                  AS "accessible!"
+           FROM oauth_access_tokens
+           WHERE ($2 AND token = $1) OR refresh_token = $1
+           ORDER BY ($2 AND token = $1) DESC
+           LIMIT 1"#,
+        token,
+        by_access,
     )
-    .fetch_all(&state.db)
+    .fetch_optional(&state.db)
     .await?;
-    // `Oauth::TokensController#unsubscribe_for_token`, and the token's
-    // streams closed (`AccessTokenExtension#push_to_streaming_api`).
-    sqlx::query!(
-        "DELETE FROM web_push_subscriptions WHERE access_token_id = ANY($1)",
-        &revoked
-    )
-    .execute(&state.db)
-    .await?;
-    crate::sessions::kill_streams(&state, revoked).await;
-    Ok(Json(serde_json::json!({})))
+    let Some(found) = found else {
+        return Ok(Json(serde_json::json!({})).into_response());
+    };
+    // `authorized?`.
+    if found
+        .application_id
+        .is_some_and(|application_id| application_id != client_id)
+    {
+        return Ok(refused());
+    }
+    if found.accessible {
+        sqlx::query!(
+            "UPDATE oauth_access_tokens SET revoked_at = now() WHERE id = $1",
+            found.id
+        )
+        .execute(&state.db)
+        .await?;
+        // `Oauth::TokensController#unsubscribe_for_token`, and the token's
+        // streams closed (`AccessTokenExtension#push_to_streaming_api`).
+        sqlx::query!(
+            "DELETE FROM web_push_subscriptions WHERE access_token_id = $1",
+            found.id
+        )
+        .execute(&state.db)
+        .await?;
+        crate::sessions::kill_streams(&state, vec![found.id]).await;
+    }
+    Ok(Json(serde_json::json!({})).into_response())
 }
 
 /// Normalize an OAuth scope string: split on whitespace or commas, deduplicate,

@@ -1044,6 +1044,20 @@ pub async fn account_session_cookie(api: &ApiClient, email: &str, password: &str
     cookie
 }
 
+/// The uid and secret of the client `token` was issued to.
+pub async fn client_of(ctx: &TestContext, token: &str) -> (String, String) {
+    let row = sqlx::query!(
+        r#"SELECT a.uid, a.secret FROM oauth_applications a
+           JOIN oauth_access_tokens t ON t.application_id = a.id
+           WHERE t.token = $1"#,
+        token,
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    (row.uid, row.secret)
+}
+
 /// Look up the `users.id` for a given account.
 pub async fn user_id_for(db: &PgPool, account_id: i64) -> i64 {
     sqlx::query_scalar!("SELECT id FROM users WHERE account_id = $1", account_id)

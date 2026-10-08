@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, application_id,\n                  (revoked_at IS NULL OR revoked_at > now())\n                  AND (expires_in IS NULL OR created_at + expires_in * interval '1 second' > now())\n                  AS \"accessible!\"\n           FROM oauth_access_tokens\n           WHERE ($2 AND token = $1) OR refresh_token = $1\n           ORDER BY ($2 AND token = $1) DESC\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "accessible!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "ed6c98c24d3e27c34244a684460c898dc2e2e680c7ff85ecee29fd76f447fbf3"
+}

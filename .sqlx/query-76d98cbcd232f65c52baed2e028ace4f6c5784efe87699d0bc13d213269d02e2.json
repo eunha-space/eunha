@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.uid, a.secret FROM oauth_applications a\n           JOIN oauth_access_tokens t ON t.application_id = a.id\n           WHERE t.token = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "secret",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "76d98cbcd232f65c52baed2e028ace4f6c5784efe87699d0bc13d213269d02e2"
+}

@@ -183,9 +183,18 @@ async fn test_subscription_scopes() {
 async fn test_revoked_token_is_killed() {
     let ctx = TestContext::new("stream-kill").await;
     let mut ws = ws_connect(&ctx, "public", &ctx.alice_token).await;
+    let (client_id, client_secret) = crate::helpers::client_of(&ctx, &ctx.alice_token).await;
     let revoked = ctx
         .api
-        .post_json("/oauth/revoke", None, &json!({"token": ctx.alice_token}))
+        .post_json(
+            "/oauth/revoke",
+            None,
+            &json!({
+                "token": ctx.alice_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }),
+        )
         .await;
     assert_eq!(revoked.status().as_u16(), 200);
     let closed = timeout(Duration::from_secs(3), async {
