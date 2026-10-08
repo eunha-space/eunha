@@ -185,6 +185,7 @@ struct Pushed {
     from_account_id: i64,
     activity_type: String,
     activity_id: i64,
+    updated_at: chrono::NaiveDateTime,
 }
 
 /// `Notification.find`, its type read as `Notification#type` reads it: the
@@ -222,6 +223,7 @@ async fn load_notification(state: &AppState, id: i64) -> anyhow::Result<Option<P
         from_account_id: row.from_account_id,
         activity_type: row.activity_type,
         activity_id: row.activity_id,
+        updated_at: row.updated_at,
     }))
 }
 
@@ -427,7 +429,12 @@ impl crate::jobs::Job for PushNotificationWorker {
         // `Web::PushSubscription.find` and `Notification.find`, else
         // nothing to do.
         let Some(sub) = sqlx::query!(
-            "SELECT endpoint, key_p256dh, key_auth, standard FROM web_push_subscriptions WHERE id = $1",
+            r#"SELECT wps.endpoint, wps.key_p256dh, wps.key_auth, wps.standard,
+                      wps.data AS "data: serde_json::Value",
+                      EXISTS (SELECT 1 FROM users u WHERE u.id = wps.user_id)
+                        AND EXISTS (SELECT 1 FROM oauth_access_tokens t
+                                    WHERE t.id = wps.access_token_id) AS "owned!"
+               FROM web_push_subscriptions wps WHERE wps.id = $1"#,
             self.web_push_subscription_id
         )
         .fetch_optional(&state.db)
@@ -438,6 +445,38 @@ impl crate::jobs::Job for PushNotificationWorker {
         let Some(notification) = load_notification(state, notification_id).await? else {
             return Ok(());
         };
+
+        // `return if @notification.updated_at < TTL.ago`.
+        if notification.updated_at
+            < chrono::Utc::now().naive_utc() - chrono::Duration::seconds(PUSH_TTL_SECONDS)
+        {
+            return Ok(());
+        }
+
+        // `@subscription.destroy! unless @subscription.valid?`: one made
+        // before its endpoint and keys were checked, or whose user or token
+        // is gone.
+        if !sub.owned
+            || !subscription_errors(&sub.endpoint, &sub.key_p256dh, &sub.key_auth).is_empty()
+        {
+            sqlx::query!(
+                "DELETE FROM web_push_subscriptions WHERE id = $1",
+                self.web_push_subscription_id
+            )
+            .execute(&state.db)
+            .await?;
+            return Ok(());
+        }
+
+        // `return unless @notification.activity.present? &&
+        // @subscription.pushable?(@notification)`: the activity may have
+        // been deleted since, and the subscription changed.
+        if !activity_present(state, &notification.activity_type, notification.activity_id).await?
+            || !pushable(state, sub.data.as_ref(), &notification).await?
+        {
+            return Ok(());
+        }
+
         // `push_notification_json`, rendered now.
         let Some(payload) = render(state, self.web_push_subscription_id, &notification).await?
         else {
@@ -471,6 +510,79 @@ impl crate::jobs::Job for PushNotificationWorker {
         }
         Ok(())
     }
+}
+
+/// `Notification#activity.present?`: the polymorphic activity still exists,
+/// a status only while it is not deleted (`Status`'s default scope).
+async fn activity_present(
+    state: &AppState,
+    activity_type: &str,
+    activity_id: i64,
+) -> anyhow::Result<bool> {
+    let table = match activity_type {
+        "Status" => "statuses",
+        "Mention" => "mentions",
+        "Favourite" => "favourites",
+        "Follow" => "follows",
+        "FollowRequest" => "follow_requests",
+        "Poll" => "polls",
+        "Report" => "reports",
+        "AccountRelationshipSeveranceEvent" => "account_relationship_severance_events",
+        "AccountWarning" => "account_warnings",
+        "GeneratedAnnualReport" => "generated_annual_reports",
+        "Quote" => "quotes",
+        "CollectionItem" => "collection_items",
+        "Collection" => "collections",
+        "Account" => "accounts",
+        _ => return Ok(false),
+    };
+    let kept = if table == "statuses" {
+        " AND deleted_at IS NULL"
+    } else {
+        ""
+    };
+    Ok(sqlx::query_scalar::<_, bool>(&format!(
+        "SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1{kept})"
+    ))
+    .bind(activity_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
+/// `Web::PushSubscription`'s validations, as full messages: the endpoint
+/// present and an `http` or `https` URL with a host (`URLValidator`), both
+/// keys present, and `WebPushKeyValidator`, which has them encrypt a test
+/// message.
+pub fn subscription_errors(endpoint: &str, p256dh: &str, auth: &str) -> Vec<String> {
+    let mut errors = vec![];
+    if endpoint.trim().is_empty() {
+        errors.push("Endpoint can't be blank".to_owned());
+    }
+    let url_ok = url::Url::parse(endpoint).is_ok_and(|url| {
+        matches!(url.scheme(), "http" | "https") && url.host_str().is_some_and(|h| !h.is_empty())
+    });
+    if !url_ok {
+        errors.push("Endpoint is invalid".to_owned());
+    }
+    if p256dh.trim().is_empty() {
+        errors.push("Key p256dh can't be blank".to_owned());
+    }
+    if auth.trim().is_empty() {
+        errors.push("Key auth can't be blank".to_owned());
+    }
+    let info = web_push::SubscriptionInfo {
+        endpoint: "https://push.invalid/".to_owned(),
+        keys: web_push::SubscriptionKeys {
+            p256dh: p256dh.to_owned(),
+            auth: auth.to_owned(),
+        },
+    };
+    let mut builder = web_push::WebPushMessageBuilder::new(&info);
+    builder.set_payload(web_push::ContentEncoding::AesGcm, b"validation_test");
+    if p256dh.is_empty() || auth.is_empty() || builder.build().is_err() {
+        errors.push("is not a valid Ed25519 or Curve25519 key".to_owned());
+    }
+    errors
 }
 
 /// Encrypt and send one push: `perform_standard_request` (`aes128gcm`, RFC
@@ -1307,7 +1419,7 @@ pub(crate) async fn update_notification_request(
 
 #[cfg(test)]
 mod tests {
-    use super::{cast_boolean, push_body, push_title, NOTIFICATION_TYPES};
+    use super::{cast_boolean, push_body, push_title, subscription_errors, NOTIFICATION_TYPES};
     use serde_json::json;
 
     #[test]
@@ -1354,6 +1466,31 @@ mod tests {
         assert_eq!(
             push_title("ja", "annual_report", "A"),
             "Translation missing: ja.notification_mailer.annual_report.subject"
+        );
+    }
+
+    #[test]
+    fn subscriptions_are_validated_as_mastodon_validates_them() {
+        let (_, p256dh) = super::generate_vapid_keypair().unwrap();
+        let auth = "tBHItJI5svbpez7KI4CCXg";
+        assert!(subscription_errors("https://push.example/a", &p256dh, auth).is_empty());
+        assert_eq!(
+            subscription_errors("ftp://push.example/a", &p256dh, auth),
+            ["Endpoint is invalid"]
+        );
+        assert_eq!(
+            subscription_errors("https://push.example/a", "BNotAKey", auth),
+            ["is not a valid Ed25519 or Curve25519 key"]
+        );
+        assert_eq!(
+            subscription_errors("", "", ""),
+            [
+                "Endpoint can't be blank",
+                "Endpoint is invalid",
+                "Key p256dh can't be blank",
+                "Key auth can't be blank",
+                "is not a valid Ed25519 or Curve25519 key",
+            ]
         );
     }
 

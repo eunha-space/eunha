@@ -197,6 +197,14 @@ pub async fn create_subscription(
         )
         .execute(&state.db)
         .await?;
+        // `create!`'s validations; the old subscriptions stay destroyed.
+        let errors = crate::push::subscription_errors(&endpoint, &p256dh, &key_auth);
+        if !errors.is_empty() {
+            return Err(AppError::Unprocessable(format!(
+                "Validation failed: {}",
+                errors.join(", ")
+            )));
+        }
         let row = sqlx::query!(
             r#"INSERT INTO web_push_subscriptions
                  (access_token_id, endpoint, key_p256dh, key_auth, data, standard, user_id, created_at, updated_at)

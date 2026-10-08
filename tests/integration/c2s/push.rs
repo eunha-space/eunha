@@ -4,11 +4,12 @@ use serde_json::{json, Value};
 use crate::helpers::TestContext;
 
 fn fake_sub_payload(endpoint: &str) -> serde_json::Value {
+    let (_, p256dh) = eunha::push::generate_vapid_keypair().unwrap();
     json!({
         "subscription": {
             "endpoint": endpoint,
             "keys": {
-                "p256dh": "BNcRdreALRFXTkOOUHK1EtK2wtZ5MRe5dvXNkbmkjfGAaLfMIRyWTa8dFbGFnO2hFmPbq3bWI4_4lCLi0bJkLY=",
+                "p256dh": p256dh,
                 "auth": "tBHItJI5svbpez7KI4CCXg=="
             }
         },
@@ -341,8 +342,12 @@ async fn sign_up_notification(ctx: &TestContext) -> i64 {
 }
 
 async fn push(ctx: &TestContext, id: i64) -> anyhow::Result<()> {
-    use eunha::jobs::Job as _;
     let notification_id = sign_up_notification(ctx).await;
+    push_notification(ctx, id, notification_id).await
+}
+
+async fn push_notification(ctx: &TestContext, id: i64, notification_id: i64) -> anyhow::Result<()> {
+    use eunha::jobs::Job as _;
     eunha::push::PushNotificationWorker {
         web_push_subscription_id: id,
         notification_id: Some(notification_id),
@@ -609,4 +614,87 @@ async fn pushes_carry_mastodons_payload() {
         payload.title,
         "Translation missing: ko.notification_mailer.annual_report.subject"
     );
+}
+
+/// `Web::PushSubscription`'s validations: an endpoint that is no URL, or
+/// keys that cannot encrypt, are refused.
+#[tokio::test]
+async fn push_subscriptions_are_validated() {
+    let ctx = TestContext::new("push-valid").await;
+    let mut body = fake_sub_payload("ftp://push.example.com/x");
+    let resp = ctx
+        .api
+        .post_json("/api/v1/push/subscription", Some(&ctx.alice_token), &body)
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error: Value = resp.json().await.unwrap();
+    assert_eq!(error["error"], "Validation failed: Endpoint is invalid");
+
+    body["subscription"]["endpoint"] = json!("https://push.example.com/x");
+    body["subscription"]["keys"]["p256dh"] = json!("BNotAKey");
+    let resp = ctx
+        .api
+        .post_json("/api/v1/push/subscription", Some(&ctx.alice_token), &body)
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(subscriptions(&ctx).await, 0);
+}
+
+/// `Web::PushNotificationWorker#perform`: nothing is sent for a
+/// notification older than the TTL, one whose activity is gone, or one the
+/// subscription no longer wants; a subscription that is not valid is
+/// destroyed.
+#[tokio::test]
+async fn pushes_are_checked_again_when_sent() {
+    let ctx = TestContext::reaching_loopback("push-send-checks").await;
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(201));
+    let (endpoint, seen) = push_endpoint(status).await;
+    let id = subscribe(&ctx, &endpoint, true).await;
+    let sent = || seen.lock().unwrap().len();
+
+    // Pushed while fresh.
+    let notification = sign_up_notification(&ctx).await;
+    push_notification(&ctx, id, notification).await.unwrap();
+    assert_eq!(sent(), 1);
+
+    // Older than 48 hours: dropped.
+    sqlx::query("UPDATE notifications SET updated_at = now() - interval '49 hours' WHERE id = $1")
+        .bind(notification)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    push_notification(&ctx, id, notification).await.unwrap();
+    assert_eq!(sent(), 1);
+
+    // About an activity that is gone: dropped.
+    let notification = sign_up_notification(&ctx).await;
+    sqlx::query("UPDATE notifications SET activity_id = -1 WHERE id = $1")
+        .bind(notification)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    push_notification(&ctx, id, notification).await.unwrap();
+    assert_eq!(sent(), 1);
+
+    // The alert turned off since it was queued: dropped.
+    let notification = sign_up_notification(&ctx).await;
+    ctx.api
+        .put_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &json!({"data": {"alerts": {"mention": true}}}),
+        )
+        .await;
+    push_notification(&ctx, id, notification).await.unwrap();
+    assert_eq!(sent(), 1);
+
+    // A subscription with keys that cannot encrypt is destroyed.
+    sqlx::query("UPDATE web_push_subscriptions SET key_p256dh = 'BNotAKey' WHERE id = $1")
+        .bind(id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    push_notification(&ctx, id, notification).await.unwrap();
+    assert_eq!(sent(), 1);
+    assert_eq!(subscriptions(&ctx).await, 0);
 }
