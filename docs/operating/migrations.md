@@ -20,6 +20,10 @@ that has moved. `eunha migrate --check` answers the same question without
 applying anything, and exits non-zero when something is pending, so a deploy
 script can gate on it.
 
+The migrations are compiled into the binary from *migrations/*. The build script
+watches that directory, so adding or editing a migration rebuilds the binary
+that `eunha migrate` runs, without a `cargo clean` or a touched source file.
+
 `public.schema_migrations` is what makes a database self-describing: it is
 seeded for everything through 4.6.0 by `007_mastodon_schema_versions.sql`, and
 [`eunha import-mastodon`](./importing) refuses a dump whose newest migration is

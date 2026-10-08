@@ -13,6 +13,12 @@ use std::path::Path;
 fn main() {
     println!("cargo:rerun-if-changed=mastodon.toml");
     println!("cargo:rerun-if-changed=build.rs");
+    // `sqlx::migrate!` reads `migrations/` at compile time, but on stable Rust
+    // it cannot tell cargo about the directory, so a new migration would not
+    // reach the binary until something else forced a rebuild. Watching the
+    // directory here reruns this script, and so recompiles the crate, whenever
+    // a migration is added, edited or removed.
+    println!("cargo:rerun-if-changed=migrations");
 
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let manifest_path = Path::new(&manifest_dir).join("mastodon.toml");
