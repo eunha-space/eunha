@@ -13,7 +13,7 @@ async fn test_account_delete_page_and_challenge() {
 
     // Signed out, the page sends you to the login form.
     let anon = ctx.api.get("/account/delete", None).await;
-    assert_eq!(anon.status(), StatusCode::SEE_OTHER);
+    assert_eq!(anon.status(), StatusCode::FOUND);
 
     let page = ctx
         .api

@@ -106,7 +106,7 @@ async fn test_sessions_are_listed_and_revoked() {
         )
         .await;
     assert_eq!(revoked.status(), StatusCode::OK);
-    assert_eq!(account_page(&ctx, &firefox).await, StatusCode::SEE_OTHER);
+    assert_eq!(account_page(&ctx, &firefox).await, StatusCode::FOUND);
     let gone = ctx
         .api
         .get("/api/v1/accounts/verify_credentials", Some(&session_token))
@@ -142,7 +142,7 @@ async fn test_sessions_are_listed_and_revoked() {
         .send()
         .await
         .unwrap();
-    assert_eq!(account_page(&ctx, &chrome).await, StatusCode::SEE_OTHER);
+    assert_eq!(account_page(&ctx, &chrome).await, StatusCode::FOUND);
     let left: i64 =
         sqlx::query_scalar("SELECT count(*) FROM session_activations WHERE user_id = $1")
             .bind(alice_user)
@@ -168,7 +168,7 @@ async fn test_sessions_are_capped_and_a_password_change_ends_the_others() {
             .await
             .unwrap();
     assert_eq!(count, 10, "`max_session_activations`");
-    assert_eq!(account_page(&ctx, &cookies[0]).await, StatusCode::SEE_OTHER);
+    assert_eq!(account_page(&ctx, &cookies[0]).await, StatusCode::FOUND);
 
     let keep = cookies.last().unwrap().clone();
     let changed = ctx
@@ -187,7 +187,7 @@ async fn test_sessions_are_capped_and_a_password_change_ends_the_others() {
         .unwrap();
     assert_eq!(changed.status(), StatusCode::SEE_OTHER);
     assert_eq!(account_page(&ctx, &keep).await, StatusCode::OK);
-    assert_eq!(account_page(&ctx, &cookies[5]).await, StatusCode::SEE_OTHER);
+    assert_eq!(account_page(&ctx, &cookies[5]).await, StatusCode::FOUND);
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM session_activations WHERE user_id = $1")
             .bind(alice_user)

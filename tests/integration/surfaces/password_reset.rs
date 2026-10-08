@@ -181,7 +181,7 @@ async fn test_a_reset_sets_the_password_and_ends_every_session() {
         .send()
         .await
         .unwrap();
-    assert_eq!(page.status(), StatusCode::SEE_OTHER);
+    assert_eq!(page.status(), StatusCode::FOUND);
     let api = ctx
         .api
         .get(

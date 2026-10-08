@@ -147,7 +147,7 @@ pub async fn account_home(
     let locale = Locale::detect(None, accept_language(&headers));
 
     let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     // `require_functional!`: an unconfirmed user is sent to confirm.
     if !user_confirmed(&state, session.user_id).await {
@@ -428,6 +428,16 @@ fn stored_location(headers: &HeaderMap) -> Option<String> {
     (path.starts_with('/') && !path.starts_with("//") && !path.contains('\\')).then_some(path)
 }
 
+/// The account pages' own redirect to the sign-in page when no one is signed
+/// in: a `302`, as Rails' `redirect_to` answers, with nothing stored.
+fn to_sign_in() -> Response {
+    (
+        axum::http::StatusCode::FOUND,
+        [(header::LOCATION, "/account/login")],
+    )
+        .into_response()
+}
+
 /// `authenticate_user!` failing: Devise's failure app remembers the page
 /// (`store_location_for`) and redirects to the sign-in page with a `302`.
 fn redirect_to_sign_in(path: &str) -> Response {
@@ -520,7 +530,7 @@ pub async fn sso_post(
     .flatten();
 
     let Some(token) = token else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
@@ -535,7 +545,7 @@ pub async fn sso_post(
     .await
     {
         Ok(id) => id,
-        Err(_) => return Redirect::to("/account/login").into_response(),
+        Err(_) => return to_sign_in(),
     };
 
     (
@@ -619,7 +629,7 @@ pub async fn password_page(
     let locale = Locale::detect(None, accept_language(&headers));
 
     let Some(_session) = get_session(&headers, &state, client_addr(client_ip)).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
 
     let domain = instance.domain.clone();
@@ -681,7 +691,7 @@ pub async fn password_post(
     }
 
     let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
 
     if form.new_password != form.new_password_confirm {
@@ -774,14 +784,14 @@ pub async fn delete_page(
     let locale = Locale::detect(None, accept_language(&headers));
 
     let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
 
     // `require_not_suspended!`
     let account = match load_deletion_subject(&state, session.user_id).await {
         Some(a) if a.suspended => return Redirect::to("/account").into_response(),
         Some(a) => a,
-        None => return Redirect::to("/account/login").into_response(),
+        None => return to_sign_in(),
     };
 
     let html = templates::render(
@@ -866,10 +876,10 @@ pub async fn delete_post(
     let htmx = is_htmx(&headers);
 
     let Some(session) = get_session(&headers, &state, client_addr(client_ip)).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     let Some(account) = load_deletion_subject(&state, session.user_id).await else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     if account.suspended {
         return Redirect::to("/account").into_response();
@@ -1053,7 +1063,7 @@ async fn render_setup(
     .await
     .ok()
     .flatten() else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     // `require_unconfirmed_or_pending!`.
     if user.confirmed && user.approved {
@@ -1111,7 +1121,7 @@ pub async fn setup_post(
     .await
     .ok()
     .flatten() else {
-        return Redirect::to("/account/login").into_response();
+        return to_sign_in();
     };
     if user.confirmed && user.approved {
         return Redirect::to("/").into_response();
