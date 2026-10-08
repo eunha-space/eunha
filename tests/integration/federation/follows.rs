@@ -610,3 +610,53 @@ async fn test_an_inbound_follow_is_accepted_by_its_request() {
         "https://rita.invalid/follows/1"
     );
 }
+
+/// `UnfollowService` runs under `with_redis_lock("relationship:<a>:<b>")`,
+/// the two ids smaller first: while another holds it, an unfollow is a
+/// `RaceConditionError`, a 503, and leaves the follow.
+#[tokio::test]
+async fn test_an_unfollow_waits_for_the_relationship_lock() {
+    let ctx = TestContext::new("follows-unfollow-lock").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    follow(&ctx, alice, bob, &format!("https://{}/f", ctx.domain)).await;
+
+    let name = format!("lock:relationship:{}:{}", alice.min(bob), alice.max(bob));
+    let held = eunha::redis_lock::try_acquire(&ctx.state, &name, 60_000)
+        .await
+        .expect("the lock is free");
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{bob}/unfollow"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), 503);
+    assert!(exists(&ctx, "follows", alice, bob).await);
+
+    drop(held);
+    // The guard releases in a task of its own.
+    let mut released = false;
+    for _ in 0..50 {
+        if let Some(lock) = eunha::redis_lock::try_acquire(&ctx.state, &name, 60_000).await {
+            drop(lock);
+            released = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(released);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{bob}/unfollow"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), 200);
+    assert!(!exists(&ctx, "follows", alice, bob).await);
+}

@@ -15,7 +15,8 @@ adds the separating colon, so the ACL key pattern for the example is
 `~tenant-example:*`. Every Redis key Eunha owns — feeds (`feed:home:<id>`,
 `feed:list:<id>`) and the boosts each feed tracks (`feed:home:<id>:reblogs` and
 `feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
-preview card locks, tombstones, the oEmbed endpoints
+preview card locks and the lock an unfollow takes on the two accounts
+(`lock:relationship:<id>:<id>`), tombstones, the oEmbed endpoints
 remembered for each domain, posting idempotency, notification
 group state, async refreshes and the job batches that finish them
 (`worker_batch:<id>`), the days each server failed deliveries on, the

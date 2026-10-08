@@ -442,7 +442,35 @@ pub async fn unfollow_account(
 /// follower whose follow of a local account goes is told with a `Reject` of
 /// it, as "remove follower" and a block tell it. `skip_unmerge` leaves the
 /// followee's posts in the follower's home feed, as a migrated follow does.
+///
+/// It runs under `with_redis_lock("relationship:<lower id>:<higher id>")`,
+/// which, held by another, raises `Mastodon::RaceConditionError`: a 503 from
+/// the API, a retry from a job.
 pub async fn unfollow(
+    state: &AppState,
+    follower_id: i64,
+    target_id: i64,
+    skip_unmerge: bool,
+) -> AppResult<()> {
+    let name = relationship_lock_name(follower_id, target_id);
+    let Some(_lock) =
+        crate::redis_lock::try_acquire(state, &name, crate::redis_lock::DEFAULT_TTL_MS).await
+    else {
+        return Err(AppError::ServiceUnavailable(
+            "There was a temporary problem serving your request, please try again".into(),
+        ));
+    };
+    unfollow_locked(state, follower_id, target_id, skip_unmerge).await
+}
+
+/// The key `UnfollowService` locks: `Lockable`'s `lock:` and
+/// `relationship:` with the two ids, smaller first.
+pub(crate) fn relationship_lock_name(a: i64, b: i64) -> String {
+    format!("lock:relationship:{}:{}", a.min(b), a.max(b))
+}
+
+/// `unfollow! || undo_follow_request!`, under the lock.
+async fn unfollow_locked(
     state: &AppState,
     follower_id: i64,
     target_id: i64,
