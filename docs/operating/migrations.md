@@ -98,6 +98,31 @@ database migrated by the tests have none either. Whoever is dropped can sign up
 again.
 
 
+Notifications written before migration 032
+------------------------------------------
+
+A notification points at what it is about: its `activity_type` and
+`activity_id`. Until migration 032, eunha pointed a favourite's at the post
+favourited, where Mastodon points it at the `Favourite`; a boost's at the post
+boosted rather than the boost; a poll's at the poll's post rather than the
+`Poll`; and a follow's sometimes at the recipient's follow of the sender
+rather than the sender's of the recipient. Mastodon serving such a database
+would find no post for these, and undoing a favourite or a boost would leave
+its notification behind.
+
+Migration 032 points each of them where Mastodon does when that activity
+still exists: the sender's favourite of the post, the sender's boost of it
+(kept even once deleted), the post's poll, the sender's follow of the
+recipient. A notification whose activity is gone — a favourite since undone,
+say, whose notification eunha did not remove — is left as it was, and
+Mastodon shows it without its post. To list what is left:
+
+~~~~ sql
+SELECT id, "type", activity_id FROM notifications
+WHERE activity_type = 'Status' AND "type" IN ('favourite', 'poll');
+~~~~
+
+
 Domain blocks written before migration 015
 ------------------------------------------
 

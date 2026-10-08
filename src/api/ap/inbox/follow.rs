@@ -470,27 +470,17 @@ async fn unfollow(state: &AppState, account_id: i64, target_id: i64) -> AppResul
 /// The favourite destroyed, with its notification and the status's count.
 /// Says whether there was one.
 async fn unfavourite(state: &AppState, account_id: i64, status_id: i64) -> AppResult<bool> {
-    let removed = sqlx::query!(
-        "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2",
+    let Some(favourite_id) = sqlx::query_scalar!(
+        "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2 RETURNING id",
         account_id,
         status_id
     )
-    .execute(&state.db)
+    .fetch_optional(&state.db)
     .await?
-    .rows_affected()
-        > 0;
-    if !removed {
+    else {
         return Ok(false);
-    }
-    sqlx::query!(
-        r#"DELETE FROM notifications
-           WHERE from_account_id = $1 AND "type" = 'favourite'
-             AND activity_type = 'Status' AND activity_id = $2"#,
-        account_id,
-        status_id,
-    )
-    .execute(&state.db)
-    .await?;
+    };
+    crate::remove_status::destroy_notification_of(&state.db, "Favourite", favourite_id).await?;
     crate::search::elasticsearch::indexing::status_interaction(state, status_id).await;
     sqlx::query!(
         r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), untrusted_favourites_count = CASE WHEN untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - favourites_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,

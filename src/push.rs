@@ -717,54 +717,86 @@ async fn notification_group_key(
     Some(format!("{prefix}-{bucket}"))
 }
 
-/// Resolve a notification's polymorphic activity (`activity_type`, `activity_id`).
-/// Both columns are NOT NULL in the schema, so a notification without a
-/// resolvable activity is dropped rather than inserted with NULLs.
+/// Resolve a notification's polymorphic activity (`activity_type`, `activity_id`)
+/// as Mastodon's callers hand it to `LocalNotificationWorker`, and when the
+/// activity was made. Both columns are NOT NULL in the schema, so a
+/// notification without a resolvable activity is dropped rather than
+/// inserted with NULLs.
+///
+/// `status_id` is the post the notification is about (`target_status`): the
+/// favourited or boosted post, the post mentioning or quoting the
+/// recipient, the poll's post.
 async fn notification_activity(
     db: &sqlx::PgPool,
     notification_type: &str,
     recipient_id: i64,
     from_account_id: i64,
     status_id: Option<i64>,
-) -> Option<(&'static str, i64)> {
-    // A `quote` is about the Quote, as Mastodon's `LocalNotificationWorker`
-    // is given it; `status_id` is the quoting status.
-    if notification_type == "quote" {
-        let sid = status_id?;
-        return sqlx::query_scalar!("SELECT id FROM quotes WHERE status_id = $1", sid)
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten()
-            .map(|id| ("Quote", id));
-    }
-    // A `mention` is about the recipient's `Mention`, as
-    // `notify_mentioned_accounts!` hands it to `LocalNotificationWorker`;
-    // without one there is nothing to notify of.
-    if notification_type == "mention" {
-        let sid = status_id?;
-        return sqlx::query_scalar!(
-            "SELECT id FROM mentions WHERE status_id = $1 AND account_id = $2",
-            sid,
+) -> Option<(&'static str, i64, chrono::NaiveDateTime)> {
+    let found = match notification_type {
+        // `FavouriteService` and `ActivityPub::Activity::Like`: the
+        // `Favourite`.
+        "favourite" => sqlx::query!(
+            "SELECT id, created_at FROM favourites WHERE account_id = $1 AND status_id = $2",
+            from_account_id,
+            status_id?,
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| ("Favourite", r.id, r.created_at)),
+        // `ReblogService` and `ActivityPub::Activity::Announce`: the boost,
+        // a status of the booster's.
+        "reblog" => sqlx::query!(
+            r#"SELECT id, created_at FROM statuses
+               WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL
+               ORDER BY id DESC LIMIT 1"#,
+            from_account_id,
+            status_id?,
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| ("Status", r.id, r.created_at)),
+        // `PollExpirationNotifyWorker`: the `Poll`.
+        "poll" => sqlx::query!(
+            "SELECT id, created_at FROM polls WHERE status_id = $1",
+            status_id?,
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| ("Poll", r.id, r.created_at)),
+        // A `quote` is about the Quote; `status_id` is the quoting status.
+        "quote" => sqlx::query!(
+            "SELECT id, created_at FROM quotes WHERE status_id = $1",
+            status_id?,
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| ("Quote", r.id, r.created_at)),
+        // A `mention` is about the recipient's `Mention`, as
+        // `notify_mentioned_accounts!` hands it to `LocalNotificationWorker`;
+        // without one there is nothing to notify of.
+        "mention" => sqlx::query!(
+            "SELECT id, created_at FROM mentions WHERE status_id = $1 AND account_id = $2",
+            status_id?,
             recipient_id,
         )
         .fetch_optional(db)
         .await
         .ok()
         .flatten()
-        .map(|id| ("Mention", id));
-    }
-    if let Some(sid) = status_id {
-        return Some(("Status", sid));
-    }
-    match notification_type {
-        // The Follow links follower→followed; the direction differs for a fresh
-        // follow vs. an accepted follow request, so match either orientation.
-        "follow" => sqlx::query_scalar!(
-            r#"SELECT id FROM follows
-               WHERE (account_id = $1 AND target_account_id = $2)
-                  OR (account_id = $2 AND target_account_id = $1)
-               LIMIT 1"#,
+        .map(|r| ("Mention", r.id, r.created_at)),
+        // The `Follow` of the sender's of the recipient, whether it was made
+        // at once or by accepting a request.
+        "follow" => sqlx::query!(
+            "SELECT id, created_at FROM follows WHERE account_id = $1 AND target_account_id = $2",
             from_account_id,
             recipient_id,
         )
@@ -772,9 +804,9 @@ async fn notification_activity(
         .await
         .ok()
         .flatten()
-        .map(|id| ("Follow", id)),
-        "follow_request" => sqlx::query_scalar!(
-            "SELECT id FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 LIMIT 1",
+        .map(|r| ("Follow", r.id, r.created_at)),
+        "follow_request" => sqlx::query!(
+            "SELECT id, created_at FROM follow_requests WHERE account_id = $1 AND target_account_id = $2",
             from_account_id,
             recipient_id,
         )
@@ -782,9 +814,43 @@ async fn notification_activity(
         .await
         .ok()
         .flatten()
-        .map(|id| ("FollowRequest", id)),
-        _ => None,
-    }
+        .map(|r| ("FollowRequest", r.id, r.created_at)),
+        // `status`, `update` and `quoted_update` are about the status itself.
+        _ => {
+            let sid = status_id?;
+            sqlx::query_scalar!("SELECT created_at FROM statuses WHERE id = $1", sid)
+                .fetch_optional(db)
+                .await
+                .ok()
+                .flatten()
+                .map(|created_at| ("Status", sid, created_at))
+        }
+    };
+    found
+}
+
+/// When the activity a notification is about was made, for an activity
+/// handed in rather than resolved.
+async fn activity_created_at(
+    db: &sqlx::PgPool,
+    activity_type: &str,
+    activity_id: i64,
+) -> Option<chrono::NaiveDateTime> {
+    let table = match activity_type {
+        "Account" => "accounts",
+        "Collection" => "collections",
+        "CollectionItem" => "collection_items",
+        "Report" => "reports",
+        "AccountWarning" => "account_warnings",
+        "AccountRelationshipSeveranceEvent" => "account_relationship_severance_events",
+        _ => return None,
+    };
+    sqlx::query_scalar(&format!("SELECT created_at FROM {table} WHERE id = $1"))
+        .bind(activity_id)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
 }
 
 pub async fn create_and_push(
@@ -1061,11 +1127,12 @@ async fn notify(
         crate::moderation::notification_policy::Decision::Deliver => false,
     };
 
-    // Resolve the polymorphic activity (activity_type/activity_id are NOT NULL).
-    // Status-bearing notifications point at the Status; follow(_request)s point
-    // at the Follow/FollowRequest row.
+    // Resolve the polymorphic activity (activity_type/activity_id are NOT NULL),
+    // and when it was made.
     let activity = match activity {
-        Some(activity) => Some(activity),
+        Some((kind, id)) => activity_created_at(&db, kind, id)
+            .await
+            .map(|created_at| (kind, id, created_at)),
         None => {
             notification_activity(
                 &db,
@@ -1077,7 +1144,7 @@ async fn notify(
             .await
         }
     };
-    let Some((activity_type_val, activity_id_val)) = activity else {
+    let Some((activity_type_val, activity_id_val, activity_created)) = activity else {
         tracing::warn!(
             notification_type,
             "no activity found for notification; skipping"
@@ -1129,9 +1196,6 @@ async fn notify(
     // read, because the decision depends on when the previous one arrived.
     // `set_group_key!` returns early for a filtered notification: it keeps no
     // key, even once it is unfiltered, and leaves the running bucket alone.
-    // The groupable types' activities — the favourite, the boost, the follow —
-    // are made just before they are notified of, so now is their
-    // `created_at`.
     let group_key = if filtered {
         None
     } else {
@@ -1141,7 +1205,7 @@ async fn notify(
             recipient_id,
             notification_type,
             status_id,
-            chrono::Utc::now(),
+            activity_created.and_utc(),
         )
         .await
     };
@@ -1308,14 +1372,10 @@ pub async fn notify_local(
         // `set_group_key!`: of these types only `admin.sign_up` groups, by
         // the hour its account was made in.
         let group_key = if activity_type == "Account" {
-            let created_at = sqlx::query_scalar!(
-                "SELECT created_at FROM accounts WHERE id = $1",
-                activity_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .map(|t| t.and_utc())
-            .unwrap_or_else(chrono::Utc::now);
+            let created_at = activity_created_at(&state.db, activity_type, activity_id)
+                .await
+                .map(|t| t.and_utc())
+                .unwrap_or_else(chrono::Utc::now);
             notification_group_key(
                 &mut state.redis_coordination.clone(),
                 &state.redis_keys,

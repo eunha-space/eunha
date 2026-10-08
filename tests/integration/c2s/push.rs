@@ -616,6 +616,44 @@ async fn pushes_carry_mastodons_payload() {
     );
 }
 
+/// A favourite's and a boost's push read the post they are about, through
+/// the `Favourite` and the boost their notifications point at.
+#[tokio::test]
+async fn pushes_read_the_post_a_favourite_or_boost_is_about() {
+    let ctx = TestContext::new("push-payload-target").await;
+    let id = subscribe_with(&ctx, "https://push.example.com/t", json!({})).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "a post worth keeping", "public")
+        .await;
+    let sid = status["id"].as_str().unwrap();
+    for verb in ["favourite", "reblog"] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{sid}/{verb}"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let notification: i64 = sqlx::query_scalar(
+            r#"SELECT id FROM notifications WHERE account_id = $1 AND "type" = $2"#,
+        )
+        .bind(alice)
+        .bind(verb)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        let payload = eunha::push::payload(&ctx.state, id, notification)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(payload.body, "a post worth keeping", "{verb}");
+    }
+}
+
 /// `Web::PushSubscription`'s validations: an endpoint that is no URL, or
 /// keys that cannot encrypt, are refused.
 #[tokio::test]

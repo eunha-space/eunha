@@ -747,6 +747,23 @@ pub(crate) async fn destroy_poll(db: &sqlx::PgPool, poll_id: i64) -> Result<()> 
     Ok(())
 }
 
+/// `has_one :notification, as: :activity, dependent: :destroy` for one
+/// activity destroyed on its own — a `Favourite` undone, say — with the
+/// notification request it may have counted towards reconsidered.
+pub(crate) async fn destroy_notification_of(
+    db: &sqlx::PgPool,
+    activity_type: &str,
+    activity_id: i64,
+) -> Result<()> {
+    let mut tx = db.begin().await?;
+    let touched = destroy_notifications(&mut tx, activity_type, &[activity_id], true).await?;
+    for (account_id, from_account_id) in touched {
+        reconsider_notification_request(&mut tx, account_id, from_account_id).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 async fn destroy_notifications(
     conn: &mut PgConnection,
     activity_type: &str,

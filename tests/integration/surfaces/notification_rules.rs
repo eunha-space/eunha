@@ -479,3 +479,241 @@ async fn test_an_expired_mute_still_hides_a_staff_notification() {
 
     assert_eq!(notification_count(&ctx, alice).await, 0);
 }
+
+/// The activity a notification of `kind` to `account_id` points at.
+async fn stored_activity(ctx: &TestContext, account_id: i64, kind: &str) -> Option<(String, i64)> {
+    sqlx::query_as::<_, (String, i64)>(
+        "SELECT activity_type, activity_id FROM notifications
+         WHERE account_id = $1 AND type = $2 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(kind)
+    .fetch_optional(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// `FavouriteService` notifies of the `Favourite`, which takes its
+/// notification with it when it is undone (`has_one :notification,
+/// dependent: :destroy`); the notification still shows the post.
+#[tokio::test]
+async fn test_a_favourite_notification_is_about_the_favourite() {
+    let ctx = TestContext::new("notify-activity-favourite").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "favourite me", "public")
+        .await;
+    let sid = status["id"].as_str().unwrap();
+    let path = |verb: &str| format!("/api/v1/statuses/{sid}/{verb}");
+    let resp = ctx
+        .api
+        .post_json(
+            &path("favourite"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let favourite_id: i64 = sqlx::query_scalar("SELECT id FROM favourites WHERE status_id = $1")
+        .bind(sid.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored_activity(&ctx, alice, "favourite").await,
+        Some(("Favourite".to_owned(), favourite_id))
+    );
+    let listed: Vec<serde_json::Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed[0]["status"]["id"].as_str(), Some(sid));
+
+    let resp = ctx
+        .api
+        .post_json(
+            &path("unfavourite"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(stored_activity(&ctx, alice, "favourite").await, None);
+}
+
+/// `ReblogService` notifies of the boost, a status of the booster's; the
+/// notification shows the post boosted (`status&.reblog`), and goes with
+/// the boost.
+#[tokio::test]
+async fn test_a_reblog_notification_is_about_the_boost() {
+    let ctx = TestContext::new("notify-activity-reblog").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "boost me", "public")
+        .await;
+    let sid = status["id"].as_str().unwrap();
+    let boost: serde_json::Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{sid}/reblog"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boost_id: i64 = boost["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        stored_activity(&ctx, alice, "reblog").await,
+        Some(("Status".to_owned(), boost_id))
+    );
+    let listed: Vec<serde_json::Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed[0]["type"], "reblog");
+    assert_eq!(listed[0]["status"]["id"].as_str(), Some(sid));
+
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{sid}/unreblog"),
+            Some(&ctx.bob_token),
+            &serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(resp.status().as_u16(), 200);
+    ctx.state.jobs.settle().await;
+    assert_eq!(stored_activity(&ctx, alice, "reblog").await, None);
+}
+
+/// A follow notification is about the sender's `Follow` of the recipient,
+/// even when the recipient follows the sender too.
+#[tokio::test]
+async fn test_a_follow_notification_is_about_the_senders_follow() {
+    let ctx = TestContext::new("notify-activity-follow").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    let bobs_follow: i64 = sqlx::query_scalar(
+        "SELECT id FROM follows WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(bob)
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_activity(&ctx, alice, "follow").await,
+        Some(("Follow".to_owned(), bobs_follow))
+    );
+}
+
+/// Migration 032 points the notifications eunha wrote before it at
+/// Mastodon's activities, where they still exist, and leaves the rest.
+#[tokio::test]
+async fn test_migration_032_points_notifications_at_mastodons_activities() {
+    let ctx = TestContext::new("notify-activity-migration").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "old notifications", "public")
+        .await;
+    let sid: i64 = post["id"].as_str().unwrap().parse().unwrap();
+    let gone = ctx
+        .api
+        .post_status(&ctx.alice_token, "unfavourited since", "public")
+        .await;
+    let gone_id: i64 = gone["id"].as_str().unwrap().parse().unwrap();
+    for verb in ["favourite", "reblog"] {
+        ctx.api
+            .post_json(
+                &format!("/api/v1/statuses/{sid}/{verb}"),
+                Some(&ctx.bob_token),
+                &serde_json::json!({}),
+            )
+            .await;
+    }
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    let (favourite_id, boost_id, bobs_follow, alices_follow): (i64, i64, i64, i64) =
+        sqlx::query_as(
+            "SELECT (SELECT id FROM favourites WHERE account_id = $2),
+                    (SELECT id FROM statuses WHERE account_id = $2 AND reblog_of_id = $3),
+                    (SELECT id FROM follows WHERE account_id = $2 AND target_account_id = $1),
+                    (SELECT id FROM follows WHERE account_id = $1 AND target_account_id = $2)",
+        )
+        .bind(alice)
+        .bind(bob)
+        .bind(sid)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+
+    // As eunha wrote them: about the post, and the wrong follow.
+    for (kind, activity_type, activity_id) in [
+        ("favourite", "Status", sid),
+        ("reblog", "Status", sid),
+        ("follow", "Follow", alices_follow),
+    ] {
+        sqlx::query(
+            "UPDATE notifications SET activity_type = $3, activity_id = $4
+             WHERE account_id = $1 AND type = $2",
+        )
+        .bind(alice)
+        .bind(kind)
+        .bind(activity_type)
+        .bind(activity_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO notifications (account_id, from_account_id, type, activity_type,
+                                    activity_id, created_at, updated_at)
+         VALUES ($1, $2, 'favourite', 'Status', $3, now(), now())",
+    )
+    .bind(alice)
+    .bind(bob)
+    .bind(gone_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/032_notification_activities.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT type, activity_type, activity_id FROM notifications
+         WHERE account_id = $1 ORDER BY type, activity_type, activity_id",
+    )
+    .bind(alice)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        [
+            ("favourite".to_owned(), "Favourite".to_owned(), favourite_id),
+            ("favourite".to_owned(), "Status".to_owned(), gone_id),
+            ("follow".to_owned(), "Follow".to_owned(), bobs_follow),
+            ("reblog".to_owned(), "Status".to_owned(), boost_id),
+        ]
+    );
+}

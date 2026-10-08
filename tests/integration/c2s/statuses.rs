@@ -2972,13 +2972,22 @@ async fn test_a_remote_poll_is_noticed_to_its_local_voters() {
         .unwrap();
     eunha::jobs::make_due(&ctx.state).await.unwrap();
     eunha::jobs::drain(&ctx.state).await.unwrap();
-    let notified: Vec<i64> = sqlx::query_scalar(
-        "SELECT account_id FROM notifications WHERE type = 'poll' ORDER BY account_id",
+    let notified: Vec<(i64, String, i64)> = sqlx::query_as(
+        "SELECT account_id, activity_type, activity_id FROM notifications
+         WHERE type = 'poll' ORDER BY account_id",
     )
     .fetch_all(&ctx.db)
     .await
     .unwrap();
-    assert_eq!(notified, [ctx.bob_id.parse::<i64>().unwrap()]);
+    assert_eq!(notified.len(), 1);
+    assert_eq!(notified[0].0, ctx.bob_id.parse::<i64>().unwrap());
+    // `PollExpirationNotifyWorker` notifies of the `Poll`.
+    assert_eq!(notified[0].1, "Poll");
+    let poll_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM polls")
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap();
+    assert!(poll_ids.contains(&notified[0].2));
 }
 
 /// GET /api/v1/polls/:id returns poll details.

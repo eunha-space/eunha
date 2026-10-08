@@ -268,9 +268,8 @@ async fn load_account(state: &AppState, id: i64) -> anyhow::Result<Option<Accoun
 }
 
 /// `Notification#target_status`: the post a notification is about, from
-/// whichever activity it points at — the status itself as eunha records it,
-/// or Mastodon's `Mention`, `Favourite` and `Quote` — and for a boost, the
-/// post boosted.
+/// whichever activity it points at — the status itself, its `Mention`,
+/// `Favourite`, `Quote` or `Poll` — and for a boost, the post boosted.
 pub(crate) async fn target_status(
     state: &AppState,
     activity_type: &str,
@@ -314,10 +313,9 @@ pub(crate) async fn target_status(
     )
     .fetch_optional(&state.db)
     .await?;
-    // A `reblog` notification Mastodon wrote points at the boost; eunha's
-    // points at the post boosted.
+    // A `reblog` notification points at the boost: `status&.reblog`.
     match status {
-        Some(s) if kind == "reblog" && s.reblog_of_id.is_some() => Ok(sqlx::query_as!(
+        Some(s) if kind == "reblog" => Ok(sqlx::query_as!(
             crate::db::models::Status,
             "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
             s.reblog_of_id,

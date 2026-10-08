@@ -199,7 +199,8 @@ async fn batch_notification_status_ids(
     sqlx::query!(
         r#"SELECT n.id,
                CASE n.activity_type
-                   WHEN 'Status'    THEN n.activity_id
+                   -- `status&.reblog` for a boost, the boost being the activity.
+                   WHEN 'Status'    THEN CASE WHEN n."type" = 'reblog' THEN st.reblog_of_id ELSE n.activity_id END
                    WHEN 'Mention'   THEN m.status_id
                    WHEN 'Favourite' THEN f.status_id
                    WHEN 'Poll'      THEN p.status_id
@@ -207,6 +208,7 @@ async fn batch_notification_status_ids(
                    ELSE NULL
                END AS "status_id: i64"
            FROM notifications n
+           LEFT JOIN statuses  st ON st.id = n.activity_id AND n.activity_type = 'Status' AND n."type" = 'reblog'
            LEFT JOIN mentions   m ON m.id = n.activity_id AND n.activity_type = 'Mention'
            LEFT JOIN favourites f ON f.id = n.activity_id AND n.activity_type = 'Favourite'
            LEFT JOIN polls      p ON p.id = n.activity_id AND n.activity_type = 'Poll'

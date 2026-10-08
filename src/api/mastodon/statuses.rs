@@ -641,14 +641,16 @@ pub async fn unfavourite_status(
     let (s, account) = fetch_status_with_account(&state, id).await?;
     check_status_visible(&state, &s, auth.account_id).await?;
 
-    let unfavourited = sqlx::query!(
-        "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2",
+    let unfavourited = sqlx::query_scalar!(
+        "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2 RETURNING id",
         auth.account_id,
         id
     )
-    .execute(&state.db)
+    .fetch_optional(&state.db)
     .await?;
-    if unfavourited.rows_affected() > 0 {
+    if let Some(favourite_id) = unfavourited {
+        // `Favourite`'s `has_one :notification, dependent: :destroy`.
+        crate::remove_status::destroy_notification_of(&state.db, "Favourite", favourite_id).await?;
         crate::statuses_cleanup::invalidate_cleanup_info(
             &state,
             auth.account_id,
