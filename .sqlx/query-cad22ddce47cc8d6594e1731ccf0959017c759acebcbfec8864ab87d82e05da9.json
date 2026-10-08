@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO web_push_subscriptions\n                 (access_token_id, endpoint, key_p256dh, key_auth, data, standard, user_id, created_at, updated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())\n               RETURNING id, standard, data as \"data: serde_json::Value\"",
+  "query": "INSERT INTO web_push_subscriptions\n                 (access_token_id, endpoint, key_p256dh, key_auth, data, standard, user_id, created_at, updated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())\n               RETURNING id, endpoint, standard, data as \"data: serde_json::Value\"",
   "describe": {
     "columns": [
       {
@@ -10,11 +10,16 @@
       },
       {
         "ordinal": 1,
+        "name": "endpoint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
         "name": "standard",
         "type_info": "Bool"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "data: serde_json::Value",
         "type_info": "Json"
       }
@@ -33,8 +38,9 @@
     "nullable": [
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "027b2a4bcc7636bb639d940e97276ff7287f6a6e4898b62fdfeb10dbc09d534b"
+  "hash": "cad22ddce47cc8d6594e1731ccf0959017c759acebcbfec8864ab87d82e05da9"
 }

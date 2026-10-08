@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, endpoint, standard, data as \"data: serde_json::Value\"\n           FROM web_push_subscriptions\n           WHERE access_token_id = $1",
+  "query": "SELECT id, endpoint, standard, data as \"data: serde_json::Value\"\n           FROM web_push_subscriptions\n           WHERE access_token_id = $1\n           ORDER BY id LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       true
     ]
   },
-  "hash": "817b71be3728341ea756282ec0f9bf09de497e246c4319fed1b32e97596bf1b5"
+  "hash": "5798d5b5b9c63d83d83692f8ec849e2a6d95c4fb30a10bdc30d57945b38c1358"
 }

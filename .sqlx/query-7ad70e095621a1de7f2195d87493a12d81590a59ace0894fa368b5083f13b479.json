@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wps.endpoint, wps.key_p256dh, wps.key_auth, wps.standard,\n                      wps.data AS \"data: serde_json::Value\",\n                      EXISTS (SELECT 1 FROM users u WHERE u.id = wps.user_id)\n                        AND EXISTS (SELECT 1 FROM oauth_access_tokens t\n                                    WHERE t.id = wps.access_token_id) AS \"owned!\"\n               FROM web_push_subscriptions wps WHERE wps.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "endpoint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_p256dh",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "key_auth",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "standard",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "data: serde_json::Value",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 5,
+        "name": "owned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "7ad70e095621a1de7f2195d87493a12d81590a59ace0894fa368b5083f13b479"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE web_push_subscriptions SET data = $2, updated_at = now()\n           WHERE id = $1\n           RETURNING id, endpoint, standard, data as \"data: serde_json::Value\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "endpoint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "standard",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "data: serde_json::Value",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Json"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7680877b1b769e39b90d2d93c3ad232924b8e631edd733b1eba8c42f80c82464"
+}

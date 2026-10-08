@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.token AS \"token?\", u.locale\n           FROM web_push_subscriptions wps\n           JOIN users u ON u.id = wps.user_id\n           LEFT JOIN oauth_access_tokens t ON t.id = wps.access_token_id\n           WHERE wps.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "locale",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "4422834b74810886188eaffa493d90c5bc8b45fcfee93247a020efe2f072fa34"
+}

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, \"type\", account_id, from_account_id, activity_type, activity_id, updated_at\n           FROM notifications WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "from_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "activity_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "activity_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2d2b3b071a495a4276df5111021a103acc9f736fdfb9ab8e28c18d19fa901a97"
+}

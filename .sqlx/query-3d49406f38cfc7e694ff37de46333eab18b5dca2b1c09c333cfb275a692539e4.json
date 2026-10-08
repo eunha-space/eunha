@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wps.id, wps.data as \"data: serde_json::Value\"\n           FROM web_push_subscriptions wps\n           JOIN users u ON u.id = wps.user_id\n           WHERE u.account_id = $1\n           ORDER BY wps.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "data: serde_json::Value",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "3d49406f38cfc7e694ff37de46333eab18b5dca2b1c09c333cfb275a692539e4"
+}
