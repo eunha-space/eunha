@@ -316,13 +316,41 @@ fn api_caching(path: &str) -> Option<ApiCaching> {
     })
 }
 
+/// What an API response varies by, as each controller's `vary_by` says:
+/// `Authorization` (`Api::BaseController`) unless the controller says
+/// otherwise. `None` is `vary_by ''`, no `Vary` at all.
+fn api_vary(
+    path: &str,
+    disallows_unauthenticated: bool,
+    show_all_domain_blocks: bool,
+) -> Option<&'static str> {
+    match path {
+        // `Api::V2::InstancesController`, and `Api::V1::InstancesController`
+        // under it.
+        "/api/v1/instance" | "/api/v2/instance" => None,
+        // `vary_by '', if: -> { Setting.show_domain_blocks == 'all' }`.
+        "/api/v1/instance/domain_blocks" => (!show_all_domain_blocks).then_some("Authorization"),
+        // `Api::V1::Instances::BaseController`.
+        p if p.starts_with("/api/v1/instance/") => None,
+        "/api/v1/peers/search" => None,
+        // `vary_by '', unless: :disallow_unauthenticated_api_access?`.
+        "/api/v1/custom_emojis" => disallows_unauthenticated.then_some("Authorization"),
+        "/api/v1/trends/statuses" | "/api/v1/trends/links" => {
+            Some("Authorization, Accept-Language")
+        }
+        _ => Some("Authorization"),
+    }
+}
+
 /// `ApplicationController#set_cache_control_defaults` and
 /// `Api::CachingConcern`: an API response is `private, no-store` unless its
 /// action says it may be cached — for five minutes whoever asked
 /// (`cache_even_if_authenticated!`, not in limited federation mode), or for
 /// fifteen seconds when nobody is signed in (`cache_if_unauthenticated!`),
 /// either served stale for thirty seconds while revalidating and for a day
-/// on error.
+/// on error. It carries the controller's `Vary` ([`api_vary`]), and
+/// `CacheConcern#enforce_cache_control!` makes one that varies by
+/// `Authorization` `private, no-store` again when the request had one.
 pub async fn api_cache_control(req: Request, next: Next) -> Response {
     use axum::http::{header, HeaderValue, Method};
 
@@ -339,34 +367,60 @@ pub async fn api_cache_control(req: Request, next: Next) -> Response {
         .extensions()
         .get::<AuthenticatedUser>()
         .is_some_and(|a| a.user_id.is_some());
+    let authorization = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .is_some_and(|v| !v.as_bytes().trim_ascii().is_empty());
     let mut caching = (req.method() == Method::GET)
         .then(|| api_caching(&path))
         .flatten();
+    let disallows_unauthenticated = state
+        .as_ref()
+        .is_some_and(|s| s.instance.disallows_unauthenticated_api_access());
+    let mut show_all_domain_blocks = false;
     if let Some(state) = &state {
         match path.as_str() {
             // `cache_even_if_authenticated! unless
             // disallow_unauthenticated_api_access?`.
-            "/api/v1/custom_emojis" if state.instance.disallows_unauthenticated_api_access() => {
+            "/api/v1/custom_emojis" if disallows_unauthenticated => {
                 caching = None;
             }
             // `DomainBlocksController#index`, by `show_domain_blocks`.
-            "/api/v1/instance/domain_blocks" if req.method() == Method::GET => {
-                caching = Some(
-                    if crate::settings::string(state, "show_domain_blocks").await == "all" {
+            "/api/v1/instance/domain_blocks" => {
+                show_all_domain_blocks =
+                    crate::settings::string(state, "show_domain_blocks").await == "all";
+                if req.method() == Method::GET {
+                    caching = Some(if show_all_domain_blocks {
                         ApiCaching::EvenIfAuthenticated
                     } else {
                         ApiCaching::IfUnauthenticated
-                    },
-                );
+                    });
+                }
             }
             _ => {}
         }
     }
+    let vary = api_vary(&path, disallows_unauthenticated, show_all_domain_blocks);
     let limited = state
         .as_ref()
         .is_some_and(|s| s.instance.limited_federation_mode);
 
     let mut response = next.run(req).await;
+    if let Some(vary) = vary {
+        if !response.headers().contains_key(header::VARY) {
+            response
+                .headers_mut()
+                .insert(header::VARY, HeaderValue::from_static(vary));
+        }
+    }
+    // `enforce_cache_control!`.
+    if authorization && vary.is_some_and(|vary| vary.contains("Authorization")) {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        );
+        return response;
+    }
     if response.headers().contains_key(header::CACHE_CONTROL) {
         return response;
     }

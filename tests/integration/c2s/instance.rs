@@ -438,3 +438,45 @@ async fn test_api_cache_control() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     assert_eq!(cache_control(&resp).as_deref(), Some("private, no-store"));
 }
+
+/// `vary_by`: an API response varies by `Authorization`, as
+/// `Api::BaseController` says, except where its controller says otherwise:
+/// nothing for the instance and its subresources, the trending posts and
+/// links by `Accept-Language` too.
+#[tokio::test]
+async fn test_api_vary() {
+    let ctx = TestContext::new("api-vary").await;
+    // What the API says it varies by, beside the `Accept-Encoding` that
+    // compression adds and the `Origin` and preflight headers CORS does.
+    let vary = async |path: &str| {
+        let resp = ctx.api.get(path, None).await;
+        let vary: Vec<String> = resp
+            .headers()
+            .get_all("vary")
+            .iter()
+            .flat_map(|v| v.to_str().unwrap().split(','))
+            .map(str::trim)
+            .filter(|v| {
+                let v = v.to_ascii_lowercase();
+                v != "accept-encoding" && v != "origin" && !v.starts_with("access-control-")
+            })
+            .map(str::to_owned)
+            .collect();
+        (!vary.is_empty()).then(|| vary.join(", "))
+    };
+    assert_eq!(vary("/api/v2/instance").await, None);
+    assert_eq!(vary("/api/v1/instance/rules").await, None);
+    assert_eq!(vary("/api/v1/custom_emojis").await, None);
+    assert_eq!(
+        vary("/api/v1/timelines/public").await.as_deref(),
+        Some("Authorization")
+    );
+    assert_eq!(
+        vary("/api/v1/trends/statuses").await.as_deref(),
+        Some("Authorization, Accept-Language")
+    );
+    assert_eq!(
+        vary("/api/v1/instance/domain_blocks").await.as_deref(),
+        Some("Authorization")
+    );
+}
