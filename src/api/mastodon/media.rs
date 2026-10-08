@@ -714,22 +714,30 @@ fn classify_media_type(content_type: &str) -> &'static str {
     }
 }
 
+/// `MediaAttachment`'s `type` enum: `{ image: 0, gifv: 1, video: 2,
+/// unknown: 3, audio: 4 }`.
+pub const TYPE_IMAGE: i32 = 0;
+pub const TYPE_GIFV: i32 = 1;
+pub const TYPE_VIDEO: i32 = 2;
+pub const TYPE_UNKNOWN: i32 = 3;
+pub const TYPE_AUDIO: i32 = 4;
+
 fn media_type_int(mt: &str) -> i32 {
     match mt {
-        "image" => 0,
-        "gifv" => 1,
-        "video" => 2,
-        "audio" => 3,
-        _ => 4,
+        "image" => TYPE_IMAGE,
+        "gifv" => TYPE_GIFV,
+        "video" => TYPE_VIDEO,
+        "audio" => TYPE_AUDIO,
+        _ => TYPE_UNKNOWN,
     }
 }
 
 pub fn media_type_str(type_int: Option<i32>) -> &'static str {
     match type_int {
-        Some(0) => "image",
-        Some(1) => "gifv",
-        Some(2) => "video",
-        Some(3) => "audio",
+        Some(TYPE_IMAGE) => "image",
+        Some(TYPE_GIFV) => "gifv",
+        Some(TYPE_VIDEO) => "video",
+        Some(TYPE_AUDIO) => "audio",
         _ => "unknown",
     }
 }
@@ -850,7 +858,7 @@ async fn proxy(
                     .urls
                     .missing_file_url(if small { "small" } else { "original" }),
             )
-        } else if remote_url.is_some() && media.r#type != Some(4) {
+        } else if remote_url.is_some() && media.r#type != Some(TYPE_UNKNOWN) {
             // `redownload!`, which fetches the file and sends the viewer to
             // the copy. Eunha keeps no copies (a recorded divergence), so the
             // viewer is sent to where the copy would have come from.

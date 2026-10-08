@@ -413,7 +413,7 @@ async fn test_media_from_a_reject_media_domain_is_recorded_without_its_file() {
     .unwrap();
     assert_eq!(rows.len(), 2);
     for (_, kind, remote_url, content_type, meta, file, processing) in &rows {
-        assert_eq!(*kind, 4);
+        assert_eq!(*kind, 3);
         assert!(remote_url
             .as_deref()
             .unwrap()

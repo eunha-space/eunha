@@ -167,6 +167,37 @@ Remote posts edited before then have no history until their next edit, and
 show only their current version until then.
 
 
+Media types written before migration 035
+----------------------------------------
+
+`media_attachments.type` is Mastodon's enum: image 0, gifv 1, video 2,
+unknown 3, audio 4. Until migration 035, eunha wrote audio as 3 and unknown as
+4, so Mastodon serving such a database showed eunha's audio as attachments it
+could not play, and eunha showed Mastodon's audio the same way.
+
+Both numberings use the same integers, so migration 035 tells the rows apart
+by what Mastodon never writes. Its unknown attachments are remote ones it has
+not downloaded, which have no content type, and its audio is what it
+transcoded to MP3, or a copy of one since removed, which keeps its
+`meta.original`. So:
+
+ -  a 3 whose content type is `audio/*` becomes 4, as does an upload of
+    eunha's still waiting in its transcoding queue as audio;
+ -  a 4 whose content type is anything but audio becomes 3, as does a remote
+    one with no file, no content type and no `meta.original`, which is how
+    eunha recorded an attachment from a domain blocked with `reject_media`.
+
+What is left is a remote attachment that named no media type and whose
+address had no extension, which eunha recorded without a content type: a 3 if
+its ActivityPub type was `Audio`, a 4 if it was anything else but `Image` or
+`Video`. Neither can be told from Mastodon's own. To list them:
+
+~~~~ sql
+SELECT id, "type", remote_url, file_meta FROM media_attachments
+WHERE "type" IN (3, 4) AND file_content_type IS NULL AND remote_url <> '';
+~~~~
+
+
 Notifications written before migration 032
 ------------------------------------------
 

@@ -706,7 +706,7 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
     // gives `meta` as it is stored. Eunha shows other remote attachments from
     // their own servers, keeping no copies (a recorded divergence); one of
     // these it must not, and the proxy has nothing to give for it.
-    let unfetched = m.r#type == Some(4)
+    let unfetched = m.r#type == Some(super::media::TYPE_UNKNOWN)
         && m.file_file_name.as_deref().is_none_or(str::is_empty)
         && m.remote_url.as_deref().is_some_and(|u| !u.is_empty());
     let proxy = |style: &str| format!("https://{}/media_proxy/{}/{style}", urls.local_domain, m.id);

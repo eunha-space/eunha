@@ -1009,8 +1009,8 @@ pub(crate) async fn validate_media(
             not_found.join(", ")
         )));
     }
-    // `audio_or_video?`: audio (3) or video (2), not gifv.
-    if rows.len() > 1 && rows.iter().any(|r| matches!(r.r#type, 2 | 3)) {
+    // `audio_or_video?`: audio (4) or video (2), not gifv.
+    if rows.len() > 1 && rows.iter().any(|r| matches!(r.r#type, 2 | 4)) {
         return Err(AppError::Unprocessable(
             "Cannot attach a video to a post that already contains images".into(),
         ));

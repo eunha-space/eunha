@@ -418,3 +418,157 @@ async fn test_media_attach_to_status() {
         Some("attached image")
     );
 }
+
+/// Migration 035 gives the rows eunha wrote with its old type numbers
+/// Mastodon's, telling them apart by content type, and leaves Mastodon's own.
+#[tokio::test]
+async fn test_migration_033_swaps_only_the_media_types_eunha_wrote() {
+    let ctx = TestContext::new("media-type-migration").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let remote = "https://remote.invalid/media/a";
+    let original = r#"{"original": {"duration": 3.0, "bitrate": 128000}}"#;
+    let focus = r#"{"focus": {"x": 0.5, "y": 0.5}}"#;
+    // (type before, content type, waiting on an audio job, remote URL,
+    // file_meta, type after)
+    type Row<'a> = (i32, Option<&'a str>, bool, &'a str, Option<&'a str>, i32);
+    let rows: [Row; 11] = [
+        // eunha's audio, read by Mastodon as unknown
+        (3, Some("audio/mpeg"), false, "", None, 4),
+        // eunha's audio upload still waiting to be transcoded
+        (3, None, true, "", None, 4),
+        // eunha's unknown remote attachment, read by Mastodon as audio
+        (4, Some("application/pdf"), false, remote, None, 3),
+        // eunha's record of one from a `reject_media` domain
+        (4, None, false, remote, Some(focus), 3),
+        (4, None, false, remote, None, 3),
+        // Mastodon's unknown: a remote attachment it never downloaded
+        (3, None, false, remote, Some(focus), 3),
+        // Mastodon's audio, transcoded to MP3
+        (4, Some("audio/mpeg"), false, "", Some(original), 4),
+        // Mastodon's remote audio whose cached copy was removed
+        (4, None, false, remote, Some(original), 4),
+        // Mastodon's audio upload waiting to be processed
+        (4, Some("video/x-ms-asf"), false, "", None, 4),
+        (0, Some("image/png"), false, "", None, 0),
+        (2, Some("video/mp4"), false, "", None, 2),
+    ];
+    let mut ids = vec![];
+    for (kind, content_type, job, remote_url, meta, _) in rows {
+        let id = eunha::snowflake::next_id();
+        sqlx::query(
+            "INSERT INTO media_attachments
+               (id, account_id, type, file_content_type, remote_url, file_meta, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6::json, now(), now())",
+        )
+        .bind(id)
+        .bind(alice)
+        .bind(kind)
+        .bind(content_type)
+        .bind(remote_url)
+        .bind(meta)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        if job {
+            sqlx::query(
+                "INSERT INTO eunha.media_processing_jobs (media_id, media_type, source_key, content_type)
+                 VALUES ($1, 'audio', 'source', 'audio/ogg')",
+            )
+            .bind(id)
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+        }
+        ids.push(id);
+    }
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/035_media_attachment_audio_type.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    for ((before, content_type, _, _, meta, after), id) in rows.iter().zip(ids) {
+        let kind: i32 = sqlx::query_scalar("SELECT type FROM media_attachments WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+        assert_eq!(
+            kind, *after,
+            "type {before} with content type {content_type:?} and meta {meta:?}"
+        );
+    }
+}
+
+/// Audio, type 4, is not attached beside other media (`audio_or_video?`);
+/// an unknown attachment, type 3, is.
+#[tokio::test]
+async fn test_audio_is_attached_alone() {
+    let ctx = TestContext::new("media-audio-alone").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut ids = vec![];
+    for kind in [0, 4, 3] {
+        let id = eunha::snowflake::next_id();
+        sqlx::query(
+            "INSERT INTO media_attachments (id, account_id, type, file_file_name, processing, created_at, updated_at)
+             VALUES ($1, $2, $3, 'a.bin', 2, now(), now())",
+        )
+        .bind(id)
+        .bind(alice)
+        .bind(kind)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        ids.push(id.to_string());
+    }
+    for (media, status) in [
+        ([&ids[0], &ids[1]], StatusCode::UNPROCESSABLE_ENTITY),
+        ([&ids[0], &ids[2]], StatusCode::OK),
+    ] {
+        let resp = ctx
+            .api
+            .post_json(
+                "/api/v1/statuses",
+                Some(&ctx.alice_token),
+                &serde_json::json!({ "status": "media", "media_ids": media }),
+            )
+            .await;
+        assert_eq!(resp.status(), status);
+    }
+}
+
+/// `type` is read as Mastodon's enum: 3 is `unknown` and 4 is `audio`.
+#[tokio::test]
+async fn test_media_types_are_mastodons() {
+    let ctx = TestContext::new("media-type-enum").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    for (kind, name) in [
+        (0, "image"),
+        (1, "gifv"),
+        (2, "video"),
+        (3, "unknown"),
+        (4, "audio"),
+    ] {
+        let id = eunha::snowflake::next_id();
+        sqlx::query(
+            "INSERT INTO media_attachments (id, account_id, type, file_file_name, file_content_type, processing, created_at, updated_at)
+             VALUES ($1, $2, $3, 'a.bin', 'application/octet-stream', 2, now(), now())",
+        )
+        .bind(id)
+        .bind(alice)
+        .bind(kind)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        let got: Value = ctx
+            .api
+            .get(&format!("/api/v1/media/{id}"), Some(&ctx.alice_token))
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(got["type"], name, "type {kind}");
+    }
+}

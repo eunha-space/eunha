@@ -49,7 +49,7 @@ pub(super) fn attachment_url(value: &Value) -> Option<(String, Option<String>)> 
 /// for `Create` and `Update` alike.
 pub(super) struct RemoteMedia {
     pub remote_url: String,
-    /// Eunha's type code, from [`classify_attachment_type`].
+    /// `MediaAttachment`'s type, from [`classify_attachment_type`].
     pub kind: i32,
     pub description: Option<String>,
     pub blurhash: Option<String>,
@@ -80,7 +80,7 @@ impl RemoteMedia {
             .and_then(|meta| meta.get("focus"))
             .map(|focus| serde_json::json!({ "focus": focus }));
         Self {
-            kind: 4,
+            kind: crate::api::mastodon::media::TYPE_UNKNOWN,
             file_content_type: None,
             file_meta,
             ..self
@@ -278,29 +278,32 @@ pub(super) fn parse_ap_duration(v: &serde_json::Value) -> Option<f64> {
     (total > 0.0).then_some(total)
 }
 
-/// Map an attachment's `type`/`mediaType` to Eunha's media-attachment type code
-/// (0 image, 1 gifv, 2 video, 3 audio, 4 unknown).
+/// Map an attachment's `type`/`mediaType` to `MediaAttachment`'s type enum
+/// (image 0, gifv 1, video 2, unknown 3, audio 4).
 pub(super) fn classify_attachment_type(att_type_str: &str, media_type_str: &str) -> i32 {
+    use crate::api::mastodon::media::{
+        TYPE_AUDIO, TYPE_GIFV, TYPE_IMAGE, TYPE_UNKNOWN, TYPE_VIDEO,
+    };
     if media_type_str == "image/gif" {
-        1
+        TYPE_GIFV
     } else if media_type_str.starts_with("image/") {
-        0
+        TYPE_IMAGE
     } else if media_type_str.starts_with("video/") {
-        2
+        TYPE_VIDEO
     } else if media_type_str.starts_with("audio/") {
-        3
+        TYPE_AUDIO
     } else {
         match att_type_str {
-            "Image" => 0,
+            "Image" => TYPE_IMAGE,
             "Video" => {
                 if media_type_str.contains("gif") {
-                    1
+                    TYPE_GIFV
                 } else {
-                    2
+                    TYPE_VIDEO
                 }
             }
-            "Audio" => 3,
-            _ => 4,
+            "Audio" => TYPE_AUDIO,
+            _ => TYPE_UNKNOWN,
         }
     }
 }
@@ -328,7 +331,7 @@ mod tests {
         assert_eq!(classify_attachment_type("Document", "image/jpeg"), 0);
         assert_eq!(classify_attachment_type("Document", "image/gif"), 1);
         assert_eq!(classify_attachment_type("Document", "video/mp4"), 2);
-        assert_eq!(classify_attachment_type("Document", "audio/mpeg"), 3);
+        assert_eq!(classify_attachment_type("Document", "audio/mpeg"), 4);
     }
 
     #[test]
@@ -361,8 +364,8 @@ mod tests {
     fn attachment_type_falls_back_to_activitypub_type() {
         assert_eq!(classify_attachment_type("Image", ""), 0);
         assert_eq!(classify_attachment_type("Video", ""), 2);
-        assert_eq!(classify_attachment_type("Audio", ""), 3);
-        assert_eq!(classify_attachment_type("Document", ""), 4);
+        assert_eq!(classify_attachment_type("Audio", ""), 4);
+        assert_eq!(classify_attachment_type("Document", ""), 3);
     }
 }
 
