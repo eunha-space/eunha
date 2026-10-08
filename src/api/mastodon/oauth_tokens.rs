@@ -194,48 +194,26 @@ pub async fn introspect(
     let token = find_token(&state, params.token.as_deref().unwrap_or_default()).await;
     let now = now();
 
-    let basic = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Basic "))
-        .and_then(|t| {
-            use base64::Engine as _;
-            base64::engine::general_purpose::STANDARD
-                .decode(t.trim())
-                .ok()
-        })
-        .and_then(|d| String::from_utf8(d).ok())
-        .and_then(|d| {
-            let (id, secret) = d.split_once(':')?;
-            let decode =
-                |s: &str| urlencoding::decode(&s.replace('+', " ")).map(|s| s.into_owned());
-            Some((decode(id).ok()?, decode(secret).ok()?))
-        });
-    let credentials = basic.or_else(|| {
-        params
-            .client_id
-            .clone()
-            .filter(|id| !id.is_empty())
-            .map(|id| (id, params.client_secret.clone().unwrap_or_default()))
-    });
+    // `server.credentials`, as `/oauth/token` reads them.
+    let credentials = match crate::api::mastodon::oauth_client::from_request(
+        &headers,
+        params.client_id.as_deref(),
+        params.client_secret.as_deref(),
+    ) {
+        Ok(credentials) => credentials,
+        Err(_) => return crate::api::mastodon::oauth_client::multiple_methods_response(),
+    };
 
-    let active = if let Some((uid, secret)) = credentials {
-        // `authorize_using_basic_auth!`.
-        let client = sqlx::query_scalar!(
-            "SELECT id FROM oauth_applications WHERE uid = $1 AND secret = $2",
-            uid,
-            secret
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
+    let active = if let Some(credentials) = credentials {
+        // `authorize_using_basic_auth!`: `server.client`, a public client
+        // by its id alone.
+        let client = crate::api::mastodon::oauth_client::authenticate(&state, &credentials)
+            .await
+            .ok()
+            .flatten()
+            .map(|app| app.id);
         let Some(client) = client else {
-            return error_response(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "Client authentication failed due to unknown client, no client authentication included, or unsupported authentication method.",
-            );
+            return crate::api::mastodon::oauth_client::invalid_client_response();
         };
         token
             .as_ref()

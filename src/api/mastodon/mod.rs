@@ -24,6 +24,7 @@ pub mod markers;
 pub mod media;
 pub mod notifications;
 pub mod oauth;
+pub mod oauth_client;
 pub mod oauth_metadata;
 pub mod oauth_tokens;
 pub mod oembed;

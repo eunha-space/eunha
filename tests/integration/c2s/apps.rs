@@ -543,9 +543,9 @@ async fn test_authorization_code_grant() {
     );
 }
 
-/// Expired authorization code returns 401.
+/// An expired authorization code is `invalid_grant`.
 #[tokio::test]
-async fn test_authorization_code_expired_returns_401() {
+async fn test_authorization_code_expired_is_invalid_grant() {
     let ctx = TestContext::new("oauth-ac-exp").await;
 
     let app: Value = ctx
@@ -604,11 +604,14 @@ async fn test_authorization_code_expired_returns_401() {
             }),
         )
         .await;
+    // `validate_grant`: Doorkeeper's `invalid_grant`, a `400`.
     assert_eq!(
         resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "expired code should return 401"
+        StatusCode::BAD_REQUEST,
+        "expired code is invalid_grant"
     );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"], "invalid_grant");
 }
 
 /// `grant_flows %w(authorization_code client_credentials)`: any other grant
@@ -723,7 +726,16 @@ async fn test_redirect_uri_must_be_registered_and_match_the_code() {
             .api
             .post_json("/oauth/token", None, &exchange(uri))
             .await;
-        assert_eq!(refused.status(), StatusCode::UNAUTHORIZED, "{uri:?}");
+        // Doorkeeper: a missing redirect URI is `invalid_request`, another
+        // one `invalid_grant`, both a `400`.
+        assert_eq!(refused.status(), StatusCode::BAD_REQUEST, "{uri:?}");
+        let body: Value = refused.json().await.unwrap();
+        let expected = if uri.is_none() {
+            "invalid_request"
+        } else {
+            "invalid_grant"
+        };
+        assert_eq!(body["error"], expected, "{uri:?}");
     }
     // A refused exchange does not use the code up.
     let ok = ctx
@@ -735,4 +747,227 @@ async fn test_redirect_uri_must_be_registered_and_match_the_code() {
         )
         .await;
     assert_eq!(ok.status(), StatusCode::OK);
+}
+
+/// Seed an authorization code for alice; the app's DB id.
+async fn seed_code(ctx: &TestContext, client_id: &str, code: &str, scopes: &str) {
+    let alice_id: i64 = ctx.alice_id.parse().unwrap();
+    let owner = crate::helpers::user_id_for(&ctx.db, alice_id).await;
+    sqlx::query(
+        "INSERT INTO oauth_access_grants
+           (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
+         SELECT id, $2, $3, 'https://app.example/callback', $4, 600, now()
+         FROM oauth_applications WHERE uid = $1",
+    )
+    .bind(client_id)
+    .bind(owner)
+    .bind(code)
+    .bind(scopes)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
+/// Mastodon's `reuse_access_token`: a second code for the same scopes gets
+/// the token the first one did, with its `created_at`; other scopes get a
+/// new one. A code is revoked, not deleted, once used, and using it again
+/// is `invalid_grant`. The answer is kept out of caches.
+#[tokio::test]
+async fn test_a_code_reuses_a_matching_token() {
+    let ctx = TestContext::new("oauth-reuse").await;
+    let api = &ctx.api;
+    let app: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/apps",
+            None,
+            &json!({
+                "client_name": "Reuse",
+                "redirect_uris": "https://app.example/callback",
+                "scopes": "read write"
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let client_id = app["client_id"].as_str().unwrap();
+    let client_secret = app["client_secret"].as_str().unwrap();
+    let exchange = |code: &'static str| {
+        let body = json!({
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": "https://app.example/callback",
+        });
+        async move { api.post_json("/oauth/token", None, &body).await }
+    };
+
+    seed_code(&ctx, client_id, "first-code", "read write").await;
+    let first = exchange("first-code").await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()["cache-control"], "no-store, no-cache");
+    assert_eq!(first.headers()["pragma"], "no-cache");
+    let first: Value = first.json().await.unwrap();
+    assert!(first.get("expires_in").is_none());
+    assert!(first.get("refresh_token").is_none());
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM oauth_access_grants WHERE token = 'first-code'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(revoked, "the code is revoked, not deleted");
+    let again = exchange("first-code").await;
+    assert_eq!(again.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        again.json::<Value>().await.unwrap()["error"],
+        "invalid_grant"
+    );
+
+    seed_code(&ctx, client_id, "second-code", "write read").await;
+    let second: Value = exchange("second-code").await.json().await.unwrap();
+    assert_eq!(second["access_token"], first["access_token"]);
+    assert_eq!(second["created_at"], first["created_at"]);
+
+    seed_code(&ctx, client_id, "third-code", "read").await;
+    let third: Value = exchange("third-code").await.json().await.unwrap();
+    assert_ne!(third["access_token"], first["access_token"]);
+    assert_eq!(third["scope"], "read");
+}
+
+/// The client credentials grant: without `scope`, the default scopes the
+/// application has (`read`); a scope beyond the application's is
+/// `invalid_scope`; a token with the same scopes is reused.
+#[tokio::test]
+async fn test_client_credentials_scopes_and_reuse() {
+    let ctx = TestContext::new("oauth-cc-scopes").await;
+    let api = &ctx.api;
+    let (client_id, client_secret) = register_test_app(&ctx).await;
+    let grant = |scope: Option<&str>| {
+        let mut body = json!({
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        });
+        if let Some(scope) = scope {
+            body["scope"] = json!(scope);
+        }
+        async move { api.post_json("/oauth/token", None, &body).await }
+    };
+    let default: Value = grant(None).await.json().await.unwrap();
+    assert_eq!(default["scope"], "read");
+    let again: Value = grant(Some("read")).await.json().await.unwrap();
+    assert_eq!(again["access_token"], default["access_token"]);
+    let wider: Value = grant(Some("read write")).await.json().await.unwrap();
+    assert_eq!(wider["scope"], "read write");
+    assert_ne!(wider["access_token"], default["access_token"]);
+    let refused = grant(Some("read follow")).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        refused.json::<Value>().await.unwrap()["error"],
+        "invalid_scope"
+    );
+}
+
+/// What `/oauth/token` refuses before it gets anywhere, as Doorkeeper does:
+/// no grant type, no code, an unknown client (`401 invalid_client` with a
+/// `WWW-Authenticate`), and a secret given two ways. HTTP Basic credentials
+/// are taken as they decode, without URL-decoding.
+#[tokio::test]
+async fn test_token_requests_doorkeeper_refuses() {
+    let ctx = TestContext::new("oauth-token-refusals").await;
+    let api = &ctx.api;
+    let (client_id, client_secret) = register_test_app(&ctx).await;
+    let post = |body: Value| async move { api.post_json("/oauth/token", None, &body).await };
+
+    let no_grant = post(json!({ "client_id": client_id })).await;
+    assert_eq!(no_grant.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        no_grant.json::<Value>().await.unwrap()["error_description"],
+        "Missing required parameter: grant_type."
+    );
+    let no_code = post(json!({
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+    }))
+    .await;
+    assert_eq!(
+        no_code.json::<Value>().await.unwrap()["error_description"],
+        "Missing required parameter: code."
+    );
+    let unknown = post(json!({
+        "grant_type": "client_credentials",
+        "client_id": "nobody",
+        "client_secret": "nothing",
+    }))
+    .await;
+    assert_eq!(unknown.status(), StatusCode::UNAUTHORIZED);
+    assert!(unknown.headers()["www-authenticate"]
+        .to_str()
+        .unwrap()
+        .contains("error=\"invalid_client\""));
+    assert_eq!(
+        unknown.json::<Value>().await.unwrap()["error"],
+        "invalid_client"
+    );
+
+    let basic = |id: &str, secret: &str| {
+        use base64::Engine as _;
+        format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(format!("{id}:{secret}"))
+        )
+    };
+    let both = ctx
+        .api
+        .http
+        .post(ctx.api.url("/oauth/token"))
+        .header("host", &ctx.api.host)
+        .header("authorization", basic(&client_id, &client_secret))
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(both.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        both.json::<Value>().await.unwrap()["error"],
+        "invalid_request"
+    );
+
+    // A secret that only matches once URL-decoded does not.
+    sqlx::query("UPDATE oauth_applications SET secret = 'a b' WHERE uid = $1")
+        .bind(&client_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let encoded = ctx
+        .api
+        .http
+        .post(ctx.api.url("/oauth/token"))
+        .header("host", &ctx.api.host)
+        .header("authorization", basic(&client_id, "a%20b"))
+        .form(&[("grant_type", "client_credentials")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(encoded.status(), StatusCode::UNAUTHORIZED);
+    let plain = ctx
+        .api
+        .http
+        .post(ctx.api.url("/oauth/token"))
+        .header("host", &ctx.api.host)
+        .header("authorization", basic(&client_id, "a b"))
+        .form(&[("grant_type", "client_credentials")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
 }

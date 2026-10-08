@@ -115,10 +115,24 @@ The authorization page takes Doorkeeper's parameters: `response_type=code`
 (anything else, or none, is refused), `state`, which comes back with the code,
 `response_mode` (`query`, `fragment` or `form_post`), and a PKCE
 `code_challenge` with `code_challenge_method=S256`, whose `code_verifier`
-`/oauth/token` then requires. The client may authenticate to `/oauth/token`
-with HTTP Basic or in the request. A client whose redirect URI is
+`/oauth/token` then requires. A client whose redirect URI is
 `urn:ietf:wg:oauth:2.0:oob` is shown the code at `/oauth/authorize/native` to
 copy.
+
+`/oauth/token`, `/oauth/revoke` and `/oauth/introspect` find the client as
+Doorkeeper does: by HTTP Basic, taken as it decodes with no URL-decoding, or
+by `client_id` and `client_secret` in the request, and a public client
+(`confidential` false) by its id alone. Giving a secret both ways, or naming
+two clients, is 400 `invalid_request`; an unknown client or a wrong secret is
+401 `invalid_client`. The token endpoint follows Mastodon's Doorkeeper
+configuration: tokens never expire and come without a refresh token, a used
+code is revoked rather than deleted, and `reuse_access_token` hands back the
+newest unrevoked token the client already holds for the same owner and scopes,
+with its original `created_at`, rather than making another. The client
+credentials grant without `scope` gets the default scopes the application has,
+`read`. Errors are Doorkeeper's: a missing parameter is `invalid_request`, a
+code that is unknown, expired, used, another client's, or given with another
+redirect URI or a wrong PKCE verifier is `invalid_grant`, both 400.
 
 A signed-out browser is asked to sign in on the authorization page itself,
 where Mastodon sends it to its sign-in page; signing in starts a session and

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::extractors::FormOrJson;
 
-use super::types::{AppCredentials, CredentialApplication, Token};
+use super::types::{AppCredentials, CredentialApplication};
 use crate::{
     db::models::OauthApplication,
     error::{AppError, AppResult},
@@ -129,7 +129,7 @@ fn app_to_credential(app: &OauthApplication, vapid_key: &str) -> CredentialAppli
 
 #[derive(Debug, Deserialize)]
 pub struct TokenRequest {
-    pub grant_type: String,
+    pub grant_type: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub redirect_uri: Option<String>,
@@ -138,45 +138,18 @@ pub struct TokenRequest {
     pub code_verifier: Option<String>,
 }
 
-/// Doorkeeper's `client_credentials_methods`, `from_basic` then
-/// `from_params`: the client's id and secret from an `Authorization: Basic`
-/// header (`client_secret_basic`), each form-decoded, or else from the request
-/// (`client_secret_post`).
-fn client_credentials(
-    headers: &axum::http::HeaderMap,
-    form: &TokenRequest,
-) -> Option<(String, String)> {
-    use base64::Engine as _;
-    let basic = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Basic "))
-        .and_then(|token| {
-            base64::engine::general_purpose::STANDARD
-                .decode(token.trim())
-                .ok()
-        })
-        .and_then(|decoded| String::from_utf8(decoded).ok())
-        .and_then(|decoded| {
-            let (id, secret) = decoded.split_once(':')?;
-            let decode = |s: &str| {
-                urlencoding::decode(&s.replace('+', " "))
-                    .map(|s| s.into_owned())
-                    .ok()
-            };
-            Some((decode(id)?, decode(secret)?))
-        });
-    basic.or_else(|| Some((form.client_id.clone()?, form.client_secret.clone()?)))
-}
-
 /// A Doorkeeper error answer, `{"error":…,"error_description":…}` with a
 /// `400`.
 fn oauth_error(error: &str, description: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({ "error": error, "error_description": description })),
+    crate::api::mastodon::oauth_client::error_response(StatusCode::BAD_REQUEST, error, description)
+}
+
+/// `InvalidRequestResponse` for a missing parameter.
+fn missing_param(name: &str) -> Response {
+    oauth_error(
+        "invalid_request",
+        &format!("Missing required parameter: {name}."),
     )
-        .into_response()
 }
 
 /// `AccessGrant.generate_code_challenge`: the `S256` challenge of a verifier.
@@ -186,169 +159,242 @@ fn s256_challenge(verifier: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier))
 }
 
-pub async fn issue_token(
-    state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    headers: axum::http::HeaderMap,
-    FormOrJson(form): FormOrJson<TokenRequest>,
-) -> AppResult<axum::response::Response> {
-    use axum::response::IntoResponse as _;
+/// `Doorkeeper.configuration.default_scopes`.
+const DEFAULT_SCOPES: &str = "read";
 
-    // `grant_flows %w(authorization_code client_credentials)`: Doorkeeper
-    // turns any other grant type away before it looks at the client, with
-    // `unsupported_grant_type`. The password grant is among them, and
-    // `resource_owner_from_credentials` would refuse it anyway.
-    if !matches!(
-        form.grant_type.as_str(),
-        "authorization_code" | "client_credentials"
-    ) {
-        return Ok((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "unsupported_grant_type",
-                "error_description": "The authorization grant type is not supported by the authorization server.",
-            })),
-        )
-            .into_response());
-    }
-    let (client_id, client_secret) =
-        client_credentials(&headers, &form).ok_or(AppError::Unauthorized)?;
-    tracing::info!(
-        grant_type = %form.grant_type,
-        client_id = %client_id,
-        instance = %instance.domain,
-        "token request",
-    );
-    // Verify client credentials
-    let app = sqlx::query_as!(
-        OauthApplication,
-        "SELECT * FROM oauth_applications WHERE uid = $1",
-        client_id,
+/// `Scopes.from_string`: the scopes of a string, each once.
+fn scope_set(scopes: &str) -> std::collections::BTreeSet<&str> {
+    scopes.split_whitespace().collect()
+}
+
+/// `Helpers::ScopeChecker.valid?`: present, on one line, and every scope
+/// among the application's, or the server's when it has none.
+fn scopes_valid(scope_str: &str, app_scopes: Option<&str>) -> bool {
+    let app_scopes = app_scopes.filter(|s| !s.trim().is_empty());
+    !scope_str.trim().is_empty()
+        && !scope_str.contains(['\n', '\r', '\t'])
+        && scope_str.split_whitespace().all(|scope| match app_scopes {
+            Some(app) => app.split_whitespace().any(|a| a == scope),
+            None => VALID_OAUTH_SCOPES.contains(&scope),
+        })
+}
+
+/// `AccessToken.find_or_create_for` with Mastodon's `reuse_access_token`: the
+/// newest unrevoked, unexpired token of the application for the owner with
+/// the same scopes (`matching_token_for`, `include_expired: false`), which
+/// never expires and so is always `reusable?`, or else a new one.
+async fn find_or_create_token(
+    conn: &mut sqlx::PgConnection,
+    application_id: i64,
+    resource_owner_id: Option<i64>,
+    scopes: &str,
+) -> sqlx::Result<(String, String, chrono::NaiveDateTime)> {
+    let wanted = scope_set(scopes);
+    let held = sqlx::query!(
+        r#"SELECT token, COALESCE(scopes, '') AS "scopes!", created_at
+           FROM oauth_access_tokens
+           WHERE application_id = $1 AND resource_owner_id IS NOT DISTINCT FROM $2
+             AND revoked_at IS NULL
+             AND (expires_in IS NULL OR created_at + expires_in * interval '1 second' > now())
+           ORDER BY created_at DESC, id DESC"#,
+        application_id,
+        resource_owner_id,
     )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| {
-        tracing::warn!(client_id = %client_id, instance = %instance.domain, "unknown client_id");
-        AppError::Unauthorized
-    })?;
-
-    if app.secret != client_secret {
-        tracing::warn!(client_id = %client_id, "client_secret mismatch");
-        return Err(AppError::Unauthorized);
+    .fetch_all(&mut *conn)
+    .await?;
+    if let Some(token) = held.into_iter().find(|t| scope_set(&t.scopes) == wanted) {
+        return Ok((token.token, token.scopes, token.created_at));
     }
-
-    let (user_id, scopes) = match form.grant_type.as_str() {
-        "client_credentials" => (
-            None,
-            app.scopes.clone().unwrap_or_else(|| "read".to_string()),
-        ),
-
-        "authorization_code" => {
-            let code_str = form
-                .code
-                .as_deref()
-                .ok_or(AppError::Unprocessable("missing code".into()))?;
-            // `AuthorizationCodeRequest#validate_redirect_uri`: the code is
-            // only good with the redirect URI it was issued for.
-            let grant = sqlx::query!(
-                r#"SELECT redirect_uri, code_challenge, code_challenge_method
-                   FROM oauth_access_grants
-                   WHERE token = $1 AND application_id = $2 AND revoked_at IS NULL
-                     AND created_at + expires_in * interval '1 second' > now()"#,
-                code_str,
-                app.id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or_else(|| {
-                tracing::warn!(code = %code_str, "authorization code not found or expired");
-                AppError::Unauthorized
-            })?;
-            let challenge = grant.code_challenge.filter(|c| !c.is_empty());
-            let verifier = form.code_verifier.as_deref().filter(|v| !v.is_empty());
-            // `AuthorizationCodeRequest#validate_params`: a grant made with
-            // PKCE wants its verifier.
-            if challenge.is_some() && verifier.is_none() {
-                return Ok(oauth_error(
-                    "invalid_request",
-                    "Missing required parameter: code_verifier.",
-                ));
-            }
-            if !form
-                .redirect_uri
-                .as_deref()
-                .is_some_and(|uri| redirect_uri_matches(uri, &grant.redirect_uri))
-            {
-                tracing::warn!(client_id = %client_id, "redirect_uri does not match the code's");
-                return Err(AppError::Unauthorized);
-            }
-            // `validate_code_verifier`: the verifier's `S256` challenge is the
-            // grant's, and a verifier for a grant made without one fails.
-            if let Some(verifier) = verifier {
-                let matches = match challenge.as_deref() {
-                    Some(challenge) if grant.code_challenge_method.as_deref() == Some("plain") => {
-                        verifier == challenge
-                    }
-                    Some(challenge) => s256_challenge(verifier) == challenge,
-                    None => false,
-                };
-                if !matches {
-                    return Ok(oauth_error("invalid_grant", INVALID_GRANT));
-                }
-            }
-            let code = sqlx::query!(
-                r#"DELETE FROM oauth_access_grants
-                   WHERE token = $1 AND application_id = $2
-                     AND created_at + expires_in * interval '1 second' > now()
-                   RETURNING resource_owner_id, scopes"#,
-                code_str,
-                app.id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or_else(|| {
-                tracing::warn!(code = %code_str, "authorization code not found or expired");
-                AppError::Unauthorized
-            })?;
-            // The sign-in was recorded on the authorization page, as
-            // `Auth::SessionsController` records it; the exchange records none.
-            let _account_id = sqlx::query_scalar!(
-                "SELECT account_id FROM users WHERE id = $1 AND disabled = false",
-                code.resource_owner_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
-            (
-                Some(code.resource_owner_id),
-                code.scopes.unwrap_or_else(|| "read".to_string()),
-            )
-        }
-
-        _ => unreachable!("only the grant flows Mastodon enables get this far"),
-    };
-
-    let token_str = generate_token(64);
-    let created_at = chrono::Utc::now();
-
-    sqlx::query!(
+    let token = generate_token(64);
+    let created_at = sqlx::query_scalar!(
         r#"INSERT INTO oauth_access_tokens (application_id, resource_owner_id, token, scopes, created_at)
-           VALUES ($1, $2, $3, $4, now())"#,
-        app.id,
-        user_id,
-        token_str,
+           VALUES ($1, $2, $3, $4, now())
+           RETURNING created_at"#,
+        application_id,
+        resource_owner_id,
+        token,
         scopes,
     )
-    .execute(&state.db)
+    .fetch_one(&mut *conn)
     .await?;
+    Ok((token, scopes.to_owned(), created_at))
+}
 
-    Ok(Json(Token {
-        access_token: token_str,
-        token_type: "Bearer".to_string(),
-        scope: scopes,
-        created_at: created_at.timestamp(),
-    })
-    .into_response())
+/// `TokenResponse`: the token, with its blank fields left out
+/// (`expires_in` and `refresh_token`, which Mastodon never sets), and the
+/// headers that keep it out of caches.
+fn token_response(token: String, scopes: String, created_at: chrono::NaiveDateTime) -> Response {
+    let mut body = serde_json::json!({
+        "access_token": token,
+        "token_type": "Bearer",
+        "created_at": created_at.and_utc().timestamp(),
+    });
+    if !scopes.trim().is_empty() {
+        body["scope"] = scopes.into();
+    }
+    (
+        [
+            (axum::http::header::CACHE_CONTROL, "no-store, no-cache"),
+            (axum::http::header::PRAGMA, "no-cache"),
+        ],
+        Json(body),
+    )
+        .into_response()
+}
+
+/// `Doorkeeper::TokensController#create`, with Mastodon's configuration:
+/// the `authorization_code` and `client_credentials` grant flows, tokens
+/// that never expire (`access_token_expires_in nil`), no refresh tokens, and
+/// `reuse_access_token`.
+pub async fn issue_token(
+    state: AppState,
+    headers: axum::http::HeaderMap,
+    FormOrJson(form): FormOrJson<TokenRequest>,
+) -> AppResult<Response> {
+    use crate::api::mastodon::oauth_client;
+
+    // `Request.token_strategy`.
+    let grant_type = form.grant_type.as_deref().unwrap_or("");
+    if grant_type.trim().is_empty() {
+        return Ok(missing_param("grant_type"));
+    }
+    if !matches!(grant_type, "authorization_code" | "client_credentials") {
+        return Ok(oauth_error(
+            "unsupported_grant_type",
+            "The authorization grant type is not supported by the authorization server.",
+        ));
+    }
+    // `Request::AuthorizationCode#grant` asks for the code before the client
+    // is looked at.
+    let code = form.code.as_deref().filter(|c| !c.trim().is_empty());
+    if grant_type == "authorization_code" && code.is_none() {
+        return Ok(missing_param("code"));
+    }
+    // `server.client`.
+    let credentials = match oauth_client::from_request(
+        &headers,
+        form.client_id.as_deref(),
+        form.client_secret.as_deref(),
+    ) {
+        Ok(credentials) => credentials,
+        Err(_) => return Ok(oauth_client::multiple_methods_response()),
+    };
+    let client = match &credentials {
+        Some(credentials) => oauth_client::authenticate(&state, credentials).await?,
+        None => None,
+    };
+
+    if grant_type == "client_credentials" {
+        // `ClientCredentials::Validator`.
+        let Some(app) = client else {
+            return Ok(oauth_client::invalid_client_response());
+        };
+        let scopes = match form.scope.as_deref().filter(|s| !s.is_empty()) {
+            Some(scope) => scope.to_owned(),
+            // `build_scopes`: the default scopes the application has, or
+            // the default scopes when it has none.
+            None => match app.scopes.as_deref().filter(|s| !s.trim().is_empty()) {
+                None => DEFAULT_SCOPES.to_owned(),
+                Some(app_scopes) => scope_set(app_scopes)
+                    .into_iter()
+                    .filter(|s| scope_set(DEFAULT_SCOPES).contains(s))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            },
+        };
+        let app_scopes = app.scopes.as_deref().filter(|s| !s.trim().is_empty());
+        if !(scopes.trim().is_empty() && app_scopes.is_none()) && !scopes_valid(&scopes, app_scopes)
+        {
+            return Ok(oauth_error(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, or malformed.",
+            ));
+        }
+        let (token, scopes, created_at) =
+            find_or_create_token(&mut *state.db.acquire().await?, app.id, None, &scopes).await?;
+        return Ok(token_response(token, scopes, created_at));
+    }
+
+    // `AuthorizationCodeRequest`.
+    let code = code.unwrap_or_default();
+    let grant = sqlx::query!(
+        r#"SELECT id, application_id, redirect_uri, code_challenge, code_challenge_method,
+                  revoked_at IS NULL AND created_at + expires_in * interval '1 second' > now()
+                  AS "accessible!"
+           FROM oauth_access_grants WHERE token = $1"#,
+        code,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let verifier = form
+        .code_verifier
+        .as_deref()
+        .filter(|v| !v.trim().is_empty());
+    let challenge = grant
+        .as_ref()
+        .and_then(|g| g.code_challenge.clone())
+        .filter(|c| !c.is_empty());
+    let challenge = challenge.as_deref();
+    // `validate_params`.
+    if challenge.is_some() && verifier.is_none() {
+        return Ok(missing_param("code_verifier"));
+    }
+    let redirect_uri = form.redirect_uri.as_deref().unwrap_or("");
+    if redirect_uri.trim().is_empty() {
+        return Ok(missing_param("redirect_uri"));
+    }
+    // `validate_client`.
+    let Some(app) = client else {
+        return Ok(oauth_client::invalid_client_response());
+    };
+    // `validate_grant`, `validate_redirect_uri`, `validate_code_verifier`.
+    let Some(grant) = grant.filter(|g| g.application_id == app.id && g.accessible) else {
+        return Ok(oauth_error("invalid_grant", INVALID_GRANT));
+    };
+    if !redirect_uri_allowed(redirect_uri, &grant.redirect_uri) {
+        return Ok(oauth_error("invalid_grant", INVALID_GRANT));
+    }
+    let verified = match verifier {
+        None => challenge.is_none(),
+        Some(verifier) => match grant.code_challenge_method.as_deref() {
+            Some("S256") => challenge == Some(s256_challenge(verifier).as_str()),
+            Some("plain") => challenge == Some(verifier),
+            _ => false,
+        },
+    };
+    if !verified {
+        return Ok(oauth_error("invalid_grant", INVALID_GRANT));
+    }
+
+    // `before_successful_response`: the grant locked, refused if it was
+    // revoked meanwhile (`InvalidGrantReuse`), revoked, and a token found or
+    // made for its owner and scopes.
+    let mut tx = state.db.begin().await?;
+    let locked = sqlx::query!(
+        r#"SELECT resource_owner_id, COALESCE(scopes, '') AS "scopes!", revoked_at IS NOT NULL AS "revoked!"
+           FROM oauth_access_grants WHERE id = $1 FOR UPDATE"#,
+        grant.id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if locked.revoked {
+        return Ok(oauth_error("invalid_grant", INVALID_GRANT));
+    }
+    sqlx::query!(
+        "UPDATE oauth_access_grants SET revoked_at = now() WHERE id = $1",
+        grant.id
+    )
+    .execute(&mut *tx)
+    .await?;
+    let (token, scopes, created_at) = find_or_create_token(
+        &mut tx,
+        app.id,
+        Some(locked.resource_owner_id),
+        &locked.scopes,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(token_response(token, scopes, created_at))
 }
 
 // ── POST /oauth/revoke ─────────────────────────────────────────────────────
@@ -359,62 +405,6 @@ pub struct RevokeRequest {
     pub client_secret: Option<String>,
     pub token: Option<String>,
     pub token_type_hint: Option<String>,
-}
-
-/// What `Client::Credentials.from_request(request, :from_basic, :from_params)`
-/// makes of a request: the one client it names, with its secret if it
-/// gave one, or `Err` for `MultipleClientAuthMethods` — a secret by two
-/// methods, or two different clients.
-fn revocation_credentials(
-    headers: &axum::http::HeaderMap,
-    form: &RevokeRequest,
-) -> Result<Option<(String, Option<String>)>, ()> {
-    use base64::Engine as _;
-    let present = |s: Option<String>| s.filter(|s| !s.trim().is_empty());
-    // `from_basic`: `Base64.decode64`, which skips what is not Base64, then
-    // `split(/:/, 2)`, nothing decoded further.
-    let basic = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .filter(|v| v.len() > 6 && v[..6].eq_ignore_ascii_case("basic "))
-        .map(|v| {
-            let encoded: String = v[6..]
-                .chars()
-                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/'))
-                .collect();
-            let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
-                .decode(&encoded)
-                .unwrap_or_default();
-            let decoded = String::from_utf8_lossy(&decoded).into_owned();
-            match decoded.split_once(':') {
-                Some((id, secret)) => (id.to_owned(), Some(secret.to_owned())),
-                None => (decoded, None),
-            }
-        });
-    let params = Some((form.client_id.clone(), form.client_secret.clone()));
-    // `extract`: credentials without a uid are none at all.
-    let credentials: Vec<(String, Option<String>)> =
-        [basic.map(|(id, secret)| (Some(id), secret)), params]
-            .into_iter()
-            .flatten()
-            .filter_map(|(id, secret)| Some((present(id)?, present(secret))))
-            .collect();
-    if credentials.iter().filter(|(_, s)| s.is_some()).count() > 1 {
-        return Err(());
-    }
-    if credentials.iter().any(|(id, _)| *id != credentials[0].0) {
-        return Err(());
-    }
-    Ok(credentials.into_iter().next())
-}
-
-/// `ActiveSupport::SecurityUtils.secure_compare`.
-fn secure_compare(a: &str, b: &str) -> bool {
-    a.len() == b.len()
-        && a.bytes()
-            .zip(b.bytes())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0
 }
 
 /// `Oauth::TokensController#revoke`, Doorkeeper's `TokensController#revoke`
@@ -430,6 +420,8 @@ pub async fn revoke_token(
     headers: axum::http::HeaderMap,
     FormOrJson(form): FormOrJson<RevokeRequest>,
 ) -> AppResult<Response> {
+    use crate::api::mastodon::oauth_client;
+
     let refused = || {
         (
             StatusCode::FORBIDDEN,
@@ -440,47 +432,22 @@ pub async fn revoke_token(
         )
             .into_response()
     };
-    let credentials = match revocation_credentials(&headers, &form) {
+    let credentials = match oauth_client::from_request(
+        &headers,
+        form.client_id.as_deref(),
+        form.client_secret.as_deref(),
+    ) {
         Ok(credentials) => credentials,
-        Err(()) => {
-            // `handle_token_exception` with an `InvalidRequestResponse`.
-            let description =
-                "The request utilizes more than one mechanism for authenticating the client.";
-            let mut response = oauth_error("invalid_request", description);
-            let headers = response.headers_mut();
-            headers.insert(
-                axum::http::header::CACHE_CONTROL,
-                axum::http::HeaderValue::from_static("no-store, no-cache"),
-            );
-            headers.insert(
-                axum::http::header::WWW_AUTHENTICATE,
-                axum::http::HeaderValue::from_str(&format!(
-                    "Bearer realm=\"Doorkeeper\", error=\"invalid_request\", error_description=\"{description}\""
-                ))
-                .expect("the description is a valid header value"),
-            );
-            return Ok(response);
-        }
+        Err(_) => return Ok(oauth_client::multiple_methods_response()),
     };
-    // `Client.authenticate`: the application by its uid, then
-    // `by_uid_and_secret`.
-    let client_id = match credentials {
+    let client = match &credentials {
+        Some(credentials) => oauth_client::authenticate(&state, credentials).await?,
         None => None,
-        Some((uid, secret)) => sqlx::query!(
-            "SELECT id, secret, confidential FROM oauth_applications WHERE uid = $1",
-            uid
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .filter(|app| match &secret {
-            None => !app.confidential,
-            Some(secret) => secure_compare(&app.secret, secret),
-        })
-        .map(|app| app.id),
     };
-    let Some(client_id) = client_id else {
+    let Some(client) = client else {
         return Ok(refused());
     };
+    let client_id = client.id;
 
     // `revocable_token`: the access token, then the refresh token, unless
     // the hint says it is a refresh token. Revoked and expired tokens are

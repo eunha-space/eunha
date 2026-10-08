@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, application_id, redirect_uri, code_challenge, code_challenge_method,\n                  revoked_at IS NULL AND created_at + expires_in * interval '1 second' > now()\n                  AS \"accessible!\"\n           FROM oauth_access_grants WHERE token = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "redirect_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "code_challenge",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "code_challenge_method",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "accessible!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "07b6015cb1744a416cf89006759f8361e1b24a1a39c5a609262d7be0e1460747"
+}

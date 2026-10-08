@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT resource_owner_id, COALESCE(scopes, '') AS \"scopes!\", revoked_at IS NOT NULL AS \"revoked!\"\n           FROM oauth_access_grants WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "resource_owner_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "scopes!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "revoked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b533665e5f1756b54e57117d7aaaaa36309939d6fe22dbfbbe4bf6ce25689206"
+}

@@ -532,6 +532,7 @@ async fn client_token(ctx: &TestContext, client_id: &str, client_secret: &str) -
                 ("grant_type", "client_credentials"),
                 ("client_id", client_id),
                 ("client_secret", client_secret),
+                ("scope", "read write"),
             ],
         )
         .await
@@ -620,8 +621,26 @@ async fn introspection_answers_a_client_about_its_own_tokens() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body, serde_json::json!({"active": false}));
 
-    // A token of the same application may ask about another of it.
-    let other = client_token(&ctx, &client_id, &client_secret).await;
+    // A token of the same application may ask about another of it (with
+    // other scopes, or `reuse_access_token` would hand back the same one).
+    let other: Value = ctx
+        .api
+        .post_form(
+            "/oauth/token",
+            None,
+            &[
+                ("grant_type", "client_credentials"),
+                ("client_id", &client_id),
+                ("client_secret", &client_secret),
+                ("scope", "read"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let other = other["access_token"].as_str().unwrap().to_owned();
+    assert_ne!(other, token);
     let resp = introspect(None, Some(&other), &token).await.unwrap();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["active"], true);

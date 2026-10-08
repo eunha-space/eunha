@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT token, COALESCE(scopes, '') AS \"scopes!\", created_at\n           FROM oauth_access_tokens\n           WHERE application_id = $1 AND resource_owner_id IS NOT DISTINCT FROM $2\n             AND revoked_at IS NULL\n             AND (expires_in IS NULL OR created_at + expires_in * interval '1 second' > now())\n           ORDER BY created_at DESC, id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "scopes!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "19bbae7e90e3807eedfc01ec51957ae76040445f6243250179f050b58cf61b91"
+}

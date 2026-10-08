@@ -250,6 +250,7 @@ async fn test_confirming_returns_to_the_app() {
                 "grant_type": "client_credentials",
                 "client_id": app["client_id"],
                 "client_secret": app["client_secret"],
+                "scope": "read write",
             }),
         )
         .await

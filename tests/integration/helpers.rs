@@ -535,6 +535,8 @@ impl TestContext {
                     "grant_type": "client_credentials",
                     "client_id": app["client_id"],
                     "client_secret": app["client_secret"],
+                    // Without it the token has the default scopes, `read`.
+                    "scope": scopes,
                 }),
             )
             .await
