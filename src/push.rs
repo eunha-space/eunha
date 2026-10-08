@@ -36,6 +36,46 @@ pub fn get_vapid_public_key(state: &AppState) -> &str {
 
 // ── Push delivery ──────────────────────────────────────────────────────────
 
+/// `Notification::TYPES`, in Mastodon's order: what a subscription may
+/// have an alert for.
+pub const NOTIFICATION_TYPES: &[&str] = &[
+    "mention",
+    "status",
+    "reblog",
+    "follow",
+    "follow_request",
+    "favourite",
+    "poll",
+    "update",
+    "severed_relationships",
+    "moderation_warning",
+    "annual_report",
+    "admin.sign_up",
+    "admin.report",
+    "quote",
+    "quoted_update",
+    "added_to_collection",
+    "collection_update",
+];
+
+/// `ActiveModel::Type::Boolean#cast`: `nil` and `""` are nil; `false`, `0`
+/// and the strings `0`, `f`, `false` and `off` (lower or upper case) are
+/// false; anything else is true.
+pub fn cast_boolean(value: &serde_json::Value) -> Option<bool> {
+    use serde_json::Value;
+    match value {
+        Value::Null => None,
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => Some(n.as_f64() != Some(0.0)),
+        Value::String(s) if s.is_empty() => None,
+        Value::String(s) => Some(!matches!(
+            s.as_str(),
+            "0" | "f" | "F" | "false" | "FALSE" | "off" | "OFF"
+        )),
+        Value::Array(_) | Value::Object(_) => Some(true),
+    }
+}
+
 /// `Web::PushNotificationWorker::TTL`: 48 hours, the push's `TTL` and how
 /// long its unsubscribe token lasts.
 pub const PUSH_TTL_SECONDS: i64 = 48 * 3600;

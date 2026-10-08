@@ -80,8 +80,11 @@ async fn test_push_subscription_lifecycle() {
         .await;
     assert_eq!(update_resp.status(), StatusCode::OK);
     let updated: Value = update_resp.json().await.unwrap();
-    assert_eq!(updated["alerts"]["follow"].as_bool(), Some(false));
-    assert_eq!(updated["alerts"]["favourite"].as_bool(), Some(true));
+    // `update!(data: data_params)`: what was given replaces what was stored.
+    assert_eq!(
+        updated["alerts"],
+        json!({"follow": false, "favourite": true})
+    );
     assert_eq!(updated["policy"].as_str(), Some("followed"));
 
     // DELETE removes the subscription.
@@ -97,6 +100,72 @@ async fn test_push_subscription_lifecycle() {
         .get("/api/v1/push/subscription", Some(&ctx.alice_token))
         .await;
     assert_eq!(after_del.status(), StatusCode::NOT_FOUND);
+}
+
+/// `Api::V1::Push::SubscriptionsController`: the data is stored as given,
+/// an alert not given is off, and blank data is `{}`, whose policy reads
+/// `all`.
+#[tokio::test]
+async fn push_subscription_data_is_stored_as_given() {
+    let ctx = TestContext::new("push-data").await;
+
+    let mut body = fake_sub_payload("https://push.example.com/data");
+    body["data"] = json!({"alerts": {"mention": true, "admin.report": true, "bogus": true}});
+    let resp = ctx
+        .api
+        .post_json("/api/v1/push/subscription", Some(&ctx.alice_token), &body)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let sub: Value = resp.json().await.unwrap();
+    assert_eq!(
+        sub["alerts"],
+        json!({"mention": true, "admin.report": true})
+    );
+    assert_eq!(sub["policy"], "all");
+    assert_eq!(sub["standard"], false);
+    let stored: Value = sqlx::query_scalar("SELECT data::jsonb FROM web_push_subscriptions")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored,
+        json!({"alerts": {"mention": true, "admin.report": true}})
+    );
+
+    // A blank update stores `{}`.
+    let resp = ctx
+        .api
+        .put_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let sub: Value = resp.json().await.unwrap();
+    assert_eq!(sub["alerts"], json!({}));
+    assert_eq!(sub["policy"], "all");
+
+    // Data with nothing permitted is a missing parameter.
+    let resp = ctx
+        .api
+        .put_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &json!({"data": {"bogus": 1}}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // So is a subscription without one.
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &json!({"data": {"policy": "all"}}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 /// POST /api/v1/push/subscription is idempotent: second POST for the same token replaces the first.
