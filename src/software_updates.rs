@@ -27,9 +27,9 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
-/// How often to ask. Mastodon checks hourly; nothing here changes that fast,
-/// and the answer is only read by a human.
-const CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+/// How often to ask: `Scheduler::SoftwareUpdateCheckScheduler`'s
+/// `interval: 30 minutes`.
+pub(crate) const CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
 /// `software_deprecations.warning_issued`, from Mastodon's enum.
 mod warning {

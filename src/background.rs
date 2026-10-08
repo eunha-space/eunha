@@ -656,16 +656,6 @@ fn classify_app(e: crate::error::AppError, context: &str) -> PublishError {
     }
 }
 
-// ── Suspended account cleanup ─────────────────────────────────────────────
-
-/// Mastodon's `Scheduler::SuspendedUserCleanupScheduler`: once a suspension has
-/// stood for `DELAY_TO_DELETION`, the account's data is purged for good. Since
-/// account deletion is expensive, only a few are processed per pass.
-///
-/// Between passes it sleeps until the oldest request comes due. It needs no
-/// wake-up: a new request falls due `DELAY_TO_DELETION` after it is made, later
-/// than anything already waiting and far later than the ceiling.
-/// `Scheduler::Trends::RefreshScheduler`: rescore trends every five minutes.
 /// `Scheduler::InstanceRefreshScheduler`: `Instance.refresh` every hour,
 /// which refreshes the `instances` materialized view concurrently. A view
 /// never populated (the schema creates it `WITH NO DATA`) is filled plainly
@@ -696,7 +686,9 @@ pub async fn refresh_instances(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `Scheduler::Trends::RefreshScheduler`: `every: ['5m', first_in: '4m']`.
 async fn run_trends_refresh(state: AppState) {
+    rest(&state.stop, crate::trends::REFRESH_FIRST_IN).await;
     while !state.stop.is_cancelled() {
         if let Err(e) = crate::trends::refresh(&state).await {
             tracing::error!(error = %e, "trends refresh failed");
@@ -705,9 +697,9 @@ async fn run_trends_refresh(state: AppState) {
     }
 }
 
-/// `Scheduler::Trends::ReviewNotificationsScheduler`: ask staff hourly about
-/// trends waiting on a review. The first pass waits its hour, as a newly
-/// started Sidekiq scheduler does.
+/// `Scheduler::Trends::ReviewNotificationsScheduler`: ask staff every six
+/// hours about trends waiting on a review. The first pass waits its six hours,
+/// as a newly started Sidekiq scheduler does.
 async fn run_trends_review(state: AppState) {
     loop {
         rest(&state.stop, crate::trends::REVIEW_EVERY).await;
@@ -720,6 +712,15 @@ async fn run_trends_review(state: AppState) {
     }
 }
 
+// ── Suspended account cleanup ─────────────────────────────────────────────
+
+/// Mastodon's `Scheduler::SuspendedUserCleanupScheduler`: once a suspension has
+/// stood for `DELAY_TO_DELETION`, the account's data is purged for good. Since
+/// account deletion is expensive, only a few are processed per pass.
+///
+/// Between passes it sleeps until the oldest request comes due. It needs no
+/// wake-up: a new request falls due `DELAY_TO_DELETION` after it is made, later
+/// than anything already waiting and far later than the ceiling.
 async fn run_suspended_account_cleanup(state: AppState) {
     let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
     while !state.stop.is_cancelled() {
@@ -738,9 +739,9 @@ async fn run_suspended_account_cleanup(state: AppState) {
     }
 }
 
-/// The two minutes this task always waited between passes. A request whose
-/// deletion keeps failing stays due, and is retried no faster than before.
-const DELETION_PASS_FLOOR: Duration = Duration::from_secs(120);
+/// `Scheduler::SuspendedUserCleanupScheduler`'s `interval: 1 minute`. A
+/// request whose deletion keeps failing stays due, and is retried no faster.
+const DELETION_PASS_FLOOR: Duration = Duration::from_secs(60);
 
 /// Seconds until the oldest deletion request comes due, or `None` when there
 /// are none. Uses this process's clock, as `process_deletion_requests` does.
@@ -927,5 +928,48 @@ mod timed_task_tests {
         assert!(jittered(nap, MOST) >= Duration::from_secs(225));
         assert_eq!(jittered(nap, 7.0), Duration::from_secs(225));
         assert_eq!(jittered(nap, -1.0), nap);
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use std::time::Duration;
+
+    const MINUTE: Duration = Duration::from_secs(60);
+    const HOUR: Duration = Duration::from_secs(60 * 60);
+    const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+
+    /// The timed tasks run as often as Mastodon 4.7.2's *config/sidekiq.yml*
+    /// schedules the scheduler each one ports. Its daily crons, at a random
+    /// minute of a random early hour, are a day apart here too.
+    #[test]
+    fn timed_tasks_keep_sidekiq_yml_intervals() {
+        let schedules = [
+            // trends_refresh_scheduler: every: ['5m', first_in: '4m']
+            (crate::trends::REFRESH_EVERY, 5 * MINUTE),
+            (crate::trends::REFRESH_FIRST_IN, 4 * MINUTE),
+            // trends_review_notifications_scheduler: every: '6h'
+            (crate::trends::REVIEW_EVERY, 6 * HOUR),
+            // indexing_scheduler: interval: 1 minute
+            (crate::search::elasticsearch::indexing::INTERVAL, MINUTE),
+            // vacuum_scheduler, user_cleanup_scheduler, ip_cleanup_scheduler:
+            // daily crons
+            (crate::vacuum::EVERY, DAY),
+            (crate::email_subscriptions::CLEANUP_EVERY, DAY),
+            (crate::ip_cleanup::EVERY, DAY),
+            // accounts_statuses_cleanup_scheduler: interval: 1 minute
+            (crate::statuses_cleanup::EVERY, MINUTE),
+            // suspended_user_cleanup_scheduler: interval: 1 minute
+            (super::DELETION_PASS_FLOOR, MINUTE),
+            // software_update_check_scheduler: interval: 30 minutes
+            (crate::software_updates::CHECK_INTERVAL, 30 * MINUTE),
+            // auto_close_registrations_scheduler: interval: 1 hour
+            (crate::auto_close_registrations::INTERVAL, HOUR),
+            // collection_item_cleanup_scheduler: interval: 1 hour
+            (crate::collection_item_cleanup::EVERY, HOUR),
+        ];
+        for (index, (ours, mastodon)) in schedules.into_iter().enumerate() {
+            assert_eq!(ours, mastodon, "schedule {index}");
+        }
     }
 }

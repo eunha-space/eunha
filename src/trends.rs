@@ -5,8 +5,8 @@
 //! post used today is remembered in a `trending_{type}:used:{day}` set.
 //! Every five minutes [`refresh`] scores whatever trended before or was used
 //! today, writes those above the decay threshold to `tag_trends`,
-//! `preview_card_trends` and `status_trends`, and ranks them. Each hour
-//! [`request_review`] mails staff about trends waiting on a review.
+//! `preview_card_trends` and `status_trends`, and ranks them. Every six
+//! hours [`request_review`] mails staff about trends waiting on a review.
 //!
 //! The Redis writes are best-effort, like the histories': a Redis user
 //! without the commands loses the use, not the request.
@@ -20,8 +20,10 @@ use crate::{moderation::history, state::AppState};
 
 /// `Scheduler::Trends::RefreshScheduler`'s every five minutes.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(5 * 60);
-/// `Scheduler::Trends::ReviewNotificationsScheduler`'s hourly.
-pub const REVIEW_EVERY: Duration = Duration::from_secs(60 * 60);
+/// The four minutes *config/sidekiq.yml* gives the refresh as `first_in`.
+pub const REFRESH_FIRST_IN: Duration = Duration::from_secs(4 * 60);
+/// `Scheduler::Trends::ReviewNotificationsScheduler`'s every six hours.
+pub const REVIEW_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// `default_options[:threshold]`, the same for all three.
 const THRESHOLD: f64 = 5.0;

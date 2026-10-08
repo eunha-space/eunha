@@ -314,9 +314,9 @@ endpoints there decide. Link publishers are reviewed at
 Trends are scored as Mastodon scores them. Each use is counted as it
 happens: the distinct people using a hashtag or link each day go into
 its history in Redis, and every hashtag, link and post used today is
-noted. Every five minutes Eunha rescores what trended before and what
-was used today, and keeps the result in `tag_trends`,
-`preview_card_trends` and `status_trends`:
+noted. Every five minutes, starting four minutes after the instance
+starts, Eunha rescores what trended before and what was used today, and keeps
+the result in `tag_trends`, `preview_card_trends` and `status_trends`:
 
  -  a hashtag or link scores once five people use it in a day and more
     use it than the day before. The peak score is kept for two days and
@@ -332,7 +332,7 @@ A link trends only from a preview card with a language that Mastodon
 recognizes, an article with a title, a description, an image and a
 publisher name.
 
-Every hour, unless `trendable_by_default` is on or trends are off, Eunha
+Every six hours, unless `trendable_by_default` is on or trends are off, Eunha
 looks for trends awaiting review that score above the allowed trend
 ranked third in their language. It marks each one as asked about and
 mails every moderator with `manage_taxonomies` who has trend emails on.

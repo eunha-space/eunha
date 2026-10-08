@@ -19,7 +19,7 @@ use crate::state::AppState;
 const MODERATOR_THRESHOLD_HOURS: i64 = 7 * 24 + 24;
 
 /// The scheduler's `interval: 1 hour`.
-const INTERVAL: Duration = Duration::from_secs(3600);
+pub(crate) const INTERVAL: Duration = Duration::from_secs(3600);
 
 /// Run [`check`] every hour until the instance stops.
 pub async fn run(state: AppState) {

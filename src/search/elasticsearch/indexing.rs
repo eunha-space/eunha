@@ -21,7 +21,7 @@ const IMPORT_BATCH_SIZE: usize = 1000;
 /// `SCAN_BATCH_SIZE`.
 const SCAN_BATCH_SIZE: usize = 10 * IMPORT_BATCH_SIZE;
 /// The scheduler's `interval: 1 minute`.
-const INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const INTERVAL: Duration = Duration::from_secs(60);
 /// `Scheduler::InstanceRefreshScheduler`'s `cron: '0 * * * *'`.
 const INSTANCES_INTERVAL: Duration = Duration::from_secs(3600);
 /// `lock_ttl: 30.minutes`.

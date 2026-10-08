@@ -20,7 +20,8 @@ software_update_url = "https://api.joinmastodon.org/update-check"
 ~~~~
 
 The request then carries the Mastodon version being asked about and eunha's own
-`User-Agent`; it does not claim to be Mastodon. A process asks once however
+`User-Agent`; it does not claim to be Mastodon. It is asked every half hour, as
+Mastodon's `SoftwareUpdateCheckScheduler` asks. A process asks once however
 many instances it serves — the question is about the release the binary
 implements, so it is the same for all of them — and records the answer in each
 of their databases. Instances naming different servers are asked separately,
