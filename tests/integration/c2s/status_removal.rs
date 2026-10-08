@@ -203,6 +203,23 @@ async fn test_reported_status_kept_until_cleanup() {
         "kept for moderators"
     );
     assert_eq!(statuses_count(&ctx, &ctx.alice_id).await, 1);
+    // Kept, but `Status.find` and `@account.statuses.find` do not find it:
+    // 404 everywhere, never 410.
+    for path in [
+        format!("/api/v1/statuses/{sid}"),
+        format!("/api/v1/statuses/{sid}/context"),
+        format!("/api/v1/statuses/{sid}/favourited_by"),
+    ] {
+        let resp = ctx.api.get(&path, Some(&ctx.alice_token)).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+    for path in [
+        format!("/users/alice/statuses/{sid}"),
+        format!("/users/alice/statuses/{sid}/activity"),
+    ] {
+        let resp = ctx.api.ap_get(&path, None).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{path}");
+    }
 
     // Not yet a month: nothing to purge.
     assert_eq!(

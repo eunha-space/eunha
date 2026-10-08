@@ -200,7 +200,8 @@ A post cited by an unresolved report or by a strike is kept, discarded, for
 moderators, and so is a local post a moderator deleted from a report. The
 daily user cleanup (Mastodon's `Scheduler::UserCleanupScheduler`) queues a
 `RemovalWorker` that destroys every post discarded more than thirty days
-earlier.
+earlier. Until then the API, its ActivityPub URLs and oEmbed answer 404 for
+it, as for a post that is gone, and as Mastodon answers.
 
 Deleting a post through the API keeps its media for delete-and-redraft: the
 attachments are left unattached, for the new post to take, and the daily

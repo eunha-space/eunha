@@ -385,15 +385,8 @@ pub async fn get_status(
     Path(id): Path<i64>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<Status>> {
-    // Check existence including deleted rows so we can return 410 vs 404 correctly.
-    let deleted_at = sqlx::query_scalar!("SELECT deleted_at FROM statuses WHERE id = $1", id)
-        .fetch_optional(&state.db)
-        .await?;
-    match deleted_at {
-        None => return Err(AppError::NotFound),
-        Some(Some(_)) => return Err(AppError::Gone("Status has been deleted".into())),
-        Some(None) => {}
-    }
+    // `Status.find`, under the default scope: a status that was discarded but
+    // kept for moderators is not found, as one destroyed is not.
     let (status, account) = fetch_status_with_account(&state, id).await?;
 
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
