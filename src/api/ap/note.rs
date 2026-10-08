@@ -289,19 +289,8 @@ pub async fn build_note(
     tag.extend(emoji_tags);
 
     // ── Media attachments ───────────────────────────────────────────────────
-    let media = sqlx::query_as!(
-        models::MediaAttachment,
-        r#"SELECT m.* FROM media_attachments m
-           JOIN LATERAL (
-               SELECT COALESCE(array_position(s.ordered_media_attachment_ids, m.id), 2147483647) AS ord
-               FROM statuses s WHERE s.id = $1
-           ) o ON true
-           WHERE m.status_id = $1
-           ORDER BY o.ord, m.id"#,
-        s.id,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    // `object.ordered_media_attachments`.
+    let media = crate::api::mastodon::status_serialize::fetch_status_media(state, s.id).await?;
     let mut attachment: Vec<Value> = media
         .iter()
         .filter_map(|m| media_attachment_ap(&state.urls, m))

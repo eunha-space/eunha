@@ -411,11 +411,21 @@ async fn test_no_card_without_a_title_or_for_media() {
     );
 
     let alice: i64 = ctx.alice_id.parse().unwrap();
+    // Attached as `PostStatusService` attaches it, in the status's order.
+    let media_id = eunha::snowflake::next_id();
     sqlx::query!(
         "INSERT INTO media_attachments (id, account_id, status_id, type, created_at, updated_at)
          VALUES ($1, $2, $3, 0, now(), now())",
-        eunha::snowflake::next_id(),
+        media_id,
         alice,
+        status_id
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "UPDATE statuses SET ordered_media_attachment_ids = ARRAY[$1::bigint] WHERE id = $2",
+        media_id,
         status_id
     )
     .execute(&ctx.db)

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.account_id, s.visibility, s.reblog_of_id,\n                  a.domain IS NULL AS \"local!\",\n                  (s.ordered_media_attachment_ids IS NOT NULL\n                   AND cardinality(s.ordered_media_attachment_ids) > 0\n                   OR EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = s.id)) AS \"with_media!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
+  "query": "SELECT s.id, s.account_id, s.visibility, s.reblog_of_id,\n                  a.domain IS NULL AS \"local!\",\n                  EXISTS (SELECT 1 FROM media_attachments m\n                          WHERE m.status_id = s.id\n                            AND (s.ordered_media_attachment_ids IS NULL\n                                 OR m.id = ANY(s.ordered_media_attachment_ids))) AS \"with_media!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       null
     ]
   },
-  "hash": "250f352d265ca8b568d2dda4d15d9f5c9384c865a8897f223ef8ec08dc415726"
+  "hash": "931f67cc91e9250f8609e2fcf1bbe898c52fb11fcdeb3820ada4ef6a735ba6d1"
 }

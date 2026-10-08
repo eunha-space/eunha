@@ -468,9 +468,13 @@ pub async fn get_account_statuses(
                    OR poll_id IS NOT NULL
                    OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
                  )
-                 AND ($8::boolean IS NOT TRUE OR
-                   EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
-                 )
+                 -- `only_media_scope`: `without_empty_attachments`, and an
+                 -- attachment of the account's.
+                 AND ($8::boolean IS NOT TRUE OR (
+                   (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')
+                   AND EXISTS (SELECT 1 FROM media_attachments m
+                               WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)
+                 ))
                  AND ($9::text IS NULL OR EXISTS (
                    SELECT 1 FROM statuses_tags st
                    JOIN tags t ON t.id = st.tag_id
@@ -529,9 +533,13 @@ pub async fn get_account_statuses(
                    OR poll_id IS NOT NULL
                    OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
                  )
-                 AND ($9::boolean IS NOT TRUE OR
-                   EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
-                 )
+                 -- `only_media_scope`: `without_empty_attachments`, and an
+                 -- attachment of the account's.
+                 AND ($9::boolean IS NOT TRUE OR (
+                   (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')
+                   AND EXISTS (SELECT 1 FROM media_attachments m
+                               WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)
+                 ))
                  AND ($10::text IS NULL OR EXISTS (
                    SELECT 1 FROM statuses_tags st
                    JOIN tags t ON t.id = st.tag_id

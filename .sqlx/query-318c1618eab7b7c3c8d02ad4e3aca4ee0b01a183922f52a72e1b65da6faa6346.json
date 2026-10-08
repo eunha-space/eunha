@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET sensitive = false, updated_at = now()\n           WHERE id = ANY($1) AND deleted_at IS NULL\n             AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id)\n           RETURNING *",
+  "query": "INSERT INTO statuses\n             (id, account_id, text, spoiler_text, visibility,\n              language, sensitive, in_reply_to_id, in_reply_to_account_id, reply, uri, url,\n              ordered_media_attachment_ids, local, created_at, updated_at)\n           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12, true, now(), now())\n           RETURNING *",
   "describe": {
     "columns": [
       {
@@ -131,6 +131,17 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int4",
+        "Varchar",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Varchar",
         "Int8Array"
       ]
     },
@@ -162,5 +173,5 @@
       false
     ]
   },
-  "hash": "8618a22358264b0238aa35e9900274bd72a607f8ff03c3fcbbb955a8660a8f3e"
+  "hash": "318c1618eab7b7c3c8d02ad4e3aca4ee0b01a183922f52a72e1b65da6faa6346"
 }

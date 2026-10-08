@@ -1081,9 +1081,13 @@ async fn test_report_moderation_actions() {
         crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
     let with_media = ctx.api.post_status(&ctx.bob_token, "look", "public").await;
     let plain = ctx.api.post_status(&ctx.bob_token, "words", "public").await;
+    // Attached as `PostStatusService` attaches it, in the status's order.
     sqlx::query(
-        "INSERT INTO media_attachments (id, account_id, status_id, type, created_at, updated_at)
-         VALUES ($1, $2, $3, 0, now(), now())",
+        "WITH m AS (
+             INSERT INTO media_attachments (id, account_id, status_id, type, created_at, updated_at)
+             VALUES ($1, $2, $3, 0, now(), now()) RETURNING id, status_id)
+         UPDATE statuses s SET ordered_media_attachment_ids = ARRAY[m.id]
+         FROM m WHERE s.id = m.status_id",
     )
     .bind(eunha::snowflake::next_id())
     .bind(id(&ctx.bob_id))

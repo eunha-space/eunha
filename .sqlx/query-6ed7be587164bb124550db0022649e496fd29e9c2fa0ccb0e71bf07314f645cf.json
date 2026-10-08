@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM media_attachments WHERE status_id = $1",
+  "query": "SELECT id FROM media_attachments WHERE status_id = $1 ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "f353ba066ad31de3fb51669fec4a8c5b1b8c291c5e9721f2ecf3b7bb9fcbff74"
+  "hash": "6ed7be587164bb124550db0022649e496fd29e9c2fa0ccb0e71bf07314f645cf"
 }

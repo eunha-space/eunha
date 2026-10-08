@@ -753,9 +753,10 @@ async fn try_remove(
     let Some(status) = sqlx::query!(
         r#"SELECT s.id, s.account_id, s.visibility, s.reblog_of_id,
                   a.domain IS NULL AS "local!",
-                  (s.ordered_media_attachment_ids IS NOT NULL
-                   AND cardinality(s.ordered_media_attachment_ids) > 0
-                   OR EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = s.id)) AS "with_media!"
+                  EXISTS (SELECT 1 FROM media_attachments m
+                          WHERE m.status_id = s.id
+                            AND (s.ordered_media_attachment_ids IS NULL
+                                 OR m.id = ANY(s.ordered_media_attachment_ids))) AS "with_media!"
            FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
         status_id
     )

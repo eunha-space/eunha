@@ -83,26 +83,49 @@ pub async fn edit_status(
         Some(crate::api::mastodon::DEFAULT_LOCALE),
     ]);
 
-    // Detect whether the attached media set changes (description edits via
-    // media_attributes also count as a change).
-    let media_changed = form.media_attributes.is_some()
-        || match form.media_ids {
-            Some(ref ids) => {
-                let mut parsed: Vec<i64> =
-                    ids.iter().filter_map(|s| s.parse::<i64>().ok()).collect();
-                let mut current: Vec<i64> = sqlx::query_scalar!(
-                    "SELECT id FROM media_attachments WHERE status_id = $1",
-                    id,
-                )
-                .fetch_all(&state.db)
-                .await
-                .unwrap_or_default();
-                parsed.sort_unstable();
-                current.sort_unstable();
-                parsed != current
-            }
-            None => false,
-        };
+    // `update_media_attachments! if @options.key?(:media_ids)`: the next
+    // attachments, validated, in the order asked for. The media changed when
+    // that order is not the one the status had (`ordered_media_attachments`),
+    // or when a `media_attributes` entry for one of them changes its
+    // description (`significantly_changed?`).
+    let previous_media: Vec<crate::db::models::MediaAttachment> =
+        crate::api::mastodon::status_serialize::fetch_status_media(&state, id).await?;
+    let next_media: Option<Vec<i64>> = match form.media_ids.as_deref() {
+        Some(ids) => Some(validate_media(&state, auth.account_id, Some(ids), Some(id)).await?),
+        None => None,
+    };
+    let media_descriptions: Vec<(i64, String)> = match (&next_media, &form.media_attributes) {
+        (Some(next), Some(attrs)) => attrs
+            .iter()
+            .filter_map(|attr| {
+                let media_id = attr.id.parse::<i64>().ok()?;
+                let description = attr.description.clone()?;
+                next.contains(&media_id).then_some((media_id, description))
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let descriptions_changed = if media_descriptions.is_empty() {
+        false
+    } else {
+        let ids: Vec<i64> = media_descriptions.iter().map(|(id, _)| *id).collect();
+        let current = sqlx::query!(
+            "SELECT id, description FROM media_attachments WHERE id = ANY($1)",
+            &ids,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        media_descriptions.iter().any(|(media_id, description)| {
+            current
+                .iter()
+                .find(|m| m.id == *media_id)
+                .is_some_and(|m| m.description.as_deref() != Some(description.as_str()))
+        })
+    };
+    let media_changed = descriptions_changed
+        || next_media
+            .as_ref()
+            .is_some_and(|next| previous_media.iter().map(|m| m.id).collect::<Vec<_>>() != *next);
 
     // Poll editing (Mastodon UpdateStatusService#update_poll!): a poll in the
     // request creates or updates one; changing options resets votes.
@@ -170,29 +193,32 @@ pub async fn edit_status(
     // carries that version's media order and poll options so `/history` renders
     // each past version faithfully.
     let snapshot_at = status.edited_at.unwrap_or(status.created_at);
-    let snapshot_media = status.ordered_media_attachment_ids.clone();
-    let snapshot_poll = existing_poll.as_ref().map(|p| p.options.clone());
-    // Each attachment's description as it is now, before this edit changes
-    // any: Mastodon's `media_descriptions`, which `/history` shows each past
-    // version with.
-    let snapshot_descriptions: Option<Vec<Option<String>>> = match &snapshot_media {
-        Some(ids) if !ids.is_empty() => Some(
+    // `ordered_media_attachment_ids&.dup || media_attachments.pluck(:id)`.
+    let snapshot_media = match status.ordered_media_attachment_ids.clone() {
+        Some(ids) => ids,
+        None => {
             sqlx::query_scalar!(
-                r#"SELECT m.description FROM unnest($1::bigint[]) WITH ORDINALITY AS o(id, position)
-                   LEFT JOIN media_attachments m ON m.id = o.id
-                   ORDER BY o.position"#,
-                ids,
+                "SELECT id FROM media_attachments WHERE status_id = $1 ORDER BY id",
+                id,
             )
             .fetch_all(&state.db)
-            .await?,
-        ),
-        _ => None,
+            .await?
+        }
     };
+    let snapshot_poll = existing_poll.as_ref().map(|p| p.options.clone());
+    // Each attachment's description as it is now, before this edit changes
+    // any: Mastodon's `media_descriptions`
+    // (`ordered_media_attachments.map(&:description)`), which `/history`
+    // shows each past version with.
+    let snapshot_descriptions: Vec<Option<String>> = previous_media
+        .iter()
+        .map(|m| m.description.clone())
+        .collect();
     sqlx::query!(
         r#"INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive, ordered_media_attachment_ids, media_descriptions, poll_options, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())"#,
         id, auth.account_id, status.text, status.spoiler_text, status.sensitive,
-        snapshot_media.as_deref(), snapshot_descriptions.as_deref() as Option<&[Option<String>]>,
+        &snapshot_media, &snapshot_descriptions as &[Option<String>],
         snapshot_poll.as_deref(), snapshot_at,
     )
     .execute(&state.db)
@@ -220,39 +246,34 @@ pub async fn edit_status(
         crate::preview_card::crawl(&state, id).await;
     }
 
-    // Update media: change descriptions and/or reorder/replace attached media.
-    if let Some(ref attrs) = form.media_attributes {
-        for attr in attrs {
-            if let Ok(media_id) = attr.id.parse::<i64>() {
-                if let Some(ref desc) = attr.description {
-                    let _ = sqlx::query!(
-                        "UPDATE media_attachments SET description = $1 WHERE id = $2 AND account_id = $3",
-                        desc, media_id, auth.account_id,
-                    )
-                    .execute(&state.db)
-                    .await;
-                }
-            }
-        }
-    }
-    if let Some(ref ids) = form.media_ids {
-        let parsed: Vec<i64> = ids.iter().filter_map(|s| s.parse::<i64>().ok()).collect();
-        // Detach old media not in the new set
-        let _ = sqlx::query!(
-            "UPDATE media_attachments SET status_id = NULL WHERE status_id = $1 AND id != ALL($2::bigint[])",
-            id, &parsed,
-        )
-        .execute(&state.db)
-        .await;
-        // Attach new media (must be owned by same account)
-        for media_id in &parsed {
-            let _ = sqlx::query!(
-                "UPDATE media_attachments SET status_id = $1 WHERE id = $2 AND account_id = $3 AND (status_id IS NULL OR status_id = $1)",
-                id, media_id, auth.account_id,
+    // `update_media_attachments!`: the descriptions given for the next
+    // attachments, the added ones attached, and the order recorded. An
+    // attachment taken off stays attached, so that the versions in the
+    // history that showed it still can.
+    if let Some(next) = &next_media {
+        for (media_id, description) in &media_descriptions {
+            sqlx::query!(
+                "UPDATE media_attachments SET description = $1, updated_at = now() WHERE id = $2",
+                description,
+                media_id,
             )
             .execute(&state.db)
-            .await;
+            .await?;
         }
+        sqlx::query!(
+            "UPDATE media_attachments SET status_id = $1 WHERE id = ANY($2) AND status_id IS NULL",
+            id,
+            next,
+        )
+        .execute(&state.db)
+        .await?;
+        sqlx::query!(
+            "UPDATE statuses SET ordered_media_attachment_ids = $2 WHERE id = $1",
+            id,
+            next,
+        )
+        .execute(&state.db)
+        .await?;
     }
 
     // Apply the poll change (Mastodon resets votes when options change; an
@@ -447,12 +468,6 @@ pub(crate) async fn status_edits(
         .iter()
         .filter_map(|e| e.ordered_media_attachment_ids.as_ref())
         .flat_map(|ids| ids.iter().copied())
-        .chain(
-            status
-                .ordered_media_attachment_ids
-                .iter()
-                .flat_map(|ids| ids.iter().copied()),
-        )
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -535,6 +550,16 @@ pub(crate) async fn status_edits(
         None
     };
 
+    // The current version, as `build_snapshot` has it: the status's
+    // `ordered_media_attachments`, every attachment by id when it has no
+    // order recorded.
+    let current_media = crate::api::mastodon::status_serialize::fetch_status_media(state, id)
+        .await?
+        .iter()
+        .map(|m| crate::api::mastodon::convert::media_from_db(&state.urls, m))
+        .filter(|m| m.url.is_some() || m.remote_url.as_deref().is_some_and(|u| !u.is_empty()))
+        .collect();
+
     // Append current version
     result.push(StatusEdit {
         content: current_content,
@@ -544,7 +569,7 @@ pub(crate) async fn status_edits(
             status.edited_at.unwrap_or(status.created_at),
         ),
         account: api_account,
-        media_attachments: ordered_media(status.ordered_media_attachment_ids.as_ref(), None),
+        media_attachments: current_media,
         emojis: vec![],
         poll: current_poll,
         quote: None,

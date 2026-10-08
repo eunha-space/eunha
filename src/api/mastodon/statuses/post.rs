@@ -72,7 +72,8 @@ pub async fn post_status(
 
     // `validate_media!`, the first thing `with_idempotency` runs, before the
     // status is built or scheduled.
-    let parsed_media_ids = validate_media(&state, account.id, form.media_ids.as_deref()).await?;
+    let parsed_media_ids =
+        validate_media(&state, account.id, form.media_ids.as_deref(), None).await?;
 
     let mut text = form.status.clone().unwrap_or_default();
     let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
@@ -396,8 +397,8 @@ pub async fn post_status(
         r#"INSERT INTO statuses
              (id, account_id, application_id, text, spoiler_text, visibility,
               language, sensitive, in_reply_to_id, in_reply_to_account_id, reply, uri, url,
-              quote_approval_policy, local, created_at, updated_at)
-           VALUES ($1,$2,$10,$3,$4,$5,$6,$7,$8,$9,$12,$11,$14,$13, true, now(), now())
+              quote_approval_policy, ordered_media_attachment_ids, local, created_at, updated_at)
+           VALUES ($1,$2,$10,$3,$4,$5,$6,$7,$8,$9,$12,$11,$14,$13,$15, true, now(), now())
            RETURNING *"#,
         status_id,
         account.id,
@@ -413,6 +414,7 @@ pub async fn post_status(
         is_reply,
         quote_policy_int,
         human_url,
+        &parsed_media_ids,
     )
     .fetch_one(&state.db)
     .await?;
@@ -783,10 +785,14 @@ fn ruby_to_i(s: &str) -> i64 {
 /// scheduled status counts as free, as upstream's `where(status_id: nil)`
 /// has it. A refusal is `Mastodon::ValidationError`'s 422, which carries the
 /// message without `Validation failed:`.
+///
+/// With `editing`, `UpdateStatusService#validate_media!`: the edited
+/// status's own uploads count too, and one on a scheduled status does not.
 pub(crate) async fn validate_media(
     state: &AppState,
     account_id: i64,
     media_ids: Option<&[String]>,
+    editing: Option<i64>,
 ) -> AppResult<Vec<i64>> {
     let Some(ids) = media_ids.filter(|ids| !ids.is_empty()) else {
         return Ok(vec![]);
@@ -799,9 +805,12 @@ pub(crate) async fn validate_media(
     let wanted: Vec<i64> = ids.iter().map(|id| ruby_to_i(id)).collect();
     let rows = sqlx::query!(
         r#"SELECT id, "type", processing FROM media_attachments
-           WHERE account_id = $1 AND status_id IS NULL AND id = ANY($2)"#,
+           WHERE account_id = $1 AND id = ANY($2)
+             AND (status_id IS NULL OR status_id = $3)
+             AND ($3::bigint IS NULL OR scheduled_status_id IS NULL)"#,
         account_id,
         &wanted,
+        editing,
     )
     .fetch_all(&state.db)
     .await?;

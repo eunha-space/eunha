@@ -45,6 +45,69 @@ pub(super) fn attachment_url(value: &Value) -> Option<(String, Option<String>)> 
     }
 }
 
+/// An attachment of a remote status, as `MediaAttachmentParser` reads it
+/// for `Create` and `Update` alike.
+pub(super) struct RemoteMedia {
+    pub remote_url: String,
+    /// Eunha's type code, from [`classify_attachment_type`].
+    pub kind: i32,
+    pub description: Option<String>,
+    pub blurhash: Option<String>,
+    pub thumbnail_remote_url: Option<String>,
+    pub file_content_type: Option<String>,
+    pub file_meta: Option<Value>,
+}
+
+/// `as_array(json['attachment'])`: an object's attachments, one that is not
+/// in an array included.
+pub(super) fn attachments_of(object: &Value) -> Vec<Value> {
+    match object.get("attachment") {
+        Some(Value::Array(items)) => items.clone(),
+        Some(Value::Null) | None => Vec::new(),
+        Some(item) => vec![item.clone()],
+    }
+}
+
+/// The media `att` names, or `None` when it has no `url`
+/// (`remote_url.blank?`).
+pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {
+    let att_type_str = att.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    // `url` may be a string, a Link object (`{href, mediaType}`), or an
+    // array of links — Mastodon resolves all of these.
+    let (remote_url, link_media_type) = att.get("url").and_then(attachment_url)?;
+    // mediaType: explicit, else from the chosen Link, else guessed from the
+    // URL's extension (matches Mastodon's `mediaType || url_to_media_type`).
+    let media_type_str = att
+        .get("mediaType")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .or(link_media_type)
+        .or_else(|| {
+            let path = remote_url.split(['?', '#']).next().unwrap_or(&remote_url);
+            mime_guess::from_path(path).first_raw().map(str::to_owned)
+        })
+        .unwrap_or_default();
+    // Classify from mediaType — Mastodon serializes `type: "Document"` for
+    // everything — falling back to the AP `type` hint for odd peers.
+    let kind = classify_attachment_type(att_type_str, &media_type_str);
+    Some(RemoteMedia {
+        kind,
+        description: att.get("name").and_then(|v| v.as_str()).map(str::to_owned),
+        blurhash: att
+            .get("blurhash")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        thumbnail_remote_url: att
+            .get("icon")
+            .and_then(|i| if i.is_object() { i.get("url") } else { None })
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        file_content_type: (!media_type_str.is_empty()).then_some(media_type_str),
+        file_meta: ap_attachment_file_meta(att),
+        remote_url,
+    })
+}
+
 /// Build a Mastodon-style `file_meta` (`{"original": {...}, "focus": {...}}`)
 /// from an ActivityPub attachment's `width`/`height`/`duration`/`focalPoint`.
 /// Returns `None` when the attachment carries no geometry.

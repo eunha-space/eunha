@@ -316,7 +316,10 @@ async fn unmark_statuses_as_sensitive(state: &AppState, strike: &Strike) -> AppR
         crate::db::models::Status,
         r#"UPDATE statuses SET sensitive = false, updated_at = now()
            WHERE id = ANY($1) AND deleted_at IS NULL
-             AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id)
+             -- `status.with_media?`: its `ordered_media_attachments`.
+             AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id
+                         AND (statuses.ordered_media_attachment_ids IS NULL
+                              OR m.id = ANY(statuses.ordered_media_attachment_ids)))
            RETURNING *"#,
         &ids,
     )

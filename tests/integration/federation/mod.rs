@@ -8,6 +8,7 @@ mod delivery_failures;
 mod delivery_queue;
 mod forwarding;
 mod handles;
+mod inbound_status;
 mod ingress;
 mod instance_actor;
 mod integrity_proofs;

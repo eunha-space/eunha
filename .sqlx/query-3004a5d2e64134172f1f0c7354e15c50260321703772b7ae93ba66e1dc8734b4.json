@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM media_attachments WHERE status_id = $1 ORDER BY id",
+  "query": "SELECT m.* FROM media_attachments m\n           JOIN statuses s ON s.id = m.status_id\n           WHERE m.status_id = ANY($1::bigint[])\n             AND (s.ordered_media_attachment_ids IS NULL\n                  OR m.id = ANY(s.ordered_media_attachment_ids))\n           ORDER BY m.status_id,\n                    array_position(s.ordered_media_attachment_ids, m.id),\n                    m.id",
   "describe": {
     "columns": [
       {
@@ -126,7 +126,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -156,5 +156,5 @@
       true
     ]
   },
-  "hash": "2e46c62411f3757b1f9fc86797f00abea8c95d376d9cc7f9c4fe5238bbc6d037"
+  "hash": "3004a5d2e64134172f1f0c7354e15c50260321703772b7ae93ba66e1dc8734b4"
 }

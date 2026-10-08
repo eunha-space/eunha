@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET ordered_media_attachment_ids = ARRAY[$1::bigint] WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19ee42295ded305cb7686fbf39f8590dae2b06287de068c296d38a6da79c8065"
+}

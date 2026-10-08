@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM media_attachments m JOIN statuses s ON s.id = m.status_id\n                                 WHERE m.status_id = $1\n                                   AND (s.ordered_media_attachment_ids IS NULL\n                                        OR m.id = ANY(s.ordered_media_attachment_ids)))\n                       OR EXISTS (SELECT 1 FROM preview_cards_statuses WHERE status_id = $1)\n                   AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d74c5a5418465ecdc36692e28c351d2bb30d036ad21497e373f73065ae38846f"
+}

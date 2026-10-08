@@ -27,6 +27,7 @@ mod limited_federation;
 mod lists;
 mod markers;
 mod media;
+mod media_order;
 mod moderation;
 mod moderation_tools;
 mod moves;

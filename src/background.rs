@@ -553,6 +553,7 @@ async fn publish_one(
         state,
         account.id,
         media_ids.as_deref(),
+        None,
     )
     .await
     {
@@ -580,11 +581,22 @@ async fn publish_one(
         crate::db::models::Status,
         r#"INSERT INTO statuses
              (id, account_id, text, spoiler_text, visibility,
-              language, sensitive, in_reply_to_id, in_reply_to_account_id, reply, uri, url, local, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11, true, now(), now())
+              language, sensitive, in_reply_to_id, in_reply_to_account_id, reply, uri, url,
+              ordered_media_attachment_ids, local, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12, true, now(), now())
            RETURNING *"#,
-        status_id, account.id, text, spoiler_text, visibility_int,
-        language, sensitive, in_reply_to_id, in_reply_to_account_id, is_reply, uri,
+        status_id,
+        account.id,
+        text,
+        spoiler_text,
+        visibility_int,
+        language,
+        sensitive,
+        in_reply_to_id,
+        in_reply_to_account_id,
+        is_reply,
+        uri,
+        &media_ids,
     )
     .fetch_one(&state.db)
     .await

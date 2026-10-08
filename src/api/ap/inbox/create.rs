@@ -6,9 +6,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::attachment::{
-    ap_attachment_file_meta, attachment_url, classify_attachment_type, preview_card_link,
-};
+use super::attachment::preview_card_link;
 use super::{
     acquire_create_lock, delete_arrived_first, fetch_remote_status, resolve_or_fetch_remote_account,
 };
@@ -521,11 +519,7 @@ pub(super) async fn create(
         if crate::federation::moderation::actor_media_rejected(state, actor_uri).await {
             Vec::new()
         } else {
-            object
-                .get("attachment")
-                .and_then(|a| a.as_array())
-                .cloned()
-                .unwrap_or_default()
+            super::attachment::attachments_of(object)
         };
     let mut media_ids: Vec<i64> = Vec::new();
     for att in &attachments {
@@ -533,44 +527,9 @@ pub(super) async fn create(
         if media_ids.len() >= 4 {
             break;
         }
-        let att_type_str = att.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        // `url` may be a string, a Link object (`{href, mediaType}`), or an
-        // array of links — Mastodon resolves all of these.
-        let Some((remote_url, link_media_type)) = att.get("url").and_then(attachment_url) else {
+        let Some(media) = super::attachment::remote_media(att) else {
             continue;
         };
-        // mediaType: explicit, else from the chosen Link, else guessed from the
-        // URL's extension (matches Mastodon's `mediaType || url_to_media_type`).
-        let media_type_str = att
-            .get("mediaType")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned)
-            .or(link_media_type)
-            .or_else(|| {
-                let path = remote_url.split(['?', '#']).next().unwrap_or(&remote_url);
-                mime_guess::from_path(path).first_raw().map(str::to_owned)
-            })
-            .unwrap_or_default();
-        // Classify from mediaType — Mastodon serializes `type: "Document"` for
-        // everything — falling back to the AP `type` hint for odd peers.
-        let att_type = classify_attachment_type(att_type_str, &media_type_str);
-        let description = att.get("name").and_then(|v| v.as_str()).map(str::to_owned);
-        let blurhash = att
-            .get("blurhash")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
-        let thumbnail_remote_url = att
-            .get("icon")
-            .and_then(|i| if i.is_object() { i.get("url") } else { None })
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
-        let file_content_type = if media_type_str.is_empty() {
-            None
-        } else {
-            Some(media_type_str.clone())
-        };
-        let file_meta = ap_attachment_file_meta(att);
-
         let media_id = crate::snowflake::next_id();
         match sqlx::query_scalar!(
             r#"INSERT INTO media_attachments
@@ -581,13 +540,13 @@ pub(super) async fn create(
             media_id,
             account_id,
             inserted_id,
-            remote_url,
-            description,
-            blurhash,
-            att_type,
-            thumbnail_remote_url,
-            file_content_type,
-            file_meta,
+            media.remote_url,
+            media.description,
+            media.blurhash,
+            media.kind,
+            media.thumbnail_remote_url,
+            media.file_content_type,
+            media.file_meta,
         )
         .fetch_one(&state.db)
         .await
@@ -596,15 +555,15 @@ pub(super) async fn create(
             Err(e) => tracing::warn!(error = %e, "failed to insert media attachment"),
         }
     }
-    if !media_ids.is_empty() {
-        let _ = sqlx::query!(
-            "UPDATE statuses SET ordered_media_attachment_ids = $1 WHERE id = $2",
-            &media_ids,
-            inserted_id,
-        )
-        .execute(&state.db)
-        .await;
-    }
+    // `ordered_media_attachment_ids: attachment_ids`, empty when there are
+    // none: the attachments in the order the object lists them.
+    sqlx::query!(
+        "UPDATE statuses SET ordered_media_attachment_ids = $1 WHERE id = $2",
+        &media_ids,
+        inserted_id,
+    )
+    .execute(&state.db)
+    .await?;
 
     // `LinkCrawlWorker.perform_in(rand(DISTRIBUTE_DELAY), @status.id,
     // @links.first)`: the card named by the first FEP-8967 `Link`

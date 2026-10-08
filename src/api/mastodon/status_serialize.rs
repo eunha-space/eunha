@@ -18,9 +18,19 @@ pub async fn batch_status_media(
     if status_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
+    // `Status#ordered_media_attachments`: in `ordered_media_attachment_ids`'
+    // order, and only those it names, or every attachment by id when it is
+    // null; at most `MEDIA_ATTACHMENTS_LIMIT`.
     let rows = sqlx::query_as!(
         crate::db::models::MediaAttachment,
-        "SELECT * FROM media_attachments WHERE status_id = ANY($1::bigint[]) ORDER BY id",
+        r#"SELECT m.* FROM media_attachments m
+           JOIN statuses s ON s.id = m.status_id
+           WHERE m.status_id = ANY($1::bigint[])
+             AND (s.ordered_media_attachment_ids IS NULL
+                  OR m.id = ANY(s.ordered_media_attachment_ids))
+           ORDER BY m.status_id,
+                    array_position(s.ordered_media_attachment_ids, m.id),
+                    m.id"#,
         status_ids,
     )
     .fetch_all(&state.db)
@@ -28,11 +38,18 @@ pub async fn batch_status_media(
     let mut map: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
     for m in rows {
         if let Some(sid) = m.status_id {
-            map.entry(sid).or_default().push(m);
+            let media = map.entry(sid).or_default();
+            if media.len() < MEDIA_ATTACHMENTS_LIMIT {
+                media.push(m);
+            }
         }
     }
     Ok(map)
 }
+
+/// `Status::MEDIA_ATTACHMENTS_LIMIT`: how many of a status's attachments
+/// `ordered_media_attachments` shows.
+pub const MEDIA_ATTACHMENTS_LIMIT: usize = 4;
 
 pub async fn batch_reblog_data(
     state: &AppState,
@@ -418,13 +435,10 @@ pub async fn fetch_status_media(
     state: &AppState,
     status_id: i64,
 ) -> AppResult<Vec<crate::db::models::MediaAttachment>> {
-    Ok(sqlx::query_as!(
-        crate::db::models::MediaAttachment,
-        "SELECT * FROM media_attachments WHERE status_id = $1 ORDER BY id",
-        status_id,
-    )
-    .fetch_all(&state.db)
-    .await?)
+    Ok(batch_status_media(state, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default())
 }
 
 pub async fn fetch_reblog_data(

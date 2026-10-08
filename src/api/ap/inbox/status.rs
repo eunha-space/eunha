@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::attachment::{ap_attachment_file_meta, classify_attachment_type, preview_card_link};
+use super::attachment::preview_card_link;
 use super::{
     acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status, mirror_item_into,
     resolve_or_fetch_remote_account, same_host, sync_remote_poll, upsert_remote_collection,
@@ -814,55 +814,67 @@ pub(super) async fn handle_update(
             };
             crate::fasp::events::status_updated(state, row.id).await;
 
-            // Replace media attachments
-            sqlx::query!("DELETE FROM media_attachments WHERE status_id = $1", row.id)
-                .execute(&state.db)
-                .await?;
-            let attachments: Vec<Value> = object
-                .get("attachment")
-                .and_then(|a| a.as_array())
-                .cloned()
-                .unwrap_or_default();
+            // `update_media_attachments!`: each attachment the object lists,
+            // the one the status already had at its URL updated in place, a
+            // new one created; at most `MEDIA_ATTACHMENTS_LIMIT`. Those no
+            // longer listed stay attached, for the history, and the order is
+            // recorded.
+            let attachments = super::attachment::attachments_of(object);
+            let previous_media = sqlx::query!(
+                "SELECT id, remote_url FROM media_attachments WHERE status_id = $1",
+                row.id
+            )
+            .fetch_all(&state.db)
+            .await?;
             let mut media_ids: Vec<i64> = Vec::new();
             for att in &attachments {
-                let att_type_str = att.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                let media_type_str = att.get("mediaType").and_then(|v| v.as_str()).unwrap_or("");
-                let att_type = classify_attachment_type(att_type_str, media_type_str);
-                let remote_url = match att.get("url").and_then(|v| v.as_str()) {
-                    Some(u) if !u.is_empty() => u,
-                    _ => continue,
+                if media_ids.len() >= 4 {
+                    break;
+                }
+                let Some(media) = super::attachment::remote_media(att) else {
+                    continue;
                 };
-                let description = att.get("name").and_then(|v| v.as_str()).map(str::to_owned);
-                let blurhash = att
-                    .get("blurhash")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned);
-                let thumbnail_remote_url = att
-                    .get("icon")
-                    .and_then(|i| if i.is_object() { i.get("url") } else { None })
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned);
-                let file_content_type = if media_type_str.is_empty() {
-                    None
-                } else {
-                    Some(media_type_str.to_owned())
-                };
-                let file_meta = ap_attachment_file_meta(att);
+                let focus = media
+                    .file_meta
+                    .as_ref()
+                    .and_then(|meta| meta.get("focus"))
+                    .cloned();
+                if let Some(previous) = previous_media
+                    .iter()
+                    .find(|m| m.remote_url == media.remote_url && !media_ids.contains(&m.id))
+                {
+                    sqlx::query!(
+                        r#"UPDATE media_attachments
+                           SET description = $2, thumbnail_remote_url = $3, blurhash = $4,
+                               file_meta = CASE WHEN $5::jsonb IS NULL THEN file_meta
+                                   ELSE jsonb_set(COALESCE(file_meta::jsonb, '{}'::jsonb), '{focus}', $5::jsonb)::json END,
+                               status_id = $6, updated_at = now()
+                           WHERE id = $1"#,
+                        previous.id,
+                        media.description,
+                        media.thumbnail_remote_url,
+                        media.blurhash,
+                        focus,
+                        row.id,
+                    )
+                    .execute(&state.db)
+                    .await?;
+                    media_ids.push(previous.id);
+                    continue;
+                }
                 let media_id = crate::snowflake::next_id();
                 if let Ok(id) = sqlx::query_scalar!(
                     r#"INSERT INTO media_attachments (id, account_id, status_id, remote_url, description, blurhash, type, thumbnail_remote_url, file_content_type, file_meta, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now()) RETURNING id"#,
-                    media_id, row.account_id, row.id, remote_url, description, blurhash, att_type, thumbnail_remote_url, file_content_type, file_meta,
+                    media_id, row.account_id, row.id, media.remote_url, media.description, media.blurhash, media.kind, media.thumbnail_remote_url, media.file_content_type, media.file_meta,
                 ).fetch_one(&state.db).await { media_ids.push(id); }
             }
-            if !media_ids.is_empty() {
-                let _ = sqlx::query!(
-                    "UPDATE statuses SET ordered_media_attachment_ids = $1 WHERE id = $2",
-                    &media_ids,
-                    row.id
-                )
-                .execute(&state.db)
-                .await;
-            }
+            sqlx::query!(
+                "UPDATE statuses SET ordered_media_attachment_ids = $1 WHERE id = $2",
+                &media_ids,
+                row.id
+            )
+            .execute(&state.db)
+            .await?;
 
             // `reset_preview_card!`, when the text changed: the card is
             // fetched again, from the `Link` attachment if there is one.

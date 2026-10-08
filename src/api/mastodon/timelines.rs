@@ -612,8 +612,12 @@ pub(crate) async fn compute_filter_results(
     let texts: std::collections::HashMap<i64, String> = sqlx::query!(
         r#"SELECT s.id, s.spoiler_text, s.text, (s.local OR a.domain IS NULL) AS "local!",
                   COALESCE((SELECT string_agg(o, E'\n\n') FROM unnest(p.options) o), '') AS "poll!",
-                  COALESCE((SELECT string_agg(m.description, E'\n\n') FROM media_attachments m
-                            WHERE m.status_id = s.id AND m.description IS NOT NULL), '') AS "media!"
+                  COALESCE((SELECT string_agg(m.description, E'\n\n'
+                                              ORDER BY array_position(s.ordered_media_attachment_ids, m.id), m.id)
+                            FROM media_attachments m
+                            WHERE m.status_id = s.id AND m.description IS NOT NULL
+                              AND (s.ordered_media_attachment_ids IS NULL
+                                   OR m.id = ANY(s.ordered_media_attachment_ids))), '') AS "media!"
            FROM statuses s
            JOIN accounts a ON a.id = s.account_id
            LEFT JOIN polls p ON p.id = s.poll_id

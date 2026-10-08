@@ -150,7 +150,10 @@ pub async fn save(
                 continue;
             }
             let carries = sqlx::query_scalar!(
-                r#"SELECT EXISTS (SELECT 1 FROM media_attachments WHERE status_id = $1)
+                r#"SELECT EXISTS (SELECT 1 FROM media_attachments m JOIN statuses s ON s.id = m.status_id
+                                 WHERE m.status_id = $1
+                                   AND (s.ordered_media_attachment_ids IS NULL
+                                        OR m.id = ANY(s.ordered_media_attachment_ids)))
                        OR EXISTS (SELECT 1 FROM preview_cards_statuses WHERE status_id = $1)
                    AS "e!""#,
                 status.id
