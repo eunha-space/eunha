@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM (\n             SELECT 1 FROM follow_requests fr\n             JOIN accounts a ON a.id = fr.account_id\n             WHERE fr.target_account_id = $1\n               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             LIMIT 40\n           ) sub",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "352fc544fe25e9b5c1457624f52ffeb5d4ac5087f0d5fbedd00506207fbe6b1c"
+}

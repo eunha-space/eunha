@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.name, COALESCE(t.display_name, t.name) AS \"display_name!\",\n                  EXISTS(SELECT 1 FROM tag_follows tf\n                         WHERE tf.account_id = $1 AND tf.tag_id = t.id) AS \"following!\"\n           FROM tags t\n           JOIN statuses_tags st ON st.tag_id = t.id\n           WHERE st.status_id IN (\n               SELECT s.id FROM statuses s\n               WHERE s.account_id = $1 AND s.deleted_at IS NULL\n                 -- `Mastodon::Snowflake.id_at(RECENT_STATUS_MAX_AGE.ago)..`\n                 AND s.id >= ((extract(epoch FROM now() - interval '1 year') * 1000)::bigint << 16)\n               ORDER BY s.id DESC\n               LIMIT 1000\n             )\n             AND t.id NOT IN (SELECT tag_id FROM featured_tags WHERE account_id = $1)\n           GROUP BY t.id\n           HAVING COUNT(st.status_id) > 1\n           ORDER BY COUNT(*) DESC\n           LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "following!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "fbfebf11df546d3390ce82d37ea042e52d80199500e7e2f9bb9bbc4c36990932"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM accounts\n               WHERE discoverable = true\n                 AND suspended_at IS NULL AND requested_deletion_at IS NULL\n                 AND silenced_at IS NULL\n                 AND (NOT $1::bool OR domain IS NULL)\n               ORDER BY created_at DESC\n               LIMIT $2 OFFSET $3",
+  "query": "SELECT a.* FROM accounts a\n           LEFT JOIN users u ON u.account_id = a.id\n           WHERE a.id = ANY($1::bigint[])\n             AND (a.domain IS NOT NULL OR (u.approved = true AND u.confirmed_at IS NOT NULL))\n             AND a.requested_deletion_at IS NULL\n           ORDER BY a.id",
   "describe": {
     "columns": [
       {
@@ -291,9 +291,7 @@
     ],
     "parameters": {
       "Left": [
-        "Bool",
-        "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -356,5 +354,5 @@
       true
     ]
   },
-  "hash": "ae3880fd59e8bc83407eaf7643f885609aa0dd5f09d4c3b625521d2f7d3234c1"
+  "hash": "d56cc7a03c1e3fc8325ba90cb9782f1ffd7e87fdc716d27e996188037b7a78bf"
 }

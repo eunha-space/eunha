@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, COALESCE(hide_collections, false) AS \"hides!\" FROM accounts\n           WHERE id = ANY($1) AND suspended_at IS NULL AND requested_deletion_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "hides!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "b7ca42ccabed6aebcabdaebb53920913a5625f89ae42ded3423cfec6e81da74d"
+}

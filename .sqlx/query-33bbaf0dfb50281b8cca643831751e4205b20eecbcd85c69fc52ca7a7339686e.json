@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.id as follow_id, f.target_account_id FROM follows f\n           JOIN accounts a ON a.id = f.target_account_id\n           WHERE f.account_id = $1\n             AND ($2::bigint IS NULL OR f.id < $2)\n             AND ($3::bigint IS NULL OR f.id > $3)\n             -- `not_excluded_by_account`, for a viewer other than the\n             -- account itself.\n             AND ($4::bigint IS NULL OR $4 = $1 OR NOT (\n                 EXISTS (SELECT 1 FROM blocks b\n                         WHERE (b.account_id = $4 AND b.target_account_id = a.id)\n                            OR (b.account_id = a.id AND b.target_account_id = $4))\n                 OR EXISTS (SELECT 1 FROM mutes\n                            WHERE account_id = $4 AND target_account_id = a.id)\n             ))\n           ORDER BY f.id DESC LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "follow_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "33bbaf0dfb50281b8cca643831751e4205b20eecbcd85c69fc52ca7a7339686e"
+}

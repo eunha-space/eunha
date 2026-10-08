@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                     EXISTS(SELECT 1 FROM tag_follows WHERE account_id = $1 AND tag_id = $2) AS \"following!\",\n                     EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2) AS \"featuring!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "following!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "featuring!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "ff3e1cde1152e8731f15c89713315f7d66f7902ae788f1b4dff7ec36da01dddf"
+}

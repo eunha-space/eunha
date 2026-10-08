@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.* FROM accounts a\n               WHERE a.discoverable = true\n                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                 AND a.silenced_at IS NULL\n                 AND (NOT $1::bool OR a.domain IS NULL)\n               ORDER BY (\n                   SELECT MAX(s.created_at) FROM statuses s\n                   WHERE s.account_id = a.id AND s.deleted_at IS NULL\n               ) DESC NULLS LAST\n               LIMIT $2 OFFSET $3",
+  "query": "SELECT * FROM accounts\n           WHERE lower(username) = lower($1)\n             AND (CASE WHEN $2::text IS NULL THEN domain IS NULL ELSE lower(domain) = lower($2) END)\n           ORDER BY id ASC\n           LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -291,9 +291,8 @@
     ],
     "parameters": {
       "Left": [
-        "Bool",
-        "Int8",
-        "Int8"
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
@@ -356,5 +355,5 @@
       true
     ]
   },
-  "hash": "7d8dc1f6f1210dddaae0525d9678ce0431c4ed4eefdfacf68e840b4a992feefe"
+  "hash": "817c30fa8e04802de0a53d7d0ff31fd8a1a2f335db472e745f1b6beb33699ad7"
 }

@@ -1,0 +1,180 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT statuses.* FROM statuses\n           WHERE account_id = $1\n             AND deleted_at IS NULL\n             AND ($2::bigint IS NULL OR id < $2)\n             AND ($3::bigint IS NULL OR $4::bigint IS NOT NULL OR id > $3)\n             AND ($4::bigint IS NULL OR id > $4)\n             -- `initial_scope`: the visibilities the viewer may see.\n             AND (\n               CASE\n                 WHEN $5::bigint IS NULL THEN visibility IN (0, 1)\n                 WHEN $6::boolean THEN NOT $8::boolean OR visibility IN (0, 1, 2)\n                 ELSE visibility IN (0, 1)\n                   OR ($7::boolean AND visibility = 2)\n                   OR (\n                     NOT $8::boolean\n                     AND EXISTS (SELECT 1 FROM mentions\n                                 WHERE status_id = statuses.id AND account_id = $5)\n                   )\n               END\n             )\n             -- `pinned_scope`.\n             AND (NOT $9::boolean OR EXISTS (\n               SELECT 1 FROM status_pins sp\n               WHERE sp.status_id = statuses.id AND sp.account_id = $1\n             ))\n             -- `only_media_scope`: `without_empty_attachments`, and an\n             -- attachment of the account's.\n             AND (NOT $10::boolean OR (\n               (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')\n               AND EXISTS (SELECT 1 FROM media_attachments m\n                           WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)\n             ))\n             -- `no_replies_scope`: `without_replies`.\n             AND (NOT $11::boolean OR reply = false OR in_reply_to_account_id = account_id)\n             -- `no_reblogs_scope`.\n             AND (NOT $12::boolean OR reblog_of_id IS NULL)\n             -- `hashtag_scope`.\n             AND ($13::text IS NULL OR EXISTS (\n               SELECT 1 FROM statuses_tags st\n               JOIN tags t ON t.id = st.tag_id\n               WHERE st.status_id = statuses.id AND lower(t.name) = lower($13)\n             ))\n             -- `filtered_reblogs_scope`: a boost of an account the viewer\n             -- excludes from timelines (blocks either way, mutes) or of a\n             -- domain it blocks.\n             AND (NOT $14::boolean OR reblog_of_id IS NULL OR EXISTS (\n               SELECT 1 FROM statuses orig\n               JOIN accounts oa ON oa.id = orig.account_id\n               WHERE orig.id = statuses.reblog_of_id\n                 AND orig.deleted_at IS NULL\n                 AND (oa.domain IS NULL OR NOT EXISTS (\n                   SELECT 1 FROM account_domain_blocks adb\n                   WHERE adb.account_id = $5 AND adb.domain = oa.domain\n                 ))\n                 AND NOT EXISTS (\n                   SELECT 1 FROM blocks b\n                   WHERE (b.account_id = $5 AND b.target_account_id = oa.id)\n                      OR (b.account_id = oa.id AND b.target_account_id = $5)\n                 )\n                 AND NOT EXISTS (\n                   SELECT 1 FROM mutes mu\n                   WHERE mu.account_id = $5 AND mu.target_account_id = oa.id\n                 )\n             ))\n           ORDER BY\n             CASE WHEN $4::bigint IS NOT NULL THEN id END ASC,\n             CASE WHEN $4::bigint IS NULL AND $9::boolean THEN (\n               SELECT sp.created_at FROM status_pins sp\n               WHERE sp.status_id = statuses.id AND sp.account_id = $1\n             ) END DESC,\n             id DESC\n           LIMIT $15",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "sensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "reply",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 16,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 17,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "poll_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 19,
+        "name": "deleted_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 20,
+        "name": "edited_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 21,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "ordered_media_attachment_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 23,
+        "name": "fetched_replies_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 24,
+        "name": "quote_approval_policy",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "49e0eff6355adf0b70e327fb482e2c7a38f779837c96b932d8b3b9268ba18e28"
+}

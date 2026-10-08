@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.* FROM accounts a\n                   JOIN follows f1 ON f1.account_id = a.id AND f1.target_account_id = $1\n                   JOIN follows f2 ON f2.account_id = $2 AND f2.target_account_id = a.id\n                   WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                   LIMIT 10",
+  "query": "SELECT a.* FROM accounts a\n           JOIN account_stats st ON st.account_id = a.id\n           LEFT JOIN users u ON u.account_id = a.id\n           WHERE a.discoverable = true\n             -- `without_unapproved`.\n             AND (a.domain IS NOT NULL\n                  OR (u.approved = true AND u.confirmed_at IS NOT NULL))\n             -- `without_suspended`, `without_silenced`, unmoved.\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND a.silenced_at IS NULL\n             AND a.moved_to_account_id IS NULL\n             AND (NOT $1::bool OR a.domain IS NULL)\n             -- `not_excluded_by_account`.\n             AND ($4::bigint IS NULL OR NOT (\n               EXISTS (SELECT 1 FROM blocks b\n                       WHERE (b.account_id = $4 AND b.target_account_id = a.id)\n                          OR (b.account_id = a.id AND b.target_account_id = $4))\n               OR EXISTS (SELECT 1 FROM mutes m\n                          WHERE m.account_id = $4 AND m.target_account_id = a.id)\n             ))\n             -- `not_domain_blocked_by_account`, beyond the local directory.\n             AND ($4::bigint IS NULL OR $1::bool OR a.domain IS NULL OR NOT EXISTS (\n               SELECT 1 FROM account_domain_blocks adb\n               WHERE adb.account_id = $4 AND adb.domain = a.domain\n             ))\n           ORDER BY\n             CASE WHEN $5::text = 'active' THEN st.last_status_at END DESC NULLS LAST,\n             CASE WHEN $5::text = 'new' THEN a.id END DESC\n           LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -291,8 +291,11 @@
     ],
     "parameters": {
       "Left": [
+        "Bool",
         "Int8",
-        "Int8"
+        "Int8",
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -355,5 +358,5 @@
       true
     ]
   },
-  "hash": "d0b9e2bf4dee79036c7f6b06d165694d791947de918e3e76be7a2959e4fba438"
+  "hash": "9d5adade0815a1116f55db28502bf254717088c7f6e3133908a05f5dbc39ef02"
 }

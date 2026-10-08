@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM accounts WHERE lower(username) = $1 AND lower(domain) = $2",
+  "query": "SELECT a.* FROM accounts a\n                   JOIN follows f1 ON f1.account_id = a.id AND f1.target_account_id = $1\n                   JOIN follows f2 ON f2.account_id = $2 AND f2.target_account_id = a.id\n                   WHERE a.hide_collections IS NOT TRUE\n                   ORDER BY f1.id",
   "describe": {
     "columns": [
       {
@@ -291,8 +291,8 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Text"
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -355,5 +355,5 @@
       true
     ]
   },
-  "hash": "ae0b244f78c1e339331b09a69fc5af730ccb042bee4155a8ff220139b65ac7f7"
+  "hash": "a4d17cbe3d55ad16982df3b45a7ba3e61b3156d3eb9f9b17a253a806391bccb3"
 }

@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tags SET\n               trendable   = COALESCE($2, trendable),\n               usable      = COALESCE($3, usable),\n               listable    = COALESCE($4, listable),\n               reviewed_at = now(),\n               updated_at  = now()\n           WHERE id = $1\n           RETURNING id, name, trendable, usable, listable, reviewed_at,\n                     COALESCE(display_name, name) AS \"display_name!\",\n                  EXISTS(SELECT 1 FROM tag_follows tf WHERE tf.account_id = $5 AND tf.tag_id = tags.id) AS \"following!\",\n                  EXISTS(SELECT 1 FROM featured_tags ft WHERE ft.account_id = $5 AND ft.tag_id = tags.id) AS \"featuring!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "usable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "listable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "reviewed_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "display_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "following!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "featuring!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "5cb2caa2b761f8b0146b2360d3937492b44d5ebca75d128c7e19e80bb55a2a53"
+}
