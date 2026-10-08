@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.url, s.uri, (COALESCE(s.local, false) OR s.uri IS NULL) AS \"local!\",\n                          a.username\n                   FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "2b72ab81a65fb7a6430e843a052336d031f093730ed238ff62681507d78c8858"
+}

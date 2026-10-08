@@ -1,35 +1,30 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS \"is_local!\"\n                       FROM follows f JOIN accounts a ON a.id = f.account_id\n                       WHERE f.target_account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)\n                       ORDER BY f.id DESC LIMIT $3",
+  "query": "SELECT a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS \"is_local!\"\n                       FROM follows f JOIN accounts a ON a.id = f.account_id\n                       WHERE f.target_account_id = $1\n                       ORDER BY f.id DESC OFFSET $2 LIMIT $3",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 1,
         "name": "account_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "id_scheme",
         "type_info": "Int4"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "account_uri",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "username",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "is_local!",
         "type_info": "Bool"
       }
@@ -43,12 +38,11 @@
     },
     "nullable": [
       false,
-      false,
       true,
       true,
       false,
       null
     ]
   },
-  "hash": "96e289e861df5f8caf6cbd65fa1a197de9aa5a0df93a7b1699ebf4b6987b3a67"
+  "hash": "dc6238ba5f1e03498047c740c1ea5f16dcff3b7d755b6d2ec4e8554a218afdf0"
 }

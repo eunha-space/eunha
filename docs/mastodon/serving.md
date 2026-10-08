@@ -23,7 +23,8 @@ that reader, by an account that is still there: a public or unlisted one to
 anyone its author does not block, by account or by domain; a followers-only
 one to a follower or an account it mentions; a direct one to an account it
 mentions. A quote's stamp is served as its quoted post is. A boost's
-activity is its `Announce`; a boost has no Note. An account's collections
+activity is its `Announce`, and the boost itself is a `302` to the post it
+boosted (`redirect_to_original`). An account's collections
 are not there for a signer the account blocks; its featured posts and
 hashtags are shown empty to one, in authorized fetch mode, as
 `ActivityPub::CollectionsController` shows them.
@@ -107,6 +108,11 @@ and `atomUri`, as `ActivityPub::NoteSerializer` does, and each is served:
 An account's collections
 ------------------------
 
+ -  `…/followers` and `…/following`: newest follow first, twelve to a page
+    at `?page=N`, each page saying how many there are, as
+    `FollowerAccountsController` and `FollowingAccountsController` page
+    them. An account that hides them shows only the count, and refuses a
+    page with a 403.
  -  `…/outbox`: its posts and boosts, newest first, twenty to a page, each as
     the `Create` or `Announce` that posted it, as `AccountStatusesFilter`
     picks them for the signer (its followers-only posts to a follower, and
@@ -154,5 +160,29 @@ remote post's are the collections its `FeaturedCollection` tags name, ours
 or a known account's, fetched when unknown
 (`FetchRemoteFeaturedCollectionService`), as its `Create` is processed and
 again when it is edited (`update_tagged_objects!`), which drops those it no
-longer names. One that could not be reached is tried again half a minute to
-ten minutes later (`TaggedCollectionResolveWorker`).
+longer names. One whose server could not be reached is tried again half a
+minute to ten minutes later (`TaggedCollectionResolveWorker`); one whose
+server answered with an error is not.
+
+
+Followers synchronization
+-------------------------
+
+A followers-only post of an account with fewer than 25,000 followers is
+delivered with a `Collection-Synchronization` header (FEP-8fcf), as
+`ActivityPub::DistributionWorker` asks `DeliveryWorker` to send it: the
+author's followers collection, the digest of its followers on the receiving
+server (`Account#remote_followers_hash`: the XOR of each follower URI's
+SHA-256), and `/users/{username}/followers_synchronization`, where that
+server, and only it, signed, may list them.
+
+A delivery that carries the header the other way, from a remote account
+whose followers collection it names, is compared with the digest of the
+account's local followers (`local_followers_hash`). When they differ, its
+list is fetched (`FollowersSynchronizationWorker`, ten pages at most): a
+local account it lists that does not follow it here has its follow request
+accepted, or sends the `Undo` of a follow eunha never knew of; and once the
+whole list is read and adds up to the digest, a local account it does not
+list stops following it. The header and the digest are ojak's
+(`ojak::synchronization`); Mastodon's `DISABLE_FOLLOWERS_SYNCHRONIZATION`
+has no counterpart.

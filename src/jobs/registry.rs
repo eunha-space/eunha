@@ -70,6 +70,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::preview_card::LinkCrawlWorker>(),
         entry::<crate::preview_card::attribution::UpdateLinkCardAttributionWorker>(),
         entry::<crate::federation::tagged_collections::TaggedCollectionResolveWorker>(),
+        entry::<crate::federation::followers_synchronization::FollowersSynchronizationWorker>(),
         entry::<crate::announcements::PublishScheduledAnnouncementWorker>(),
         entry::<crate::announcements::PublishAnnouncementReactionWorker>(),
         entry::<crate::portability::import::BulkImportWorker>(),

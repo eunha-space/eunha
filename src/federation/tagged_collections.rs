@@ -57,8 +57,9 @@ async fn known(state: &AppState, id: i64) -> sqlx::Result<Option<Known>> {
 
 /// `TagManager#uri_to_resource(uri, Collection)`, or else
 /// `ActivityPub::FetchRemoteFeaturedCollectionService`: a collection on a
-/// known account's server, fetched and stored. An error is a fetch that
-/// did not get through, to be tried again later.
+/// known account's server, fetched and stored. An error is a request that
+/// did not get through (`HTTP_CONNECTION_ERRORS`), to be tried again later;
+/// a server that answered with an error is not asked again.
 async fn resolve(state: &AppState, uri: &str) -> anyhow::Result<Option<Known>> {
     if let Some(id) = crate::federation::local_uri::collection(state, uri).await {
         return Ok(known(state, id).await?);
@@ -66,9 +67,20 @@ async fn resolve(state: &AppState, uri: &str) -> anyhow::Result<Option<Known>> {
     if crate::federation::local_uri::is_local(state, uri) {
         return Ok(None);
     }
-    let json = crate::federation::fetch::signed_get_json(state, uri).await?;
-    if json.get("id").and_then(Value::as_str) != Some(uri)
-        || !crate::federation::fetch_resource::supported_context(&json)
+    // `fetch_resource(uri, true)`: an answer that is not the collection is
+    // nothing to try again; only a request that did not get through is an
+    // error, and tried again later.
+    let Some(json) = crate::federation::json_ld::fetch_resource(
+        state,
+        uri,
+        None,
+        crate::federation::json_ld::RaiseOn::None,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    if !crate::federation::fetch_resource::supported_context(&json)
         || json.get("type").and_then(Value::as_str) != Some("FeaturedCollection")
     {
         return Ok(None);

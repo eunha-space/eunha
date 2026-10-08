@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.uri AS \"uri!\" FROM follows f JOIN accounts a ON a.id = f.account_id\n           WHERE f.target_account_id = $1 AND a.uri IS NOT NULL\n             AND (a.uri = $2 OR left(a.uri, length($2) + 1) = $2 || '/')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4a97759918c617e739240144158f30e1ead64846226228802fab1e33a823abf7"
+}

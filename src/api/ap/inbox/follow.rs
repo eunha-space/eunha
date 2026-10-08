@@ -643,64 +643,12 @@ pub(super) async fn handle_accept_reject(
             // when remote accepts our Follow, moving the list memberships
             // that waited on the request over to the follow before the
             // request (and with it, by cascade, those memberships) goes.
-            let promoted = sqlx::query!(
-                "SELECT id, account_id, target_account_id, show_reblogs, notify, languages
-                 FROM follow_requests WHERE uri = $1",
-                uri
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            if let Some(row) = promoted {
-                let follow_id = sqlx::query_scalar!(
-                    r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify,
-                                            languages, uri, created_at, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, now(), now()) ON CONFLICT DO NOTHING
-                       RETURNING id"#,
-                    row.account_id,
-                    row.target_account_id,
-                    row.show_reblogs,
-                    row.notify,
-                    row.languages.as_deref(),
-                    uri
-                )
-                .fetch_optional(&state.db)
-                .await?;
-                if let Some(follow_id) = follow_id {
-                    sqlx::query!(
-                        "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
-                         WHERE follow_request_id = $1",
-                        row.id,
-                        follow_id,
-                    )
-                    .execute(&state.db)
+            let promoted =
+                sqlx::query_scalar!("SELECT id FROM follow_requests WHERE uri = $1", uri)
+                    .fetch_optional(&state.db)
                     .await?;
-                }
-                sqlx::query!("DELETE FROM follow_requests WHERE id = $1", row.id)
-                    .execute(&state.db)
-                    .await?;
-                // `AccountStat`'s `update_index('accounts', :account)`.
-                crate::search::elasticsearch::indexing::accounts(
-                    state,
-                    &[row.account_id, row.target_account_id],
-                )
-                .await;
-
-                // Update follower/following counts
-                let _ = crate::counters::on_follow_created(
-                    &state.db,
-                    row.account_id,
-                    row.target_account_id,
-                )
-                .await;
-                // `MergeWorker` into the home feed of the local account that
-                // asked, which also finishes the regeneration its first
-                // follow started, and into its lists that hold the account.
-                crate::home_feed::merge_into_home_and_lists(
-                    state,
-                    row.target_account_id,
-                    row.account_id,
-                )
-                .await;
+            if let Some(id) = promoted {
+                authorize_follow_request(state, id).await?;
             }
         } else {
             sqlx::query!("DELETE FROM follow_requests WHERE uri = $1", uri)
@@ -762,5 +710,65 @@ pub(super) async fn handle_accept_reject(
         super::quote::handle_quote_answer(state, activity, activity_type == "Accept").await?;
     }
 
+    Ok(())
+}
+
+/// `FollowRequest#authorize!`: the follow request `request_id` becomes a
+/// follow, moving the list memberships that waited on the request over to
+/// the follow before the request (and with it, by cascade, those
+/// memberships) goes.
+pub(crate) async fn authorize_follow_request(state: &AppState, request_id: i64) -> AppResult<()> {
+    let promoted = sqlx::query!(
+        "SELECT id, account_id, target_account_id, show_reblogs, notify, languages, uri
+         FROM follow_requests WHERE id = $1",
+        request_id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(row) = promoted {
+        let follow_id = sqlx::query_scalar!(
+            r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify,
+                                    languages, uri, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, now(), now()) ON CONFLICT DO NOTHING
+               RETURNING id"#,
+            row.account_id,
+            row.target_account_id,
+            row.show_reblogs,
+            row.notify,
+            row.languages.as_deref(),
+            row.uri
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if let Some(follow_id) = follow_id {
+            sqlx::query!(
+                "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
+                 WHERE follow_request_id = $1",
+                row.id,
+                follow_id,
+            )
+            .execute(&state.db)
+            .await?;
+        }
+        sqlx::query!("DELETE FROM follow_requests WHERE id = $1", row.id)
+            .execute(&state.db)
+            .await?;
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(
+            state,
+            &[row.account_id, row.target_account_id],
+        )
+        .await;
+
+        // Update follower/following counts
+        let _ =
+            crate::counters::on_follow_created(&state.db, row.account_id, row.target_account_id)
+                .await;
+        // `MergeWorker` into the home feed of the local account that
+        // asked, which also finishes the regeneration its first
+        // follow started, and into its lists that hold the account.
+        crate::home_feed::merge_into_home_and_lists(state, row.target_account_id, row.account_id)
+            .await;
+    }
     Ok(())
 }

@@ -201,6 +201,7 @@ pub fn deliverer(
     };
     let attempts = tracker.clone();
     let settled_db = db.clone();
+    let synchronization_db = db.clone();
     Ok(ojak::deliverer::Deliverer::new(
         queue,
         // A post fans out to thousands of inboxes signed with one key, and
@@ -231,6 +232,26 @@ pub fn deliverer(
     .skip_if(move |inbox, activity| {
         activity.get("type").and_then(Value::as_str) != Some("Follow")
             && tracker.is_unavailable_inbox(inbox)
+    })
+    // `ActivityPub::DeliveryWorker#synchronization_header`, written when the
+    // delivery is made, for the account its key names on the instance whose
+    // domain the key is on.
+    .collection_synchronization(move |key_id: String, inbox: url::Url| {
+        let db = synchronization_db.clone();
+        async move {
+            let domain = url::Url::parse(&key_id)
+                .ok()?
+                .host_str()
+                .map(str::to_owned)?;
+            let account_id = signing_account_id_in(&db, &key_id).await.ok()?;
+            crate::federation::followers_synchronization::header_for(
+                &db,
+                &domain,
+                account_id,
+                inbox.as_str(),
+            )
+            .await
+        }
     }))
 }
 
@@ -715,6 +736,34 @@ pub async fn deliver_to_inboxes_signed(
     linked_data: LinkedData,
 ) -> anyhow::Result<u64> {
     enqueue(state, activity, inboxes, key_id, true, linked_data, None).await
+}
+
+/// A status's `Create`, `Update` or `Announce`, as
+/// `ActivityPub::DistributionWorker` sends it: [`deliver_to_inboxes_signed`],
+/// with a `Collection-Synchronization` header on each delivery when
+/// `synchronize_followers`.
+pub async fn deliver_status_to_inboxes(
+    state: &AppState,
+    activity: Value,
+    inboxes: Vec<String>,
+    key_id: String,
+    linked_data: LinkedData,
+    synchronize_followers: bool,
+) -> anyhow::Result<u64> {
+    let batch = ojak::deliverer::Batch {
+        synchronize_collection: synchronize_followers,
+        ..ojak::deliverer::Batch::default()
+    };
+    enqueue(
+        state,
+        activity,
+        inboxes,
+        key_id,
+        true,
+        linked_data,
+        Some(&batch),
+    )
+    .await
 }
 
 /// [`deliver_to_inboxes`], in `batch`.

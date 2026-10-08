@@ -897,8 +897,17 @@ pub async fn post_status(
                 matches!(vis_int, vis::PUBLIC | vis::UNLISTED),
                 crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
             );
-            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
-                &state, activity, inboxes, key_id, signed,
+            let synchronize = crate::federation::followers_synchronization::synchronizes(
+                &state, account.id, vis_int,
+            )
+            .await;
+            if let Err(e) = crate::federation::delivery::deliver_status_to_inboxes(
+                &state,
+                activity,
+                inboxes,
+                key_id,
+                signed,
+                synchronize,
             )
             .await
             {

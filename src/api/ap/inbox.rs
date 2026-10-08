@@ -6,7 +6,7 @@ mod attachment;
 mod collection;
 pub(crate) mod create;
 mod fetch;
-mod follow;
+pub(crate) mod follow;
 mod moderation;
 pub(crate) mod quote;
 mod status;

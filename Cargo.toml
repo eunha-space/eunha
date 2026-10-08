@@ -22,6 +22,10 @@ name = "remote_replies"
 path = "tests/remote_replies.rs"
 
 [[test]]
+name = "followers_synchronization"
+path = "tests/followers_synchronization.rs"
+
+[[test]]
 name = "fasp"
 path = "tests/fasp.rs"
 

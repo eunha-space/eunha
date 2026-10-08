@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, tag_id, statuses_count, last_status_at FROM featured_tags\n           WHERE account_id = $1 AND tag_id = ANY($2) ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "tag_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "statuses_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_status_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "5814488b3b9ae92e28d44d3340efa712cb0b1f50c5ce64ad92d908f3ff656de9"
+}

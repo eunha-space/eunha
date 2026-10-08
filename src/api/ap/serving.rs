@@ -324,6 +324,16 @@ pub fn federation() -> Federation<AppState> {
                     tracing::warn!(host, %error, "could not clear a server's delivery failures");
                 }
             }
+            // `InboxesController#process_collection_synchronization`, for
+            // the account that signed the request.
+            if let Some(raw) = ctx.request_header("collection-synchronization") {
+                crate::federation::followers_synchronization::prepare(
+                    ctx.data(),
+                    signer.as_str(),
+                    &raw,
+                )
+                .await;
+            }
             super::inbox::received_from(
                 ctx.data(),
                 received.vouched,
@@ -451,6 +461,29 @@ pub fn federation() -> Federation<AppState> {
                     &scheme.template("/collections/featured"),
                     featured(scheme),
                 )
+                .object(
+                    &scheme.kind("followers_synchronization"),
+                    &scheme.template("/followers_synchronization"),
+                    move |ctx: Ctx, values: Values| async move {
+                        let Some(account) =
+                            scheme.account(&ctx, values.single().unwrap_or_default()).await?
+                        else {
+                            return Ok::<_, AppError>(Found::NotFound);
+                        };
+                        let Some(signer) = signer(&ctx).await else {
+                            return Ok(Found::NotFound);
+                        };
+                        let document = crate::federation::followers_synchronization::document(
+                            ctx.data(),
+                            &account,
+                            &signer,
+                        )
+                        .await?;
+                        // `expires_in 0, public: false`.
+                        expires_in(&ctx, Vary::Signature, 0, false).await;
+                        Ok(Found::Found(document))
+                    },
+                )
                 .collection(
                     &scheme.kind("featured_tags"),
                     &scheme.template("/collections/tags"),
@@ -507,8 +540,6 @@ pub fn federation() -> Federation<AppState> {
             ("actor", Vary::Page),
             ("account_collections", Vary::Page),
             ("outbox", Vary::Outbox),
-            ("followers", Vary::Page),
-            ("following", Vary::Page),
             ("featured", Vary::Signature),
             ("featured_tags", Vary::Signature),
             ("status", Vary::Page),
@@ -523,6 +554,28 @@ pub fn federation() -> Federation<AppState> {
                 require_signature(&ctx).await
             });
         }
+        for kind in ["followers", "following"] {
+            builder = builder.guard(
+                &scheme.kind(kind),
+                move |ctx: Ctx, values: Values| async move {
+                    vary_by(&ctx, Vary::Page).await;
+                    relation_guard(&ctx, scheme, &values).await
+                },
+            );
+        }
+        // `ActivityPub::FollowersSynchronizationsController` asks for a
+        // signature in either mode.
+        builder = builder.guard(
+            &scheme.kind("followers_synchronization"),
+            |ctx: Ctx, _| async move {
+                vary_by(&ctx, Vary::Signature).await;
+                Ok::<_, AppError>(match ctx.signing().await {
+                    Signing::Verified(_) => Access::Allow,
+                    Signing::Blocked(_) => Access::Forbidden,
+                    Signing::Unsigned | Signing::Invalid(_) => Access::Unauthorized,
+                })
+            },
+        );
     }
     // The instance actor is exempt, as `InstanceActorsController` is: a peer
     // in authorized fetch mode has to fetch its key before it can sign.
@@ -1088,9 +1141,34 @@ async fn status(
         };
     let public = servable.distributable() && public_fetch_mode(ctx).await;
     let document = match servable.reblog_of_id {
-        // A boost's page is the boosted post's (`redirect_to_original`),
-        // which is no ActivityPub document.
-        Some(_) if !activity => return Ok(Found::NotFound),
+        // `redirect_to_original`: a boost sends whoever asks for it to the
+        // boosted post (`TagManager#url_for`).
+        Some(reblog_of_id) if !activity => {
+            let original = sqlx::query!(
+                r#"SELECT s.id, s.url, s.uri, (COALESCE(s.local, false) OR s.uri IS NULL) AS "local!",
+                          a.username
+                   FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
+                reblog_of_id,
+            )
+            .fetch_optional(&ctx.data().db)
+            .await?;
+            let Some(original) = original else {
+                return Ok(Found::NotFound);
+            };
+            let location = if original.local {
+                Some(format!(
+                    "https://{}/@{}/{}",
+                    domain(ctx),
+                    original.username,
+                    original.id
+                ))
+            } else {
+                original.url.filter(|url| !url.is_empty()).or(original.uri)
+            };
+            return Ok(location
+                .and_then(|location| Url::parse(&location).ok())
+                .map_or(Found::NotFound, Found::Redirect));
+        }
         Some(reblog_of_id) => {
             let row = sqlx::query!(
                 "SELECT visibility, created_at FROM statuses WHERE id = $1",
@@ -1406,11 +1484,44 @@ impl Relation {
     }
 }
 
-const RELATION_PAGE: i64 = 40;
+/// `AccountControllerConcern::FOLLOW_PER_PAGE`.
+const RELATION_PAGE: i64 = 12;
 
-/// Who follows an account, or whom it follows, newest follow first, forty to
-/// a page. An account that hides its collections shows the count and not
-/// the members.
+/// The page a followers or following request asks for: its `page`, as it
+/// was given, when it has one (`params[:page].present?`).
+fn relation_cursor(query: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(name, _)| name == "page")
+        .map(|(_, value)| value.into_owned())
+        .filter(|page| !page.trim().is_empty())
+}
+
+/// Whether a followers or following request asks for a page.
+fn relation_page_requested(ctx: &Ctx) -> bool {
+    relation_cursor(ctx.query().unwrap_or_default()).is_some()
+}
+
+/// How many follow the account, or it follows (`followers_count`,
+/// `following_count`).
+async fn relation_count(ctx: &Ctx, account_id: i64, relation: Relation) -> AppResult<u64> {
+    let counts = sqlx::query!(
+        "SELECT followers_count, following_count FROM account_stats WHERE account_id = $1",
+        account_id,
+    )
+    .fetch_optional(&ctx.data().db)
+    .await?;
+    let count = counts.map_or(0, |c| match relation {
+        Relation::Followers => c.followers_count,
+        Relation::Following => c.following_count,
+    });
+    Ok(u64::try_from(count).unwrap_or(0))
+}
+
+/// Who follows an account, or whom it follows, as `FollowerAccountsController`
+/// and `FollowingAccountsController` serve them: newest follow first,
+/// twelve to a page at `?page=N`, each page saying how many there are. An
+/// account that hides its collections shows the count alone, and refuses
+/// its pages (`protect_hidden_collections`, in the guard).
 fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
     Collection::new(
         move |ctx: Ctx, identifier: String, cursor: Option<String>| async move {
@@ -1421,55 +1532,64 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
             // public_fetch_mode?)`.
             let public = public_fetch_mode(&ctx).await;
             expires_in(&ctx, Vary::Page, 0, public).await;
-            if account.hide_collections.unwrap_or(false) {
-                return Ok(Some(Page::default()));
-            }
-            let max_id = match cursor.as_deref().unwrap_or_default() {
-                "" => None,
-                cursor => match number(cursor) {
-                    Some(id) => Some(id),
-                    None => return Ok(None),
-                },
-            };
+            // Kaminari's `page`: a number from one, anything else the first.
+            let number = cursor
+                .as_deref()
+                .and_then(|page| page.trim().parse::<i64>().ok())
+                .filter(|n| *n >= 1)
+                .unwrap_or(1);
+            let offset = (number - 1).saturating_mul(RELATION_PAGE);
             let state = ctx.data();
             let domain = domain(&ctx);
-            let rows: Vec<(i64, String)> = match relation {
+            let uris: Vec<String> = match relation {
                 Relation::Followers => sqlx::query!(
-                    r#"SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
+                    r#"SELECT a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
                        FROM follows f JOIN accounts a ON a.id = f.account_id
-                       WHERE f.target_account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)
-                       ORDER BY f.id DESC LIMIT $3"#,
+                       WHERE f.target_account_id = $1
+                       ORDER BY f.id DESC OFFSET $2 LIMIT $3"#,
                     account.id,
-                    max_id,
+                    offset,
                     RELATION_PAGE,
                 )
                 .fetch_all(&state.db)
                 .await?
                 .into_iter()
-                .map(|r| (r.id, super::collections::resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username)))
+                .map(|r| super::collections::resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username))
                 .collect(),
                 Relation::Following => sqlx::query!(
-                    r#"SELECT f.id, a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
+                    r#"SELECT a.id AS account_id, a.id_scheme, a.uri AS account_uri, a.username, (a.domain IS NULL) AS "is_local!"
                        FROM follows f JOIN accounts a ON a.id = f.target_account_id
-                       WHERE f.account_id = $1 AND ($2::bigint IS NULL OR f.id < $2)
-                       ORDER BY f.id DESC LIMIT $3"#,
+                       WHERE f.account_id = $1
+                       ORDER BY f.id DESC OFFSET $2 LIMIT $3"#,
                     account.id,
-                    max_id,
+                    offset,
                     RELATION_PAGE,
                 )
                 .fetch_all(&state.db)
                 .await?
                 .into_iter()
-                .map(|r| (r.id, super::collections::resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username)))
+                .map(|r| super::collections::resolve_actor_uri(domain, r.account_uri, r.is_local, r.account_id, r.id_scheme, &r.username))
                 .collect(),
             };
-            let next = (rows.len() as i64 == RELATION_PAGE)
-                .then(|| rows.last().map(|(id, _)| id.to_string()))
-                .flatten();
+            // `next_page` and `prev_page`, as Kaminari counts the follows.
+            let total = match relation {
+                Relation::Followers => sqlx::query_scalar!(
+                    r#"SELECT COUNT(*) AS "c!" FROM follows WHERE target_account_id = $1"#,
+                    account.id,
+                )
+                .fetch_one(&state.db)
+                .await?,
+                Relation::Following => sqlx::query_scalar!(
+                    r#"SELECT COUNT(*) AS "c!" FROM follows WHERE account_id = $1"#,
+                    account.id,
+                )
+                .fetch_one(&state.db)
+                .await?,
+            };
             Ok(Some(Page {
-                items: rows.into_iter().map(|(_, uri)| Value::String(uri)).collect(),
-                next,
-                prev: None,
+                items: uris.into_iter().map(Value::String).collect(),
+                next: (number.saturating_mul(RELATION_PAGE) < total).then(|| (number + 1).to_string()),
+                prev: (number > 1).then(|| (number - 1).to_string()),
             }))
         },
     )
@@ -1477,23 +1597,9 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
         let Some(account) = scheme.account(&ctx, &identifier).await? else {
             return Ok::<_, AppError>(None);
         };
-        let total = match relation {
-            Relation::Followers => sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM follows WHERE target_account_id = $1",
-                account.id,
-            )
-            .fetch_one(&ctx.data().db)
-            .await?,
-            Relation::Following => sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM follows WHERE account_id = $1",
-                account.id,
-            )
-            .fetch_one(&ctx.data().db)
-            .await?,
-        }
-        .unwrap_or(0);
-        Ok(Some(u64::try_from(total).unwrap_or(0)))
+        Ok(Some(relation_count(&ctx, account.id, relation).await?))
     })
+    .count_pages()
     .first_cursor(move |ctx: Ctx, identifier: String| async move {
         let public = public_fetch_mode(&ctx).await;
         expires_in(&ctx, Vary::Page, 180, public).await;
@@ -1501,12 +1607,31 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
             if account.hide_collections.unwrap_or(false) {
                 First::Hidden
             } else {
-                First::At(String::new())
+                First::At("1".to_owned())
             }
         }))
     })
+    .page_query(|page| format!("page={page}"), relation_cursor)
     .uri(move |ctx: Ctx, identifier: String| async move {
         scheme.own_uri(&ctx, &identifier, relation.own()).await
+    })
+}
+
+/// `protect_hidden_collections`: a page of an account's followers or
+/// following, when it hides them, is refused.
+async fn relation_guard(ctx: &Ctx, scheme: Scheme, values: &Values) -> AppResult<Access> {
+    let access = require_signature(ctx).await?;
+    if access != Access::Allow || !relation_page_requested(ctx) {
+        return Ok(access);
+    }
+    let hidden = scheme
+        .account(ctx, values.single().unwrap_or_default())
+        .await?
+        .is_some_and(|account| account.hide_collections.unwrap_or(false));
+    Ok(if hidden {
+        Access::Forbidden
+    } else {
+        Access::Allow
     })
 }
 

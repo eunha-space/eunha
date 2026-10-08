@@ -940,8 +940,19 @@ pub async fn reblog_status(
                 matches!(boost_visibility, vis::PUBLIC | vis::UNLISTED),
                 crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
             );
-            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
-                &state, announce, inboxes, key_id, signed,
+            let synchronize = crate::federation::followers_synchronization::synchronizes(
+                &state,
+                boost_account.id,
+                boost_visibility,
+            )
+            .await;
+            if let Err(e) = crate::federation::delivery::deliver_status_to_inboxes(
+                &state,
+                announce,
+                inboxes,
+                key_id,
+                signed,
+                synchronize,
             )
             .await
             {
@@ -1733,8 +1744,21 @@ pub(crate) async fn federate_status_update(
             matches!(status.visibility, vis::PUBLIC | vis::UNLISTED),
             crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,
         );
-        crate::federation::delivery::deliver_to_inboxes_signed(
-            state, activity, inboxes, key_id, signed,
+        // `ActivityPub::StatusUpdateDistributionWorker`, a
+        // `DistributionWorker`.
+        let synchronize = crate::federation::followers_synchronization::synchronizes(
+            state,
+            account.id,
+            status.visibility,
+        )
+        .await;
+        crate::federation::delivery::deliver_status_to_inboxes(
+            state,
+            activity,
+            inboxes,
+            key_id,
+            signed,
+            synchronize,
         )
         .await?;
     }

@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM follows WHERE target_account_id = $1",
+  "query": "SELECT COUNT(*) AS \"c!\" FROM follows WHERE account_id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "count",
+        "name": "c!",
         "type_info": "Int8"
       }
     ],
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "727542fb900fd5c130173b78c86ce063df369104ec103703c7c4058560ed5197"
+  "hash": "bf5fe0bbd3e9fc8f277693cabe91c9074ce5557e10c428ce3cf61edc5f985253"
 }

@@ -459,3 +459,150 @@ async fn rest_featured_tags_and_tagged_collections_are_mastodons() {
         assert_eq!(tagged[0]["items"].as_array().map(Vec::len), Some(items));
     }
 }
+
+/// `FollowerAccountsController`: twelve to a page at `?page=N`, each page
+/// counting them all, and a page of hidden followers refused.
+#[tokio::test]
+async fn followers_are_paged_as_mastodon_pages_them() {
+    let ctx = TestContext::new("ap-followers-pages").await;
+    let mut followers = Vec::new();
+    for n in 0..13 {
+        let (id, _, _) = remote_account(&ctx, "peer.invalid", &format!("f{n}")).await;
+        follow(&ctx, id, &ctx.alice_id).await;
+        followers.push(format!("https://peer.invalid/users/f{n}"));
+    }
+    sqlx::query(
+        "INSERT INTO account_stats (account_id, followers_count, following_count, statuses_count, created_at, updated_at)
+         VALUES ($1, 13, 0, 0, now(), now())
+         ON CONFLICT (account_id) DO UPDATE SET followers_count = 13",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let base = format!("https://{}/users/alice/followers", ctx.domain);
+    let root: Value = ctx
+        .api
+        .ap_get("/users/alice/followers", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(root["totalItems"], 13);
+    assert_eq!(
+        root["first"].as_str(),
+        Some(format!("{base}?page=1").as_str())
+    );
+    let first: Value = ctx
+        .api
+        .ap_get("/users/alice/followers?page=1", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        first["id"].as_str(),
+        Some(format!("{base}?page=1").as_str())
+    );
+    assert_eq!(first["totalItems"], 13);
+    assert_eq!(first["partOf"].as_str(), Some(base.as_str()));
+    assert_eq!(
+        first["next"].as_str(),
+        Some(format!("{base}?page=2").as_str())
+    );
+    assert!(first.get("prev").is_none());
+    let items = first["orderedItems"].as_array().unwrap();
+    assert_eq!(items.len(), 12);
+    assert_eq!(
+        items[0].as_str(),
+        Some(followers[12].as_str()),
+        "newest first"
+    );
+    let second: Value = ctx
+        .api
+        .ap_get("/users/alice/followers?page=2", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(second["orderedItems"], json!([followers[0]]));
+    assert_eq!(
+        second["prev"].as_str(),
+        Some(format!("{base}?page=1").as_str())
+    );
+    assert!(second.get("next").is_none());
+
+    sqlx::query("UPDATE accounts SET hide_collections = true WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let hidden: Value = ctx
+        .api
+        .ap_get("/users/alice/followers", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(hidden["totalItems"], 13);
+    assert!(hidden.get("first").is_none());
+    assert_eq!(
+        ctx.api
+            .ap_get("/users/alice/followers?page=1", None)
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+/// `StatusesController#redirect_to_original`: a boost sends whoever asks
+/// for it to the post it boosted; its activity is its `Announce`.
+#[tokio::test]
+async fn a_boost_is_sent_to_the_post_it_boosted() {
+    let ctx = TestContext::new("ap-boost-redirect").await;
+    let original = ctx
+        .api
+        .post_status(&ctx.bob_token, "boost me", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{original_id}/reblog"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boost_id = boost["id"].as_str().unwrap();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let resp = client
+        .get(ctx.api.url(&format!("/users/alice/statuses/{boost_id}")))
+        .header("host", &ctx.domain)
+        .header("accept", "application/activity+json")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert_eq!(
+        resp.headers()["location"].to_str().unwrap(),
+        format!("https://{}/@bob/{original_id}", ctx.domain)
+    );
+    let activity: Value = ctx
+        .api
+        .ap_get(&format!("/users/alice/statuses/{boost_id}/activity"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(activity["type"], "Announce");
+    assert_eq!(
+        activity["object"].as_str(),
+        Some(format!("https://{}/users/bob/statuses/{original_id}", ctx.domain).as_str())
+    );
+}
