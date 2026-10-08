@@ -111,7 +111,12 @@ async fn try_forward(
         account.id_scheme,
         &account.username,
     );
-    crate::federation::delivery::forward_to_inboxes(state, activity.clone(), inboxes, key_id)
-        .await?;
+    // As its sender signed it: without what eunha noted on it on arrival.
+    let mut activity = activity.clone();
+    if let Some(members) = activity.as_object_mut() {
+        members.remove(crate::api::ap::inbox::THROUGH_RELAY);
+        members.remove(crate::api::ap::inbox::DELIVERED_TO);
+    }
+    crate::federation::delivery::forward_to_inboxes(state, activity, inboxes, key_id).await?;
     Ok(())
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET conversation_id = $1 WHERE id = $2",
+  "query": "DELETE FROM conversation_mutes WHERE account_id = $1 AND conversation_id = $2",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "aea7dcaf251e263a4345a0291533b286cbc9cc4d837883b508426697384207d4"
+  "hash": "d6347ecb88abda8a6e4d34fd5004849e7d835b5e87c7ed00f432902d3fa586fa"
 }

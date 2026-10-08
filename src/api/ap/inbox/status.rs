@@ -14,167 +14,198 @@ use super::{
 };
 use ojak_vocab::json_ld_helper::{ids, type_is};
 
+/// `ActivityPub::Activity::Delete#perform`: the sender itself
+/// (`delete_person`), an authorization to feature it that it gave
+/// (`delete_feature_authorization!`), or else one of its statuses or a quote
+/// stamp it gave (`delete_object`).
 pub(super) async fn handle_delete(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
 ) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-    let object_uri = activity.get("object").and_then(|o| {
-        if o.is_string() {
-            o.as_str()
-        } else {
-            o.get("id").and_then(|i| i.as_str())
-        }
-    });
+    let Some(uri) = activity
+        .get("object")
+        .and_then(crate::federation::json_ld::value_or_id)
+    else {
+        return Ok(());
+    };
+    // `@account`, the sender, whom the inbox knows.
+    let Some(account_id) = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+        actor_uri,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
 
-    if let Some(uri) = object_uri {
-        // Delete(actor) — remote account deleted itself. Mastodon's
-        // `ActivityPub::Activity::Delete#delete_person`: purge it outright,
-        // without announcing anything back over ActivityPub.
-        if uri == actor_uri {
-            let account_id = sqlx::query_scalar!(
-                "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
-                uri,
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            if let Some(account_id) = account_id {
-                crate::delete_account::call(
-                    state,
-                    account_id,
-                    crate::delete_account::Options {
-                        reserve_username: false,
-                        skip_activitypub: true,
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(crate::error::AppError::Internal)?;
-                tracing::debug!(actor_uri, "purged remote account on Delete(actor)");
-            }
-        } else {
-            // Delete(FeatureAuthorization) — a featured account revoked consent;
-            // revoke the matching item (matched by the authorization URI we stored).
-            let revoked = sqlx::query!(
-                r#"UPDATE collection_items SET state = 3, updated_at = now()
-                   WHERE approval_uri = $1 AND state = 1
-                   RETURNING collection_id"#,
-                uri,
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            if let Some(r) = revoked {
-                refresh_collection_item_count(state, r.collection_id).await?;
-                return Ok(());
-            }
+    // `delete_person`, once at a time (`delete_in_progress:#{@account.id}`,
+    // held two hours, and skipped by whoever finds it held): purged
+    // outright, without announcing anything back over ActivityPub.
+    if uri == actor_uri {
+        let Some(_lock) = crate::redis_lock::try_acquire(
+            state,
+            &format!("delete_in_progress:{account_id}"),
+            2 * 60 * 60 * 1000,
+        )
+        .await
+        else {
+            return Ok(());
+        };
+        crate::delete_account::call(
+            state,
+            account_id,
+            crate::delete_account::Options {
+                reserve_username: false,
+                skip_activitypub: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+        tracing::debug!(actor_uri, "purged remote account on Delete(actor)");
+        return Ok(());
+    }
 
-            // `case @object['type']`: a `QuoteAuthorization` is a stamp taken
-            // back (`revoke_quote`), a `Note` or `Question` a status, and
-            // anything else whichever of the two it turns out to be.
-            let object_type = activity
-                .get("object")
-                .and_then(|o| o.get("type"))
-                .and_then(|t| t.as_str());
-            let may_be_stamp = !matches!(object_type, Some("Note" | "Question"));
-            if object_type == Some("QuoteAuthorization") {
-                if same_host(actor_uri, uri) {
-                    delete_later(state, actor_uri, uri).await;
-                }
-                super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
-                return Ok(());
-            }
+    // `delete_feature_authorization!`: the item of a local collection
+    // featuring the sender, by the authorization it gave
+    // (`CollectionItem.local.find_by(approval_uri:, account_id: @account.id)`),
+    // revoked (`DeleteCollectionItemService` with `revoke: true`).
+    if let Some(item) = sqlx::query!(
+        r#"SELECT ci.id, ci.collection_id, c.account_id AS owner_id
+           FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+           WHERE c.local AND ci.approval_uri = $1 AND ci.account_id = $2
+           ORDER BY ci.id LIMIT 1"#,
+        uri,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    {
+        sqlx::query!(
+            "UPDATE collection_items SET state = 3, updated_at = now() WHERE id = $1",
+            item.id,
+        )
+        .execute(&state.db)
+        .await?;
+        refresh_collection_item_count(state, item.collection_id).await?;
+        crate::api::mastodon::collections::distribute_collection(
+            state,
+            &state.instance.domain,
+            item.collection_id,
+            item.owner_id,
+            false,
+        )
+        .await;
+        return Ok(());
+    }
 
-            // Reject if the actor's domain doesn't match the object's domain —
-            // prevents one server from deleting another server's content.
-            if !same_host(actor_uri, uri) {
-                if may_be_stamp
-                    && super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?
-                {
-                    return Ok(());
-                }
-                tracing::warn!(
-                    actor_uri,
-                    uri,
-                    "Delete: actor domain does not match object domain, ignoring"
-                );
-                return Ok(());
-            }
-
-            // Delete(Note/Tombstone): `delete_status`. Serialize against a
-            // concurrent Create for this uri (same `create:{uri}` lock) so we
-            // observe its committed status and it observes our tombstone.
+    // `delete_object`, once at a time for a URI
+    // (`delete_status_in_progress:#{object_uri}`, skipped when held).
+    let Some(_lock) = crate::redis_lock::try_acquire(
+        state,
+        &format!("delete_status_in_progress:{uri}"),
+        crate::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await
+    else {
+        return Ok(());
+    };
+    // On the sender's own host, the URI is remembered as deleted, so that a
+    // `Create` of it arriving late is skipped (`delete_later!`, under the
+    // `create:` lock a concurrent `Create` holds while it stores the status),
+    // and tombstoned.
+    if same_host(actor_uri, uri) {
+        {
             let _create_lock = acquire_create_lock(state, uri).await;
-            let actor_id =
-                sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri,)
-                    .fetch_optional(&state.db)
-                    .await?;
-            // `Status.find_by(uri:, account: @account)`, or by its `atomUri`.
-            let atom_uri = activity
-                .get("object")
-                .filter(|o| o.is_object())
-                .and_then(|o| o.get("atomUri"))
-                .and_then(|u| u.as_str())
-                .filter(|u| !u.is_empty());
-            let mut target = None;
-            if let Some(actor_id) = actor_id {
-                for candidate in std::iter::once(uri).chain(atom_uri) {
-                    target = sqlx::query_scalar!(
-                        "SELECT id FROM statuses
-                         WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
-                        candidate,
-                        actor_id,
-                    )
-                    .fetch_optional(&state.db)
-                    .await?;
-                    if target.is_some() {
-                        break;
-                    }
-                }
-            }
-            if let (Some(status_id), Some(actor_id)) = (target, actor_id) {
-                // `forwarder.forward! if forwarder.forwardable?`, before the
-                // status goes, to the followers of the local accounts that
-                // shared it.
-                if crate::federation::forwarder::forwardable(state, activity, status_id).await {
-                    crate::federation::forwarder::forward(state, actor_id, activity, status_id)
-                        .await;
-                }
-                crate::remove_status::call(
-                    state,
-                    status_id,
-                    crate::remove_status::Options::default(),
-                )
-                .await?;
-            } else {
-                // If the status isn't known yet (out-of-order delivery),
-                // remember the Delete so a late Create with this URI is
-                // skipped.
-                delete_later(state, actor_uri, uri).await;
-                // `delete_status || revoke_quote`
-                if may_be_stamp {
-                    super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
-                }
-            }
+            delete_later(state, actor_uri, uri).await;
+        }
+        // `Tombstone.find_or_create_by(uri:, account: @account)`.
+        sqlx::query!(
+            r#"INSERT INTO tombstones (id, account_id, uri, created_at, updated_at)
+               SELECT $1, $2, $3::text, now(), now()
+               WHERE NOT EXISTS (SELECT 1 FROM tombstones WHERE uri = $3::text AND account_id = $2)"#,
+            crate::snowflake::next_id(),
+            account_id,
+            uri,
+        )
+        .execute(&state.db)
+        .await?;
+    }
 
-            // Create a tombstone so that a subsequent Create with the same URI is rejected.
-            if let Some(actor_id) = actor_id {
-                let tombstone_id = crate::snowflake::next_id();
-                let _ = sqlx::query!(
-                    r#"INSERT INTO tombstones (id, account_id, uri, created_at, updated_at)
-                       SELECT $1, $2, $3::text, now(), now()
-                       WHERE NOT EXISTS (SELECT 1 FROM tombstones WHERE uri = $3::text)"#,
-                    tombstone_id,
-                    actor_id,
-                    uri,
-                )
-                .execute(&state.db)
-                .await;
+    // `case @object['type']`: a `QuoteAuthorization` is a stamp taken back
+    // (`revoke_quote`), a `Note` or `Question` a status, and anything else
+    // whichever of the two it turns out to be.
+    let object_type = activity
+        .get("object")
+        .and_then(|o| o.get("type"))
+        .and_then(|t| t.as_str());
+    match object_type {
+        Some("QuoteAuthorization") => {
+            super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
+        }
+        Some("Note" | "Question") => {
+            delete_status(state, activity, account_id, uri).await?;
+        }
+        _ => {
+            if !delete_status(state, activity, account_id, uri).await? {
+                super::quote::revoke_by_stamp(state, activity, actor_uri, uri).await?;
             }
         }
     }
-
     Ok(())
+}
+
+/// `delete_status`: the sender's own status, by the URI or the object's
+/// `atomUri` (`Status.find_by(uri:, account: @account)`), forwarded to the
+/// followers of the local accounts that shared it and then removed
+/// (`RemoveStatusService` with `redraft: false`, which takes it off every
+/// feed and removes the boosts of it). Says whether there was one.
+async fn delete_status(
+    state: &AppState,
+    activity: &Value,
+    account_id: i64,
+    uri: &str,
+) -> AppResult<bool> {
+    let atom_uri = activity
+        .get("object")
+        .filter(|o| o.is_object())
+        .and_then(|o| o.get("atomUri"))
+        .and_then(|u| u.as_str())
+        .filter(|u| !u.trim().is_empty());
+    let mut target = None;
+    for candidate in std::iter::once(uri).chain(atom_uri) {
+        target = sqlx::query_scalar!(
+            "SELECT id FROM statuses
+             WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+            candidate,
+            account_id,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if target.is_some() {
+            break;
+        }
+    }
+    let Some(status_id) = target else {
+        return Ok(false);
+    };
+    // `forwarder.forward! if forwarder.forwardable?`, before the status goes.
+    if crate::federation::forwarder::forwardable(state, activity, status_id).await {
+        crate::federation::forwarder::forward(state, account_id, activity, status_id).await;
+    }
+    crate::remove_status::call(
+        state,
+        status_id,
+        crate::remove_status::Options {
+            redraft: false,
+            ..crate::remove_status::Options::default()
+        },
+    )
+    .await?;
+    Ok(true)
 }
 
 /// `RemoveStatusService` with `redraft: false` for a remote status whose
@@ -380,7 +411,15 @@ pub(super) async fn handle_announce(
     // collection → private, otherwise direct) instead of assuming public.
     let announce_to = ids(activity.get("to"));
     let announce_cc = ids(activity.get("cc"));
-    let visibility = crate::db::models::vis::from_audience(&announce_to, &announce_cc);
+    let booster_followers: String = sqlx::query_scalar!(
+        "SELECT followers_url FROM accounts WHERE id = $1",
+        booster_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or_default();
+    let visibility =
+        crate::db::models::vis::of_remote(&announce_to, &announce_cc, &booster_followers);
 
     let boost_id = crate::snowflake::next_id();
     let inserted = sqlx::query_scalar!(
@@ -401,7 +440,9 @@ pub(super) async fn handle_announce(
 
     // A boost is a status of the booster's. `inserted` is `None` when the
     // announce was already recorded, which is how a redelivery counts once.
-    if inserted.is_some() {
+    if let Some(boost_id) = inserted {
+        // `set_conversation`: a boost starts a conversation of its own.
+        crate::conversation::assign(&state.db, boost_id).await?;
         if let Err(e) =
             crate::counters::on_status_created(&state.db, booster_id, visibility, None, published)
                 .await
@@ -471,7 +512,7 @@ pub(super) async fn handle_like(
     let activity_uri = activity.get("id").and_then(|i| i.as_str()).unwrap_or("");
     let object_uri = activity
         .get("object")
-        .and_then(|o| o.as_str())
+        .and_then(crate::federation::json_ld::value_or_id)
         .unwrap_or("");
 
     // Skip a Like whose Undo already arrived out of order.
@@ -482,7 +523,7 @@ pub(super) async fn handle_like(
     // `status_from_uri(object_uri)`, fetching nothing: only a favourite of a
     // local post is recorded (`return if original_status.nil? ||
     // !original_status.account.local?`).
-    let Some(status_id) = crate::federation::local_uri::status(state, object_uri).await else {
+    let Some(status_id) = super::kept_status(state, object_uri).await? else {
         return Ok(());
     };
     let local_author = sqlx::query_scalar!(
@@ -879,6 +920,55 @@ pub(super) async fn handle_update(
                     }
                 }
             }
+            // `update_mentions!`: whoever it now tags is mentioned, and not
+            // silently; whoever it no longer tags stays mentioned, silently,
+            // as taking back access from someone already told would confuse
+            // more than it helps. An account that cannot be fetched for now
+            // is tried again later.
+            let mut mentioned: Vec<i64> = Vec::new();
+            let mut unresolved: Vec<String> = Vec::new();
+            for href in tags_arr
+                .iter()
+                .filter(|t| type_is(t, "Mention"))
+                .filter_map(|t| t.get("href").and_then(Value::as_str))
+                .filter(|href| !href.trim().is_empty())
+            {
+                match resolve_or_fetch_remote_account(state, href).await {
+                    Ok(id) => {
+                        if !mentioned.contains(&id) {
+                            mentioned.push(id);
+                        }
+                    }
+                    Err(error) if super::create::fetch_failed_for_now(&error) => {
+                        if !unresolved.iter().any(|u| u == href) {
+                            unresolved.push(href.to_owned());
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+            for &id in &mentioned {
+                sqlx::query!(
+                    r#"INSERT INTO mentions (status_id, account_id, silent, created_at, updated_at)
+                       VALUES ($1, $2, false, now(), now())
+                       ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()"#,
+                    row.id,
+                    id,
+                )
+                .execute(&state.db)
+                .await?;
+            }
+            sqlx::query!(
+                "UPDATE mentions SET silent = true WHERE status_id = $1 AND NOT (account_id = ANY($2))",
+                row.id,
+                &mentioned,
+            )
+            .execute(&state.db)
+            .await?;
+            for uri in unresolved {
+                super::create::resolve_mention_later(state, row.id, uri, None).await;
+            }
+
             // `update_tags!`: the featured tags the edit added or took away.
             if let Some(counted) = sqlx::query!(
                 "SELECT visibility, created_at FROM statuses WHERE id = $1",

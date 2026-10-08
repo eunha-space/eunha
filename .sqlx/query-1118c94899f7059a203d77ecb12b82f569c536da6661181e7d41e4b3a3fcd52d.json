@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(r.id, s.id) AS \"id!\", COALESCE(r.account_id, s.account_id) AS \"account_id!\",\n                  CASE WHEN r.id IS NULL THEN s.conversation_id ELSE r.conversation_id END AS conversation_id,\n                  CASE WHEN r.id IS NULL THEN s.in_reply_to_account_id ELSE r.in_reply_to_account_id END\n                    AS in_reply_to_account_id,\n                  COALESCE(CASE WHEN r.id IS NULL THEN s.reply ELSE r.reply END, false) AS \"reply!\"\n           FROM statuses s\n           LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL\n           WHERE s.id = $1 AND s.deleted_at IS NULL\n             AND (s.reblog_of_id IS NULL OR r.id IS NOT NULL)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "reply!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1118c94899f7059a203d77ecb12b82f569c536da6661181e7d41e4b3a3fcd52d"
+}

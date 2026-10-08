@@ -414,6 +414,23 @@ pub mod vis {
         matches!(v, PUBLIC | UNLISTED)
     }
 
+    /// `StatusParser#visibility` and `Announce#visibility_from_audience`:
+    /// the public collection in `to` is public, in `cc` unlisted; the
+    /// author's own followers collection in `to` is private; anything else
+    /// is direct.
+    pub fn of_remote<S: AsRef<str>, T: AsRef<str>>(to: &[S], cc: &[T], followers_url: &str) -> i32 {
+        let is_public = ojak_vocab::is_public_collection;
+        if to.iter().any(|u| is_public(u.as_ref())) {
+            PUBLIC
+        } else if cc.iter().any(|u| is_public(u.as_ref())) {
+            UNLISTED
+        } else if !followers_url.is_empty() && to.iter().any(|u| u.as_ref() == followers_url) {
+            PRIVATE
+        } else {
+            DIRECT
+        }
+    }
+
     /// Derive visibility from an object's `to`/`cc` audience (federation::addressing).
     pub fn from_audience<S: AsRef<str>, T: AsRef<str>>(to: &[S], cc: &[T]) -> i32 {
         use crate::federation::addressing::Visibility;

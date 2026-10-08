@@ -459,7 +459,6 @@ pub async fn get_account_statuses(
                    OR (
                      NOT $10::boolean
                      AND $11::bigint IS NOT NULL
-                     AND visibility = 3
                      AND EXISTS (SELECT 1 FROM mentions WHERE status_id = statuses.id AND account_id = $11)
                    )
                  )
@@ -521,7 +520,6 @@ pub async fn get_account_statuses(
                    OR (
                      NOT $11::boolean
                      AND $12::bigint IS NOT NULL
-                     AND visibility = 3
                      AND EXISTS (SELECT 1 FROM mentions WHERE status_id = statuses.id AND account_id = $12)
                    )
                  )

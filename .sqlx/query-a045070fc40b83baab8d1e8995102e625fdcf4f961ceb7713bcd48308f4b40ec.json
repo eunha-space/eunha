@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM statuses\n                         WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+  "query": "SELECT id FROM statuses\n             WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "6c54077eb1a152b5a5efab261958aaddb068097aa2b7b5a964780b351bce6bb8"
+  "hash": "a045070fc40b83baab8d1e8995102e625fdcf4f961ceb7713bcd48308f4b40ec"
 }

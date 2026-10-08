@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET conversation_id = $2 WHERE id = $1 AND conversation_id IS DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e22d866739ada151603028f7aefa8273a4299a50af19a5c87b2c2e45b7d07d31"
+}

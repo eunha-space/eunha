@@ -201,22 +201,17 @@ pub async fn post_status(
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
 
-    // Look up the parent author for in_reply_to_account_id
-    let in_reply_to_account_id: Option<i64> = if let Some(parent_id) = in_reply_to_id {
-        let account_id = sqlx::query_scalar!(
-            "SELECT account_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-            parent_id,
-        )
-        .fetch_optional(&state.db)
-        .await?;
-        if account_id.is_none() {
+    // The thread (`Status#thread`, a boost's original in its place) and
+    // `carried_over_reply_to_account_id`.
+    let (in_reply_to_id, in_reply_to_account_id) = if let Some(parent_id) = in_reply_to_id {
+        let Some(thread) = crate::conversation::thread(&state.db, parent_id).await? else {
             return Err(AppError::Unprocessable(
                 "in_reply_to_id does not exist".into(),
             ));
-        }
-        account_id
+        };
+        (Some(thread.id), thread.reply_to_account_id(auth.account_id))
     } else {
-        None
+        (None, None)
     };
 
     // `set_quoted_status`: `Status.find(quoted_status_id)&.proper`, then
@@ -505,62 +500,11 @@ pub async fn post_status(
         crate::quotes::ensure_quoted_access(&state.db, quote).await;
     }
 
-    // Mastodon assigns a conversation_id to every status. For replies, inherit
-    // the parent's conversation; otherwise create a new one.
-    let conv_id = if let Some(parent_id) = in_reply_to_id {
-        sqlx::query_scalar!(
-            "SELECT conversation_id FROM statuses WHERE id = $1",
-            parent_id
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .flatten()
-    } else {
-        None
-    };
-
-    let conv_id = if let Some(cid) = conv_id {
-        cid
-    } else {
-        sqlx::query_scalar!(
-            "INSERT INTO conversations (created_at, updated_at) VALUES (now(), now()) RETURNING id",
-        )
-        .fetch_one(&state.db)
-        .await?
-    };
-
-    sqlx::query!(
-        "UPDATE statuses SET conversation_id = $1 WHERE id = $2",
-        conv_id,
-        status.id
-    )
-    .execute(&state.db)
-    .await?;
-    // `Status#update_conversation`: a post that answers nothing starts its
-    // conversation, which is then named by it (`/contexts/{account}-{status}`).
-    if in_reply_to_id.is_none() {
-        sqlx::query!(
-            r#"UPDATE conversations SET parent_status_id = $2, parent_account_id = $3
-               WHERE id = $1 AND parent_status_id IS NULL"#,
-            conv_id,
-            status.id,
-            status.account_id,
-        )
-        .execute(&state.db)
-        .await?;
-    }
-
-    sqlx::query!(
-        "UPDATE conversations SET updated_at = now() WHERE id = $1",
-        conv_id
-    )
-    .execute(&state.db)
-    .await?;
+    // `set_conversation` and `update_conversation`.
+    let conv_id = crate::conversation::assign(&state.db, status.id).await?;
 
     // For direct messages, also manage the account_conversations inbox.
-    if visibility == "direct" {
+    if let (true, Some(conv_id)) = (visibility == "direct", conv_id) {
         // Build sorted participant ID lists for each party's account_conversations row.
         // Mastodon convention: participant_account_ids = everyone else in the conversation.
         let mut mentioned_ids: Vec<i64> = resolved

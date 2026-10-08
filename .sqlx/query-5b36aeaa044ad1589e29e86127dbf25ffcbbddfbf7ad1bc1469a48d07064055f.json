@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.id, ci.collection_id, c.account_id AS owner_id\n           FROM collection_items ci JOIN collections c ON c.id = ci.collection_id\n           WHERE c.local AND ci.approval_uri = $1 AND ci.account_id = $2\n           ORDER BY ci.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5b36aeaa044ad1589e29e86127dbf25ffcbbddfbf7ad1bc1469a48d07064055f"
+}

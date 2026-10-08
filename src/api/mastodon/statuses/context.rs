@@ -120,7 +120,9 @@ pub async fn get_status_context(
             }
             if matches!(
                 s.visibility,
-                crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+                crate::db::models::vis::PRIVATE
+                    | crate::db::models::vis::DIRECT
+                    | crate::db::models::vis::LIMITED
             ) {
                 viewer_id.is_some()
             } else {
@@ -137,7 +139,9 @@ pub async fn get_status_context(
             }
             if matches!(
                 s.visibility,
-                crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+                crate::db::models::vis::PRIVATE
+                    | crate::db::models::vis::DIRECT
+                    | crate::db::models::vis::LIMITED
             ) {
                 viewer_id.is_some()
             } else {
@@ -158,7 +162,9 @@ pub async fn get_status_context(
         for s in &visible_ancestors {
             if matches!(
                 s.visibility,
-                crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+                crate::db::models::vis::PRIVATE
+                    | crate::db::models::vis::DIRECT
+                    | crate::db::models::vis::LIMITED
             ) {
                 if let Some(vid) = viewer_id {
                     if check_status_visible(&state, s, vid).await.is_err() {
@@ -175,7 +181,9 @@ pub async fn get_status_context(
         for s in &visible_descendants {
             if matches!(
                 s.visibility,
-                crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+                crate::db::models::vis::PRIVATE
+                    | crate::db::models::vis::DIRECT
+                    | crate::db::models::vis::LIMITED
             ) {
                 if let Some(vid) = viewer_id {
                     if check_status_visible(&state, s, vid).await.is_err() {

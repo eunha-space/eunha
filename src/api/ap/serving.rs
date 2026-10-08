@@ -334,10 +334,16 @@ pub fn federation() -> Federation<AppState> {
                 )
                 .await;
             }
-            super::inbox::received_from(
+            // `@account`, the owner of the personal inbox it arrived at.
+            let delivered_to = match &received.recipient {
+                Some(recipient) => recipient_account_id(&ctx, recipient).await?,
+                None => None,
+            };
+            super::inbox::received_at(
                 ctx.data(),
                 received.vouched,
                 received.forwarder.as_ref().map(url::Url::as_str),
+                delivered_to,
             )
             .await
         })
@@ -886,6 +892,23 @@ async fn signer_blocked(ctx: &Ctx, owner_id: i64) -> AppResult<bool> {
     .fetch_optional(&ctx.data().db)
     .await?;
     Ok(blocked.unwrap_or(false))
+}
+
+/// The local account whose inbox `recipient` names.
+async fn recipient_account_id(
+    ctx: &Ctx,
+    recipient: &ojak::federation::ActorRef,
+) -> AppResult<Option<i64>> {
+    let scheme = [Scheme::Username, Scheme::Id]
+        .into_iter()
+        .find(|scheme| scheme.kind("actor") == recipient.kind);
+    match scheme {
+        Some(scheme) => Ok(scheme
+            .account(ctx, &recipient.identifier)
+            .await?
+            .map(|account| account.id)),
+        None => Ok(None),
+    }
 }
 
 /// Which of Mastodon's two URI schemes a route is under.

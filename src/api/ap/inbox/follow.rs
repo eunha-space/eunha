@@ -409,6 +409,9 @@ pub(super) async fn handle_follow(
     Ok(())
 }
 
+/// `ActivityPub::Activity::Undo#perform`: what the sender takes back is
+/// looked up as the sender's own, never by its id alone, so that no one can
+/// undo what someone else did.
 pub(super) async fn handle_undo(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
@@ -416,198 +419,333 @@ pub(super) async fn handle_undo(
 ) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
     let object = activity.get("object");
-    let object_type = object.and_then(|o| o.get("type")).and_then(|t| t.as_str());
+    let object_uri = object
+        .and_then(crate::federation::json_ld::value_or_id)
+        .filter(|uri| !uri.is_empty());
+    // `@account`, the sender, whom the inbox knows.
+    let Some(account_id) = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+        actor_uri,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let object_type = object
+        .filter(|o| o.is_object())
+        .and_then(|o| o.get("type"))
+        .and_then(|t| t.as_str());
+    // `target_uri`: `value_or_id(@object['object'])`.
+    let target_uri = object
+        .filter(|o| o.is_object())
+        .and_then(|o| o.get("object"))
+        .and_then(crate::federation::json_ld::value_or_id);
 
     match object_type {
-        Some("Follow") => {
-            let follow_uri = object
-                .and_then(|o| o.get("id"))
-                .and_then(|i| i.as_str())
-                .unwrap_or("");
-            // Return who was following whom, so the two counts can come back
-            // down: an unfollow that removed a row but left the counts is a
-            // count that only ever rises.
-            let undone_follow = sqlx::query!(
-                "DELETE FROM follows WHERE uri = $1 RETURNING account_id, target_account_id",
-                follow_uri
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            if let Some(row) = &undone_follow {
-                // `AccountStat`'s `update_index('accounts', :account)`.
-                crate::search::elasticsearch::indexing::accounts(
-                    state,
-                    &[row.account_id, row.target_account_id],
+        Some("Announce") => {
+            // `undo_announce`: the sender's status with the Announce's id, or
+            // its `atomUri`, removed by `RemoveStatusService`; one not seen
+            // yet is remembered, so that the Announce is skipped.
+            let Some(announce_uri) = object_uri else {
+                return Ok(());
+            };
+            let atom_uri = object
+                .and_then(|o| o.get("atomUri"))
+                .and_then(|u| u.as_str())
+                .filter(|u| !u.is_empty());
+            let mut boost_id = None;
+            for candidate in std::iter::once(announce_uri).chain(atom_uri) {
+                boost_id = sqlx::query_scalar!(
+                    "SELECT id FROM statuses
+                     WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+                    candidate,
+                    account_id,
                 )
-                .await;
-                if let Err(e) = crate::counters::on_follow_removed(
-                    &state.db,
-                    row.account_id,
-                    row.target_account_id,
-                )
-                .await
-                {
-                    tracing::error!(error = %e, "failed to uncount a federated unfollow");
+                .fetch_optional(&state.db)
+                .await?;
+                if boost_id.is_some() {
+                    break;
                 }
             }
-            let undone_request = sqlx::query!(
-                "DELETE FROM follow_requests WHERE uri = $1 RETURNING account_id, target_account_id",
-                follow_uri
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            if let Some(req) = &undone_request {
-                // Mirror Mastodon's FollowRequest dependent: :destroy — clear the
-                // recipient's follow_request notification for the withdrawn request.
-                sqlx::query!(
-                    "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
-                    req.target_account_id,
-                    req.account_id,
-                )
-                .execute(&state.db)
-                .await?;
+            match boost_id {
+                Some(boost_id) => {
+                    crate::remove_status::call(
+                        state,
+                        boost_id,
+                        crate::remove_status::Options::default(),
+                    )
+                    .await?;
+                }
+                None => delete_later(state, actor_uri, announce_uri).await,
             }
-            // The Follow may not have been processed yet (out-of-order delivery);
-            // remember this Undo so a late Follow with the same id is skipped
-            // rather than resurrecting the follow.
-            if undone_follow.is_none() && undone_request.is_none() {
-                delete_later(state, actor_uri, follow_uri).await;
+        }
+        Some("Accept") => {
+            // `undo_accept`: the sender's acceptance of a follow by one of
+            // ours taken back, which leaves the follow a request again
+            // (`Follow#revoke_request!`).
+            if let Some(uri) = target_uri {
+                revoke_follow_request(state, account_id, uri).await?;
+            }
+        }
+        Some("Follow") => {
+            // `undo_follow`: the sender's follow of, or request to follow, the
+            // local account the Follow names.
+            let Some(target_id) = local_target(state, target_uri).await else {
+                return Ok(());
+            };
+            if !unfollow(state, account_id, target_id).await? {
+                if let Some(uri) = object_uri {
+                    delete_later(state, actor_uri, uri).await;
+                }
             }
         }
         Some("Like") => {
-            let like_uri = object
-                .and_then(|o| o.get("id"))
-                .and_then(|i| i.as_str())
-                .unwrap_or("");
-            // object.object is the liked status URI
-            let status_uri = object
-                .and_then(|o| o.get("object"))
-                .and_then(|v| {
-                    if v.is_string() {
-                        v.as_str()
-                    } else {
-                        v.get("id").and_then(|i| i.as_str())
-                    }
-                })
-                .unwrap_or("");
-            let status_id =
-                sqlx::query_scalar!("SELECT id FROM statuses WHERE uri = $1", status_uri)
-                    .fetch_optional(&state.db)
-                    .await?;
-            let account_id =
-                sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri)
-                    .fetch_optional(&state.db)
-                    .await?;
-            let mut removed = false;
-            if let (Some(sid), Some(aid)) = (status_id, account_id) {
-                let deleted = sqlx::query!(
-                    "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2",
-                    aid,
-                    sid
-                )
-                .execute(&state.db)
-                .await?;
-                removed = deleted.rows_affected() > 0;
-                crate::search::elasticsearch::indexing::status_interaction(state, sid).await;
-                sqlx::query!(
-                    r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), untrusted_favourites_count = CASE WHEN untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - favourites_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,
-                    sid
-                ).execute(&state.db).await?;
+            // `undo_like`: the sender's favourite of a local post.
+            let Some(status_id) = (match target_uri {
+                Some(uri) => super::kept_status(state, uri).await?,
+                None => None,
+            }) else {
+                return Ok(());
+            };
+            let local_author = sqlx::query_scalar!(
+                r#"SELECT (a.domain IS NULL) AS "local!" FROM statuses s
+                   JOIN accounts a ON a.id = s.account_id WHERE s.id = $1"#,
+                status_id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if !local_author {
+                return Ok(());
             }
-            if !removed {
-                delete_later(state, actor_uri, like_uri).await;
-            }
-        }
-        Some("Announce") => {
-            // `undo_announce`: the actor's status with the Announce's id, or
-            // its `atomUri`, removed by `RemoveStatusService`; one not seen
-            // yet is remembered, so that the Announce is skipped.
-            let announce = object.filter(|o| o.is_object());
-            let announce_uri = announce
-                .and_then(|o| o.get("id"))
-                .and_then(|i| i.as_str())
-                .unwrap_or("");
-            if !announce_uri.is_empty() {
-                let atom_uri = announce
-                    .and_then(|o| o.get("atomUri"))
-                    .and_then(|u| u.as_str())
-                    .filter(|u| !u.is_empty());
-                let actor_id =
-                    sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri)
-                        .fetch_optional(&state.db)
-                        .await?;
-                let mut boost_id = None;
-                if let Some(actor_id) = actor_id {
-                    for candidate in std::iter::once(announce_uri).chain(atom_uri) {
-                        boost_id = sqlx::query_scalar!(
-                            "SELECT id FROM statuses
-                             WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
-                            candidate,
-                            actor_id,
-                        )
-                        .fetch_optional(&state.db)
-                        .await?;
-                        if boost_id.is_some() {
-                            break;
-                        }
-                    }
-                }
-                match boost_id {
-                    Some(boost_id) => {
-                        crate::remove_status::call(
-                            state,
-                            boost_id,
-                            crate::remove_status::Options::default(),
-                        )
-                        .await?;
-                    }
-                    None => delete_later(state, actor_uri, announce_uri).await,
+            if !unfavourite(state, account_id, status_id).await? {
+                if let Some(uri) = object_uri {
+                    delete_later(state, actor_uri, uri).await;
                 }
             }
         }
         Some("Block") => {
-            let block_uri = object
-                .and_then(|o| o.get("id"))
-                .and_then(|i| i.as_str())
-                .unwrap_or("");
-            let block_object_uri = object
-                .and_then(|o| o.get("object"))
-                .and_then(|v| {
-                    if v.is_string() {
-                        v.as_str()
-                    } else {
-                        v.get("id").and_then(|i| i.as_str())
-                    }
-                })
-                .unwrap_or("");
-            let blocker_id =
-                sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri)
-                    .fetch_optional(&state.db)
-                    .await?;
-            let blockee_id = sqlx::query_scalar!(
-                "SELECT id FROM accounts WHERE uri = $1 AND domain IS NULL",
-                block_object_uri
+            // `undo_block`: the sender's block of a local account.
+            let Some(target_id) = local_target(state, target_uri).await else {
+                return Ok(());
+            };
+            if !unblock(state, account_id, target_id).await? {
+                if let Some(uri) = object_uri {
+                    delete_later(state, actor_uri, uri).await;
+                }
+            }
+        }
+        None => {
+            // `handle_reference`: an object given by its id alone, guessed
+            // at among the sender's boosts, follows and requests, and blocks
+            // (`try_undo_announce || try_undo_follow || try_undo_block`), or
+            // else remembered.
+            let Some(uri) = object_uri else {
+                return Ok(());
+            };
+            let boost_id = sqlx::query_scalar!(
+                "SELECT id FROM statuses
+                 WHERE uri = $1 AND account_id = $2 AND reblog_of_id IS NOT NULL AND deleted_at IS NULL",
+                uri,
+                account_id,
             )
             .fetch_optional(&state.db)
             .await?;
-            let mut removed = false;
-            if let (Some(bid), Some(eid)) = (blocker_id, blockee_id) {
-                let deleted = sqlx::query!(
-                    "DELETE FROM blocks WHERE account_id = $1 AND target_account_id = $2",
-                    bid,
-                    eid
+            if let Some(boost_id) = boost_id {
+                crate::remove_status::call(
+                    state,
+                    boost_id,
+                    crate::remove_status::Options::default(),
                 )
-                .execute(&state.db)
                 .await?;
-                removed = deleted.rows_affected() > 0;
+                return Ok(());
             }
-            if !removed {
-                delete_later(state, actor_uri, block_uri).await;
+            let followed = sqlx::query_scalar!(
+                r#"SELECT target_account_id AS "target_account_id?" FROM follow_requests WHERE account_id = $1 AND uri = $2
+                   UNION ALL
+                   SELECT target_account_id FROM follows WHERE account_id = $1 AND uri = $2
+                   LIMIT 1"#,
+                account_id,
+                uri,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+            if let Some(target_id) = followed {
+                unfollow(state, account_id, target_id).await?;
+                return Ok(());
             }
+            let blocked = sqlx::query_scalar!(
+                "SELECT target_account_id FROM blocks WHERE account_id = $1 AND uri = $2",
+                account_id,
+                uri,
+            )
+            .fetch_optional(&state.db)
+            .await?;
+            if let Some(target_id) = blocked {
+                unblock(state, account_id, target_id).await?;
+                return Ok(());
+            }
+            delete_later(state, actor_uri, uri).await;
         }
-        _ => {}
+        Some(_) => {}
     }
 
+    Ok(())
+}
+
+/// `account_from_uri(target_uri)`, when it is a local account.
+async fn local_target(state: &AppState, uri: Option<&str>) -> Option<i64> {
+    let id = crate::federation::local_uri::account(state, uri?).await?;
+    sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE id = $1 AND domain IS NULL",
+        id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// `@account.unfollow!(target_account)`, or the request destroyed when there
+/// is no follow; each takes its notification with it (`has_one
+/// :notification, dependent: :destroy`). Says whether there was either.
+async fn unfollow(state: &AppState, account_id: i64, target_id: i64) -> AppResult<bool> {
+    if let Some(follow_id) = sqlx::query_scalar!(
+        "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING id",
+        account_id,
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    {
+        sqlx::query!(
+            "DELETE FROM notifications WHERE activity_type = 'Follow' AND activity_id = $1",
+            follow_id,
+        )
+        .execute(&state.db)
+        .await?;
+        // `AccountStat`'s `update_index('accounts', :account)`.
+        crate::search::elasticsearch::indexing::accounts(state, &[account_id, target_id]).await;
+        if let Err(e) = crate::counters::on_follow_removed(&state.db, account_id, target_id).await {
+            tracing::error!(error = %e, "failed to uncount a federated unfollow");
+        }
+        return Ok(true);
+    }
+    if sqlx::query!(
+        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING id",
+        account_id,
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .is_some()
+    {
+        sqlx::query!(
+            "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
+            target_id,
+            account_id,
+        )
+        .execute(&state.db)
+        .await?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// The favourite destroyed, with its notification and the status's count.
+/// Says whether there was one.
+async fn unfavourite(state: &AppState, account_id: i64, status_id: i64) -> AppResult<bool> {
+    let removed = sqlx::query!(
+        "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2",
+        account_id,
+        status_id
+    )
+    .execute(&state.db)
+    .await?
+    .rows_affected()
+        > 0;
+    if !removed {
+        return Ok(false);
+    }
+    sqlx::query!(
+        r#"DELETE FROM notifications
+           WHERE from_account_id = $1 AND "type" = 'favourite'
+             AND activity_type = 'Status' AND activity_id = $2"#,
+        account_id,
+        status_id,
+    )
+    .execute(&state.db)
+    .await?;
+    crate::search::elasticsearch::indexing::status_interaction(state, status_id).await;
+    sqlx::query!(
+        r#"UPDATE status_stats SET favourites_count = (SELECT COUNT(*) FROM favourites WHERE status_id = $1), untrusted_favourites_count = CASE WHEN untrusted_favourites_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_favourites_count + (SELECT COUNT(*) FROM favourites WHERE status_id = $1) - favourites_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,
+        status_id
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(true)
+}
+
+/// `UnblockService` for a remote blocker: the block destroyed. Says whether
+/// there was one.
+async fn unblock(state: &AppState, account_id: i64, target_id: i64) -> AppResult<bool> {
+    Ok(sqlx::query!(
+        "DELETE FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+        account_id,
+        target_id
+    )
+    .execute(&state.db)
+    .await?
+    .rows_affected()
+        > 0)
+}
+
+/// `Follow#revoke_request!`: the follow of the sender with the id `uri`
+/// becomes a request again, and is uncounted.
+async fn revoke_follow_request(state: &AppState, target_id: i64, uri: &str) -> AppResult<()> {
+    let Some(follow) = sqlx::query!(
+        r#"SELECT id, account_id, show_reblogs, notify, languages FROM follows
+           WHERE target_account_id = $1 AND uri = $2"#,
+        target_id,
+        uri,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let mut tx = state.db.begin().await?;
+    sqlx::query!(
+        r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify,
+                                        languages, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+           ON CONFLICT DO NOTHING"#,
+        follow.account_id,
+        target_id,
+        follow.show_reblogs,
+        follow.notify,
+        follow.languages.as_deref(),
+        uri,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!("DELETE FROM follows WHERE id = $1", follow.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query!(
+        "DELETE FROM notifications WHERE activity_type = 'Follow' AND activity_id = $1",
+        follow.id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    crate::search::elasticsearch::indexing::accounts(state, &[follow.account_id, target_id]).await;
+    if let Err(e) =
+        crate::counters::on_follow_removed(&state.db, follow.account_id, target_id).await
+    {
+        tracing::error!(error = %e, "failed to uncount a revoked follow");
+    }
     Ok(())
 }
 

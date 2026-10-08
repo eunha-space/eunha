@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO conversations (uri, created_at, updated_at) VALUES ($1, now(), now())\n           ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "12f22e1e00a88c5870a51f9027460e528838eda8b2200b88e7755f6c73c72f95"
+}

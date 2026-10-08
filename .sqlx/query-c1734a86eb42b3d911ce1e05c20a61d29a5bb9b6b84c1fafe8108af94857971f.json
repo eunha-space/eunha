@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mentions (status_id, account_id, silent, created_at, updated_at)\n               VALUES ($1, $2, false, now(), now())\n               ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c1734a86eb42b3d911ce1e05c20a61d29a5bb9b6b84c1fafe8108af94857971f"
+}

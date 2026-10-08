@@ -53,6 +53,7 @@ export default defineConfig({
           { text: "Remote actors", link: "/mastodon/remote-actors" },
           { text: "What other servers fetch", link: "/mastodon/serving" },
           { text: "Quotes", link: "/mastodon/quotes" },
+          { text: "Inbound statuses", link: "/mastodon/inbound-statuses" },
           { text: "Streaming", link: "/mastodon/streaming" },
           { text: "API entity parity", link: "/mastodon/entity-parity" },
           { text: "Differential testing", link: "/mastodon/differential-testing" },

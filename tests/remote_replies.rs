@@ -83,6 +83,8 @@ async fn spawn_remote(remote: &Remote) -> (String, String) {
             "webfinger": format!("eve@{}", base.trim_start_matches("http://")),
             "inbox": format!("{actor}/inbox"),
             "outbox": format!("{actor}/outbox"),
+            // What makes a post addressed to it followers-only.
+            "followers": format!("{actor}/followers"),
             "publicKey": {
                 "id": format!("{actor}#main-key"),
                 "owner": actor,

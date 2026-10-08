@@ -1,22 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS(SELECT 1 FROM accounts WHERE uri = ANY($1) AND domain IS NULL)",
+  "query": "SELECT EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND deleted_at IS NULL) AS \"e!\"",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "exists",
+        "name": "e!",
         "type_info": "Bool"
       }
     ],
     "parameters": {
       "Left": [
-        "TextArray"
+        "Int8"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "4179b6ebb6feb0f91dd368829cb32206743836a374955477b9891615d0f538df"
+  "hash": "a9ffaf38de2c54a5b0e6b3ece3f5bf7cb2d6d0f73c9f80e4179824a53770792b"
 }

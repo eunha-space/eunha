@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET visibility = $2, updated_at = now() WHERE id = $1 AND visibility = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa43bc2d5fe18cb372fe98b2df1024f2e5c73685b15c6e141cbdad910b88c2f2"
+}

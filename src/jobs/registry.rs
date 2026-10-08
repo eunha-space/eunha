@@ -86,6 +86,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::moves::UnfollowMigratedWorker>(),
         entry::<crate::push::PushNotificationWorker>(),
         entry::<crate::api::ap::inbox::create::ThreadResolveWorker>(),
+        entry::<crate::api::ap::inbox::create::MentionResolveWorker>(),
         entry::<crate::api::mastodon::annual_reports::GenerateAnnualReportWorker>(),
         entry::<crate::delete_account::AccountDeletionWorker>(),
         entry::<crate::delete_account::AdminAccountDeletionWorker>(),

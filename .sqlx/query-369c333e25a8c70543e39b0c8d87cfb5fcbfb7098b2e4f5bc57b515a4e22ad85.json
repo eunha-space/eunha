@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mentions SET silent = true WHERE status_id = $1 AND NOT (account_id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "369c333e25a8c70543e39b0c8d87cfb5fcbfb7098b2e4f5bc57b515a4e22ad85"
+}

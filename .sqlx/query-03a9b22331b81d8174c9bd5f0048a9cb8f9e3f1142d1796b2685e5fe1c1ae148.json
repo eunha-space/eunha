@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications WHERE activity_type = 'Follow' AND activity_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03a9b22331b81d8174c9bd5f0048a9cb8f9e3f1142d1796b2685e5fe1c1ae148"
+}

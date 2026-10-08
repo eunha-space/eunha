@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT conversation_id FROM statuses WHERE id = $1",
+  "query": "SELECT id FROM conversations WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "conversation_id",
+        "name": "id",
         "type_info": "Int8"
       }
     ],
@@ -15,8 +15,8 @@
       ]
     },
     "nullable": [
-      true
+      false
     ]
   },
-  "hash": "be9e5cf4e5c8f2d892cc1e8ce65b4146bf5c78d6385bc27c14209a290a987ae3"
+  "hash": "8bf42ab7f4faf895a3d73f4ad21e9b6280c50d6fbe1575b6ba0a8f7c32dcf233"
 }

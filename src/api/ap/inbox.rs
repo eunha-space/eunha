@@ -146,16 +146,64 @@ pub async fn received_from(
     activity: Value,
     forwarder: Option<&str>,
 ) -> AppResult<()> {
+    received_at(state, activity, forwarder, None).await
+}
+
+/// Set on an activity by eunha, and never taken from its sender, when it
+/// arrived at a local account's own inbox: the account's id, Mastodon's
+/// `delivered_to_account_id`, which `ActivityPub::ProcessingWorker` carries.
+pub(crate) const DELIVERED_TO: &str = "eunha:deliveredToAccountId";
+
+/// [`received_from`], delivered to the inbox of the local account
+/// `delivered_to`, or to the shared inbox when `None`.
+pub async fn received_at(
+    state: &AppState,
+    activity: Value,
+    forwarder: Option<&str>,
+    delivered_to: Option<i64>,
+) -> AppResult<()> {
     let mut activity = activity;
     if let Some(members) = activity.as_object_mut() {
         members.remove(THROUGH_RELAY);
+        members.remove(DELIVERED_TO);
         if let Some(forwarder) = forwarder {
             if through_enabled_relay(state, forwarder).await {
                 members.insert(THROUGH_RELAY.to_owned(), Value::Bool(true));
             }
         }
+        if let Some(account_id) = delivered_to {
+            members.insert(DELIVERED_TO.to_owned(), Value::from(account_id));
+        }
     }
     received_now(state, activity).await
+}
+
+/// The local account whose inbox `activity` was delivered to
+/// (`@options[:delivered_to_account_id]`), if it still exists.
+pub(super) async fn delivered_to(state: &AppState, activity: &Value) -> Option<i64> {
+    let id = activity.get(DELIVERED_TO)?.as_i64()?;
+    sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE id = $1 AND domain IS NULL",
+        id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// `status_from_uri`: the status a URI names, local or already known, and
+/// not discarded (`Status`'s default scope).
+pub(super) async fn kept_status(state: &AppState, uri: &str) -> AppResult<Option<i64>> {
+    let Some(id) = crate::federation::local_uri::status(state, uri).await else {
+        return Ok(None);
+    };
+    Ok(sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        id
+    )
+    .fetch_optional(&state.db)
+    .await?)
 }
 
 /// Whether `actor` is an enabled relay's: its inbox is one (`Relay.find_by(

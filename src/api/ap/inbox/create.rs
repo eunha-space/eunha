@@ -159,47 +159,82 @@ pub(super) async fn create(
     let mention_hrefs: Vec<String> = tags_arr
         .iter()
         .filter(|t| type_is(t, "Mention"))
-        .filter_map(|t| t.get("href").and_then(|v| v.as_str()).map(str::to_owned))
+        .filter_map(|t| t.get("href").and_then(|v| v.as_str()))
+        .filter(|href| !href.trim().is_empty())
+        .map(str::to_owned)
         .collect();
 
-    // Collect to/cc from both the activity wrapper and the Note object (Mastodon merges both).
-    // Each is `as_array(...).map { value_or_id }`: an IRI, or an embedded
-    // object's id.
-    let audience: Vec<String> = {
-        let mut a = ids(activity.get("to"));
-        a.extend(ids(activity.get("cc")));
-        a.extend(ids(object.get("to")));
-        a.extend(ids(object.get("cc")));
-        a.sort_unstable();
-        a.dedup();
-        a.into_iter().map(str::to_owned).collect()
+    // `StatusParser#audience_to` and `#audience_cc`: the object's, or, when
+    // it has none, the activity's; each an IRI or an embedded object's id.
+    let audience_of = |key: &str| -> Vec<String> {
+        ids(object
+            .get(key)
+            .filter(|v| !v.is_null())
+            .or_else(|| activity.get(key)))
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
     };
+    let audience_to = audience_of("to");
+    let audience_cc = audience_of("cc");
+    let audience: Vec<String> = {
+        let mut seen = std::collections::HashSet::new();
+        audience_to
+            .iter()
+            .chain(&audience_cc)
+            .filter(|uri| seen.insert(uri.as_str()))
+            .cloned()
+            .collect()
+    };
+    // `@options[:delivered_to_account_id]`: the local account whose inbox it
+    // was delivered to.
+    let delivered_to = super::delivered_to(state, activity).await;
 
-    // Look up inReplyTo status (id + account_id + whether account is local)
-    let in_reply_to_uri = object.get("inReplyTo").and_then(|v| v.as_str());
-    let in_reply_to_row = if let Some(uri) = in_reply_to_uri {
-        sqlx::query!(
-            r#"SELECT s.id, s.account_id, (a.domain IS NULL) AS "is_local!"
+    // `replied_to_status`: by `inReplyTo`, or its `inReplyToAtomUri`.
+    let in_reply_to_uri = object
+        .get("inReplyTo")
+        .and_then(crate::federation::json_ld::value_or_id)
+        .filter(|uri| !uri.trim().is_empty());
+    let mut replied_to_id = match in_reply_to_uri {
+        Some(uri) => super::kept_status(state, uri).await?,
+        None => None,
+    };
+    if let (Some(_), None) = (in_reply_to_uri, replied_to_id) {
+        if let Some(atom_uri) = object
+            .get("inReplyToAtomUri")
+            .and_then(Value::as_str)
+            .filter(|uri| !uri.trim().is_empty())
+        {
+            replied_to_id = super::kept_status(state, atom_uri).await?;
+        }
+    }
+    // `responds_to_followed_account?` reads the replied-to author: local, or
+    // followed by someone.
+    let replied_to = match replied_to_id {
+        Some(id) => sqlx::query!(
+            r#"SELECT s.id, (a.domain IS NULL) AS "is_local!",
+                      EXISTS (SELECT 1 FROM follows f WHERE f.target_account_id = s.account_id) AS "followed!"
                FROM statuses s JOIN accounts a ON a.id = s.account_id
-               WHERE s.uri = $1"#,
-            uri,
+               WHERE s.id = $1"#,
+            id,
         )
         .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-    } else {
-        None
+        .await?,
+        None => None,
     };
-    let in_reply_to_id = in_reply_to_row.as_ref().map(|r| r.id);
-    let in_reply_to_account_id = in_reply_to_row.as_ref().map(|r| r.account_id);
-    let in_reply_to_local = in_reply_to_row.as_ref().is_some_and(|r| r.is_local);
+    // `Status#thread`, and `carried_over_reply_to_account_id`.
+    let thread = match &replied_to {
+        Some(r) => crate::conversation::thread(&state.db, r.id).await?,
+        None => None,
+    };
+    let in_reply_to_id = thread.map(|t| t.id);
+    let in_reply_to_account_id = thread.and_then(|t| t.reply_to_account_id(account_id));
 
     // Mastodon serializes poll votes as Create(Note) where the Note's
     // `inReplyTo` is the poll status and `name` is the selected option. Store
     // these as poll_votes instead of creating a visible status.
     if let (Some(parent_id), Some(choice_name)) = (
-        in_reply_to_id,
+        replied_to.as_ref().map(|r| r.id),
         object
             .get("name")
             .and_then(|v| v.as_str())
@@ -210,55 +245,169 @@ pub(super) async fn create(
         }
     }
 
-    // Acceptance filter: only process if related to local activity (mirrors Mastodon's
-    // related_to_local_activity? / addresses_local_accounts? checks), which
-    // whatever we fetched ourselves is (`fetch?`).
-    let is_followed_locally = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-            SELECT 1 FROM follows f
-            JOIN accounts a ON a.id = f.account_id
-            WHERE f.target_account_id = $1 AND a.domain IS NULL
-        )"#,
-        account_id,
+    // `StatusParser#visibility`, against the author's followers collection.
+    let followers_url: String = sqlx::query_scalar!(
+        "SELECT followers_url FROM accounts WHERE id = $1",
+        account_id
     )
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await?
-    .unwrap_or(false);
+    .unwrap_or_default();
+    let mut visibility =
+        crate::db::models::vis::of_remote(&audience_to, &audience_cc, &followers_url);
 
-    // Any URI in to/cc (from either the activity or the Note) that is a local account.
-    let addresses_local = if !audience.is_empty() {
-        sqlx::query_scalar!(
-            "SELECT EXISTS(SELECT 1 FROM accounts WHERE uri = ANY($1) AND domain IS NULL)",
-            &audience as &[String],
+    // `related_to_local_activity?`, which whatever we fetched ourselves is
+    // (`fetch?`).
+    if !create_options.fetched {
+        // `followed_by_local_accounts?`.
+        let followed_by_local_accounts = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                SELECT 1 FROM follows f
+                JOIN accounts a ON a.id = f.account_id
+                WHERE f.target_account_id = $1 AND a.domain IS NULL
+            )"#,
+            account_id,
         )
         .fetch_one(&state.db)
         .await?
-        .unwrap_or(false)
-    } else {
-        false
-    };
+        .unwrap_or(false);
+        // `addresses_local_accounts?`: delivered to a local inbox, or
+        // addressed to a local account.
+        let mut addresses_local_accounts = delivered_to.is_some();
+        for uri in &audience {
+            if addresses_local_accounts {
+                break;
+            }
+            addresses_local_accounts = crate::federation::local_uri::is_local(state, uri)
+                && crate::federation::local_uri::account(state, uri)
+                    .await
+                    .is_some();
+        }
+        // `requested_through_relay?`.
+        let requested_through_relay = activity
+            .get(super::THROUGH_RELAY)
+            .is_some_and(|flag| flag == &Value::Bool(true));
+        // `responds_to_followed_account?`.
+        let responds_to_followed_account = replied_to
+            .as_ref()
+            .is_some_and(|r| r.is_local || r.followed);
+        let related = match visibility {
+            crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED => {
+                followed_by_local_accounts
+                    || requested_through_relay
+                    || responds_to_followed_account
+                    || addresses_local_accounts
+            }
+            crate::db::models::vis::PRIVATE => {
+                followed_by_local_accounts || addresses_local_accounts
+            }
+            _ => addresses_local_accounts,
+        };
+        if !related {
+            tracing::debug!(
+                note_uri,
+                "Create(Note): ignoring, not related to local activity"
+            );
+            return Ok(());
+        }
+    }
 
-    // `requested_through_relay?`, for a public or unlisted post.
-    let through_relay = activity
-        .get(super::THROUGH_RELAY)
-        .is_some_and(|flag| flag == &Value::Bool(true))
-        && matches!(
-            crate::db::models::vis::from_audience(&ids(object.get("to")), &ids(object.get("cc")),),
-            crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-        );
-
-    if !create_options.fetched
-        && !is_followed_locally
-        && !addresses_local
-        && !in_reply_to_local
-        && !through_relay
-    {
-        tracing::debug!(
-            note_uri,
-            "Create(Note): ignoring, not related to local activity"
-        );
+    // `find_existing_status`: by its id, or by its `atomUri`. One stored
+    // under another author stays theirs ("authorship change is not
+    // supported"); one of the sender's own, delivered again to a local
+    // inbox, is given to that inbox's owner (`postprocess_audience_and_deliver`).
+    let mut existing = super::kept_status(state, note_uri).await?;
+    if existing.is_none() {
+        if let Some(atom_uri) = object
+            .get("atomUri")
+            .and_then(Value::as_str)
+            .filter(|uri| !uri.trim().is_empty())
+        {
+            existing = super::kept_status(state, atom_uri).await?;
+        }
+    }
+    if let Some(existing_id) = existing {
+        let author: Option<i64> =
+            sqlx::query_scalar!("SELECT account_id FROM statuses WHERE id = $1", existing_id)
+                .fetch_optional(&state.db)
+                .await?;
+        if author == Some(account_id) {
+            if let Some(recipient) = delivered_to {
+                postprocess_audience_and_deliver(state, existing_id, account_id, recipient).await?;
+            }
+        }
         return Ok(());
     }
+
+    // `process_mention`: an account we know, or fetch. One that cannot be
+    // fetched for now is tried again later (`@unresolved_mentions`); one that
+    // is not there is left out.
+    let mut mentions: Vec<Mention> = Vec::new();
+    let mut unresolved_mentions: Vec<String> = Vec::new();
+    for href in &mention_hrefs {
+        match resolve_or_fetch_remote_account(state, href).await {
+            Ok(id) => {
+                if !mentions.iter().any(|m| m.account_id == id) {
+                    mentions.push(Mention {
+                        account_id: id,
+                        silent: false,
+                    });
+                }
+            }
+            Err(error) if fetch_failed_for_now(&error) => {
+                if !unresolved_mentions.contains(href) {
+                    unresolved_mentions.push(href.clone());
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    // `process_audience`: every account we already know in `to` and `cc`,
+    // and the owner of the inbox it was delivered to, can see it. Those not
+    // tagged are mentioned silently, which makes a direct message a
+    // limited one; a tagged local account outside the audience is mentioned
+    // but not told (`@silenced_account_ids`).
+    let mut accounts_in_audience: Vec<i64> = Vec::new();
+    for uri in &audience {
+        if ojak_vocab::is_public_collection(uri) {
+            continue;
+        }
+        if let Some(id) = crate::federation::local_uri::account(state, uri).await {
+            if !accounts_in_audience.contains(&id) {
+                accounts_in_audience.push(id);
+            }
+        }
+    }
+    if let Some(recipient) = delivered_to {
+        if !accounts_in_audience.contains(&recipient) {
+            accounts_in_audience.push(recipient);
+        }
+    }
+    for &id in &accounts_in_audience {
+        if mentions.iter().any(|m| m.account_id == id) {
+            continue;
+        }
+        mentions.push(Mention {
+            account_id: id,
+            silent: true,
+        });
+        if visibility == crate::db::models::vis::DIRECT {
+            visibility = crate::db::models::vis::LIMITED;
+        }
+    }
+    let mentioned_ids: Vec<i64> = mentions.iter().map(|m| m.account_id).collect();
+    let local_mentioned: Vec<i64> = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE id = ANY($1) AND domain IS NULL",
+        &mentioned_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let silenced_account_ids: Vec<i64> = local_mentioned
+        .iter()
+        .copied()
+        .filter(|id| !accounts_in_audience.contains(id))
+        .collect();
 
     // Field extraction: `processed_text` and `processed_spoiler_text`, which
     // for a converted object are its title, summary and a link to it.
@@ -291,10 +440,11 @@ pub(super) async fn create(
         .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
         .filter(|edited| Some(*edited) != published);
 
-    // Visibility is determined from the Note object's own to/cc fields.
-    let note_to = ids(object.get("to"));
-    let note_cc = ids(object.get("cc"));
-    let visibility = crate::db::models::vis::from_audience(&note_to, &note_cc);
+    // `conversation_from_uri(@object['conversation'])`.
+    let conversation_id = match object.get("conversation").and_then(Value::as_str) {
+        Some(uri) => crate::conversation::from_uri(state, uri).await?,
+        None => None,
+    };
 
     // `StatusParser#language`.
     let language = super::status_parser::language(object);
@@ -306,8 +456,9 @@ pub(super) async fn create(
         r#"INSERT INTO statuses
              (id, account_id, text, spoiler_text, visibility, sensitive,
               uri, url, in_reply_to_id, in_reply_to_account_id, reply,
-              language, local, created_at, edited_at, updated_at, quote_approval_policy)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13,$14, now(), $15)
+              language, local, created_at, edited_at, updated_at, quote_approval_policy,
+              conversation_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, false, $13,$14, now(), $15, $16)
            ON CONFLICT (uri) WHERE uri IS NOT NULL AND uri != '' DO NOTHING
            RETURNING id"#,
         status_id,
@@ -328,6 +479,7 @@ pub(super) async fn create(
         created_at,
         edited_at,
         super::remote_quote_policy(state, account_id, object).await,
+        conversation_id,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -335,6 +487,8 @@ pub(super) async fn create(
     let Some(inserted_id) = inserted else {
         return Ok(()); // duplicate
     };
+    // `set_conversation` and `update_conversation`.
+    let conversation_id = crate::conversation::assign(&state.db, inserted_id).await?;
 
     // The same call the API path makes: a status is a status however it
     // arrived, and the conditions belong to `counters`, not here. `inserted_id`
@@ -538,43 +692,24 @@ pub(super) async fn create(
         }
     }
 
-    // Mentions — resolve accounts and notify local ones
-    let actor_info = sqlx::query!(
-        "SELECT display_name, username, domain, avatar_remote_url FROM accounts WHERE id = $1",
-        account_id,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten();
-    // Store every mention before notifying anyone. Mastodon writes the whole
-    // set as part of creating the status and notifies afterwards, and the order
-    // matters: a mention is dropped when the status also mentions someone the
-    // recipient blocks, which cannot be seen while the rest are still unwritten.
-    let mut mentioned: Vec<(i64, bool)> = Vec::new();
-    for href in &mention_hrefs {
-        let mentioned_id = match resolve_or_fetch_remote_account(state, href).await {
-            Ok(id) => id,
-            Err(_) => continue,
-        };
-        let _ = sqlx::query!(
-            "INSERT INTO mentions (status_id, account_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING",
+    // `attach_mentions`: every mention is stored before anyone is notified.
+    // The order matters: a mention is dropped when the status also mentions
+    // someone the recipient blocks, which cannot be seen while the rest are
+    // still unwritten.
+    for mention in &mentions {
+        sqlx::query!(
+            r#"INSERT INTO mentions (status_id, account_id, silent, created_at, updated_at)
+               VALUES ($1, $2, $3, now(), now()) ON CONFLICT DO NOTHING"#,
             inserted_id,
-            mentioned_id,
+            mention.account_id,
+            mention.silent,
         )
         .execute(&state.db)
-        .await;
-
-        let is_local = sqlx::query_scalar!(
-            r#"SELECT (domain IS NULL) AS "v!" FROM accounts WHERE id = $1"#,
-            mentioned_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(false);
-        mentioned.push((mentioned_id, is_local));
+        .await?;
+    }
+    // `resolve_unresolved_mentions`.
+    for uri in unresolved_mentions {
+        resolve_mention_later(state, inserted_id, uri, create_options.request_id.clone()).await;
     }
 
     // `DistributionWorker` runs only for a status within the real-time
@@ -583,105 +718,62 @@ pub(super) async fn create(
     // it was written is stored, not announced.
     let within_realtime_window =
         chrono::Utc::now().naive_utc() - created_at <= chrono::Duration::hours(6);
-    for (mentioned_id, is_local) in mentioned {
-        if !is_local || !within_realtime_window {
-            continue;
-        }
-        if let Some(ref info) = actor_info {
-            let acct = match &info.domain {
-                Some(d) => format!("{}@{}", info.username, d),
-                None => info.username.clone(),
-            };
-            crate::push::create_and_push(
+    let actor_info = sqlx::query!(
+        "SELECT display_name, username, domain, avatar_remote_url FROM accounts WHERE id = $1",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    // `notify_mentioned_accounts!`: the local accounts of `active_mentions`,
+    // those outside the audience as if the sender were limited.
+    if let (true, Some(info)) = (within_realtime_window, &actor_info) {
+        let acct = match &info.domain {
+            Some(d) => format!("{}@{}", info.username, d),
+            None => info.username.clone(),
+        };
+        for mention in mentions.iter().filter(|m| !m.silent) {
+            if !local_mentioned.contains(&mention.account_id) {
+                continue;
+            }
+            crate::push::create_and_push_with(
                 state,
-                mentioned_id,
+                mention.account_id,
                 account_id,
                 "mention",
                 Some(inserted_id),
                 format!("New mention from {}", info.display_name),
-                acct,
+                acct.clone(),
                 info.avatar_remote_url.clone().unwrap_or_default(),
+                silenced_account_ids.contains(&mention.account_id),
             )
             .await;
         }
     }
 
-    // Conversation management for direct messages.
-    // Mirrors Mastodon: participants = sender + status.active_mentions (explicit Mention tags).
-    if visibility == crate::db::models::vis::DIRECT {
-        // Reuse the parent status's conversation if this is a reply, otherwise create a new one.
-        let conversation_id: i64 = if let Some(parent_id) = in_reply_to_id {
-            let parent_conv = sqlx::query_scalar!(
-                "SELECT conversation_id FROM statuses WHERE id = $1",
-                parent_id,
-            )
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .flatten();
-            if let Some(cid) = parent_conv {
-                cid
-            } else {
-                sqlx::query_scalar!(
-                    "INSERT INTO conversations (created_at, updated_at) VALUES (now(), now()) RETURNING id"
-                )
-                .fetch_one(&state.db)
-                .await?
-            }
-        } else {
-            sqlx::query_scalar!(
-                "INSERT INTO conversations (created_at, updated_at) VALUES (now(), now()) RETURNING id"
-            )
-            .fetch_one(&state.db)
-            .await?
-        };
-
-        let _ = sqlx::query!(
-            "UPDATE statuses SET conversation_id = $1 WHERE id = $2",
-            conversation_id,
-            inserted_id,
-        )
-        .execute(&state.db)
-        .await;
-
-        // Participants = sender + explicitly mentioned accounts (mirrors Mastodon's active_mentions).
-        let mentioned_local_ids: Vec<i64> = sqlx::query_scalar!(
-            r#"SELECT m.account_id FROM mentions m
-               JOIN accounts a ON a.id = m.account_id
-               WHERE m.status_id = $1 AND a.domain IS NULL"#,
-            inserted_id,
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
-
-        let mut all_participant_ids: Vec<i64> = std::iter::once(account_id)
-            .chain(mentioned_local_ids.iter().copied())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
+    // A direct message's conversations (`AccountConversation.add_status`,
+    // from the mention's notification): for each local account it mentions,
+    // the others in it are its author and everyone else it mentions.
+    if let (true, true, Some(conversation_id)) = (
+        visibility == crate::db::models::vis::DIRECT,
+        within_realtime_window,
+        conversation_id,
+    ) {
+        let active: Vec<i64> = mentions
+            .iter()
+            .filter(|m| !m.silent)
+            .map(|m| m.account_id)
             .collect();
-        all_participant_ids.sort_unstable();
-
-        // For each local recipient, upsert account_conversations.
-        // participant_account_ids = everyone else in the conversation (not this recipient).
-        // Mastodon adds a status to its conversations from `DistributionWorker`
-        // (`deliver_to_conversation!`) and from the mention's notification
-        // (`NotifyService#push_to_conversation!`), so only within the
-        // real-time window.
-        let recipients: &[i64] = if within_realtime_window {
-            &mentioned_local_ids
-        } else {
-            &[]
-        };
-        for &local_id in recipients {
-            let mut others: Vec<i64> = all_participant_ids
+        let mut everyone: Vec<i64> = active.clone();
+        everyone.push(account_id);
+        everyone.sort_unstable();
+        everyone.dedup();
+        for &local_id in active.iter().filter(|id| local_mentioned.contains(id)) {
+            let others: Vec<i64> = everyone
                 .iter()
                 .copied()
                 .filter(|&id| id != local_id)
                 .collect();
-            others.sort_unstable();
-            let _ = sqlx::query!(
+            sqlx::query!(
                 r#"INSERT INTO account_conversations
                      (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)
                    VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, true)
@@ -695,7 +787,7 @@ pub(super) async fn create(
                 inserted_id,
             )
             .execute(&state.db)
-            .await;
+            .await?;
         }
     }
 
@@ -835,6 +927,147 @@ pub(super) async fn create(
     crate::feed::distribute_later(state, inserted_id).await;
 
     Ok(())
+}
+
+/// A mention the status is stored with: `Mention.new(account:, silent:)`.
+struct Mention {
+    account_id: i64,
+    silent: bool,
+}
+
+/// `ActivityPub::Activity::Create::PROCESSING_DELAY`, in seconds: when an
+/// unresolved mention is first tried again.
+const PROCESSING_DELAY: std::ops::RangeInclusive<u64> = 30..=600;
+
+/// Whether resolving an account failed for now rather than for good: the
+/// server did not answer (`*Mastodon::HTTP_CONNECTION_ERRORS`). An answer,
+/// whatever it said, leaves the account out.
+pub(super) fn fetch_failed_for_now(error: &crate::error::AppError) -> bool {
+    match error {
+        crate::error::AppError::Internal(error) => error
+            .downcast_ref::<ojak::fetch::FetchError>()
+            .is_some_and(|error| matches!(error, ojak::fetch::FetchError::Request(_))),
+        _ => false,
+    }
+}
+
+/// `MentionResolveWorker.perform_in(rand(PROCESSING_DELAY), status_id, uri,
+/// { 'request_id' => … })`.
+pub(super) async fn resolve_mention_later(
+    state: &AppState,
+    status_id: i64,
+    uri: String,
+    request_id: Option<String>,
+) {
+    let delay = std::time::Duration::from_secs(rand::random_range(PROCESSING_DELAY));
+    crate::jobs::push_in(
+        state,
+        delay,
+        MentionResolveWorker {
+            status_id,
+            uri,
+            request_id,
+        },
+    )
+    .await;
+}
+
+/// `postprocess_audience_and_deliver`: a status we hold, delivered again to
+/// a local inbox whose owner it does not mention, is shared with them by a
+/// silent mention, which makes a direct message a limited one, and goes
+/// into their home feed if they follow its author.
+async fn postprocess_audience_and_deliver(
+    state: &AppState,
+    status_id: i64,
+    author_id: i64,
+    recipient_id: i64,
+) -> AppResult<()> {
+    let inserted = sqlx::query!(
+        r#"INSERT INTO mentions (status_id, account_id, silent, created_at, updated_at)
+           VALUES ($1, $2, true, now(), now()) ON CONFLICT DO NOTHING"#,
+        status_id,
+        recipient_id,
+    )
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+    if inserted == 0 {
+        return Ok(());
+    }
+    sqlx::query!(
+        "UPDATE statuses SET visibility = $2, updated_at = now() WHERE id = $1 AND visibility = $3",
+        status_id,
+        crate::db::models::vis::LIMITED,
+        crate::db::models::vis::DIRECT,
+    )
+    .execute(&state.db)
+    .await?;
+    let following = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+        recipient_id,
+        author_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if following {
+        // `FeedInsertWorker.perform_async(@status.id, recipient, 'home')`.
+        crate::feed::insert_into_home(state, status_id, recipient_id).await;
+    }
+    Ok(())
+}
+
+/// `MentionResolveWorker`: a mention whose account could not be fetched
+/// when its status arrived, tried again with `ExponentialBackoff` on the
+/// `pull` queue, seven times. Found, it is stored as a mention that is not
+/// silent; an account that is not there leaves nothing to do, and the
+/// status is not distributed again, as upstream does not.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MentionResolveWorker {
+    pub status_id: i64,
+    pub uri: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+impl crate::jobs::Job for MentionResolveWorker {
+    const KIND: &'static str = "MentionResolveWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(7);
+
+    fn retry_in(count: u32) -> Option<std::time::Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        let exists = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND deleted_at IS NULL) AS "e!""#,
+            self.status_id
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if !exists {
+            return Ok(());
+        }
+        let account_id = match resolve_or_fetch_remote_account(state, &self.uri).await {
+            Ok(id) => id,
+            Err(error) if fetch_failed_for_now(&error) => {
+                anyhow::bail!("could not fetch mentioned account {}: {error:?}", self.uri)
+            }
+            Err(_) => return Ok(()),
+        };
+        // `status.mentions.upsert({ account_id:, silent: false })`.
+        sqlx::query!(
+            r#"INSERT INTO mentions (status_id, account_id, silent, created_at, updated_at)
+               VALUES ($1, $2, false, now(), now())
+               ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()"#,
+            self.status_id,
+            account_id,
+        )
+        .execute(&state.db)
+        .await?;
+        Ok(())
+    }
 }
 
 pub(super) async fn handle_poll_vote_note(

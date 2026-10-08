@@ -383,6 +383,35 @@ pub async fn create_and_push(
     body: String,
     icon: String,
 ) {
+    create_and_push_with(
+        state,
+        recipient_id,
+        from_account_id,
+        notification_type,
+        status_id,
+        title,
+        body,
+        icon,
+        false,
+    )
+    .await;
+}
+
+/// [`create_and_push`] with `NotifyService`'s `silenced:` option: the
+/// recipient's policy treats the sender as a limited account, as for a
+/// mention of someone outside the status's audience.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_and_push_with(
+    state: &AppState,
+    recipient_id: i64,
+    from_account_id: i64,
+    notification_type: &'static str,
+    status_id: Option<i64>,
+    title: String,
+    body: String,
+    icon: String,
+    silenced: bool,
+) {
     Box::pin(notify(
         state,
         recipient_id,
@@ -393,6 +422,7 @@ pub async fn create_and_push(
         title,
         body,
         icon,
+        silenced,
     ))
     .await;
 }
@@ -439,6 +469,7 @@ pub async fn notify_collection(
         title,
         body,
         icon,
+        false,
     ))
     .await;
 }
@@ -480,6 +511,7 @@ async fn notify(
     title: String,
     body: String,
     icon: String,
+    silenced: bool,
 ) {
     let db = state.db.clone();
 
@@ -641,7 +673,7 @@ async fn notify(
         from_account_id,
         notification_type,
         status_id,
-        false,
+        silenced,
     )
     .await
     {

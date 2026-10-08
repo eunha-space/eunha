@@ -932,6 +932,48 @@ pub async fn distribute_later(state: &crate::state::AppState, status_id: i64) {
     }
 }
 
+/// `FeedInsertWorker.perform_async(status_id, account_id, 'home')`: the
+/// status into one account's home feed, where `filter_from_home` lets it in,
+/// and streamed to it.
+pub async fn insert_into_home(state: &crate::state::AppState, status_id: i64, account_id: i64) {
+    let db = &state.db;
+    let Some(d) = distributed(db, status_id).await else {
+        return;
+    };
+    let status = &d.status;
+    let crutches =
+        match crutches_for(db, status, d.author_domain.as_deref(), &[account_id], true).await {
+            Ok(crutches) => crutches,
+            Err(error) => {
+                tracing::warn!(%error, status_id, "could not read what filters a home insert");
+                return;
+            }
+        };
+    let Some(c) = crutches.get(&account_id) else {
+        return;
+    };
+    if filter_result(status, account_id, c, Receiver::Home).is_some() {
+        return;
+    }
+    let aggregate = status.reblog_of_id.is_none()
+        || !not_aggregating(db, &[account_id])
+            .await
+            .contains(&account_id);
+    let mut redis = state.redis.clone();
+    let timeline = Timeline::home(&state.redis_keys, account_id);
+    if push(
+        &mut redis,
+        &timeline,
+        status_id,
+        status.reblog_of_id,
+        aggregate,
+    )
+    .await
+    {
+        crate::streaming::fan_out::home_inserted(state, status_id, account_id).await;
+    }
+}
+
 /// `LocalNotificationWorker.perform_async(follower, status, 'Status',
 /// 'status')` for each of `followers`.
 async fn notify_followers(state: &crate::state::AppState, status_id: i64, followers: &[i64]) {

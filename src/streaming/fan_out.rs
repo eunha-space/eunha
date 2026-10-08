@@ -121,6 +121,30 @@ fn status_event(update: bool) -> &'static str {
     }
 }
 
+/// `push_to_home`'s streaming message for one account the status just went
+/// into the home feed of (`FeedInsertWorker` on its own), when that account
+/// is streaming its home.
+pub async fn home_inserted(state: &AppState, status_id: i64, receiver: i64) {
+    let Ok(Some(s)) = subject(state, status_id).await else {
+        return;
+    };
+    let bus = &state.streaming;
+    if bus
+        .subscribed_ids("timeline:", vec![receiver])
+        .await
+        .is_empty()
+    {
+        return;
+    }
+    if let Some(payload) = render(state, &s.status, Some(receiver)).await {
+        bus.publish(
+            &format!("timeline:{receiver}"),
+            json!({"event": status_event(false), "payload": payload}),
+        )
+        .await;
+    }
+}
+
 /// `DistributionWorker` → `FanOutOnWriteService#call`, for its streaming
 /// messages: the author's own home, followers' homes and lists, followers of
 /// its hashtags, the mentioned accounts on an edit, and the public and

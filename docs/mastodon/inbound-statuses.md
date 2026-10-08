@@ -1,0 +1,90 @@
+Inbound statuses
+================
+
+What a remote server's `Create`, `Update`, `Delete`, `Like`, `Announce` and
+`Undo` do here, as Mastodon's `ActivityPub::Activity` classes do them. They
+run as `ActivityPub::ProcessingWorker` jobs (*docs/operating/jobs.md*); the
+handlers are in *src/api/ap/inbox/*.
+
+
+Audience and visibility
+-----------------------
+
+A status's audience is its object's `to` and `cc`, or the activity's when
+the object has none (`StatusParser#audience_to` and `#audience_cc`). It is
+public with the public collection in `to`, unlisted with it in `cc`, private
+with its author's own followers collection in `to`, and direct otherwise.
+Whether it is taken at all depends on that visibility
+(`related_to_local_activity?`): a public or unlisted one from an account
+someone here follows, through an enabled relay, in reply to a local post or
+to an account someone follows, or addressed to a local account; a private
+one from a followed account or addressed to a local account; a direct one
+only addressed to a local account. Anything fetched on purpose is taken, and
+so is anything delivered to a local account's own inbox, whose owner eunha
+remembers on the job (Mastodon's `delivered_to_account_id`).
+
+Every account already known in the audience, and the owner of the inbox it
+was delivered to, can read the status (`process_audience`). Those it tags
+are mentioned; the others are mentioned silently, and a direct message with
+a silent mention becomes **limited** (`visibility = 4`), which the API shows
+as `private`. A limited status is shown only to its author and the accounts
+it mentions, and is never boosted. A local account the status tags but does
+not address is mentioned, but its notification is decided as if the sender
+were limited (`silenced_account_ids`), so a policy that filters or drops
+limited accounts applies. Only tagged mentions notify.
+
+A status already held, delivered again to a local inbox whose owner it does
+not mention, gives that owner a silent mention, makes a direct message
+limited, and goes into their home feed if they follow its author
+(`postprocess_audience_and_deliver`). A status held under another author is
+left as it is.
+
+A tagged account that cannot be fetched because its server does not answer
+is tried again with a `MentionResolveWorker` on the `pull` queue, seven
+times on Mastodon's backoff; one whose server answers that there is no such
+account is left out. An edit's mentions (`update_mentions!`) are the
+accounts it now tags, mentioned not silently; an account it no longer tags
+keeps a silent mention.
+
+
+Conversations
+-------------
+
+Every status is in a conversation (`Status#set_conversation`). A remote
+status names one by its `conversation`: a URI of ours names one of ours, and
+any other is found or recorded under its `uri`. A reply that names none
+joins its parent's; anything else, a boost included, starts one. A status
+that is not a reply becomes the root of its conversation when it has none
+yet (`parent_status_id`, `parent_account_id`), which names a local
+conversation's context URL. A reply to an author's own reply is a reply to
+whoever that one answered (`carried_over_reply_to_account_id`).
+
+Muting a status (`POST /api/v1/statuses/:id/mute`) mutes its conversation,
+so it works on any status the viewer can see; one without a conversation,
+left from before, answers 422.
+
+Mastodon resolves a context URL of ours, `/contexts/{account}-{status}`, by
+looking the second half up as the conversation's id while the URL carries
+the root status's id there; eunha does the same, so such a URL rarely finds
+the conversation, and the reply joins its thread's instead.
+
+
+Deletes and undos
+-----------------
+
+A `Delete` of the sender itself purges the account, once at a time. A
+`Delete` of an authorization the sender gave to be featured revokes the item
+of the local collection holding it. Otherwise, a URI on the sender's host is
+remembered as deleted for six hours, so that its `Create` arriving late is
+skipped, and tombstoned; then the sender's own status with that URI, or with
+the object's `atomUri`, is forwarded and removed by `RemoveStatusService`,
+which takes it off every feed and removes the boosts of it, or else the quote
+stamp it names is revoked. A status of someone else's is never removed.
+
+An `Undo` takes back only what the sender did: its boost, its follow of or
+request to follow a local account, its favourite of a local post, its block
+of a local account, and the acceptance it gave a local account's follow,
+which leaves the follow a request again. An `Undo` naming its object by id
+alone is tried as the sender's boost, follow or request, and block, in that
+order. What is not found yet is remembered, so that it is skipped when it
+arrives.

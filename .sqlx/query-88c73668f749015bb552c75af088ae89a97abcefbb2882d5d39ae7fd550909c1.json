@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target_account_id AS \"target_account_id?\" FROM follow_requests WHERE account_id = $1 AND uri = $2\n                   UNION ALL\n                   SELECT target_account_id FROM follows WHERE account_id = $1 AND uri = $2\n                   LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_account_id?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "88c73668f749015bb552c75af088ae89a97abcefbb2882d5d39ae7fd550909c1"
+}

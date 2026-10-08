@@ -517,19 +517,18 @@ async fn publish_one(
         .as_str()
         .and_then(|s| s.parse::<i64>().ok());
 
-    // Resolve the parent's account for in_reply_to_account_id and replies_count
-    let in_reply_to_account_id: Option<i64> = if let Some(parent_id) = in_reply_to_id {
-        sqlx::query_scalar!(
-            "SELECT account_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-            parent_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-    } else {
-        None
+    // The thread (`Status#thread`, a boost's original in its place), whose
+    // author is the one notified, and `carried_over_reply_to_account_id`.
+    let thread = match in_reply_to_id {
+        Some(parent_id) => crate::conversation::thread(&state.db, parent_id)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
     };
+    let in_reply_to_id = thread.map(|t| t.id).or(in_reply_to_id);
+    let parent_account_id = thread.map(|t| t.account_id);
+    let in_reply_to_account_id = thread.and_then(|t| t.reply_to_account_id(account_id));
     let is_reply = in_reply_to_id.is_some();
 
     use crate::api::mastodon::statuses::{
@@ -565,6 +564,11 @@ async fn publish_one(
     .map_err(|e| classify_db(e, "insert scheduled status"))?;
 
     // ── Past this point the status exists; failures are logged, not returned ──
+
+    // `set_conversation` and `update_conversation`.
+    if let Err(e) = crate::conversation::assign(&state.db, status.id).await {
+        tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its conversation");
+    }
 
     if let Err(e) = store_statuses_tags(state, status.id, account.id, &hashtags).await {
         tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its hashtags");
@@ -683,7 +687,7 @@ async fn publish_one(
 
     // Send mention notifications (mirrors post_status)
     let mut notified = std::collections::HashSet::new();
-    if let Some(parent_account_id) = in_reply_to_account_id {
+    if let Some(parent_account_id) = parent_account_id {
         crate::push::create_and_push(
             state,
             parent_account_id,

@@ -95,6 +95,9 @@ Tracking Mastodon:
     followers synchronization (FEP-8fcf).
  -  *docs/mastodon/quotes.md*: a quote's states, the consent handshake,
     verifying stamps, and revoking.
+ -  *docs/mastodon/inbound-statuses.md*: an inbound status's audience,
+    silent mentions and limited visibility, conversations, and what a
+    `Delete` or `Undo` may take back.
  -  *docs/mastodon/entity-parity.md*, *docs/mastodon/differential-testing.md*
     and *docs/mastodon/federation-testing.md*: the harnesses that compare
     eunha with upstream, and the environment traps that fake failures.

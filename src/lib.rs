@@ -8,6 +8,7 @@ pub mod background;
 pub mod browser_detection;
 pub mod collection_item_cleanup;
 pub mod config;
+pub mod conversation;
 pub mod counters;
 pub mod crypto;
 pub mod db;

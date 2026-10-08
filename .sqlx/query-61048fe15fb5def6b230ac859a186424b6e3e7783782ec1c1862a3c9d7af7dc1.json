@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, show_reblogs, notify, languages FROM follows\n           WHERE target_account_id = $1 AND uri = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "show_reblogs",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "notify",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "languages",
+        "type_info": "VarcharArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "61048fe15fb5def6b230ac859a186424b6e3e7783782ec1c1862a3c9d7af7dc1"
+}

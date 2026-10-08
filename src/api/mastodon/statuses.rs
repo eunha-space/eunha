@@ -250,7 +250,9 @@ pub async fn get_statuses_batch(
         .filter(|s| {
             matches!(
                 s.visibility,
-                crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+                crate::db::models::vis::PRIVATE
+                    | crate::db::models::vis::DIRECT
+                    | crate::db::models::vis::LIMITED
             ) && viewer_id != Some(s.account_id)
         })
         .map(|s| s.id)
@@ -282,7 +284,7 @@ pub async fn get_statuses_batch(
                         || followed_ids.contains(&s.account_id)
                         || mentioned_status_ids.contains(&s.id)
                 }
-                crate::db::models::vis::DIRECT => {
+                crate::db::models::vis::DIRECT | crate::db::models::vis::LIMITED => {
                     viewer_id == Some(s.account_id) || mentioned_status_ids.contains(&s.id)
                 }
                 _ => true,
@@ -441,7 +443,9 @@ pub async fn get_status(
                 return Err(AppError::NotFound);
             }
         }
-        crate::db::models::vis::DIRECT if viewer_id != Some(status.account_id) => {
+        crate::db::models::vis::DIRECT | crate::db::models::vis::LIMITED
+            if viewer_id != Some(status.account_id) =>
+        {
             let is_mentioned = if let Some(vid) = viewer_id {
                 sqlx::query_scalar!(
                     "SELECT 1 as e FROM mentions WHERE status_id = $1 AND account_id = $2",
@@ -733,9 +737,11 @@ pub async fn reblog_status(
     // visibility check: 404 if not visible, 403 if visible but not rebloggable
     check_status_visible(&state, &original, auth.account_id).await?;
     // direct messages are never rebloggable; private statuses only by their author
-    if original.visibility == crate::db::models::vis::DIRECT
-        || (original.visibility == crate::db::models::vis::PRIVATE
-            && original.account_id != auth.account_id)
+    if matches!(
+        original.visibility,
+        crate::db::models::vis::DIRECT | crate::db::models::vis::LIMITED
+    ) || (original.visibility == crate::db::models::vis::PRIVATE
+        && original.account_id != auth.account_id)
     {
         return Err(AppError::Forbidden);
     }
@@ -803,6 +809,8 @@ pub async fn reblog_status(
     )
     .fetch_one(&state.db)
     .await?;
+    // `set_conversation`: a boost starts a conversation of its own.
+    crate::conversation::assign(&state.db, boost.id).await?;
 
     sqlx::query!(
         r#"INSERT INTO status_stats (status_id, reblogs_count, created_at, updated_at)
@@ -1202,10 +1210,12 @@ pub async fn mute_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:mutes")?;
     let (status, _) = fetch_status_with_account(&state, id).await?;
-    // `Statuses::BaseController#set_status`: `authorize @status, :show?`.
+    // `authorize @status, :show?`, then the status's conversation, which
+    // every status is given (`Mastodon::ValidationError` without one).
     check_status_visible(&state, &status, auth.account_id).await?;
-    // Every status now has a conversation_id assigned at creation time.
-    let cid = status.conversation_id.ok_or(AppError::NotFound)?;
+    let cid = status
+        .conversation_id
+        .ok_or_else(|| AppError::Unprocessable("Validation failed".into()))?;
     sqlx::query!(
         "INSERT INTO conversation_mutes (account_id, conversation_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
         auth.account_id, cid
@@ -1226,11 +1236,14 @@ pub async fn unmute_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:mutes")?;
     let (status, _) = fetch_status_with_account(&state, id).await?;
-    // `Statuses::BaseController#set_status`: `authorize @status, :show?`.
     check_status_visible(&state, &status, auth.account_id).await?;
+    let cid = status
+        .conversation_id
+        .ok_or_else(|| AppError::Unprocessable("Validation failed".into()))?;
     sqlx::query!(
-        "DELETE FROM conversation_mutes WHERE account_id = $1 AND conversation_id = (SELECT conversation_id FROM statuses WHERE id = $2)",
-        auth.account_id, id
+        "DELETE FROM conversation_mutes WHERE account_id = $1 AND conversation_id = $2",
+        auth.account_id,
+        cid
     )
     .execute(&state.db)
     .await?;
@@ -1255,7 +1268,9 @@ pub async fn favourited_by(
         check_status_visible(&state, &status, vid).await?;
     } else if matches!(
         status.visibility,
-        crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+        crate::db::models::vis::PRIVATE
+            | crate::db::models::vis::DIRECT
+            | crate::db::models::vis::LIMITED
     ) {
         return Err(AppError::NotFound);
     }
@@ -1350,7 +1365,9 @@ pub async fn reblogged_by(
         check_status_visible(&state, &status, vid).await?;
     } else if matches!(
         status.visibility,
-        crate::db::models::vis::PRIVATE | crate::db::models::vis::DIRECT
+        crate::db::models::vis::PRIVATE
+            | crate::db::models::vis::DIRECT
+            | crate::db::models::vis::LIMITED
     ) {
         return Err(AppError::NotFound);
     }
