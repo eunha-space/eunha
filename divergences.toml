@@ -1014,3 +1014,24 @@ queues are in PostgreSQL, so Redis memory says nothing about their backlog."""
 evidence = "tests/integration/surfaces/self_destruct.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "oauth-deny-checks-the-redirect-uri"
+kind = "behaviour"
+summary = "Denying an authorization answers only at a redirect URI the client registered"
+mastodon = """
+`DELETE /oauth/authorize` (`Doorkeeper::AuthorizationsController#destroy`) \
+builds its `access_denied` answer from the `redirect_uri` parameter as given, \
+without the checks `new` and `create` make, so a signed-in user can be sent \
+anywhere."""
+eunha = """
+Answers `invalid_client` (401) for an unknown client and \
+`invalid_redirect_uri` (400) for a redirect URI the client did not register, \
+and otherwise sends `access_denied` as Doorkeeper does."""
+why = """
+Redirecting a signed-in user to an arbitrary address is an open redirect; a \
+client that asked for authorization properly registered the URI it is told \
+about, so it sees no difference."""
+evidence = "tests/integration/c2s/oauth_server.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

@@ -111,6 +111,17 @@ with, the `code` response type, the `authorization_code` and
 PKCE with `S256`, and `/api/v1/apps` as the non-standard
 `app_registration_endpoint`.
 
+The authorization page takes Doorkeeper's parameters: `response_type=code`
+(anything else, or none, is refused), `state`, which comes back with the code,
+`response_mode` (`query`, `fragment` or `form_post`), and a PKCE
+`code_challenge` with `code_challenge_method=S256`, whose `code_verifier`
+`/oauth/token` then requires. The client may authenticate to `/oauth/token`
+with HTTP Basic or in the request. A client whose redirect URI is
+`urn:ietf:wg:oauth:2.0:oob` is shown the code at `/oauth/authorize/native` to
+copy. `DELETE /oauth/authorize`, from a signed-in browser, turns the client
+away: it is sent `access_denied`, with its `state`, at a redirect URI it
+registered (an unregistered one is refused, where Doorkeeper would follow it).
+
 `GET` and `POST /oauth/userinfo` is OpenID Connect's UserInfo endpoint, for a
 token with the `profile` scope (401 without a token, 403 without the scope):
 `iss` the instance's root URL, `sub` the actor's URI, `name`,

@@ -1441,8 +1441,11 @@ pub fn router() -> Router {
         )
         .route(
             "/oauth/authorize",
-            get(oauth::authorize_form).post(oauth::authorize_submit),
+            get(oauth::authorize_form)
+                .post(oauth::authorize_submit)
+                .delete(oauth::authorize_deny),
         )
+        .route("/oauth/authorize/native", get(oauth::authorize_native))
         .route("/oauth/token", post(oauth::issue_token))
         .route("/oauth/revoke", post(oauth::revoke_token))
         .route(

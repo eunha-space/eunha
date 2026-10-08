@@ -28,6 +28,10 @@
     <input type="hidden" name="redirect_uri" value="{{ oauth.redirect_uri }}">
     <input type="hidden" name="scope" value="{{ oauth.scope }}">
     <input type="hidden" name="lang" value="{{ oauth.lang }}">
+    {% if oauth.extras.state %}<input type="hidden" name="state" value="{{ oauth.extras.state }}">{% endif %}
+    {% if oauth.extras.code_challenge %}<input type="hidden" name="code_challenge" value="{{ oauth.extras.code_challenge }}">{% endif %}
+    {% if oauth.extras.code_challenge_method %}<input type="hidden" name="code_challenge_method" value="{{ oauth.extras.code_challenge_method }}">{% endif %}
+    {% if oauth.extras.response_mode %}<input type="hidden" name="response_mode" value="{{ oauth.extras.response_mode }}">{% endif %}
     {% endif %}
   {% endmacro %}
 

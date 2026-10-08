@@ -35,6 +35,9 @@ pub enum Continuation {
         redirect_uri: String,
         scope: String,
         lang: String,
+        /// The state, PKCE challenge and response mode it asked with.
+        #[serde(default)]
+        extras: crate::api::mastodon::oauth::AuthorizationExtras,
     },
     /// The account pages: a browser session.
     Account,
@@ -522,10 +525,11 @@ pub fn render(state: &AppState, locale: Locale, page: &Page) -> Response {
             redirect_uri,
             scope,
             lang,
+            extras,
         } => (
             "/oauth/authorize",
             Some(minijinja::context! {
-                client_id, redirect_uri, scope, lang,
+                client_id, redirect_uri, scope, lang, extras,
             }),
         ),
         Continuation::Account => ("/account/login", None),

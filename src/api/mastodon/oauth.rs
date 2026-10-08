@@ -4,7 +4,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::extractors::FormOrJson;
 
@@ -130,16 +130,66 @@ fn app_to_credential(app: &OauthApplication, vapid_key: &str) -> CredentialAppli
 #[derive(Debug, Deserialize)]
 pub struct TokenRequest {
     pub grant_type: String,
-    pub client_id: String,
-    pub client_secret: String,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
     pub redirect_uri: Option<String>,
     pub code: Option<String>,
     pub scope: Option<String>,
+    pub code_verifier: Option<String>,
+}
+
+/// Doorkeeper's `client_credentials_methods`, `from_basic` then
+/// `from_params`: the client's id and secret from an `Authorization: Basic`
+/// header (`client_secret_basic`), each form-decoded, or else from the request
+/// (`client_secret_post`).
+fn client_credentials(
+    headers: &axum::http::HeaderMap,
+    form: &TokenRequest,
+) -> Option<(String, String)> {
+    use base64::Engine as _;
+    let basic = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Basic "))
+        .and_then(|token| {
+            base64::engine::general_purpose::STANDARD
+                .decode(token.trim())
+                .ok()
+        })
+        .and_then(|decoded| String::from_utf8(decoded).ok())
+        .and_then(|decoded| {
+            let (id, secret) = decoded.split_once(':')?;
+            let decode = |s: &str| {
+                urlencoding::decode(&s.replace('+', " "))
+                    .map(|s| s.into_owned())
+                    .ok()
+            };
+            Some((decode(id)?, decode(secret)?))
+        });
+    basic.or_else(|| Some((form.client_id.clone()?, form.client_secret.clone()?)))
+}
+
+/// A Doorkeeper error answer, `{"error":…,"error_description":…}` with a
+/// `400`.
+fn oauth_error(error: &str, description: &str) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": error, "error_description": description })),
+    )
+        .into_response()
+}
+
+/// `AccessGrant.generate_code_challenge`: the `S256` challenge of a verifier.
+fn s256_challenge(verifier: &str) -> String {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier))
 }
 
 pub async fn issue_token(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    headers: axum::http::HeaderMap,
     FormOrJson(form): FormOrJson<TokenRequest>,
 ) -> AppResult<axum::response::Response> {
     use axum::response::IntoResponse as _;
@@ -161,9 +211,11 @@ pub async fn issue_token(
         )
             .into_response());
     }
+    let (client_id, client_secret) =
+        client_credentials(&headers, &form).ok_or(AppError::Unauthorized)?;
     tracing::info!(
         grant_type = %form.grant_type,
-        client_id = %form.client_id,
+        client_id = %client_id,
         instance = %instance.domain,
         "token request",
     );
@@ -171,17 +223,17 @@ pub async fn issue_token(
     let app = sqlx::query_as!(
         OauthApplication,
         "SELECT * FROM oauth_applications WHERE uid = $1",
-        form.client_id,
+        client_id,
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| {
-        tracing::warn!(client_id = %form.client_id, instance = %instance.domain, "unknown client_id");
+        tracing::warn!(client_id = %client_id, instance = %instance.domain, "unknown client_id");
         AppError::Unauthorized
     })?;
 
-    if app.secret != form.client_secret {
-        tracing::warn!(client_id = %form.client_id, "client_secret mismatch");
+    if app.secret != client_secret {
+        tracing::warn!(client_id = %client_id, "client_secret mismatch");
         return Err(AppError::Unauthorized);
     }
 
@@ -198,8 +250,9 @@ pub async fn issue_token(
                 .ok_or(AppError::Unprocessable("missing code".into()))?;
             // `AuthorizationCodeRequest#validate_redirect_uri`: the code is
             // only good with the redirect URI it was issued for.
-            let issued_for = sqlx::query_scalar!(
-                r#"SELECT redirect_uri FROM oauth_access_grants
+            let grant = sqlx::query!(
+                r#"SELECT redirect_uri, code_challenge, code_challenge_method
+                   FROM oauth_access_grants
                    WHERE token = $1 AND application_id = $2 AND revoked_at IS NULL
                      AND created_at + expires_in * interval '1 second' > now()"#,
                 code_str,
@@ -211,13 +264,37 @@ pub async fn issue_token(
                 tracing::warn!(code = %code_str, "authorization code not found or expired");
                 AppError::Unauthorized
             })?;
+            let challenge = grant.code_challenge.filter(|c| !c.is_empty());
+            let verifier = form.code_verifier.as_deref().filter(|v| !v.is_empty());
+            // `AuthorizationCodeRequest#validate_params`: a grant made with
+            // PKCE wants its verifier.
+            if challenge.is_some() && verifier.is_none() {
+                return Ok(oauth_error(
+                    "invalid_request",
+                    "Missing required parameter: code_verifier.",
+                ));
+            }
             if !form
                 .redirect_uri
                 .as_deref()
-                .is_some_and(|uri| redirect_uri_matches(uri, &issued_for))
+                .is_some_and(|uri| redirect_uri_matches(uri, &grant.redirect_uri))
             {
-                tracing::warn!(client_id = %form.client_id, "redirect_uri does not match the code's");
+                tracing::warn!(client_id = %client_id, "redirect_uri does not match the code's");
                 return Err(AppError::Unauthorized);
+            }
+            // `validate_code_verifier`: the verifier's `S256` challenge is the
+            // grant's, and a verifier for a grant made without one fails.
+            if let Some(verifier) = verifier {
+                let matches = match challenge.as_deref() {
+                    Some(challenge) if grant.code_challenge_method.as_deref() == Some("plain") => {
+                        verifier == challenge
+                    }
+                    Some(challenge) => s256_challenge(verifier) == challenge,
+                    None => false,
+                };
+                if !matches {
+                    return Ok(oauth_error("invalid_grant", INVALID_GRANT));
+                }
             }
             let code = sqlx::query!(
                 r#"DELETE FROM oauth_access_grants
@@ -649,6 +726,152 @@ fn redirect_uri_allowed(url: &str, registered: &str) -> bool {
 /// Doorkeeper's `invalid_redirect_uri`.
 const INVALID_REDIRECT_URI: &str = "The redirect uri included is not valid.";
 
+/// Doorkeeper's `invalid_grant`.
+const INVALID_GRANT: &str = "The provided authorization grant is invalid, expired, revoked, does not match the redirection URI used in the authorization request, or was issued to another client.";
+
+/// Doorkeeper's `native_redirect_uri`, the out-of-band redirect.
+const OOB_REDIRECT_URI: &str = "urn:ietf:wg:oauth:2.0:oob";
+
+/// What an authorization request carries besides its client, redirect URI and
+/// scope, kept through the sign-in to the grant: `PreAuthorization`'s
+/// `state`, `code_challenge`, `code_challenge_method` and `response_mode`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AuthorizationExtras {
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub code_challenge: Option<String>,
+    #[serde(default)]
+    pub code_challenge_method: Option<String>,
+    #[serde(default)]
+    pub response_mode: Option<String>,
+}
+
+impl AuthorizationExtras {
+    fn present(value: &Option<String>) -> Option<&str> {
+        value.as_deref().filter(|v| !v.is_empty())
+    }
+
+    /// `PreAuthorization#validate_response_mode`, `#validate_code_challenge_method`:
+    /// what is wrong with these, if anything.
+    fn error(&self) -> Option<&'static str> {
+        if !matches!(
+            Self::present(&self.response_mode),
+            None | Some("query" | "fragment" | "form_post")
+        ) {
+            return Some("The authorization server does not support this response mode.");
+        }
+        if Self::present(&self.code_challenge).is_some()
+            && Self::present(&self.code_challenge_method) != Some("S256")
+        {
+            return Some("The code_challenge_method must be S256.");
+        }
+        None
+    }
+
+    /// The query string that asks for the same authorization again.
+    fn query(&self, client_id: &str, redirect_uri: &str, scope: &str) -> String {
+        let mut query = url::form_urlencoded::Serializer::new(String::new());
+        query
+            .append_pair("response_type", "code")
+            .append_pair("client_id", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("scope", scope);
+        for (key, value) in [
+            ("state", &self.state),
+            ("code_challenge", &self.code_challenge),
+            ("code_challenge_method", &self.code_challenge_method),
+            ("response_mode", &self.response_mode),
+        ] {
+            if let Some(value) = Self::present(value) {
+                query.append_pair(key, value);
+            }
+        }
+        query.finish()
+    }
+}
+
+/// Where the browser goes with what the authorization page decided.
+enum Outcome {
+    /// `redirect_to auth.redirect_uri`.
+    Redirect(String),
+    /// `render :form_post`: the fields, posted to the redirect URI.
+    FormPost(String, Vec<(&'static str, String)>),
+}
+
+impl IntoResponse for Outcome {
+    fn into_response(self) -> Response {
+        match self {
+            Outcome::Redirect(url) => Redirect::to(&url).into_response(),
+            Outcome::FormPost(action, fields) => {
+                let escape = |s: &str| {
+                    s.replace('&', "&amp;")
+                        .replace('"', "&quot;")
+                        .replace('<', "&lt;")
+                        .replace('>', "&gt;")
+                };
+                let inputs: String = fields
+                    .iter()
+                    .map(|(name, value)| {
+                        format!(
+                            "<input type=\"hidden\" name=\"{name}\" value=\"{}\">",
+                            escape(value)
+                        )
+                    })
+                    .collect();
+                Html(format!(
+                    "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>Submit this form</title></head>\
+                     <body><h1>Submit this form</h1>\
+                     <form method=\"post\" action=\"{}\" id=\"authorization_form\">{inputs}\
+                     <input type=\"submit\" value=\"Submit\"></form>\
+                     <script>window.onload = function () {{ document.getElementById(\"authorization_form\").submit(); }};</script>\
+                     </body></html>\n",
+                    escape(&action)
+                ))
+                .into_response()
+            }
+        }
+    }
+}
+
+/// `CodeResponse`/`ErrorResponse#redirect_uri`: `fields` merged into the
+/// redirect URI's query (`URIBuilder.uri_with_query`), into its fragment for
+/// `response_mode=fragment`, or posted to it for `form_post`. Blank fields are
+/// left out.
+fn respond_to_client(
+    redirect_uri: &str,
+    response_mode: Option<&str>,
+    fields: Vec<(&'static str, String)>,
+) -> Outcome {
+    let fields: Vec<(&'static str, String)> =
+        fields.into_iter().filter(|(_, v)| !v.is_empty()).collect();
+    if response_mode == Some("form_post") {
+        return Outcome::FormPost(redirect_uri.to_owned(), fields);
+    }
+    let Ok(mut url) = url::Url::parse(redirect_uri) else {
+        return Outcome::Redirect(redirect_uri.to_owned());
+    };
+    let encode = |pairs: &[(String, String)]| {
+        url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(pairs)
+            .finish()
+    };
+    let fields: Vec<(String, String)> =
+        fields.into_iter().map(|(k, v)| (k.to_owned(), v)).collect();
+    if response_mode == Some("fragment") {
+        url.set_fragment(Some(&encode(&fields)));
+    } else {
+        let mut pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .into_owned()
+            .filter(|(k, _)| !fields.iter().any(|(f, _)| f == k))
+            .collect();
+        pairs.extend(fields);
+        url.set_query(Some(&encode(&pairs)));
+    }
+    Outcome::Redirect(url.to_string())
+}
+
 // ── GET /oauth/authorize ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -659,6 +882,8 @@ pub struct AuthorizeParams {
     pub scope: Option<String>,
     pub force_login: Option<String>,
     pub lang: Option<String>,
+    #[serde(flatten)]
+    pub extras: AuthorizationExtras,
 }
 
 pub async fn authorize_form(
@@ -689,6 +914,27 @@ pub async fn authorize_form(
     let instance = crate::settings::Snapshot::load(&state)
         .await
         .amend(&instance);
+    // `validate_params` and `validate_response_type`: the code flow alone.
+    match params.response_type.as_deref().filter(|t| !t.is_empty()) {
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Missing required parameter: response_type.",
+            )
+                .into_response()
+        }
+        Some("code") => {}
+        Some(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "The authorization server does not support this response type.",
+            )
+                .into_response()
+        }
+    }
+    if let Some(error) = params.extras.error() {
+        return (StatusCode::BAD_REQUEST, error).into_response();
+    }
     let scope = params.scope.as_deref().unwrap_or("read");
     // The requested scope must be within the app's registered scopes.
     if !scope_is_subset(scope, app.scopes.as_deref().unwrap_or("read")) {
@@ -704,22 +950,29 @@ pub async fn authorize_form(
         &params.client_id,
         &params.redirect_uri,
         scope,
+        &params.extras,
         locale,
         "",
     )
 }
 
 /// The sign-in form of the authorization page.
+#[allow(clippy::too_many_arguments)]
 fn render_authorize(
     instance: &crate::config::InstanceConfig,
     app_name: &str,
     client_id: &str,
     redirect_uri: &str,
     scope: &str,
+    extras: &AuthorizationExtras,
     locale: crate::locale::Locale,
     error: &str,
 ) -> Response {
-    let (toggle_en_url, toggle_ko_url) = authorize_toggle_urls(client_id, redirect_uri, scope);
+    let base = format!(
+        "/oauth/authorize?{}",
+        extras.query(client_id, redirect_uri, scope)
+    );
+    let (toggle_en_url, toggle_ko_url) = (format!("{base}&lang=en"), format!("{base}&lang=ko"));
     let signup_url = format!("/auth/signup?lang={}", locale.as_str());
     let html = crate::templates::render(
         "authorize.html",
@@ -729,6 +982,7 @@ fn render_authorize(
             client_id => client_id,
             redirect_uri => redirect_uri,
             scope => scope,
+            extras => extras,
             error => error,
             lang => locale.as_str(),
             toggle_en_url => toggle_en_url,
@@ -748,16 +1002,6 @@ fn render_authorize(
     Html(html).into_response()
 }
 
-fn authorize_toggle_urls(client_id: &str, redirect_uri: &str, scope: &str) -> (String, String) {
-    let enc_redirect = urlencoding::encode(redirect_uri);
-    let enc_scope = urlencoding::encode(scope);
-    let base = format!(
-        "/oauth/authorize?client_id={}&redirect_uri={}&scope={}",
-        client_id, enc_redirect, enc_scope,
-    );
-    (format!("{}&lang=en", base), format!("{}&lang=ko", base))
-}
-
 // ── POST /oauth/authorize ──────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -768,6 +1012,8 @@ pub struct AuthorizeForm {
     pub email: Option<String>,
     pub password: Option<String>,
     pub lang: Option<String>,
+    #[serde(flatten)]
+    pub extras: AuthorizationExtras,
     /// A step after the password: the second factor, or the setup the
     /// user's role requires.
     #[serde(flatten)]
@@ -812,6 +1058,7 @@ pub async fn authorize_submit(
             &form.client_id,
             &form.redirect_uri,
             &scope,
+            &form.extras,
             locale,
             error,
         )
@@ -822,6 +1069,7 @@ pub async fn authorize_submit(
         redirect_uri: form.redirect_uri.clone(),
         scope: form.scope.clone().unwrap_or_default(),
         lang: locale.as_str().to_string(),
+        extras: form.extras.clone(),
     };
     let step = if form.step.is_attempt() {
         sign_in::continue_attempt(&state, &form.step, continuation, ip, user_agent.as_deref()).await
@@ -850,6 +1098,7 @@ pub async fn authorize_submit(
                 client_id,
                 redirect_uri,
                 scope,
+                extras,
                 ..
             },
         ) => {
@@ -859,10 +1108,8 @@ pub async fn authorize_submit(
             // (`store_current_location`).
             if !user_confirmed(&state, user_id).await {
                 let back = format!(
-                    "/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}",
-                    urlencoding::encode(&client_id),
-                    urlencoding::encode(&redirect_uri),
-                    urlencoding::encode(&scope),
+                    "/oauth/authorize?{}",
+                    extras.query(&client_id, &redirect_uri, &scope)
                 );
                 return crate::api::account::sign_in_and_redirect(
                     &state,
@@ -875,8 +1122,8 @@ pub async fn authorize_submit(
                 .await;
             }
             let scope = (!scope.is_empty()).then_some(scope);
-            match issue_grant(&state, &client_id, &redirect_uri, scope, user_id).await {
-                Ok(redirect_url) => Redirect::to(&redirect_url).into_response(),
+            match issue_grant(&state, &client_id, &redirect_uri, scope, user_id, &extras).await {
+                Ok(outcome) => outcome.into_response(),
                 Err(_) => form_error(locale.t("invalid_credentials")),
             }
         }
@@ -952,7 +1199,8 @@ async fn issue_grant(
     redirect_uri: &str,
     scope: Option<String>,
     user_id: i64,
-) -> Result<String, String> {
+    extras: &AuthorizationExtras,
+) -> Result<Outcome, String> {
     let app = sqlx::query_as!(
         OauthApplication,
         "SELECT * FROM oauth_applications WHERE uid = $1",
@@ -972,22 +1220,167 @@ async fn issue_grant(
     if !scope_is_subset(&scopes, app.scopes.as_deref().unwrap_or("read")) {
         return Err("invalid_scope".to_string());
     }
+    if let Some(error) = extras.error() {
+        return Err(error.to_string());
+    }
     let code = generate_token(32);
+    // `Authorization::Code#pkce_attributes`.
+    let code_challenge = AuthorizationExtras::present(&extras.code_challenge);
+    let code_challenge_method =
+        code_challenge.and(AuthorizationExtras::present(&extras.code_challenge_method));
 
     sqlx::query!(
         r#"INSERT INTO oauth_access_grants
-             (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in, created_at)
-           VALUES ($1, $2, $3, $4, $5, 600, now())"#,
+             (application_id, resource_owner_id, token, redirect_uri, scopes, expires_in,
+              code_challenge, code_challenge_method, created_at)
+           VALUES ($1, $2, $3, $4, $5, 600, $6, $7, now())"#,
         app.id,
         user_id,
         code,
         redirect_uri,
         scopes,
+        code_challenge,
+        code_challenge_method,
     )
     .execute(&state.db)
     .await
     .map_err(|_| "Database error".to_string())?;
 
-    let sep = if redirect_uri.contains('?') { '&' } else { '?' };
-    Ok(format!("{}{}code={}", redirect_uri, sep, code))
+    // `CodeResponse`: an out-of-band client is shown the code
+    // (`oob_redirect`); any other gets it, with the state it sent, at its
+    // redirect URI.
+    if redirect_uri == OOB_REDIRECT_URI {
+        return Ok(Outcome::Redirect(format!(
+            "/oauth/authorize/native?code={}",
+            urlencoding::encode(&code)
+        )));
+    }
+    Ok(respond_to_client(
+        redirect_uri,
+        AuthorizationExtras::present(&extras.response_mode),
+        vec![
+            ("code", code),
+            ("state", extras.state.clone().unwrap_or_default()),
+        ],
+    ))
+}
+
+// ── GET /oauth/authorize/native ───────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct NativeParams {
+    pub code: Option<String>,
+}
+
+/// `Doorkeeper::AuthorizationsController#show`, where an out-of-band client's
+/// user is sent with the code to copy into it.
+pub async fn authorize_native(Query(params): Query<NativeParams>) -> Response {
+    let code = params
+        .code
+        .unwrap_or_default()
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    Html(format!(
+        "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Authorization code</title><link rel=\"stylesheet\" href=\"/auth.css\"></head>\
+         <body class=\"centered\"><div class=\"card\">\
+         <p>Copy this authorization code and paste it to the application.</p>\
+         <input type=\"text\" class=\"oauth-code\" readonly value=\"{code}\" onclick=\"this.select()\">\
+         </div></body></html>\n"
+    ))
+    .into_response()
+}
+
+// ── DELETE /oauth/authorize ───────────────────────────────────────────────
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DenyParams {
+    pub client_id: Option<String>,
+    pub redirect_uri: Option<String>,
+    #[serde(flatten)]
+    pub extras: AuthorizationExtras,
+}
+
+/// `Doorkeeper::AuthorizationsController#destroy`: the signed-in user turns
+/// the client away (`CodeRequest#deny`), and the client hears
+/// `access_denied`, with its state, at its redirect URI — or, out of band, as
+/// a `400`.
+///
+/// `authenticate_resource_owner!` comes first: without a session the browser
+/// is sent to sign in. The parameters are read from the query and a form
+/// body both, as Rails merges them. Doorkeeper builds the answer from the
+/// redirect URI as given; eunha sends it only to a redirect URI the client
+/// registered (`oauth-deny-checks-the-redirect-uri` in divergences.toml).
+pub async fn authorize_deny(
+    state: AppState,
+    headers: axum::http::HeaderMap,
+    uri: axum::http::Uri,
+    body: axum::body::Bytes,
+) -> Response {
+    if crate::api::account::signed_in_user(&headers, &state)
+        .await
+        .is_none()
+    {
+        return crate::api::account::sign_in_redirect(
+            uri.path_and_query()
+                .map_or("/oauth/authorize", |p| p.as_str()),
+        );
+    }
+    let mut params: DenyParams =
+        serde_urlencoded::from_str(uri.query().unwrap_or("")).unwrap_or_default();
+    if let Ok(form) = serde_urlencoded::from_bytes::<DenyParams>(&body) {
+        params.client_id = form.client_id.or(params.client_id);
+        params.redirect_uri = form.redirect_uri.or(params.redirect_uri);
+        let extras = form.extras;
+        params.extras.state = extras.state.or(params.extras.state);
+        params.extras.response_mode = extras.response_mode.or(params.extras.response_mode);
+    }
+    let registered = match params.client_id.as_deref() {
+        Some(client_id) => sqlx::query_scalar!(
+            "SELECT redirect_uri FROM oauth_applications WHERE uid = $1",
+            client_id
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten(),
+        None => None,
+    };
+    let Some(registered) = registered else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "invalid_client",
+                "error_description": "Client authentication failed due to unknown client, no client authentication included, or unsupported authentication method.",
+            })),
+        )
+            .into_response();
+    };
+    let redirect_uri = params.redirect_uri.unwrap_or_default();
+    if !redirect_uri_allowed(&redirect_uri, &registered) {
+        return oauth_error("invalid_redirect_uri", INVALID_REDIRECT_URI);
+    }
+    let description = "The resource owner or authorization server denied the request.";
+    let state_param = params.extras.state.clone().unwrap_or_default();
+    if redirect_uri == OOB_REDIRECT_URI {
+        let mut body =
+            serde_json::json!({ "error": "access_denied", "error_description": description });
+        if !state_param.is_empty() {
+            body["state"] = state_param.into();
+        }
+        return (StatusCode::BAD_REQUEST, Json(body)).into_response();
+    }
+    respond_to_client(
+        &redirect_uri,
+        AuthorizationExtras::present(&params.extras.response_mode),
+        vec![
+            ("error", "access_denied".to_owned()),
+            ("error_description", description.to_owned()),
+            ("state", state_param),
+        ],
+    )
+    .into_response()
 }

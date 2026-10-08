@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT redirect_uri FROM oauth_applications WHERE uid = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "redirect_uri",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "421c02d1433d056a777a494148a73370b48a07de6669b36de2bcd38198dc89e9"
+}

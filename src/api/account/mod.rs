@@ -392,6 +392,16 @@ const RETURN_TO_COOKIE: &str = "account_return_to";
 const CLEAR_RETURN_TO: &str = "account_return_to=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
 
 /// The stored location, if it is a path on this site.
+/// `current_user` for the OAuth pages: the user signed in on this browser.
+pub(crate) async fn signed_in_user(headers: &HeaderMap, state: &AppState) -> Option<i64> {
+    get_session(headers, state, None).await.map(|s| s.user_id)
+}
+
+/// `redirect_to(new_user_session_url)`, remembering `path` to come back to.
+pub(crate) fn sign_in_redirect(path: &str) -> Response {
+    redirect_to_sign_in(path)
+}
+
 fn stored_location(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     let value = cookie_header
