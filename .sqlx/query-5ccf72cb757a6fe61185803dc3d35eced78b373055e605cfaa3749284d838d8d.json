@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(DISTINCT domain) FROM accounts WHERE domain IS NOT NULL",
+  "query": "SELECT COUNT(*) AS \"n!\" FROM instances",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "count",
+        "name": "n!",
         "type_info": "Int8"
       }
     ],
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "cd17f23062bae0baaeb9d7d3fe40523873c182307d78f8d8fc122c5a0f893c72"
+  "hash": "5ccf72cb757a6fe61185803dc3d35eced78b373055e605cfaa3749284d838d8d"
 }
