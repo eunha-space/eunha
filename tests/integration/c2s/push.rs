@@ -408,3 +408,80 @@ async fn pushes_carry_mastodons_headers_and_an_unsubscribe_url() {
     push(&ctx, id).await.unwrap();
     assert_eq!(subscriptions(&ctx).await, 0);
 }
+
+/// Subscribe alice's token to `endpoint` with `data`.
+async fn subscribe_with(ctx: &TestContext, endpoint: &str, data: Value) -> i64 {
+    let (_, p256dh) = eunha::push::generate_vapid_keypair().unwrap();
+    let resp: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &json!({
+                "subscription": {
+                    "endpoint": endpoint,
+                    "standard": true,
+                    "keys": { "p256dh": p256dh, "auth": "tBHItJI5svbpez7KI4CCXg" },
+                },
+                "data": data,
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    resp["id"].as_str().unwrap().parse().unwrap()
+}
+
+/// Bob's sign-up, told to alice as `admin.sign_up`; how many pushes reached
+/// the endpoint for it.
+async fn notify_sign_up(
+    ctx: &TestContext,
+    seen: &std::sync::Mutex<Vec<axum::http::HeaderMap>>,
+) -> usize {
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    sqlx::query("DELETE FROM notifications WHERE account_id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    seen.lock().unwrap().clear();
+    eunha::push::notify_local(&ctx.state, alice, "admin.sign_up", "Account", bob, bob).await;
+    ctx.state.jobs.settle().await;
+    seen.lock().unwrap().len()
+}
+
+/// `Web::PushSubscription#pushable?`: any type is pushed when its alert is
+/// on, the staff types among them, and only as the policy allows.
+#[tokio::test]
+async fn pushes_follow_the_alerts_and_the_policy() {
+    let ctx = TestContext::reaching_loopback("push-pushable").await;
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(201));
+    let (endpoint, seen) = push_endpoint(status).await;
+
+    // No alert for the type: nothing.
+    subscribe_with(&ctx, &endpoint, json!({"alerts": {"mention": true}})).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 0);
+
+    // On, as a form would give it.
+    subscribe_with(&ctx, &endpoint, json!({"alerts": {"admin.sign_up": "1"}})).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 1);
+
+    // `followed`: only from someone alice follows.
+    let followed = json!({"alerts": {"admin.sign_up": true}, "policy": "followed"});
+    subscribe_with(&ctx, &endpoint, followed).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 0);
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 1);
+
+    // `follower`: only from someone following alice.
+    let follower = json!({"alerts": {"admin.sign_up": true}, "policy": "follower"});
+    subscribe_with(&ctx, &endpoint, follower).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 0);
+
+    // `none`: nothing at all.
+    let none = json!({"alerts": {"admin.sign_up": true}, "policy": "none"});
+    subscribe_with(&ctx, &endpoint, none).await;
+    assert_eq!(notify_sign_up(&ctx, &seen).await, 0);
+}

@@ -195,50 +195,29 @@ async fn try_deliver(
     title: &str,
     body: &str,
 ) -> anyhow::Result<()> {
-    // Look up subscriptions for the recipient that have this alert type enabled.
-    let (alert_key, alert_default) = match notification_type {
-        "follow" | "follow_request" => ("follow", "true"),
-        "favourite" => ("favourite", "true"),
-        "reblog" => ("reblog", "true"),
-        "mention" => ("mention", "true"),
-        "poll" => ("poll", "false"),
-        "status" => ("status", "false"),
-        "update" => ("update", "false"),
-        "quote" => ("quote", "false"),
-        "quoted_update" => ("quoted_update", "false"),
-        "added_to_collection" => ("added_to_collection", "false"),
-        "collection_update" => ("collection_update", "false"),
-        _ => return Ok(()),
-    };
-
-    // Honor the subscription's delivery policy (Mastodon
-    // Web::PushSubscription#policy_allows_notification?): all / followed /
-    // follower / none, based on the recipient↔sender relationship. $1 =
-    // recipient, $2 = sender.
-    let subs_query = format!(
-        r#"SELECT wps.id, wps.endpoint, wps.key_p256dh, wps.key_auth
+    // `NotifyService#push_to_web_push_subscriptions!`: the recipient's
+    // user's subscriptions, those `pushable?` for this notification.
+    let subscriptions = sqlx::query!(
+        r#"SELECT wps.id, wps.data as "data: serde_json::Value"
            FROM web_push_subscriptions wps
-           JOIN oauth_access_tokens oat ON oat.id = wps.access_token_id
-           JOIN users u ON u.id = oat.resource_owner_id
+           JOIN users u ON u.id = wps.user_id
            WHERE u.account_id = $1
-             AND oat.revoked_at IS NULL
-             AND COALESCE((wps.data->'alerts'->>'{}')::boolean, {})
-             AND (
-               $2 = $1
-               OR COALESCE(wps.data->>'policy', 'all') = 'all'
-               OR (COALESCE(wps.data->>'policy','all') = 'followed'
-                   AND EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2))
-               OR (COALESCE(wps.data->>'policy','all') = 'follower'
-                   AND EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1))
-             )"#,
-        alert_key, alert_default,
-    );
-
-    let rows = sqlx::query_as::<_, (i64, String, String, String)>(&subs_query)
-        .bind(recipient_id)
-        .bind(from_account_id)
-        .fetch_all(&state.db)
-        .await?;
+           ORDER BY wps.id"#,
+        recipient_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let notification = Pushed {
+        account_id: recipient_id,
+        from_account_id,
+        notification_type,
+    };
+    let mut rows = vec![];
+    for subscription in subscriptions {
+        if pushable(state, subscription.data.as_ref(), &notification).await? {
+            rows.push(subscription.id);
+        }
+    }
 
     if rows.is_empty() {
         return Ok(());
@@ -255,7 +234,7 @@ async fn try_deliver(
 
     // `Web::PushNotificationWorker.perform_async(subscription.id,
     // notification.id)` for each, with the payload as it was rendered.
-    for (id, _, _, _) in rows {
+    for id in rows {
         crate::jobs::perform_async(
             state,
             PushNotificationWorker {
@@ -267,6 +246,62 @@ async fn try_deliver(
     }
 
     Ok(())
+}
+
+/// What `Web::PushSubscription#pushable?` asks of a notification.
+struct Pushed<'a> {
+    account_id: i64,
+    from_account_id: i64,
+    notification_type: &'a str,
+}
+
+/// `Web::PushSubscription#pushable?`: the subscription's policy allows the
+/// notification, and its alert for the notification's type is on, as
+/// `ActiveModel::Type::Boolean` reads it. Any type may be pushed; an alert
+/// that is not stored is off.
+async fn pushable(
+    state: &AppState,
+    data: Option<&serde_json::Value>,
+    notification: &Pushed<'_>,
+) -> anyhow::Result<bool> {
+    use serde_json::Value;
+    let policy_allows = match data.and_then(|d| d.get("policy")) {
+        None | Some(Value::Null) => true,
+        Some(Value::String(policy)) if policy == "all" => true,
+        // `notification.account.following?(notification.from_account)`.
+        Some(Value::String(policy)) if policy == "followed" => {
+            following(state, notification.account_id, notification.from_account_id).await?
+        }
+        // `notification.from_account.following?(notification.account)`.
+        Some(Value::String(policy)) if policy == "follower" => {
+            following(state, notification.from_account_id, notification.account_id).await?
+        }
+        // `none`, and any policy Mastodon does not know.
+        Some(_) => false,
+    };
+    Ok(policy_allows
+        && data
+            .and_then(|d| d.get("alerts"))
+            .and_then(|a| a.get(notification.notification_type))
+            .and_then(cast_boolean)
+            .unwrap_or(false))
+}
+
+/// `Account#following?`.
+async fn following(
+    state: &AppState,
+    account_id: i64,
+    target_account_id: i64,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2
+           ) AS "e!""#,
+        account_id,
+        target_account_id,
+    )
+    .fetch_one(&state.db)
+    .await?)
 }
 
 /// `Web::PushNotificationWorker`: one notification, to one subscription.
