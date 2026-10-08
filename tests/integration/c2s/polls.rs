@@ -384,3 +384,32 @@ async fn test_poll_tallies_are_kept_as_mastodon_keeps_them() {
         .unwrap();
     assert!(hidden["poll"]["options"][0]["votes_count"].is_null());
 }
+
+/// `VoteService#distribute_poll!`: a vote on a local poll sends its tallies
+/// three minutes later, by `ActivityPub::DistributePollUpdateWorker`.
+#[tokio::test]
+async fn test_a_local_vote_schedules_the_poll_update() {
+    let ctx = TestContext::new("poll-vote-update").await;
+    let status = post_poll_status(&ctx).await;
+    let poll_id = status["poll"]["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/polls/{poll_id}/votes"),
+            Some(&ctx.bob_token),
+            &json!({"choices": [0]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let (count, later): (i64, bool) = sqlx::query_as(
+        r#"SELECT count(*), bool_and(run_at > now() + interval '2 minutes') FROM eunha.jobs
+           WHERE kind = 'ActivityPub::DistributePollUpdateWorker'
+             AND (args->>'status_id')::bigint = $1"#,
+    )
+    .bind(status["id"].as_str().unwrap().parse::<i64>().unwrap())
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    assert!(later);
+}

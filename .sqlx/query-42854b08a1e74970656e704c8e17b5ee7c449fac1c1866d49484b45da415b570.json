@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT owner.uri AS owner_uri, owner.inbox_url, owner.shared_inbox_url,\n                  s.uri AS \"status_uri?\"\n           FROM accounts owner\n           JOIN statuses s ON s.id = $1\n           WHERE owner.id = $2 AND owner.domain IS NOT NULL",
+  "query": "SELECT owner.uri AS owner_uri, owner.inbox_url,\n                  s.uri AS \"status_uri?\"\n           FROM accounts owner\n           JOIN statuses s ON s.id = $1\n           WHERE owner.id = $2 AND owner.domain IS NOT NULL",
   "describe": {
     "columns": [
       {
@@ -15,11 +15,6 @@
       },
       {
         "ordinal": 2,
-        "name": "shared_inbox_url",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 3,
         "name": "status_uri?",
         "type_info": "Varchar"
       }
@@ -33,9 +28,8 @@
     "nullable": [
       true,
       false,
-      false,
       true
     ]
   },
-  "hash": "4bf6907801b39e7eda42d21927a24db8dbca677b30f572181f7bae94e1acda7c"
+  "hash": "42854b08a1e74970656e704c8e17b5ee7c449fac1c1866d49484b45da415b570"
 }

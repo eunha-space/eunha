@@ -196,16 +196,32 @@ pub async fn vote_poll(
         crate::activity_tracker::increment(&state, crate::activity_tracker::INTERACTIONS).await;
     }
 
-    if let Err(e) = federate_poll_votes(&state, &poll, auth.account_id, &created_votes).await {
+    // `if @poll.account.local?` `distribute_poll!`, else `deliver_votes!`.
+    let poll_is_local = sqlx::query_scalar!(
+        r#"SELECT (domain IS NULL) AS "local!" FROM accounts WHERE id = $1"#,
+        poll.account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if poll_is_local {
+        // `distribute_poll!`: `return if @poll.hide_totals?`, then
+        // `DistributePollUpdateWorker.perform_in(3.minutes, …)`.
+        if !poll.hide_totals {
+            crate::jobs::push_in(
+                &state,
+                std::time::Duration::from_secs(3 * 60),
+                crate::api::ap::inbox::create::DistributePollUpdateWorker {
+                    status_id: poll.status_id,
+                },
+            )
+            .await;
+        }
+    } else if let Err(e) = federate_poll_votes(&state, &poll, auth.account_id, &created_votes).await
+    {
         tracing::warn!(poll_id = id, error = %e, "failed to enqueue ActivityPub poll vote");
     }
 
     let poll = fetch_poll(&state, id).await?;
-    if !poll.hide_totals {
-        if let Err(e) = federate_poll_update(&state, poll.status_id).await {
-            tracing::warn!(poll_id = id, error = %e, "failed to enqueue ActivityPub poll update");
-        }
-    }
     poll_from_db(&state, &poll, Some(auth.account_id))
         .await
         .map(Json)
@@ -270,7 +286,7 @@ async fn federate_poll_votes(
     }
 
     let remote = sqlx::query!(
-        r#"SELECT owner.uri AS owner_uri, owner.inbox_url, owner.shared_inbox_url,
+        r#"SELECT owner.uri AS owner_uri, owner.inbox_url,
                   s.uri AS "status_uri?"
            FROM accounts owner
            JOIN statuses s ON s.id = $1
@@ -287,11 +303,8 @@ async fn federate_poll_votes(
         return Ok(());
     };
 
-    let inbox = if !remote.shared_inbox_url.is_empty() {
-        remote.shared_inbox_url
-    } else {
-        remote.inbox_url
-    };
+    // `@poll.account.inbox_url`, its own inbox.
+    let inbox = remote.inbox_url;
     if inbox.is_empty() {
         return Ok(());
     }
@@ -309,14 +322,9 @@ async fn federate_poll_votes(
         let Some(option_name) = poll.options.get(*choice as usize) else {
             continue;
         };
+        // `VoteSerializer`: a local vote has no `uri` of its own, and is named
+        // under its voter.
         let vote_uri = format!("{actor}#votes/{vote_id}");
-        sqlx::query!(
-            "UPDATE poll_votes SET uri = $2, updated_at = now() WHERE id = $1",
-            vote_id,
-            vote_uri,
-        )
-        .execute(&state.db)
-        .await?;
 
         let activity = serde_json::json!({
             "@context": "https://www.w3.org/ns/activitystreams",

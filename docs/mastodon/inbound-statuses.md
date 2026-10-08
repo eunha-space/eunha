@@ -48,7 +48,11 @@ A reply named after an option of a local post's poll is a vote
 the voter already voted (once on a single-choice poll, once per option on
 a multiple-choice one); the poll's tallies are sent out three minutes later
 unless it hides them (`ActivityPub::DistributePollUpdateWorker`). Such a
-reply to a remote poll, or naming no option, is a status.
+reply to a remote poll, or naming no option, is a status. A local account's
+vote through `POST /api/v1/polls/:id/votes` does the same for a local poll
+(`VoteService#distribute_poll!`); on a remote poll, each choice goes to the
+poll's author's own inbox as a `Create` of a `Note` named after it, with the
+id `{voter}#votes/{id}` (`ActivityPub::VoteSerializer`).
 
 A status already held, delivered again to a local inbox whose owner it does
 not mention, gives that owner a silent mention, makes a direct message
