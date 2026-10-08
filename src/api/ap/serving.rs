@@ -1058,25 +1058,9 @@ async fn by_username(ctx: &Ctx, username: &str) -> AppResult<Option<ActorRef>> {
 
 async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
     let state = ctx.data();
-    let (user_count, active_month, active_halfyear, status_count) = tokio::try_join!(
+    let (user_count, status_count) = tokio::try_join!(
         sqlx::query_scalar!(
             "SELECT COUNT(*) FROM accounts WHERE domain IS NULL AND suspended_at IS NULL AND requested_deletion_at IS NULL",
-        )
-        .fetch_one(&state.db),
-        sqlx::query_scalar!(
-            r#"SELECT COUNT(DISTINCT s.account_id) FROM statuses s
-               WHERE s.account_id IN (
-                   SELECT id FROM accounts WHERE domain IS NULL
-               ) AND s.deleted_at IS NULL
-                 AND s.created_at > now() - interval '30 days'"#,
-        )
-        .fetch_one(&state.db),
-        sqlx::query_scalar!(
-            r#"SELECT COUNT(DISTINCT s.account_id) FROM statuses s
-               WHERE s.account_id IN (
-                   SELECT id FROM accounts WHERE domain IS NULL
-               ) AND s.deleted_at IS NULL
-                 AND s.created_at > now() - interval '180 days'"#,
         )
         .fetch_one(&state.db),
         sqlx::query_scalar!(
@@ -1087,6 +1071,9 @@ async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
         )
         .fetch_one(&state.db),
     )?;
+    // `InstancePresenter#active_user_count(4)` and `(24)`.
+    let active_month = Some(crate::activity_tracker::active_user_count(state, 4).await);
+    let active_halfyear = Some(crate::activity_tracker::active_user_count(state, 24).await);
     let count = |n: Option<i64>| u64::try_from(n.unwrap_or(0)).ok();
     let instance = &state.instance;
     let mut nodeinfo = NodeInfo::new(Software {

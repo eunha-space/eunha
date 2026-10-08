@@ -245,35 +245,127 @@ async fn test_announcement_dismiss() {
     );
 }
 
-/// GET /api/v1/instance/activity returns an array of weekly stats.
+/// GET /api/v1/instance/activity: twelve weeks from `ActivityTracker`, the
+/// first ending today, counting local public and unlisted posts but not
+/// private ones, rendered once and then served from the cache for a day.
 #[tokio::test]
-async fn test_instance_activity_returns_array() {
+async fn test_instance_activity_counts_from_activity_tracker() {
     let ctx = TestContext::new("inst-activity").await;
 
-    // Post a status so there's activity to count
     ctx.api
         .post_status(&ctx.alice_token, "some activity", "public")
+        .await;
+    ctx.api
+        .post_status(&ctx.alice_token, "more activity", "unlisted")
+        .await;
+    ctx.api
+        .post_status(&ctx.alice_token, "followers only", "private")
         .await;
 
     let resp = ctx.api.get("/api/v1/instance/activity", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
-
-    let body: Value = resp.json().await.unwrap();
-    assert!(body.is_array(), "instance/activity should return an array");
-
-    // Each entry should have the required fields as strings
-    if let Some(entry) = body.as_array().and_then(|a| a.first()) {
-        assert!(
-            entry["week"].is_string(),
-            "week should be a string timestamp"
-        );
-        assert!(entry["statuses"].is_string(), "statuses should be a string");
-        assert!(entry["logins"].is_string(), "logins should be a string");
-        assert!(
-            entry["registrations"].is_string(),
-            "registrations should be a string"
-        );
+    let body: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(body.len(), 12, "twelve weeks, always: {body:?}");
+    for entry in &body {
+        for field in ["week", "statuses", "logins", "registrations"] {
+            assert!(entry[field].is_string(), "{field} should be a string");
+        }
     }
+    assert_eq!(body[0]["statuses"], "2", "{body:?}");
+    let week: i64 = body[0]["week"].as_str().unwrap().parse().unwrap();
+    assert!((chrono::Utc::now().timestamp() - week).abs() < 60);
+    assert_eq!(body[1]["statuses"], "0");
+    let week_before: i64 = body[1]["week"].as_str().unwrap().parse().unwrap();
+    assert_eq!(week - week_before, 7 * 24 * 60 * 60);
+
+    // Cached, as `render_with_cache` keeps it, under Mastodon's key.
+    ctx.api
+        .post_status(&ctx.alice_token, "after the cache", "public")
+        .await;
+    let again: Vec<Value> = ctx
+        .api
+        .get("/api/v1/instance/activity", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(again, body);
+    let mut redis = ctx.state.redis.clone();
+    let cached: Option<String> = redis::cmd("GET")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key("cache:api/v1/instances/activity/show"),
+        )
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&cached.unwrap()).unwrap(),
+        body
+    );
+}
+
+/// The day's interactions, as `ActivityTracker` counts them: a favourite, a
+/// boost, a follow and a reply to someone else, each once.
+#[tokio::test]
+async fn test_interactions_are_counted_in_activity_tracker() {
+    let ctx = TestContext::new("inst-interactions").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "interact with me", "public")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    let interactions = || async {
+        eunha::activity_tracker::sum(
+            &ctx.state,
+            eunha::activity_tracker::INTERACTIONS,
+            eunha::activity_tracker::Kind::Basic,
+            chrono::Utc::now().date_naive(),
+            chrono::Utc::now().date_naive(),
+        )
+        .await
+        .unwrap()
+    };
+    assert_eq!(interactions().await, 0);
+
+    for action in ["favourite", "favourite", "reblog"] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{id}/{action}"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    // The second favourite is the one already made.
+    assert_eq!(interactions().await, 2);
+
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    assert_eq!(interactions().await, 3);
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({ "status": "a reply", "in_reply_to_id": id }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    // A reply to one's own post is no interaction.
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({ "status": "my own thread", "in_reply_to_id": id }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(interactions().await, 4);
 }
 
 /// GET /api/v1/instance/rules returns an array (may be empty).

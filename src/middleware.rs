@@ -249,39 +249,10 @@ pub async fn update_sign_in(state: &AppState, user_id: i64, new_sign_in: bool) {
             return;
         }
     };
-    record_activity(state, "activity:logins", Some(user_id)).await;
+    crate::activity_tracker::record(state, crate::activity_tracker::LOGINS, user_id).await;
     if row.inactive {
         crate::home_feed::regenerate_feed(state, row.account_id).await;
     }
-}
-
-/// `ActivityTracker::EXPIRE_AFTER`: six months, as ActiveSupport counts them.
-const ACTIVITY_EXPIRE_AFTER: i64 = 15_778_476;
-
-/// `ActivityTracker.record(prefix, value)` with a value, into the day's
-/// HyperLogLog, and `ActivityTracker.increment(prefix)` without one, adding
-/// one to the day's counter.
-pub async fn record_activity(state: &AppState, prefix: &str, value: Option<i64>) {
-    let today = chrono::Utc::now()
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight")
-        .and_utc()
-        .timestamp();
-    let key = state.redis_keys.key(format!("{prefix}:{today}"));
-    let mut redis = state.redis.clone();
-    let mut pipe = redis::pipe();
-    match value {
-        Some(value) => pipe.cmd("PFADD").arg(&key).arg(value).ignore(),
-        None => pipe.cmd("INCRBY").arg(&key).arg(1).ignore(),
-    };
-    let _: redis::RedisResult<()> = pipe
-        .cmd("EXPIRE")
-        .arg(&key)
-        .arg(ACTIVITY_EXPIRE_AFTER)
-        .ignore()
-        .query_async(&mut redis)
-        .await;
 }
 
 /// Log failed requests (4xx/5xx) with their method, path and status.

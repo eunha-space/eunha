@@ -204,41 +204,16 @@ pub async fn get_measures(
                 })
             }
             "active_users" => {
-                // Matches Mastodon: counts users by current_sign_in_at (updated on every login).
-                let total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM users WHERE current_sign_in_at BETWEEN $1 AND $2",
+                // `Admin::Metrics::Measure::ActiveUsersMeasure`.
+                activity_measure(
+                    &state,
+                    key,
+                    crate::activity_tracker::LOGINS,
+                    crate::activity_tracker::Kind::Unique,
                     start,
                     end,
                 )
-                .fetch_one(&state.db)
                 .await?
-                .unwrap_or(0);
-                let previous_total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM users WHERE current_sign_in_at BETWEEN $1 AND $2",
-                    prev_start,
-                    start,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM users
-                               WHERE date_trunc('day', current_sign_in_at)::date = axis.day) AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(),
-                    "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
             }
             "new_statuses" => {
                 let total = sqlx::query_scalar!(
@@ -342,54 +317,16 @@ pub async fn get_measures(
                 })
             }
             "interactions" => {
-                // Approximates Mastodon's Redis-backed interactions counter:
-                // statuses posted + favourites + follows by local users.
-                macro_rules! count_interactions {
-                    ($s:expr, $e:expr) => {
-                        sqlx::query_scalar!(
-                            r#"SELECT
-                               (SELECT COUNT(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-                                WHERE a.domain IS NULL AND s.deleted_at IS NULL AND s.created_at BETWEEN $1 AND $2)
-                               +
-                               (SELECT COUNT(*) FROM favourites f JOIN accounts a ON a.id = f.account_id
-                                WHERE a.domain IS NULL AND f.created_at BETWEEN $1 AND $2)
-                               +
-                               (SELECT COUNT(*) FROM follows f JOIN accounts a ON a.id = f.account_id
-                                WHERE a.domain IS NULL AND f.created_at BETWEEN $1 AND $2)"#,
-                            $s, $e,
-                        ).fetch_one(&state.db).await?.unwrap_or(0)
-                    };
-                }
-                let total = count_interactions!(start, end);
-                let previous_total = count_interactions!(prev_start, start);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-                               WHERE a.domain IS NULL AND s.deleted_at IS NULL
-                                 AND date_trunc('day', s.created_at)::date = axis.day)
-                              +
-                              (SELECT COUNT(*) FROM favourites f JOIN accounts a ON a.id = f.account_id
-                               WHERE a.domain IS NULL
-                                 AND date_trunc('day', f.created_at)::date = axis.day)
-                              +
-                              (SELECT COUNT(*) FROM follows f2 JOIN accounts a ON a.id = f2.account_id
-                               WHERE a.domain IS NULL
-                                 AND date_trunc('day', f2.created_at)::date = axis.day)
-                              AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(),
-                    "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
+                // `Admin::Metrics::Measure::InteractionsMeasure`.
+                activity_measure(
+                    &state,
+                    key,
+                    crate::activity_tracker::INTERACTIONS,
+                    crate::activity_tracker::Kind::Basic,
+                    start,
+                    end,
+                )
+                .await?
             }
             other if instances::MEASURES.contains(&other) => {
                 instances::measure(&state, other, &body.params, start, end).await?
@@ -419,6 +356,49 @@ fn locale_name(code: &str) -> &'static str {
         "ar" => "Arabic",
         _ => "Unknown",
     }
+}
+
+/// A measure `ActivityTracker` keeps (`ActiveUsersMeasure`,
+/// `InteractionsMeasure`): the total over `time_period`, the total over the
+/// period of the same length before it, and each day's count. The start is
+/// no more than two years before the end, as `BaseMeasure` clamps it, and
+/// the measure has no `human_value`, as neither defines
+/// `value_to_human_value`.
+async fn activity_measure(
+    state: &AppState,
+    key: &str,
+    prefix: &str,
+    kind: crate::activity_tracker::Kind,
+    start: chrono::NaiveDateTime,
+    end: chrono::NaiveDateTime,
+) -> AppResult<serde_json::Value> {
+    use crate::activity_tracker::{get, sum};
+
+    let start = start.max(end - chrono::Months::new(24));
+    let (first, last) = (start.date(), end.date());
+    // `previous_time_period`: shifted back by `length_of_period + 1` days.
+    let shift = chrono::Duration::days((last - first).num_days() + 1);
+    let redis_error = |e: redis::RedisError| AppError::Internal(e.into());
+    let total = sum(state, prefix, kind, first, last)
+        .await
+        .map_err(redis_error)?;
+    let previous_total = sum(state, prefix, kind, first - shift, last - shift)
+        .await
+        .map_err(redis_error)?;
+    let data = get(state, prefix, kind, first, last)
+        .await
+        .map_err(redis_error)?;
+    Ok(serde_json::json!({
+        "key": key,
+        "unit": null,
+        "total": total.to_string(),
+        "previous_total": previous_total.to_string(),
+        "data": data.iter().map(|(date, value)| serde_json::json!({
+            // `date.to_time(:utc).iso8601`.
+            "date": date.format("%Y-%m-%dT00:00:00Z").to_string(),
+            "value": value.to_string(),
+        })).collect::<Vec<_>>(),
+    }))
 }
 
 fn parse_admin_date(s: &str) -> Option<chrono::NaiveDateTime> {

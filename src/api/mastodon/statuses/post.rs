@@ -615,6 +615,11 @@ pub async fn post_status(
     {
         tracing::error!(status_id = status.id, error = %e, "failed to count a new status");
     }
+    // `Status#update_statistics` and `PostStatusService#bump_potential_friendship!`.
+    crate::activity_tracker::local_status_created(&state, visibility_int).await;
+    if in_reply_to_id.is_some() && in_reply_to_account_id != Some(account.id) {
+        crate::activity_tracker::increment(&state, crate::activity_tracker::INTERACTIONS).await;
+    }
     // `update_index('statuses', :proper)` and the account's stats.
     crate::search::elasticsearch::indexing::status(&state, status.id).await;
     crate::search::elasticsearch::indexing::account(&state, account.id).await;

@@ -740,6 +740,59 @@ async fn test_admin_measures() {
     }
 }
 
+/// `active_users` and `interactions` read `ActivityTracker`, a day at a time,
+/// with the period before for comparison and no `human_value`.
+#[tokio::test]
+async fn test_admin_activity_tracker_measures() {
+    let ctx = TestContext::new("admin-activity-measures").await;
+    make_admin(&ctx).await;
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "favourite me", "public")
+        .await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/favourite",
+                status["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days(2);
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({
+                "keys": ["interactions", "active_users"],
+                "start_at": start.to_string(),
+                "end_at": today.to_string(),
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let measures: Vec<Value> = resp.json().await.unwrap();
+    let interactions = &measures[0];
+    assert_eq!(interactions["key"], "interactions");
+    assert_eq!(interactions["total"], "1");
+    assert_eq!(interactions["previous_total"], "0");
+    assert!(interactions.get("human_value").is_none(), "{interactions}");
+    let data = interactions["data"].as_array().unwrap();
+    assert_eq!(data.len(), 3);
+    assert_eq!(data[0]["date"], format!("{start}T00:00:00Z"));
+    assert_eq!(data[2]["date"], format!("{today}T00:00:00Z"));
+    assert_eq!(data[2]["value"], "1");
+    assert_eq!(measures[1]["key"], "active_users");
+    assert!(measures[1]["total"].as_str().is_some());
+}
+
 /// POST /api/v1/admin/dimensions returns an array of dimension objects.
 #[tokio::test]
 async fn test_admin_dimensions() {

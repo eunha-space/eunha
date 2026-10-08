@@ -559,6 +559,8 @@ pub async fn favourite_status(
         > 0;
     if favourited {
         crate::fasp::events::favourite_created(&state, id).await;
+        // `FavouriteService#increment_statistics`, for a new favourite.
+        crate::activity_tracker::increment(&state, crate::activity_tracker::INTERACTIONS).await;
     }
     // `Favourite`'s `update_index('statuses', :status)`.
     crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
@@ -837,6 +839,9 @@ pub async fn reblog_status(
 
     // `ReblogService`: `Trends.register!`.
     crate::trends::register(&state, boost.id).await;
+    // `Status#update_statistics` for the boost, and `ReblogService#increment_statistics`.
+    crate::activity_tracker::local_status_created(&state, boost.visibility).await;
+    crate::activity_tracker::increment(&state, crate::activity_tracker::INTERACTIONS).await;
     crate::fasp::events::status_created(&state, boost.id).await;
 
     // Notify original author

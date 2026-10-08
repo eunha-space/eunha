@@ -163,6 +163,32 @@ logins in Redis (`activity:logins:<day>`), as Mastodon's `ActivityTracker` does,
 and has its home feed regenerated when the sign-in before was more than a week
 ago (see [accounts](./accounts.md)).
 
+### Activity counts
+
+Eunha keeps Mastodon's `ActivityTracker` counters in Redis, a key per day named
+by the day's midnight in UTC, each kept six months: the users who signed in
+(`activity:logins:<day>`), sign-ups (`activity:accounts:local:<day>`), local
+public and unlisted posts, boosts included (`activity:statuses:local:<day>`),
+and interactions (`activity:interactions:<day>`): a new favourite, a boost, a
+follow or follow request, a poll vote, and a reply to someone else's post. A
+Mastodon process sharing the Redis and the key prefix counts into the same keys.
+
+They are what the numbers that sound like activity are made of:
+
+ -  `GET /api/v1/instance/activity` is always twelve weeks, the first from now
+    back seven days, with that week's posts, logins and registrations. It is
+    rendered once a day and kept in Redis under Mastodon's own cache key,
+    `cache:api/v1/instances/activity/show`.
+ -  `usage.users.active_month` in `GET /api/v2/instance`, and the active users
+    in NodeInfo, are the users who signed in over the last four weeks (and
+    twenty-four, for the half year), cached for ten minutes.
+ -  The `active_users` and `interactions` measures of
+    `POST /api/v1/admin/measures` add up the days asked for, and the same
+    number of days before them.
+
+Counting starts when eunha does: a database imported from Mastodon brings no
+history unless its Redis comes along.
+
 ### Content retention
 
 Once a day each instance runs what Mastodon's `VacuumScheduler` runs for the

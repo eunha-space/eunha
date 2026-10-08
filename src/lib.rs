@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod activity_tracker;
 pub mod announcements;
 pub mod api;
 pub mod async_refresh;

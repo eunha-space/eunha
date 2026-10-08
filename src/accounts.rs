@@ -1254,9 +1254,9 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
     let invite_id = user.as_ref().and_then(|u| u.invite_id);
     // `ActivityTracker.increment('activity:accounts:local')` and
     // `ActivityTracker.record('activity:logins', id)`.
-    crate::middleware::record_activity(state, "activity:accounts:local", None).await;
+    crate::activity_tracker::increment(state, crate::activity_tracker::ACCOUNTS_LOCAL).await;
     if let Some(user) = &user {
-        crate::middleware::record_activity(state, "activity:logins", Some(user.id)).await;
+        crate::activity_tracker::record(state, crate::activity_tracker::LOGINS, user.id).await;
     }
     // `UserMailer.welcome(self).deliver_later(wait: 1.hour)`.
     if let Some(user) = &user {

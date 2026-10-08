@@ -21,8 +21,11 @@ group state, async refreshes and the job batches that finish them
 (`worker_batch:<id>`), the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of
 what was used today that trends are rescored from, the posts waiting to be
-emailed to an account's subscribers, the users who signed in each day
-(`activity:logins:<day>`), sign-ins waiting on a second factor
+emailed to an account's subscribers, the daily activity counts
+(`activity:logins:<day>`, `activity:accounts:local:<day>`,
+`activity:statuses:local:<day>`, `activity:interactions:<day>`) and what is
+rendered from them (`cache:api/v1/instances/activity/show`,
+`active_user_count/<weeks>`), sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
 the translation service, the JSON-LD contexts fetched to check Linked Data
 signatures (`jsonld:context:<url>`), what ojak remembers for the inbox (the

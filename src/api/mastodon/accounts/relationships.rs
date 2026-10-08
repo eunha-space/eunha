@@ -214,6 +214,10 @@ pub async fn follow(
         return Ok(FollowOutcome::RequestUpdated);
     }
 
+    // `ActivityTracker.increment('activity:interactions')`, for a follow or
+    // request that is new.
+    crate::activity_tracker::increment(state, crate::activity_tracker::INTERACTIONS).await;
+
     let show_reblogs = options.reblogs.unwrap_or(true);
     let notify = options.notify.unwrap_or(false);
     let languages: Vec<String> = options.languages.clone().unwrap_or_default();

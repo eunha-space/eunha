@@ -8,7 +8,7 @@ use axum::{
     extract::{Extension, Path, Query},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── GET /api/v1/instance/languages ───────────────────────────────────────
 
@@ -336,24 +336,13 @@ pub async fn get_instance_v2(
 ) -> AppResult<Json<InstanceV2>> {
     let streaming_url = format!("wss://{}/api/v1/streaming", instance.domain);
     let base_url = format!("https://{}", instance.domain);
-    let (_, _, _) = fetch_stats(&state).await;
     let settings = crate::settings::Snapshot::load(&state).await;
     let contact_account = fetch_contact_account(&state, &settings).await;
     let registrations = settings.registrations_mode(&instance);
     let thumbnail = crate::site_uploads::find(&state, "thumbnail").await?;
     let app_icon = crate::site_uploads::find(&state, "app_icon").await?;
-    let active_month = sqlx::query_scalar!(
-        r#"SELECT COUNT(DISTINCT s.account_id)
-           FROM statuses s
-           WHERE s.account_id IN (
-               SELECT id FROM accounts WHERE domain IS NULL
-           ) AND s.deleted_at IS NULL
-             AND s.created_at > now() - interval '30 days'"#,
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or(Some(0))
-    .unwrap_or(0);
+    // `InstancePresenter::UsagePresenter#users`: `active_user_count(4)`.
+    let active_month = crate::activity_tracker::active_user_count(&state, 4).await;
 
     Ok(Json(InstanceV2 {
         domain: instance.domain.clone(),
@@ -541,59 +530,95 @@ pub async fn get_instance_v2(
 
 // ── GET /api/v1/instance/activity ────────────────────────────────────────
 
-pub async fn get_instance_activity(state: AppState) -> AppResult<Json<Vec<serde_json::Value>>> {
+/// `Api::V1::Instances::ActivityController::WEEKS_OF_ACTIVITY`.
+const WEEKS_OF_ACTIVITY: i64 = 12;
+
+/// The `Rails.cache` key `render_with_cache` keeps the body under
+/// (`"#{controller}/#{action}"`, in the cache store's `cache` namespace), raw,
+/// so a Mastodon process sharing the Redis serves what eunha cached and the
+/// other way round.
+const ACTIVITY_CACHE_KEY: &str = "cache:api/v1/instances/activity/show";
+
+/// `render_with_cache json: :activity, expires_in: 1.day`.
+const ACTIVITY_CACHE_TTL: u64 = 24 * 60 * 60;
+
+#[derive(Serialize)]
+struct ActivityWeek {
+    week: String,
+    statuses: String,
+    logins: String,
+    registrations: String,
+}
+
+/// `Api::V1::Instances::ActivityController#show`: the last twelve weeks, each
+/// from a week ago to six days after, as `ActivityTracker` counted them —
+/// local public and unlisted posts, users who signed in, and sign-ups —
+/// rendered once a day and served from the cache in between.
+pub async fn get_instance_activity(state: AppState) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+
     require_enabled_api(&state, "activity_api_enabled").await?;
-    // Return 12 weeks of activity
-    let rows = sqlx::query!(
-        r#"SELECT
-             EXTRACT(EPOCH FROM date_trunc('week', s.created_at))::bigint AS week,
-             COUNT(s.id) AS statuses,
-             COUNT(DISTINCT s.account_id) AS logins
-           FROM statuses s
-           WHERE s.account_id IN (
-               SELECT id FROM accounts WHERE domain IS NULL
-           ) AND s.deleted_at IS NULL
-             AND s.created_at >= date_trunc('week', now()) - interval '11 weeks'
-           GROUP BY date_trunc('week', s.created_at)
-           ORDER BY week DESC"#,
-    )
-    .fetch_all(&state.db)
-    .await?;
 
-    let registrations_rows = sqlx::query!(
-        r#"SELECT
-             EXTRACT(EPOCH FROM date_trunc('week', a.created_at))::bigint AS week,
-             COUNT(a.id) AS registrations
-           FROM accounts a
-           WHERE a.domain IS NULL
-             AND a.created_at >= date_trunc('week', now()) - interval '11 weeks'
-           GROUP BY date_trunc('week', a.created_at)"#,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    // Build a map of week -> registration count
-    let mut reg_map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
-    for r in registrations_rows {
-        if let (Some(week), Some(count)) = (r.week, r.registrations) {
-            reg_map.insert(week, count);
+    let cache_key = state.redis_keys.key(ACTIVITY_CACHE_KEY);
+    let mut redis = state.redis.clone();
+    let cached: Option<String> = redis::cmd("GET")
+        .arg(&cache_key)
+        .query_async(&mut redis)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let body = match cached {
+        Some(body) => body,
+        None => {
+            let body = serde_json::to_string(&activity_weeks(&state).await?)
+                .map_err(|e| AppError::Internal(e.into()))?;
+            let written: redis::RedisResult<()> = redis::cmd("SET")
+                .arg(&cache_key)
+                .arg(&body)
+                .arg("EX")
+                .arg(ACTIVITY_CACHE_TTL)
+                .query_async(&mut redis)
+                .await;
+            if let Err(error) = written {
+                tracing::warn!(%error, "could not cache the instance activity");
+            }
+            body
         }
-    }
+    };
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/json; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response())
+}
 
-    let mut result = Vec::new();
-    for r in rows {
-        if let (Some(week), Some(statuses), Some(logins)) = (r.week, r.statuses, r.logins) {
-            let registrations = reg_map.get(&week).copied().unwrap_or(0);
-            result.push(serde_json::json!({
-                "week": week.to_string(),
-                "statuses": statuses.to_string(),
-                "logins": logins.to_string(),
-                "registrations": registrations.to_string(),
-            }));
-        }
-    }
+/// `ActivityController#activity`.
+async fn activity_weeks(state: &AppState) -> AppResult<Vec<ActivityWeek>> {
+    use crate::activity_tracker::{sum, Kind, ACCOUNTS_LOCAL, LOGINS, STATUSES_LOCAL};
 
-    Ok(Json(result))
+    let now = chrono::Utc::now();
+    let mut weeks = Vec::new();
+    for weeks_ago in 0..WEEKS_OF_ACTIVITY {
+        // `week_edge_days(num)`: `[num.weeks.ago, num.weeks.ago + 6.days]`.
+        let start_of_week = now - chrono::Duration::weeks(weeks_ago);
+        let start = start_of_week.date_naive();
+        let end = (start_of_week + chrono::Duration::days(6)).date_naive();
+        let count = |prefix, kind| async move {
+            sum(state, prefix, kind, start, end)
+                .await
+                .map(|n| n.to_string())
+                .map_err(|e| AppError::Internal(e.into()))
+        };
+        weeks.push(ActivityWeek {
+            week: start_of_week.timestamp().to_string(),
+            statuses: count(STATUSES_LOCAL, Kind::Basic).await?,
+            logins: count(LOGINS, Kind::Unique).await?,
+            registrations: count(ACCOUNTS_LOCAL, Kind::Basic).await?,
+        });
+    }
+    Ok(weeks)
 }
 
 async fn fetch_stats(state: &AppState) -> (i64, i64, i64) {

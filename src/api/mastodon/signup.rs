@@ -236,6 +236,8 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
         if !matches!(inserted, Ok(r) if r.rows_affected() > 0) {
             return;
         }
+        // `FollowService`: `ActivityTracker.increment('activity:interactions')`.
+        crate::activity_tracker::increment(state, crate::activity_tracker::INTERACTIONS).await;
         crate::push::create_and_push(
             state,
             target_id,
@@ -262,6 +264,8 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
     if !matches!(inserted, Ok(r) if r.rows_affected() > 0) {
         return;
     }
+    // `FollowService`: `ActivityTracker.increment('activity:interactions')`.
+    crate::activity_tracker::increment(state, crate::activity_tracker::INTERACTIONS).await;
     // `AccountStat`'s `update_index('accounts', :account)`.
     crate::search::elasticsearch::indexing::accounts(state, &[follower_account_id, target_id])
         .await;

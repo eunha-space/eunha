@@ -145,6 +145,11 @@ pub async fn vote_poll(
         .await?;
     }
 
+    // `VoteService`: `ActivityTracker.increment('activity:interactions')`.
+    if !form.choices.is_empty() {
+        crate::activity_tracker::increment(&state, crate::activity_tracker::INTERACTIONS).await;
+    }
+
     if let Err(e) = federate_poll_votes(&state, &poll, auth.account_id, &created_votes).await {
         tracing::warn!(poll_id = id, error = %e, "failed to enqueue ActivityPub poll vote");
     }
