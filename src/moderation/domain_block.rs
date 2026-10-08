@@ -77,7 +77,7 @@ pub async fn block(state: &AppState, id: i64, update: bool) -> Result<()> {
         .execute(&state.db)
         .await?;
     } else if severity == domain_severity::SUSPEND {
-        event = Some(suspend_accounts(state, &block).await?);
+        event = suspend_accounts(state, &block).await?;
     }
 
     if update {
@@ -109,8 +109,13 @@ pub async fn block(state: &AppState, id: i64, update: bool) -> Result<()> {
 }
 
 /// `suspend_accounts!`: suspend every account from the domain not already
-/// unavailable, then purge each, recording the follows it severs.
-async fn suspend_accounts(state: &AppState, block: &Block) -> Result<i64> {
+/// unavailable (`without_suspended`, which also leaves out an account whose
+/// deletion was requested), then purge each, recording the follows it severs.
+///
+/// The severance event is `domain_block_event`, made the first time an
+/// account is purged; a block that purges nobody makes none, and so notifies
+/// nobody. Returns it, if it was made.
+async fn suspend_accounts(state: &AppState, block: &Block) -> Result<Option<i64>> {
     sqlx::query(&format!(
         "UPDATE accounts a SET suspended_at = $2, suspension_origin = 0
          WHERE {BY_DOMAIN} AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL"
@@ -119,12 +124,7 @@ async fn suspend_accounts(state: &AppState, block: &Block) -> Result<i64> {
     .bind(block.created_at)
     .execute(&state.db)
     .await?;
-    let event_id = super::severance::create(
-        &state.db,
-        super::severance::kind::DOMAIN_BLOCK,
-        &block.domain,
-    )
-    .await?;
+    let mut event = None;
     let accounts: Vec<i64> = sqlx::query_scalar(&format!(
         "SELECT a.id FROM accounts a WHERE {BY_DOMAIN} AND a.suspended_at = $2 ORDER BY a.id"
     ))
@@ -133,6 +133,19 @@ async fn suspend_accounts(state: &AppState, block: &Block) -> Result<i64> {
     .fetch_all(&state.db)
     .await?;
     for account_id in accounts {
+        let event_id = match event {
+            Some(id) => id,
+            None => {
+                let id = super::severance::create(
+                    &state.db,
+                    super::severance::kind::DOMAIN_BLOCK,
+                    &block.domain,
+                )
+                .await?;
+                event = Some(id);
+                id
+            }
+        };
         crate::delete_account::call(
             state,
             account_id,
@@ -145,7 +158,7 @@ async fn suspend_accounts(state: &AppState, block: &Block) -> Result<i64> {
         )
         .await?;
     }
-    Ok(event_id)
+    Ok(event)
 }
 
 async fn unsilence_from(state: &AppState, block: &Block) -> Result<()> {

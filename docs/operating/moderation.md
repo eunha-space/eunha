@@ -137,9 +137,10 @@ created or changed, it applies to the accounts already known from them, as
 Mastodon's `BlockDomainService` does:
 
  -  *silence* limits each account, as an account action would;
- -  *suspend* suspends each account and purges its data. It records the
-    follows this cuts, and tells each local account that lost any with a
-    `severed_relationships` notification;
+ -  *suspend* suspends each account not already suspended or awaiting
+    deletion, and purges its data. It records the follows this cuts, and
+    tells each local account that lost any with a `severed_relationships`
+    notification; a block that purges no account records no severance;
  -  *noop* changes nothing about the accounts, but can still carry
     `reject_media` and `reject_reports`.
 

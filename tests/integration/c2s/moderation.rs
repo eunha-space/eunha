@@ -699,6 +699,48 @@ async fn test_domain_block_suspends_existing_accounts() {
     assert_eq!(logs, vec!["create".to_string(), "destroy".to_string()]);
 }
 
+/// `BlockDomainService` makes its severance event the first time it purges an
+/// account, so a suspend block that purges nobody records none. An account
+/// whose deletion was requested is not `without_suspended`, and is left alone.
+#[tokio::test]
+async fn test_domain_block_severance_event_only_when_an_account_goes() {
+    let ctx = TestContext::new("mod-dblock-lazy-event").await;
+    make_admin(&ctx).await;
+    let leaving = seed_remote(&ctx, "gone", "leaving.test").await;
+    sqlx::query("UPDATE accounts SET requested_deletion_at = now() WHERE id = $1")
+        .bind(leaving)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    for domain in ["nobody.test", "leaving.test"] {
+        let resp = ctx
+            .api
+            .post_json(
+                "/api/v1/admin/domain_blocks",
+                Some(&ctx.alice_token),
+                &json!({"domain": domain, "severity": "suspend"}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let events: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM relationship_severance_events WHERE target_name = $1",
+        )
+        .bind(domain)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        assert_eq!(events, 0, "{domain}: nobody was purged");
+    }
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1")
+            .bind(leaving)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(!suspended);
+}
+
 /// A silence block limits the domain's accounts, and changing it to noop lifts
 /// the limit it made.
 #[tokio::test]
