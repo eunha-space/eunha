@@ -3145,6 +3145,119 @@ async fn test_delete_account_reserves_username_and_destroys_user() {
     assert_eq!(requests, 0, "deletion request should be fulfilled");
 }
 
+/// Gives alice a collection featuring bob, a followed hashtag and a generated
+/// annual report: the associations `DeleteAccountService` purges by name.
+async fn give_alice_purgeable_associations(ctx: &TestContext) {
+    let collection: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Featured"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let collection_id = collection["collection"]["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/collections/{collection_id}/items"),
+            Some(&ctx.alice_token),
+            &json!({"account_id": ctx.bob_id}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/tags/purgedtag/follow",
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    sqlx::query(
+        "INSERT INTO generated_annual_reports (account_id, year, data, schema_version, created_at, updated_at)
+         VALUES ($1, 2025, '{}', 1, now(), now())",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
+/// What is left of alice's collections, their items, her tag follows and her
+/// annual reports.
+async fn alice_purgeable_associations(ctx: &TestContext) -> [i64; 4] {
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut counts = [0; 4];
+    for (count, sql) in counts.iter_mut().zip([
+        "SELECT count(*) FROM collections WHERE account_id = $1",
+        "SELECT count(*) FROM collection_items i JOIN collections c ON c.id = i.collection_id
+         WHERE c.account_id = $1",
+        "SELECT count(*) FROM tag_follows WHERE account_id = $1",
+        "SELECT count(*) FROM generated_annual_reports WHERE account_id = $1",
+    ]) {
+        *count = sqlx::query_scalar(sql)
+            .bind(alice)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    }
+    counts
+}
+
+/// `DeleteAccountService::ASSOCIATIONS_ON_PURGE` takes an account's
+/// collections and tag follows, and since Mastodon 4.7.2 its generated annual
+/// reports, even when the account row is kept.
+#[tokio::test]
+async fn test_delete_account_purges_collections_tag_follows_and_annual_reports() {
+    let ctx = TestContext::new("del-acct-assoc").await;
+    give_alice_purgeable_associations(&ctx).await;
+    assert_eq!(alice_purgeable_associations(&ctx).await, [1, 1, 1, 1]);
+
+    let resp = ctx
+        .api
+        .http
+        .delete(ctx.api.url("/api/v1/accounts"))
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .json(&json!({"password": "testpassword123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(alice_purgeable_associations(&ctx).await, [0, 0, 0, 0]);
+}
+
+/// A full purge deletes the account row, which `collections.account_id`'s
+/// foreign key (no ON DELETE) refuses while the account still owns a
+/// collection, so the collections have to go first.
+#[tokio::test]
+async fn test_purging_an_account_that_owns_a_collection() {
+    let ctx = TestContext::new("del-acct-coll").await;
+    give_alice_purgeable_associations(&ctx).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+
+    Box::pin(eunha::delete_account::call(
+        &ctx.state,
+        alice,
+        eunha::delete_account::Options::purge(),
+    ))
+    .await
+    .unwrap();
+
+    let account: Option<i64> = sqlx::query_scalar("SELECT id FROM accounts WHERE id = $1")
+        .bind(alice)
+        .fetch_optional(&ctx.db)
+        .await
+        .unwrap();
+    assert!(account.is_none(), "the account row should be gone");
+    assert_eq!(alice_purgeable_associations(&ctx).await, [0, 0, 0, 0]);
+}
+
 /// Statuses attached to an unresolved report survive the purge so moderators
 /// can still act on them (`reported_status_ids`), while everything else —
 /// including uploads never attached to a status — still goes.

@@ -1106,7 +1106,25 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
         }
     }
 
-    // ASSOCIATIONS_ON_SUSPEND
+    // `collections`, destroyed one by one (it is not among
+    // ASSOCIATIONS_WITHOUT_SIDE_EFFECTS): each takes its notifications
+    // (`dependent: :destroy`), and its items and reports go by their foreign
+    // keys. `collections.account_id` itself has no ON DELETE, so an account
+    // that owns one cannot be deleted until they are gone.
+    let collections: Vec<i64> = sqlx::query_scalar!(
+        "SELECT id FROM collections WHERE account_id = $1",
+        account_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for collection in collections {
+        crate::api::mastodon::collections::destroy_notifications(&state.db, collection).await?;
+        sqlx::query!("DELETE FROM collections WHERE id = $1", collection)
+            .execute(&state.db)
+            .await?;
+    }
+
+    // The rest of ASSOCIATIONS_ON_PURGE.
     let statements: &[&str] = &[
         "DELETE FROM account_notes WHERE account_id = $1",
         "DELETE FROM account_pins WHERE account_id = $1",
@@ -1135,6 +1153,9 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
         "DELETE FROM report_notes WHERE account_id = $1",
         "DELETE FROM scheduled_statuses WHERE account_id = $1",
         "DELETE FROM status_pins WHERE account_id = $1",
+        "DELETE FROM tag_follows WHERE account_id = $1",
+        // Mastodon 4.7.2 (#40394).
+        "DELETE FROM generated_annual_reports WHERE account_id = $1",
     ];
     // ASSOCIATIONS_ON_DESTROY
     let on_destroy: &[&str] = &[
