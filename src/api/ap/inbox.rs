@@ -119,6 +119,32 @@ pub(super) async fn acquire_create_lock(
     None
 }
 
+/// `with_redis_lock(lock_name)` for an inbound activity: waited for a
+/// moment, then, still held by another, `Mastodon::RaceConditionError`, for
+/// the activity to be tried again later.
+pub(super) async fn acquire_lockable_or_retry(
+    state: &AppState,
+    lock_name: &str,
+) -> AppResult<crate::redis_lock::RedisLock> {
+    for attempt in 0..40 {
+        if let Some(lock) = crate::redis_lock::try_acquire_lockable(
+            state,
+            lock_name,
+            crate::redis_lock::DEFAULT_TTL_MS,
+        )
+        .await
+        {
+            return Ok(lock);
+        }
+        if attempt < 39 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+    Err(crate::error::AppError::Internal(anyhow::anyhow!(
+        "Could not acquire lock for {lock_name}, try again later"
+    )))
+}
+
 /// An activity ojak has received and authenticated: queued for the ingress
 /// worker, or, in tests, handled at once.
 ///

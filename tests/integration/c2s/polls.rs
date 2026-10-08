@@ -25,6 +25,58 @@ async fn post_poll_status(ctx: &TestContext) -> Value {
         .unwrap()
 }
 
+/// `VoteService` votes under `with_redis_lock("vote:<poll>:<account>")`, and
+/// `ReblogsController#create` boosts under `"reblog:<account>:<status>"`:
+/// held by another, either is a 503; released, it goes through.
+#[tokio::test]
+async fn test_votes_and_boosts_take_their_locks() {
+    let ctx = TestContext::new("poll-vote-lock").await;
+    let status: Value = post_poll_status(&ctx).await;
+    let poll_id = status["poll"]["id"].as_str().unwrap().to_owned();
+    let status_id = status["id"].as_str().unwrap().to_owned();
+
+    let held = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:vote:{poll_id}:{}", ctx.bob_id),
+        60_000,
+    )
+    .await
+    .unwrap();
+    let vote_path = format!("/api/v1/polls/{poll_id}/votes");
+    let choices = json!({ "choices": [0] });
+    let busy = ctx
+        .api
+        .post_json(&vote_path, Some(&ctx.bob_token), &choices)
+        .await;
+    assert_eq!(busy.status(), StatusCode::SERVICE_UNAVAILABLE);
+    held.release().await;
+    let voted = ctx
+        .api
+        .post_json(&vote_path, Some(&ctx.bob_token), &choices)
+        .await;
+    assert_eq!(voted.status(), StatusCode::OK);
+
+    let held = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:reblog:{}:{status_id}", ctx.bob_id),
+        60_000,
+    )
+    .await
+    .unwrap();
+    let reblog_path = format!("/api/v1/statuses/{status_id}/reblog");
+    let busy = ctx
+        .api
+        .post_json(&reblog_path, Some(&ctx.bob_token), &json!({}))
+        .await;
+    assert_eq!(busy.status(), StatusCode::SERVICE_UNAVAILABLE);
+    held.release().await;
+    let boosted = ctx
+        .api
+        .post_json(&reblog_path, Some(&ctx.bob_token), &json!({}))
+        .await;
+    assert_eq!(boosted.status(), StatusCode::OK);
+}
+
 /// GET /api/v1/polls/:id returns the poll data.
 #[tokio::test]
 async fn test_poll_get() {

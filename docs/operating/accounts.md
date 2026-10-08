@@ -194,7 +194,10 @@ token with the `profile` scope (401 without a token, 403 without the scope):
 Push notifications
 ------------------
 
-A push to a subscription made with `/api/v1/push/subscription` is sent as
+`POST /api/v1/push/subscription` destroys the token's subscription and makes
+a new one, with a new id, under the member's `lock:push_subscription:<user>`
+lock; a request that finds it held is a 503. A push to a subscription made
+with `/api/v1/push/subscription` is sent as
 Mastodon's `Web::PushNotificationWorker` sends it: `aes128gcm` with RFC 8292
 VAPID for a subscription made with `standard`, `aesgcm` otherwise, with a
 48-hour `TTL`, `Urgency: normal`, and an `Unsubscribe-URL`. That URL,

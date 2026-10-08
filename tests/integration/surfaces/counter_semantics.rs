@@ -795,3 +795,69 @@ async fn test_a_scheduled_direct_message_is_not_counted() {
         "a scheduled direct message must not raise the public post count"
     );
 }
+
+/// `Announce#perform` runs under `with_redis_lock("announce:<object>")`:
+/// held by another, the activity fails, to be tried again, and stores
+/// nothing; released, it goes through.
+#[tokio::test]
+async fn test_a_federated_boost_takes_the_announce_lock() {
+    let ctx = TestContext::new("counters-announce-lock").await;
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "worth boosting", "public")
+        .await;
+    let original_uri: String = sqlx::query_scalar!(
+        "SELECT uri FROM statuses WHERE id = $1",
+        original["id"].as_str().unwrap().parse::<i64>().unwrap()
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+    .unwrap();
+    let domain = "announce-lock.invalid";
+    let actor_uri = format!("https://{domain}/users/booster");
+    let booster_id = eunha::snowflake::next_id();
+    sqlx::query!(
+        r#"INSERT INTO accounts
+             (id, username, domain, display_name, note, url, uri, public_key,
+              inbox_url, outbox_url, created_at, updated_at)
+           VALUES ($1, 'booster', $2, 'booster', '', $3::text, $3::text, 'remote-key',
+                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+        booster_id,
+        domain,
+        actor_uri,
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let announce = serde_json::json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("https://{domain}/activities/announce-1"),
+        "type": "Announce",
+        "actor": actor_uri,
+        "object": original_uri,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    });
+
+    let held = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:announce:{original_uri}"),
+        60_000,
+    )
+    .await
+    .unwrap();
+    // Failed inline, it is queued to be tried again.
+    eunha::api::ap::inbox::received(&ctx.state, announce)
+        .await
+        .unwrap();
+    assert_eq!(
+        statuses_count(&ctx, &booster_id.to_string()).await,
+        0,
+        "stored while another held the lock"
+    );
+    held.release().await;
+    eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
+        .await
+        .unwrap();
+    assert_eq!(statuses_count(&ctx, &booster_id.to_string()).await, 1);
+}

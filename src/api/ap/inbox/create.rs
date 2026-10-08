@@ -1038,30 +1038,41 @@ pub(super) async fn handle_poll_vote_note(
         return Ok(true);
     }
 
-    let previous: Vec<i32> = sqlx::query_scalar!(
-        "SELECT choice FROM poll_votes WHERE poll_id = $1 AND account_id = $2",
-        poll.id,
-        voter_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let already_voted = !previous.is_empty();
-    // `additional_voting_not_allowed?`: any vote on a single-choice poll, the
-    // same choice again on a multiple-choice one.
-    if (!poll.multiple && already_voted) || previous.contains(&choice) {
-        return Ok(true);
+    // Under `with_redis_lock("vote:<poll>:<account>")`, as `VoteService`
+    // takes it; held by another, the activity is tried again later.
+    let lock =
+        super::acquire_lockable_or_retry(state, &format!("vote:{}:{voter_id}", poll.id)).await?;
+    let voted = async {
+        let previous: Vec<i32> = sqlx::query_scalar!(
+            "SELECT choice FROM poll_votes WHERE poll_id = $1 AND account_id = $2",
+            poll.id,
+            voter_id,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        let already_voted = !previous.is_empty();
+        // `additional_voting_not_allowed?`: any vote on a single-choice poll,
+        // the same choice again on a multiple-choice one.
+        if (!poll.multiple && already_voted) || previous.contains(&choice) {
+            return Ok::<_, crate::error::AppError>(None);
+        }
+        sqlx::query!(
+            r#"INSERT INTO poll_votes (account_id, poll_id, choice, uri, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, now(), now())"#,
+            voter_id,
+            poll.id,
+            choice,
+            vote_uri,
+        )
+        .execute(&state.db)
+        .await?;
+        Ok(Some(already_voted))
     }
-
-    sqlx::query!(
-        r#"INSERT INTO poll_votes (account_id, poll_id, choice, uri, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, now(), now())"#,
-        voter_id,
-        poll.id,
-        choice,
-        vote_uri,
-    )
-    .execute(&state.db)
-    .await?;
+    .await;
+    lock.release().await;
+    let Some(already_voted) = voted? else {
+        return Ok(true);
+    };
 
     // `PollVote#increment_counter_cache`, and `increment_voters_count!`
     // unless the voter had voted already.

@@ -125,32 +125,27 @@ pub async fn create_subscription(
 
     let standard = body.subscription.standard.unwrap_or(false);
     let user_id = auth.user_id.ok_or(AppError::Unauthorized)?;
-    // One push subscription per access token: replace the existing one (endpoint
-    // and keys may change) rather than keying on the endpoint.
-    let row = if let Some(row) = sqlx::query!(
-        r#"UPDATE web_push_subscriptions
-           SET endpoint = $2,
-               key_p256dh = $3,
-               key_auth = $4,
-               data = $5,
-               standard = $6,
-               user_id = $7,
-               updated_at = now()
-           WHERE access_token_id = $1
-           RETURNING id, standard, data as "data: serde_json::Value""#,
-        auth.token_id,
-        body.subscription.endpoint,
-        body.subscription.keys.p256dh,
-        body.subscription.keys.auth,
-        data,
-        standard,
-        user_id,
+    // Under `with_redis_lock("push_subscription:<user>")`, which, held by
+    // another, raises `RaceConditionError`: the token's subscriptions
+    // destroyed (`destroy_web_push_subscriptions!`), and a new one made.
+    let lock = crate::redis_lock::try_acquire_lockable(
+        &state,
+        &format!("push_subscription:{user_id}"),
+        crate::redis_lock::DEFAULT_TTL_MS,
     )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        (row.id, row.standard, row.data)
-    } else {
+    .await
+    .ok_or_else(|| {
+        AppError::ServiceUnavailable(
+            "There was a temporary problem serving your request, please try again".into(),
+        )
+    })?;
+    let created: AppResult<_> = async {
+        sqlx::query!(
+            "DELETE FROM web_push_subscriptions WHERE access_token_id = $1",
+            auth.token_id,
+        )
+        .execute(&state.db)
+        .await?;
         let row = sqlx::query!(
             r#"INSERT INTO web_push_subscriptions
                  (access_token_id, endpoint, key_p256dh, key_auth, data, standard, user_id, created_at, updated_at)
@@ -166,8 +161,11 @@ pub async fn create_subscription(
         )
         .fetch_one(&state.db)
         .await?;
-        (row.id, row.standard, row.data)
-    };
+        Ok((row.id, row.standard, row.data))
+    }
+    .await;
+    lock.release().await;
+    let row = created?;
 
     Ok(Json(PushSubscription {
         id: row.0.to_string(),

@@ -218,6 +218,28 @@ pub(super) async fn remove_remote_status(state: &AppState, status_id: i64) -> Ap
 
 pub(super) async fn handle_announce(
     state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    activity: &Value,
+) -> AppResult<()> {
+    // `with_redis_lock("announce:#{value_or_id(@object)}")`, so that two
+    // copies of one boost are not both stored. Eunha takes it before the
+    // checks Mastodon makes first, which only read.
+    let Some(object_id) = activity
+        .get("object")
+        .and_then(crate::federation::json_ld::value_or_id)
+        .map(str::to_owned)
+    else {
+        return announce(state, instance, activity).await;
+    };
+    let lock = super::acquire_lockable_or_retry(state, &format!("announce:{object_id}")).await?;
+    let result = Box::pin(announce(state, instance, activity)).await;
+    lock.release().await;
+    result
+}
+
+/// `ActivityPub::Activity::Announce#perform`, under its lock.
+async fn announce(
+    state: &AppState,
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
 ) -> AppResult<()> {

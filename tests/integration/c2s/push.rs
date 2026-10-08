@@ -136,6 +136,62 @@ async fn test_push_subscription_idempotent() {
     );
 }
 
+/// `SubscriptionsController#create` destroys the token's subscription and
+/// makes a new one, under `with_redis_lock("push_subscription:<user>")`:
+/// held by another, the request is a 503; released, it goes through.
+#[tokio::test]
+async fn test_push_subscription_create_takes_the_users_lock() {
+    let ctx = TestContext::new("push-lock").await;
+    let first: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &fake_sub_payload("https://push.example.com/first"),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let user_id = crate::helpers::user_id_for(&ctx.db, ctx.alice_id.parse::<i64>().unwrap()).await;
+    let held = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:push_subscription:{user_id}"),
+        60_000,
+    )
+    .await
+    .unwrap();
+    let busy = ctx
+        .api
+        .post_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &fake_sub_payload("https://push.example.com/busy"),
+        )
+        .await;
+    assert_eq!(busy.status(), StatusCode::SERVICE_UNAVAILABLE);
+    held.release().await;
+    let second: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &fake_sub_payload("https://push.example.com/second"),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_ne!(second["id"], first["id"], "a new subscription");
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM web_push_subscriptions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+}
+
 /// GET /api/v1/push/subscription returns 404 when no subscription exists.
 #[tokio::test]
 async fn test_push_subscription_get_when_none() {

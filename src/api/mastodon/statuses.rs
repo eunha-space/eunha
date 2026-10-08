@@ -778,6 +778,21 @@ pub async fn reblog_status(
         }
     };
 
+    // `ReblogsController#create`: `ReblogService` under
+    // `with_redis_lock("reblog:<account>:<status>")`, which, held by another,
+    // raises `RaceConditionError`.
+    let lock = crate::redis_lock::try_acquire_lockable(
+        &state,
+        &format!("reblog:{}:{id}", auth.account_id),
+        crate::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await
+    .ok_or_else(|| {
+        AppError::ServiceUnavailable(
+            "There was a temporary problem serving your request, please try again".into(),
+        )
+    })?;
+    let result: AppResult<Json<Status>> = async {
     // Idempotent: if already reblogged, return the existing boost
     let existing = sqlx::query_as!(
         DbStatus,
@@ -970,6 +985,10 @@ pub async fn reblog_status(
     }
 
     Ok(Json(api_boost))
+    }
+    .await;
+    lock.release().await;
+    result
 }
 
 // ── POST /api/v1/statuses/:id/unreblog ────────────────────────────────────

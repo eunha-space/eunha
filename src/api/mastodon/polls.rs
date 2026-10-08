@@ -137,59 +137,28 @@ pub async fn vote_poll(
         ));
     }
 
-    let option_count = poll.options.len() as i32;
     if !poll.multiple && form.choices.len() > 1 {
         return Err(AppError::Unprocessable(
             "Multiple choices not allowed".into(),
         ));
     }
 
-    // Single-choice: block re-voting entirely. Multi-choice: only block same choice (ON CONFLICT).
-    if !poll.multiple {
-        let already_voted = sqlx::query_scalar!(
-            "SELECT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
-            id,
-            auth.account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(false);
-        if already_voted {
-            return Err(AppError::Unprocessable("Already voted".into()));
-        }
-    }
-
-    let was_first_vote = sqlx::query_scalar!(
-        "SELECT NOT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
-        id,
-        auth.account_id,
+    // `VoteService`: the votes made under `with_redis_lock("vote:<poll>:<account>")`,
+    // which, held by another, raises `RaceConditionError`.
+    let lock = crate::redis_lock::try_acquire_lockable(
+        &state,
+        &format!("vote:{id}:{}", auth.account_id),
+        crate::redis_lock::DEFAULT_TTL_MS,
     )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(true);
-
-    let mut created_votes: Vec<(i64, i32)> = Vec::new();
-    let mut new_voter = was_first_vote;
-    for choice in &form.choices {
-        if *choice < 0 || *choice >= option_count {
-            return Err(AppError::Unprocessable("Invalid choice index".into()));
-        }
-        if let Some(vote) = sqlx::query!(
-            r#"INSERT INTO poll_votes (poll_id, account_id, choice, created_at, updated_at)
-               VALUES ($1, $2, $3, now(), now())
-               ON CONFLICT DO NOTHING
-               RETURNING id, choice"#,
-            id,
-            auth.account_id,
-            choice,
+    .await
+    .ok_or_else(|| {
+        AppError::ServiceUnavailable(
+            "There was a temporary problem serving your request, please try again".into(),
         )
-        .fetch_optional(&state.db)
-        .await?
-        {
-            count_vote(&state.db, id, vote.choice, std::mem::take(&mut new_voter)).await?;
-            created_votes.push((vote.id, vote.choice));
-        }
-    }
+    })?;
+    let created_votes = Box::pin(cast_votes(&state, &poll, auth.account_id, &form.choices)).await;
+    lock.release().await;
+    let created_votes = created_votes?;
 
     // `VoteService`: `ActivityTracker.increment('activity:interactions')`.
     if !form.choices.is_empty() {
@@ -231,6 +200,66 @@ pub async fn vote_poll(
     poll_from_db(&state, &poll, Some(auth.account_id))
         .await
         .map(Json)
+}
+
+/// What `VoteService` does under its lock: whether the account voted
+/// already, then a vote for each choice. The votes made, by id and choice.
+async fn cast_votes(
+    state: &AppState,
+    poll: &models::Poll,
+    account_id: i64,
+    choices: &[i32],
+) -> AppResult<Vec<(i64, i32)>> {
+    let id = poll.id;
+    let option_count = poll.options.len() as i32;
+    // Single-choice: block re-voting entirely. Multi-choice: only block same choice (ON CONFLICT).
+    if !poll.multiple {
+        let already_voted = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
+            id,
+            account_id,
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(false);
+        if already_voted {
+            return Err(AppError::Unprocessable("Already voted".into()));
+        }
+    }
+
+    let was_first_vote = sqlx::query_scalar!(
+        "SELECT NOT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
+        id,
+        account_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(true);
+
+    let mut created_votes: Vec<(i64, i32)> = Vec::new();
+    let mut new_voter = was_first_vote;
+    for choice in choices {
+        if *choice < 0 || *choice >= option_count {
+            return Err(AppError::Unprocessable("Invalid choice index".into()));
+        }
+        if let Some(vote) = sqlx::query!(
+            r#"INSERT INTO poll_votes (poll_id, account_id, choice, created_at, updated_at)
+               VALUES ($1, $2, $3, now(), now())
+               ON CONFLICT DO NOTHING
+               RETURNING id, choice"#,
+            id,
+            account_id,
+            choice,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            count_vote(&state.db, id, vote.choice, std::mem::take(&mut new_voter)).await?;
+            created_votes.push((vote.id, vote.choice));
+        }
+    }
+
+    Ok(created_votes)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
