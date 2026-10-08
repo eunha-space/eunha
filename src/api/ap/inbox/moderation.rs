@@ -9,69 +9,101 @@ use crate::{error::AppResult, state::AppState};
 
 use super::{delete_arrived_first, resolve_or_fetch_remote_account};
 
+/// `ActivityPub::Activity::Block#perform`: the sender blocks a local
+/// account, which ends the follows between them as `UnfollowService` ends
+/// them, telling the sender, and withdraws the local account's request to
+/// follow it.
 pub(super) async fn handle_block(state: &AppState, activity: &Value) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-    let activity_uri = activity.get("id").and_then(|i| i.as_str()).unwrap_or("");
-
-    // Skip a Block whose Undo already arrived out of order.
-    if delete_arrived_first(state, actor_uri, activity_uri).await {
-        return Ok(());
-    }
-
+    let activity_uri = activity
+        .get("id")
+        .and_then(|i| i.as_str())
+        .filter(|id| !id.is_empty());
     let object_uri = activity
         .get("object")
-        .and_then(|o| {
-            if o.is_string() {
-                o.as_str()
-            } else {
-                o.get("id").and_then(|i| i.as_str())
-            }
-        })
-        .unwrap_or("");
+        .and_then(value_or_id)
+        .filter(|uri| !uri.is_empty());
 
-    // Only process if the blocked account is local
-    let Some(target_id) = sqlx::query_scalar!(
-        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NULL",
-        object_uri
+    // `account_from_uri(object_uri)`, when it is local. A local account
+    // Mastodon made has no `uri` of its own, so it is found by its path.
+    let Some(target_id) = (match object_uri {
+        Some(uri) => crate::federation::local_uri::account(state, uri).await,
+        None => None,
+    }) else {
+        return Ok(());
+    };
+    let target_is_local = sqlx::query_scalar!(
+        r#"SELECT domain IS NULL AS "local!" FROM accounts WHERE id = $1"#,
+        target_id,
     )
     .fetch_optional(&state.db)
     .await?
-    else {
+    .unwrap_or(false);
+    if !target_is_local {
         return Ok(());
-    };
+    }
 
     let blocker_id = resolve_or_fetch_remote_account(state, actor_uri).await?;
 
-    sqlx::query!(
-        "INSERT INTO blocks (account_id, target_account_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING",
-        blocker_id, target_id,
-    ).execute(&state.db).await?;
-
-    // Remove mutual follows
-    let deleted = sqlx::query!(
-        "DELETE FROM follows WHERE (account_id=$1 AND target_account_id=$2) OR (account_id=$2 AND target_account_id=$1) RETURNING account_id, target_account_id",
-        blocker_id, target_id,
-    ).fetch_all(&state.db).await?;
-    for row in &deleted {
-        // `AccountStat`'s `update_index('accounts', :account)`.
-        crate::search::elasticsearch::indexing::accounts(
-            state,
-            &[row.account_id, row.target_account_id],
-        )
-        .await;
-        let _ =
-            crate::counters::on_follow_removed(state, row.account_id, row.target_account_id).await;
+    // A block already made only takes the activity's id.
+    if let Some(block_id) = sqlx::query_scalar!(
+        "SELECT id FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+        blocker_id,
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    {
+        if let Some(uri) = activity_uri {
+            sqlx::query!(
+                "UPDATE blocks SET uri = $2, updated_at = now() WHERE id = $1",
+                block_id,
+                uri,
+            )
+            .execute(&state.db)
+            .await?;
+        }
+        return Ok(());
     }
-    sqlx::query!(
-        "DELETE FROM follow_requests WHERE (account_id=$1 AND target_account_id=$2) OR (account_id=$2 AND target_account_id=$1)",
-        blocker_id, target_id,
-    ).execute(&state.db).await?;
-    // Mirror Mastodon's FollowRequest dependent: :destroy — clear the local
-    // target's follow_request notification from the remote blocker.
-    sqlx::query!(
-        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
-        target_id, blocker_id,
-    ).execute(&state.db).await?;
+
+    let follows = |a: i64, b: i64| async move {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM follows
+                              WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+            a,
+            b,
+        )
+        .fetch_one(&state.db)
+        .await
+    };
+    if follows(blocker_id, target_id).await? {
+        crate::api::mastodon::accounts::unfollow(state, blocker_id, target_id, false).await?;
+    }
+    if follows(target_id, blocker_id).await? {
+        crate::api::mastodon::accounts::unfollow(state, target_id, blocker_id, false).await?;
+    }
+    // `RejectFollowService.new.call(target_account, @account) if
+    // target_account.requested?(@account)`.
+    crate::api::mastodon::accounts::reject_follow(state, target_id, blocker_id).await?;
+
+    // Skip a Block whose Undo already arrived out of order.
+    if !delete_arrived_first(state, actor_uri, activity_uri.unwrap_or("")).await {
+        crate::api::mastodon::accounts::queue_block_worker(state, blocker_id, target_id).await;
+        // `@account.block!(target_account, uri: @json['id'])`, whose
+        // `set_uri` names a block that came without an id.
+        let uri = activity_uri.map(str::to_owned).unwrap_or_else(|| {
+            crate::federation::relationships::generate_uri(&state.instance.domain)
+        });
+        sqlx::query!(
+            r#"INSERT INTO blocks (account_id, target_account_id, uri, created_at, updated_at)
+               VALUES ($1, $2, $3, now(), now()) ON CONFLICT DO NOTHING"#,
+            blocker_id,
+            target_id,
+            uri,
+        )
+        .execute(&state.db)
+        .await?;
+    }
 
     Ok(())
 }

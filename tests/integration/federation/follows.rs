@@ -228,3 +228,91 @@ async fn test_an_embedded_follow_is_answered_by_its_accounts() {
     receive(&ctx, answer("Reject", &rita_uri, embedded(&alice_uri))).await;
     assert!(!exists(&ctx, "follows", alice, rita).await);
 }
+
+async fn block_uri(ctx: &TestContext, from: i64, to: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT uri FROM blocks WHERE account_id = $1 AND target_account_id = $2")
+        .bind(from)
+        .bind(to)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+}
+
+/// An inbound `Block` of a local account, named by its path as a local
+/// account Mastodon made has no `uri`: the follows between them end as
+/// `UnfollowService` ends them, telling the blocker (a `Reject` of its
+/// follow, an `Undo` of ours), the local account's request to follow it is
+/// withdrawn, and the block keeps the activity's id. Delivered again, it only
+/// takes the new id.
+#[tokio::test]
+async fn test_an_inbound_block_ends_follows_as_unfollow_service_does() {
+    let ctx = TestContext::new("follows-inbound-block").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    let bob_uri = format!("https://{}/users/bob", ctx.domain);
+    let (rita, rita_uri) = seed_remote(&ctx, "rita").await;
+    let ritas_follow = "https://rita.invalid/follows/1";
+    let alices_follow = format!("https://{}/alices-follow", ctx.domain);
+    follow(&ctx, rita, alice, ritas_follow).await;
+    follow(&ctx, alice, rita, &alices_follow).await;
+    let ritas_follow_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM follows WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(rita)
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    request(
+        &ctx,
+        bob,
+        rita,
+        &format!("https://{}/bobs-request", ctx.domain),
+    )
+    .await;
+
+    let block = |id: &str, object: &str| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": id,
+            "type": "Block",
+            "actor": rita_uri,
+            "object": object,
+        })
+    };
+    receive(&ctx, block("https://rita.invalid/blocks/1", &alice_uri)).await;
+    assert!(!exists(&ctx, "follows", rita, alice).await);
+    assert!(!exists(&ctx, "follows", alice, rita).await);
+    assert_eq!(
+        block_uri(&ctx, rita, alice).await.as_deref(),
+        Some("https://rita.invalid/blocks/1")
+    );
+
+    let rejects = queued(&ctx, "Reject").await;
+    assert_eq!(rejects.len(), 1, "{rejects:?}");
+    let (reject, inbox) = &rejects[0];
+    assert_eq!(inbox, &format!("{rita_uri}/inbox"));
+    assert_eq!(
+        reject["id"],
+        format!("{alice_uri}#rejects/follows/{ritas_follow_id}")
+    );
+    assert_eq!(reject["object"]["id"], ritas_follow);
+    let undos = queued(&ctx, "Undo").await;
+    assert_eq!(undos.len(), 1, "{undos:?}");
+    assert_eq!(undos[0].0["object"]["id"], alices_follow.as_str());
+
+    receive(&ctx, block("https://rita.invalid/blocks/2", &bob_uri)).await;
+    assert!(!exists(&ctx, "follow_requests", bob, rita).await);
+    assert!(exists(&ctx, "blocks", rita, bob).await);
+
+    // Delivered again under another id, the block only takes it.
+    follow(&ctx, alice, rita, &alices_follow).await;
+    receive(&ctx, block("https://rita.invalid/blocks/3", &alice_uri)).await;
+    assert!(exists(&ctx, "follows", alice, rita).await);
+    assert_eq!(
+        block_uri(&ctx, rita, alice).await.as_deref(),
+        Some("https://rita.invalid/blocks/3")
+    );
+}

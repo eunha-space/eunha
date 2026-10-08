@@ -26,7 +26,7 @@ mod search;
 pub use search::search_accounts;
 mod mutes_blocks;
 pub use mutes_blocks::{
-    block, block_account, get_blocks, get_mutes, mute, mute_account,
+    block, block_account, get_blocks, get_mutes, mute, mute_account, queue_block_worker,
     queue_expiries as queue_mute_expiries, unblock, unblock_account, unmute, unmute_account,
     BlockWorker, DeleteMuteWorker, MuteWorker,
 };
@@ -43,7 +43,7 @@ pub use aliases::{
 mod relationships;
 pub use relationships::{
     follow, follow_account, get_account_followers, get_account_following, get_relationships,
-    unfollow, unfollow_account, FollowOptions, FollowOutcome,
+    reject_follow, unfollow, unfollow_account, FollowOptions, FollowOutcome,
 };
 mod credentials;
 pub use credentials::{

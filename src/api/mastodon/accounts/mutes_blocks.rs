@@ -710,7 +710,7 @@ pub async fn after_block(state: &AppState, account_id: i64, target_id: i64) -> s
 
 /// `BlockWorker.perform_async`, or the worker at once when the tests ask
 /// for background work inline.
-async fn queue_block_worker(state: &AppState, account_id: i64, target_id: i64) {
+pub async fn queue_block_worker(state: &AppState, account_id: i64, target_id: i64) {
     if feed::sync_fanout() {
         if let Err(error) = after_block(state, account_id, target_id).await {
             tracing::warn!(%error, account_id, target_id, "AfterBlockService failed");

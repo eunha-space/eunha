@@ -438,112 +438,197 @@ pub async fn unfollow_account(
         .map(Json)
 }
 
-/// Mastodon's `UnfollowService`: remove the follow, or cancel the request,
-/// and tell a remote followee. `skip_unmerge` leaves the followee's posts in
-/// the follower's home feed, as a migrated follow does.
+/// Mastodon's `UnfollowService`: remove the follow, or else cancel the
+/// request. A remote followee is told with an `Undo` of the follow; a remote
+/// follower whose follow of a local account goes is told with a `Reject` of
+/// it, as "remove follower" and a block tell it. `skip_unmerge` leaves the
+/// followee's posts in the follower's home feed, as a migrated follow does.
 pub async fn unfollow(
     state: &AppState,
     follower_id: i64,
     target_id: i64,
     skip_unmerge: bool,
 ) -> AppResult<()> {
-    // List members go with the follow, so the lists holding the followee are
-    // read first.
+    // `unfollow!`. List members go with the follow, so the lists holding the
+    // followee are read first.
     let list_ids = if skip_unmerge {
         Vec::new()
     } else {
         crate::home_feed::lists_with_account(state, follower_id, target_id).await
     };
     let deleted = sqlx::query!(
-        "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
+        "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
         follower_id,
         target_id,
     )
     .fetch_optional(&state.db)
     .await?;
-
-    let follow_uri_opt: Option<String> = if let Some(ref d) = deleted {
+    if let Some(follow) = deleted {
+        // `has_one :notification, dependent: :destroy`.
+        sqlx::query!(
+            "DELETE FROM notifications WHERE activity_type = 'Follow' AND activity_id = $1",
+            follow.id,
+        )
+        .execute(&state.db)
+        .await?;
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[follower_id, target_id]).await;
         crate::counters::on_follow_removed(state, follower_id, target_id).await?;
-        d.uri.clone()
-    } else {
-        // Canceling a pending request: keep its uri so the Undo(Follow)
-        // references the original Follow activity (matches Mastodon).
-        let cancelled = sqlx::query!(
-            "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
-            follower_id,
-            target_id,
-        )
-        .fetch_optional(&state.db)
-        .await?;
-        if cancelled.is_some() {
-            // Mirror Mastodon's FollowRequest dependent: :destroy — clear the
-            // recipient's follow_request notification for the cancelled request.
-            sqlx::query!(
-                "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
-                target_id,
-                follower_id,
-            )
-            .execute(&state.db)
-            .await?;
-        }
-        cancelled.and_then(|r| r.uri)
-    };
 
-    // `UnmergeWorker`s of the ex-followee's posts out of the home feed and the
-    // lists that held it. Only when an accepted follow was removed; a
-    // cancelled request never fanned anything out.
-    if deleted.is_some() && !skip_unmerge {
-        crate::home_feed::unmerge_from_home_and_lists(state, target_id, follower_id, list_ids)
-            .await;
+        let follower = fetch_account(state, follower_id).await?;
+        let target = fetch_account(state, target_id).await?;
+        if target.domain.is_none() && follower.domain.is_some() {
+            // `send_reject_follow`.
+            send_reject_follow(state, &target, &follower, follow.id, follow.uri.as_deref()).await;
+        } else if target.domain.is_some() {
+            // `send_undo_follow`.
+            send_undo_follow(state, &follower, &target, follow.id, follow.uri.as_deref()).await;
+        }
+
+        // `UnmergeWorker`s of the ex-followee's posts out of the home feed
+        // and the lists that held it.
+        if !skip_unmerge {
+            crate::home_feed::unmerge_from_home_and_lists(state, target_id, follower_id, list_ids)
+                .await;
+        }
+        return Ok(());
     }
 
-    // Send Undo(Follow) to remote target
+    // `undo_follow_request!`.
+    let Some(request) = sqlx::query!(
+        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
+        follower_id,
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    // Mirror Mastodon's FollowRequest dependent: :destroy — clear the
+    // recipient's follow_request notification for the cancelled request.
+    sqlx::query!(
+        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
+        target_id,
+        follower_id,
+    )
+    .execute(&state.db)
+    .await?;
     let target = fetch_account(state, target_id).await?;
     if target.domain.is_some() {
-        let requester = fetch_account(state, follower_id).await?;
-        if crate::federation::keypair::has_signing_key(state, requester.id)
-            .await
-            .unwrap_or(false)
-        {
-            let actor_url =
-                crate::federation::tag::account_uri_of(&state.instance.domain, &requester);
-            let key_id = format!("{}#main-key", actor_url);
-            let follow_uri = follow_uri_opt.clone().unwrap_or_else(|| actor_url.clone());
-            let undo_id = format!(
-                "https://{}/activities/{}",
-                state.instance.domain,
-                crate::snowflake::next_id()
-            );
-            let undo = crate::federation::activity::undo_follow(
-                &undo_id,
-                &actor_url,
-                &follow_uri,
-                &actor_url,
-                &target.uri.clone().unwrap_or_default(),
-            )?;
-            let inbox = if !target.shared_inbox_url.is_empty() {
-                target.shared_inbox_url.clone()
-            } else {
-                target.inbox_url.clone()
-            };
-            if !inbox.is_empty() {
-                if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    state,
-                    undo,
-                    vec![inbox],
-                    key_id,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "failed to enqueue Undo(Follow)");
-                }
-            }
-        }
+        let follower = fetch_account(state, follower_id).await?;
+        send_undo_follow(
+            state,
+            &follower,
+            &target,
+            request.id,
+            request.uri.as_deref(),
+        )
+        .await;
     }
-
     Ok(())
+}
+
+/// Mastodon's `RejectFollowService`: `source_id`'s request to follow
+/// `target_id` is rejected (`FollowRequest#reject!`, which destroys it and
+/// its notification), and a remote requester is told. Says whether there
+/// was a request.
+pub async fn reject_follow(state: &AppState, source_id: i64, target_id: i64) -> AppResult<bool> {
+    let Some(request) = sqlx::query!(
+        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
+        source_id,
+        target_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(false);
+    };
+    sqlx::query!(
+        "DELETE FROM notifications WHERE activity_type = 'FollowRequest' AND activity_id = $1",
+        request.id,
+    )
+    .execute(&state.db)
+    .await?;
+    let source = fetch_account(state, source_id).await?;
+    if source.domain.is_some() {
+        let target = fetch_account(state, target_id).await?;
+        send_reject_follow(state, &target, &source, request.id, request.uri.as_deref()).await;
+    }
+    Ok(true)
+}
+
+/// `ActivityPub::DeliveryWorker` of an `UndoFollowSerializer` of the local
+/// `follower`'s follow (or request) `id` to the remote `target`'s inbox.
+async fn send_undo_follow(
+    state: &AppState,
+    follower: &Account,
+    target: &Account,
+    id: i64,
+    uri: Option<&str>,
+) {
+    let (Some(target_uri), false) = (target.stored_uri(), target.inbox_url.is_empty()) else {
+        return;
+    };
+    if !crate::federation::keypair::has_signing_key(state, follower.id)
+        .await
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let actor_url = crate::federation::tag::account_uri_of(&state.instance.domain, follower);
+    let Ok(undo) =
+        crate::federation::relationships::undo_follow(&actor_url, target_uri, Some(id), uri)
+    else {
+        return;
+    };
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+        state,
+        undo,
+        vec![target.inbox_url.clone()],
+        format!("{actor_url}#main-key"),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to enqueue Undo(Follow)");
+    }
+}
+
+/// `ActivityPub::DeliveryWorker` of a `RejectFollowSerializer` of the remote
+/// `follower`'s follow (or request) `id` of the local `followee`, to the
+/// follower's inbox.
+pub(crate) async fn send_reject_follow(
+    state: &AppState,
+    followee: &Account,
+    follower: &Account,
+    id: i64,
+    uri: Option<&str>,
+) {
+    let (Some(follower_uri), false) = (follower.stored_uri(), follower.inbox_url.is_empty()) else {
+        return;
+    };
+    if !crate::federation::keypair::has_signing_key(state, followee.id)
+        .await
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let actor_url = crate::federation::tag::account_uri_of(&state.instance.domain, followee);
+    let Ok(reject) =
+        crate::federation::relationships::reject_follow(&actor_url, follower_uri, Some(id), uri)
+    else {
+        return;
+    };
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+        state,
+        reject,
+        vec![follower.inbox_url.clone()],
+        format!("{actor_url}#main-key"),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to enqueue Reject(Follow)");
+    }
 }
 
 pub async fn get_account_followers(

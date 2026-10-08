@@ -18,6 +18,7 @@ pub mod local_uri;
 pub mod moderation;
 pub mod portable;
 pub mod process_account;
+pub mod relationships;
 pub mod replies;
 pub mod tag;
 pub mod tag_manager;
