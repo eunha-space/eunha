@@ -194,15 +194,6 @@ pub struct WorkersConfig {
     /// “Fan-out”).
     #[serde(default = "default_delivery_concurrency")]
     pub delivery_concurrency: usize,
-    /// Number of concurrent inbound (ingress) queue loops.
-    #[serde(default = "default_inbox_workers")]
-    pub inbox_workers: usize,
-    /// Activities claimed per batch by a single ingress loop.
-    #[serde(default = "default_inbox_batch")]
-    pub inbox_batch: i64,
-    /// Activities processed concurrently per ingress loop.
-    #[serde(default = "default_inbox_concurrency")]
-    pub inbox_concurrency: usize,
     /// The longest an idle queue loop waits before looking for work again, in
     /// seconds. A job this process enqueues wakes its loop at once regardless;
     /// the poll only finds retries that have come due and jobs another process
@@ -277,18 +268,6 @@ fn default_delivery_concurrency() -> usize {
     128
 }
 
-fn default_inbox_workers() -> usize {
-    1
-}
-
-fn default_inbox_batch() -> i64 {
-    20
-}
-
-fn default_inbox_concurrency() -> usize {
-    4
-}
-
 fn default_queue_idle_poll_seconds() -> u64 {
     30
 }
@@ -313,9 +292,6 @@ impl Default for WorkersConfig {
             delivery_workers: default_delivery_workers(),
             delivery_batch: default_delivery_batch(),
             delivery_concurrency: default_delivery_concurrency(),
-            inbox_workers: default_inbox_workers(),
-            inbox_batch: default_inbox_batch(),
-            inbox_concurrency: default_inbox_concurrency(),
             queue_idle_poll_seconds: default_queue_idle_poll_seconds(),
             process_delivery_concurrency: default_process_delivery_concurrency(),
             job_workers: default_job_workers(),
@@ -332,9 +308,6 @@ impl WorkersConfig {
             delivery_workers: self.delivery_workers.max(1),
             delivery_batch: self.delivery_batch.max(1),
             delivery_concurrency: self.delivery_concurrency.max(1),
-            inbox_workers: self.inbox_workers.max(1),
-            inbox_batch: self.inbox_batch.max(1),
-            inbox_concurrency: self.inbox_concurrency.max(1),
             queue_idle_poll_seconds: self.queue_idle_poll_seconds.max(1),
             process_delivery_concurrency: self.process_delivery_concurrency.max(1),
             job_workers: self.job_workers.max(1),

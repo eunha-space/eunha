@@ -204,15 +204,9 @@ async fn test_a_federated_reply_is_counted() {
         },
     });
 
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
 
     let processed = eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
@@ -274,20 +268,12 @@ async fn test_a_deleted_federated_reply_is_uncounted() {
     .unwrap();
 
     let note_uri = format!("https://{domain}/notes/reply-1");
-    let enqueue = |activity: serde_json::Value, kind: &'static str| {
+    let enqueue = |activity: serde_json::Value, _kind: &'static str| {
         let db = ctx.db.clone();
-        let actor = actor_uri.clone();
         async move {
-            sqlx::query!(
-                r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-                   VALUES ($1, $2, $3, now(), now())"#,
-                activity,
-                kind,
-                actor,
-            )
-            .execute(&db)
-            .await
-            .unwrap();
+            eunha::api::ap::inbox::queue_activity(&db, &activity)
+                .await
+                .unwrap();
         }
     };
 
@@ -489,15 +475,9 @@ async fn test_a_federated_status_counts_for_its_author() {
                 "published": "2026-01-01T00:00:00Z",
             },
         });
-        sqlx::query!(
-            r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-               VALUES ($1, 'Create', $2, now(), now())"#,
-            create,
-            actor_uri,
-        )
-        .execute(&ctx.db)
-        .await
-        .unwrap();
+        eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+            .await
+            .unwrap();
         eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
             .await
             .unwrap();
@@ -564,15 +544,9 @@ async fn test_a_federated_follow_counts() {
         "actor": actor_uri,
         "object": format!("https://{}/users/alice", ctx.domain),
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Follow', $2, now(), now())"#,
-        follow,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &follow)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -594,15 +568,9 @@ async fn test_a_federated_follow_counts() {
     );
 
     // Redelivery must not inflate it: federation repeats.
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Follow', $2, now(), now())"#,
-        follow,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &follow)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -635,15 +603,9 @@ async fn test_a_federated_follow_counts() {
             "object": format!("https://{}/users/alice", ctx.domain),
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Undo', $2, now(), now())"#,
-        undo,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &undo)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -713,20 +675,12 @@ async fn test_a_federated_boost_counts_for_the_booster() {
         "object": original_uri,
         "to": ["https://www.w3.org/ns/activitystreams#Public"],
     });
-    let enqueue = |activity: serde_json::Value, kind: &'static str| {
+    let enqueue = |activity: serde_json::Value, _kind: &'static str| {
         let db = ctx.db.clone();
-        let actor = actor_uri.clone();
         async move {
-            sqlx::query!(
-                r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-                   VALUES ($1, $2, $3, now(), now())"#,
-                activity,
-                kind,
-                actor,
-            )
-            .execute(&db)
-            .await
-            .unwrap();
+            eunha::api::ap::inbox::queue_activity(&db, &activity)
+                .await
+                .unwrap();
         }
     };
 

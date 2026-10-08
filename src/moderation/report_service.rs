@@ -21,19 +21,6 @@ pub struct Options {
     pub application_id: Option<i64>,
 }
 
-/// `TagManager#normalize_domain`.
-fn normalize_domain(domain: &str) -> Option<String> {
-    let domain = domain.trim().trim_end_matches('/').to_lowercase();
-    if domain.is_empty() {
-        return None;
-    }
-    // `Addressable::IDNA.to_ascii`, by way of the URL parser's host handling.
-    url::Url::parse(&format!("https://{domain}/"))
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .or(Some(domain))
-}
-
 /// `ReportService#call`, returning the new report's id.
 pub async fn call(
     state: &AppState,
@@ -66,8 +53,16 @@ pub async fn call(
             .forward_to_domains
             .clone()
             .unwrap_or_else(|| target.domain.clone().into_iter().collect());
-        let mut domains: Vec<String> = given.iter().filter_map(|d| normalize_domain(d)).collect();
-        domains.dedup();
+        // `.filter_map { normalize_domain(_1) }.uniq`: a domain Addressable
+        // refuses raises, and nothing rescues it.
+        let mut domains: Vec<String> = Vec::with_capacity(given.len());
+        for domain in &given {
+            let domain = crate::federation::tag_manager::normalize_domain(domain)
+                .map_err(|error| AppError::Unrescued(error.to_string()))?;
+            if !domains.contains(&domain) {
+                domains.push(domain);
+            }
+        }
         domains
     };
     let forward_to_origin = forward

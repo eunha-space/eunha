@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"count!\" FROM eunha.inbox_jobs",
+  "query": "SELECT count(*) AS \"count!\" FROM eunha.jobs\n               WHERE kind = 'ActivityPub::ProcessingWorker'",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "de2bc59a219cfaa0890d1fd1de6fdb1af8c5b347acad23313b4374e468489ef6"
+  "hash": "d7977e1694931762e6d5a55ce69465f19475806e009871883d16b44cbde4bf12"
 }

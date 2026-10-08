@@ -110,11 +110,7 @@ data-encoding = "2"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rsa = { version = "0.9", features = ["sha2", "pem"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
-# FASP's Ed25519 registration keys and response signatures (src/fasp/), the
-# structured fields RFC 9421 signature headers are, and the MD5 an account
-# search's refresh is keyed by.
-ed25519-dalek = "2"
-sfv = "0.15"
+# The MD5 an account search's refresh is keyed by.
 md-5 = "0.10"
 
 # HTTP client (federation)

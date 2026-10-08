@@ -87,16 +87,12 @@ async fn find_block(state: &AppState, id: i64) -> AppResult<BlockRow> {
     .ok_or(AppError::NotFound)
 }
 
-/// `TagManager#normalize_domain` (`DomainNormalizable`): stripped, without
-/// trailing slashes, lowercased and in its ASCII form.
+/// `TagManager#normalize_domain` (`DomainNormalizable`), `None` for a
+/// domain that is blank or that Addressable refuses.
 pub(super) fn normalize_domain(domain: &str) -> Option<String> {
-    let domain = domain.trim().trim_end_matches('/').to_lowercase();
-    if domain.is_empty() {
-        return None;
-    }
-    url::Url::parse(&format!("https://{domain}/"))
+    crate::federation::tag_manager::normalize_domain(domain)
         .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
+        .filter(|domain| !domain.is_empty())
 }
 
 fn with_links<'a, T: Serialize>(
@@ -214,13 +210,21 @@ pub async fn create_domain_block(
     let severity = parse_severity(form.severity.as_deref().unwrap_or("silence"))?;
     let reject_media = form.reject_media.is_some_and(|b| b.0);
     let reject_reports = form.reject_reports.is_some_and(|b| b.0);
-    let domain = form
+    // `DomainBlock.rule_for(resource_params[:domain])` raises for a domain
+    // Addressable refuses, and nothing rescues it.
+    let domain = match form
         .domain
         .as_deref()
-        .and_then(normalize_domain)
-        .ok_or_else(|| {
-            AppError::Unprocessable("Validation failed: Domain can't be blank".into())
-        })?;
+        .map(crate::federation::tag_manager::normalize_domain)
+    {
+        Some(Err(error)) => return Err(AppError::Unrescued(error.to_string())),
+        Some(Ok(domain)) if !domain.is_empty() => domain,
+        _ => {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Domain can't be blank".into(),
+            ))
+        }
+    };
 
     // `conflicts_with_existing_block?`: the same domain, or a parent block this
     // one would not be stricter than.
@@ -468,13 +472,24 @@ pub async fn create_domain_allow(
 ) -> AppResult<Json<AdminDomainAllow>> {
     auth.require_scope("admin:write:domain_allows")?;
     require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let domain = form
+    // `DomainNormalizable` adds `:invalid` for a domain Addressable refuses.
+    let domain = match form
         .domain
         .as_deref()
-        .and_then(normalize_domain)
-        .ok_or_else(|| {
-            AppError::Unprocessable("Validation failed: Domain can't be blank".into())
-        })?;
+        .map(crate::federation::tag_manager::normalize_domain)
+    {
+        Some(Err(_)) => {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Domain is invalid".into(),
+            ))
+        }
+        Some(Ok(domain)) if !domain.is_empty() => domain,
+        _ => {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Domain can't be blank".into(),
+            ))
+        }
+    };
     // An existing allow is returned as it is, and not logged again.
     if let Some(existing) = sqlx::query_as!(
         AllowRow,

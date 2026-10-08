@@ -133,10 +133,7 @@ impl Provider {
 
     /// The host the provider's failures are tracked under.
     pub fn host(&self) -> Option<String> {
-        url::Url::parse(&self.base_url)
-            .ok()
-            .as_ref()
-            .and_then(crate::federation::delivery_failures::host)
+        ojak::origin::host_of(&self.base_url)
     }
 
     /// The seed this server signs for this provider with.

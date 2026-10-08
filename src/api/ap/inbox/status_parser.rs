@@ -90,37 +90,14 @@ pub fn language(object: &Value) -> Option<String> {
     (!raw.trim().is_empty()).then(|| crate::languages::normalized_locale_name(&raw))
 }
 
-/// `JsonLdHelper#url_to_href(value, 'text/html')`.
-pub fn url_to_href(value: &Value, preferred_type: &str) -> Option<String> {
-    let single = match value {
-        Value::Object(_) => Some(value),
-        Value::Array(items) if !items.first().is_some_and(Value::is_string) => {
-            items.iter().find(|link| {
-                let media_type = link
-                    .get("mimeType")
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or("text/html");
-                media_type == preferred_type
-            })
-        }
-        Value::Array(items) => items.first(),
-        other => Some(other),
-    }?;
-    match single {
-        Value::String(s) => Some(s.clone()),
-        Value::Object(link) => link.get("href").and_then(Value::as_str).map(str::to_owned),
-        _ => None,
-    }
-}
-
 /// `StatusParser#url`: the `text/html` link among `url`, if it is `http` or
 /// `https`.
 pub fn url(object: &Value) -> Option<String> {
     let value = object
         .get("url")
         .filter(|v| crate::federation::json_ld::is_present(v))?;
-    url_to_href(value, "text/html")
+    ojak_vocab::json_ld_helper::url_to_href(value, Some("text/html"))
+        .map(str::to_owned)
         .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
 }
 
@@ -271,18 +248,12 @@ mod tests {
     }
 
     #[test]
-    fn a_link_is_found_by_its_media_type() {
-        let links = json!([
+    fn the_url_is_the_html_link() {
+        let object = json!({"url": [
             {"type": "Link", "mimeType": "video/mp4", "href": "https://a.example/v.mp4"},
             {"type": "Link", "href": "https://a.example/v"},
-        ]);
-        assert_eq!(
-            url_to_href(&links, "text/html").as_deref(),
-            Some("https://a.example/v")
-        );
-        assert_eq!(
-            url_to_href(&json!("https://a.example/p"), "text/html").as_deref(),
-            Some("https://a.example/p")
-        );
+        ]});
+        assert_eq!(url(&object).as_deref(), Some("https://a.example/v"));
+        assert_eq!(url(&json!({"url": "ftp://a.example/p"})), None);
     }
 }

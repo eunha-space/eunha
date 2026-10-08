@@ -17,6 +17,10 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use futures::future::BoxFuture;
+use ojak_vocab::json_ld_helper::{
+    as_array, equals_or_includes, first_lang_string, first_of_value, truthy,
+    unsupported_uri_scheme, url_to_href, value_or_id,
+};
 use serde_json::{Map, Value};
 
 use crate::db::models::Account;
@@ -91,7 +95,7 @@ async fn process_inner(
 ) -> Result<Option<i64>> {
     let id = json.get("id").and_then(Value::as_str).unwrap_or_default();
     let portable = crate::federation::portable::reach(json);
-    if portable.is_none() && unsupported_uri_scheme(id) {
+    if portable.is_none() && unsupported_uri_scheme(Some(id)) {
         bail!("Actor {id} has unsupported URI scheme");
     }
     if !is_present(json.get("inbox").unwrap_or(&Value::Null)) {
@@ -139,7 +143,7 @@ async fn process_inner(
     }
     // `normalizes :username, with: squish`.
     let mut username = squish(&username);
-    let mut domain = normalize_domain(&domain);
+    let mut domain = crate::federation::tag_manager::normalize_domain(&domain)?;
 
     let mut webfinger_verified = options.account.is_some_and(|account| {
         account.username == username && account.domain.as_deref() == Some(domain.as_str())
@@ -285,7 +289,7 @@ async fn process_inner(
             crate::federation::featured::synchronize_featured_collection_later(
                 state,
                 account_id,
-                value_or_id_owned(featured),
+                value_or_id(featured).map(str::to_owned),
                 featured_tags.is_none(),
                 &request_id,
             )
@@ -295,7 +299,7 @@ async fn process_inner(
             crate::federation::featured::synchronize_featured_tags_collection_later(
                 state,
                 account_id,
-                value_or_id_owned(featured_tags),
+                value_or_id(featured_tags).map(str::to_owned),
             )
             .await;
         }
@@ -464,19 +468,15 @@ impl Processor<'_> {
     fn url(&self) -> Option<String> {
         let value = self.json.get("url").filter(|url| is_present(url))?;
         let candidate = url_to_href(value, Some("text/html"))?;
-        if unsupported_uri_scheme(&candidate) {
+        if unsupported_uri_scheme(Some(candidate)) {
             return None;
         }
-        let host = |uri: &str| {
-            url::Url::parse(uri)
-                .ok()
-                .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        };
         let haystack = match self.portable {
             Some(reach) => Some(reach.domain.to_ascii_lowercase()),
-            None => host(self.uri),
+            None => ojak::origin::host_of(self.uri),
         };
-        (haystack.is_some() && host(&candidate) == haystack).then_some(candidate)
+        (haystack.is_some() && ojak::origin::host_of(candidate) == haystack)
+            .then(|| candidate.to_owned())
     }
 
     /// `set_immediate_attributes!`.
@@ -869,7 +869,7 @@ impl Processor<'_> {
 
     /// `moved_account`: the account `movedTo` names, fetched if unknown.
     async fn moved_account(&self, moved: &Value) -> Option<i64> {
-        let uri = value_or_id_owned(moved)?;
+        let uri = value_or_id(moved)?.to_owned();
         // `TagManager#uri_to_resource`, which looks a remote account up by
         // its `uri` without the fragment: an actor whose `movedTo` is its
         // own `id` is marked as moved to itself, as Mastodon marks it.
@@ -1060,7 +1060,7 @@ pub async fn process_fetched_actor(
 
 /// `ActivityPub::TagManager#uri_to_actor` for a URI on this instance.
 async fn local_account(state: &AppState, uri: &str) -> Option<i64> {
-    let host = crate::federation::moderation::domain_of(uri)?;
+    let host = ojak::origin::host_of(uri)?;
     let ours = host.eq_ignore_ascii_case(&state.instance.domain)
         || state
             .instance
@@ -1225,7 +1225,7 @@ pub async fn resolve_account(
     let Some(domain) = account.domain.as_deref() else {
         return Ok(());
     };
-    let domain = normalize_domain(domain);
+    let domain = crate::federation::tag_manager::normalize_domain(domain)?;
     if is_local_domain(state, &domain)
         || crate::federation::moderation::domain_not_allowed(state, &domain).await
     {
@@ -1813,25 +1813,6 @@ async fn find_remote(
     .await
 }
 
-/// `JsonLdHelper#unsupported_uri_scheme?`.
-fn unsupported_uri_scheme(uri: &str) -> bool {
-    !(uri.starts_with("http://") || uri.starts_with("https://"))
-}
-
-/// `TagManager#normalize_domain`: stripped, without a trailing slash, in
-/// lower case and ASCII, keeping a port if it has one.
-pub fn normalize_domain(domain: &str) -> String {
-    let domain = domain.trim().trim_end_matches('/');
-    match url::Url::parse(&format!("http://{domain}/")) {
-        Ok(url) => match (url.host_str(), url.port()) {
-            (Some(host), Some(port)) => format!("{host}:{port}"),
-            (Some(host), None) => host.to_owned(),
-            _ => domain.to_lowercase(),
-        },
-        Err(_) => domain.to_lowercase(),
-    }
-}
-
 /// Ruby's `String#squish`.
 fn squish(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -1843,11 +1824,6 @@ fn truncate_chars(value: &str, limit: usize) -> String {
         Some((end, _)) => value[..end].to_owned(),
         None => value.to_owned(),
     }
-}
-
-/// Whether Ruby holds a JSON value true: anything but `null` and `false`.
-fn truthy(value: Option<&Value>) -> bool {
-    !matches!(value, None | Some(Value::Null) | Some(Value::Bool(false)))
 }
 
 /// `value || false`, as Active Record casts it into a boolean column.
@@ -1864,15 +1840,6 @@ fn active_record_boolean(value: Option<&Value>) -> bool {
     }
 }
 
-/// `JsonLdHelper#value_or_id`, owned.
-fn value_or_id_owned(value: &Value) -> Option<String> {
-    match value {
-        Value::String(id) => Some(id.clone()),
-        Value::Object(object) => object.get("id").and_then(Value::as_str).map(str::to_owned),
-        _ => None,
-    }
-}
-
 /// `alsoKnownAs` as `ProcessAccountService` keeps it: at most
 /// `Account::ALSO_KNOWN_AS_HARD_LIMIT` ids, embedded objects reduced to theirs.
 pub fn also_known_as_of(actor: &Value) -> Vec<String> {
@@ -1880,84 +1847,9 @@ pub fn also_known_as_of(actor: &Value) -> Vec<String> {
     as_array(actor.get("alsoKnownAs"))
         .into_iter()
         .take(ALSO_KNOWN_AS_HARD_LIMIT)
-        .filter_map(value_or_id_owned)
+        .filter_map(value_or_id)
+        .map(str::to_owned)
         .collect()
-}
-
-/// `JsonLdHelper#as_array`.
-fn as_array(value: Option<&Value>) -> Vec<&Value> {
-    match value {
-        None | Some(Value::Null) => Vec::new(),
-        Some(Value::Array(items)) => items.iter().collect(),
-        Some(item) => vec![item],
-    }
-}
-
-/// `JsonLdHelper#first_of_value`.
-fn first_of_value(value: &Value) -> Option<&Value> {
-    match value {
-        Value::Array(items) => items.first(),
-        value => Some(value),
-    }
-}
-
-/// `JsonLdHelper#equals_or_includes?`.
-fn equals_or_includes(haystack: Option<&Value>, needle: &str) -> bool {
-    match haystack {
-        Some(Value::Array(items)) => items.iter().any(|item| item.as_str() == Some(needle)),
-        Some(Value::String(value)) => value == needle,
-        _ => false,
-    }
-}
-
-/// `JsonLdHelper#first_lang_string`: an `xsd:string` or `rdf:langString`
-/// property, or the first value of its language map.
-fn first_lang_string<'a>(json: &'a Value, name: &str) -> Option<&'a str> {
-    match json.get(name).filter(|value| truthy(Some(value))) {
-        Some(value) => match first_of_value(value)? {
-            Value::String(text) => Some(text),
-            Value::Object(object) => object.get("@value").and_then(Value::as_str),
-            _ => None,
-        },
-        None => json
-            .get(format!("{name}Map"))
-            .and_then(Value::as_object)
-            .and_then(|map| map.values().next())
-            .and_then(Value::as_str),
-    }
-}
-
-/// `JsonLdHelper#url_to_href`: a link's `href`, preferring one of
-/// `preferred_type` among several.
-fn url_to_href(value: &Value, preferred_type: Option<&str>) -> Option<String> {
-    let wrapped;
-    let value = match value {
-        Value::Object(_) => {
-            wrapped = Value::Array(vec![value.clone()]);
-            &wrapped
-        }
-        value => value,
-    };
-    let single = match value {
-        Value::Array(links) if !links.first().is_some_and(Value::is_string) => {
-            links.iter().find(|link| {
-                preferred_type.is_none_or(|preferred| {
-                    let mime = link
-                        .get("mimeType")
-                        .and_then(Value::as_str)
-                        .filter(|mime| !mime.trim().is_empty())
-                        .unwrap_or("text/html");
-                    mime == preferred
-                })
-            })
-        }
-        Value::Array(links) => links.first(),
-        value => Some(value),
-    }?;
-    match single {
-        Value::String(href) => Some(href.clone()),
-        link => link.get("href").and_then(Value::as_str).map(str::to_owned),
-    }
 }
 
 /// `valid_collection_uri`: the first of several, the id of an embedded
@@ -2056,31 +1948,6 @@ mod tests {
     }
 
     #[test]
-    fn url_to_href_prefers_html() {
-        assert_eq!(
-            url_to_href(
-                &json!([
-                    {"type": "Link", "mimeType": "application/activity+json", "href": "https://a.example/ap"},
-                    {"type": "Link", "href": "https://a.example/@alice"}
-                ]),
-                Some("text/html")
-            ),
-            Some("https://a.example/@alice".into())
-        );
-        assert_eq!(
-            url_to_href(
-                &json!(["https://a.example/1", "https://a.example/2"]),
-                Some("text/html")
-            ),
-            Some("https://a.example/1".into())
-        );
-        assert_eq!(
-            url_to_href(&json!({"href": "https://a.example/x"}), Some("text/html")),
-            Some("https://a.example/x".into())
-        );
-    }
-
-    #[test]
     fn truncation_counts_characters() {
         assert_eq!(truncate_chars("가나다라", 2), "가나");
         assert_eq!(truncate_chars("ab", 5), "ab");
@@ -2093,8 +1960,6 @@ mod tests {
         assert!(active_record_boolean(Some(&json!("yes"))));
         assert!(!active_record_boolean(Some(&json!(0))));
         assert!(!active_record_boolean(None));
-        assert!(truthy(Some(&json!("false"))));
-        assert!(!truthy(Some(&json!(null))));
     }
 
     #[test]
@@ -2123,13 +1988,6 @@ mod tests {
         assert_eq!(registrable_domain("social.example.co.uk"), "example.co.uk");
         assert_eq!(registrable_domain("alice.github.io"), "github.io");
         assert_eq!(registrable_domain("example.com"), "example.com");
-    }
-
-    #[test]
-    fn domains_are_normalized() {
-        assert_eq!(normalize_domain(" Example.COM/ "), "example.com");
-        assert_eq!(normalize_domain("bücher.example"), "xn--bcher-kva.example");
-        assert_eq!(normalize_domain("127.0.0.1:3000"), "127.0.0.1:3000");
     }
 
     #[test]

@@ -83,15 +83,9 @@ async fn test_a_domain_block_stops_notifications() {
             "published": chrono::Utc::now().to_rfc3339(),
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -158,15 +152,9 @@ async fn test_following_through_a_domain_block_still_notifies() {
             "published": chrono::Utc::now().to_rfc3339(),
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -228,15 +216,9 @@ async fn test_a_mention_alongside_a_blocked_account_is_not_delivered() {
             "published": chrono::Utc::now().to_rfc3339(),
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -283,15 +265,9 @@ async fn test_an_ordinary_co_mention_still_notifies() {
             "published": chrono::Utc::now().to_rfc3339(),
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();

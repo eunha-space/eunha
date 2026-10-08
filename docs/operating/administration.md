@@ -270,6 +270,17 @@ federation mode it lists only the allowed domains. Each server comes with its
 block, its allow, whether it is unavailable, and how many days deliveries to
 it have failed. All of this needs `manage_federation`.
 
+A domain given to these endpoints, to the domain block and allow APIs, to
+the audit log's `target_domain` filter, and in a report's
+`forward_to_domains` is written as Mastodon's `TagManager#normalize_domain`
+writes it: stripped, one trailing `/` removed, lower case, in its ASCII
+form, and with its port, if it has one, kept. A domain with a space, `/` or
+`@` in it is one Mastodon's URL library refuses, and is refused as Mastodon
+refuses it there: a domain allow with
+`422 Validation failed: Domain is invalid`; a domain block, the audit log
+filter and a report with a 500, which nothing in Mastodon rescues; the peers
+search with no domains.
+
 The `instances` materialized view itself is refreshed every hour, as
 Mastodon's `Scheduler::InstanceRefreshScheduler` does, so a Mastodon sharing
 the database, or anything else reading the view, sees current servers. The

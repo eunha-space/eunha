@@ -4,19 +4,17 @@
 //!
 //! Requests both ways are signed over `@method`, `@target-uri` and
 //! `content-digest` with Ed25519, and every request carries a
-//! `Content-Digest`, an empty body's included — ojak's RFC 9421 signer and
-//! verifier handle those. Responses both ways are signed over `@status` and
-//! `content-digest`, which ojak's verifier, written for requests, cannot
-//! rebuild, so responses are signed and verified here. A response signature
-//! has no `keyid`: the key is the registration's, known to both sides.
+//! `Content-Digest`, an empty body's included. Responses both ways are signed
+//! over `@status` and `content-digest`. A response signature has no `keyid`:
+//! the key is the registration's, known to both sides. Ojak's RFC 9421
+//! module signs and verifies both; what is here is the policy Linzer applies
+//! for Mastodon: how old a request's signature may be, and that an expired
+//! one is refused.
 //!
 //! [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
 
 use axum::http::HeaderMap;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-
-/// Linzer's `DEFAULT_LABEL`.
-const LABEL: &str = "sig1";
+use ojak::sig::rfc9421::{SigningKey, VerifyingKey};
 
 /// `Linzer.verify!(…, no_older_than: 5.minutes)`, as the provider API checks
 /// requests.
@@ -44,17 +42,17 @@ pub fn sign_response(
     seed: &[u8; 32],
     now: i64,
 ) -> (String, String) {
-    use ed25519_dalek::Signer as _;
-    let params = format!("(\"@status\" \"content-digest\");created={now}");
-    let base = format!(
-        "\"@status\": {status}\n\"content-digest\": {content_digest}\n\"@signature-params\": {params}"
-    );
-    let key = ed25519_dalek::SigningKey::from_bytes(seed);
-    let signature = BASE64.encode(key.sign(base.as_bytes()).to_bytes());
-    (
-        format!("{LABEL}={params}"),
-        format!("{LABEL}=:{signature}:"),
-    )
+    match ojak::sig::rfc9421::sign_response(
+        status,
+        content_digest,
+        None,
+        &SigningKey::Ed25519(seed),
+        now,
+    ) {
+        Ok(signed) => (signed.signature_input, signed.signature),
+        // An Ed25519 seed always signs.
+        Err(error) => unreachable!("an Ed25519 signature failed: {error}"),
+    }
 }
 
 /// `Linzer.verify!(response, key:)`: check a response's signature against the
@@ -68,44 +66,27 @@ pub fn verify_response(
 ) -> Result<(), String> {
     let signature_input = header(headers, "signature-input").ok_or("signature-input is missing")?;
     let signature = header(headers, "signature").ok_or("signature is missing")?;
-    let input = Input::parse(&signature_input)?;
-    if input
-        .integer("expires")
-        .is_some_and(|expires| expires < now)
-    {
+    if ojak::sig::rfc9421::expires_at(&signature_input).is_some_and(|expires| expires < now) {
         return Err("Signature has expired or is invalid".into());
     }
-    let mut base = String::new();
-    for name in &input.covered {
-        let value = match name.as_str() {
-            "@status" => status.to_string(),
-            derived if derived.starts_with('@') => {
-                return Err(format!("cannot verify the component {derived:?}"));
-            }
-            field => {
-                let values: Vec<String> = headers
-                    .get_all(field)
-                    .iter()
-                    .filter_map(|v| v.to_str().ok())
-                    .map(|v| v.trim().to_owned())
-                    .collect();
-                if values.is_empty() {
-                    return Err(format!("Missing component in message: {field:?}"));
-                }
-                values.join(", ")
-            }
-        };
-        base.push_str(&format!("\"{name}\": {value}\n"));
-    }
-    base.push_str(&format!("\"@signature-params\": {}", input.params));
-    let raw = signature_bytes(&signature, &input.label)?;
-    verify_ed25519(key, base.as_bytes(), &raw)
+    let fields = fields(headers);
+    let fields: Vec<(&str, &str)> = fields
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    ojak::sig::rfc9421::verify_response(
+        status,
+        &signature_input,
+        &signature,
+        &fields,
+        &VerifyingKey::Ed25519(key),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// `Linzer.verify!(request, no_older_than: 5.minutes)` for a request a
 /// provider made: the signature must name its key, be no older than five
 /// minutes, not have expired, and verify against `key`.
-#[allow(clippy::too_many_arguments)]
 pub fn verify_request(
     method: &str,
     target_uri: &str,
@@ -126,12 +107,7 @@ pub fn verify_request(
     if ojak::sig::rfc9421::expires_at(&signature_input).is_some_and(|expires| expires < now) {
         return Err("Signature has expired or is invalid".into());
     }
-    let fields: Vec<(String, String)> = headers
-        .iter()
-        .filter_map(|(name, value)| {
-            Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
-        })
-        .collect();
+    let fields = fields(headers);
     let fields: Vec<(&str, &str)> = fields
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
@@ -145,7 +121,7 @@ pub fn verify_request(
         digest.as_deref(),
         body,
         &fields,
-        &ojak::sig::rfc9421::VerifyingKey::Ed25519(key),
+        &VerifyingKey::Ed25519(key),
     )
     .map_err(|e| e.to_string())
 }
@@ -164,91 +140,14 @@ fn header(headers: &HeaderMap, name: &str) -> Option<String> {
     (!values.is_empty()).then(|| values.join(", "))
 }
 
-fn verify_ed25519(key: &[u8; 32], message: &[u8], signature: &[u8]) -> Result<(), String> {
-    use ed25519_dalek::Verifier as _;
-    let signature = ed25519_dalek::Signature::from_slice(signature)
-        .map_err(|e| format!("Ed25519 signature: {e}"))?;
-    ed25519_dalek::VerifyingKey::from_bytes(key)
-        .map_err(|e| format!("Ed25519 public key: {e}"))?
-        .verify(message, &signature)
-        .map_err(|_| "Failed to verify message: Invalid signature.".to_owned())
-}
-
-/// The first signature a `Signature-Input` describes, read as the
-/// structured-field dictionary it is.
-struct Input {
-    label: String,
-    covered: Vec<String>,
-    /// The `@signature-params` line as RFC 8941 serializes it.
-    params: String,
-    parameters: sfv::Parameters,
-}
-
-impl Input {
-    fn parse(header: &str) -> Result<Self, String> {
-        let malformed = |why: String| format!("Signature-Input: {why}");
-        let dictionary = sfv::Parser::new(header)
-            .parse::<sfv::Dictionary>()
-            .map_err(|e| malformed(e.to_string()))?;
-        let (label, entry) = dictionary
-            .first()
-            .ok_or_else(|| malformed("no signature".into()))?;
-        let sfv::ListEntry::InnerList(list) = entry else {
-            return Err(malformed("not a component list".into()));
-        };
-        let mut covered = Vec::with_capacity(list.items.len());
-        for item in &list.items {
-            let name = item
-                .bare_item
-                .as_string()
-                .ok_or_else(|| malformed("a covered component is not a string".into()))?;
-            if !item.params.is_empty() {
-                return Err(format!(
-                    "cannot verify the component {:?} with parameters",
-                    name.as_str()
-                ));
-            }
-            let name = name.as_str().to_owned();
-            if covered.contains(&name) {
-                return Err(malformed(format!("{name:?} is covered twice")));
-            }
-            covered.push(name);
-        }
-        let mut serializer = sfv::ListSerializer::new();
-        serializer.members([entry]);
-        let params = serializer
-            .finish()
-            .ok_or_else(|| malformed("no signature".into()))?;
-        Ok(Self {
-            label: label.as_str().to_owned(),
-            covered,
-            params,
-            parameters: list.params.clone(),
+/// Every header field that is text, by name.
+fn fields(headers: &HeaderMap) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
         })
-    }
-
-    fn integer(&self, name: &str) -> Option<i64> {
-        let key = sfv::KeyRef::from_str(name).ok()?;
-        Some(self.parameters.get(key)?.as_integer()?.into())
-    }
-}
-
-/// The signature published under `label` in a `Signature` field.
-fn signature_bytes(header: &str, label: &str) -> Result<Vec<u8>, String> {
-    let malformed = |why: String| format!("Signature: {why}");
-    let dictionary = sfv::Parser::new(header)
-        .parse::<sfv::Dictionary>()
-        .map_err(|e| malformed(e.to_string()))?;
-    let key = sfv::KeyRef::from_str(label).map_err(|e| malformed(e.to_string()))?;
-    match dictionary.get(key) {
-        Some(sfv::ListEntry::Item(item)) => item
-            .bare_item
-            .as_byte_sequence()
-            .map(<[u8]>::to_vec)
-            .ok_or_else(|| malformed("not a byte sequence".into())),
-        Some(sfv::ListEntry::InnerList(_)) => Err(malformed("not a byte sequence".into())),
-        None => Err(malformed(format!("no signature labelled {label:?}"))),
-    }
+        .collect()
 }
 
 #[cfg(test)]

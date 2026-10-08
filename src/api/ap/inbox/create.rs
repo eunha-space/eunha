@@ -10,9 +10,9 @@ use super::attachment::{
     ap_attachment_file_meta, attachment_url, classify_attachment_type, preview_card_link,
 };
 use super::{
-    acquire_create_lock, as_string_vec, delete_arrived_first, fetch_remote_status,
-    resolve_or_fetch_remote_account, tag_type_is,
+    acquire_create_lock, delete_arrived_first, fetch_remote_status, resolve_or_fetch_remote_account,
 };
+use ojak_vocab::json_ld_helper::{ids, type_is};
 
 /// How a `Create` reached us: the options `ActivityPub::Activity` is given.
 #[derive(Debug, Default, Clone)]
@@ -158,20 +158,21 @@ pub(super) async fn create(
 
     let mention_hrefs: Vec<String> = tags_arr
         .iter()
-        .filter(|t| tag_type_is(t, "Mention"))
+        .filter(|t| type_is(t, "Mention"))
         .filter_map(|t| t.get("href").and_then(|v| v.as_str()).map(str::to_owned))
         .collect();
 
     // Collect to/cc from both the activity wrapper and the Note object (Mastodon merges both).
-    // Both fields may be a string or an array.
+    // Each is `as_array(...).map { value_or_id }`: an IRI, or an embedded
+    // object's id.
     let audience: Vec<String> = {
-        let mut a = as_string_vec(activity.get("to"));
-        a.extend(as_string_vec(activity.get("cc")));
-        a.extend(as_string_vec(object.get("to")));
-        a.extend(as_string_vec(object.get("cc")));
+        let mut a = ids(activity.get("to"));
+        a.extend(ids(activity.get("cc")));
+        a.extend(ids(object.get("to")));
+        a.extend(ids(object.get("cc")));
         a.sort_unstable();
         a.dedup();
-        a
+        a.into_iter().map(str::to_owned).collect()
     };
 
     // Look up inReplyTo status (id + account_id + whether account is local)
@@ -242,10 +243,7 @@ pub(super) async fn create(
         .get(super::THROUGH_RELAY)
         .is_some_and(|flag| flag == &Value::Bool(true))
         && matches!(
-            crate::db::models::vis::from_audience(
-                &as_string_vec(object.get("to")),
-                &as_string_vec(object.get("cc")),
-            ),
+            crate::db::models::vis::from_audience(&ids(object.get("to")), &ids(object.get("cc")),),
             crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
         );
 
@@ -294,8 +292,8 @@ pub(super) async fn create(
         .filter(|edited| Some(*edited) != published);
 
     // Visibility is determined from the Note object's own to/cc fields.
-    let note_to = as_string_vec(object.get("to"));
-    let note_cc = as_string_vec(object.get("cc"));
+    let note_to = ids(object.get("to"));
+    let note_cc = ids(object.get("cc"));
     let visibility = crate::db::models::vis::from_audience(&note_to, &note_cc);
 
     // `StatusParser#language`.
@@ -478,7 +476,7 @@ pub(super) async fn create(
         let mut seen = std::collections::HashSet::new();
         tags_arr
             .iter()
-            .filter(|t| tag_type_is(t, "Hashtag"))
+            .filter(|t| type_is(t, "Hashtag"))
             .filter_map(|t| {
                 t.get("name")
                     .and_then(|v| v.as_str())
@@ -683,7 +681,7 @@ pub(super) async fn create(
     let actor_domain = url::Url::parse(actor_uri)
         .ok()
         .and_then(|u| u.host_str().map(str::to_owned));
-    for tag in tags_arr.iter().filter(|t| tag_type_is(t, "Emoji")) {
+    for tag in tags_arr.iter().filter(|t| type_is(t, "Emoji")) {
         let shortcode = match tag.get("name").and_then(|v| v.as_str()) {
             Some(n) => n.trim_matches(':').to_string(),
             None => continue,

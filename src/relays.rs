@@ -39,11 +39,7 @@ fn payload_uri(state: &AppState) -> String {
 /// `DeliveryFailureTracker.reset!(inbox_url)`: the relay's host is delivered
 /// to again, whatever it failed before.
 async fn reset_delivery_tracker(state: &AppState, inbox_url: &str) -> anyhow::Result<()> {
-    if let Some(host) = url::Url::parse(inbox_url)
-        .ok()
-        .as_ref()
-        .and_then(crate::federation::delivery_failures::host)
-    {
+    if let Some(host) = ojak::origin::host_of(inbox_url) {
         state.delivery_failures.restart(&host).await?;
     }
     Ok(())

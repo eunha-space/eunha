@@ -25,14 +25,6 @@ pub enum Visibility {
     Direct,
 }
 
-/// `ActivityPub::TagManager#public_collection?`: the public collection, by
-/// its IRI or as JSON-LD compacts it (`as:Public`, `Public`), which is how a
-/// processor such as ojak's writes it back.
-#[must_use]
-pub fn public_collection(uri: &str) -> bool {
-    uri == ACTIVITYSTREAMS_PUBLIC || uri == "as:Public" || uri == "Public"
-}
-
 /// Derive an object's [`Visibility`] from its `to` / `cc` audience.
 #[must_use]
 pub fn visibility_from_audience<S, T>(to: &[S], cc: &[T]) -> Visibility
@@ -40,7 +32,8 @@ where
     S: AsRef<str>,
     T: AsRef<str>,
 {
-    let is_public = public_collection;
+    // `ActivityPub::TagManager#public_collection?`, however it is compacted.
+    let is_public = ojak_vocab::is_public_collection;
     let is_followers = |u: &str| u.ends_with(FOLLOWERS_SUFFIX);
 
     if to.iter().any(|u| is_public(u.as_ref())) {

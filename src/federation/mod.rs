@@ -19,4 +19,5 @@ pub mod portable;
 pub mod process_account;
 pub mod replies;
 pub mod tag;
+pub mod tag_manager;
 pub mod webfinger;

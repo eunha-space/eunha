@@ -223,9 +223,8 @@ pub fn federation() -> Federation<AppState> {
             .await
             .ok()
             .flatten();
-            let inbox = inbox.and_then(|inbox| url::Url::parse(&inbox).ok());
             if let Some(host) =
-                crate::federation::delivery_failures::host(inbox.as_ref().unwrap_or(signer))
+                ojak::origin::host_of(inbox.as_deref().unwrap_or(signer.as_str()))
             {
                 if let Err(error) = ctx.data().delivery_failures.track_success(&host).await {
                     tracing::warn!(host, %error, "could not clear a server's delivery failures");

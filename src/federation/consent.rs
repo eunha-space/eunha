@@ -12,7 +12,7 @@ use ojak_vocab as vocab;
 use serde_json::{json, Value};
 use vocab::{AnyActor, AnyObject, Iri};
 
-use super::activity::with_context;
+use ojak_vocab::write_with_context as with_context;
 
 fn iri(s: &str) -> anyhow::Result<Iri> {
     crate::federation::portable::iri(s)

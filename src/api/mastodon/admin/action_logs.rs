@@ -662,7 +662,10 @@ pub async fn list_action_logs(
             .push(")))");
     }
     if let Some(domain) = given(&params.target_domain) {
-        let domain = super::federation::normalize_domain(&domain).unwrap_or(domain);
+        // `TagManager#normalize_domain`, whose `InvalidURIError` nothing
+        // rescues.
+        let domain = crate::federation::tag_manager::normalize_domain(&domain)
+            .map_err(|error| AppError::Unrescued(error.to_string()))?;
         q.push(" AND human_identifier = ")
             .push_bind(domain)
             .push(" AND target_type = ANY(")

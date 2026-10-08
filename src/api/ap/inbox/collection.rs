@@ -6,14 +6,21 @@ use serde_json::Value;
 use crate::{error::AppResult, state::AppState};
 
 use super::{
-    json_uri, mirror_item_into, refresh_collection_item_count, resolve_or_fetch_remote_account,
+    mirror_item_into, refresh_collection_item_count, resolve_or_fetch_remote_account,
     upsert_remote_collection,
 };
+use ojak_vocab::json_ld_helper::value_or_id;
 
 pub(super) async fn handle_add(state: &AppState, activity: &Value) -> AppResult<()> {
     let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-    let object_uri = json_uri(activity.get("object"));
-    let target_uri = json_uri(activity.get("target"));
+    let object_uri = activity
+        .get("object")
+        .and_then(value_or_id)
+        .unwrap_or_default();
+    let target_uri = activity
+        .get("target")
+        .and_then(value_or_id)
+        .unwrap_or_default();
 
     if actor_uri.is_empty() || object_uri.is_empty() {
         return Ok(());

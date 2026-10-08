@@ -8,7 +8,7 @@
 
 use ojak_vocab as vocab;
 use ojak_vocab::json::ToJson;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use vocab::{AnyActor, AnyObject, Iri};
 
 /// The special collection addressing every actor (public posts).
@@ -30,20 +30,10 @@ fn actor(s: &str) -> anyhow::Result<Vec<AnyActor>> {
     Ok(vec![AnyActor::Iri(iri(s)?)])
 }
 
-/// `value` written with `context` as its `@context`, first. An object nested
-/// in another is written without one: the outer document's covers it.
-pub(crate) fn with_context(value: &impl ToJson, context: Value) -> Value {
-    let mut document = Map::new();
-    document.insert("@context".into(), context);
-    if let Value::Object(members) = value.to_json() {
-        document.extend(members);
-    }
-    Value::Object(document)
-}
-
-/// `value` as a delivery, under the ActivityStreams context.
+/// `value` as a delivery, under the plain ActivityStreams context Mastodon
+/// writes its activities under.
 pub(crate) fn document(value: &impl ToJson) -> Value {
-    with_context(value, json!(vocab::ACTIVITYSTREAMS_CONTEXT))
+    vocab::write_with_context(value, json!(vocab::ACTIVITYSTREAMS_CONTEXT))
 }
 
 // ── Follow ──────────────────────────────────────────────────────────────────

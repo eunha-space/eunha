@@ -727,16 +727,9 @@ async fn test_health() {
 
 /// Feed an activity from a remote actor through the inbox queue.
 async fn receive(ctx: &TestContext, activity: Value) {
-    sqlx::query(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, $2, $3, now(), now())"#,
-    )
-    .bind(&activity)
-    .bind(activity["type"].as_str().unwrap())
-    .bind(activity["actor"].as_str().unwrap())
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &activity)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();

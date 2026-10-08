@@ -2,38 +2,44 @@
 //! (`app/lib/delivery_failure_tracker.rb`), over the same Redis keys and the
 //! same `unavailable_domains` table.
 //!
-//! Every attempt at a delivery that fails in a way that may pass — and every
-//! one the circuit breaker holds back — adds today's date to the set
+//! The rule is ojak's ([`ojak::deliverer::availability`]): every attempt at a
+//! delivery that fails in a way that may pass — and every one the circuit
+//! breaker holds back — adds today's date to the set
 //! `exhausted_deliveries:<host>`. A host with failures on seven different days
 //! is marked unavailable, and the fan-outs leave it out. Any delivery to it
 //! that goes through, and any request it signs to our inbox, clears both. A
 //! delivery queued before its host was marked is dropped unsent when it comes
 //! due, unless it is a `Follow`, which Mastodon sends regardless
 //! (`bypass_availability` in `FollowService`). An answer that will not change,
-//! such as a 404, is the server working, and counts for nothing.
+//! such as a 404, is the server working, and counts for nothing. Requests to
+//! a FASP are counted in minutes instead, five of which mark it.
+//!
+//! What is eunha's is where they are kept, [`Store`]: the Redis sets under
+//! the instance's key prefix, and the table.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+use ojak::deliverer::availability::{Availability, AvailabilityStore, Resolution};
 use redis::aio::ConnectionManager;
-
-/// Days with failures that mark a host unavailable
-/// (`DeliveryFailureTracker::FAILURE_THRESHOLDS[:days]`).
-const FAILURE_DAYS: usize = 7;
-
-/// Minutes with failures that mark a host unavailable, for a tracker counting
-/// minutes (`DeliveryFailureTracker::FAILURE_THRESHOLDS[:minutes]`).
-const FAILURE_MINUTES: usize = 5;
 
 /// How long the hosts marked unavailable are taken from memory before the
 /// table is read again, for a host another process marked.
 const UNAVAILABLE_TTL: Duration = Duration::from_secs(60);
 
-/// An instance's tracker.
+/// An instance's tracker: deliveries counted in days, and requests to a FASP
+/// in minutes, over one store.
 #[derive(Clone)]
 pub struct DeliveryFailureTracker {
+    days: Availability<Store>,
+    minutes: Availability<Store>,
+}
+
+/// Where an instance's failures and marks are kept.
+#[derive(Clone)]
+pub struct Store {
     db: sqlx::PgPool,
     redis: ConnectionManager,
     keys: crate::redis_keys::RedisKeyspace,
@@ -46,11 +52,102 @@ struct Unavailable {
     reading: AtomicBool,
 }
 
-/// The host deliveries to `url` are tracked by, as Mastodon normalises it:
-/// lower case, an internationalised name in its ASCII form, which is how
-/// `url` keeps a host.
-pub fn host(url: &url::Url) -> Option<String> {
-    url.host_str().map(str::to_ascii_lowercase)
+impl Store {
+    fn key(&self, host: &str) -> String {
+        self.keys.key(format!("exhausted_deliveries:{host}"))
+    }
+
+    /// Read the table again at the next question, after a change here.
+    fn forget(&self) {
+        self.unavailable.hosts.write().expect("unavailable hosts").0 = None;
+    }
+}
+
+impl AvailabilityStore for Store {
+    type Error = anyhow::Error;
+
+    async fn add_failure(&self, host: &str, stamp: &str) -> anyhow::Result<usize> {
+        let mut redis = self.redis.clone();
+        let (_, failures): (i64, usize) = redis::pipe()
+            .cmd("SADD")
+            .arg(self.key(host))
+            .arg(stamp)
+            .cmd("SCARD")
+            .arg(self.key(host))
+            .query_async(&mut redis)
+            .await?;
+        Ok(failures)
+    }
+
+    async fn clear_failures(&self, host: &str) -> anyhow::Result<bool> {
+        let mut redis = self.redis.clone();
+        let cleared: i64 = redis::cmd("DEL")
+            .arg(self.key(host))
+            .query_async(&mut redis)
+            .await?;
+        Ok(cleared > 0)
+    }
+
+    /// `UnavailableDomain.create`, which a domain already there fails
+    /// validation for and leaves as it is.
+    async fn mark_unavailable(&self, host: &str) -> anyhow::Result<bool> {
+        let marked = sqlx::query!(
+            r#"INSERT INTO unavailable_domains (domain, created_at, updated_at)
+                   VALUES ($1, now(), now())
+                   ON CONFLICT (domain) DO NOTHING"#,
+            host,
+        )
+        .execute(&self.db)
+        .await?;
+        let marked = marked.rows_affected() > 0;
+        if marked {
+            tracing::info!(host, "marked domain unavailable");
+            self.forget();
+        }
+        Ok(marked)
+    }
+
+    /// `UnavailableDomain.find_by(domain:)&.destroy`.
+    async fn mark_available(&self, host: &str) -> anyhow::Result<bool> {
+        let unmarked = sqlx::query!("DELETE FROM unavailable_domains WHERE domain = $1", host)
+            .execute(&self.db)
+            .await?;
+        let unmarked = unmarked.rows_affected() > 0;
+        if unmarked {
+            tracing::info!(host, "domain available again");
+            self.forget();
+        }
+        Ok(unmarked)
+    }
+
+    /// From memory, read again in the background once it is a minute old.
+    fn is_unavailable(&self, host: &str) -> bool {
+        let (read, hosts) = self
+            .unavailable
+            .hosts
+            .read()
+            .expect("unavailable hosts")
+            .clone();
+        if read.is_none_or(|read| read.elapsed() >= UNAVAILABLE_TTL)
+            && !self.unavailable.reading.swap(true, Ordering::AcqRel)
+        {
+            let store = self.clone();
+            crate::tenants::spawn(async move {
+                let hosts = sqlx::query_scalar!("SELECT domain FROM unavailable_domains")
+                    .fetch_all(&store.db)
+                    .await;
+                match hosts {
+                    Ok(hosts) => {
+                        *store.unavailable.hosts.write().expect("unavailable hosts") =
+                            (Some(Instant::now()), Arc::new(hosts.into_iter().collect()));
+                    }
+                    Err(error) => tracing::warn!(%error, "could not read unavailable domains"),
+                }
+                store.unavailable.reading.store(false, Ordering::Release);
+            });
+        }
+        hosts.contains(host)
+    }
 }
 
 impl DeliveryFailureTracker {
@@ -59,7 +156,7 @@ impl DeliveryFailureTracker {
         redis: ConnectionManager,
         keys: crate::redis_keys::RedisKeyspace,
     ) -> Self {
-        Self {
+        let store = Store {
             db,
             redis,
             keys,
@@ -67,18 +164,21 @@ impl DeliveryFailureTracker {
                 hosts: RwLock::new((None, Arc::default())),
                 reading: AtomicBool::new(false),
             }),
+        };
+        Self {
+            days: Availability::new(store.clone(), Resolution::Days),
+            minutes: Availability::new(store, Resolution::Minutes),
         }
     }
 
-    fn key(&self, host: &str) -> String {
-        self.keys.key(format!("exhausted_deliveries:{host}"))
+    fn store(&self) -> &Store {
+        self.days.store()
     }
 
     /// Count a failed attempt at a delivery to `host`
     /// (`DeliveryFailureTracker#track_failure!`).
     pub async fn track_failure(&self, host: &str) -> anyhow::Result<()> {
-        let day = chrono::Utc::now().format("%Y%m%d").to_string();
-        self.track_failure_at(host, day, FAILURE_DAYS).await
+        self.days.track_failure(host).await.map(drop)
     }
 
     /// Count a failed request to `host` at the resolution of minutes
@@ -86,88 +186,31 @@ impl DeliveryFailureTracker {
     /// .track_failure!`), which is how requests to a FASP are tracked: five
     /// different minutes with failures mark the host unavailable.
     pub async fn track_failure_minutes(&self, host: &str) -> anyhow::Result<()> {
-        let minute = chrono::Utc::now().format("%Y%m%d%H%M").to_string();
-        self.track_failure_at(host, minute, FAILURE_MINUTES).await
-    }
-
-    async fn track_failure_at(
-        &self,
-        host: &str,
-        stamp: String,
-        threshold: usize,
-    ) -> anyhow::Result<()> {
-        let mut redis = self.redis.clone();
-        let (_, days): (i64, usize) = redis::pipe()
-            .cmd("SADD")
-            .arg(self.key(host))
-            .arg(stamp)
-            .cmd("SCARD")
-            .arg(self.key(host))
-            .query_async(&mut redis)
-            .await?;
-        if days >= threshold {
-            // `UnavailableDomain.create`, which a domain already there fails
-            // validation for and leaves as it is.
-            let marked = sqlx::query!(
-                r#"INSERT INTO unavailable_domains (domain, created_at, updated_at)
-                   VALUES ($1, now(), now())
-                   ON CONFLICT (domain) DO NOTHING"#,
-                host,
-            )
-            .execute(&self.db)
-            .await?;
-            if marked.rows_affected() > 0 {
-                tracing::info!(host, days, "marked domain unavailable");
-                self.forget();
-            }
-        }
-        Ok(())
+        self.minutes.track_failure(host).await.map(drop)
     }
 
     /// Clear `host`'s failures, and its mark if it has one
-    /// (`DeliveryFailureTracker#track_success!`, and `reset!`).
+    /// (`DeliveryFailureTracker#track_success!`, and `reset!`). With no
+    /// failures to clear and no mark remembered, the table is not asked, so
+    /// that a fan-out to thousands of servers that answer does not ask it
+    /// thousands of times; Mastodon asks it every time.
     pub async fn track_success(&self, host: &str) -> anyhow::Result<()> {
-        let mut redis = self.redis.clone();
-        let cleared: i64 = redis::cmd("DEL")
-            .arg(self.key(host))
-            .query_async(&mut redis)
-            .await?;
-        // A host is marked only once it has failures, and only a success or
-        // `reset` clears them; with none to clear there is no mark either,
-        // and a fan-out to thousands of servers that answer does not ask the
-        // table thousands of times. Mastodon asks it every time.
-        if cleared > 0 || self.is_unavailable(host) {
-            let unmarked = sqlx::query!("DELETE FROM unavailable_domains WHERE domain = $1", host)
-                .execute(&self.db)
-                .await?;
-            if unmarked.rows_affected() > 0 {
-                tracing::info!(host, "domain available again");
-                self.forget();
-            }
-        }
-        Ok(())
+        self.days.track_success(host).await.map(drop)
     }
 
     /// Clear `host`'s failures and its mark, asking the table whatever this
     /// process remembers (`track_success!` as `restart_delivery` calls it).
     pub async fn restart(&self, host: &str) -> anyhow::Result<()> {
-        self.clear_failures(host).await?;
-        sqlx::query!("DELETE FROM unavailable_domains WHERE domain = $1", host)
-            .execute(&self.db)
-            .await?;
-        self.forget();
+        self.store().clear_failures(host).await?;
+        self.store().mark_available(host).await?;
+        self.store().forget();
         Ok(())
     }
 
     /// Forget `host`'s failures, leaving any mark
     /// (`DeliveryFailureTracker#clear_failures!`).
     pub async fn clear_failures(&self, host: &str) -> anyhow::Result<()> {
-        let mut redis = self.redis.clone();
-        let _: i64 = redis::cmd("DEL")
-            .arg(self.key(host))
-            .query_async(&mut redis)
-            .await?;
-        Ok(())
+        self.store().clear_failures(host).await.map(drop)
     }
 
     /// The days deliveries to `host` failed on, oldest first
@@ -176,9 +219,10 @@ impl DeliveryFailureTracker {
         &self,
         host: &str,
     ) -> anyhow::Result<Vec<chrono::NaiveDate>> {
-        let mut redis = self.redis.clone();
+        let store = self.store();
+        let mut redis = store.redis.clone();
         let days: Vec<String> = redis::cmd("SMEMBERS")
-            .arg(self.key(host))
+            .arg(store.key(host))
             .query_async(&mut redis)
             .await?;
         let mut days: Vec<chrono::NaiveDate> = days
@@ -198,11 +242,12 @@ impl DeliveryFailureTracker {
         &self,
         domains: Option<&[String]>,
     ) -> anyhow::Result<std::collections::HashMap<String, usize>> {
-        let mut redis = self.redis.clone();
+        let store = self.store();
+        let mut redis = store.redis.clone();
         let candidates: Vec<String> = match domains {
             Some(domains) => domains.to_vec(),
             None => {
-                let prefix = self.key("");
+                let prefix = store.key("");
                 let mut found = vec![];
                 let mut cursor: u64 = 0;
                 loop {
@@ -230,7 +275,7 @@ impl DeliveryFailureTracker {
             "SELECT domain FROM unavailable_domains WHERE domain = ANY($1)",
             &candidates,
         )
-        .fetch_all(&self.db)
+        .fetch_all(&store.db)
         .await?
         .into_iter()
         .collect();
@@ -240,7 +285,7 @@ impl DeliveryFailureTracker {
                 continue;
             }
             let days: usize = redis::cmd("SCARD")
-                .arg(self.key(&domain))
+                .arg(store.key(&domain))
                 .query_async(&mut redis)
                 .await?;
             if days > 0 {
@@ -260,10 +305,10 @@ impl DeliveryFailureTracker {
                RETURNING id"#,
             host,
         )
-        .fetch_optional(&self.db)
+        .fetch_optional(&self.store().db)
         .await?;
         if id.is_some() {
-            self.forget();
+            self.store().forget();
         }
         Ok(id)
     }
@@ -271,81 +316,26 @@ impl DeliveryFailureTracker {
     /// Whether deliveries to `host` are no longer sent. From memory, read
     /// again in the background once it is a minute old.
     pub fn is_unavailable(&self, host: &str) -> bool {
-        let (read, hosts) = self
-            .unavailable
-            .hosts
-            .read()
-            .expect("unavailable hosts")
-            .clone();
-        if read.is_none_or(|read| read.elapsed() >= UNAVAILABLE_TTL)
-            && !self.unavailable.reading.swap(true, Ordering::AcqRel)
-        {
-            let tracker = self.clone();
-            crate::tenants::spawn(async move {
-                let hosts = sqlx::query_scalar!("SELECT domain FROM unavailable_domains")
-                    .fetch_all(&tracker.db)
-                    .await;
-                match hosts {
-                    Ok(hosts) => {
-                        *tracker
-                            .unavailable
-                            .hosts
-                            .write()
-                            .expect("unavailable hosts") =
-                            (Some(Instant::now()), Arc::new(hosts.into_iter().collect()));
-                    }
-                    Err(error) => tracing::warn!(%error, "could not read unavailable domains"),
-                }
-                tracker.unavailable.reading.store(false, Ordering::Release);
-            });
-        }
-        hosts.contains(host)
+        self.store().is_unavailable(host)
     }
 
-    /// Read the table again at the next question, after a change here.
-    fn forget(&self) {
-        self.unavailable.hosts.write().expect("unavailable hosts").0 = None;
+    /// Whether deliveries to `inbox` are no longer sent: its host's.
+    pub fn is_unavailable_inbox(&self, inbox: &url::Url) -> bool {
+        self.days.is_unavailable(inbox)
     }
 
     /// What `attempt` says about its host, recorded in the background.
     pub fn record(&self, attempt: &ojak::deliverer::DeliveryAttempt) {
-        use ojak::deliverer::AttemptOutcome;
-
-        let Some(host) = host(&attempt.inbox) else {
+        // `@unsalvageable`: neither a success nor a failure.
+        if ojak::deliverer::availability::succeeded(attempt).is_none() {
             return;
-        };
-        let succeeded = match attempt.outcome {
-            AttemptOutcome::Delivered => true,
-            AttemptOutcome::Failed {
-                permanent: false, ..
-            }
-            | AttemptOutcome::Held => false,
-            // `@unsalvageable`: neither a success nor a failure.
-            AttemptOutcome::Failed {
-                permanent: true, ..
-            } => return,
-        };
+        }
         let tracker = self.clone();
+        let attempt = attempt.clone();
         crate::tenants::spawn(async move {
-            let recorded = if succeeded {
-                tracker.track_success(&host).await
-            } else {
-                tracker.track_failure(&host).await
-            };
-            if let Err(error) = recorded {
-                tracing::warn!(host, %error, "could not record a delivery's outcome");
+            if let Err(error) = tracker.days.record(&attempt).await {
+                tracing::warn!(inbox = %attempt.inbox, %error, "could not record a delivery's outcome");
             }
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::host;
-
-    #[test]
-    fn a_host_is_tracked_in_its_ascii_form() {
-        let url = url::Url::parse("https://Bücher.Example/inbox").unwrap();
-        assert_eq!(host(&url).as_deref(), Some("xn--bcher-kva.example"));
     }
 }

@@ -538,6 +538,10 @@ async fn claim(
 }
 
 /// Run job `id` now, whenever it is due, unless another worker holds it.
+pub async fn run_now(state: &AppState, id: i64) -> anyhow::Result<()> {
+    run_one(state, id).await
+}
+
 async fn run_one(state: &AppState, id: i64) -> anyhow::Result<()> {
     let worker = format!("immediate-{}", std::process::id());
     for job in claim(state, 1, &worker, Some(id)).await? {

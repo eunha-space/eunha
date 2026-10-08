@@ -133,29 +133,13 @@ pub async fn fetch_resource(
     Ok(json.filter(|json| json.get("id").and_then(Value::as_str) == Some(uri)))
 }
 
-/// `JsonLdHelper#supported_context?`.
-pub fn supported_context(json: &Value) -> bool {
-    const CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
-    match json.get("@context") {
-        Some(Value::String(context)) => context == CONTEXT,
-        Some(Value::Array(contexts)) => contexts.iter().any(|c| c.as_str() == Some(CONTEXT)),
-        _ => false,
-    }
-}
+/// `JsonLdHelper`'s accessors for a document as it arrived, which ojak
+/// ports.
+pub use ojak_vocab::json_ld_helper::{supported_context, value_or_id};
 
 /// `JsonLdHelper#non_matching_uri_hosts?`.
 pub fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
     !ojak::origin::same_host(base, comparison)
-}
-
-/// The id of an item that is either a URI or an object carrying one
-/// (`JsonLdHelper#value_or_id`).
-pub fn value_or_id(value: &Value) -> Option<&str> {
-    match value {
-        Value::String(s) => Some(s.as_str()),
-        Value::Object(o) => o.get("id").and_then(Value::as_str),
-        _ => None,
-    }
 }
 
 /// Rails' `present?` for a JSON value.

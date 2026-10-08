@@ -156,7 +156,10 @@ pub fn retry_in(failed: u32) -> Duration {
 }
 
 /// An instance's deliverer.
-pub type Deliverer = ojak::deliverer::Deliverer<ojak_postgres::PostgresQueue, SigningKeys>;
+pub type Deliverer = ojak::deliverer::Deliverer<
+    ojak_postgres::PostgresQueue,
+    ojak::deliverer::CachingSenderKeys<SigningKeys>,
+>;
 
 /// Build an instance's deliverer, from its `[workers]` settings.
 ///
@@ -200,11 +203,11 @@ pub fn deliverer(
     let settled_db = db.clone();
     Ok(ojak::deliverer::Deliverer::new(
         queue,
-        SigningKeys {
-            db,
-            encryptor,
-            parsed: Default::default(),
-        },
+        // A post fans out to thousands of inboxes signed with one key, and
+        // loading it for each took two queries apiece: with many deliveries
+        // in flight they held the instance's whole connection pool, and its
+        // own requests timed out. So a key is kept for a while once loaded.
+        ojak::deliverer::CachingSenderKeys::new(SigningKeys { db, encryptor }, SIGNING_KEY_TTL),
         client,
         config,
     )
@@ -227,22 +230,15 @@ pub fn deliverer(
     })
     .skip_if(move |inbox, activity| {
         activity.get("type").and_then(Value::as_str) != Some("Follow")
-            && crate::federation::delivery_failures::host(inbox)
-                .is_some_and(|host| tracker.is_unavailable(&host))
+            && tracker.is_unavailable_inbox(inbox)
     }))
 }
 
-/// The key a delivery is signed with, found by the key ID it was queued with.
+/// The key a delivery is signed with, found by the key ID it was queued with:
+/// loaded from the database and decrypted.
 pub struct SigningKeys {
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
-    /// Keys already loaded, decrypted and parsed, by key ID. A post fans out
-    /// to thousands of inboxes signed with one key, and loading it for each
-    /// took two queries apiece: with many deliveries in flight they held the
-    /// instance's whole connection pool, and its own requests timed out.
-    parsed: std::sync::Mutex<
-        std::collections::HashMap<String, (std::time::Instant, ojak::sig::SenderKey)>,
-    >,
 }
 
 /// How long a loaded signing key is used before it is loaded again, so that a
@@ -254,11 +250,6 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
         &self,
         key_id: &str,
     ) -> Result<Option<ojak::sig::SenderKey>, ojak::queue::QueueError> {
-        if let Some((loaded, key)) = self.parsed.lock().expect("signing keys").get(key_id) {
-            if loaded.elapsed() < SIGNING_KEY_TTL {
-                return Ok(Some(key.clone()));
-            }
-        }
         let transient = |e: anyhow::Error| ojak::queue::QueueError(e.to_string());
         let account_id = match signing_account_id_in(&self.db, key_id).await {
             Ok(id) => id,
@@ -282,17 +273,10 @@ impl ojak::deliverer::SenderKeys for SigningKeys {
             }
         };
         match ojak::sig::PrivateKey::from_pem(&pem) {
-            Ok(private_key) => {
-                let key = ojak::sig::SenderKey {
-                    key_id: key_id.to_owned(),
-                    private_key: Arc::new(private_key),
-                };
-                let mut parsed = self.parsed.lock().expect("signing keys");
-                // Only the keys signing now are worth keeping.
-                parsed.retain(|_, (loaded, _)| loaded.elapsed() < SIGNING_KEY_TTL);
-                parsed.insert(key_id.to_owned(), (std::time::Instant::now(), key.clone()));
-                Ok(Some(key))
-            }
+            Ok(private_key) => Ok(Some(ojak::sig::SenderKey {
+                key_id: key_id.to_owned(),
+                private_key: Arc::new(private_key),
+            })),
             Err(e) => {
                 tracing::error!(key_id, error = %e, "signing key does not parse; the delivery fails");
                 Ok(None)
@@ -999,7 +983,7 @@ async fn attach_integrity_proof(
     // A proof is only meaningful to a JSON-LD reader if `proof` is defined, so
     // the document has to carry the data integrity context before it is signed
     // — the signature covers `@context` too.
-    let with_context = match with_data_integrity_context(activity.clone()) {
+    let with_context = match ojak::sig::integrity::with_data_integrity_context(activity.clone()) {
         Some(document) => document,
         None => return activity,
     };
@@ -1080,32 +1064,6 @@ async fn attach_linked_data_signature(
     }
 }
 
-/// Add the data integrity context to a document's `@context`, however it is
-/// currently shaped, leaving it alone if it is already there.
-fn with_data_integrity_context(mut activity: Value) -> Option<Value> {
-    const DATA_INTEGRITY: &str = "https://w3id.org/security/data-integrity/v1";
-
-    let object = activity.as_object_mut()?;
-    match object.get_mut("@context") {
-        Some(Value::Array(entries)) => {
-            if !entries.iter().any(|e| e.as_str() == Some(DATA_INTEGRITY)) {
-                entries.push(Value::from(DATA_INTEGRITY));
-            }
-        }
-        Some(existing) => {
-            let existing = existing.clone();
-            object.insert(
-                "@context".to_string(),
-                Value::Array(vec![existing, Value::from(DATA_INTEGRITY)]),
-            );
-        }
-        None => {
-            object.insert("@context".to_string(), Value::from(DATA_INTEGRITY));
-        }
-    }
-    Some(activity)
-}
-
 /// Periodically delete deliveries given up on more than a week ago, whose
 /// `last_error` is kept that long for debugging. Deliveries that went through
 /// are deleted as they go.
@@ -1126,153 +1084,40 @@ pub async fn run_delivery_cleanup(state: AppState) {
 }
 
 /// Mastodon's Stoplight for an inbox, kept in Redis as
-/// `Stoplight::DataStore::Redis` keeps it, so that every process delivering
-/// for the instance holds back the same inboxes and lets one probe through
-/// between them: the failures in a row (`stoplight:<inbox>:failures`), when
-/// an open breaker turns half-open (`stoplight:<inbox>:recovery_after`, in
-/// milliseconds), and the lock its probe holds (`stoplight:<inbox>:probe`),
-/// under the instance's key prefix on the coordination Redis. Each lasts a
-/// week after it last changed, as Stoplight's metadata does. A breaker Redis
-/// cannot be asked about lets the delivery through.
+/// `Stoplight::DataStore::Redis` keeps it ([`ojak_redis::RedisBreakers`]), so
+/// that every process delivering for the instance holds back the same inboxes
+/// and lets one probe through between them: the failures in a row
+/// (`stoplight:<inbox>:failures`), when an open breaker turns half-open
+/// (`stoplight:<inbox>:recovery_after`, in milliseconds), and the lock its
+/// probe holds (`stoplight:<inbox>:probe`), under the instance's key prefix
+/// on the coordination Redis. Each lasts a week after it last changed, as
+/// Stoplight's metadata does. A breaker Redis cannot be asked about lets the
+/// delivery through. A probe's lock is released with the pooled Redis's
+/// `eunha_compare_delete` function when the keyspace is shared, as every
+/// other eunha lock is.
 #[derive(Clone)]
-pub struct RedisBreakers {
-    redis: redis::aio::ConnectionManager,
-    keys: crate::redis_keys::RedisKeyspace,
-}
-
-/// How long Stoplight keeps a light's metadata after it last changed.
-const BREAKER_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+pub struct RedisBreakers(ojak_redis::RedisBreakers<redis::aio::ConnectionManager>);
 
 impl RedisBreakers {
     pub fn new(
         redis: redis::aio::ConnectionManager,
         keys: crate::redis_keys::RedisKeyspace,
     ) -> Self {
-        Self { redis, keys }
-    }
-
-    fn failures_key(&self, inbox: &str) -> String {
-        self.keys.key(format!("stoplight:{inbox}:failures"))
-    }
-
-    fn recovery_key(&self, inbox: &str) -> String {
-        self.keys.key(format!("stoplight:{inbox}:recovery_after"))
-    }
-
-    /// `Light#run`'s choice of strategy: closed (green) lets the delivery
-    /// through; open (red) holds it until the cool-off has passed; half-open
-    /// (yellow) lets it through as the probe if it takes the recovery lock,
-    /// which starts the count of failures again, and holds it otherwise.
-    pub async fn admit(
-        &self,
-        breaker: &ojak::deliverer::CircuitBreaker,
-        inbox: &str,
-    ) -> ojak::deliverer::Admission {
-        use ojak::deliverer::Admission;
-
-        let mut redis = self.redis.clone();
-        let recovery_after: redis::RedisResult<Option<u64>> = redis::cmd("GET")
-            .arg(self.recovery_key(inbox))
-            .query_async(&mut redis)
-            .await;
-        let Ok(Some(recovery_after)) = recovery_after else {
-            return Admission::Pass;
+        let release = if keys.is_shared() {
+            ojak_redis::ProbeRelease::Function("eunha_compare_delete".into())
+        } else {
+            ojak_redis::ProbeRelease::Eval
         };
-        let now = now_millis();
-        if now < recovery_after {
-            return Admission::Held(Duration::from_millis(recovery_after - now));
-        }
-        let ttl = usize::try_from(breaker.cool_off.as_millis()).unwrap_or(usize::MAX);
-        let Some(lock) = crate::redis_lock::try_acquire_on(
-            &self.redis,
-            &self.keys,
-            &format!("stoplight:{inbox}:probe"),
-            ttl.max(1),
-        )
-        .await
-        else {
-            return Admission::Held(breaker.cool_off);
-        };
-        // `YellowRunStrategy#enter_recovery`: `metrics_store.clear`.
-        let _: redis::RedisResult<()> = redis::cmd("DEL")
-            .arg(self.failures_key(inbox))
-            .query_async(&mut redis)
-            .await;
-        Admission::Probe(ojak::deliverer::Probe::new(lock))
-    }
-
-    /// `Tracker::Request` for a delivery let through closed, and
-    /// `Tracker::RecoveryProbe` for the probe, whose lock is released after.
-    pub async fn record(
-        &self,
-        breaker: &ojak::deliverer::CircuitBreaker,
-        inbox: &str,
-        failed: bool,
-        probe: Option<ojak::deliverer::Probe>,
-    ) -> redis::RedisResult<()> {
-        let mut redis = self.redis.clone();
-        let failures = self.failures_key(inbox);
-        let recovery = self.recovery_key(inbox);
-        let reopen = || {
-            let mut cmd = redis::cmd("SET");
-            cmd.arg(&recovery)
-                .arg(now_millis().saturating_add(
-                    u64::try_from(breaker.cool_off.as_millis()).unwrap_or(u64::MAX),
-                ))
-                .arg("EX")
-                .arg(BREAKER_TTL_SECS);
-            cmd
-        };
-        let recorded = match (probe.is_some(), failed) {
-            // The probe failed: red for another cool-off.
-            (true, true) => reopen().query_async(&mut redis).await,
-            // The probe succeeded: green.
-            (true, false) => {
-                redis::cmd("DEL")
-                    .arg(&recovery)
-                    .query_async(&mut redis)
-                    .await
-            }
-            // A success starts the count of failures again, and only that.
-            (false, false) => {
-                redis::pipe()
-                    .cmd("DEL")
-                    .arg(&failures)
-                    .ignore()
-                    .cmd("EXPIRE")
-                    .arg(&recovery)
-                    .arg(BREAKER_TTL_SECS)
-                    .ignore()
-                    .query_async(&mut redis)
-                    .await
-            }
-            (false, true) => {
-                let (count,): (u32,) = redis::pipe()
-                    .cmd("INCRBY")
-                    .arg(&failures)
-                    .arg(1)
-                    .cmd("EXPIRE")
-                    .arg(&failures)
-                    .arg(BREAKER_TTL_SECS)
-                    .ignore()
-                    .query_async(&mut redis)
-                    .await?;
-                if count >= breaker.threshold.max(1) {
-                    reopen().query_async(&mut redis).await
-                } else {
-                    Ok(())
-                }
-            }
-        };
-        drop(probe);
-        recorded
+        Self(ojak_redis::RedisBreakers::new(redis, keys.key("")).release_with(release))
     }
 }
 
-fn now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+impl std::ops::Deref for RedisBreakers {
+    type Target = ojak_redis::RedisBreakers<redis::aio::ConnectionManager>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl ojak::deliverer::BreakerStore for RedisBreakers {
@@ -1281,7 +1126,7 @@ impl ojak::deliverer::BreakerStore for RedisBreakers {
         breaker: &'a ojak::deliverer::CircuitBreaker,
         key: &'a str,
     ) -> ojak::deliverer::BreakerFuture<'a, ojak::deliverer::Admission> {
-        Box::pin(RedisBreakers::admit(self, breaker, key))
+        Box::pin(self.0.admit(breaker, key))
     }
 
     fn record<'a>(
@@ -1292,7 +1137,7 @@ impl ojak::deliverer::BreakerStore for RedisBreakers {
         probe: Option<ojak::deliverer::Probe>,
     ) -> ojak::deliverer::BreakerFuture<'a, ()> {
         Box::pin(async move {
-            if let Err(error) = RedisBreakers::record(self, breaker, key, failed, probe).await {
+            if let Err(error) = self.0.record(breaker, key, failed, probe).await {
                 tracing::warn!(%error, "could not record a delivery in its circuit breaker");
             }
         })

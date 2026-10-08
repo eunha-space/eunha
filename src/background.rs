@@ -49,11 +49,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             &state,
-            "inbox cleanup",
-            crate::api::ap::inbox::run_inbox_cleanup(state.clone()),
-        ),
-        until_stopped(
-            &state,
             "media queue",
             crate::api::mastodon::media::run_media_queue(state.clone()),
         ),
@@ -106,13 +101,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             deliverer.run_until(stop.cancelled_owned()).await;
         }));
     }
-    for index in 0..workers.inbox_workers {
-        tasks.push(until_stopped(
-            &state,
-            "inbox queue",
-            crate::api::ap::inbox::run_inbox_queue(state.clone(), index),
-        ));
-    }
     for index in 0..workers.job_workers {
         tasks.push(until_stopped(
             &state,
@@ -125,8 +113,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         job_concurrency = workers.job_concurrency,
         delivery_workers = workers.delivery_workers,
         delivery_concurrency = workers.delivery_concurrency,
-        inbox_workers = workers.inbox_workers,
-        inbox_concurrency = workers.inbox_concurrency,
         "background queues started"
     );
     tasks
@@ -180,7 +166,6 @@ pub async fn rest(stop: &CancellationToken, nap: Duration) {
 #[derive(Default)]
 pub struct QueueWakes {
     pub delivery: tokio::sync::Notify,
-    pub inbox: tokio::sync::Notify,
     pub media: tokio::sync::Notify,
     /// A job was queued (crate::jobs).
     pub jobs: tokio::sync::Notify,

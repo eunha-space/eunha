@@ -9,14 +9,6 @@
 use crate::db::models::domain_severity;
 use crate::state::AppState;
 
-/// The host of an ActivityPub id/URI, lowercased.
-pub fn domain_of(uri: &str) -> Option<String> {
-    url::Url::parse(uri)
-        .ok()?
-        .host_str()
-        .map(|h| h.to_lowercase())
-}
-
 /// The effect of the admin domain block covering `domain`, if any.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DomainBlock {
@@ -73,7 +65,7 @@ pub async fn domain_not_allowed(state: &AppState, uri_or_domain: &str) -> bool {
         format!("https://{}/", uri_or_domain.trim().replace('/', ""))
     };
     // No host is on no allow list, and under no block.
-    let Some(domain) = domain_of(&uri) else {
+    let Some(domain) = ojak::origin::host_of(&uri) else {
         return state.instance.limited_federation_mode;
     };
     if state.instance.limited_federation_mode {
@@ -97,7 +89,7 @@ async fn domain_allowed(state: &AppState, domain: &str) -> bool {
 /// True when activities attributed to `actor_uri` should be dropped on arrival
 /// (the actor's domain is defederated at suspend severity).
 pub async fn actor_is_suspended(state: &AppState, actor_uri: &str) -> bool {
-    let Some(domain) = domain_of(actor_uri) else {
+    let Some(domain) = ojak::origin::host_of(actor_uri) else {
         return false;
     };
     matches!(lookup(state, &domain).await, Some(b) if b.is_suspend())
@@ -106,7 +98,7 @@ pub async fn actor_is_suspended(state: &AppState, actor_uri: &str) -> bool {
 /// True when remote media from `actor_uri`'s domain should not be stored
 /// (`reject_media`, or a full suspend which implies it).
 pub async fn actor_media_rejected(state: &AppState, actor_uri: &str) -> bool {
-    let Some(domain) = domain_of(actor_uri) else {
+    let Some(domain) = ojak::origin::host_of(actor_uri) else {
         return false;
     };
     matches!(lookup(state, &domain).await, Some(b) if b.reject_media || b.is_suspend())
@@ -126,20 +118,14 @@ pub async fn suspended_domains(state: &AppState) -> Vec<String> {
 
 /// True if `host` equals or is a subdomain of any entry in `blocked`.
 pub fn host_matches(host: &str, blocked: &[String]) -> bool {
-    let host = host.to_lowercase();
-    blocked.iter().any(|b| {
-        let b = b.to_lowercase();
-        host == b || host.ends_with(&format!(".{b}"))
-    })
+    blocked
+        .iter()
+        .any(|parent| ojak::origin::host_within(host, parent))
 }
 
 /// True if the inbox URL's host is covered by any of the `blocked` domains.
 pub fn inbox_suspended(inbox_url: &str, blocked: &[String]) -> bool {
-    url::Url::parse(inbox_url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .map(|h| host_matches(&h, blocked))
-        .unwrap_or(false)
+    ojak::origin::host_of(inbox_url).is_some_and(|host| host_matches(&host, blocked))
 }
 
 #[cfg(test)]
@@ -148,15 +134,6 @@ mod tests {
 
     fn blocked() -> Vec<String> {
         vec!["example.com".into(), "Evil.NET".into()]
-    }
-
-    #[test]
-    fn domain_of_extracts_lowercased_host() {
-        assert_eq!(
-            domain_of("https://Mastodon.Social/users/foo"),
-            Some("mastodon.social".into())
-        );
-        assert_eq!(domain_of("not a url"), None);
     }
 
     #[test]

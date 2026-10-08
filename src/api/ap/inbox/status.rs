@@ -8,10 +8,11 @@ use crate::{error::AppResult, state::AppState};
 
 use super::attachment::{ap_attachment_file_meta, classify_attachment_type, preview_card_link};
 use super::{
-    acquire_create_lock, as_string_vec, delete_arrived_first, delete_later, fetch_remote_status,
-    mirror_item_into, refresh_collection_item_count, resolve_or_fetch_remote_account, same_host,
-    sync_remote_poll, tag_type_is, upsert_remote_collection,
+    acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status, mirror_item_into,
+    refresh_collection_item_count, resolve_or_fetch_remote_account, same_host, sync_remote_poll,
+    upsert_remote_collection,
 };
+use ojak_vocab::json_ld_helper::{ids, type_is};
 
 pub(super) async fn handle_delete(
     state: &AppState,
@@ -419,8 +420,8 @@ pub(super) async fn handle_announce(
     // mirroring Mastodon's ActivityPub::Activity::Announce#visibility_from_audience
     // (public collection in `to` → public, in `cc` → unlisted, a followers
     // collection → private, otherwise direct) instead of assuming public.
-    let announce_to = as_string_vec(activity.get("to"));
-    let announce_cc = as_string_vec(activity.get("cc"));
+    let announce_to = ids(activity.get("to"));
+    let announce_cc = ids(activity.get("cc"));
     let visibility = crate::db::models::vis::from_audience(&announce_to, &announce_cc);
 
     let boost_id = crate::snowflake::next_id();
@@ -891,7 +892,7 @@ pub(super) async fn handle_update(
                 Some(obj @ Value::Object(_)) => vec![obj.clone()],
                 _ => vec![],
             };
-            for tag in tags_arr.iter().filter(|t| tag_type_is(t, "Hashtag")) {
+            for tag in tags_arr.iter().filter(|t| type_is(t, "Hashtag")) {
                 let name = match tag
                     .get("name")
                     .and_then(|v| v.as_str())

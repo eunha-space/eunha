@@ -9,26 +9,14 @@ use crate::state::AppState;
 /// `LIMIT`.
 pub const LIMIT: i64 = 10;
 
-/// `TagManager#normalize_domain`: stripped, without a trailing slash,
-/// lowercased and in its ASCII form. `None` where Addressable would raise.
-pub fn normalize_domain(domain: &str) -> Option<String> {
-    let domain = domain.trim();
-    let domain = domain.strip_suffix('/').unwrap_or(domain).to_lowercase();
-    if domain.is_empty() {
-        return Some(String::new());
-    }
-    url::Url::parse(&format!("https://{domain}/"))
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-}
-
 /// The domains for `q`; `None` for a blank one, which the endpoint renders as
 /// `null`.
 pub async fn search(state: &AppState, q: Option<&str>) -> AppResult<Option<Vec<String>>> {
     let Some(q) = q.filter(|q| !q.trim().is_empty()) else {
         return Ok(None);
     };
-    let Some(domain) = normalize_domain(q) else {
+    // `rescue Addressable::URI::InvalidURIError`: no domains.
+    let Ok(domain) = crate::federation::tag_manager::normalize_domain(q) else {
         return Ok(Some(vec![]));
     };
     // Nothing rescues a search server error here, so it is a 500.

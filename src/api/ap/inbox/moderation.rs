@@ -2,6 +2,7 @@
 //! account), `Flag` (a remote report against local accounts/statuses), and
 //! `Move` (an actor migrating to a new account).
 
+use ojak_vocab::json_ld_helper::value_or_id;
 use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
@@ -109,11 +110,10 @@ pub(super) async fn handle_flag(state: &AppState, activity: &Value) -> AppResult
     }
 
     // `object_uris`: a string, an object with an id, or an array of either.
-    let object_uris: Vec<String> = match activity.get("object") {
-        Some(Value::Array(items)) => items.iter().filter_map(value_or_id).collect(),
-        Some(item) => value_or_id(item).into_iter().collect(),
-        None => vec![],
-    };
+    let object_uris: Vec<String> = ojak_vocab::json_ld_helper::ids(activity.get("object"))
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
 
     let mut target_accounts: Vec<i64> = vec![];
     let mut statuses: Vec<i64> = vec![];
@@ -135,10 +135,7 @@ pub(super) async fn handle_flag(state: &AppState, activity: &Value) -> AppResult
         .get("id")
         .and_then(|i| i.as_str())
         .filter(|id| {
-            crate::federation::moderation::domain_of(id)
-                == reporter
-                    .stored_uri()
-                    .and_then(crate::federation::moderation::domain_of)
+            ojak::origin::host_of(id) == reporter.stored_uri().and_then(ojak::origin::host_of)
         })
         .map(str::to_owned);
     // `report_comment`
@@ -215,15 +212,6 @@ pub(super) async fn handle_flag(state: &AppState, activity: &Value) -> AppResult
     Ok(())
 }
 
-/// `value_or_id`.
-fn value_or_id(value: &Value) -> Option<String> {
-    match value {
-        Value::String(s) => Some(s.clone()),
-        Value::Object(o) => o.get("id").and_then(Value::as_str).map(str::to_owned),
-        _ => None,
-    }
-}
-
 /// `ActivityPub::Activity::Move::PROCESSING_COOLDOWN`: how long one Move
 /// from an account keeps others from it out.
 const MOVE_PROCESSING_COOLDOWN_SECS: u64 = 7 * 24 * 60 * 60;
@@ -246,7 +234,7 @@ pub(super) async fn handle_move(state: &AppState, activity: &Value) -> AppResult
     }
     // `return if origin_account.uri != object_uri`.
     let object_uri = activity.get("object").and_then(value_or_id);
-    if object_uri.as_deref() != Some(actor_uri) {
+    if object_uri != Some(actor_uri) {
         return Ok(());
     }
     let origin_id = resolve_or_fetch_remote_account(state, actor_uri).await?;
@@ -289,7 +277,7 @@ async fn process_move(
     };
     // `ActivityPub::FetchRemoteAccountService`, which returns nil when the
     // target cannot be fetched.
-    let Ok(target_id) = super::fetch_remote_account(state, &target_uri).await else {
+    let Ok(target_id) = super::fetch_remote_account(state, target_uri).await else {
         return Ok(false);
     };
     let Some(target) = sqlx::query_as!(

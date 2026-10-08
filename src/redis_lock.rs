@@ -52,18 +52,8 @@ impl Drop for RedisLock {
 /// instance's key prefix exactly as given. `None` when someone else holds it
 /// or Redis cannot be reached.
 pub async fn try_acquire(state: &AppState, name: &str, ttl_ms: usize) -> Option<RedisLock> {
-    try_acquire_on(&state.redis_coordination, &state.redis_keys, name, ttl_ms).await
-}
-
-/// [`try_acquire`] on the given coordination Redis and keyspace, for what
-/// holds those rather than the instance's state, such as the delivery
-/// breakers.
-pub async fn try_acquire_on(
-    redis: &redis::aio::ConnectionManager,
-    keys: &crate::redis_keys::RedisKeyspace,
-    name: &str,
-    ttl_ms: usize,
-) -> Option<RedisLock> {
+    let redis = &state.redis_coordination;
+    let keys = &state.redis_keys;
     let key = keys.key(name);
     let token = crate::snowflake::next_id().to_string();
     let mut connection = redis.clone();

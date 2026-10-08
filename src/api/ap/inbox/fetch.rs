@@ -401,9 +401,7 @@ async fn discovery_limit_reached(state: &AppState, request_id: &str) -> bool {
 /// Whether two URIs name the same HTTP(S) host, which is how Mastodon decides
 /// whether an object's attribution can be believed; for portable ids, the
 /// same DID, whose proof is what vouches for them.
-fn same_host(a: &str, b: &str) -> bool {
-    crate::federation::portable::same_authority(a, b)
-}
+use ojak::origin::same_authority as same_host;
 
 /// Looks up a remote account by URI, fetching it from the remote server if unknown.
 pub async fn resolve_or_fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResult<i64> {
@@ -415,7 +413,7 @@ pub async fn resolve_or_fetch_remote_account(state: &AppState, actor_uri: &str) 
 /// that what is read off it (a Move's `alsoKnownAs`) is current. A URI on
 /// this instance is the local account, without a fetch.
 pub async fn fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResult<i64> {
-    let ours = crate::federation::moderation::domain_of(actor_uri).is_some_and(|host| {
+    let ours = ojak::origin::host_of(actor_uri).is_some_and(|host| {
         host.eq_ignore_ascii_case(&state.instance.domain)
             || state
                 .instance

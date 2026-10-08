@@ -11,24 +11,17 @@ use crate::db::models::{quote_state, vis};
 use crate::quotes::Quote;
 use crate::{error::AppResult, state::AppState};
 
-use super::{fetch_remote_status_prefetched, json_uri, resolve_or_fetch_remote_account, same_host};
+use super::{fetch_remote_status_prefetched, resolve_or_fetch_remote_account, same_host};
+use ojak_vocab::json_ld_helper::{first_of_value, value_or_id};
 
-/// `value_or_id`: a string IRI, or an object's `id`.
-fn value_or_id(v: &Value) -> Option<&str> {
-    match v {
-        Value::String(s) => Some(s),
-        Value::Object(o) => o.get("id").and_then(Value::as_str),
-        _ => None,
-    }
+/// `value_or_id(value)`, or `""` when there is none.
+fn uri_of(value: Option<&Value>) -> &str {
+    value.and_then(value_or_id).unwrap_or_default()
 }
 
-/// The first of a value that may be an array (`as_array(value).first`).
-fn first(v: Option<&Value>) -> Option<&Value> {
-    match v {
-        Some(Value::Array(items)) => items.first(),
-        Some(Value::Null) | None => None,
-        Some(other) => Some(other),
-    }
+/// `first_of_value(value)`, for a value that may be absent.
+fn first(value: Option<&Value>) -> Option<&Value> {
+    value.and_then(first_of_value)
 }
 
 /// Whether a JSON value is `present?`: not null, nor an empty string, array
@@ -652,9 +645,9 @@ pub(super) async fn handle_quote_request(
     activity: &Value,
 ) -> AppResult<()> {
     let req_id = activity.get("id").and_then(Value::as_str).unwrap_or("");
-    let actor_uri = json_uri(activity.get("actor"));
-    let object_uri = json_uri(activity.get("object"));
-    let instrument_uri = json_uri(activity.get("instrument"));
+    let actor_uri = uri_of(activity.get("actor"));
+    let object_uri = uri_of(activity.get("object"));
+    let instrument_uri = uri_of(activity.get("instrument"));
     if req_id.is_empty() || object_uri.is_empty() || actor_uri.is_empty() {
         return Ok(());
     }
@@ -876,8 +869,8 @@ pub(super) async fn handle_quote_answer(
     activity: &Value,
     accept: bool,
 ) -> AppResult<bool> {
-    let actor_uri = json_uri(activity.get("actor"));
-    let object_uri = json_uri(activity.get("object"));
+    let actor_uri = uri_of(activity.get("actor"));
+    let object_uri = uri_of(activity.get("object"));
     if object_uri.is_empty() {
         return Ok(false);
     }

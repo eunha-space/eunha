@@ -1,11 +1,11 @@
-//! The durable ingress queue that carries inbound activities off the request
-//! path.
+//! The ingress queue that carries inbound activities off the request path:
+//! `ActivityPub::ProcessingWorker` jobs in the job queue.
 //!
 //! `TestContext` puts the inbox in sync mode so the rest of the suite can
 //! assert on an activity right after POSTing it, which means the queued path
-//! needs its own coverage. These tests drive the worker directly: enqueue a row
-//! the way the handler would, drain one batch, and check both the activity's
-//! effect and the job's bookkeeping.
+//! needs its own coverage. These tests drive the worker directly: queue a job
+//! the way the handler would, drain the ingress jobs, and check both the
+//! activity's effect and the job's bookkeeping.
 
 use serde_json::json;
 
@@ -47,15 +47,9 @@ async fn test_queued_activity_is_processed_and_job_removed() {
         "object": format!("https://{}/users/alice", ctx.domain),
     });
 
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Follow', $2, now(), now())"#,
-        follow,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &follow)
+        .await
+        .unwrap();
 
     let processed = eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
@@ -75,11 +69,13 @@ async fn test_queued_activity_is_processed_and_job_removed() {
     .unwrap();
     assert_eq!(follows, 1, "the queued Follow must take effect");
 
-    let remaining: i64 =
-        sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM eunha.inbox_jobs"#)
-            .fetch_one(&ctx.db)
-            .await
-            .unwrap();
+    let remaining: i64 = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "count!" FROM eunha.jobs
+               WHERE kind = 'ActivityPub::ProcessingWorker'"#
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
     assert_eq!(remaining, 0, "a succeeded job must be deleted");
 }
 
@@ -105,16 +101,14 @@ async fn test_queue_respects_run_at() {
         "actor": actor_uri,
         "object": format!("https://{}/users/alice", ctx.domain),
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs
-             (activity, activity_type, actor_uri, run_at, created_at, updated_at)
-           VALUES ($1, 'Follow', $2, now() + interval '1 hour', now(), now())"#,
-        follow,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &follow)
+        .await
+        .unwrap();
+    // As a retry backed off for an hour is.
+    sqlx::query!("UPDATE eunha.jobs SET run_at = now() + interval '1 hour'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     assert_eq!(
         eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
@@ -124,11 +118,13 @@ async fn test_queue_respects_run_at() {
         "a backed-off job must not be claimed before its run_at"
     );
 
-    let remaining: i64 =
-        sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM eunha.inbox_jobs"#)
-            .fetch_one(&ctx.db)
-            .await
-            .unwrap();
+    let remaining: i64 = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "count!" FROM eunha.jobs
+               WHERE kind = 'ActivityPub::ProcessingWorker'"#
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
     assert_eq!(remaining, 1, "the future job must still be queued");
 }
 
@@ -177,15 +173,9 @@ async fn test_a_delete_that_arrives_first_suppresses_a_late_create() {
         "actor": actor_uri,
         "object": {"id": note_uri, "type": "Tombstone"},
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Delete', $2, now(), now())"#,
-        delete,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &delete)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -206,15 +196,9 @@ async fn test_a_delete_that_arrives_first_suppresses_a_late_create() {
             "published": "2026-01-01T00:00:00Z",
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -249,15 +233,9 @@ async fn test_a_delete_that_arrives_first_suppresses_a_late_create() {
             "published": "2026-01-01T00:00:00Z",
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        control,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &control)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -318,15 +296,9 @@ async fn test_a_remembered_delete_suppresses_a_create_without_a_tombstone() {
         "actor": actor_uri,
         "object": {"id": note_uri, "type": "Tombstone"},
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Delete', $2, now(), now())"#,
-        delete,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &delete)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();
@@ -357,15 +329,9 @@ async fn test_a_remembered_delete_suppresses_a_create_without_a_tombstone() {
             "published": "2026-01-01T00:00:00Z",
         },
     });
-    sqlx::query!(
-        r#"INSERT INTO eunha.inbox_jobs (activity, activity_type, actor_uri, created_at, updated_at)
-           VALUES ($1, 'Create', $2, now(), now())"#,
-        create,
-        actor_uri,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    eunha::api::ap::inbox::queue_activity(&ctx.db, &create)
+        .await
+        .unwrap();
     eunha::api::ap::inbox::drain_inbox_queue(&ctx.state)
         .await
         .unwrap();

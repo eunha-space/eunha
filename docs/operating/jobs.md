@@ -97,6 +97,21 @@ mail a new user is sent goes an hour after the account is ready, and is
 rendered then, so that its checklist shows what the user has done since.
 
 
+Inbound activities
+------------------
+
+An activity posted to an inbox is checked while its sender waits — its
+signature or proof, its actor, the domain blocks — and answered `202`; what
+it does is done by an `ActivityPub::ProcessingWorker` job on the `ingress`
+queue, retried eight times, as Mastodon queues it. Before 029, eunha kept
+these in a queue of their own, `eunha.inbox_jobs`; migration 029 hands
+whatever was waiting there to `eunha.jobs`, an activity that had failed for
+good to the dead set, and drops it. Its `[workers] inbox_workers`,
+`inbox_batch` and `inbox_concurrency` settings are gone with it, and are
+ignored where a configuration still has them: the job loops run inbound
+activities with everything else.
+
+
 Deliveries
 ----------
 
@@ -120,7 +135,10 @@ under the instance's prefix (`stoplight:<inbox>:failures`,
 `stoplight:<inbox>:recovery_after` and the probe's lock,
 `stoplight:<inbox>:probe`), so every process delivering for the instance counts
 the same failures and lets one probe through between them, as Mastodon's
-Stoplights are shared across Sidekiq processes.
+Stoplights are shared across Sidekiq processes. The store is ojak's
+(*ojak-redis*'s `RedisBreakers`), given the instance's prefix, and the probe's
+lock is released with `eunha_compare_delete` where the keyspace is shared, as
+every other lock is.
 
 
 Seeing whether the queue moves
