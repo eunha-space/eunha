@@ -521,9 +521,15 @@ async fn test_poll_only_status_appears_in_timelines() {
     let status: Value = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.bob_token),
-        &json!({ "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
+        &json!({ "status": "which?", "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
     ).await.json().await.unwrap();
     let id = status["id"].as_str().unwrap().to_string();
+    // A local post needs text; a remote one may be a poll alone.
+    sqlx::query("UPDATE statuses SET text = '' WHERE id = $1")
+        .bind(id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     let home = ctx.api.home_timeline(&ctx.alice_token).await;
     assert!(

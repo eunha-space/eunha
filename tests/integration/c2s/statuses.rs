@@ -2936,7 +2936,7 @@ async fn test_poll_only_status_appears_on_profile() {
     let resp = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.alice_token),
-        &json!({ "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
+        &json!({ "status": "which?", "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
     ).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let status: Value = resp.json().await.unwrap();
@@ -2945,6 +2945,12 @@ async fn test_poll_only_status_appears_on_profile() {
         status["poll"].is_object(),
         "created status should carry a poll"
     );
+    // A local post needs text; a remote one may be a poll alone.
+    sqlx::query("UPDATE statuses SET text = '' WHERE id = $1")
+        .bind(sid.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
 
     let list: Vec<Value> = ctx
         .api
@@ -2973,7 +2979,7 @@ async fn test_poll_ended_notifies_author_and_voters() {
     let status: Value = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.alice_token),
-        &json!({ "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
+        &json!({ "status": "which?", "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
     ).await.json().await.unwrap();
     let poll_id = status["poll"]["id"].as_str().unwrap();
     ctx.api
