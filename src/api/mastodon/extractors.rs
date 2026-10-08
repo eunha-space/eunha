@@ -261,6 +261,166 @@ impl<'de> serde::Deserialize<'de> for FlexBool {
     }
 }
 
+/// Rails' `params` with Rack's nesting: the query string and the body,
+/// merged with the body winning, where a form's `subscription[keys][auth]`
+/// is `{"subscription": {"keys": {"auth": …}}}` and `ids[]` an array, as
+/// `Rack::QueryParser#normalize_params` builds them. A JSON body is taken as
+/// it is, its booleans and numbers kept; form values are strings. Names that
+/// nest in conflicting ways are a 400, as Rack's `ParameterTypeError` is.
+pub struct NestedParams(pub serde_json::Value);
+
+/// `Rack::QueryParser#normalize_params`: put `value` into `params` under
+/// the bracketed `name`. `Err` when the name conflicts with what is there.
+fn normalize_params(
+    params: &mut serde_json::Map<String, serde_json::Value>,
+    name: &str,
+    value: serde_json::Value,
+) -> Result<(), ()> {
+    use serde_json::{Map, Value};
+    // `name =~ %r(\A[\[\]]*([^\[\]]+)\]*)`: the key, and what follows it.
+    let trimmed = name.trim_start_matches(['[', ']']);
+    let end = trimmed.find(['[', ']']).unwrap_or(trimmed.len());
+    let key = &trimmed[..end];
+    let after = trimmed[end..].trim_start_matches(']');
+    if key.is_empty() {
+        return Ok(());
+    }
+    if after.is_empty() {
+        params.insert(key.to_owned(), value);
+    } else if after == "[" {
+        params.insert(name.to_owned(), value);
+    } else if after == "[]" {
+        match params
+            .entry(key.to_owned())
+            .or_insert_with(|| Value::Array(vec![]))
+        {
+            Value::Array(items) => items.push(value),
+            _ => return Err(()),
+        }
+    } else if let Some(child) = after.strip_prefix("[]") {
+        // `[][child]`: an array of hashes, a new one whenever the last
+        // already has the child.
+        let child_key = child
+            .strip_prefix('[')
+            .and_then(|c| c.strip_suffix(']'))
+            .filter(|c| !c.contains(['[', ']']))
+            .unwrap_or(child);
+        let Value::Array(items) = params
+            .entry(key.to_owned())
+            .or_insert_with(|| Value::Array(vec![]))
+        else {
+            return Err(());
+        };
+        // `params_hash_has_key?`, by the child's first key.
+        let first = child_key
+            .trim_start_matches(['[', ']'])
+            .split(['[', ']'])
+            .next()
+            .unwrap_or("");
+        let reuse = matches!(items.last(), Some(Value::Object(last)) if !last.contains_key(first));
+        if reuse {
+            let Some(Value::Object(last)) = items.last_mut() else {
+                return Err(());
+            };
+            normalize_params(last, child_key, value)?;
+        } else {
+            let mut hash = Map::new();
+            normalize_params(&mut hash, child_key, value)?;
+            items.push(Value::Object(hash));
+        }
+    } else {
+        let Value::Object(nested) = params
+            .entry(key.to_owned())
+            .or_insert_with(|| Value::Object(Map::new()))
+        else {
+            return Err(());
+        };
+        normalize_params(nested, after, value)?;
+    }
+    Ok(())
+}
+
+fn nest_pairs(
+    into: &mut serde_json::Map<String, serde_json::Value>,
+    pairs: Vec<(String, String)>,
+) -> Result<(), Response> {
+    for (name, value) in pairs {
+        normalize_params(into, &name, serde_json::Value::String(value)).map_err(|()| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("invalid parameter: {name}"),
+            )
+                .into_response()
+        })?;
+    }
+    Ok(())
+}
+
+impl<S> FromRequest<S> for NestedParams
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        use serde_json::Value;
+        let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e).into_response();
+        let mut merged = serde_json::Map::new();
+        let query = req.uri().query().unwrap_or("").to_owned();
+        nest_pairs(
+            &mut merged,
+            url::form_urlencoded::parse(query.as_bytes())
+                .into_owned()
+                .collect(),
+        )?;
+        let content_type = req
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if content_type.contains("application/json") {
+            let bytes = axum::body::Bytes::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            if !bytes.is_empty() {
+                match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(Value::Object(body)) => merged.extend(body),
+                    Ok(_) => {}
+                    Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string()).into_response()),
+                }
+            }
+        } else if content_type.contains("multipart/form-data") {
+            let mut multipart = Multipart::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            let mut pairs = vec![];
+            while let Some(field) = multipart
+                .next_field()
+                .await
+                .map_err(|e| unprocessable(e.to_string()))?
+            {
+                let name = field.name().unwrap_or("").to_string();
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| unprocessable(e.to_string()))?;
+                pairs.push((name, value));
+            }
+            nest_pairs(&mut merged, pairs)?;
+        } else {
+            let bytes = axum::body::Bytes::from_request(req, state)
+                .await
+                .map_err(IntoResponse::into_response)?;
+            nest_pairs(
+                &mut merged,
+                url::form_urlencoded::parse(&bytes).into_owned().collect(),
+            )?;
+        }
+        Ok(NestedParams(Value::Object(merged)))
+    }
+}
+
 /// One parameter of a request body: text, or an uploaded file.
 #[derive(Debug, Clone)]
 pub enum Part {
@@ -396,5 +556,44 @@ where
             }
         }
         Ok(Parts(parts))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    fn nested(pairs: &[(&str, &str)]) -> Result<serde_json::Value, ()> {
+        let mut params = serde_json::Map::new();
+        for (name, value) in pairs {
+            super::normalize_params(&mut params, name, json!(value))?;
+        }
+        Ok(serde_json::Value::Object(params))
+    }
+
+    #[test]
+    fn form_names_nest_as_rack_nests_them() {
+        assert_eq!(
+            nested(&[
+                ("subscription[endpoint]", "https://e"),
+                ("subscription[keys][auth]", "a"),
+                ("data[alerts][admin.sign_up]", "true"),
+                ("ids[]", "1"),
+                ("ids[]", "2"),
+                ("f[][name]", "x"),
+                ("f[][value]", "y"),
+                ("f[][name]", "z"),
+                ("plain", "p"),
+            ])
+            .unwrap(),
+            json!({
+                "subscription": {"endpoint": "https://e", "keys": {"auth": "a"}},
+                "data": {"alerts": {"admin.sign_up": "true"}},
+                "ids": ["1", "2"],
+                "f": [{"name": "x", "value": "y"}, {"name": "z"}],
+                "plain": "p",
+            })
+        );
+        assert!(nested(&[("a", "1"), ("a[b]", "2")]).is_err());
     }
 }

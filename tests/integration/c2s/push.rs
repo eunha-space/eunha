@@ -698,3 +698,56 @@ async fn pushes_are_checked_again_when_sent() {
     assert_eq!(sent(), 1);
     assert_eq!(subscriptions(&ctx).await, 0);
 }
+
+/// The subscription endpoints take `subscription[...]` and `data[...]` as a
+/// form, as Rails reads them; the values are stored as the form gave them
+/// and read back cast.
+#[tokio::test]
+async fn push_subscriptions_take_forms() {
+    let ctx = TestContext::new("push-form").await;
+    let (_, p256dh) = eunha::push::generate_vapid_keypair().unwrap();
+    let resp = ctx
+        .api
+        .post_form(
+            "/api/v1/push/subscription",
+            Some(&ctx.alice_token),
+            &[
+                ("subscription[endpoint]", "https://push.example.com/form"),
+                ("subscription[keys][p256dh]", &p256dh),
+                ("subscription[keys][auth]", "tBHItJI5svbpez7KI4CCXg"),
+                ("subscription[standard]", "true"),
+                ("data[alerts][mention]", "true"),
+                ("data[alerts][follow]", "0"),
+                ("data[policy]", "follower"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let sub: Value = resp.json().await.unwrap();
+    assert_eq!(sub["standard"], true);
+    assert_eq!(sub["alerts"], json!({"mention": true, "follow": false}));
+    assert_eq!(sub["policy"], "follower");
+    let stored: Value = sqlx::query_scalar("SELECT data::jsonb FROM web_push_subscriptions")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored,
+        json!({"policy": "follower", "alerts": {"mention": "true", "follow": "0"}})
+    );
+
+    let resp = ctx
+        .api
+        .http
+        .put(ctx.api.url("/api/v1/push/subscription"))
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .form(&[("data[alerts][poll]", "true")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let sub: Value = resp.json().await.unwrap();
+    assert_eq!(sub["alerts"], json!({"poll": true}));
+    assert_eq!(sub["policy"], "all");
+}

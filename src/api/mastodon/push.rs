@@ -2,6 +2,7 @@ use axum::{extract::Extension, Json};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use super::extractors::NestedParams;
 use crate::{
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
@@ -167,7 +168,7 @@ fn subscription_params(params: &Value) -> AppResult<SubscriptionParams> {
 pub async fn create_subscription(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(params): Json<Value>,
+    NestedParams(params): NestedParams,
 ) -> AppResult<Json<PushSubscription>> {
     auth.require_scope("push")?;
     let user_id = auth.user_id.ok_or(AppError::Unauthorized)?;
@@ -272,7 +273,7 @@ pub async fn get_subscription(
 pub async fn update_subscription(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(params): Json<Value>,
+    NestedParams(params): NestedParams,
 ) -> AppResult<Json<PushSubscription>> {
     auth.require_scope("push")?;
 
