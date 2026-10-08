@@ -49,7 +49,11 @@ The recorded decisions cover:
  -  the collection addresses eunha named before, still answered;
  -  the followers digests, cached in Redis entries of eunha's own;
  -  deliveries to a suspended domain, dropped as they are queued;
- -  the date forms a remote poll's end is read in.
+ -  the date forms a remote poll's end is read in;
+ -  Mastodon's web UI endpoints under `/api/web`, which eunha does not serve;
+ -  self-destruct mode in eunha's terms;
+ -  where an OAuth denial is sent;
+ -  the tooling for changing an instance's domain.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
