@@ -391,6 +391,8 @@ async fn test_poll_tallies_are_kept_as_mastodon_keeps_them() {
 async fn test_a_local_vote_schedules_the_poll_update() {
     let ctx = TestContext::new("poll-vote-update").await;
     let status = post_poll_status(&ctx).await;
+    // Queued, not run at once, so that the job is still there to look at.
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
     let poll_id = status["poll"]["id"].as_str().unwrap();
     let resp = ctx
         .api
