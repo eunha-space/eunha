@@ -716,6 +716,13 @@ async fn test_feature_request_notifies_the_featured_account() {
     assert_eq!(added.len(), 1, "{added:?}");
     assert_eq!(added[0]["collection"]["name"], "Neighbours");
     assert_eq!(added[0]["collection"]["local"], false);
+    // `collection_items.create!` counts the item into the counter cache.
+    let item_count: i32 = sqlx::query_scalar("SELECT item_count FROM collections WHERE uri = $1")
+        .bind(format!("{base}/collections/1"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(item_count, 1);
 
     let update = json!({
         "@context": "https://www.w3.org/ns/activitystreams",

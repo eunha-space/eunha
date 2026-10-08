@@ -5,10 +5,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::{
-    mirror_item_into, refresh_collection_item_count, resolve_or_fetch_remote_account,
-    upsert_remote_collection,
-};
+use super::{mirror_item_into, resolve_or_fetch_remote_account, upsert_remote_collection};
 use ojak_vocab::json_ld_helper::value_or_id;
 
 pub(super) async fn handle_add(state: &AppState, activity: &Value) -> AppResult<()> {
@@ -135,7 +132,9 @@ pub(super) async fn handle_remove(state: &AppState, activity: &Value) -> AppResu
     .fetch_optional(&state.db)
     .await?;
     if let Some(r) = removed_item {
-        refresh_collection_item_count(state, r.collection_id).await?;
+        // `collection_item&.destroy!`.
+        crate::api::mastodon::collections::update_item_count(&state.db, r.collection_id, -1)
+            .await?;
         return Ok(());
     }
 

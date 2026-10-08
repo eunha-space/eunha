@@ -30,36 +30,28 @@ pub async fn run(state: AppState) {
     }
 }
 
-/// `CollectionItemCleanupScheduler#perform`. Each item's `destroy` updates
-/// its collection's `item_count` counter cache; eunha's count is of the
-/// pending and accepted items, which these are not, so it is recounted the
-/// same way rather than decremented.
+/// `CollectionItemCleanupScheduler#perform`. `destroy_all` destroys each item,
+/// and each `destroy` takes one off its collection's `item_count` counter
+/// cache, so a collection's count drops by the number of its items deleted.
 pub async fn perform(db: &sqlx::PgPool) -> anyhow::Result<u64> {
-    let mut tx = db.begin().await?;
-    let collections: Vec<i64> = sqlx::query_scalar!(
-        r#"DELETE FROM collection_items
-           WHERE state IN ($1, $2)
-             AND updated_at < now() AT TIME ZONE 'UTC' - make_interval(hours => $3)
-           RETURNING collection_id"#,
+    let deleted = sqlx::query_scalar!(
+        r#"WITH deleted AS (
+               DELETE FROM collection_items
+               WHERE state IN ($1, $2)
+                 AND updated_at < now() AT TIME ZONE 'UTC' - make_interval(hours => $3)
+               RETURNING collection_id
+           ),
+           counted AS (
+               UPDATE collections c SET item_count = COALESCE(c.item_count, 0) - d.n
+               FROM (SELECT collection_id, count(*)::int AS n FROM deleted GROUP BY collection_id) d
+               WHERE c.id = d.collection_id
+           )
+           SELECT count(*) AS "deleted!" FROM deleted"#,
         REJECTED,
         REVOKED,
         RETENTION_HOURS,
     )
-    .fetch_all(&mut *tx)
+    .fetch_one(db)
     .await?;
-    let deleted = collections.len() as u64;
-    let mut collections = collections;
-    collections.sort_unstable();
-    collections.dedup();
-    sqlx::query!(
-        r#"UPDATE collections c SET item_count =
-             (SELECT count(*) FROM collection_items i
-              WHERE i.collection_id = c.id AND i.state IN (0, 1))
-           WHERE c.id = ANY($1)"#,
-        &collections,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(deleted)
+    Ok(deleted as u64)
 }

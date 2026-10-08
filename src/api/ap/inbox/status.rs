@@ -9,8 +9,7 @@ use crate::{error::AppResult, state::AppState};
 use super::attachment::{ap_attachment_file_meta, classify_attachment_type, preview_card_link};
 use super::{
     acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status, mirror_item_into,
-    refresh_collection_item_count, resolve_or_fetch_remote_account, same_host, sync_remote_poll,
-    upsert_remote_collection,
+    resolve_or_fetch_remote_account, same_host, sync_remote_poll, upsert_remote_collection,
 };
 use ojak_vocab::json_ld_helper::{ids, type_is};
 
@@ -90,7 +89,6 @@ pub(super) async fn handle_delete(
         )
         .execute(&state.db)
         .await?;
-        refresh_collection_item_count(state, item.collection_id).await?;
         crate::api::mastodon::collections::distribute_collection(
             state,
             &state.instance.domain,

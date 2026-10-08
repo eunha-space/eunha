@@ -218,7 +218,8 @@ async fn access_tokens_vacuum_deletes_spent_tokens() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-/// Rejected and revoked collection items go a day after they were.
+/// Rejected and revoked collection items go a day after they were, and each
+/// one destroyed comes off its collection's `item_count` counter cache.
 #[tokio::test]
 async fn collection_item_cleanup_deletes_spent_items() {
     let ctx = TestContext::new("collection-items").await;
@@ -226,7 +227,7 @@ async fn collection_item_cleanup_deletes_spent_items() {
     let bob: i64 = ctx.bob_id.parse().unwrap();
     let collection: i64 = sqlx::query_scalar(
         r#"INSERT INTO collections (account_id, name, local, sensitive, discoverable, item_count, created_at, updated_at)
-           VALUES ($1, 'c', true, false, true, 1, now(), now()) RETURNING id"#,
+           VALUES ($1, 'c', true, false, true, 3, now(), now()) RETURNING id"#,
     )
     .bind(alice)
     .fetch_one(&ctx.db)
@@ -260,7 +261,7 @@ async fn collection_item_cleanup_deletes_spent_items() {
         .fetch_one(&ctx.db)
         .await
         .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
 }
 
 /// Unfollowing a hashtag takes its posts out of the home feed, but not the

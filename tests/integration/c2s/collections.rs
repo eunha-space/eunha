@@ -186,6 +186,17 @@ async fn test_add_revoke_delete_item() {
         .unwrap();
     assert_eq!(show2["collection"]["item_count"].as_i64(), Some(0));
 
+    // The `item_count` column is Mastodon's counter cache: the revoked item
+    // still counts until it is destroyed.
+    let column = || async {
+        sqlx::query_scalar::<_, i32>("SELECT item_count FROM collections WHERE id = $1")
+            .bind(cid.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap()
+    };
+    assert_eq!(column().await, 1);
+
     // Delete the item row entirely.
     let del = ctx
         .api
@@ -195,6 +206,7 @@ async fn test_add_revoke_delete_item() {
         )
         .await;
     assert_eq!(del.status(), StatusCode::OK);
+    assert_eq!(column().await, 0);
 }
 
 /// Only the owner may update or delete a collection.

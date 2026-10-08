@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH deleted AS (\n               DELETE FROM collection_items\n               WHERE state IN ($1, $2)\n                 AND updated_at < now() AT TIME ZONE 'UTC' - make_interval(hours => $3)\n               RETURNING collection_id\n           ),\n           counted AS (\n               UPDATE collections c SET item_count = COALESCE(c.item_count, 0) - d.n\n               FROM (SELECT collection_id, count(*)::int AS n FROM deleted GROUP BY collection_id) d\n               WHERE c.id = d.collection_id\n           )\n           SELECT count(*) AS \"deleted!\" FROM deleted",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deleted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "029540ff04bca1d6ea24fec7eaf96755b50ada97c29deeaeb5cc589b5f955c47"
+}

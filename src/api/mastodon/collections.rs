@@ -747,7 +747,7 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
         }
     };
 
-    refresh_item_count(state, collection_id).await?;
+    update_item_count(&state.db, collection_id, 1).await?;
 
     // `notify_local_user` (`AddAccountToCollectionService`, and
     // `CreateCollectionService#notify_local_users` for the first members).
@@ -913,14 +913,22 @@ pub(crate) async fn distribute_collection_removal(
     }
 }
 
-async fn refresh_item_count(state: &AppState, collection_id: i64) -> AppResult<()> {
+/// `CollectionItem`'s `belongs_to :collection, counter_cache: :item_count`:
+/// creating an item adds one to its collection's `item_count` and destroying
+/// one takes one away (`update_counters`), whatever the item's state. A state
+/// change — accepted, rejected, revoked — leaves the count alone, and so does
+/// Mastodon's `delete_all`, which skips callbacks.
+pub(crate) async fn update_item_count<'e>(
+    db: impl sqlx::PgExecutor<'e>,
+    collection_id: i64,
+    by: i32,
+) -> AppResult<()> {
     sqlx::query!(
-        r#"UPDATE collections SET item_count =
-             (SELECT COUNT(*) FROM collection_items WHERE collection_id = $1 AND state IN (0, 1))
-           WHERE id = $1"#,
+        "UPDATE collections SET item_count = COALESCE(item_count, 0) + $2 WHERE id = $1",
         collection_id,
+        by,
     )
-    .execute(&state.db)
+    .execute(db)
     .await?;
     Ok(())
 }
@@ -988,7 +996,8 @@ pub async fn delete_collection_item(
     if deleted.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    refresh_item_count(&state, collection_id).await?;
+    // `@collection_item.destroy!`.
+    update_item_count(&state.db, collection_id, -1).await?;
     distribute_collection(
         &state,
         &instance.domain,
@@ -1024,7 +1033,6 @@ pub async fn revoke_collection_item(
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    refresh_item_count(&state, collection_id).await?;
     distribute_collection(
         &state,
         &instance.domain,

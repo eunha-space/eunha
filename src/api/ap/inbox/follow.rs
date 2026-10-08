@@ -6,10 +6,7 @@ use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};
 
-use super::{
-    delete_arrived_first, delete_later, refresh_collection_item_count,
-    resolve_or_fetch_remote_account,
-};
+use super::{delete_arrived_first, delete_later, resolve_or_fetch_remote_account};
 
 pub(super) async fn handle_follow(
     state: &AppState,
@@ -839,7 +836,6 @@ pub(super) async fn handle_accept_reject(
                     .execute(&state.db)
                     .await?;
                 }
-                refresh_collection_item_count(state, item.collection_id).await?;
             }
         }
 

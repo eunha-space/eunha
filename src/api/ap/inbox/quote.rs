@@ -1091,7 +1091,7 @@ pub(super) async fn handle_feature_request(
     };
 
     // Record the accepted item with our authorization URI.
-    let item_id = sqlx::query_scalar!(
+    let item = sqlx::query!(
         r#"INSERT INTO collection_items
              (collection_id, account_id, state, activity_uri, position, created_at, updated_at)
            VALUES ($1, $2, 1, $3,
@@ -1099,13 +1099,18 @@ pub(super) async fn handle_feature_request(
                    now(), now())
            ON CONFLICT (account_id, collection_id)
              DO UPDATE SET state = 1, activity_uri = EXCLUDED.activity_uri, updated_at = now()
-           RETURNING id"#,
+           RETURNING id, (xmax = 0) AS "inserted!""#,
         collection_id,
         local.id,
         req_id,
     )
     .fetch_one(&state.db)
     .await?;
+    let item_id = item.id;
+    // `collection_items.create!` counts the item into `item_count`.
+    if item.inserted {
+        crate::api::mastodon::collections::update_item_count(&state.db, collection_id, 1).await?;
+    }
 
     let domain = &instance.domain;
     // `ap_account_feature_authorization_url`.

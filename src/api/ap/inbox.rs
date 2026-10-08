@@ -471,22 +471,6 @@ pub async fn drain_inbox_queue(state: &AppState) -> anyhow::Result<usize> {
     }
 }
 
-/// Recompute a collection's `item_count` (pending + accepted items).
-pub(super) async fn refresh_collection_item_count(
-    state: &AppState,
-    collection_id: i64,
-) -> AppResult<()> {
-    sqlx::query!(
-        r#"UPDATE collections SET item_count =
-             (SELECT COUNT(*) FROM collection_items WHERE collection_id = $1 AND state IN (0, 1))
-           WHERE id = $1"#,
-        collection_id,
-    )
-    .execute(&state.db)
-    .await?;
-    Ok(())
-}
-
 /// `ProcessStatusUpdateService#update_poll!`: the poll as its status now
 /// has it, fetched just now (`last_fetched_at`).
 pub(super) async fn sync_remote_poll(
@@ -684,19 +668,25 @@ pub(super) async fn mirror_item_into(
     let Ok(account_id) = resolve_or_fetch_remote_account(state, account_uri).await else {
         return Ok(());
     };
-    sqlx::query!(
+    // `xmax = 0` holds for a row this statement inserted, not one it updated.
+    let inserted = sqlx::query_scalar!(
         r#"INSERT INTO collection_items
              (collection_id, account_id, state, uri, position, created_at, updated_at)
            VALUES ($1, $2, 1, $3,
                    (SELECT COALESCE(MAX(position), 0) + 1 FROM collection_items WHERE collection_id = $1),
                    now(), now())
            ON CONFLICT (account_id, collection_id)
-             DO UPDATE SET state = 1, uri = EXCLUDED.uri, updated_at = now()"#,
+             DO UPDATE SET state = 1, uri = EXCLUDED.uri, updated_at = now()
+           RETURNING (xmax = 0) AS "inserted!""#,
         collection_id,
         account_id,
         item_uri,
     )
-    .execute(&state.db)
+    .fetch_one(&state.db)
     .await?;
-    refresh_collection_item_count(state, collection_id).await
+    // The counter cache counts a created item, not an updated one.
+    if inserted {
+        crate::api::mastodon::collections::update_item_count(&state.db, collection_id, 1).await?;
+    }
+    Ok(())
 }
