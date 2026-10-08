@@ -340,18 +340,13 @@ fn normalize_params(
     Ok(())
 }
 
+/// Nest each pair; `Err` with the name of one that conflicts.
 fn nest_pairs(
     into: &mut serde_json::Map<String, serde_json::Value>,
     pairs: Vec<(String, String)>,
-) -> Result<(), Response> {
+) -> Result<(), String> {
     for (name, value) in pairs {
-        normalize_params(into, &name, serde_json::Value::String(value)).map_err(|()| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("invalid parameter: {name}"),
-            )
-                .into_response()
-        })?;
+        normalize_params(into, &name, serde_json::Value::String(value)).map_err(|()| name)?;
     }
     Ok(())
 }
@@ -365,6 +360,13 @@ where
     async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
         use serde_json::Value;
         let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e).into_response();
+        let invalid = |name: String| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("invalid parameter: {name}"),
+            )
+                .into_response()
+        };
         let mut merged = serde_json::Map::new();
         let query = req.uri().query().unwrap_or("").to_owned();
         nest_pairs(
@@ -372,7 +374,8 @@ where
             url::form_urlencoded::parse(query.as_bytes())
                 .into_owned()
                 .collect(),
-        )?;
+        )
+        .map_err(invalid)?;
         let content_type = req
             .headers()
             .get(axum::http::header::CONTENT_TYPE)
@@ -407,7 +410,7 @@ where
                     .map_err(|e| unprocessable(e.to_string()))?;
                 pairs.push((name, value));
             }
-            nest_pairs(&mut merged, pairs)?;
+            nest_pairs(&mut merged, pairs).map_err(invalid)?;
         } else {
             let bytes = axum::body::Bytes::from_request(req, state)
                 .await
@@ -415,7 +418,8 @@ where
             nest_pairs(
                 &mut merged,
                 url::form_urlencoded::parse(&bytes).into_owned().collect(),
-            )?;
+            )
+            .map_err(invalid)?;
         }
         Ok(NestedParams(Value::Object(merged)))
     }
