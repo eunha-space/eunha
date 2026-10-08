@@ -116,7 +116,8 @@ async fn routes_mastodon_lacks_are_not_answered() {
 }
 
 /// `namespace :web` is Mastodon's own web UI's; eunha serves none of it
-/// (`mastodon-web-ui-endpoints-not-served` in divergences.toml).
+/// (`mastodon-web-ui-endpoints-not-served` in divergences.toml) but the
+/// unsubscribe a push names, which c2s::push tests.
 #[tokio::test]
 async fn mastodon_web_ui_endpoints_are_not_served() {
     let ctx = TestContext::new("routes-api-web").await;
@@ -133,12 +134,11 @@ async fn mastodon_web_ui_endpoints_are_not_served() {
         (Method::GET, format!("/api/web/embeds/{status_id}")),
         (Method::POST, "/api/web/push_subscriptions".to_owned()),
         (Method::PUT, "/api/web/push_subscriptions/1".to_owned()),
-        (
-            Method::DELETE,
-            "/api/web/push_subscriptions/token".to_owned(),
-        ),
     ] {
         let got = status(&ctx, method.clone(), &path, &ctx.alice_token).await;
-        assert_eq!(got, StatusCode::NOT_FOUND, "{method} {path}");
+        assert!(
+            got == StatusCode::NOT_FOUND || got == StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {path} answered {got}"
+        );
     }
 }

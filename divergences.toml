@@ -965,26 +965,28 @@ reviewed_for = "4.7.2"
 [[divergence]]
 id = "mastodon-web-ui-endpoints-not-served"
 kind = "omission"
-summary = "Does not serve `/api/web/*`, the endpoints private to Mastodon's own web UI"
+summary = "Serves only the push unsubscribe of `/api/web/*`, the endpoints private to Mastodon's own web UI"
 mastodon = """
 Serves `PUT`/`PATCH /api/web/settings`, which stores the web UI's settings \
 blob in `web_settings` for the next page load to read back from the initial \
 state the HTML carries; `GET /api/web/embeds/:id`, the embed modal's oEmbed; \
 and `POST`/`PUT`/`PATCH`/`DELETE /api/web/push_subscriptions`, which ties a \
 browser's Web Push subscription to the cookie session (`SessionActivation`), \
-and whose `DELETE` takes the token a standard push names in its \
+and whose `DELETE` takes the token every push names in its \
 `Unsubscribe-URL` header. All but the `DELETE` check the CSRF token the HTML \
 page carries."""
 eunha = """
-Answers each with a 404. Its web client keeps its settings in the browser, has \
-no embed modal and no Web Push of its own; clients subscribe to push with \
-`/api/v1/push/subscription`, and pushes carry no `Unsubscribe-URL`."""
+Serves `DELETE /api/web/push_subscriptions/:token`, which every push names in \
+its `Unsubscribe-URL`, and nothing else there. Its web client keeps its \
+settings in the browser, has no embed modal and no Web Push of its own; \
+clients subscribe to push with `/api/v1/push/subscription`."""
 why = """
 These are not client API: they need the CSRF token and the session cookie of \
 Mastodon's server-rendered page, and what they store is read back only through \
 that page's initial state, so no client other than Mastodon's own web UI can \
 use them, and eunha does not serve that UI. The embed modal's oEmbed is \
-`/api/oembed`'s, which eunha serves."""
+`/api/oembed`'s, which eunha serves. The unsubscribe needs none of that and is \
+for push services, whatever client subscribed."""
 evidence = "tests/integration/c2s/routes.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"

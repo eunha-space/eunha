@@ -139,6 +139,19 @@ token with the `profile` scope (401 without a token, 403 without the scope):
 `preferred_username`, `profile` the profile page, and `picture` the avatar.
 
 
+Push notifications
+------------------
+
+A push to a subscription made with `/api/v1/push/subscription` is sent as
+Mastodon's `Web::PushNotificationWorker` sends it: `aes128gcm` with RFC 8292
+VAPID for a subscription made with `standard`, `aesgcm` otherwise, with a
+48-hour `TTL`, `Urgency: normal`, and an `Unsubscribe-URL`. That URL,
+`DELETE /api/web/push_subscriptions/:token`, removes the subscription for
+whoever calls it while the token is good, 48 hours. An endpoint answering a
+4xx other than 408 or 429 has the subscription removed; any other failure is
+tried again, up to five times.
+
+
 Multiple accounts in the web client
 -----------------------------------
 

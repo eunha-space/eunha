@@ -366,7 +366,9 @@ byte for byte, and reads what that Mastodon handed out before the switch:
     a month;
  -  `users.reset_password_token`, Devise's keyed digest of the token mailed;
  -  the [`self_destruct`](./self-destruct) value,
-    `message_verifier('self-destruct')`.
+    `message_verifier('self-destruct')`;
+ -  the token in a Web Push's `Unsubscribe-URL`,
+    `generate_token_for(:unsubscribe)`, good for 48 hours.
 
 Without it, each of these uses a scheme of eunha's own (the divergences that
 name `secret_key_base`), and what Mastodon issued is not recognised. What

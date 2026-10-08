@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT endpoint, key_p256dh, key_auth FROM web_push_subscriptions WHERE id = $1",
+  "query": "SELECT endpoint, key_p256dh, key_auth, standard FROM web_push_subscriptions WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "key_auth",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "standard",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -27,8 +32,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "47a9ebdecc303a15b1a47eb2cf7ed83b5a39df2b70f23d726745ee15131cc49d"
+  "hash": "7f6f5be1e502c8c96d7db61ea12acdedd4d3c0d5cc99a54929e15b0d425affbf"
 }

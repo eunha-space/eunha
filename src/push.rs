@@ -36,6 +36,67 @@ pub fn get_vapid_public_key(state: &AppState) -> &str {
 
 // ── Push delivery ──────────────────────────────────────────────────────────
 
+/// `Web::PushNotificationWorker::TTL`: 48 hours, the push's `TTL` and how
+/// long its unsubscribe token lasts.
+pub const PUSH_TTL_SECONDS: i64 = 48 * 3600;
+
+/// `Web::PushNotificationWorker::URGENCY`.
+const URGENCY: &str = "normal";
+
+/// What signs an unsubscribe token without `secret_key_base`.
+const UNSUBSCRIBE_PURPOSE: &[u8] = b"Web::PushSubscription unsubscribe";
+
+/// `subscription.generate_token_for(:unsubscribe)`: Mastodon's token with
+/// `secret_key_base`, and otherwise one keyed from the VAPID key that carries
+/// its expiry.
+pub fn unsubscribe_token(state: &AppState, id: i64, now: chrono::DateTime<chrono::Utc>) -> String {
+    match &state.instance.secret_key_base {
+        Some(secret) => secret.push_unsubscribe_token(id, now),
+        None => crate::crypto::sign_message(
+            &state.instance.vapid_private_key,
+            UNSUBSCRIBE_PURPOSE,
+            &format!("{id}:{}", now.timestamp() + PUSH_TTL_SECONDS),
+        ),
+    }
+}
+
+/// `Web::PushSubscription.find_by_token_for(:unsubscribe, token)` up to the
+/// find: the subscription a genuine, unexpired token names. A token keyed from
+/// the VAPID key is read either way.
+pub fn verify_unsubscribe_token(
+    state: &AppState,
+    token: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<i64> {
+    if let Some(id) = state
+        .instance
+        .secret_key_base
+        .as_ref()
+        .and_then(|secret| secret.verify_push_unsubscribe_token(token, now))
+    {
+        return Some(id);
+    }
+    let message = crate::crypto::verify_message(
+        &state.instance.vapid_private_key,
+        UNSUBSCRIBE_PURPOSE,
+        token,
+    )?;
+    let (id, expires) = message.split_once(':')?;
+    (expires.parse::<i64>().ok()? > now.timestamp())
+        .then(|| id.parse().ok())
+        .flatten()
+}
+
+/// `subscription_url`, `api_web_push_subscription_url(id: token)`: the route
+/// helper escapes the `/` a base64 token may hold, and nothing else in it.
+fn unsubscribe_url(state: &AppState, id: i64) -> String {
+    let token = unsubscribe_token(state, id, chrono::Utc::now()).replace('/', "%2F");
+    format!(
+        "https://{}/api/web/push_subscriptions/{token}",
+        state.instance.domain
+    )
+}
+
 /// Payload sent to the push endpoint, matching Mastodon's format.
 #[derive(serde::Serialize)]
 struct PushPayload<'a> {
@@ -184,7 +245,7 @@ impl crate::jobs::Job for PushNotificationWorker {
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
         // `Web::PushSubscription.find`, else nothing to do.
         let Some(sub) = sqlx::query!(
-            "SELECT endpoint, key_p256dh, key_auth FROM web_push_subscriptions WHERE id = $1",
+            "SELECT endpoint, key_p256dh, key_auth, standard FROM web_push_subscriptions WHERE id = $1",
             self.web_push_subscription_id
         )
         .fetch_optional(&state.db)
@@ -192,26 +253,49 @@ impl crate::jobs::Job for PushNotificationWorker {
         else {
             return Ok(());
         };
-        send_one(
+        let status = send_one(
             state,
             &sub.endpoint,
             &sub.key_p256dh,
             &sub.key_auth,
-            &state.instance.vapid_private_key,
+            sub.standard,
+            &unsubscribe_url(state, self.web_push_subscription_id),
             &self.payload,
         )
-        .await
+        .await?;
+        // `#send`: a 4xx other than a timeout or rate limit means the
+        // subscription is gone or was never valid, so it is destroyed;
+        // anything else that is not a success is tried again.
+        let code = status.as_u16();
+        if (400..500).contains(&code) && code != 408 && code != 429 {
+            sqlx::query!(
+                "DELETE FROM web_push_subscriptions WHERE id = $1",
+                self.web_push_subscription_id
+            )
+            .execute(&state.db)
+            .await?;
+            return Ok(());
+        }
+        if !status.is_success() {
+            anyhow::bail!("push endpoint answered {status}");
+        }
+        Ok(())
     }
 }
 
+/// Encrypt and send one push: `perform_standard_request` (`aes128gcm`, RFC
+/// 8291, with RFC 8292 VAPID) for a `standard` subscription, else
+/// `perform_legacy_request` (`aesgcm`). Either way with Mastodon's `TTL`,
+/// `Urgency` and `Unsubscribe-URL`. Returns what the endpoint answered.
 async fn send_one(
     state: &AppState,
     endpoint: &str,
     p256dh: &str,
     auth: &str,
-    vapid_private_pem: &str,
+    standard: bool,
+    unsubscribe_url: &str,
     payload: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<reqwest::StatusCode> {
     use web_push::{
         ContentEncoding, SubscriptionInfo, SubscriptionKeys, VapidSignatureBuilder,
         WebPushMessageBuilder,
@@ -226,24 +310,35 @@ async fn send_one(
     };
 
     let mut builder = WebPushMessageBuilder::new(&sub_info);
-    builder.set_payload(ContentEncoding::AesGcm, payload.as_bytes());
-    builder.set_ttl(86400);
+    let encoding = if standard {
+        ContentEncoding::Aes128Gcm
+    } else {
+        ContentEncoding::AesGcm
+    };
+    builder.set_payload(encoding, payload.as_bytes());
+    builder.set_ttl(PUSH_TTL_SECONDS as u32);
 
-    let sig_builder = VapidSignatureBuilder::from_pem(vapid_private_pem.as_bytes(), &sub_info)?;
+    let sig_builder =
+        VapidSignatureBuilder::from_pem(state.instance.vapid_private_key.as_bytes(), &sub_info)?;
     builder.set_vapid_signature(sig_builder.build()?);
 
     let message = builder.build()?;
 
-    send_with_reqwest(&state.http, message).await
+    send_with_reqwest(&state.http, message, unsubscribe_url).await
 }
 
 async fn send_with_reqwest(
     http: &reqwest::Client,
     message: web_push::WebPushMessage,
-) -> anyhow::Result<()> {
+    unsubscribe_url: &str,
+) -> anyhow::Result<reqwest::StatusCode> {
     let endpoint = message.endpoint.to_string();
     let ttl = message.ttl;
-    let mut req = http.post(endpoint.as_str()).header("TTL", ttl.to_string());
+    let mut req = http
+        .post(endpoint.as_str())
+        .header("TTL", ttl.to_string())
+        .header("Urgency", URGENCY)
+        .header("Unsubscribe-URL", unsubscribe_url);
 
     if let Some(payload) = message.payload {
         req = req
@@ -259,12 +354,12 @@ async fn send_with_reqwest(
 
     let resp = req.send().await?;
     let status = resp.status();
-    if !status.is_success() && status.as_u16() != 201 {
+    if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         tracing::warn!(status = %status, body = %body, endpoint = %endpoint, "push relay rejected message");
     }
 
-    Ok(())
+    Ok(status)
 }
 
 // ── Notification creation helper ───────────────────────────────────────────

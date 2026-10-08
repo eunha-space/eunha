@@ -67,6 +67,11 @@ def signed_global_id(gid, purpose, expires_at)
   sign(app_key('signed_global_ids'), Base64.urlsafe_encode64(as_json(envelope)))
 end
 
+def token_for(purpose, payload, expires_at)
+  envelope = { '_rails' => { 'data' => payload, 'exp' => expires_at.utc.iso8601(3), 'pur' => purpose } }
+  sign(app_key('active_record/token_for'), Base64.strict_encode64(as_json(envelope)))
+end
+
 def devise_digest(column, value)
   OpenSSL::HMAC.hexdigest('SHA256', devise_key(column), value)
 end
@@ -77,4 +82,5 @@ puts "async_refreshes: #{message_verifier('async_refreshes', 'async_refreshes:v1
 puts "self-destruct: #{message_verifier('self-destruct', 'example.com')}"
 puts "sgid User/1: #{signed_global_id('gid://mastodon/User/1', 'unsubscribe', expires_at)}"
 puts "sgid EmailSubscription/42: #{signed_global_id('gid://mastodon/EmailSubscription/42', 'unsubscribe', expires_at)}"
+puts "push unsubscribe 42: #{token_for("Web::PushSubscription\nunsubscribe\n172800", [42], expires_at)}"
 puts "reset_password_token: #{devise_digest('reset_password_token', 'sxyzAbCdEfGhIjKlMnOp')}"

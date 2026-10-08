@@ -1449,6 +1449,10 @@ pub fn router() -> Router {
         .route("/oauth/authorize/native", get(oauth::authorize_native))
         .route("/oauth/token", post(oauth::issue_token))
         .route("/oauth/revoke", post(oauth::revoke_token))
+        .route(
+            "/api/web/push_subscriptions/{token}",
+            delete(push::unsubscribe),
+        )
         .route("/oauth/token/info", get(oauth_tokens::token_info))
         .route("/oauth/introspect", post(oauth_tokens::introspect))
         .route(

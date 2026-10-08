@@ -284,3 +284,21 @@ pub async fn delete_subscription(
 
     Ok(Json(serde_json::json!({})))
 }
+
+// ── DELETE /api/web/push_subscriptions/:token ─────────────────────────────
+
+/// `Api::Web::PushSubscriptionsController#destroy`, the `Unsubscribe-URL`
+/// every push names: the subscription the token signs is destroyed, if it
+/// still exists and the token has not expired, and the answer is a `200`
+/// either way. It asks for no user, no CSRF token and no session.
+pub async fn unsubscribe(
+    state: AppState,
+    axum::extract::Path(token): axum::extract::Path<String>,
+) -> AppResult<axum::http::StatusCode> {
+    if let Some(id) = crate::push::verify_unsubscribe_token(&state, &token, chrono::Utc::now()) {
+        sqlx::query!("DELETE FROM web_push_subscriptions WHERE id = $1", id)
+            .execute(&state.db)
+            .await?;
+    }
+    Ok(axum::http::StatusCode::OK)
+}

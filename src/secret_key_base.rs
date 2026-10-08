@@ -3,7 +3,8 @@
 //! An instance configured with its Mastodon's `SECRET_KEY_BASE`
 //! (`instance.secret_key_base`) mints and accepts exactly what that Mastodon
 //! does: async refresh ids, the signed GlobalIDs in unsubscribe links,
-//! Devise's digest of a password reset token, and the `SELF_DESTRUCT` value. Without it, eunha keeps its own
+//! Devise's digest of a password reset token, the `SELF_DESTRUCT` value, and
+//! the unsubscribe token a Web Push names in its `Unsubscribe-URL`. Without it, eunha keeps its own
 //! schemes, which no Mastodon reads (see the divergences that name
 //! `secret_key_base`).
 //!
@@ -50,6 +51,9 @@ const APP_ITERATIONS: u32 = 1000;
 const DEVISE_ITERATIONS: u32 = 1 << 16;
 /// `GlobalID.app` for `Mastodon::Application`.
 const GLOBAL_ID_APP: &str = "mastodon";
+/// `TokenDefinition#full_purpose` of `Web::PushSubscription`'s
+/// `generates_token_for :unsubscribe, expires_in: 48.hours`.
+const PUSH_UNSUBSCRIBE_PURPOSE: &str = "Web::PushSubscription\nunsubscribe\n172800";
 /// The hex length of an HMAC-SHA1, which is what `MessageVerifier` signs with.
 const DIGEST_HEX_LEN: usize = 40;
 
@@ -62,6 +66,7 @@ struct Inner {
     secret: String,
     async_refreshes: OnceLock<[u8; KEY_LEN]>,
     self_destruct: OnceLock<[u8; KEY_LEN]>,
+    token_for: OnceLock<[u8; KEY_LEN]>,
     signed_global_ids: OnceLock<[u8; KEY_LEN]>,
     reset_password_token: OnceLock<[u8; KEY_LEN]>,
 }
@@ -91,6 +96,7 @@ impl SecretKeyBase {
             secret: secret.into(),
             async_refreshes: OnceLock::new(),
             self_destruct: OnceLock::new(),
+            token_for: OnceLock::new(),
             signed_global_ids: OnceLock::new(),
             reset_password_token: OnceLock::new(),
         }))
@@ -124,6 +130,18 @@ impl SecretKeyBase {
                 .0
                 .self_destruct
                 .get_or_init(|| self.app_key(crate::self_destruct::VERIFY_PURPOSE)),
+            encoding: Encoding::Strict,
+        }
+    }
+
+    /// `ActiveRecord::Base.generated_token_verifier`,
+    /// `message_verifier('active_record/token_for')`.
+    fn token_for(&self) -> Verifier<'_> {
+        Verifier {
+            key: self
+                .0
+                .token_for
+                .get_or_init(|| self.app_key("active_record/token_for")),
             encoding: Encoding::Strict,
         }
     }
@@ -166,6 +184,29 @@ impl SecretKeyBase {
     pub fn verify_self_destruct(&self, value: &str) -> Option<String> {
         match self.self_destruct().verify(value, None, Utc::now())? {
             Value::String(domain) => Some(domain),
+            _ => None,
+        }
+    }
+
+    /// `Web::PushSubscription#generate_token_for(:unsubscribe)` at `now`:
+    /// `[id]` for the purpose `"Web::PushSubscription\nunsubscribe\n172800"`,
+    /// good for `Web::PushNotificationWorker::TTL`.
+    pub fn push_unsubscribe_token(&self, id: i64, now: DateTime<Utc>) -> String {
+        self.token_for().generate(
+            &serde_json::json!([id]),
+            Some(PUSH_UNSUBSCRIBE_PURPOSE),
+            Some(now + chrono::Duration::seconds(crate::push::PUSH_TTL_SECONDS)),
+        )
+    }
+
+    /// `Web::PushSubscription.find_by_token_for(:unsubscribe, token)` up to the
+    /// find: the subscription id a genuine, unexpired token names.
+    pub fn verify_push_unsubscribe_token(&self, token: &str, now: DateTime<Utc>) -> Option<i64> {
+        match self
+            .token_for()
+            .verify(token, Some(PUSH_UNSUBSCRIBE_PURPOSE), now)?
+        {
+            Value::Array(payload) if payload.len() == 1 => payload[0].as_i64(),
             _ => None,
         }
     }
@@ -444,6 +485,9 @@ mod tests {
     const SUBSCRIPTION_SGID: &str = "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL21hc3RvZG9uL0VtYWlsU3Vic2NyaXB0aW9uLzQyIiwiZXhwIjoiMjAyNi0xMS0wMlQwNzoyNTowMS4xMjNaIiwicHVyIjoidW5zdWJzY3JpYmUifX0=--30f11c153b2ac1e70a2a9a0d7ab435ff60e4a55e";
     /// `message_verifier('self-destruct').generate('example.com')`.
     const SELF_DESTRUCT: &str = "ImV4YW1wbGUuY29tIg==--d98e70d05297ffc5945339fd0796bb8aafb0222f";
+    /// `Web::PushSubscription` 42's unsubscribe token, made 48 hours before
+    /// [`expires_at`].
+    const PUSH_UNSUBSCRIBE: &str = "eyJfcmFpbHMiOnsiZGF0YSI6WzQyXSwiZXhwIjoiMjAyNi0xMS0wMlQwNzoyNTowMS4xMjNaIiwicHVyIjoiV2ViOjpQdXNoU3Vic2NyaXB0aW9uXG51bnN1YnNjcmliZVxuMTcyODAwIn19--6a5384ccda52009a2324a9cc7a1438038a0c43a6";
     const RESET_DIGEST: &str = "a5106b6b4dc0e29d5f7eef97ecf87a7734d60218ca010180d6cf0aea936391a7";
 
     #[test]
@@ -468,6 +512,22 @@ mod tests {
         assert_eq!(
             SecretKeyBase::new("another secret").verify_self_destruct(SELF_DESTRUCT),
             None
+        );
+    }
+
+    #[test]
+    fn push_unsubscribe_tokens_are_what_token_for_writes() {
+        let skb = secret();
+        let made = expires_at() - chrono::Duration::hours(48);
+        assert_eq!(skb.push_unsubscribe_token(42, made), PUSH_UNSUBSCRIBE);
+        assert_eq!(
+            skb.verify_push_unsubscribe_token(PUSH_UNSUBSCRIBE, made),
+            Some(42)
+        );
+        assert_eq!(
+            skb.verify_push_unsubscribe_token(PUSH_UNSUBSCRIBE, expires_at()),
+            None,
+            "expired"
         );
     }
 
