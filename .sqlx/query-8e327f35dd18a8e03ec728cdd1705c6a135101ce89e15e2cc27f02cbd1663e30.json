@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO media_attachments\n             (id, account_id, \"type\", file_file_name, file_content_type, file_file_size, thumbnail_file_name, description, file_meta, blurhash, created_at, updated_at)\n           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())\n           RETURNING *",
+  "query": "INSERT INTO media_attachments\n             (id, account_id, \"type\", description, processing,\n              file_file_name, file_content_type, file_file_size, file_updated_at,\n              file_storage_schema_version, file_meta, blurhash,\n              thumbnail_file_name, thumbnail_content_type, thumbnail_file_size,\n              thumbnail_updated_at, thumbnail_storage_schema_version,\n              created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), 1, $9, $10, $11, $12, $13,\n                   CASE WHEN $14 THEN now() END,\n                   CASE WHEN $14 THEN 1 END,\n                   now(), now())\n           RETURNING *",
   "describe": {
     "columns": [
       {
@@ -129,13 +129,17 @@
         "Int8",
         "Int8",
         "Int4",
+        "Text",
+        "Int4",
         "Varchar",
         "Varchar",
         "Int4",
-        "Varchar",
-        "Text",
         "Json",
-        "Varchar"
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Bool"
       ]
     },
     "nullable": [
@@ -165,5 +169,5 @@
       true
     ]
   },
-  "hash": "1882e7a014a5e53d296c208849efe92a7482e2394262ae04ec83016823106903"
+  "hash": "8e327f35dd18a8e03ec728cdd1705c6a135101ce89e15e2cc27f02cbd1663e30"
 }

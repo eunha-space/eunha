@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO media_attachments\n                 (id, account_id, \"type\", description, processing, created_at, updated_at)\n               VALUES ($1,$2,$3,$4,1, now(), now())\n               RETURNING *",
+  "query": "UPDATE media_attachments\n           SET description = COALESCE($2, description),\n               file_meta = CASE WHEN $3 THEN $4::jsonb::json ELSE file_meta END,\n               blurhash = CASE WHEN $5 THEN $6 ELSE blurhash END,\n               thumbnail_file_name = CASE WHEN $5 THEN $7 ELSE thumbnail_file_name END,\n               thumbnail_content_type = CASE WHEN $5 THEN $8 ELSE thumbnail_content_type END,\n               thumbnail_file_size = CASE WHEN $5 THEN $9 ELSE thumbnail_file_size END,\n               thumbnail_updated_at = CASE WHEN $5 THEN now() ELSE thumbnail_updated_at END,\n               thumbnail_storage_schema_version =\n                 CASE WHEN $5 THEN 1 ELSE thumbnail_storage_schema_version END,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING *",
   "describe": {
     "columns": [
       {
@@ -127,9 +127,14 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
-        "Int4",
-        "Text"
+        "Text",
+        "Bool",
+        "Jsonb",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4"
       ]
     },
     "nullable": [
@@ -159,5 +164,5 @@
       true
     ]
   },
-  "hash": "4169b90ccd5e06b5adf87daf9fc47a7d0621174a2468e8aeb6538dd7b85392a0"
+  "hash": "1416343293ffd32ff9310d3a213a481fed40e63027db7a14a0f48d1d698ce3da"
 }

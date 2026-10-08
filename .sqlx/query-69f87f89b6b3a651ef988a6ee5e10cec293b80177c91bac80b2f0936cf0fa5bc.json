@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments\n           SET file_file_name = $2, file_content_type = $3, file_file_size = $4,\n               file_updated_at = now(), file_meta = $5, blurhash = $6, processing = $7,\n               thumbnail_file_name = CASE WHEN $8 THEN $9 ELSE thumbnail_file_name END,\n               thumbnail_content_type = CASE WHEN $8 THEN $10 ELSE thumbnail_content_type END,\n               thumbnail_file_size = CASE WHEN $8 THEN $11 ELSE thumbnail_file_size END,\n               thumbnail_updated_at = CASE WHEN $8 THEN now() ELSE thumbnail_updated_at END,\n               thumbnail_storage_schema_version =\n                 CASE WHEN $8 THEN 1 ELSE thumbnail_storage_schema_version END,\n               updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Json",
+        "Varchar",
+        "Int4",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "69f87f89b6b3a651ef988a6ee5e10cec293b80177c91bac80b2f0936cf0fa5bc"
+}
