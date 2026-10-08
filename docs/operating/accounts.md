@@ -101,6 +101,22 @@ authorization, as Mastodon's `require_functional!` sends the person to the setup
 first. The settings page says so too, and its setup works for such a member.
 
 
+The OAuth server
+----------------
+
+`/.well-known/oauth-authorization-server` describes the OAuth server as
+Mastodon's does (RFC 8414): its endpoints, the scopes Doorkeeper is configured
+with, the `code` response type, the `authorization_code` and
+`client_credentials` grants, `client_secret_basic` and `client_secret_post`,
+PKCE with `S256`, and `/api/v1/apps` as the non-standard
+`app_registration_endpoint`.
+
+`GET` and `POST /oauth/userinfo` is OpenID Connect's UserInfo endpoint, for a
+token with the `profile` scope (401 without a token, 403 without the scope):
+`iss` the instance's root URL, `sub` the actor's URI, `name`,
+`preferred_username`, `profile` the profile page, and `picture` the avatar.
+
+
 Multiple accounts in the web client
 -----------------------------------
 

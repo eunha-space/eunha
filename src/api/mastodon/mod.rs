@@ -24,6 +24,7 @@ pub mod markers;
 pub mod media;
 pub mod notifications;
 pub mod oauth;
+pub mod oauth_metadata;
 pub mod oembed;
 pub mod polls;
 pub mod preview_cards;
@@ -1443,7 +1444,15 @@ pub fn router() -> Router {
             get(oauth::authorize_form).post(oauth::authorize_submit),
         )
         .route("/oauth/token", post(oauth::issue_token))
-        .route("/oauth/revoke", post(oauth::revoke_token));
+        .route("/oauth/revoke", post(oauth::revoke_token))
+        .route(
+            "/oauth/userinfo",
+            get(oauth_metadata::userinfo).post(oauth_metadata::userinfo),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth_metadata::oauth_metadata),
+        );
 
     Router::new()
         .merge(auth_required)

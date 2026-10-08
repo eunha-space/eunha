@@ -34,6 +34,7 @@ mod moves;
 mod mutes;
 mod notification_emails;
 mod notifications;
+mod oauth_server;
 mod polls;
 mod push;
 mod reports;
