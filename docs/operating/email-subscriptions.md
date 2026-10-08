@@ -101,9 +101,9 @@ to each confirmed subscriber.
 The emails go out through the instance's `[smtp]` settings, from its `from`
 address, in English or, for a subscriber who signed up in Korean, with
 Mastodon's Korean strings where it has them. The footer links the privacy
-policy (eunha's `/about`) and carries the **additional footer text** an
-administrator sets on the Email newsletters page, Mastodon's
-`Setting.email_footer_text`.
+policy, `https://<domain>/privacy-policy` as Mastodon 4.7.2 links it, and
+carries the **additional footer text** an administrator sets on the Email
+newsletters page, Mastodon's `Setting.email_footer_text`.
 
 
 The admin API

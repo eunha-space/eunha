@@ -297,6 +297,25 @@ async fn test_confirmation_and_unsubscribing() {
     assert_eq!(left, 0);
 }
 
+/// The footer links to the privacy policy by `privacy_policy_url`, absolute,
+/// as Mastodon 4.7.2 does (#40486): a relative link goes nowhere in a mail.
+#[tokio::test]
+async fn test_mail_links_to_the_privacy_policy() {
+    let ctx = TestContext::new("emailsub-privacy").await;
+    let alice = offer(&ctx).await;
+    subscribe(&ctx, alice, "reader@example.com").await;
+    let mail = ctx
+        .mail_to("reader@example.com", "")
+        .await
+        .expect("a confirmation mail");
+    assert!(
+        mail.html
+            .contains(&format!("href=\"https://{}/privacy-policy\"", ctx.domain)),
+        "{}",
+        mail.html
+    );
+}
+
 /// With the Mastodon's `secret_key_base`, links carry Mastodon's signed
 /// GlobalID of the subscription, a GlobalID Mastodon signed unsubscribes, and
 /// a link eunha mailed before the secret was configured still works.

@@ -523,7 +523,9 @@ async fn envelope(
         domain: state.instance.domain.clone(),
         list_id: format!("<{}.{}>", account.username, state.instance.domain),
         unsubscribe_url: unsubscribe_url(state, sub.id, &token),
-        privacy_policy_url: format!("https://{}/about", state.instance.domain),
+        // `privacy_policy_url` since Mastodon 4.7.2 (#40486), absolute as the
+        // instance entity's `privacy_policy` is; it was `privacy_policy_path`.
+        privacy_policy_url: format!("https://{}/privacy-policy", state.instance.domain),
         footer_text: (!footer.trim().is_empty()).then_some(footer),
     }
 }
