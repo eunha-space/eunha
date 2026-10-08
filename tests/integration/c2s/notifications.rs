@@ -2017,3 +2017,45 @@ async fn test_a_reply_notifies_its_parents_author_only_when_it_mentions_them() {
         assert!(found.iter().all(|(t,)| t == "Mention"));
     }
 }
+
+/// Alice files what comes from accounts she does not follow.
+async fn filter_strangers(ctx: &TestContext) {
+    let resp = ctx
+        .api
+        .http
+        .patch(ctx.api.url("/api/v2/notifications/policy"))
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .json(&json!({"for_not_following": "filter"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// `NotificationRequest.without_suspended`: the index leaves out a request
+/// from a suspended account.
+#[tokio::test]
+async fn test_notification_requests_leave_out_suspended_senders() {
+    let ctx = TestContext::new("notif-req-suspended").await;
+    filter_strangers(&ctx).await;
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
+    let listed = || async {
+        ctx.api
+            .get("/api/v1/notifications/requests", Some(&ctx.alice_token))
+            .await
+            .json::<Vec<Value>>()
+            .await
+            .unwrap()
+    };
+    assert_eq!(listed().await.len(), 1);
+
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert!(listed().await.is_empty());
+}

@@ -1473,6 +1473,9 @@ pub async fn get_notification_requests(
     let rows = sqlx::query!(
         r#"SELECT nr.id, nr.from_account_id, nr.last_status_id, nr.notifications_count, nr.created_at, nr.updated_at
            FROM notification_requests nr
+           -- `without_suspended`: none from a suspended or deleting account.
+           JOIN accounts a ON a.id = nr.from_account_id
+             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
            WHERE nr.account_id = $1
              AND ($3::bigint IS NULL OR nr.id < $3)
              AND ($4::bigint IS NULL OR nr.id > $4)
