@@ -30,6 +30,10 @@ pub enum AppError {
     ForbiddenMsg(String),
     #[error("unprocessable entity: {0}")]
     Unprocessable(String),
+    /// `ActiveRecord::RecordInvalid` as `ValidationErrorFormatter` renders
+    /// it: a 422 with this body, `error` and `details`.
+    #[error("invalid record: {0}")]
+    Invalid(serde_json::Value),
     /// `Mastodon::InvalidParameterError` and `ActionController::ParameterMissing`.
     #[error("bad request: {0}")]
     BadRequest(String),
@@ -72,6 +76,9 @@ impl IntoResponse for AppError {
             ),
             AppError::ForbiddenMsg(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
+            AppError::Invalid(body) => {
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(body.clone())).into_response();
+            }
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict => (StatusCode::CONFLICT, "Duplicate record".to_string()),
             AppError::TooManyRequests => (

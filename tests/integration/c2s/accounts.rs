@@ -1770,7 +1770,10 @@ async fn test_update_credentials_preserves_verified_at() {
 }
 
 /// update_credentials rejects more than 4 profile fields (Mastodon
-/// Account::DEFAULT_FIELDS_SIZE) and over-long field values.
+/// Account::DEFAULT_FIELDS_SIZE) and a value without a name
+/// (`EmptyProfileFieldNamesValidator`), with `ValidationErrorFormatter`'s
+/// details; an over-long field is kept as given and cut to 255 characters
+/// when read, as `Account::Field#sanitize` cuts it.
 #[tokio::test]
 async fn test_update_credentials_fields_limits() {
     let ctx = TestContext::new("update-fields").await;
@@ -1797,11 +1800,37 @@ async fn test_update_credentials_fields_limits() {
         StatusCode::UNPROCESSABLE_ENTITY,
         "5 fields must be rejected"
     );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        json!("Validation failed: Fields is too long (maximum is 4 characters)")
+    );
+    assert_eq!(body["details"]["fields"][0]["error"], json!("ERR_TOO_LONG"));
 
-    // An over-long value → 422.
+    // A value with no name → 422.
+    let resp = ctx
+        .api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"fields_attributes": [{"name": "  ", "value": "orphan"}]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        json!("Validation failed: Fields contains values with missing labels")
+    );
+    assert_eq!(
+        body["details"]["fields"][0]["error"],
+        json!("ERR_FIELDS_WITH_VALUES_MISSING_LABELS")
+    );
+
+    // An over-long value is stored, and read back cut.
     let form = reqwest::multipart::Form::new()
-        .text("fields_attributes[0][name]", "website")
-        .text("fields_attributes[0][value]", "x".repeat(256));
+        .text("fields_attributes[0][name]", " website ")
+        .text("fields_attributes[0][value]", "x".repeat(300));
     let resp = ctx
         .api
         .http
@@ -1812,11 +1841,19 @@ async fn test_update_credentials_fields_limits() {
         .send()
         .await
         .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["source"]["fields"][0]["name"], json!("website"));
     assert_eq!(
-        resp.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "over-long field value must be rejected"
+        body["source"]["fields"][0]["value"].as_str().unwrap().len(),
+        255
     );
+    let stored: Value = sqlx::query_scalar("SELECT fields FROM accounts WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(stored[0]["value"].as_str().unwrap().len(), 300);
 
     // Exactly 4 valid fields → OK.
     let mut form = reqwest::multipart::Form::new();
@@ -3461,9 +3498,9 @@ async fn test_delete_account_keeps_reported_statuses() {
     );
 }
 
-/// A deleted account is still served as a blanked tombstone with
-/// `suspended: true` (Mastodon's `REST::AccountSerializer`), by id as well as
-/// by lookup — the profile page needs it to say the account is gone.
+/// A deleted account is still served by id as a blanked tombstone with
+/// `suspended: true` (Mastodon's `REST::AccountSerializer`); a lookup by
+/// name is a 404, as `LookupController` raises for `@account.deleted?`.
 #[tokio::test]
 async fn test_deleted_account_is_served_as_suspended_tombstone() {
     let ctx = TestContext::new("del-acct-tombstone").await;
@@ -3486,10 +3523,13 @@ async fn test_deleted_account_is_served_as_suspended_tombstone() {
         .await
         .unwrap();
 
-    for path in [
-        format!("/api/v1/accounts/{}", ctx.alice_id),
-        "/api/v1/accounts/lookup?acct=alice".to_string(),
-    ] {
+    let resp = ctx
+        .api
+        .get("/api/v1/accounts/lookup?acct=alice", Some(&ctx.bob_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    {
+        let path = format!("/api/v1/accounts/{}", ctx.alice_id);
         let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;
         assert_eq!(resp.status(), StatusCode::OK, "{path} should still resolve");
         let account: Value = resp.json().await.unwrap();
@@ -3501,6 +3541,251 @@ async fn test_deleted_account_is_served_as_suspended_tombstone() {
         assert_eq!(account["display_name"].as_str(), Some(""), "{path}");
         assert_eq!(account["note"].as_str(), Some(""), "{path}");
     }
+}
+
+/// An invalid `source[privacy]` is the `ArgumentError` `UserSettings#[]=`
+/// raises, which nothing rescues: a 500, after the account was saved and
+/// with the settings left as they were.
+#[tokio::test]
+async fn test_update_credentials_invalid_privacy_is_unrescued() {
+    let ctx = TestContext::new("update-privacy").await;
+    let resp = ctx
+        .api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"display_name": "Saved", "source": {"privacy": "direct", "sensitive": true}}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let me: Value = ctx
+        .api
+        .get(
+            "/api/v1/accounts/verify_credentials",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me["display_name"], json!("Saved"));
+    assert_eq!(me["source"]["sensitive"], json!(false));
+    assert_ne!(me["source"]["privacy"], json!("direct"));
+}
+
+/// `source.follow_requests_count` counts requests from accounts that are
+/// not suspended (`Account.without_suspended`).
+#[tokio::test]
+async fn test_follow_requests_count_leaves_out_suspended_requesters() {
+    let ctx = TestContext::new("fr-count-suspended").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let (carol, _) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    for requester in [bob, carol] {
+        sqlx::query(
+            "INSERT INTO follow_requests (account_id, target_account_id, created_at, updated_at)
+             VALUES ($1, $2, now(), now())",
+        )
+        .bind(requester)
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(carol)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let me: Value = ctx
+        .api
+        .get(
+            "/api/v1/accounts/verify_credentials",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me["source"]["follow_requests_count"], json!(1));
+}
+
+/// Followers and following as `FollowerAccountsController` lists them: a
+/// suspended follower is listed, and the account itself sees the accounts
+/// it blocks or mutes; another viewer does not.
+#[tokio::test]
+async fn test_followers_as_mastodon_lists_them() {
+    let ctx = TestContext::new("followers-exclusions").await;
+    let (carol, carol_token) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    let (dave, dave_token) = seed_user(&ctx.db, &ctx.domain, "dave", "dave@example.com").await;
+    let _ = dave;
+    for token in [&ctx.bob_token, &carol_token, &dave_token] {
+        ctx.api.follow(token, &ctx.alice_id).await;
+    }
+    ctx.api.follow(&ctx.alice_token, &carol.to_string()).await;
+    // Alice mutes Bob; Dave is suspended.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/mute", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(dave)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let usernames = |list: Vec<Value>| -> Vec<String> {
+        list.iter()
+            .map(|a| a["username"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let own: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/followers", ctx.alice_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let own = usernames(own);
+    assert!(own.contains(&"bob".to_owned()), "{own:?}");
+    assert!(own.contains(&"dave".to_owned()), "{own:?}");
+
+    // Carol blocks Bob: she does not see him among Alice's followers.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/block", ctx.bob_id),
+            Some(&carol_token),
+            &json!({}),
+        )
+        .await;
+    let for_carol: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/followers", ctx.alice_id),
+            Some(&carol_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let for_carol = usernames(for_carol);
+    assert!(!for_carol.contains(&"bob".to_owned()), "{for_carol:?}");
+    assert!(for_carol.contains(&"dave".to_owned()), "{for_carol:?}");
+}
+
+/// Familiar followers: every account the viewer follows that follows the
+/// target, but those hiding their collections; an unknown or suspended
+/// target is left out of the answer.
+#[tokio::test]
+async fn test_familiar_followers_as_mastodon_finds_them() {
+    let ctx = TestContext::new("familiar-mastodon").await;
+    let target: i64 = ctx.bob_id.parse().unwrap();
+    let mut middles = vec![];
+    for i in 0..12 {
+        let (id, token) = seed_user(
+            &ctx.db,
+            &ctx.domain,
+            &format!("middle{i}"),
+            &format!("middle{i}@example.com"),
+        )
+        .await;
+        ctx.api.follow(&token, &ctx.bob_id).await;
+        ctx.api.follow(&ctx.alice_token, &id.to_string()).await;
+        middles.push(id);
+    }
+    sqlx::query("UPDATE accounts SET hide_collections = true WHERE id = $1")
+        .bind(middles[0])
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let (gone, _) = seed_user(&ctx.db, &ctx.domain, "gone", "gone@example.com").await;
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(gone)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let body: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/familiar_followers?id[]={target}&id[]={gone}&id[]=999999"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body.len(), 1, "{body:?}");
+    assert_eq!(body[0]["id"], json!(target.to_string()));
+    assert_eq!(body[0]["accounts"].as_array().unwrap().len(), 11);
+}
+
+/// `GET /api/v1/accounts/lookup`: `user@` this domain is local, a lookup
+/// never resolves over WebFinger, and a blank `acct` is a 404.
+#[tokio::test]
+async fn test_lookup_as_resolve_account_service_with_skip_webfinger() {
+    let ctx = TestContext::new("lookup-skip").await;
+    let resp = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/lookup?acct=@ALICE@{}", ctx.domain),
+            None,
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["id"], json!(ctx.alice_id));
+    for query in ["acct=", "acct=nobody@unknown.invalid&resolve=true", ""] {
+        let resp = ctx
+            .api
+            .get(&format!("/api/v1/accounts/lookup?{query}"), None)
+            .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{query}");
+    }
+}
+
+/// `GET /api/v1/accounts?id[]=`: at most 40 ids, `Mastodon::ValidationError`
+/// beyond; unconfirmed local accounts are left out; a lone `id` is no list.
+#[tokio::test]
+async fn test_accounts_batch_as_accounts_controller_index() {
+    let ctx = TestContext::new("accounts-batch").await;
+    let (carol, _) = seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    sqlx::query("UPDATE users SET confirmed_at = NULL WHERE account_id = $1")
+        .bind(carol)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let body: Vec<Value> = ctx
+        .api
+        .get(
+            &format!(
+                "/api/v1/accounts?id[]={}&id[]={}&id[]={carol}",
+                ctx.alice_id, ctx.bob_id
+            ),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body.len(), 2, "{body:?}");
+    let lone: Vec<Value> = ctx
+        .api
+        .get(&format!("/api/v1/accounts?id={}", ctx.alice_id), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(lone.is_empty());
+    let many: String = (1..=41).map(|i| format!("id[]={i}&")).collect();
+    let resp = ctx.api.get(&format!("/api/v1/accounts?{many}"), None).await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// Lineage survives a *chain* of deletions: when an inviter is deleted after

@@ -540,7 +540,10 @@ pub fn account_from_db_for_viewer(
             // `account_field_value_format`.
             super::formatting::field_values(
                 &urls.local_domain,
-                fields_from_db(a.fields.as_ref().unwrap_or(&serde_json::json!([]))),
+                fields_from_db(
+                    a.fields.as_ref().unwrap_or(&serde_json::json!([])),
+                    a.domain.is_none(),
+                ),
                 a.domain.is_none(),
                 &[],
             )
@@ -573,15 +576,25 @@ pub fn account_from_db_for_viewer(
     }
 }
 
-pub fn fields_from_db(fields: &serde_json::Value) -> Vec<types::Field> {
+/// `Account::Field#sanitize`: stripped, then cut to
+/// `MAX_CHARACTERS_LOCAL` (255) or, for a remote account,
+/// `MAX_CHARACTERS_COMPAT` (2,047) characters.
+pub fn sanitize_field(text: &str, local: bool) -> String {
+    let limit = if local { 255 } else { 2_047 };
+    text.trim().chars().take(limit).collect()
+}
+
+/// `Account#fields`: each stored field as `Account::Field` reads it,
+/// sanitized; one without a name or a value is dropped.
+pub fn fields_from_db(fields: &serde_json::Value, local: bool) -> Vec<types::Field> {
     fields
         .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|f| {
                     Some(types::Field {
-                        name: f["name"].as_str()?.to_string(),
-                        value: f["value"].as_str()?.to_string(),
+                        name: sanitize_field(f["name"].as_str()?, local),
+                        value: sanitize_field(f["value"].as_str()?, local),
                         verified_at: f["verified_at"].as_str().map(str::to_string),
                     })
                 })

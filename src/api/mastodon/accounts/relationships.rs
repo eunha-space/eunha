@@ -757,28 +757,22 @@ pub async fn get_account_followers(
         .since_id
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
-    let min_id = q
-        .pagination
-        .min_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok());
 
-    // Paginate by follow.id (matching Mastodon's Follow.paginate_by_max_id)
+    // `Follow.paginate_by_max_id`: `max_id` and `since_id`, no `min_id`.
     let follow_rows = sqlx::query!(
         r#"SELECT f.id as follow_id, f.account_id FROM follows f
            JOIN accounts a ON a.id = f.account_id
            WHERE f.target_account_id = $1
              AND ($2::bigint IS NULL OR f.id < $2)
              AND ($3::bigint IS NULL OR f.id > $3)
-             AND ($6::bigint IS NULL OR f.id > $6)
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             AND ($4::bigint IS NULL OR NOT EXISTS (
-                 SELECT 1 FROM blocks b
-                 WHERE (b.account_id = $4 AND b.target_account_id = a.id)
-                    OR (b.account_id = a.id AND b.target_account_id = $4)
-             ))
-             AND ($4::bigint IS NULL OR NOT EXISTS (
-                 SELECT 1 FROM mutes WHERE account_id = $4 AND target_account_id = a.id
+             -- `not_excluded_by_account`, for a viewer other than the
+             -- account itself.
+             AND ($4::bigint IS NULL OR $4 = $1 OR NOT (
+                 EXISTS (SELECT 1 FROM blocks b
+                         WHERE (b.account_id = $4 AND b.target_account_id = a.id)
+                            OR (b.account_id = a.id AND b.target_account_id = $4))
+                 OR EXISTS (SELECT 1 FROM mutes
+                            WHERE account_id = $4 AND target_account_id = a.id)
              ))
            ORDER BY f.id DESC LIMIT $5"#,
         id,
@@ -786,7 +780,6 @@ pub async fn get_account_followers(
         since_id,
         viewer_id,
         limit,
-        min_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -814,12 +807,14 @@ pub async fn get_account_followers(
         .filter_map(|r| account_map.get(&r.account_id).cloned())
         .collect();
 
+    let records_continue = follow_rows.len() as i64 == limit;
     let api_accounts = batch_accounts_to_api(&state, &accounts).await;
     let bounds = first_follow_id.zip(last_follow_id);
-    let resp_headers = crate::api::mastodon::link_headers(
+    let resp_headers = crate::api::mastodon::link_headers_continuing(
         &req_headers,
         &uri,
         bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
+        records_continue,
     );
     Ok((resp_headers, Json(api_accounts)))
 }
@@ -871,28 +866,22 @@ pub async fn get_account_following(
         .since_id
         .as_deref()
         .and_then(|s| s.parse::<i64>().ok());
-    let min_id = q
-        .pagination
-        .min_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok());
 
-    // Paginate by follow.id (matching Mastodon's Follow.paginate_by_max_id)
+    // `Follow.paginate_by_max_id`: `max_id` and `since_id`, no `min_id`.
     let follow_rows = sqlx::query!(
         r#"SELECT f.id as follow_id, f.target_account_id FROM follows f
            JOIN accounts a ON a.id = f.target_account_id
            WHERE f.account_id = $1
              AND ($2::bigint IS NULL OR f.id < $2)
              AND ($3::bigint IS NULL OR f.id > $3)
-             AND ($6::bigint IS NULL OR f.id > $6)
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-             AND ($4::bigint IS NULL OR NOT EXISTS (
-                 SELECT 1 FROM blocks b
-                 WHERE (b.account_id = $4 AND b.target_account_id = a.id)
-                    OR (b.account_id = a.id AND b.target_account_id = $4)
-             ))
-             AND ($4::bigint IS NULL OR NOT EXISTS (
-                 SELECT 1 FROM mutes WHERE account_id = $4 AND target_account_id = a.id
+             -- `not_excluded_by_account`, for a viewer other than the
+             -- account itself.
+             AND ($4::bigint IS NULL OR $4 = $1 OR NOT (
+                 EXISTS (SELECT 1 FROM blocks b
+                         WHERE (b.account_id = $4 AND b.target_account_id = a.id)
+                            OR (b.account_id = a.id AND b.target_account_id = $4))
+                 OR EXISTS (SELECT 1 FROM mutes
+                            WHERE account_id = $4 AND target_account_id = a.id)
              ))
            ORDER BY f.id DESC LIMIT $5"#,
         id,
@@ -900,7 +889,6 @@ pub async fn get_account_following(
         since_id,
         viewer_id,
         limit,
-        min_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -928,12 +916,14 @@ pub async fn get_account_following(
         .filter_map(|r| account_map.get(&r.target_account_id).cloned())
         .collect();
 
+    let records_continue = follow_rows.len() as i64 == limit;
     let api_accounts = batch_accounts_to_api(&state, &accounts).await;
     let bounds = first_follow_id.zip(last_follow_id);
-    let resp_headers = crate::api::mastodon::link_headers(
+    let resp_headers = crate::api::mastodon::link_headers_continuing(
         &req_headers,
         &uri,
         bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
+        records_continue,
     );
     Ok((resp_headers, Json(api_accounts)))
 }

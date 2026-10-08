@@ -23,7 +23,13 @@ pub async fn verify_credentials(
         (d.privacy, d.sensitive, d.language, d.quote_policy);
 
     let follow_requests: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM (SELECT 1 FROM follow_requests WHERE target_account_id = $1 LIMIT 40) sub",
+        r#"SELECT COUNT(*) FROM (
+             SELECT 1 FROM follow_requests fr
+             JOIN accounts a ON a.id = fr.account_id
+             WHERE fr.target_account_id = $1
+               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+             LIMIT 40
+           ) sub"#,
         account.id
     )
     .fetch_one(&state.db)
@@ -37,6 +43,7 @@ pub async fn verify_credentials(
         note: account.note.clone(),
         fields: crate::api::mastodon::convert::fields_from_db(
             account.fields.as_ref().unwrap_or(&serde_json::json!([])),
+            true,
         ),
         follow_requests_count: follow_requests,
         discoverable: account.discoverable,
@@ -104,6 +111,9 @@ async fn do_update_credentials(
     let mut source_hide_collections: Option<bool> = None;
     let mut source_quote_policy: Option<String> = None;
     let mut indexable: Option<bool> = None;
+    // A `source[privacy]` or `source[quote_policy]` that `UserSettings#[]=`
+    // refuses, with its message.
+    let mut invalid_setting: Option<String> = None;
     // fields_attributes[N][name] / fields_attributes[N][value]
     let mut fields_map: std::collections::BTreeMap<u32, (String, String)> =
         std::collections::BTreeMap::new();
@@ -141,44 +151,46 @@ async fn do_update_credentials(
                 note = Some(part.text());
             }
             "locked" => {
-                let v = part.text();
-                locked = Some(v == "true" || v == "1");
+                locked = cast_bool(&part.text()).or(locked);
             }
             "bot" => {
-                let v = part.text();
-                bot = Some(v == "true" || v == "1");
+                bot = cast_bool(&part.text()).or(bot);
             }
             "discoverable" => {
-                let v = part.text();
-                discoverable = Some(v == "true" || v == "1");
+                discoverable = cast_bool(&part.text()).or(discoverable);
             }
             "source[privacy]" => {
+                // `setting :default_privacy, in: %w(public unlisted private)`.
                 let v = part.text();
-                if matches!(v.as_str(), "public" | "unlisted" | "private" | "direct") {
+                if matches!(v.as_str(), "public" | "unlisted" | "private") {
                     source_privacy = Some(v);
+                } else if invalid_setting.is_none() {
+                    invalid_setting =
+                        Some(format!("Invalid value for setting default_privacy: {v}"));
                 }
             }
             "source[sensitive]" => {
-                let v = part.text();
-                source_sensitive = Some(v == "true" || v == "1");
+                source_sensitive = cast_bool(&part.text()).or(source_sensitive);
             }
             "source[language]" => {
                 let v = part.text();
                 source_language = Some(if v.is_empty() { None } else { Some(v) });
             }
             "hide_collections" | "source[hide_collections]" => {
-                let v = part.text();
-                source_hide_collections = Some(v == "true" || v == "1");
+                source_hide_collections = cast_bool(&part.text()).or(source_hide_collections);
             }
             "source[quote_policy]" => {
                 let v = part.text();
                 if matches!(v.as_str(), "public" | "followers" | "nobody") {
                     source_quote_policy = Some(v);
+                } else if invalid_setting.is_none() {
+                    invalid_setting = Some(format!(
+                        "Invalid value for setting default_quote_policy: {v}"
+                    ));
                 }
             }
             "indexable" | "source[indexable]" => {
-                let v = part.text();
-                indexable = Some(v == "true" || v == "1");
+                indexable = cast_bool(&part.text()).or(indexable);
             }
             "avatar" => {
                 let (ct, data) = part.file();
@@ -216,30 +228,73 @@ async fn do_update_credentials(
         *n = n.trim().to_string();
     }
 
-    // Enforce Mastodon's local-account length validations before writing:
-    // display_name ≤ 40 chars (Account::DISPLAY_NAME_LENGTH_LIMIT) and note ≤ 500
-    // (Account::NOTE_LENGTH_LIMIT, counted via the same URL/mention-aware rule as
-    // status length — reuse `countable_length`).
-    if let Some(ref dn) = display_name {
-        if dn.chars().count() > 40 {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Display name is too long (maximum is 40 characters)".into(),
-            ));
+    // `Account#fields_attributes=`: the fields given, but those with neither
+    // a name nor a value, as they were written.
+    let fields: Option<Vec<(String, String)>> = fields_submitted.then(|| {
+        fields_map
+            .into_values()
+            .filter(|(n, v)| !(n.trim().is_empty() && v.trim().is_empty()))
+            .collect()
+    });
+
+    // The account's validations, all run before anything is written, as
+    // `update!` runs them: display_name up to 40 characters
+    // (`DISPLAY_NAME_LENGTH_LIMIT`), note up to 500 as statuses count them
+    // (`NOTE_LENGTH_LIMIT`), at most 4 fields (`DEFAULT_FIELDS_SIZE`, whose
+    // length message speaks of characters), and none with a value but no
+    // name (`EmptyProfileFieldNamesValidator`). A long field name or value
+    // is no error: `Account::Field` truncates it when it is read.
+    let mut errors = crate::email_subscriptions::ValidationErrors::default();
+    if display_name
+        .as_ref()
+        .is_some_and(|dn| dn.chars().count() > 40)
+    {
+        errors.add(
+            "display_name",
+            "too_long",
+            "is too long (maximum is 40 characters)",
+        );
+    }
+    if note
+        .as_ref()
+        .is_some_and(|n| crate::api::mastodon::formatting::countable_length(n, "") > 500)
+    {
+        errors.add(
+            "note",
+            "too_long",
+            "is too long (maximum is 500 characters)",
+        );
+    }
+    if let Some(fields) = &fields {
+        if fields.len() > 4 {
+            errors.add(
+                "fields",
+                "too_long",
+                "is too long (maximum is 4 characters)",
+            );
+        }
+        if fields.iter().any(|(n, v)| {
+            crate::api::mastodon::convert::sanitize_field(n, true).is_empty()
+                && !crate::api::mastodon::convert::sanitize_field(v, true).is_empty()
+        }) {
+            errors.add(
+                "fields",
+                "fields_with_values_missing_labels",
+                "contains values with missing labels",
+            );
         }
     }
-    if let Some(ref n) = note {
-        if crate::api::mastodon::formatting::countable_length(n, "") > 500 {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Note is too long (maximum is 500 characters)".into(),
-            ));
-        }
+    if !errors.is_empty() {
+        return Err(errors.into());
     }
 
-    // Persist posting preferences into users.settings (JSON).
-    if source_privacy.is_some()
-        || source_sensitive.is_some()
-        || source_language.is_some()
-        || source_quote_policy.is_some()
+    // Persist posting preferences into users.settings (JSON), unless one is
+    // refused, which `current_user.update(user_params)` raises on.
+    if invalid_setting.is_none()
+        && (source_privacy.is_some()
+            || source_sensitive.is_some()
+            || source_language.is_some()
+            || source_quote_policy.is_some())
     {
         let mut settings = user_settings_json(state, auth.account_id).await;
         let obj = settings.as_object_mut().expect("settings json object");
@@ -386,31 +441,9 @@ async fn do_update_credentials(
         .execute(&state.db).await?;
     }
 
-    // Collect non-empty fields and save as JSONB
-    if fields_submitted {
-        // Drop fully-blank entries, then enforce Mastodon's limits: at most 4
-        // fields (Account::DEFAULT_FIELDS_SIZE), each name/value <= 255 chars
-        // (Account::Field::MAX_CHARACTERS_LOCAL).
-        let fields: Vec<(String, String)> = fields_map
-            .into_values()
-            .filter(|(n, v)| !(n.is_empty() && v.is_empty()))
-            .collect();
-        if fields.len() > 4 {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Fields can't have more than 4 entries".into(),
-            ));
-        }
-        for (n, v) in &fields {
-            if n.chars().count() > 255 || v.chars().count() > 255 {
-                return Err(AppError::Unprocessable(
-                    "Validation failed: Field name and value can't be longer than 255 characters"
-                        .into(),
-                ));
-            }
-        }
-        // Preserve an existing `verified_at` when a field's value is unchanged,
-        // mirroring Mastodon's `Account#fields_attributes=`; a changed value
-        // clears the badge and re-verification is enqueued below.
+    // `self[:fields] = fields`: each as given, keeping an existing
+    // `verified_at` while the value is the same.
+    if let Some(fields) = fields {
         let old_fields: Vec<serde_json::Value> =
             sqlx::query_scalar!("SELECT fields FROM accounts WHERE id = $1", auth.account_id,)
                 .fetch_one(&state.db)
@@ -419,15 +452,17 @@ async fn do_update_credentials(
                 .unwrap_or_default();
         let fields_json: serde_json::Value = fields
             .into_iter()
-            .filter(|(n, _)| !n.is_empty())
             .map(|(n, v)| {
-                let verified_at = old_fields
+                let mut field = serde_json::json!({"name": n, "value": v});
+                if let Some(verified_at) = old_fields
                     .iter()
                     .find(|of| of.get("value").and_then(|ov| ov.as_str()) == Some(v.as_str()))
-                    .and_then(|of| of.get("verified_at").cloned())
-                    .filter(|va| !va.is_null())
-                    .unwrap_or(serde_json::Value::Null);
-                serde_json::json!({"name": n, "value": v, "verified_at": verified_at})
+                    .and_then(|of| of.get("verified_at"))
+                    .filter(|va| va.as_str().is_some_and(|va| !va.is_empty()))
+                {
+                    field["verified_at"] = verified_at.clone();
+                }
+                field
             })
             .collect();
         sqlx::query!(
@@ -499,7 +534,19 @@ async fn do_update_credentials(
             .await?;
     }
     crate::fasp::events::account_updated(state, auth.account_id, discoverable_changed).await;
+    if let Some(message) = invalid_setting {
+        // `UpdateAccountService` has saved the account and queued its link
+        // checks; the settings then raise an `ArgumentError` nothing
+        // rescues, before the update is distributed.
+        crate::link_verification::verify(state, auth.account_id).await;
+        return Err(AppError::Unrescued(message));
+    }
     Ok(account)
+}
+
+/// `ActiveModel::Type::Boolean#cast` of a form value; blank is nil.
+fn cast_bool(value: &str) -> Option<bool> {
+    crate::api::mastodon::extractors::rails::cast_bool(&serde_json::Value::String(value.to_owned()))
 }
 
 /// `UpdateAccountService#process_hashtags`: the account's profile hashtags
@@ -597,6 +644,7 @@ pub async fn patch_profile(
     let a = &account;
     let fields = crate::api::mastodon::convert::fields_from_db(
         a.fields.as_ref().unwrap_or(&serde_json::json!([])),
+        true,
     );
     // `ProfileSerializer`: `account_bio_format` and `account_field_value_format`.
     let mut texts: Vec<&str> = vec![&a.note];
@@ -645,12 +693,19 @@ async fn build_credential_account_response(
 ) -> AppResult<Json<ApiAccount>> {
     let fields = crate::api::mastodon::convert::fields_from_db(
         account.fields.as_ref().unwrap_or(&serde_json::json!([])),
+        true,
     );
     let mut api_account = account_from_db(&state.urls, &account);
     api_account.emojis = fetch_account_emojis(state, &account).await;
     apply_account_stats(state, &mut api_account, account.id).await;
     let follow_requests_count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM (SELECT 1 FROM follow_requests WHERE target_account_id = $1 LIMIT 40) sub",
+        r#"SELECT COUNT(*) FROM (
+             SELECT 1 FROM follow_requests fr
+             JOIN accounts a ON a.id = fr.account_id
+             WHERE fr.target_account_id = $1
+               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+             LIMIT 40
+           ) sub"#,
         auth.account_id,
     )
     .fetch_one(&state.db)
@@ -771,6 +826,7 @@ async fn build_profile(
     let a = &account;
     let fields = crate::api::mastodon::convert::fields_from_db(
         a.fields.as_ref().unwrap_or(&serde_json::json!([])),
+        true,
     );
     // `ProfileSerializer`: `account_bio_format` and `account_field_value_format`.
     let mut texts: Vec<&str> = vec![&a.note];

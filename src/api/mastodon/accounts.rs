@@ -129,77 +129,93 @@ pub async fn fetch_account_role(state: &AppState, account_id: i64) -> Option<sup
 
 #[derive(Debug, Deserialize)]
 pub struct LookupQuery {
-    pub acct: String,
     #[serde(
         default,
-        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_string"
     )]
-    pub resolve: Option<bool>,
+    pub acct: Option<String>,
 }
 
+/// `Accounts::LookupController#show`: `ResolveAccountService` with
+/// `skip_webfinger`, so only an account already known, never one fetched.
+/// `@user` and `user@` this domain are local; an account on a domain
+/// that may not federate (`domain_not_allowed?`) and one deleted are 404s.
 pub async fn lookup_account(
     state: AppState,
     Query(q): Query<LookupQuery>,
 ) -> AppResult<Json<ApiAccount>> {
-    // acct can be "username" (local) or "username@domain" (remote)
-    let (username, domain) = match q.acct.split_once('@') {
-        Some((user, domain)) => (user.to_lowercase(), Some(domain.to_lowercase())),
-        None => (q.acct.to_lowercase(), None),
-    };
-
-    let found = match domain {
-        None => {
-            sqlx::query_as!(
-                Account,
-                "SELECT * FROM accounts WHERE lower(username) = $1 AND domain IS NULL",
-                username,
-            )
-            .fetch_optional(&state.db)
-            .await?
-        }
-
-        Some(ref d) => {
-            sqlx::query_as!(
-                Account,
-                "SELECT * FROM accounts WHERE lower(username) = $1 AND lower(domain) = $2",
-                username,
-                d,
-            )
-            .fetch_optional(&state.db)
-            .await?
-        }
-    };
-
-    if let Some(account) = found {
-        let mut api = account_from_db(&state.urls, &account);
-        api.emojis = fetch_account_emojis(&state, &account).await;
-        api.roles = fetch_account_roles(&state, account.id).await;
-        apply_account_stats(&state, &mut api, account.id).await;
-        api.email_subscriptions = crate::email_subscriptions::serialized(&state, &account).await;
-        return Ok(Json(api));
+    // `process_options!`: stripped, a leading `@` removed, split on `@`.
+    let acct = q.acct.unwrap_or_default();
+    let acct = acct.trim();
+    let acct = acct.strip_prefix('@').unwrap_or(acct);
+    if acct.is_empty() {
+        return Err(AppError::NotFound);
     }
-
-    // Not found locally — attempt WebFinger resolution if requested and domain is known
-    if q.resolve.unwrap_or(false) {
-        if let Some(ref d) = domain {
-            if let Ok(uri) =
-                crate::federation::webfinger::resolve_allowed(&state, &username, d).await
-            {
-                let account_id =
-                    crate::api::ap::inbox::resolve_or_fetch_remote_account(&state, &uri).await?;
-                let account =
-                    sqlx::query_as!(Account, "SELECT * FROM accounts WHERE id = $1", account_id,)
-                        .fetch_one(&state.db)
-                        .await?;
-                let mut api = account_from_db(&state.urls, &account);
-                api.emojis = fetch_account_emojis(&state, &account).await;
-                api.roles = fetch_account_roles(&state, account.id).await;
-                return Ok(Json(api));
-            }
+    // Ruby's `split` drops the empty strings at the end.
+    let mut parts: Vec<&str> = acct.split('@').collect();
+    while parts.last() == Some(&"") {
+        parts.pop();
+    }
+    let username = parts.first().copied().unwrap_or_default().to_owned();
+    let domain = match parts.get(1).copied() {
+        None => None,
+        Some(d) if crate::search::is_local_domain(&state, d) => None,
+        Some(d) => Some(
+            crate::federation::tag_manager::normalize_domain(d).map_err(|_| AppError::NotFound)?,
+        ),
+    };
+    if let Some(ref d) = domain {
+        if crate::federation::moderation::domain_not_allowed(&state, d).await {
+            return Err(AppError::NotFound);
         }
     }
 
-    Err(AppError::NotFound)
+    // `Account.find_remote(username, domain)`.
+    let account = sqlx::query_as!(
+        Account,
+        r#"SELECT * FROM accounts
+           WHERE lower(username) = lower($1)
+             AND (CASE WHEN $2::text IS NULL THEN domain IS NULL ELSE lower(domain) = lower($2) END)
+           ORDER BY id ASC
+           LIMIT 1"#,
+        username,
+        domain,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    // `raise ActiveRecord::RecordNotFound if @account.deleted?`, the
+    // instance actor aside.
+    if account.is_deleted() && account.id != -99 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(render_account(&state, &account).await))
+}
+
+/// `REST::AccountSerializer` of one account, `moved` included.
+async fn render_account(state: &AppState, account: &Account) -> ApiAccount {
+    let mut api_account = account_from_db(&state.urls, account);
+    api_account.emojis = fetch_account_emojis(state, account).await;
+    api_account.roles = fetch_account_roles(state, account.id).await;
+    apply_account_stats(state, &mut api_account, account.id).await;
+    api_account.email_subscriptions = crate::email_subscriptions::serialized(state, account).await;
+    if let Some(moved_account_id) = account.moved_to_account_id {
+        if let Ok(Some(moved)) = sqlx::query_as!(
+            Account,
+            "SELECT * FROM accounts WHERE id = $1 LIMIT 1",
+            moved_account_id,
+        )
+        .fetch_optional(&state.db)
+        .await
+        {
+            let mut moved_api = account_from_db(&state.urls, &moved);
+            moved_api.emojis = fetch_account_emojis(state, &moved).await;
+            moved_api.roles = fetch_account_roles(state, moved.id).await;
+            apply_account_stats(state, &mut moved_api, moved.id).await;
+            api_account.moved = Some(Box::new(moved_api));
+        }
+    }
+    api_account
 }
 
 // ── GET /api/v1/accounts/:id ───────────────────────────────────────────────
@@ -228,29 +244,7 @@ pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json
             _ => {}
         }
     }
-    let mut api_account = account_from_db(&state.urls, &account);
-    api_account.emojis = fetch_account_emojis(&state, &account).await;
-    api_account.roles = fetch_account_roles(&state, account.id).await;
-    apply_account_stats(&state, &mut api_account, account.id).await;
-    api_account.email_subscriptions =
-        crate::email_subscriptions::serialized(&state, &account).await;
-    if let Some(moved_account_id) = account.moved_to_account_id {
-        if let Ok(Some(moved)) = sqlx::query_as!(
-            Account,
-            "SELECT * FROM accounts WHERE id = $1 LIMIT 1",
-            moved_account_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        {
-            let mut moved_api = account_from_db(&state.urls, &moved);
-            moved_api.emojis = fetch_account_emojis(&state, &moved).await;
-            moved_api.roles = fetch_account_roles(&state, moved.id).await;
-            apply_account_stats(&state, &mut moved_api, moved.id).await;
-            api_account.moved = Some(Box::new(moved_api));
-        }
-    }
-    Ok(Json(api_account))
+    Ok(Json(render_account(&state, &account).await))
 }
 
 // ── GET /api/v1/accounts/:id/statuses ─────────────────────────────────────
@@ -1041,34 +1035,38 @@ pub async fn get_account_featured_tags(
 
 // ── GET /api/v1/accounts/familiar_followers ──────────────────────────────
 
+/// `FamiliarFollowersController#index`: for each of the accounts asked
+/// about that exists and is not suspended (`Account.without_suspended`),
+/// the accounts the viewer follows that follow it, unless it hides its
+/// collections. An account the viewer follows that hides its own
+/// collections is no intermediary (`FamiliarFollowersPresenter`).
 pub async fn get_familiar_followers(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     RawQuery(qs): RawQuery,
 ) -> AppResult<Json<Vec<super::types::FamiliarFollowers>>> {
     auth.require_scope("read:follows")?;
+    // `Array(params[:id]).map(&:to_i)`.
     let mut seen = std::collections::HashSet::new();
     let ids: Vec<i64> = url::form_urlencoded::parse(qs.as_deref().unwrap_or("").as_bytes())
         .filter(|(k, _)| k == "id[]" || k == "id")
-        .filter_map(|(_, v)| v.parse::<i64>().ok())
+        .map(|(_, v)| crate::search::ruby_to_i(&v))
         .filter(|id| seen.insert(*id))
         .collect();
 
-    let mut result = Vec::with_capacity(ids.len());
-    for target_id in &ids {
-        // Accounts the viewer follows that also follow the target. When the
-        // target hides their followers (hide_collections), Mastodon reveals no
-        // familiar followers for it.
-        let target_hides = sqlx::query_scalar!(
-            r#"SELECT COALESCE(hide_collections, false) FROM accounts WHERE id = $1"#,
-            target_id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .flatten()
-        .unwrap_or(false);
+    let targets = sqlx::query!(
+        r#"SELECT id, COALESCE(hide_collections, false) AS "hides!" FROM accounts
+           WHERE id = ANY($1) AND suspended_at IS NULL AND requested_deletion_at IS NULL"#,
+        &ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let targets: std::collections::HashMap<i64, bool> =
+        targets.into_iter().map(|t| (t.id, t.hides)).collect();
 
-        let accounts = if target_hides {
+    let mut result = Vec::with_capacity(targets.len());
+    for target_id in ids.iter().filter(|id| targets.contains_key(id)) {
+        let accounts = if targets[target_id] {
             Vec::new()
         } else {
             sqlx::query_as!(
@@ -1076,14 +1074,13 @@ pub async fn get_familiar_followers(
                 r#"SELECT a.* FROM accounts a
                    JOIN follows f1 ON f1.account_id = a.id AND f1.target_account_id = $1
                    JOIN follows f2 ON f2.account_id = $2 AND f2.target_account_id = a.id
-                   WHERE a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                   LIMIT 10"#,
+                   WHERE a.hide_collections IS NOT TRUE
+                   ORDER BY f1.id"#,
                 target_id,
                 auth.account_id,
             )
             .fetch_all(&state.db)
-            .await
-            .unwrap_or_default()
+            .await?
         };
 
         result.push(super::types::FamiliarFollowers {
@@ -1190,23 +1187,47 @@ pub async fn get_directory(
 
 // ── GET /api/v1/accounts (batch lookup) ──────────────────────────────────
 
+/// `AccountsController#index`: the accounts of `id[]` (`params.permit(id:
+/// [])`, so a lone `id` is none), no more than 40 distinct ones
+/// (`check_accounts_limit`, a `Mastodon::ValidationError`), leaving out
+/// local accounts not approved and confirmed (`without_unapproved`) and
+/// those whose deletion was asked for.
 pub async fn get_accounts_batch(
     state: AppState,
-    RawQuery(qs): RawQuery,
+    super::extractors::NestedParams(params): super::extractors::NestedParams,
 ) -> AppResult<Json<Vec<ApiAccount>>> {
-    // serde_urlencoded treats id[]=v1&id[]=v2 as a duplicate field → 400.
-    // Parse with form_urlencoded which correctly returns each pair separately.
-    let ids: Vec<i64> = url::form_urlencoded::parse(qs.as_deref().unwrap_or("").as_bytes())
-        .filter(|(k, _)| k == "id[]" || k == "id")
-        .filter_map(|(_, v)| v.parse::<i64>().ok())
+    // `Array(accounts_params[:id]).uniq.map(&:to_i)`.
+    let mut given: Vec<String> = match params.get("id") {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|v| match v {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            })
+            .collect(),
+        _ => vec![],
+    };
+    let mut seen = std::collections::HashSet::new();
+    given.retain(|id| seen.insert(id.clone()));
+    if given.len() > 40 {
+        return Err(AppError::Unprocessable("Mastodon::ValidationError".into()));
+    }
+    let ids: Vec<i64> = given
+        .iter()
+        .map(|id| crate::search::ruby_to_i(id))
         .collect();
-
     if ids.is_empty() {
         return Ok(Json(vec![]));
     }
     let accounts = sqlx::query_as!(
         crate::db::models::Account,
-        "SELECT * FROM accounts WHERE id = ANY($1::bigint[]) ORDER BY created_at DESC",
+        r#"SELECT a.* FROM accounts a
+           LEFT JOIN users u ON u.account_id = a.id
+           WHERE a.id = ANY($1::bigint[])
+             AND (a.domain IS NOT NULL OR (u.approved = true AND u.confirmed_at IS NOT NULL))
+             AND a.requested_deletion_at IS NULL
+           ORDER BY a.id"#,
         &ids,
     )
     .fetch_all(&state.db)

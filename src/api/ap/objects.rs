@@ -409,18 +409,30 @@ pub async fn actor_json(
     // remote servers show the account's fields (Mastodon's `virtual_attachments`),
     // each value through `account_field_value_format`, and the bio through
     // `account_bio_format`, mentions in both looked up as `TextFormatter` does.
-    let raw_fields: Vec<(&str, &str)> = account
+    // `Account#fields`, each sanitized as `Account::Field` reads it.
+    let raw_fields: Vec<(String, String)> = account
         .fields
         .as_ref()
         .and_then(|f| f.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|f| Some((f.get("name")?.as_str()?, f.get("value")?.as_str()?)))
+                .filter_map(|f| {
+                    Some((
+                        crate::api::mastodon::convert::sanitize_field(
+                            f.get("name")?.as_str()?,
+                            true,
+                        ),
+                        crate::api::mastodon::convert::sanitize_field(
+                            f.get("value")?.as_str()?,
+                            true,
+                        ),
+                    ))
+                })
                 .collect()
         })
         .unwrap_or_default();
     let mut texts: Vec<&str> = vec![&account.note];
-    texts.extend(raw_fields.iter().map(|(_, value)| *value));
+    texts.extend(raw_fields.iter().map(|(_, value)| value.as_str()));
     let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
     let attachment: Vec<Value> = if available {
         raw_fields

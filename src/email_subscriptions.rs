@@ -275,8 +275,9 @@ fn humanize(attribute: &str) -> String {
     chars.into_iter().collect()
 }
 
-impl IntoResponse for ValidationErrors {
-    fn into_response(self) -> Response {
+impl ValidationErrors {
+    /// `ValidationErrorFormatter#as_json`.
+    pub fn body(&self) -> serde_json::Value {
         let mut details = serde_json::Map::new();
         for (attribute, key, message, _) in &self.errors {
             let entry = details
@@ -289,11 +290,19 @@ impl IntoResponse for ValidationErrors {
                 }));
             }
         }
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({ "error": self.message(), "details": details })),
-        )
-            .into_response()
+        serde_json::json!({ "error": self.message(), "details": details })
+    }
+}
+
+impl From<ValidationErrors> for crate::error::AppError {
+    fn from(errors: ValidationErrors) -> Self {
+        Self::Invalid(errors.body())
+    }
+}
+
+impl IntoResponse for ValidationErrors {
+    fn into_response(self) -> Response {
+        (StatusCode::UNPROCESSABLE_ENTITY, Json(self.body())).into_response()
     }
 }
 

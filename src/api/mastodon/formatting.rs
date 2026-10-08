@@ -275,8 +275,10 @@ pub async fn link_profile_mentions<'a>(
             account.note = formatter::local_bio(note, local_domain, &lookup);
         }
         if !account.fields.is_empty() {
-            let raw =
-                super::convert::fields_from_db(fields.as_ref().unwrap_or(&serde_json::json!([])));
+            let raw = super::convert::fields_from_db(
+                fields.as_ref().unwrap_or(&serde_json::json!([])),
+                true,
+            );
             account.fields = field_values(local_domain, raw, true, &lookup);
         }
     }
