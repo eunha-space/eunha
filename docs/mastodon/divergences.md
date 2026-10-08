@@ -47,7 +47,8 @@ The recorded decisions cover:
  -  remote media linked rather than downloaded, which the operator chose;
  -  the web push title of a collection notification;
  -  the collection addresses eunha named before, still answered;
- -  the followers digests, cached in Redis entries of eunha's own.
+ -  the followers digests, cached in Redis entries of eunha's own;
+ -  deliveries to a suspended domain, dropped as they are queued.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

@@ -178,6 +178,16 @@ accounts. Outside that mode the allow list is kept but does nothing.
 from the `settings` table the same way as the settings above, unless the
 instance configuration decides it.
 
+A delivery is dropped when the block covers its inbox's server, the way a
+block covers an account's domain: the inbox's host, with its port when that is
+not the scheme's own. A block on `example.com` covers
+`https://a.example.com/inbox` but not `https://example.com:8443/inbox`, and a
+block on `example.com:8443` covers only that server. Mastodon checks nothing
+at delivery, and never has these inboxes to deliver to once the block has
+suspended their accounts; eunha checks them as well, for the inboxes no
+account stands for (a [recorded
+divergence](../mastodon/divergences)).
+
 
 Sign-ups and addresses
 ----------------------

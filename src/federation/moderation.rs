@@ -146,9 +146,30 @@ pub fn host_matches(host: &str, blocked: &[String]) -> bool {
         .any(|parent| ojak::origin::host_within(host, parent))
 }
 
-/// True if the inbox URL's host is covered by any of the `blocked` domains.
+/// True if the inbox URL's server is covered by any of the `blocked` domains,
+/// as `DomainBlock.rule_for` covers an account's domain: the host with the
+/// port it is reached at when that is not the scheme's own, so a block on
+/// `example.com` covers `https://a.example.com/inbox` but not
+/// `https://example.com:8443/inbox`, and one on `example.com:8443` covers
+/// only that server. Upstream's delivery does not look at domain blocks; it
+/// never has these inboxes to deliver to, because the block suspended their
+/// accounts, matched by that same domain.
 pub fn inbox_suspended(inbox_url: &str, blocked: &[String]) -> bool {
-    ojak::origin::host_of(inbox_url).is_some_and(|host| host_matches(&host, blocked))
+    inbox_domain(inbox_url).is_some_and(|domain| host_matches(&domain, blocked))
+}
+
+/// The domain an account at `inbox_url` would have: its host, lower case,
+/// with its port when one other than the scheme's is given.
+fn inbox_domain(inbox_url: &str) -> Option<String> {
+    let url = url::Url::parse(inbox_url).ok()?;
+    let host = url
+        .host_str()
+        .filter(|h| !h.is_empty())?
+        .to_ascii_lowercase();
+    Some(match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host,
+    })
 }
 
 #[cfg(test)]
@@ -205,5 +226,21 @@ mod tests {
         assert!(inbox_suspended("https://a.example.com/inbox", &b));
         assert!(!inbox_suspended("https://safe.test/inbox", &b));
         assert!(!inbox_suspended("garbage", &b));
+    }
+
+    /// The port is part of the domain, as it is of an account's and of the
+    /// block's: a block on the host alone does not cover a server at a port,
+    /// and one at a port covers that server and its subdomains there.
+    #[test]
+    fn inbox_suspended_keeps_the_port() {
+        let b = vec!["example.com".to_owned(), "ported.test:8443".to_owned()];
+        assert!(inbox_suspended("https://example.com/inbox", &b));
+        // The scheme's own port is no port.
+        assert!(inbox_suspended("https://example.com:443/inbox", &b));
+        assert!(!inbox_suspended("https://example.com:8443/inbox", &b));
+        assert!(inbox_suspended("https://ported.test:8443/inbox", &b));
+        assert!(inbox_suspended("https://a.ported.test:8443/inbox", &b));
+        assert!(!inbox_suspended("https://ported.test/inbox", &b));
+        assert!(!inbox_suspended("https://ported.test:9443/inbox", &b));
     }
 }

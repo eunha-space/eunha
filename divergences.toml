@@ -914,3 +914,29 @@ nothing to change or one put off until the next followers-only post."""
 evidence = "tests/followers_synchronization.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "deliveries-to-suspended-domains-dropped"
+kind = "addition"
+summary = "Drops a delivery to an inbox on a domain blocked at suspend severity"
+mastodon = """
+`ActivityPub::DeliveryWorker` does not look at domain blocks. A suspended \
+domain's inboxes drop out of what it delivers to because the block suspended \
+the domain's accounts, those whose `domain` is the blocked one or under it, \
+port and all."""
+eunha = """
+Also drops, when it queues a delivery, any inbox whose server the block \
+covers, matched as `DomainBlock.rule_for` matches an account's domain: the \
+inbox's host with the port it is reached at when that is not the scheme's \
+own. A block on `example.com` covers `https://a.example.com/inbox` and not \
+`https://example.com:8443/inbox`; one on `example.com:8443` covers that \
+server only."""
+why = """
+A delivery can be addressed to an inbox no suspended account stands for: a \
+relay, a consent reply, an inbox URL taken from an activity. Refusing those \
+too keeps a defederated server from hearing from this one at all, and \
+matching as the block matches accounts keeps it from refusing a server the \
+block does not name."""
+evidence = "tests/integration/federation/suspended_inboxes.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

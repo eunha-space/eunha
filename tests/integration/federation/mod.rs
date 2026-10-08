@@ -23,3 +23,4 @@ mod served_to_signers;
 mod serving;
 mod signature;
 mod signature_rfc9421;
+mod suspended_inboxes;
