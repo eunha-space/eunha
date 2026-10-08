@@ -48,7 +48,8 @@ The recorded decisions cover:
  -  the web push title of a collection notification;
  -  the collection addresses eunha named before, still answered;
  -  the followers digests, cached in Redis entries of eunha's own;
- -  deliveries to a suspended domain, dropped as they are queued.
+ -  deliveries to a suspended domain, dropped as they are queued;
+ -  the date forms a remote poll's end is read in.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

@@ -81,11 +81,7 @@ impl PollParser {
 /// other value but `false`, or else `endTime`. A time that does not parse is
 /// none.
 fn expires_at(json: &Value, now: NaiveDateTime) -> Option<NaiveDateTime> {
-    let time = |value: &str| {
-        chrono::DateTime::parse_from_rfc3339(value)
-            .ok()
-            .map(|time| time.naive_utc())
-    };
+    let time = to_datetime;
     match json.get("closed") {
         Some(Value::String(closed)) => time(closed),
         Some(Value::Null | Value::Bool(false)) | None => {
@@ -93,6 +89,151 @@ fn expires_at(json: &Value, now: NaiveDateTime) -> Option<NaiveDateTime> {
         }
         Some(_) => Some(now),
     }
+}
+
+/// ActiveSupport's `String#to_datetime`, `DateTime.parse(self, false)`, in
+/// UTC, for the forms a server writes a time in: ISO 8601 in its extended or
+/// basic form, with a `T`, a space or nothing between the date and the time,
+/// the time to the minute or to the second with any fraction, or a date
+/// alone (its midnight), and a zone that is `Z`, `UTC`, `GMT`, `UT`, or an
+/// offset of hours with or without minutes, or none (UTC, as `DateTime`
+/// takes it); and RFC 2822. Blank is none, as `to_datetime` has it, and so
+/// is anything else `DateTime.parse` would raise on. What `DateTime.parse`
+/// reads beyond these, such as month names in free text or a time with no
+/// date, is not read.
+pub(super) fn to_datetime(value: &str) -> Option<NaiveDateTime> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Ok(time) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(time.naive_utc());
+    }
+    if let Ok(time) = chrono::DateTime::parse_from_rfc2822(value) {
+        return Some(time.naive_utc());
+    }
+    iso8601(value)
+}
+
+/// The ISO 8601 forms [`to_datetime`] reads past RFC 3339.
+fn iso8601(value: &str) -> Option<NaiveDateTime> {
+    let bytes = value.as_bytes();
+    let digits = |from: usize, len: usize| -> Option<u32> {
+        let part = value.get(from..from + len)?;
+        part.bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| part.parse().ok())
+            .flatten()
+    };
+    // The date: `YYYY-MM-DD`, or `YYYYMMDD`.
+    let (date, mut at) = if bytes.get(4) == Some(&b'-') {
+        if bytes.get(7) != Some(&b'-') {
+            return None;
+        }
+        (
+            chrono::NaiveDate::from_ymd_opt(
+                i32::try_from(digits(0, 4)?).ok()?,
+                digits(5, 2)?,
+                digits(8, 2)?,
+            )?,
+            10,
+        )
+    } else {
+        (
+            chrono::NaiveDate::from_ymd_opt(
+                i32::try_from(digits(0, 4)?).ok()?,
+                digits(4, 2)?,
+                digits(6, 2)?,
+            )?,
+            8,
+        )
+    };
+    // The time, after `T`, `t` or a space: `HH:MM[:SS[.fff]]` or
+    // `HHMM[SS[.fff]]`.
+    let mut time = chrono::NaiveTime::MIN;
+    if matches!(bytes.get(at), Some(b'T' | b't' | b' '))
+        && bytes.get(at + 1).is_some_and(u8::is_ascii_digit)
+    {
+        at += 1;
+        let hour = digits(at, 2)?;
+        at += 2;
+        let extended = bytes.get(at) == Some(&b':');
+        if extended {
+            at += 1;
+        }
+        let minute = digits(at, 2)?;
+        at += 2;
+        let mut second = 0;
+        let mut nanos = 0;
+        let has_seconds = if extended {
+            bytes.get(at) == Some(&b':')
+        } else {
+            bytes.get(at).is_some_and(u8::is_ascii_digit)
+        };
+        if has_seconds {
+            if extended {
+                at += 1;
+            }
+            second = digits(at, 2)?;
+            at += 2;
+            if matches!(bytes.get(at), Some(b'.' | b',')) {
+                at += 1;
+                let start = at;
+                while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+                    at += 1;
+                }
+                let fraction = value.get(start..at)?;
+                if fraction.is_empty() {
+                    return None;
+                }
+                let padded = format!("{:0<9}", &fraction[..fraction.len().min(9)]);
+                nanos = padded.parse().ok()?;
+            }
+        }
+        // `DateTime` takes a leap second as the next minute's start.
+        let (second, carry) = if second == 60 { (59, 1) } else { (second, 0) };
+        time = chrono::NaiveTime::from_hms_nano_opt(hour, minute, second, nanos)?
+            + chrono::Duration::seconds(carry);
+    }
+    // The zone.
+    let rest = value[at..].trim_start();
+    let offset_seconds: i64 = match rest {
+        "" | "Z" | "z" => 0,
+        zone if ["UTC", "GMT", "UT"]
+            .iter()
+            .any(|name| zone.eq_ignore_ascii_case(name)) =>
+        {
+            0
+        }
+        zone => {
+            let sign = match zone.as_bytes().first()? {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let zone = &zone[1..];
+            let (hours, minutes) = match zone.len() {
+                2 => (zone, "00"),
+                4 => (&zone[..2], &zone[2..]),
+                5 if zone.as_bytes()[2] == b':' => (&zone[..2], &zone[3..]),
+                _ => return None,
+            };
+            if !hours
+                .bytes()
+                .chain(minutes.bytes())
+                .all(|b| b.is_ascii_digit())
+            {
+                return None;
+            }
+            let hours: i64 = hours.parse().ok()?;
+            let minutes: i64 = minutes.parse().ok()?;
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            sign * (hours * 3600 + minutes * 60)
+        }
+    };
+    Some(date.and_time(time) - chrono::Duration::seconds(offset_seconds))
 }
 
 #[cfg(test)]
@@ -161,5 +302,41 @@ mod tests {
         assert_eq!(end(json!(false)).as_deref(), Some("2026-01-01 00:00:00"));
         assert_eq!(end(json!(null)).as_deref(), Some("2026-01-01 00:00:00"));
         assert_eq!(end(json!("not a time")), None);
+        assert_eq!(end(json!("")), None);
+    }
+
+    /// `String#to_datetime` reads the ISO 8601 forms servers write, not
+    /// RFC 3339 alone, and RFC 2822; a missing zone is UTC.
+    #[test]
+    fn reads_times_as_to_datetime_does() {
+        let at = |value: &str| to_datetime(value).map(|time| time.to_string());
+        let cases = [
+            ("2026-01-02T03:04:05Z", "2026-01-02 03:04:05"),
+            ("2026-01-02T03:04:05.250+09:00", "2026-01-01 18:04:05.250"),
+            ("2026-01-02T03:04:05", "2026-01-02 03:04:05"),
+            ("2026-01-02T03:04", "2026-01-02 03:04:00"),
+            ("2026-01-02T03:04Z", "2026-01-02 03:04:00"),
+            ("2026-01-02 03:04:05 +0900", "2026-01-01 18:04:05"),
+            ("2026-01-02T03:04:05-05", "2026-01-02 08:04:05"),
+            ("2026-01-02T03:04:05 UTC", "2026-01-02 03:04:05"),
+            ("2026-01-02", "2026-01-02 00:00:00"),
+            ("20260102T030405Z", "2026-01-02 03:04:05"),
+            ("20260102", "2026-01-02 00:00:00"),
+            ("Fri, 02 Jan 2026 03:04:05 +0000", "2026-01-02 03:04:05"),
+            ("  2026-01-02T03:04:05Z  ", "2026-01-02 03:04:05"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(at(value).as_deref(), Some(expected), "{value}");
+        }
+        for value in [
+            "",
+            "  ",
+            "soon",
+            "2026-13-01",
+            "2026-01-02T25:00",
+            "2026-01-02Tx",
+        ] {
+            assert_eq!(at(value), None, "{value}");
+        }
     }
 }

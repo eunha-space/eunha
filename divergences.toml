@@ -940,3 +940,23 @@ block does not name."""
 evidence = "tests/integration/federation/suspended_inboxes.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "poll-times-in-the-forms-servers-write"
+kind = "omission"
+summary = "Reads a poll's end in the date forms servers write, not all DateTime.parse guesses"
+mastodon = """
+Reads a remote poll's `closed` and `endTime` with `String#to_datetime`, \
+`DateTime.parse`, which also guesses at free text: month names, a weekday, a \
+time with no date (today's), two-digit years and the like."""
+eunha = """
+Reads RFC 3339, RFC 2822 and ISO 8601 in its extended and basic forms, with or \
+without seconds, a time or a zone (UTC), and takes anything else as no time, \
+so such a poll has no end."""
+why = """
+Every server that federates polls writes `xsd:dateTime`, which these cover; \
+reimplementing Ruby's heuristic date parser to read text no server sends \
+would add a large surface for nothing."""
+evidence = "src/api/ap/inbox/poll_parser.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

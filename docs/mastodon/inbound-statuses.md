@@ -125,3 +125,12 @@ poll, and since the status is saved with its poll, the status is refused
 whole; an edit to one is not kept, any of it. An update that does not say
 the status was edited leaves a poll's options and multiplicity as they were,
 and an edit that changes them resets its votes.
+
+A poll ends at its `closed` time, now when `closed` is any other value but
+`false`, or else at its `endTime`, each read as Ruby's `String#to_datetime`
+reads it: RFC 3339 and RFC 2822, ISO 8601 in its extended or basic form,
+with the time to the minute or the second or left out (midnight), a zone of
+`Z`, `UTC`, `GMT` or an hour offset with or without minutes, and UTC when
+there is none. What else `DateTime.parse` accepts, such as month names in
+free text or a time with no date, is not read, and the poll then has no end (a
+[recorded divergence](./divergences)).
