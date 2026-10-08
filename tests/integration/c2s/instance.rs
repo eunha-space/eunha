@@ -393,3 +393,48 @@ async fn test_peers_search_returns_array() {
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     let _ = body; // just verify it returns valid JSON array
 }
+
+/// `Api::CachingConcern`: the instance may be cached five minutes by anyone,
+/// a status fifteen seconds when nobody is signed in, and anything else is
+/// `private, no-store`, as `set_cache_control_defaults` leaves it.
+#[tokio::test]
+async fn test_api_cache_control() {
+    let ctx = TestContext::new("api-cache-control").await;
+    let cache_control = |resp: &reqwest::Response| {
+        resp.headers()
+            .get("cache-control")
+            .map(|v| v.to_str().unwrap().to_owned())
+    };
+
+    let resp = ctx
+        .api
+        .get("/api/v2/instance", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(
+        cache_control(&resp).as_deref(),
+        Some("max-age=300, public, stale-while-revalidate=30, stale-if-error=86400")
+    );
+
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "cache me", "public")
+        .await;
+    let path = format!("/api/v1/statuses/{}", status["id"].as_str().unwrap());
+    let resp = ctx.api.get(&path, None).await;
+    assert_eq!(
+        cache_control(&resp).as_deref(),
+        Some("max-age=15, public, stale-while-revalidate=30, stale-if-error=86400")
+    );
+    let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;
+    assert_eq!(cache_control(&resp).as_deref(), Some("private, no-store"));
+
+    let resp = ctx
+        .api
+        .get("/api/v1/timelines/home", Some(&ctx.bob_token))
+        .await;
+    assert_eq!(cache_control(&resp).as_deref(), Some("private, no-store"));
+    // A refusal is not cached either.
+    let resp = ctx.api.get("/api/v1/statuses/1", None).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(cache_control(&resp).as_deref(), Some("private, no-store"));
+}

@@ -255,6 +255,140 @@ pub async fn update_sign_in(state: &AppState, user_id: i64, new_sign_in: bool) {
     }
 }
 
+/// Which of `Api::CachingConcern`'s caching a route's action asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApiCaching {
+    /// `cache_even_if_authenticated!`.
+    EvenIfAuthenticated,
+    /// `cache_if_unauthenticated!`.
+    IfUnauthenticated,
+}
+
+/// The actions that call `cache_even_if_authenticated!` or
+/// `cache_if_unauthenticated!`, by route. Only `GET`s do.
+fn api_caching(path: &str) -> Option<ApiCaching> {
+    use ApiCaching::*;
+    Some(match path {
+        "/api/v1/instance"
+        | "/api/v2/instance"
+        | "/api/v1/custom_emojis"
+        | "/api/v1/peers/search"
+        | "/api/v1/instance/activity"
+        | "/api/v1/instance/extended_description"
+        | "/api/v1/instance/languages"
+        | "/api/v1/instance/peers"
+        | "/api/v1/instance/privacy_policy"
+        | "/api/v1/instance/rules"
+        | "/api/v1/instance/terms_of_service"
+        | "/api/v1/instance/terms_of_service/{date}"
+        | "/api/v1/instance/translation_languages" => EvenIfAuthenticated,
+        "/api/v1/accounts"
+        | "/api/v1/accounts/{id}"
+        | "/api/v1/accounts/lookup"
+        | "/api/v1/accounts/{id}/followers"
+        | "/api/v1/accounts/{id}/following"
+        | "/api/v1/accounts/{id}/statuses"
+        | "/api/v1/accounts/{id}/endorsements"
+        | "/api/v1/accounts/{id}/collections"
+        | "/api/v1_alpha/accounts/{id}/collections"
+        | "/api/v1/accounts/{id}/in_collections"
+        | "/api/v1_alpha/accounts/{id}/in_collections"
+        | "/api/v1/collections/{id}"
+        | "/api/v1_alpha/collections/{id}"
+        | "/api/v1/directory"
+        | "/api/v1/polls/{id}"
+        | "/api/v1/statuses"
+        | "/api/v1/statuses/{id}"
+        | "/api/v1/statuses/{id}/context"
+        | "/api/v1/statuses/{id}/favourited_by"
+        | "/api/v1/statuses/{id}/history"
+        | "/api/v1/statuses/{id}/quotes"
+        | "/api/v1/statuses/{id}/reblogged_by"
+        | "/api/v1/tags/{name}"
+        | "/api/v1/timelines/link"
+        | "/api/v1/timelines/public"
+        | "/api/v1/timelines/tag/{hashtag}"
+        | "/api/v1/trends"
+        | "/api/v1/trends/links"
+        | "/api/v1/trends/statuses"
+        | "/api/v1/trends/tags" => IfUnauthenticated,
+        _ => return None,
+    })
+}
+
+/// `ApplicationController#set_cache_control_defaults` and
+/// `Api::CachingConcern`: an API response is `private, no-store` unless its
+/// action says it may be cached — for five minutes whoever asked
+/// (`cache_even_if_authenticated!`, not in limited federation mode), or for
+/// fifteen seconds when nobody is signed in (`cache_if_unauthenticated!`),
+/// either served stale for thirty seconds while revalidating and for a day
+/// on error.
+pub async fn api_cache_control(req: Request, next: Next) -> Response {
+    use axum::http::{header, HeaderValue, Method};
+
+    let Some(path) = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|p| p.as_str().to_owned())
+        .filter(|p| p.starts_with("/api/"))
+    else {
+        return next.run(req).await;
+    };
+    let state = req.extensions().get::<AppState>().cloned();
+    let signed_in = req
+        .extensions()
+        .get::<AuthenticatedUser>()
+        .is_some_and(|a| a.user_id.is_some());
+    let mut caching = (req.method() == Method::GET)
+        .then(|| api_caching(&path))
+        .flatten();
+    if let Some(state) = &state {
+        match path.as_str() {
+            // `cache_even_if_authenticated! unless
+            // disallow_unauthenticated_api_access?`.
+            "/api/v1/custom_emojis" if state.instance.disallows_unauthenticated_api_access() => {
+                caching = None;
+            }
+            // `DomainBlocksController#index`, by `show_domain_blocks`.
+            "/api/v1/instance/domain_blocks" if req.method() == Method::GET => {
+                caching = Some(
+                    if crate::settings::string(state, "show_domain_blocks").await == "all" {
+                        ApiCaching::EvenIfAuthenticated
+                    } else {
+                        ApiCaching::IfUnauthenticated
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+    let limited = state
+        .as_ref()
+        .is_some_and(|s| s.instance.limited_federation_mode);
+
+    let mut response = next.run(req).await;
+    if response.headers().contains_key(header::CACHE_CONTROL) {
+        return response;
+    }
+    let public = response.status().is_success()
+        && match caching {
+            Some(ApiCaching::EvenIfAuthenticated) => !limited,
+            Some(ApiCaching::IfUnauthenticated) => !signed_in,
+            None => false,
+        };
+    let value = match (public, caching) {
+        (true, Some(ApiCaching::EvenIfAuthenticated)) => {
+            "max-age=300, public, stale-while-revalidate=30, stale-if-error=86400"
+        }
+        (true, _) => "max-age=15, public, stale-while-revalidate=30, stale-if-error=86400",
+        (false, _) => "private, no-store",
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+    response
+}
+
 /// Log failed requests (4xx/5xx) with their method, path and status.
 ///
 /// Never the body, nor the query string: a refused password grant, sign-up or
