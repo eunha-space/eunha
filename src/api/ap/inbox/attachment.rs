@@ -149,7 +149,9 @@ pub(super) fn supported_blurhash(blurhash: &str) -> bool {
         return false;
     };
     let (x, y) = (flag % 9 + 1, flag / 9 + 1);
-    x <= 5 && y <= 5
+    // `Blurhash.components` answers nothing unless the hash is exactly as
+    // long as its components need.
+    blurhash.chars().count() == 4 + 2 * x * y && x <= 5 && y <= 5
 }
 
 /// The media `att` names, or `None` when it has no `url`
@@ -405,6 +407,9 @@ mod media_parser_tests {
         // Six across (`5`).
         assert!(!supported_blurhash("5EHV6nWB2yk8pyo0adR*.7kCMdnj"));
         assert!(!supported_blurhash(""));
+        // Components a hash of this length cannot hold.
+        assert!(!supported_blurhash("LEHV6nWB2yk8pyo0adR*.7kCMdn"));
+        assert!(!supported_blurhash("LEHV6nWB2yk8pyo0adR*.7kCMdnjX"));
         assert!(!supported_blurhash("LEHV 6nWB"));
         assert!(!supported_blurhash("LEHV\"nWB"));
     }
