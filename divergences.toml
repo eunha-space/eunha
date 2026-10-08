@@ -1154,3 +1154,23 @@ mascots, so it names pictures it serves and says what is in them."""
 evidence = "tests/integration/c2s/instance.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "admin-metrics-default-range"
+kind = "behaviour"
+summary = "Measures and dimensions asked for without a range cover the last week"
+mastodon = """
+`Admin::Metrics::Measure` and `::Dimension` take `start_at` and `end_at` \
+without requiring them, and with either missing compute on no range at all: \
+a measure, and a dimension that counts by snowflake ids, fail with a server \
+error, and the others find nothing."""
+eunha = """
+Takes seven days before now for a missing `start_at`, and now for a missing \
+`end_at`, and answers for that range."""
+why = """
+Mastodon's answer is an unhandled exception rather than a decision; the last \
+week is what eunha's own dashboard asks for, and a client that leaves the \
+range out gets numbers instead of an error page."""
+evidence = "tests/integration/c2s/admin.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

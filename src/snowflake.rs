@@ -9,3 +9,9 @@ pub fn next_id() -> i64 {
     let random = rand::random::<u16>() as u64;
     ((ms << 16) | random) as i64
 }
+
+/// `Mastodon::Snowflake.id_at(timestamp, with_random: false)`: the id of
+/// the whole second `at` falls in, its sequence bits zero.
+pub fn id_at(at: chrono::DateTime<chrono::Utc>) -> i64 {
+    (at.timestamp() * 1000) << 16
+}

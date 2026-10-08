@@ -565,141 +565,186 @@ pub(super) const MEASURES: &[&str] = &[
 /// The instance dimensions `Admin::Metrics::Dimension` has.
 pub(super) const DIMENSIONS: &[&str] = &["instance_accounts", "instance_languages"];
 
-fn domain_of(params: &HashMap<String, Value>, key: &str) -> String {
-    params
-        .get(key)
-        .and_then(|p| p.get("domain"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned()
+/// `params[:include_subdomains]`, which is true for anything given but
+/// `false` and `null`, the string `"false"` included.
+fn include_subdomains(params: &serde_json::Map<String, Value>) -> bool {
+    !matches!(
+        params.get("include_subdomains"),
+        None | Some(Value::Null) | Some(Value::Bool(false))
+    )
 }
 
-/// One of the instance measures: an all-time total and its daily series in
-/// the range, with no previous total, as `total_in_time_range?` is false.
+/// One of the instance measures: an all-time total, of the domain and its
+/// subdomains with `include_subdomains`, and its daily series in the range
+/// (`account_domain_sql`, which with `include_subdomains` matches the domain
+/// alone), with no previous total, as `total_in_time_range?` is false.
 pub(super) async fn measure(
     state: &AppState,
     key: &str,
-    params: &HashMap<String, Value>,
-    start: chrono::NaiveDateTime,
-    end: chrono::NaiveDateTime,
+    params: &serde_json::Map<String, Value>,
+    window: &super::metrics::Window,
 ) -> AppResult<Value> {
-    let domain = domain_of(params, key);
-    // Each measure's total, and the per-day query, by the same join.
+    use super::metrics::{measure_json, per_day, string_param, Arg};
+
+    let domain = string_param(params, "domain");
+    let subdomains = include_subdomains(params);
+    // `Account.where(domain:)`, or `Instance.by_domain_and_subdomains`.
+    let total_filter = if subdomains {
+        "accounts.domain IN (SELECT domain FROM instances
+                             WHERE reverse('.' || domain) LIKE reverse('%.' || $1::text))"
+    } else {
+        "accounts.domain IS NOT DISTINCT FROM $1::text"
+    };
+    // `account_domain_sql(include_subdomains)`.
+    let day_filter = if subdomains {
+        "accounts.domain IN (SELECT domain FROM instances
+                             WHERE reverse('.' || domain) LIKE reverse('.' || $3::text))"
+    } else {
+        "accounts.domain = $3::text"
+    };
     let (total_sql, per_day_sql) = match key {
         "instance_accounts" => (
-            "SELECT count(*) FROM accounts WHERE domain = $1",
-            "SELECT count(*) FROM accounts
-             WHERE domain = $1 AND date_trunc('day', created_at)::date = axis.period",
+            format!("SELECT count(*) FROM accounts WHERE {total_filter}"),
+            format!(
+                "SELECT count(*) FROM accounts
+                 WHERE date_trunc('day', accounts.created_at)::date = axis.period AND {day_filter}"
+            ),
         ),
+        // `Status.joins(:account)`: kept posts only, as the default scope
+        // has it; the series counts by snowflake ids, discarded ones too.
         "instance_statuses" => (
-            "SELECT count(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-             WHERE a.domain = $1 AND s.deleted_at IS NULL",
-            "SELECT count(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-             WHERE a.domain = $1 AND s.deleted_at IS NULL
-               AND date_trunc('day', s.created_at)::date = axis.period",
+            format!(
+                "SELECT count(*) FROM statuses INNER JOIN accounts ON accounts.id = statuses.account_id
+                 WHERE statuses.deleted_at IS NULL AND {total_filter}"
+            ),
+            format!(
+                "SELECT count(*) FROM statuses INNER JOIN accounts ON accounts.id = statuses.account_id
+                 WHERE statuses.id BETWEEN $4 AND $5 AND {day_filter}
+                   AND date_trunc('day', statuses.created_at)::date = axis.period"
+            ),
         ),
         "instance_media_attachments" => (
-            "SELECT COALESCE(sum(COALESCE(m.file_file_size, 0) + COALESCE(m.thumbnail_file_size, 0)), 0)::bigint
-             FROM media_attachments m JOIN accounts a ON a.id = m.account_id WHERE a.domain = $1",
-            "SELECT COALESCE(sum(COALESCE(m.file_file_size, 0) + COALESCE(m.thumbnail_file_size, 0)), 0)::bigint
-             FROM media_attachments m JOIN accounts a ON a.id = m.account_id
-             WHERE a.domain = $1 AND date_trunc('day', m.created_at)::date = axis.period",
+            format!(
+                "SELECT COALESCE(sum(COALESCE(media_attachments.file_file_size, 0)
+                                     + COALESCE(media_attachments.thumbnail_file_size, 0)), 0)::bigint
+                 FROM media_attachments INNER JOIN accounts ON accounts.id = media_attachments.account_id
+                 WHERE {total_filter}"
+            ),
+            format!(
+                "SELECT COALESCE(sum(COALESCE(media_attachments.file_file_size, 0)
+                                     + COALESCE(media_attachments.thumbnail_file_size, 0)), 0)
+                 FROM media_attachments INNER JOIN accounts ON accounts.id = media_attachments.account_id
+                 WHERE date_trunc('day', media_attachments.created_at)::date = axis.period
+                   AND {day_filter}"
+            ),
         ),
         "instance_follows" => (
-            "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.target_account_id
-             WHERE a.domain = $1",
-            "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.target_account_id
-             WHERE a.domain = $1 AND date_trunc('day', f.created_at)::date = axis.period",
+            format!(
+                "SELECT count(*) FROM follows INNER JOIN accounts ON follows.target_account_id = accounts.id
+                 WHERE {total_filter}"
+            ),
+            format!(
+                "SELECT count(*) FROM follows INNER JOIN accounts ON follows.target_account_id = accounts.id
+                 WHERE date_trunc('day', follows.created_at)::date = axis.period AND {day_filter}"
+            ),
         ),
         "instance_followers" => (
-            "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.account_id
-             WHERE a.domain = $1",
-            "SELECT count(*) FROM follows f JOIN accounts a ON a.id = f.account_id
-             WHERE a.domain = $1 AND date_trunc('day', f.created_at)::date = axis.period",
+            format!(
+                "SELECT count(*) FROM follows INNER JOIN accounts ON follows.account_id = accounts.id
+                 WHERE {total_filter}"
+            ),
+            format!(
+                "SELECT count(*) FROM follows INNER JOIN accounts ON follows.account_id = accounts.id
+                 WHERE date_trunc('day', follows.created_at)::date = axis.period AND {day_filter}"
+            ),
         ),
         _ => (
-            "SELECT count(*) FROM reports r JOIN accounts a ON a.id = r.target_account_id
-             WHERE a.domain = $1",
-            "SELECT count(*) FROM reports r JOIN accounts a ON a.id = r.target_account_id
-             WHERE a.domain = $1 AND date_trunc('day', r.created_at)::date = axis.period",
+            format!(
+                "SELECT count(*) FROM reports INNER JOIN accounts ON accounts.id = reports.target_account_id
+                 WHERE {total_filter}"
+            ),
+            format!(
+                "SELECT count(*) FROM reports INNER JOIN accounts ON accounts.id = reports.target_account_id
+                 WHERE date_trunc('day', reports.created_at)::date = axis.period AND {day_filter}"
+            ),
         ),
     };
-    let total: i64 = sqlx::query_scalar(total_sql)
+    let total: i64 = sqlx::query_scalar(&total_sql)
         .bind(&domain)
         .fetch_one(&state.db)
         .await?;
-    let data: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as(&format!(
-        "SELECT axis.period, ({per_day_sql}) AS value
-         FROM (SELECT generate_series($2::timestamp, $3::timestamp, '1 day')::date AS period) AS axis
-         ORDER BY axis.period"
-    ))
-    .bind(&domain)
-    .bind(start)
-    .bind(end)
-    .fetch_all(&state.db)
-    .await?;
-    let mut out = json!({
-        "key": key,
-        "unit": if key == "instance_media_attachments" { Value::from("bytes") } else { Value::Null },
-        "total": total.to_string(),
-        "data": data.iter().map(|(date, value)| json!({
-            "date": super::super::convert::mastodon_date(date.and_hms_opt(0, 0, 0).unwrap_or_default()),
-            "value": value.to_string(),
-        })).collect::<Vec<_>>(),
-    });
-    if key == "instance_media_attachments" {
-        out["human_value"] = Value::from(super::human_size(total));
+    let mut args = vec![Arg::Text(domain)];
+    if key == "instance_statuses" {
+        args.push(Arg::Int(window.earliest_status_id()));
+        args.push(Arg::Int(window.latest_status_id()));
     }
-    Ok(out)
+    let data = per_day(state, window, &per_day_sql, args).await?;
+    // `InstanceMediaAttachmentsMeasure`, in bytes, the one that defines
+    // `value_to_human_value`.
+    Ok(if key == "instance_media_attachments" {
+        measure_json(
+            key,
+            Some("bytes"),
+            total,
+            Some(super::metrics::number_to_human_size(total)),
+            None,
+            data,
+        )
+    } else {
+        measure_json(key, None, total, None, None, data)
+    })
 }
 
-/// One of the instance dimensions.
+/// One of the instance dimensions: the domain's most followed accounts, or
+/// the languages of its posts between the snowflake ids of the range's days,
+/// boosts left out.
 pub(super) async fn dimension(
     state: &AppState,
     key: &str,
-    params: &HashMap<String, Value>,
-    limit: i64,
-) -> AppResult<Value> {
-    let domain = domain_of(params, key);
-    let data: Vec<Value> = if key == "instance_accounts" {
-        // The domain's most followed accounts.
+    params: &serde_json::Map<String, Value>,
+    window: &super::metrics::Window,
+    limit: Option<i64>,
+    locale: crate::locale::Locale,
+) -> AppResult<Vec<Value>> {
+    use super::metrics::{dimension_row, standard_locale_name, string_param};
+
+    let domain = string_param(params, "domain");
+    Ok(if key == "instance_accounts" {
         let rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT a.username, count(f.id) AS value FROM accounts a
-             LEFT JOIN follows f ON f.target_account_id = a.id
-             WHERE a.domain = $1 GROUP BY a.id ORDER BY value DESC LIMIT $2",
+            "SELECT accounts.username, count(follows.*) AS value FROM accounts
+             LEFT JOIN follows ON follows.target_account_id = accounts.id
+             WHERE accounts.domain = $1
+             GROUP BY accounts.id, follows.target_account_id
+             ORDER BY value DESC LIMIT $2",
         )
         .bind(&domain)
         .bind(limit)
         .fetch_all(&state.db)
         .await?;
-        rows.into_iter()
-            .map(|(username, value)| {
-                json!({"key": username, "human_key": username, "value": value.to_string()})
-            })
+        rows.iter()
+            .map(|(username, value)| dimension_row(username, username, *value))
             .collect()
     } else {
-        // The languages of the domain's posts, boosts left out.
         let rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT COALESCE(s.language, 'und') AS language, count(*) AS value
-             FROM statuses s JOIN accounts a ON a.id = s.account_id
-             WHERE a.domain = $1 AND s.reblog_of_id IS NULL
-             GROUP BY COALESCE(s.language, 'und') ORDER BY count(*) DESC LIMIT $2",
+            "SELECT COALESCE(statuses.language, 'und') AS language, count(*) AS value
+             FROM statuses INNER JOIN accounts ON accounts.id = statuses.account_id
+             WHERE accounts.domain = $1
+               AND statuses.id BETWEEN $2 AND $3
+               AND statuses.reblog_of_id IS NULL
+             GROUP BY COALESCE(statuses.language, 'und') ORDER BY count(*) DESC LIMIT $4",
         )
         .bind(&domain)
+        .bind(window.earliest_status_id())
+        .bind(window.latest_status_id())
         .bind(limit)
         .fetch_all(&state.db)
         .await?;
-        rows.into_iter()
+        rows.iter()
             .map(|(language, value)| {
-                json!({
-                    "key": language,
-                    "human_key": super::locale_name(&language),
-                    "value": value.to_string(),
-                })
+                dimension_row(language, &standard_locale_name(language, locale), *value)
             })
             .collect()
-    };
-    Ok(json!({"key": key, "data": data}))
+    })
 }
 
 // ── Exporting and importing domain blocks and allows ──────────────────────

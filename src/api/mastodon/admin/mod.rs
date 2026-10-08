@@ -1,4 +1,3 @@
-use super::extractors::QueryOrJson;
 use crate::{
     error::{AppError, AppResult},
     middleware::{AuthenticatedUser, ResolvedInstance},
@@ -132,299 +131,97 @@ pub(crate) async fn require_permission(
     crate::moderation::role::authorize(role.can(&[flag]))
 }
 
-// ── POST /api/v1/admin/measures ───────────────────────────────────────────
+mod metrics;
+pub use metrics::*;
 
-#[derive(Debug, Deserialize)]
-pub struct MeasuresRequest {
-    pub keys: Vec<String>,
-    pub start_at: Option<String>,
-    pub end_at: Option<String>,
-    /// Each key's own parameters, such as `instance_accounts[domain]`.
-    #[serde(flatten)]
-    pub params: std::collections::HashMap<String, serde_json::Value>,
-}
+/// `SoftwareVersionsDimension`, in eunha's terms.
+pub(super) async fn software_versions(state: &AppState) -> AppResult<Vec<serde_json::Value>> {
+    let pg_version_raw: String = sqlx::query_scalar!("SELECT version()")
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or_default();
+    let pg_version = pg_version_raw
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("unknown")
+        .to_string();
 
-pub async fn get_measures(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    QueryOrJson(body): QueryOrJson<MeasuresRequest>,
-) -> AppResult<Json<Vec<serde_json::Value>>> {
-    require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
-
-    let start: chrono::NaiveDateTime = body
-        .start_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc() - chrono::Duration::days(7));
-    let end: chrono::NaiveDateTime = body
-        .end_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-    let prev_start = start - (end - start);
-
-    let mut result = Vec::new();
-
-    for key in &body.keys {
-        let measure = match key.as_str() {
-            "new_users" => {
-                let total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM users WHERE created_at BETWEEN $1 AND $2",
-                    start,
-                    end,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let previous_total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM users WHERE created_at BETWEEN $1 AND $2",
-                    prev_start,
-                    start,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM users
-                               WHERE date_trunc('day', created_at)::date = axis.day) AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(),
-                    "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
-            }
-            "active_users" => {
-                // `Admin::Metrics::Measure::ActiveUsersMeasure`.
-                activity_measure(
-                    &state,
-                    key,
-                    crate::activity_tracker::LOGINS,
-                    crate::activity_tracker::Kind::Unique,
-                    start,
-                    end,
-                )
-                .await?
-            }
-            "new_statuses" => {
-                let total = sqlx::query_scalar!(
-                    r#"SELECT COUNT(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-                       WHERE a.domain IS NULL AND s.created_at BETWEEN $1 AND $2 AND s.deleted_at IS NULL"#,
-                    start, end,
-                ).fetch_one(&state.db).await?.unwrap_or(0);
-                let previous_total = sqlx::query_scalar!(
-                    r#"SELECT COUNT(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-                       WHERE a.domain IS NULL AND s.created_at BETWEEN $1 AND $2 AND s.deleted_at IS NULL"#,
-                    prev_start, start,
-                ).fetch_one(&state.db).await?.unwrap_or(0);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM statuses s JOIN accounts a ON a.id = s.account_id
-                               WHERE a.domain IS NULL AND s.deleted_at IS NULL
-                                 AND date_trunc('day', s.created_at)::date = axis.day) AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(),
-                    "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
-            }
-            "opened_reports" => {
-                let total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM reports WHERE created_at BETWEEN $1 AND $2",
-                    start,
-                    end,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let previous_total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM reports WHERE created_at BETWEEN $1 AND $2",
-                    prev_start,
-                    start,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM reports
-                               WHERE date_trunc('day', created_at)::date = axis.day) AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(), "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
-            }
-            "resolved_reports" => {
-                let total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM reports WHERE action_taken_at BETWEEN $1 AND $2",
-                    start,
-                    end,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let previous_total = sqlx::query_scalar!(
-                    "SELECT COUNT(*) FROM reports WHERE action_taken_at BETWEEN $1 AND $2",
-                    prev_start,
-                    start,
-                )
-                .fetch_one(&state.db)
-                .await?
-                .unwrap_or(0);
-                let data = sqlx::query!(
-                    r#"SELECT axis.day::timestamp,
-                              (SELECT COUNT(*) FROM reports
-                               WHERE date_trunc('day', action_taken_at)::date = axis.day) AS n
-                       FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS day) AS axis
-                       ORDER BY axis.day"#,
-                    start, end,
-                ).fetch_all(&state.db).await?;
-                serde_json::json!({
-                    "key": key, "unit": null,
-                    "total": total.to_string(), "human_value": total.to_string(),
-                    "previous_total": previous_total.to_string(),
-                    "data": data.iter().map(|r| serde_json::json!({
-                        "date": r.day.map(super::convert::mastodon_date).unwrap_or_default(),
-                        "value": r.n.unwrap_or(0).to_string(),
-                    })).collect::<Vec<_>>(),
-                })
-            }
-            "interactions" => {
-                // `Admin::Metrics::Measure::InteractionsMeasure`.
-                activity_measure(
-                    &state,
-                    key,
-                    crate::activity_tracker::INTERACTIONS,
-                    crate::activity_tracker::Kind::Basic,
-                    start,
-                    end,
-                )
-                .await?
-            }
-            other if instances::MEASURES.contains(&other) => {
-                instances::measure(&state, other, &body.params, start, end).await?
-            }
-            _ => serde_json::json!({
-                "key": key, "unit": null, "total": "0",
-                "human_value": "0", "previous_total": "0", "data": [],
-            }),
-        };
-        result.push(measure);
-    }
-
-    Ok(Json(result))
-}
-
-fn locale_name(code: &str) -> &'static str {
-    match code {
-        "ko" => "Korean",
-        "en" => "English",
-        "ja" => "Japanese",
-        "zh" => "Chinese",
-        "fr" => "French",
-        "de" => "German",
-        "es" => "Spanish",
-        "pt" => "Portuguese",
-        "ru" => "Russian",
-        "ar" => "Arabic",
-        _ => "Unknown",
-    }
-}
-
-/// A measure `ActivityTracker` keeps (`ActiveUsersMeasure`,
-/// `InteractionsMeasure`): the total over `time_period`, the total over the
-/// period of the same length before it, and each day's count. The start is
-/// no more than two years before the end, as `BaseMeasure` clamps it, and
-/// the measure has no `human_value`, as neither defines
-/// `value_to_human_value`.
-async fn activity_measure(
-    state: &AppState,
-    key: &str,
-    prefix: &str,
-    kind: crate::activity_tracker::Kind,
-    start: chrono::NaiveDateTime,
-    end: chrono::NaiveDateTime,
-) -> AppResult<serde_json::Value> {
-    use crate::activity_tracker::{get, sum};
-
-    let start = start.max(end - chrono::Months::new(24));
-    let (first, last) = (start.date(), end.date());
-    // `previous_time_period`: shifted back by `length_of_period + 1` days.
-    let shift = chrono::Duration::days((last - first).num_days() + 1);
-    let redis_error = |e: redis::RedisError| AppError::Internal(e.into());
-    let total = sum(state, prefix, kind, first, last)
+    let mut redis = state.redis.clone();
+    let redis_info: String = redis::cmd("INFO")
+        .arg("server")
+        .query_async(&mut redis)
         .await
-        .map_err(redis_error)?;
-    let previous_total = sum(state, prefix, kind, first - shift, last - shift)
-        .await
-        .map_err(redis_error)?;
-    let data = get(state, prefix, kind, first, last)
-        .await
-        .map_err(redis_error)?;
-    Ok(serde_json::json!({
-        "key": key,
-        "unit": null,
-        "total": total.to_string(),
-        "previous_total": previous_total.to_string(),
-        "data": data.iter().map(|(date, value)| serde_json::json!({
-            // `date.to_time(:utc).iso8601`.
-            "date": date.format("%Y-%m-%dT00:00:00Z").to_string(),
-            "value": value.to_string(),
-        })).collect::<Vec<_>>(),
-    }))
+        .unwrap_or_default();
+    let redis_version = parse_redis_info_field(&redis_info, "redis_version")
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let eunha_version = crate::version::EUNHA_FULL.to_string();
+
+    Ok(vec![
+        serde_json::json!({"key": "mastodon", "human_key": "Eunha", "value": eunha_version.clone(), "human_value": eunha_version}),
+        serde_json::json!({"key": "postgresql", "human_key": "PostgreSQL", "value": pg_version.clone(), "human_value": pg_version}),
+        serde_json::json!({"key": "redis", "human_key": "Redis", "value": redis_version.clone(), "human_value": redis_version}),
+    ])
 }
 
-fn parse_admin_date(s: &str) -> Option<chrono::NaiveDateTime> {
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some(dt.with_timezone(&chrono::Utc).naive_utc());
-    }
-    // Mastodon sends date-only strings like "2026-04-27"
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return date.and_hms_opt(0, 0, 0);
-    }
-    None
-}
+/// `SpaceUsageDimension`, in eunha's terms.
+pub(super) async fn space_usage(state: &AppState) -> AppResult<Vec<serde_json::Value>> {
+    let pg_size: i64 = sqlx::query_scalar!("SELECT pg_database_size(current_database())")
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(0);
 
-fn human_size(bytes: i64) -> String {
-    const KB: i64 = 1024;
-    const MB: i64 = 1024 * KB;
-    const GB: i64 = 1024 * MB;
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
+    let redis_size = if state.config.redis_process_metrics
+        && !state.redis_keys.is_shared()
+        && state.config.redis_coordination_url.is_none()
+    {
+        let mut redis = state.redis.clone();
+        let redis_mem_info: String = redis::cmd("INFO")
+            .arg("memory")
+            .query_async(&mut redis)
+            .await
+            .unwrap_or_default();
+        parse_redis_info_field(&redis_mem_info, "used_memory").and_then(|v| v.parse::<i64>().ok())
     } else {
-        format!("{} B", bytes)
-    }
+        None
+    };
+
+    let media_size: i64 = sqlx::query_scalar!(
+        r#"SELECT
+           COALESCE((SELECT SUM(COALESCE(file_file_size,0) + COALESCE(thumbnail_file_size,0)) FROM media_attachments), 0)
+           + COALESCE((SELECT SUM(COALESCE(image_file_size,0)) FROM custom_emojis), 0)
+           + COALESCE((SELECT SUM(COALESCE(image_file_size,0)) FROM preview_cards), 0)
+           + COALESCE((SELECT SUM(COALESCE(avatar_file_size,0) + COALESCE(header_file_size,0)) FROM accounts), 0)"#
+    ).fetch_one(&state.db).await?.unwrap_or(0);
+
+    let human = metrics::number_to_human_size;
+    Ok(vec![
+        serde_json::json!({
+            "key": "postgresql", "human_key": "PostgreSQL",
+            "value": pg_size.to_string(), "unit": "bytes",
+            "human_value": human(pg_size),
+        }),
+        redis_size
+            .map(|bytes| {
+                serde_json::json!({
+                    "key": "redis", "human_key": "Redis",
+                    "value": bytes.to_string(), "unit": "bytes",
+                    "human_value": human(bytes),
+                })
+            })
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "key": "redis", "human_key": "Redis",
+                    "value": null, "unit": "bytes",
+                    "human_value": "Unavailable for shared Redis",
+                })
+            }),
+        serde_json::json!({
+            "key": "media", "human_key": "Media storage",
+            "value": media_size.to_string(), "unit": "bytes",
+            "human_value": human(media_size),
+        }),
+    ])
 }
 
 fn parse_redis_info_field(info: &str, field: &str) -> Option<String> {
@@ -432,345 +229,6 @@ fn parse_redis_info_field(info: &str, field: &str) -> Option<String> {
         .find(|l| l.starts_with(field))
         .and_then(|l| l.split_once(':').map(|x| x.1))
         .map(|v| v.trim().to_string())
-}
-
-// ── POST /api/v1/admin/dimensions ─────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct DimensionsRequest {
-    pub keys: Vec<String>,
-    pub start_at: Option<String>,
-    pub end_at: Option<String>,
-    pub limit: Option<i64>,
-    /// Each key's own parameters, such as `instance_accounts[domain]`.
-    #[serde(flatten)]
-    pub params: std::collections::HashMap<String, serde_json::Value>,
-}
-
-pub async fn get_dimensions(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    QueryOrJson(body): QueryOrJson<DimensionsRequest>,
-) -> AppResult<Json<Vec<serde_json::Value>>> {
-    require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
-
-    let start: chrono::NaiveDateTime = body
-        .start_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc() - chrono::Duration::days(7));
-    let end: chrono::NaiveDateTime = body
-        .end_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-    let limit = body.limit.unwrap_or(10).clamp(1, 50);
-
-    let mut result = Vec::new();
-
-    for key in &body.keys {
-        let dimension = match key.as_str() {
-            "servers" => {
-                let rows = sqlx::query!(
-                    r#"SELECT COALESCE(a.domain, 'local') AS server, COUNT(*) AS n
-                       FROM statuses s JOIN accounts a ON a.id = s.account_id
-                       WHERE s.created_at BETWEEN $1 AND $2 AND s.deleted_at IS NULL
-                       GROUP BY COALESCE(a.domain, 'local') ORDER BY n DESC LIMIT $3"#,
-                    start,
-                    end,
-                    limit,
-                )
-                .fetch_all(&state.db)
-                .await?;
-                serde_json::json!({
-                    "key": key,
-                    "data": rows.iter().map(|r| {
-                        let v = r.n.unwrap_or(0).to_string();
-                        serde_json::json!({
-                            "key": r.server,
-                            "human_key": r.server,
-                            "value": v,
-                            "unit": null,
-                            "human_value": v,
-                        })
-                    }).collect::<Vec<_>>(),
-                })
-            }
-            "sources" => {
-                let rows = sqlx::query!(
-                    r#"SELECT COALESCE(a.name, 'web') AS name, COUNT(*) AS n
-                       FROM users u
-                       LEFT JOIN oauth_applications a ON a.id = u.created_by_application_id
-                       WHERE u.created_at BETWEEN $1 AND $2
-                       GROUP BY a.name ORDER BY n DESC LIMIT $3"#,
-                    start,
-                    end,
-                    limit,
-                )
-                .fetch_all(&state.db)
-                .await?;
-                serde_json::json!({
-                    "key": key,
-                    "data": rows.iter().map(|r| {
-                        let v = r.n.unwrap_or(0).to_string();
-                        serde_json::json!({
-                            "key": r.name, "human_key": r.name,
-                            "value": v, "unit": null, "human_value": v,
-                        })
-                    }).collect::<Vec<_>>(),
-                })
-            }
-            "languages" => {
-                let rows = sqlx::query!(
-                    r#"SELECT COALESCE(u.locale, 'und') AS locale, COUNT(*) AS n
-                       FROM users u
-                       WHERE u.current_sign_in_at BETWEEN $1 AND $2
-                         AND u.locale IS NOT NULL
-                       GROUP BY u.locale ORDER BY n DESC LIMIT $3"#,
-                    start,
-                    end,
-                    limit,
-                )
-                .fetch_all(&state.db)
-                .await?;
-                serde_json::json!({
-                    "key": key,
-                    "data": rows.iter().map(|r| {
-                        let v = r.n.unwrap_or(0).to_string();
-                        let human = locale_name(r.locale.as_deref().unwrap_or("und"));
-                        serde_json::json!({
-                            "key": r.locale, "human_key": human,
-                            "value": v, "unit": null, "human_value": v,
-                        })
-                    }).collect::<Vec<_>>(),
-                })
-            }
-            "software_versions" => {
-                let pg_version_raw: String = sqlx::query_scalar!("SELECT version()")
-                    .fetch_one(&state.db)
-                    .await?
-                    .unwrap_or_default();
-                let pg_version = pg_version_raw
-                    .split_whitespace()
-                    .nth(1)
-                    .unwrap_or("unknown")
-                    .to_string();
-
-                let mut redis = state.redis.clone();
-                let redis_info: String = redis::cmd("INFO")
-                    .arg("server")
-                    .query_async(&mut redis)
-                    .await
-                    .unwrap_or_default();
-                let redis_version = parse_redis_info_field(&redis_info, "redis_version")
-                    .unwrap_or_else(|| "unknown".to_string());
-
-                let eunha_version = crate::version::EUNHA_FULL.to_string();
-
-                serde_json::json!({
-                    "key": key,
-                    "data": [
-                        {"key": "mastodon", "human_key": "Eunha", "value": eunha_version.clone(), "human_value": eunha_version},
-                        {"key": "postgresql", "human_key": "PostgreSQL", "value": pg_version.clone(), "human_value": pg_version},
-                        {"key": "redis", "human_key": "Redis", "value": redis_version.clone(), "human_value": redis_version},
-                    ],
-                })
-            }
-            "space_usage" => {
-                let pg_size: i64 =
-                    sqlx::query_scalar!("SELECT pg_database_size(current_database())")
-                        .fetch_one(&state.db)
-                        .await?
-                        .unwrap_or(0);
-
-                let redis_size = if state.config.redis_process_metrics
-                    && !state.redis_keys.is_shared()
-                    && state.config.redis_coordination_url.is_none()
-                {
-                    let mut redis = state.redis.clone();
-                    let redis_mem_info: String = redis::cmd("INFO")
-                        .arg("memory")
-                        .query_async(&mut redis)
-                        .await
-                        .unwrap_or_default();
-                    parse_redis_info_field(&redis_mem_info, "used_memory")
-                        .and_then(|v| v.parse::<i64>().ok())
-                } else {
-                    None
-                };
-
-                let media_size: i64 = sqlx::query_scalar!(
-                    r#"SELECT
-                       COALESCE((SELECT SUM(COALESCE(file_file_size,0) + COALESCE(thumbnail_file_size,0)) FROM media_attachments), 0)
-                       + COALESCE((SELECT SUM(COALESCE(image_file_size,0)) FROM custom_emojis), 0)
-                       + COALESCE((SELECT SUM(COALESCE(image_file_size,0)) FROM preview_cards), 0)
-                       + COALESCE((SELECT SUM(COALESCE(avatar_file_size,0) + COALESCE(header_file_size,0)) FROM accounts), 0)"#
-                ).fetch_one(&state.db).await?.unwrap_or(0);
-
-                serde_json::json!({
-                    "key": key,
-                    "data": [
-                        {
-                            "key": "postgresql", "human_key": "PostgreSQL",
-                            "value": pg_size.to_string(), "unit": "bytes",
-                            "human_value": human_size(pg_size),
-                        },
-                        redis_size.map(|bytes| serde_json::json!({
-                            "key": "redis", "human_key": "Redis",
-                            "value": bytes.to_string(), "unit": "bytes",
-                            "human_value": human_size(bytes),
-                        })).unwrap_or_else(|| serde_json::json!({
-                            "key": "redis", "human_key": "Redis",
-                            "value": null, "unit": "bytes",
-                            "human_value": "Unavailable for shared Redis",
-                        })),
-                        {
-                            "key": "media", "human_key": "Media storage",
-                            "value": media_size.to_string(), "unit": "bytes",
-                            "human_value": human_size(media_size),
-                        },
-                    ],
-                })
-            }
-            other if instances::DIMENSIONS.contains(&other) => {
-                instances::dimension(&state, other, &body.params, limit).await?
-            }
-            _ => serde_json::json!({"key": key, "data": []}),
-        };
-        result.push(dimension);
-    }
-
-    Ok(Json(result))
-}
-
-// ── POST /api/v1/admin/retention ─────────────────────────────────────────
-//
-// Matches Mastodon: cohorts are groups of users who signed up in the same
-// period; a user is "retained" in a later period if current_sign_in_at
-// falls within that period (i.e. they logged in again).
-
-#[derive(Debug, Deserialize)]
-pub struct RetentionRequest {
-    pub start_at: Option<String>,
-    pub end_at: Option<String>,
-    pub frequency: Option<String>, // "day" or "month"
-}
-
-pub async fn get_retention(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    QueryOrJson(body): QueryOrJson<RetentionRequest>,
-) -> AppResult<Json<Vec<serde_json::Value>>> {
-    require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
-
-    let start: chrono::NaiveDateTime = body
-        .start_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc() - chrono::Duration::days(30));
-    let end: chrono::NaiveDateTime = body
-        .end_at
-        .as_deref()
-        .and_then(parse_admin_date)
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-    let frequency = match body.frequency.as_deref().unwrap_or("day") {
-        "month" => "month",
-        _ => "day",
-    };
-
-    // Mirrors Mastodon's retention SQL exactly: for every (cohort_period,
-    // retention_period) pair where retention_period >= cohort_period, count
-    // users whose signup was in cohort_period and whose current_sign_in_at
-    // is >= retention_period.
-    let rows = sqlx::query!(
-        r#"SELECT
-               axis.cohort_period::timestamp,
-               axis.retention_period::timestamp,
-               (
-                 WITH new_users AS (
-                   SELECT users.id FROM users
-                   WHERE date_trunc($3, users.created_at)::date = axis.cohort_period
-                 ),
-                 retained_users AS (
-                   SELECT users.id FROM users
-                   INNER JOIN new_users ON new_users.id = users.id
-                   WHERE date_trunc($3, users.current_sign_in_at) >= axis.retention_period
-                 )
-                 SELECT ARRAY[
-                   count(*)::bigint,
-                   (count(*)::float /
-                    GREATEST((SELECT count(*) FROM new_users), 1) * 1000000)::bigint
-                 ]
-                 FROM retained_users
-               ) AS retention_value_and_rate
-           FROM (
-             WITH cohort_periods AS (
-               SELECT generate_series(
-                 date_trunc($3, $1::timestamp)::date,
-                 date_trunc($3, $2::timestamp)::date,
-                 ('1 ' || $3)::interval
-               ) AS cohort_period
-             ),
-             retention_periods AS (
-               SELECT cohort_period AS retention_period FROM cohort_periods
-             )
-             SELECT * FROM cohort_periods, retention_periods
-             WHERE retention_period >= cohort_period
-           ) AS axis
-           ORDER BY axis.cohort_period, axis.retention_period"#,
-        start,
-        end,
-        frequency,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut cohorts: indexmap::IndexMap<chrono::NaiveDateTime, Vec<serde_json::Value>> =
-        indexmap::IndexMap::new();
-
-    for row in &rows {
-        let cohort_period = match row.cohort_period {
-            Some(p) => p,
-            None => continue,
-        };
-        let retention_period = match row.retention_period {
-            Some(p) => p,
-            None => continue,
-        };
-        let (value, rate_millionths) = match row.retention_value_and_rate.as_deref() {
-            Some([v, r]) => (*v, *r),
-            _ => (0, 0),
-        };
-        let rate = rate_millionths as f64 / 1_000_000.0;
-
-        cohorts
-            .entry(cohort_period)
-            .or_default()
-            .push(serde_json::json!({
-                "date": super::convert::mastodon_date(retention_period),
-                "rate": rate,
-                "value": value.to_string(),
-            }));
-    }
-
-    let data: Vec<serde_json::Value> = cohorts
-        .into_iter()
-        .map(|(period, entries)| {
-            let cohort_size = entries
-                .first()
-                .and_then(|e| e["value"].as_str())
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
-            serde_json::json!({
-                "period": super::convert::mastodon_date(period),
-                "frequency": frequency,
-                "cohort_size": cohort_size,
-                "data": entries,
-            })
-        })
-        .collect();
-
-    Ok(Json(data))
 }
 
 // ── Admin CustomEmoji type ────────────────────────────────────────────────

@@ -176,6 +176,32 @@ async fn test_instances() {
     assert_eq!(measures[0]["total"], "3");
     assert!(measures[0].get("previous_total").is_none());
     assert_eq!(measures[1]["total"], "1");
+    // Only the media measure defines `value_to_human_value`, in Rails' words.
+    let media = json_ok(
+        ctx.api
+            .post_json(
+                "/api/v1/admin/measures",
+                Some(&ctx.bob_token),
+                &json!({
+                    "keys": ["instance_media_attachments"],
+                    "instance_media_attachments": {"domain": big},
+                }),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(media[0]["unit"], "bytes");
+    assert_eq!(media[0]["human_value"], "0 Bytes");
+    // `params.require(:instance_accounts)`.
+    let missing = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.bob_token),
+            &json!({"keys": ["instance_accounts"]}),
+        )
+        .await;
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 
     // Purging deletes every account from the domain.
     json_ok(

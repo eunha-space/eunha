@@ -1716,3 +1716,297 @@ async fn test_domain_block_severity_integers() {
     let all = eunha::federation::moderation::suspended_domains(&ctx.state).await;
     assert_eq!(all, vec!["suspended.test".to_string()]);
 }
+
+/// `Admin::Metrics::Measure.retrieve`: keys it does not have are dropped,
+/// eunha's old `new_statuses` among them. The counted measures total the
+/// dates of the range (`where(created_at: time_period)`, which reaches only
+/// midnight of the last day), date each day as Rails decodes a `date`, and
+/// have no `human_value`.
+#[tokio::test]
+async fn test_admin_measures_are_mastodons() {
+    let ctx = TestContext::new("admin-measures-keys").await;
+    make_admin(&ctx).await;
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days(2);
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({
+                "keys": ["new_users", "new_statuses", "bogus", "opened_reports", "resolved_reports"],
+                "start_at": start.to_string(),
+                "end_at": today.to_string(),
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let measures: Vec<Value> = resp.json().await.unwrap();
+    let keys: Vec<&str> = measures
+        .iter()
+        .map(|m| m["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["new_users", "opened_reports", "resolved_reports"]);
+
+    let new_users = &measures[0];
+    assert!(new_users.get("human_value").is_none(), "{new_users}");
+    assert_eq!(new_users["previous_total"], "0");
+    // Everyone here signed up today, after the last day's midnight.
+    assert_eq!(new_users["total"], "0");
+    let data = new_users["data"].as_array().unwrap();
+    assert_eq!(data.len(), 3);
+    assert_eq!(data[0]["date"], start.to_string());
+    assert_eq!(data[2]["date"], today.to_string());
+    // Each day's new users, by their accounts' snowflake ids.
+    let users_today: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE account_id >= $1")
+        .bind((today.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() * 1000) << 16)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert!(users_today >= 2);
+    assert_eq!(data[2]["value"], users_today.to_string());
+
+    // Without a range, the last week up to now, where Mastodon fails.
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({"keys": ["new_users"]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let measures: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(measures[0]["data"].as_array().unwrap().len(), 8);
+}
+
+/// The tag measures and dimensions: its history's uses and accounts, the
+/// servers that used it, and its languages.
+#[tokio::test]
+async fn test_admin_tag_metrics() {
+    let ctx = TestContext::new("admin-tag-metrics").await;
+    make_admin(&ctx).await;
+    crate::helpers::open_trends(&ctx.db).await;
+    ctx.api
+        .post_status(&ctx.alice_token, "about #metrictag", "public")
+        .await;
+    ctx.api
+        .post_status(&ctx.bob_token, "also #metrictag", "public")
+        .await;
+    let tag_id: i64 = sqlx::query_scalar("SELECT id FROM tags WHERE name = 'metrictag'")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let today = chrono::Utc::now().date_naive();
+    let end = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+    let start = (today - chrono::Duration::days(1)).to_string();
+
+    let measures: Vec<Value> = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({
+                "keys": ["tag_uses", "tag_accounts", "tag_servers"],
+                "start_at": start,
+                "end_at": end,
+                "tag_uses": {"id": tag_id.to_string()},
+                "tag_accounts": {"id": tag_id},
+                "tag_servers": {"id": tag_id},
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(measures[0]["key"], "tag_uses");
+    assert_eq!(measures[0]["total"], "2");
+    assert_eq!(measures[0]["previous_total"], "0");
+    assert_eq!(measures[0]["data"][1]["date"], format!("{today}T00:00:00Z"));
+    assert_eq!(measures[0]["data"][1]["value"], "2");
+    assert_eq!(measures[1]["key"], "tag_accounts");
+    assert_eq!(measures[1]["total"], "2");
+    // `count('distinct accounts.domain')` leaves the local domain out; a
+    // day's `SELECT DISTINCT` counts it as one.
+    assert_eq!(measures[2]["key"], "tag_servers");
+    assert_eq!(measures[2]["total"], "0");
+    assert_eq!(measures[2]["data"][1]["date"], today.to_string());
+    assert_eq!(measures[2]["data"][1]["value"], "1");
+
+    // `params.require(:tag_uses)`, and `Tag.find`.
+    let missing = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({"keys": ["tag_uses"], "start_at": start, "end_at": end}),
+        )
+        .await;
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+    let unknown = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/measures",
+            Some(&ctx.alice_token),
+            &json!({"keys": ["tag_uses"], "start_at": start, "end_at": end, "tag_uses": {"id": "0"}}),
+        )
+        .await;
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+
+    let dimensions: Vec<Value> = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/dimensions",
+            Some(&ctx.alice_token),
+            &json!({
+                "keys": ["tag_servers", "tag_languages"],
+                "start_at": start,
+                "end_at": end,
+                "tag_servers": {"id": tag_id},
+                "tag_languages": {"id": tag_id},
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        dimensions[0],
+        json!({"key": "tag_servers", "data": [
+            {"key": ctx.domain, "human_key": ctx.domain, "value": "2"},
+        ]})
+    );
+    assert_eq!(dimensions[1]["key"], "tag_languages");
+    let languages = dimensions[1]["data"].as_array().unwrap();
+    assert_eq!(languages.len(), 1, "{languages:?}");
+    assert_eq!(languages[0]["value"], "2");
+    let language = languages[0]["key"].as_str().unwrap();
+    assert_eq!(
+        languages[0]["human_key"],
+        eunha::languages::standard_locale_name(language)
+    );
+}
+
+/// The dimensions as Mastodon's give their rows: the local server under its
+/// domain, the website in the request's locale, each locale by its name,
+/// and `limit&.to_i`, which without a limit is none.
+#[tokio::test]
+async fn test_admin_dimensions_are_mastodons() {
+    let ctx = TestContext::new("admin-dimensions-rows").await;
+    make_admin(&ctx).await;
+    ctx.api
+        .post_status(&ctx.alice_token, "counted", "public")
+        .await;
+    sqlx::query("UPDATE users SET current_sign_in_at = now(), locale = 'ko'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let users: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let today = chrono::Utc::now().date_naive();
+    let end = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+
+    let dimensions = |body: Value| {
+        let ctx = &ctx;
+        async move {
+            let resp = ctx
+                .api
+                .post_json("/api/v1/admin/dimensions", Some(&ctx.alice_token), &body)
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            resp.json::<Vec<Value>>().await.unwrap()
+        }
+    };
+    let all = dimensions(json!({
+        "keys": ["servers", "sources", "languages", "bogus"],
+        "start_at": today.to_string(),
+        "end_at": end,
+    }))
+    .await;
+    let keys: Vec<&str> = all.iter().map(|d| d["key"].as_str().unwrap()).collect();
+    assert_eq!(keys, ["servers", "sources", "languages"]);
+    assert_eq!(all[0]["data"][0]["key"], json!(ctx.domain));
+    assert_eq!(all[0]["data"][0]["human_key"], json!(ctx.domain));
+    assert!(all[0]["data"][0].get("unit").is_none(), "{}", all[0]);
+    assert!(all[0]["data"][0].get("human_value").is_none(), "{}", all[0]);
+    assert_eq!(
+        all[1]["data"][0],
+        // In the user's own locale, which is Korean now.
+        json!({"key": "web", "human_key": "웹사이트", "value": users.to_string()})
+    );
+    assert_eq!(
+        all[2]["data"],
+        json!([{"key": "ko", "human_key": "Korean", "value": users.to_string()}])
+    );
+
+    // A limit given as a string, and one of zero.
+    let limited = dimensions(json!({
+        "keys": ["languages"], "start_at": today.to_string(), "end_at": end, "limit": "0",
+    }))
+    .await;
+    assert_eq!(limited[0]["data"], json!([]));
+}
+
+/// `Admin::Metrics::Retention`: cohorts by the snowflake ids of their
+/// accounts, each period a `timestamptz` as Rails gives it, the rate
+/// unrounded and no cohort size; both ends are required.
+#[tokio::test]
+async fn test_admin_retention_is_mastodons() {
+    let ctx = TestContext::new("admin-retention-cohorts").await;
+    make_admin(&ctx).await;
+    sqlx::query("UPDATE users SET current_sign_in_at = now()")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let today = chrono::Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let users_today: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE account_id >= $1")
+        .bind((today.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() * 1000) << 16)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/retention",
+            Some(&ctx.alice_token),
+            &json!({"start_at": yesterday.to_string(), "end_at": today.to_string(), "frequency": "day"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let cohorts: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(
+        cohorts,
+        vec![
+            json!({
+                "period": format!("{yesterday}T00:00:00+00:00"),
+                "frequency": "day",
+                "data": [
+                    {"date": format!("{yesterday}T00:00:00+00:00"), "rate": 0.0, "value": "0"},
+                    {"date": format!("{today}T00:00:00+00:00"), "rate": 0.0, "value": "0"},
+                ],
+            }),
+            json!({
+                "period": format!("{today}T00:00:00+00:00"),
+                "frequency": "day",
+                "data": [
+                    {"date": format!("{today}T00:00:00+00:00"), "rate": 1.0, "value": users_today.to_string()},
+                ],
+            }),
+        ]
+    );
+
+    let missing = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/retention",
+            Some(&ctx.alice_token),
+            &json!({"end_at": today.to_string()}),
+        )
+        .await;
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+}

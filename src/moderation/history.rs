@@ -137,3 +137,46 @@ pub async fn aggregate_accounts(state: &AppState, prefix: &str, id: i64, days_ag
 pub fn today() -> i64 {
     day_start(0)
 }
+
+fn day_key(state: &AppState, prefix: &str, id: i64, date: chrono::NaiveDate) -> String {
+    key(
+        state,
+        prefix,
+        id,
+        date.and_time(chrono::NaiveTime::MIN).and_utc().timestamp(),
+    )
+}
+
+/// `Trends::History#aggregate(dates).uses`: the uses of each day, added up.
+pub async fn uses_on(state: &AppState, prefix: &str, id: i64, dates: &[chrono::NaiveDate]) -> i64 {
+    let mut redis = state.redis.clone();
+    let mut total = 0;
+    for date in dates {
+        let uses: Option<String> = redis::cmd("GET")
+            .arg(day_key(state, prefix, id, *date))
+            .query_async(&mut redis)
+            .await
+            .unwrap_or_default();
+        total += uses.as_deref().map_or(0, crate::search::ruby_to_i);
+    }
+    total
+}
+
+/// `Trends::History#aggregate(dates).accounts`: the distinct users of all
+/// the days together (`PFCOUNT` of every day's key).
+pub async fn accounts_on(
+    state: &AppState,
+    prefix: &str,
+    id: i64,
+    dates: &[chrono::NaiveDate],
+) -> i64 {
+    if dates.is_empty() {
+        return 0;
+    }
+    let mut redis = state.redis.clone();
+    let mut command = redis::cmd("PFCOUNT");
+    for date in dates {
+        command.arg(format!("{}:accounts", day_key(state, prefix, id, *date)));
+    }
+    command.query_async(&mut redis).await.unwrap_or(0)
+}

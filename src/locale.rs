@@ -465,6 +465,11 @@ impl Locale {
             }
             (Self::En, "notification_mailer.update.subject") => "%{name} edited a post",
             (Self::Ko, "notification_mailer.update.subject") => "%{name} 님이 게시물을 수정했습니다",
+            // ── admin dashboard ──────────────────────────────────────────────
+            (Self::En, "admin.dashboard.website") => "Website",
+            (Self::Ko, "admin.dashboard.website") => "웹사이트",
+            (Self::En, "generic.none") => "None",
+            (Self::Ko, "generic.none") => "없음",
             // fallback
             _ => "",
         }

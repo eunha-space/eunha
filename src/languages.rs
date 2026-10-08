@@ -219,6 +219,15 @@ pub const SUPPORTED_LOCALES: &[(&str, &str, &str)] = &[
     ("nan-TW", "Hokkien (Taiwan)", "臺語 (Hô-ló話)"),
 ];
 
+/// `LanguagesHelper#standard_locale_name` of a locale that is not blank:
+/// its English name when it is supported, else the code as it is.
+pub fn standard_locale_name(locale: &str) -> String {
+    SUPPORTED_LOCALES
+        .iter()
+        .find(|(code, _, _)| *code == locale)
+        .map_or_else(|| locale.to_owned(), |(_, name, _)| (*name).to_owned())
+}
+
 /// `LanguagesHelper#valid_locale?`.
 pub fn valid_locale(locale: Option<&str>) -> bool {
     locale.is_some_and(|l| SUPPORTED_LOCALES.iter().any(|(code, _, _)| *code == l))

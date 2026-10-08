@@ -197,6 +197,37 @@ They are what the numbers that sound like activity are made of:
 Counting starts when eunha does: a database imported from Mastodon brings no
 history unless its Redis comes along.
 
+### The dashboard's metrics
+
+`POST /api/v1/admin/measures`, `/dimensions` and `/retention` answer what
+Mastodon's `Admin::Metrics` classes do, key for key; a key Mastodon does not
+have is left out of the answer. The measures are `active_users`,
+`interactions`, `new_users`, `opened_reports`, `resolved_reports`, the tag
+measures `tag_accounts`, `tag_uses` and `tag_servers` (each with
+`<key>[id]`), and the instance measures below; the dimensions are `languages`,
+`sources`, `servers`, `space_usage`, `software_versions`, `tag_servers`
+and `tag_languages` (with `<key>[id]`), and the instance dimensions. As in
+Mastodon:
+
+ -  The range starts no more than two years before it ends, and the period it
+    is compared with is the same number of days before it. A counted total
+    covers its dates up to midnight of the last one.
+ -  Each day of a counted measure is dated `YYYY-MM-DD`, and of one counted
+    in Redis `YYYY-MM-DDT00:00:00Z`. Only `instance_media_attachments` has a
+    `human_value`.
+ -  New users, servers and the languages of posts are counted by the
+    snowflake ids of accounts and posts. The local server is listed under its
+    domain, and sign-ups through no application under `web`, named in the
+    asker's language.
+ -  A dimension's `limit` is read as a number; without one, every row is
+    listed.
+ -  Retention requires both ends of its range, starts no more than 31 days
+    (or 12 months) before the end, and gives each cohort's periods as
+    `YYYY-MM-DDT00:00:00+00:00` and its rate unrounded.
+
+Mastodon caches each answer for five minutes; eunha computes it every time.
+Asked without a range, eunha covers the last week, where Mastodon fails.
+
 ### Content retention
 
 Once a day each instance runs what Mastodon's `VacuumScheduler` runs for the
@@ -407,7 +438,8 @@ The counters on the page are Mastodon's instance measures,
 `POST /api/v1/admin/measures` now serves with a `domain` parameter for each,
 as Mastodon's admin API does; `POST /api/v1/admin/dimensions` serves
 `instance_accounts` and `instance_languages` the same way. Their totals are of
-all time.
+all time, and with `include_subdomains` take in the subdomains too (the daily
+series, as in Mastodon, still the domain alone).
 
 Finding the failing domains scans this instance's delivery failure keys in
 Redis, which is why `SCAN` is among the commands a tenant's Redis user needs

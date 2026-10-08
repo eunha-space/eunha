@@ -58,7 +58,8 @@ The recorded decisions cover:
  -  where a signed-out browser signs in to authorize an OAuth client;
  -  the language of a notification's fallback, and how it names a
     collection's owner;
- -  the pictures the instance API names when none were uploaded.
+ -  the pictures the instance API names when none were uploaded;
+ -  the range of a dashboard measure or dimension asked for without one.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
