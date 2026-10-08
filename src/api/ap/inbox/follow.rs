@@ -122,6 +122,22 @@ pub(super) async fn handle_follow(
 
     let follower_id = resolve_or_fetch_remote_account(state, actor_uri).await?;
 
+    // A request already pending only takes the Follow's id ("Update id of
+    // already-existing follow requests"), before anything else is asked of
+    // it: it is neither rejected nor notified of again.
+    let pending = sqlx::query!(
+        "UPDATE follow_requests SET uri = $3, updated_at = now()
+         WHERE account_id = $1 AND target_account_id = $2",
+        follower_id,
+        target.id,
+        Some(activity_uri).filter(|uri| !uri.is_empty()),
+    )
+    .execute(&state.db)
+    .await?;
+    if pending.rows_affected() > 0 {
+        return Ok(());
+    }
+
     // Fetch the follower's account for push notification details and to decide
     // whether a silenced follower must go through a request.
     let follower = sqlx::query!(

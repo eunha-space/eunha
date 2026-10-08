@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE follow_requests SET uri = $3, updated_at = now()\n         WHERE account_id = $1 AND target_account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5e3cfcd267364551121910973465c2b6bac65131741e478b01c63623b6fbfca"
+}

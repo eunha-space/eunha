@@ -316,3 +316,64 @@ async fn test_an_inbound_block_ends_follows_as_unfollow_service_does() {
         Some("https://rita.invalid/blocks/3")
     );
 }
+
+/// A Follow repeated while its request is pending only gives the request its
+/// new id, before anything else: no second notification, and no `Reject`
+/// even once the local account has blocked the requester.
+#[tokio::test]
+async fn test_a_repeated_follow_only_renames_a_pending_request() {
+    let ctx = TestContext::new("follows-repeat-request").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    sqlx::query("UPDATE accounts SET locked = true WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    let (rita, rita_uri) = seed_remote(&ctx, "rita").await;
+    let follow_activity = |id: &str| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": id,
+            "type": "Follow",
+            "actor": rita_uri,
+            "object": alice_uri,
+        })
+    };
+    let notifications = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notifications WHERE account_id = $1 AND type = 'follow_request'",
+        )
+        .bind(alice)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+    };
+
+    receive(&ctx, follow_activity("https://rita.invalid/follows/1")).await;
+    assert!(exists(&ctx, "follow_requests", rita, alice).await);
+    assert_eq!(notifications().await, 1);
+
+    sqlx::query(
+        "INSERT INTO blocks (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(alice)
+    .bind(rita)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    receive(&ctx, follow_activity("https://rita.invalid/follows/2")).await;
+    let uri: Option<String> = sqlx::query_scalar(
+        "SELECT uri FROM follow_requests WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(rita)
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(uri.as_deref(), Some("https://rita.invalid/follows/2"));
+    assert_eq!(notifications().await, 1);
+    assert!(queued(&ctx, "Reject").await.is_empty());
+}
