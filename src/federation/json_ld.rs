@@ -142,14 +142,17 @@ pub fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
     !ojak::origin::same_host(base, comparison)
 }
 
-/// Rails' `present?` for a JSON value.
+/// Rails' `present?` for a JSON value: not `nil`, not `false`, not an empty
+/// or whitespace-only string, not an empty hash or array. A number is
+/// always present, `0` included.
 pub fn is_present(value: &Value) -> bool {
     match value {
         Value::Null => false,
+        Value::Bool(b) => *b,
         Value::String(s) => !s.trim().is_empty(),
         Value::Object(o) => !o.is_empty(),
         Value::Array(a) => !a.is_empty(),
-        _ => true,
+        Value::Number(_) => true,
     }
 }
 
@@ -199,6 +202,38 @@ pub async fn collection_items(
             Err(error) if raises(&error, RaiseOn::Temporary) => return Err(error.into()),
             Ok(None) | Err(_) if n_pages == 0 => return Ok(None),
             Ok(None) | Err(_) => return Ok(Some((items, n_pages + 1))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::is_present;
+
+    /// `present?` as ActiveSupport has it: `false` is blank, as is a
+    /// whitespace-only string; `0` and `true` are present.
+    #[test]
+    fn is_present_is_rails_present() {
+        for blank in [
+            json!(null),
+            json!(false),
+            json!(""),
+            json!(" \n"),
+            json!([]),
+            json!({}),
+        ] {
+            assert!(!is_present(&blank), "{blank} is blank");
+        }
+        for present in [
+            json!(true),
+            json!(0),
+            json!("x"),
+            json!([null]),
+            json!({"a": 1}),
+        ] {
+            assert!(is_present(&present), "{present} is present");
         }
     }
 }
