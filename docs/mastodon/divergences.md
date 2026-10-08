@@ -54,7 +54,9 @@ The recorded decisions cover:
  -  self-destruct mode in eunha's terms;
  -  where an OAuth denial is sent;
  -  the tooling for changing an instance's domain;
- -  where a signed-out browser signs in to authorize an OAuth client.
+ -  where a signed-out browser signs in to authorize an OAuth client;
+ -  the language of a notification's fallback, and how it names a
+    collection's owner.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

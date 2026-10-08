@@ -445,7 +445,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v2/notifications/unread_count",
-            get(notifications::get_notifications_unread_count),
+            get(notifications::get_notifications_unread_count_v2),
         )
         .route(
             "/api/v2/notifications/{group_key}",

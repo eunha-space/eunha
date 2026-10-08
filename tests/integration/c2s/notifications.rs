@@ -1010,7 +1010,19 @@ async fn test_v2_notifications_group_favourites() {
         .json()
         .await
         .unwrap();
-    assert_eq!(single["notifications_count"].as_i64(), Some(2));
+    // `show` renders `REST::DedupNotificationGroupSerializer`, as the index.
+    assert_eq!(
+        single["notification_groups"][0]["notifications_count"].as_i64(),
+        Some(2)
+    );
+    assert_eq!(single["accounts"].as_array().map(Vec::len), Some(2));
+    assert_eq!(single["statuses"][0]["id"].as_str(), Some(sid));
+    assert!(
+        single["notification_groups"][0]
+            .get("page_max_id")
+            .is_none(),
+        "a group read on its own is not paginated"
+    );
 
     // And its accounts endpoint returns both.
     let accts: Vec<Value> = ctx
@@ -1750,7 +1762,8 @@ async fn test_notification_group_get() {
         )
         .await;
     assert_eq!(resp2.status(), StatusCode::OK);
-    let group: Value = resp2.json().await.unwrap();
+    let body2: Value = resp2.json().await.unwrap();
+    let group = &body2["notification_groups"][0];
     assert_eq!(group["group_key"].as_str(), Some(group_key));
     assert!(group["notifications_count"].is_number());
 }
@@ -2167,4 +2180,263 @@ async fn test_requests_are_not_merged_while_unfiltering_is_pending() {
         .await
         .unwrap();
     assert_eq!(merged().await, json!(true));
+}
+
+/// Bob is followed by Alice, then has a post favourited by Alice and by
+/// Carol: three notifications in two groups. Returns Carol's id and token,
+/// the post's id, and the follow notification's id.
+async fn two_groups(ctx: &TestContext) -> (String, String, String, String) {
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "favourite me", "public")
+        .await;
+    let sid = status["id"].as_str().unwrap().to_string();
+    for token in [&ctx.alice_token, &carol_token] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{sid}/favourite"),
+                Some(token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    let follow_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM notifications WHERE account_id = $1 AND type = 'follow'",
+    )
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    (
+        carol_id.to_string(),
+        carol_token,
+        sid,
+        follow_id.to_string(),
+    )
+}
+
+/// `paginate_groups` reads until it has `limit` groups, not `limit`
+/// notifications, and the page's Link header pages by the notifications it
+/// read.
+#[tokio::test]
+async fn test_v2_notifications_page_by_groups() {
+    let ctx = TestContext::new("notif-v2-page-groups").await;
+    let (carol_id, _, sid, follow_id) = two_groups(&ctx).await;
+
+    let resp = ctx
+        .api
+        .get("/api/v2/notifications?limit=2", Some(&ctx.bob_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let link = resp
+        .headers()
+        .get("link")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        link.contains(&format!("max_id={follow_id}")),
+        "the next page is past the follow: {link}"
+    );
+    let body: Value = resp.json().await.unwrap();
+    let groups = body["notification_groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 2, "{body}");
+    assert_eq!(groups[0]["type"], "favourite");
+    assert_eq!(groups[0]["notifications_count"], 2);
+    assert_eq!(groups[0]["sample_account_ids"][0], json!(carol_id));
+    assert_eq!(groups[0]["status_id"], json!(sid));
+    assert_eq!(groups[1]["type"], "follow");
+    assert_eq!(groups[1]["page_min_id"], json!(follow_id));
+    assert_eq!(groups[1]["page_max_id"], json!(follow_id));
+
+    // One group a page: the favourites' group still counts both, and
+    // samples both, though the page read only the newest.
+    let body: Value = ctx
+        .api
+        .get("/api/v2/notifications?limit=1", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let group = &body["notification_groups"][0];
+    assert_eq!(group["notifications_count"], 2);
+    assert_eq!(group["sample_account_ids"].as_array().unwrap().len(), 2);
+    assert_eq!(body["accounts"].as_array().unwrap().len(), 2);
+
+    // `account_id` is not among v2's filters.
+    let body: Value = ctx
+        .api
+        .get(
+            &format!("/api/v2/notifications?account_id={carol_id}"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["notification_groups"].as_array().unwrap().len(), 2);
+}
+
+/// Only the `grouped_types` asked for are grouped; the rest are
+/// `ungrouped-<id>`.
+#[tokio::test]
+async fn test_v2_notifications_group_only_the_grouped_types() {
+    let ctx = TestContext::new("notif-v2-grouped-types").await;
+    two_groups(&ctx).await;
+
+    let body: Value = ctx
+        .api
+        .get(
+            "/api/v2/notifications?grouped_types[]=follow",
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let groups = body["notification_groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 3);
+    for group in groups.iter().filter(|g| g["type"] == "favourite") {
+        assert!(
+            group["group_key"]
+                .as_str()
+                .unwrap()
+                .starts_with("ungrouped-"),
+            "{group}"
+        );
+        assert_eq!(group["notifications_count"], 1);
+    }
+    let follow = groups.iter().find(|g| g["type"] == "follow").unwrap();
+    assert!(follow["group_key"].as_str().unwrap().starts_with("follow-"));
+}
+
+/// `expand_accounts=partial_avatars` gives each group's first account in
+/// full and the rest as partial accounts; any other value is refused.
+#[tokio::test]
+async fn test_v2_notifications_partial_avatars() {
+    let ctx = TestContext::new("notif-v2-partial").await;
+    let (carol_id, _, _, _) = two_groups(&ctx).await;
+
+    let body: Value = ctx
+        .api
+        .get(
+            "/api/v2/notifications?types[]=favourite&expand_accounts=partial_avatars",
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let accounts = body["accounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0]["id"], json!(carol_id));
+    let partial = body["partial_accounts"].as_array().unwrap();
+    assert_eq!(partial.len(), 1);
+    assert_eq!(partial[0]["id"], json!(ctx.alice_id));
+    assert!(partial[0].get("avatar_description").is_some());
+    assert!(partial[0].get("display_name").is_none());
+
+    let refused = ctx
+        .api
+        .get(
+            "/api/v2/notifications?expand_accounts=some",
+            Some(&ctx.bob_token),
+        )
+        .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+}
+
+/// v2's unread count counts groups; v1's counts notifications, and both
+/// take the browsing filters.
+#[tokio::test]
+async fn test_unread_counts_take_the_browsing_filters() {
+    let ctx = TestContext::new("notif-unread-filters").await;
+    let (carol_id, _, _, _) = two_groups(&ctx).await;
+    let count = |path: String| {
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .get(&path, Some(&ctx.bob_token))
+                .await
+                .json::<Value>()
+                .await
+                .unwrap()["count"]
+                .as_i64()
+                .unwrap()
+        }
+    };
+    assert_eq!(count("/api/v1/notifications/unread_count".into()).await, 3);
+    assert_eq!(count("/api/v2/notifications/unread_count".into()).await, 2);
+    assert_eq!(
+        count("/api/v1/notifications/unread_count?types[]=follow".into()).await,
+        1
+    );
+    assert_eq!(
+        count(format!(
+            "/api/v1/notifications/unread_count?account_id={carol_id}"
+        ))
+        .await,
+        1
+    );
+    assert_eq!(
+        count("/api/v2/notifications/unread_count?exclude_types[]=follow".into()).await,
+        1
+    );
+    assert_eq!(
+        count("/api/v2/notifications/unread_count?grouped_types[]=follow".into()).await,
+        3
+    );
+}
+
+/// A client that does not list a type that is not `baseline` among its
+/// `supported_types` is given a `fallback` for it.
+#[tokio::test]
+async fn test_notifications_fall_back_for_unsupported_types() {
+    let ctx = TestContext::new("notif-fallback").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    eunha::push::notify_local(&ctx.state, alice, "admin.sign_up", "Account", bob, bob).await;
+
+    let get = |path: &'static str| {
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .get(path, Some(&ctx.alice_token))
+                .await
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    let v2 = get("/api/v2/notifications?supported_types[]=mention").await;
+    let fallback = &v2["notification_groups"][0]["fallback"];
+    let title = fallback["title"].as_str().unwrap();
+    assert!(
+        title.contains("class=\"u-url mention\"") && title.ends_with(" signed up"),
+        "{title}"
+    );
+    assert!(fallback["summary"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("href=\"https://{}/\"", ctx.domain)));
+    assert_eq!(fallback["description"], Value::Null);
+
+    let v1 = get("/api/v1/notifications?supported_types[]=mention").await;
+    assert_eq!(v1[0]["fallback"]["title"], json!(title));
+
+    for path in [
+        "/api/v2/notifications",
+        "/api/v2/notifications?supported_types[]=admin.sign_up",
+    ] {
+        let body = get(path).await;
+        assert!(
+            body["notification_groups"][0].get("fallback").is_none(),
+            "{path}"
+        );
+    }
 }

@@ -812,6 +812,7 @@ pub struct PartialAccount {
     pub url: String,
     pub avatar: String,
     pub avatar_static: String,
+    pub avatar_description: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -830,9 +831,14 @@ pub struct NotificationGroup {
     #[serde(rename = "type")]
     pub notification_type: String,
     pub most_recent_notification_id: i64,
-    pub page_max_id: String,
-    pub page_min_id: String,
-    pub latest_page_notification_at: String,
+    /// `page_min_id`, `page_max_id` and `latest_page_notification_at` are
+    /// there only for a group read as part of a page (`paginated?`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_max_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_min_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_page_notification_at: Option<Option<String>>,
     pub sample_account_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_id: Option<String>,

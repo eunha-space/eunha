@@ -756,6 +756,28 @@ async fn test_collection_notifications() {
         cid.as_str(),
         "{grouped}"
     );
+    // A client that does not know the type is given a fallback naming the
+    // owner as a mention, where Mastodon prints the account object
+    // (`notification-fallback-text`).
+    let fallback: Value = ctx
+        .api
+        .get(
+            "/api/v2/notifications?types[]=collection_update&supported_types[]=mention",
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let title = fallback["notification_groups"][0]["fallback"]["title"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        title.starts_with(r#"<span class="h-card" translate="no">"#)
+            && title.contains("@<span>alice</span>")
+            && title.ends_with(" updated a collection you are in"),
+        "{fallback}"
+    );
 
     let resp = ctx
         .api
