@@ -212,7 +212,14 @@ pub async fn discard(state: &AppState, status_id: i64) -> Result<()> {
 
 /// `RemoveStatusService#call` for the status `status_id`, discarded or not.
 /// A status that is gone already is nothing to do.
+///
+/// Boxed, because the removal's future is large: inline in an inbox
+/// activity's future it overflows a test thread's stack.
 pub async fn call(state: &AppState, status_id: i64, options: Options) -> Result<()> {
+    Box::pin(call_unboxed(state, status_id, options)).await
+}
+
+async fn call_unboxed(state: &AppState, status_id: i64, options: Options) -> Result<()> {
     let Some(status) = load_status(state, status_id).await? else {
         return Ok(());
     };
