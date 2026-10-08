@@ -435,6 +435,9 @@ impl Locale {
             }
             (Self::En, "notification_mailer.mention.subject") => "You were mentioned by %{name}",
             (Self::Ko, "notification_mailer.mention.subject") => "%{name} 님의 멘션",
+            // ── errors ───────────────────────────────────────────────────────
+            (Self::En, "errors.429") => "Too many requests",
+            (Self::Ko, "errors.429") => "요청 횟수 제한에 도달했습니다",
             (Self::En, "notification_mailer.moderation_warning.subject") => {
                 "You have received a moderation warning"
             }

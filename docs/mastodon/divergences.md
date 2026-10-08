@@ -63,7 +63,8 @@ The recorded decisions cover:
  -  what the dashboard's software versions and space usage report;
  -  the shared Wrapstodon page, drawn by eunha's web app;
  -  the rate limits counted at eunha's own sign-in and account pages, and
-    the switch that turns them off;
+    the switch that turns them off, and the locales the rate limit message
+    is written in;
  -  how a profile link's redirect back to the account is asked about.
 
 Read the file rather than this paragraph: the file is the one that has to stay

@@ -735,6 +735,42 @@ async fn test_event_stream_errors() {
     }
 }
 
+/// `PublishAnnouncementReactionWorker`: the reaction rendered for no viewer,
+/// so without `me`, and the announcement it is on.
+#[tokio::test]
+async fn test_announcement_reaction_event() {
+    let ctx = TestContext::new("stream-reaction").await;
+    signed_in(&ctx, &ctx.alice_id).await;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO announcements (text, published, published_at, created_at, updated_at)
+         VALUES ('Hello', true, now(), now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let mut alice = ws_connect(&ctx, "user", &ctx.alice_token).await;
+
+    let resp = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/announcements/{id}/reactions/👍"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status().as_u16(), 200);
+    let event = loop {
+        let event = next_event(&mut alice).await.expect("a reaction event");
+        if event["event"] == "announcement.reaction" {
+            break event;
+        }
+    };
+    assert_eq!(
+        payload(&event),
+        json!({"name": "👍", "count": 1, "announcement_id": id.to_string()})
+    );
+}
+
 #[tokio::test]
 async fn test_health() {
     let ctx = TestContext::new("stream-health").await;

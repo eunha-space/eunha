@@ -1272,3 +1272,21 @@ same redirect."""
 evidence = "src/link_verification.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "rate-limit-message-in-english-and-korean"
+kind = "omission"
+summary = "Says a rate limit was reached in English or Korean only"
+mastodon = """
+Answers a rate-limited request with `I18n.t('errors.429')` in the default \
+locale, in whichever of its locales that is."""
+eunha = """
+Carries the message in English and Korean, the two locales its server-side \
+text has, and answers in English when the default locale is any other."""
+why = """
+Eunha's server-rendered text is written in those two locales, as its push \
+titles are (`push-titles-in-english-and-korean`); clients tell a rate limit \
+by its status and headers, not the message."""
+evidence = "src/rate_limit.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

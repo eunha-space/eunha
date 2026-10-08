@@ -739,7 +739,9 @@ pub struct FeaturedTag {
 pub struct AnnouncementReaction {
     pub name: String,
     pub count: i64,
-    pub me: bool,
+    /// `attribute :me, if: :current_user?`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub me: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

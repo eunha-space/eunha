@@ -39,9 +39,10 @@ pub enum AppError {
     BadRequest(String),
     #[error("conflict")]
     Conflict,
-    /// `Mastodon::RateLimitExceededError`.
-    #[error("too many requests")]
-    TooManyRequests,
+    /// `Mastodon::RateLimitExceededError`, with `I18n.t('errors.429')` in
+    /// the instance's default locale.
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
     #[error("gone")]
     Gone(String),
     #[error("service unavailable: {0}")]
@@ -81,10 +82,7 @@ impl IntoResponse for AppError {
             }
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict => (StatusCode::CONFLICT, "Duplicate record".to_string()),
-            AppError::TooManyRequests => (
-                StatusCode::TOO_MANY_REQUESTS,
-                crate::rate_limit::TOO_MANY_REQUESTS.to_string(),
-            ),
+            AppError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             AppError::Gone(msg) => (StatusCode::GONE, msg.clone()),
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
             AppError::Database(e) => {

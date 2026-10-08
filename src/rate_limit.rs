@@ -27,8 +27,19 @@ use crate::{
     state::AppState,
 };
 
-/// `I18n.t('errors.429')`.
-pub const TOO_MANY_REQUESTS: &str = "Too many requests";
+/// `I18n.t('errors.429')`, in `I18n.default_locale`: both the throttled
+/// responder and `Api::ErrorHandling` run outside the controller's
+/// `set_locale`. Eunha has the message in English and Korean, and gives any
+/// other locale the English one (`rate-limit-message-in-english-and-korean`).
+#[must_use]
+pub fn too_many_requests(default_locale: &str) -> &'static str {
+    let locale = if default_locale == "ko" {
+        crate::locale::Locale::Ko
+    } else {
+        crate::locale::Locale::En
+    };
+    locale.t("errors.429")
+}
 
 // ── RateLimiter ────────────────────────────────────────────────────────────
 
@@ -119,7 +130,9 @@ async fn record_at(state: &AppState, account_id: i64, family: Family, epoch: i64
             .map_err(|e| AppError::Internal(e.into()))?;
     }
     if count.is_some_and(|count| count >= family.limit) {
-        return Err(AppError::TooManyRequests);
+        return Err(AppError::TooManyRequests(
+            too_many_requests(state.instance.default_locale()).to_owned(),
+        ));
     }
     let _: i64 = redis::cmd("INCRBY")
         .arg(&key)
@@ -521,10 +534,11 @@ fn set_headers(headers: &mut HeaderMap, limit: i64, remaining: i64, reset: &str)
 }
 
 /// `Rack::Attack.throttled_responder`.
-fn throttled(limit: i64, period: i64, now: DateTime<Utc>) -> Response {
+fn throttled(state: &AppState, limit: i64, period: i64, now: DateTime<Utc>) -> Response {
+    let message = too_many_requests(state.instance.default_locale());
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
-        axum::Json(serde_json::json!({ "error": TOO_MANY_REQUESTS })),
+        axum::Json(serde_json::json!({ "error": message })),
     )
         .into_response();
     set_headers(response.headers_mut(), limit, 0, &reset(now, period));
@@ -677,7 +691,7 @@ pub async fn layer(req: Request, next: Next) -> Response {
                 req.method(),
                 req.uri()
             );
-            return throttled(throttle.limit, throttle.period, now);
+            return throttled(&state, throttle.limit, throttle.period, now);
         }
     }
 
@@ -732,6 +746,14 @@ pub async fn layer(req: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_message_is_in_the_default_locale() {
+        assert_eq!(too_many_requests("en"), "Too many requests");
+        assert_eq!(too_many_requests("ko"), "요청 횟수 제한에 도달했습니다");
+        // A locale eunha has no text in reads in English.
+        assert_eq!(too_many_requests("de"), "Too many requests");
+    }
 
     #[test]
     fn a_period_resets_at_its_boundary() {

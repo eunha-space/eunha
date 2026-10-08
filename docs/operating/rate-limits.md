@@ -107,7 +107,11 @@ remaining, and
 {"error": "Too many requests"}
 ~~~~
 
-and so is one a family refuses, with the family's.
+and so is one a family refuses, with the family's. The message is
+Mastodon's `errors.429` in the instance's `default_locale`, whatever the
+request asked for, as Mastodon gives it outside any controller's locale:
+eunha has it in English and Korean (요청 횟수 제한에 도달했습니다), and gives
+any other locale the English one.
 
 
 Turning them off

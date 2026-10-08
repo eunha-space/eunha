@@ -160,10 +160,11 @@ pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::
     )
     .fetch_one(&state.db)
     .await?;
+    // `InlineRenderer.render(reaction, nil, :reaction)`: no viewer, so no
+    // `me`.
     let mut payload = serde_json::json!({
         "name": name,
         "count": row.count,
-        "me": false,
     });
     // `REST::ReactionSerializer#url` and `#static_url`, for a custom emoji.
     if let Some(emoji_id) = row.emoji_id {

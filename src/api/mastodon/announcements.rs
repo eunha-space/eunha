@@ -95,7 +95,7 @@ pub async fn render(
             .push(AnnouncementReaction {
                 name: row.name,
                 count: row.count,
-                me,
+                me: viewer_id.map(|_| me),
                 url,
                 static_url,
             });
