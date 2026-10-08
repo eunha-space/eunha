@@ -1202,34 +1202,27 @@ pub async fn delete_collection_item(
 /// POST /api/v1/collections/{id}/items/{item_id}/revoke
 pub async fn revoke_collection_item(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path((collection_id, item_id)): Path<(i64, i64)>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("write:collections")?;
-    let c = load_collection(&state, collection_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    if c.account_id != auth.account_id {
-        return Err(AppError::Forbidden);
-    }
-    let updated = sqlx::query!(
-        "UPDATE collection_items SET state = 3, updated_at = now() WHERE id = $1 AND collection_id = $2",
+    // `set_collection` (`Collection.find`) and `set_collection_item`
+    // (`@collection.collection_items.find`), each a 404.
+    let item = sqlx::query!(
+        r#"SELECT ci.account_id FROM collection_items ci
+           JOIN collections c ON c.id = ci.collection_id
+           WHERE ci.id = $1 AND c.id = $2"#,
         item_id,
         collection_id,
     )
-    .execute(&state.db)
-    .await?;
-    if updated.rows_affected() == 0 {
-        return Err(AppError::NotFound);
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    // `CollectionItemPolicy#revoke?`: only the account it features.
+    if item.account_id != Some(auth.account_id) {
+        return Err(AppError::Forbidden);
     }
-    distribute_collection(
-        &state,
-        &instance.domain,
-        collection_id,
-        auth.account_id,
-        false,
-    )
-    .await;
+    // `RevokeCollectionItemService`, which tells only a remote collection.
+    revoke_item(&state, item_id).await?;
     Ok(Json(json!({})))
 }

@@ -162,16 +162,26 @@ async fn test_add_revoke_delete_item() {
         "collection missing from bob's in_collections: {in_colls:?}",
     );
 
-    // Revoke the item.
-    let revoke = ctx
-        .api
-        .post_json(
-            &format!("/api/v1/collections/{cid}/items/{item_id}/revoke"),
-            Some(&ctx.alice_token),
-            &json!({}),
-        )
-        .await;
-    assert_eq!(revoke.status(), StatusCode::OK);
+    // Only the account it features may revoke it (`CollectionItemPolicy`):
+    // not even the collection's owner.
+    let revoke = |token: String| {
+        let api = &ctx.api;
+        let path = format!("/api/v1/collections/{cid}/items/{item_id}/revoke");
+        async move { api.post_json(&path, Some(&token), &json!({})).await }
+    };
+    assert_eq!(
+        revoke(ctx.alice_token.clone()).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(revoke(ctx.bob_token.clone()).await.status(), StatusCode::OK);
+    // From a local collection, nothing is sent.
+    let sent: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority')",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(sent, 0);
 
     // Revoked item no longer counts.
     let show2: Value = ctx
