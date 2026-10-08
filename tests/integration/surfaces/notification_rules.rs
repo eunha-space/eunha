@@ -374,3 +374,57 @@ async fn test_an_ungroupable_type_has_no_key() {
         );
     }
 }
+
+/// The group key a notification was stored with, the newest of its type.
+async fn stored_group_key(ctx: &TestContext, account_id: i64, kind: &str) -> Option<String> {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT group_key FROM notifications
+         WHERE account_id = $1 AND type = $2 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(kind)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// A filtered notification is given no group key.
+///
+/// `set_group_key!` returns early when the notification is `filtered?`: the
+/// key stays NULL, so the notification reads as `ungrouped-<id>` even after
+/// it is let through, and the running bucket in Redis is not touched.
+#[tokio::test]
+async fn test_a_filtered_notification_has_no_group_key() {
+    let ctx = TestContext::new("notify-group-filtered").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    sqlx::query(
+        "INSERT INTO notification_policies
+           (account_id, for_not_following, created_at, updated_at)
+         VALUES ($1, 1, now(), now())
+         ON CONFLICT (account_id) DO UPDATE SET for_not_following = 1",
+    )
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+
+    let filtered: bool = sqlx::query_scalar(
+        "SELECT filtered FROM notifications WHERE account_id = $1 AND type = 'follow'",
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(filtered, "a follow from someone alice does not follow");
+    assert_eq!(stored_group_key(&ctx, alice, "follow").await, None);
+
+    let mut redis = ctx.state.redis_coordination.clone();
+    let bucket: Option<i64> = redis::cmd("GET")
+        .arg(ctx.state.redis_keys.key(format!("notif-group/{alice}/follow")))
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(bucket, None, "the running bucket is left alone");
+}

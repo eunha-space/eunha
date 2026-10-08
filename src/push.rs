@@ -383,13 +383,15 @@ async fn notification_group_key(
     recipient_id: i64,
     notification_type: &str,
     status_id: Option<i64>,
+    activity_created_at: chrono::DateTime<chrono::Utc>,
 ) -> Option<String> {
     use crate::api::mastodon::notifications::{group_type_prefix, MAXIMUM_GROUP_SPAN_HOURS};
 
     let prefix = group_type_prefix(notification_type, status_id)?;
     let redis_key = redis_keys.key(format!("notif-group/{recipient_id}/{prefix}"));
     let hour = 3600;
-    let mut bucket = chrono::Utc::now().timestamp() / hour;
+    // `activity.created_at.utc.to_i / 1.hour.to_i`
+    let mut bucket = activity_created_at.timestamp() / hour;
 
     let previous: Option<i64> = redis::cmd("GET")
         .arg(&redis_key)
@@ -859,14 +861,24 @@ async fn notify(
 
     // Mastodon decides a notification's group when it is created, not when it is
     // read, because the decision depends on when the previous one arrived.
-    let group_key = notification_group_key(
-        &mut state.redis_coordination.clone(),
-        &state.redis_keys,
-        recipient_id,
-        notification_type,
-        status_id,
-    )
-    .await;
+    // `set_group_key!` returns early for a filtered notification: it keeps no
+    // key, even once it is unfiltered, and leaves the running bucket alone.
+    // The groupable types' activities — the favourite, the boost, the follow —
+    // are made just before they are notified of, so now is their
+    // `created_at`.
+    let group_key = if filtered {
+        None
+    } else {
+        notification_group_key(
+            &mut state.redis_coordination.clone(),
+            &state.redis_keys,
+            recipient_id,
+            notification_type,
+            status_id,
+            chrono::Utc::now(),
+        )
+        .await
+    };
 
     let row = sqlx::query!(
         r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_type, activity_id, group_key, filtered, created_at, updated_at)
