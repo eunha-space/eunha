@@ -91,6 +91,57 @@ pub fn account_avatar_url_parts(
     urls.missing_avatar().to_string()
 }
 
+/// `avatar_static_url`: a GIF's `static` style, a PNG of its first frame;
+/// any other avatar's own URL.
+pub fn account_avatar_static_url(urls: &InstanceUrls, a: &models::Account) -> String {
+    static_style_url(
+        urls,
+        "avatars",
+        a.id,
+        a.avatar_remote_url.as_deref().unwrap_or_default(),
+        a.avatar_file_name.as_deref(),
+        a.avatar_content_type.as_deref(),
+    )
+    .unwrap_or_else(|| account_avatar_url(urls, a))
+}
+
+/// `header_static_url`, as [`account_avatar_static_url`].
+pub fn account_header_static_url(urls: &InstanceUrls, a: &models::Account) -> String {
+    static_style_url(
+        urls,
+        "headers",
+        a.id,
+        &a.header_remote_url,
+        a.header_file_name.as_deref(),
+        a.header_content_type.as_deref(),
+    )
+    .unwrap_or_else(|| account_header_url(urls, a))
+}
+
+/// The `static` style of a local GIF avatar or header. A remote account's
+/// is shown from its server, as its original is.
+fn static_style_url(
+    urls: &InstanceUrls,
+    attachment: &str,
+    id: i64,
+    remote_url: &str,
+    file_name: Option<&str>,
+    content_type: Option<&str>,
+) -> Option<String> {
+    if !remote_url.is_empty() || content_type != Some("image/gif") {
+        return None;
+    }
+    let file_name = file_name.filter(|f| !f.is_empty())?;
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    Some(format!(
+        "{}/accounts/{attachment}/{}/static/{stem}.png",
+        urls.media_base,
+        crate::media::int_to_path(id),
+    ))
+}
+
 fn account_header_url(urls: &InstanceUrls, a: &models::Account) -> String {
     if !a.header_remote_url.is_empty() {
         return a.header_remote_url.clone();
@@ -502,7 +553,7 @@ pub fn account_from_db_for_viewer(
         avatar_static: if suspended {
             urls.missing_avatar().to_string()
         } else {
-            account_avatar_url(urls, a)
+            account_avatar_static_url(urls, a)
         },
         header: if suspended {
             urls.missing_header().to_string()
@@ -512,7 +563,7 @@ pub fn account_from_db_for_viewer(
         header_static: if suspended {
             urls.missing_header().to_string()
         } else {
-            account_header_url(urls, a)
+            account_header_static_url(urls, a)
         },
         // Mastodon blanks the alt text along with the image it describes.
         avatar_description: if suspended {

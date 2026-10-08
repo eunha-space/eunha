@@ -109,6 +109,49 @@ async fn transcode_inner(src: &Path, media_type: &str) -> anyhow::Result<Transco
     })
 }
 
+/// The GIF branch of `Paperclip::LazyThumbnail`: `src` through `filter`, at
+/// most 60 frames a second and 3,000 frames, in a 32-colour palette.
+pub async fn gif(src: &[u8], filter: &str) -> anyhow::Result<Vec<u8>> {
+    let src_path = unique_temp("gif");
+    tokio::fs::write(&src_path, src).await?;
+    let out = unique_temp("gif");
+    let (src_s, out_s) = (
+        src_path.to_string_lossy().to_string(),
+        out.to_string_lossy().to_string(),
+    );
+    let filter = format!(
+        "{filter},split[a][b];[a]palettegen=max_colors=32[p];[b][p]paletteuse=dither=bayer"
+    );
+    let res = run(
+        "ffmpeg",
+        &[
+            "-nostdin",
+            "-i",
+            &src_s,
+            "-map_metadata",
+            "-1",
+            "-fpsmax",
+            "60",
+            "-frames:v",
+            "3000",
+            "-filter_complex",
+            &filter,
+            "-loglevel",
+            "fatal",
+            "-y",
+            &out_s,
+        ],
+    )
+    .await;
+    let _ = tokio::fs::remove_file(&src_path).await;
+    let bytes = match res {
+        Ok(()) => tokio::fs::read(&out).await.map_err(Into::into),
+        Err(e) => Err(e),
+    };
+    let _ = tokio::fs::remove_file(&out).await;
+    bytes
+}
+
 /// Extract the first frame as a PNG, for thumbnail/blurhash generation.
 pub async fn extract_frame(src: &[u8]) -> anyhow::Result<Vec<u8>> {
     let src_path = unique_temp("src");

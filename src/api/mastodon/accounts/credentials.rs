@@ -3,7 +3,8 @@
 //! propagating profile Updates to the fediverse.
 
 use super::*;
-use crate::media::picture::{self, Fit, Picture};
+use crate::email_subscriptions::ValidationErrors;
+use crate::media::profile;
 
 // ── GET /api/v1/accounts/verify_credentials ────────────────────────────────
 
@@ -63,32 +64,47 @@ pub async fn verify_credentials(
 
 // ── PATCH /api/v1/accounts/update_credentials ─────────────────────────────
 
-/// `Account::Avatar::AVATAR_GEOMETRY`: `400x400#`.
-const AVATAR_FIT: Fit = Fit::Cover(400, 400);
-/// `Account::Header::HEADER_MAX_PIXELS`: 1500×500.
-const HEADER_FIT: Fit = Fit::Pixels(750_000);
-
-/// An avatar or header as it is stored, with the content type of what is
-/// stored: upright, fitted and without its metadata, as Mastodon's
-/// `lazy_thumbnail` leaves it. See [`crate::media::picture`].
-async fn process_profile_image(
-    data: Vec<u8>,
-    content_type: String,
-    fit: Fit,
-) -> AppResult<(Vec<u8>, String)> {
-    let processed = crate::tenants::spawn_blocking(move || match Picture::decode(&data) {
-        Some(picture) => match picture.original(&data, fit) {
-            Some(stored) => {
-                let content_type = stored.content_type().to_owned();
-                (stored.bytes, content_type)
-            }
-            None => (data, content_type),
-        },
-        None => (picture::strip_metadata(&data), content_type),
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("image processing did not finish: {e}"))?;
-    Ok(processed)
+/// Validate, process and store an avatar or header, as assigning it to
+/// `Account` does: the validations first, then `lazy_thumbnail`, whose
+/// failure to read the file is another validation error, recorded in
+/// `errors`. Returns the stored file's name, content type and size.
+async fn store_profile_image(
+    state: &AppState,
+    account_id: i64,
+    kind: profile::Kind,
+    (content_type, data): (String, Vec<u8>),
+    errors: &mut ValidationErrors,
+) -> AppResult<Option<(String, &'static str, i32)>> {
+    let mut own = ValidationErrors::default();
+    profile::validate(kind, &content_type, data.len(), &mut own);
+    if !own.is_empty() {
+        errors.extend(own);
+        return Ok(None);
+    }
+    let Some(stored) = profile::process(kind, data).await? else {
+        profile::not_identified(kind, errors);
+        return Ok(None);
+    };
+    let key = match kind {
+        profile::Kind::Avatar => crate::media::account_avatar_key(account_id, stored.content_type),
+        profile::Kind::Header => crate::media::account_header_key(account_id, stored.content_type),
+    };
+    state
+        .storage
+        .store(&stored.bytes, &key, stored.content_type)
+        .await?;
+    if let Some(png) = &stored.static_png {
+        state
+            .storage
+            .store(png, &profile::Kind::static_key(&key), "image/png")
+            .await?;
+    }
+    let file_name = key.rsplit('/').next().unwrap_or_default().to_owned();
+    Ok(Some((
+        file_name,
+        stored.content_type,
+        stored.bytes.len() as i32,
+    )))
 }
 
 async fn do_update_credentials(
@@ -101,10 +117,10 @@ async fn do_update_credentials(
     let mut locked: Option<bool> = None;
     let mut bot: Option<bool> = None;
     let mut discoverable: Option<bool> = None;
-    let mut avatar_url: Option<String> = None;
-    let mut avatar_content_type: Option<String> = None;
-    let mut header_url: Option<String> = None;
-    let mut header_content_type: Option<String> = None;
+    let mut avatar_upload: Option<(String, Vec<u8>)> = None;
+    let mut header_upload: Option<(String, Vec<u8>)> = None;
+    let mut avatar_description: Option<String> = None;
+    let mut header_description: Option<String> = None;
     let mut source_privacy: Option<String> = None;
     let mut source_sensitive: Option<bool> = None;
     let mut source_language: Option<Option<String>> = None;
@@ -195,25 +211,55 @@ async fn do_update_credentials(
             "avatar" => {
                 let (ct, data) = part.file();
                 if !data.is_empty() {
-                    let (data, ct) = process_profile_image(data.to_vec(), ct, AVATAR_FIT).await?;
-                    let key = crate::media::account_avatar_key(auth.account_id, &ct);
-                    state.storage.store(&data, &key, &ct).await?;
-                    avatar_url = key.rsplit('/').next().map(str::to_string);
-                    avatar_content_type = Some(ct);
+                    avatar_upload = Some((ct, data));
                 }
             }
             "header" => {
                 let (ct, data) = part.file();
                 if !data.is_empty() {
-                    let (data, ct) = process_profile_image(data.to_vec(), ct, HEADER_FIT).await?;
-                    let key = crate::media::account_header_key(auth.account_id, &ct);
-                    state.storage.store(&data, &key, &ct).await?;
-                    header_url = key.rsplit('/').next().map(str::to_string);
-                    header_content_type = Some(ct);
+                    header_upload = Some((ct, data));
                 }
             }
+            "avatar_description" => avatar_description = Some(part.text()),
+            "header_description" => header_description = Some(part.text()),
             _ => {}
         }
+    }
+
+    // `Account::Avatar` and `Account::Header`: each image validated, and
+    // processed when it is valid; their descriptions' lengths. Nothing is
+    // saved when any of them fails.
+    let mut image_errors = ValidationErrors::default();
+    let mut avatar = None;
+    let mut header = None;
+    if let Some(upload) = avatar_upload {
+        avatar = store_profile_image(
+            state,
+            auth.account_id,
+            profile::Kind::Avatar,
+            upload,
+            &mut image_errors,
+        )
+        .await?;
+    }
+    if let Some(upload) = header_upload {
+        header = store_profile_image(
+            state,
+            auth.account_id,
+            profile::Kind::Header,
+            upload,
+            &mut image_errors,
+        )
+        .await?;
+    }
+    if let Some(description) = &avatar_description {
+        profile::validate_description(profile::Kind::Avatar, description, &mut image_errors);
+    }
+    if let Some(description) = &header_description {
+        profile::validate_description(profile::Kind::Header, description, &mut image_errors);
+    }
+    if !image_errors.is_empty() {
+        return Err(AppError::Unprocessable(image_errors.message()));
     }
 
     // Mastodon's `Account#prepare_contents` (a `before_validation` hook that runs
@@ -426,19 +472,51 @@ async fn do_update_credentials(
             });
         }
     }
-    if let Some(ref filename) = avatar_url {
+    if let Some((filename, content_type, size)) = avatar {
         sqlx::query!(
-            "UPDATE accounts SET avatar_file_name = $1, avatar_content_type = $2, avatar_updated_at = now() WHERE id = $3",
-            filename, avatar_content_type, auth.account_id
+            "UPDATE accounts SET avatar_file_name = $1, avatar_content_type = $2,
+                    avatar_file_size = $3, avatar_storage_schema_version = 1,
+                    avatar_updated_at = now()
+             WHERE id = $4",
+            filename,
+            content_type,
+            size,
+            auth.account_id
         )
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
     }
-    if let Some(ref filename) = header_url {
+    if let Some((filename, content_type, size)) = header {
         sqlx::query!(
-            "UPDATE accounts SET header_file_name = $1, header_content_type = $2, header_updated_at = now() WHERE id = $3",
-            filename, header_content_type, auth.account_id
+            "UPDATE accounts SET header_file_name = $1, header_content_type = $2,
+                    header_file_size = $3, header_storage_schema_version = 1,
+                    header_updated_at = now()
+             WHERE id = $4",
+            filename,
+            content_type,
+            size,
+            auth.account_id
         )
-        .execute(&state.db).await?;
+        .execute(&state.db)
+        .await?;
+    }
+    if let Some(description) = &avatar_description {
+        sqlx::query!(
+            "UPDATE accounts SET avatar_description = $1 WHERE id = $2",
+            description,
+            auth.account_id
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    if let Some(description) = &header_description {
+        sqlx::query!(
+            "UPDATE accounts SET header_description = $1 WHERE id = $2",
+            description,
+            auth.account_id
+        )
+        .execute(&state.db)
+        .await?;
     }
 
     // `self[:fields] = fields`: each as given, keeping an existing
@@ -664,7 +742,7 @@ pub async fn patch_profile(
             &state.urls,
             a,
         )),
-        avatar_static: Some(crate::api::mastodon::convert::account_avatar_url_for(
+        avatar_static: Some(crate::api::mastodon::convert::account_avatar_static_url(
             &state.urls,
             a,
         )),
@@ -672,7 +750,7 @@ pub async fn patch_profile(
             &state.urls,
             a,
         )),
-        header_static: Some(crate::api::mastodon::convert::account_header_url_for(
+        header_static: Some(crate::api::mastodon::convert::account_header_static_url(
             &state.urls,
             a,
         )),
@@ -846,7 +924,7 @@ async fn build_profile(
             &state.urls,
             a,
         )),
-        avatar_static: Some(crate::api::mastodon::convert::account_avatar_url_for(
+        avatar_static: Some(crate::api::mastodon::convert::account_avatar_static_url(
             &state.urls,
             a,
         )),
@@ -854,7 +932,7 @@ async fn build_profile(
             &state.urls,
             a,
         )),
-        header_static: Some(crate::api::mastodon::convert::account_header_url_for(
+        header_static: Some(crate::api::mastodon::convert::account_header_static_url(
             &state.urls,
             a,
         )),

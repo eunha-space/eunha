@@ -1126,7 +1126,9 @@ pub fn router() -> Router {
             "/api/v1/profile",
             get(accounts::get_profile)
                 .patch(accounts::patch_profile)
-                .put(accounts::put_profile),
+                .put(accounts::put_profile)
+                // An avatar and a header, each up to `AVATAR_LIMIT`.
+                .layer(DefaultBodyLimit::max(crate::media::profile::BODY_LIMIT)),
         )
         // Followed tags
         .route("/api/v1/followed_tags", get(tags::list_followed_tags))

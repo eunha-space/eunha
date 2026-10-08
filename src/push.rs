@@ -328,7 +328,7 @@ async fn render(
         preferred_locale: locale.clone(),
         notification_id: notification.id,
         notification_type: notification.notification_type.clone(),
-        icon: crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &from),
+        icon: crate::api::mastodon::convert::account_avatar_static_url(&state.urls, &from),
         title: push_title(&locale, &notification.notification_type, &name),
         body: push_body(&source),
     }))

@@ -253,6 +253,11 @@ impl ValidationErrors {
         self.errors.is_empty()
     }
 
+    /// `other`'s errors after these.
+    pub fn extend(&mut self, other: ValidationErrors) {
+        self.errors.extend(other.errors);
+    }
+
     /// `errors.full_messages.to_sentence`'s `RecordInvalid` form.
     pub fn message(&self) -> String {
         let full: Vec<String> = self

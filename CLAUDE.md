@@ -71,6 +71,8 @@ Running an instance:
     and their queue, and the archive takeout (not `eunha import-mastodon`).
  -  *docs/operating/preview-cards.md*: link preview cards, how they are
     fetched, their images and authors.
+ -  *docs/operating/media.md*: avatars and headers, and media uploads: what
+    they take, how they are processed, and where their files are kept.
  -  *docs/operating/remote-replies.md*: fetching remote threads' replies,
     and async refreshes (`Mastodon-Async-Refresh`).
  -  *docs/operating/terms-of-service.md*: terms of service versions, their

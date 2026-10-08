@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub mod picture;
+pub mod profile;
 pub mod transcode;
 
 pub struct Storage {
