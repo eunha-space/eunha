@@ -1129,7 +1129,7 @@ pub fn router() -> Router {
             get(filters::get_filter_keywords).post(filters::create_filter_keyword),
         )
         .route(
-            "/api/v2/filter_keywords/{id}",
+            "/api/v2/filters/keywords/{id}",
             get(filters::get_filter_keyword)
                 .put(filters::update_filter_keyword)
                 .delete(filters::delete_filter_keyword),
@@ -1139,7 +1139,7 @@ pub fn router() -> Router {
             get(filters::get_filter_statuses).post(filters::add_filter_status),
         )
         .route(
-            "/api/v2/filter_statuses/{id}",
+            "/api/v2/filters/statuses/{id}",
             get(filters::get_filter_status).delete(filters::delete_filter_status),
         )
         // Domain blocks (user-level)

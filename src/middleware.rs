@@ -724,8 +724,6 @@ pub fn requires_user(method: &axum::http::Method, path: &str) -> bool {
             | "favourites"
             | "featured_tags"
             | "filters"
-            | "filter_keywords"
-            | "filter_statuses"
             | "follow_requests"
             | "followed_tags"
             | "lists"

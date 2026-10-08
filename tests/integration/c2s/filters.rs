@@ -178,11 +178,22 @@ async fn test_filter_v2_crud() {
         .unwrap();
     assert!(kws.iter().any(|k| k["keyword"] == "junk"));
 
+    // `namespace :filters` routes a keyword at `/api/v2/filters/keywords/:id`;
+    // there is no `/api/v2/filter_keywords`.
+    let old_path = ctx
+        .api
+        .get(
+            &format!("/api/v2/filter_keywords/{kw_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await;
+    assert_eq!(old_path.status(), StatusCode::NOT_FOUND);
+
     // Get single keyword
     let kw_resp = ctx
         .api
         .get(
-            &format!("/api/v2/filter_keywords/{kw_id}"),
+            &format!("/api/v2/filters/keywords/{kw_id}"),
             Some(&ctx.alice_token),
         )
         .await;
@@ -192,7 +203,7 @@ async fn test_filter_v2_crud() {
     let upd_kw: Value = ctx
         .api
         .put_json(
-            &format!("/api/v2/filter_keywords/{kw_id}"),
+            &format!("/api/v2/filters/keywords/{kw_id}"),
             Some(&ctx.alice_token),
             &json!({"keyword": "garbage", "whole_word": false}),
         )
@@ -206,7 +217,7 @@ async fn test_filter_v2_crud() {
     let del_kw_resp = ctx
         .api
         .delete(
-            &format!("/api/v2/filter_keywords/{kw_id}"),
+            &format!("/api/v2/filters/keywords/{kw_id}"),
             &ctx.alice_token,
         )
         .await;
@@ -285,19 +296,27 @@ async fn test_filter_statuses_crud() {
     let get_resp = ctx
         .api
         .get(
-            &format!("/api/v2/filter_statuses/{fs_id}"),
+            &format!("/api/v2/filters/statuses/{fs_id}"),
             Some(&ctx.alice_token),
         )
         .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
     let fs2: Value = get_resp.json().await.unwrap();
     assert_eq!(fs2["status_id"].as_str(), Some(status_id));
+    let old_path = ctx
+        .api
+        .get(
+            &format!("/api/v2/filter_statuses/{fs_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await;
+    assert_eq!(old_path.status(), StatusCode::NOT_FOUND);
 
     // Delete filter status.
     let del_resp = ctx
         .api
         .delete(
-            &format!("/api/v2/filter_statuses/{fs_id}"),
+            &format!("/api/v2/filters/statuses/{fs_id}"),
             &ctx.alice_token,
         )
         .await;
@@ -384,14 +403,14 @@ async fn test_get_filter_v1_other_user_is_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// GET /api/v2/filter_statuses/:id for unknown id returns 404.
+/// GET /api/v2/filters/statuses/:id for unknown id returns 404.
 #[tokio::test]
 async fn test_get_filter_status_not_found() {
     let ctx = TestContext::new("filter-status-404").await;
 
     let resp = ctx
         .api
-        .get("/api/v2/filter_statuses/99999999", Some(&ctx.alice_token))
+        .get("/api/v2/filters/statuses/99999999", Some(&ctx.alice_token))
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

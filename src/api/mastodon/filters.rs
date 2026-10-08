@@ -450,7 +450,7 @@ pub async fn create_filter_keyword(
     ))
 }
 
-// ── GET /api/v2/filter_keywords/:id ──────────────────────────────────────
+// ── GET /api/v2/filters/keywords/:id ──────────────────────────────────────
 
 pub async fn get_filter_keyword(
     state: AppState,
@@ -477,7 +477,7 @@ pub async fn get_filter_keyword(
     }))
 }
 
-// ── PUT /api/v2/filter_keywords/:id ──────────────────────────────────────
+// ── PUT /api/v2/filters/keywords/:id ──────────────────────────────────────
 
 pub async fn update_filter_keyword(
     state: AppState,
@@ -509,7 +509,7 @@ pub async fn update_filter_keyword(
     }))
 }
 
-// ── DELETE /api/v2/filter_keywords/:id ───────────────────────────────────
+// ── DELETE /api/v2/filters/keywords/:id ───────────────────────────────────
 
 pub async fn delete_filter_keyword(
     state: AppState,
@@ -618,7 +618,7 @@ pub async fn add_filter_status(
     ))
 }
 
-// ── GET /api/v2/filter_statuses/:id ──────────────────────────────────────
+// ── GET /api/v2/filters/statuses/:id ──────────────────────────────────────
 
 pub async fn get_filter_status(
     state: AppState,
@@ -644,7 +644,7 @@ pub async fn get_filter_status(
     }))
 }
 
-// ── DELETE /api/v2/filter_statuses/:id ───────────────────────────────────
+// ── DELETE /api/v2/filters/statuses/:id ───────────────────────────────────
 
 pub async fn delete_filter_status(
     state: AppState,
