@@ -1980,3 +1980,40 @@ async fn test_v2_notifications_unread_count() {
         "unread count should be > 0 after receiving a notification",
     );
 }
+
+/// Only mentioned accounts are notified (`notify_mentioned_accounts!`): a
+/// reply that does not mention its parent's author tells them nothing, and
+/// one that does tells them about the `Mention`.
+#[tokio::test]
+async fn test_a_reply_notifies_its_parents_author_only_when_it_mentions_them() {
+    let ctx = TestContext::new("notif-reply-mention").await;
+    let parent = ctx
+        .api
+        .post_status(&ctx.alice_token, "a thought", "public")
+        .await;
+    let parent_id = parent["id"].as_str().unwrap();
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mentions = || async {
+        sqlx::query_as::<_, (String,)>(
+            "SELECT activity_type FROM notifications WHERE account_id = $1 AND type = 'mention'",
+        )
+        .bind(alice)
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap()
+    };
+    for (text, expected) in [("an answer", 0), ("@alice an answer", 1)] {
+        let resp = ctx
+            .api
+            .post_json(
+                "/api/v1/statuses",
+                Some(&ctx.bob_token),
+                &json!({"status": text, "in_reply_to_id": parent_id}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let found = mentions().await;
+        assert_eq!(found.len(), expected, "{text}");
+        assert!(found.iter().all(|(t,)| t == "Mention"));
+    }
+}

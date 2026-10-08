@@ -340,11 +340,11 @@ async fn notification_activity(
             .map(|id| ("Quote", id));
     }
     // A `mention` is about the recipient's `Mention`, as
-    // `notify_mentioned_accounts!` hands it to `LocalNotificationWorker`. A
-    // reply eunha tells its parent's author of without mentioning them has
-    // none, and is about the status.
-    if let (Some(sid), "mention") = (status_id, notification_type) {
-        if let Some(id) = sqlx::query_scalar!(
+    // `notify_mentioned_accounts!` hands it to `LocalNotificationWorker`;
+    // without one there is nothing to notify of.
+    if notification_type == "mention" {
+        let sid = status_id?;
+        return sqlx::query_scalar!(
             "SELECT id FROM mentions WHERE status_id = $1 AND account_id = $2",
             sid,
             recipient_id,
@@ -353,9 +353,7 @@ async fn notification_activity(
         .await
         .ok()
         .flatten()
-        {
-            return Some(("Mention", id));
-        }
+        .map(|id| ("Mention", id));
     }
     if let Some(sid) = status_id {
         return Some(("Status", sid));

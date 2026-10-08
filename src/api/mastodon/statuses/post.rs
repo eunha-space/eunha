@@ -638,32 +638,9 @@ pub async fn post_status(
     )
     .await;
 
-    // Notify the author of the parent status if this is a reply
     let mut notified = std::collections::HashSet::new();
-    if let Some(parent_id) = in_reply_to_id {
-        if let Ok(Some(parent)) = sqlx::query!(
-            "SELECT account_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-            parent_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        {
-            push::create_and_push(
-                &state,
-                parent.account_id,
-                account.id,
-                "mention",
-                Some(status.id),
-                format!("{} mentioned you", account.display_name),
-                account.acct().clone(),
-                crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-            )
-            .await;
-            notified.insert(parent.account_id);
-        }
-    }
-
-    // Notify each mentioned account not already notified above
+    // `notify_mentioned_accounts!`: the accounts it mentions, and only
+    // those; a reply's parent author is told only if mentioned.
     for (_, mentioned) in &resolved {
         if mentioned.id == account.id || notified.contains(&mentioned.id) {
             continue;

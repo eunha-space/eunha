@@ -517,8 +517,8 @@ async fn publish_one(
         .as_str()
         .and_then(|s| s.parse::<i64>().ok());
 
-    // The thread (`Status#thread`, a boost's original in its place), whose
-    // author is the one notified, and `carried_over_reply_to_account_id`.
+    // The thread (`Status#thread`, a boost's original in its place), and
+    // `carried_over_reply_to_account_id`.
     let thread = match in_reply_to_id {
         Some(parent_id) => crate::conversation::thread(&state.db, parent_id)
             .await
@@ -527,7 +527,6 @@ async fn publish_one(
         None => None,
     };
     let in_reply_to_id = thread.map(|t| t.id).or(in_reply_to_id);
-    let parent_account_id = thread.map(|t| t.account_id);
     let in_reply_to_account_id = thread.and_then(|t| t.reply_to_account_id(account_id));
     let is_reply = in_reply_to_id.is_some();
 
@@ -685,22 +684,8 @@ async fn publish_one(
     // `DistributionWorker`.
     crate::feed::distribute(state, status.id, false).await;
 
-    // Send mention notifications (mirrors post_status)
+    // `notify_mentioned_accounts!`: the accounts it mentions, and only those.
     let mut notified = std::collections::HashSet::new();
-    if let Some(parent_account_id) = parent_account_id {
-        crate::push::create_and_push(
-            state,
-            parent_account_id,
-            account.id,
-            "mention",
-            Some(status.id),
-            format!("{} mentioned you", account.display_name),
-            account.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-        )
-        .await;
-        notified.insert(parent_account_id);
-    }
     for (_, mentioned) in &resolved {
         if mentioned.id == account.id || notified.contains(&mentioned.id) {
             continue;
