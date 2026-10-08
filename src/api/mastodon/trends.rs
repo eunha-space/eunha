@@ -78,7 +78,14 @@ pub async fn trending_tags(
     .into_iter()
     .map(|(tag, _)| tag)
     .collect();
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, tags.len());
+    let headers = super::offset_link_headers(
+        &req_headers,
+        &uri,
+        "/api/v1/trends/tags",
+        offset,
+        limit,
+        tags.len(),
+    );
     Ok((headers, Json(tags)))
 }
 
@@ -203,7 +210,14 @@ pub async fn trending_statuses(
         .into_iter()
         .map(|(status, _)| status)
         .collect();
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, result.len());
+    let headers = super::offset_link_headers(
+        &req_headers,
+        &uri,
+        "/api/v1/trends/statuses",
+        offset,
+        limit,
+        result.len(),
+    );
     Ok((headers, Json(result)))
 }
 
@@ -409,7 +423,14 @@ pub async fn trending_links(
             .into_iter()
             .map(|(card, _, _)| card)
             .collect();
-    let headers = super::offset_link_headers(&req_headers, &uri, offset, limit, cards.len());
+    let headers = super::offset_link_headers(
+        &req_headers,
+        &uri,
+        "/api/v1/trends/links",
+        offset,
+        limit,
+        cards.len(),
+    );
     Ok((headers, Json(cards)))
 }
 

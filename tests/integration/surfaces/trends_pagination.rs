@@ -101,3 +101,65 @@ async fn test_a_short_page_of_trends_does_not_link_onward() {
         );
     }
 }
+
+/// `pagination_params(offset:)`: a link names the endpoint with the
+/// request's `limit` only when it gave one, the new `offset`, and nothing
+/// else of the query.
+#[tokio::test]
+async fn test_trends_links_keep_only_a_given_limit() {
+    let ctx = TestContext::new("trends-page-limit").await;
+    crate::helpers::open_trends(&ctx.db).await;
+    for n in 0..25 {
+        let card_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO preview_cards (url, title, type, trendable, created_at, updated_at)
+               VALUES ($1, $2, 0, true, now(), now()) RETURNING id"#,
+        )
+        .bind(format!("https://links.example/{n}"))
+        .bind(format!("link {n}"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO preview_card_trends (id, preview_card_id, allowed, score, rank)
+             VALUES ($1, $1, true, $2, $3)",
+        )
+        .bind(card_id)
+        .bind(100.0 - n as f64)
+        .bind(n + 1)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    let header = |query: &'static str| {
+        let ctx = &ctx;
+        async move {
+            let response = ctx
+                .api
+                .get(&format!("/api/v1/trends/links?{query}"), None)
+                .await;
+            links(response.headers()["link"].to_str().unwrap())
+        }
+    };
+
+    let page = header("foo=bar").await;
+    assert_eq!(page.len(), 1, "{page:?}");
+    assert_eq!(page[0].0, "next");
+    assert!(
+        page[0].1.ends_with("/api/v1/trends/links?offset=10"),
+        "{page:?}"
+    );
+
+    let page = header("limit=5&foo=bar&offset=10").await;
+    assert_eq!(page[0].0, "next");
+    assert!(
+        page[0]
+            .1
+            .ends_with("/api/v1/trends/links?limit=5&offset=15"),
+        "{page:?}"
+    );
+    assert_eq!(page[1].0, "prev");
+    assert!(
+        page[1].1.ends_with("/api/v1/trends/links?limit=5&offset=5"),
+        "{page:?}"
+    );
+}

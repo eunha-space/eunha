@@ -90,9 +90,14 @@ pub(crate) fn link_header(
 /// when the offset is more than one page in. That second condition means no
 /// `prev` on the second page, which is odd but is what Mastodon does, and a
 /// client that follows these headers should land where it would there.
+///
+/// As `pagination_params(offset:)` builds them, each link names `path` with
+/// the request's own `limit`, only if it gave one, and the new `offset`, and
+/// nothing else of the query.
 pub(crate) fn offset_link_headers(
     req_headers: &HeaderMap,
     uri: &axum::http::Uri,
+    path: &str,
     offset: i64,
     limit: i64,
     returned: usize,
@@ -106,27 +111,25 @@ pub(crate) fn offset_link_headers(
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("https");
-    let base = format!("{proto}://{host}{}", uri.path());
-    let extra = non_pagination_query(uri.query());
-    let extra = extra
-        .split('&')
-        .filter(|kv| !kv.is_empty() && !kv.starts_with("offset=") && !kv.starts_with("limit="))
-        .collect::<Vec<_>>()
-        .join("&");
-    let sep = if extra.is_empty() { "" } else { "&" };
+    // `params.slice(:limit)`, the last given as Rack reads it, escaped as
+    // `to_query` escapes it.
+    let given_limit = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+        .filter(|(key, _)| key == "limit")
+        .last()
+        .map(|(_, value)| {
+            url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>()
+        });
+    let link = |offset: i64| match &given_limit {
+        Some(limit) => format!("{proto}://{host}{path}?limit={limit}&offset={offset}"),
+        None => format!("{proto}://{host}{path}?offset={offset}"),
+    };
 
     let mut links = Vec::new();
     if returned as i64 == limit {
-        links.push(format!(
-            r#"<{base}?{extra}{sep}offset={}&limit={limit}>; rel="next""#,
-            offset + limit
-        ));
+        links.push(format!(r#"<{}>; rel="next""#, link(offset + limit)));
     }
     if offset > limit {
-        links.push(format!(
-            r#"<{base}?{extra}{sep}offset={}&limit={limit}>; rel="prev""#,
-            offset - limit
-        ));
+        links.push(format!(r#"<{}>; rel="prev""#, link(offset - limit)));
     }
     if !links.is_empty() {
         if let Ok(val) = links.join(", ").parse() {
