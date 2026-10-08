@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             COUNT(*) FILTER (WHERE reblog_of_id IS NOT NULL) AS \"reblogs!\",\n             COUNT(*) FILTER (WHERE in_reply_to_id IS NOT NULL\n                                AND in_reply_to_account_id <> $1) AS \"replies!\",\n             COUNT(*) FILTER (WHERE (reply = FALSE OR in_reply_to_account_id = account_id)\n                                AND reblog_of_id IS NULL) AS \"standalone!\",\n             COUNT(*) FILTER (WHERE poll_id IS NOT NULL) AS \"polls!\",\n             COUNT(*) AS \"statuses!\"\n           FROM statuses\n           WHERE account_id = $1 AND deleted_at IS NULL AND id BETWEEN $2 AND $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reblogs!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "replies!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "standalone!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "polls!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "statuses!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f18381e5376850dadd69a07360947cd2d0fc9f9f7748dfaa777e99de302f07ae"
+}

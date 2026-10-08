@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(t.display_name, t.name) AS \"name!\", COUNT(*) AS \"count!\"\n           FROM tags t\n           JOIN statuses_tags st ON st.tag_id = t.id\n           JOIN statuses s ON s.id = st.status_id\n           WHERE s.deleted_at IS NULL\n             AND s.id IN (SELECT id FROM statuses\n                          WHERE account_id = $1 AND deleted_at IS NULL\n                            AND id BETWEEN $2 AND $3)\n           GROUP BY COALESCE(t.display_name, t.name)\n           HAVING COUNT(*) > 1\n           ORDER BY COUNT(*) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "58f96f673533898a28e2edf68dd892a44e8dfbb52d338024954032960e48c29e"
+}

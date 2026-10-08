@@ -126,6 +126,25 @@ again. With `--tenants`, each instance's own bucket is used; a single instance
 needs its media storage in the configuration or the environment, or the
 emoji wait for the next `eunha migrate` that has it.
 
+Annual reports generated before migration 033
+---------------------------------------------
+
+Until migration 033, eunha labelled the annual reports it generated
+`schema_version` 1, though their data had the keys of Mastodon's schema 2
+(`archetype`, `top_statuses`, `time_series`, `top_hashtags`). Mastodon reads
+schema 1 as its 2024 reports and looks for `most_reblogged_accounts` in them,
+so serving such a database it would fail on every one of them; its web client
+also shows a report's share link only for schema 2.
+
+Migration 033 labels those reports schema 2 and empties their
+`top_statuses.by_favourites` and `by_replies`, which Mastodon's schema 2 leaves
+empty. The rest of their data is kept as eunha generated it, which can differ
+from what Mastodon would have: posts counted by when they were made rather
+than by their ids, a pollster told by whole numbers, a hashtag used only once
+or named by its name rather than its display name, and a top post chosen
+among originals only. A schema 1
+report Mastodon made has `most_reblogged_accounts` and is left as it is.
+
 
 Notifications written before migration 032
 ------------------------------------------

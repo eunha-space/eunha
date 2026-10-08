@@ -481,3 +481,150 @@ async fn test_shared_annual_report_refusals() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     assert_eq!(resp.headers()["cache-control"], "max-age=180, public");
 }
+
+/// `AnnualReport#generate` with `SCHEMA = 2` and its sources: the most
+/// boosted post among those with stats and no other, the hashtag by its
+/// display name, the follows made in the year, and the presenter's accounts.
+#[tokio::test]
+async fn test_annual_report_is_mastodons_schema_2() {
+    let ctx = TestContext::new("annrep-schema2").await;
+    for i in 0..3 {
+        post_in(&ctx, 2023, &format!("post {i} #annualtag")).await;
+    }
+    sqlx::query("UPDATE tags SET display_name = 'AnnualTag' WHERE name = 'annualtag'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM statuses ORDER BY id")
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap();
+    // The first is the most boosted; the second's favourites do not count.
+    for (id, reblogs, favourites) in [(ids[0], 5_i64, 0_i64), (ids[1], 1, 100)] {
+        sqlx::query(
+            "INSERT INTO status_stats (id, status_id, reblogs_count, favourites_count, created_at, updated_at)
+             VALUES ($1, $1, $2, $3, now(), now())",
+        )
+        .bind(id)
+        .bind(reblogs)
+        .bind(favourites)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    // A follow made in 2023 counts; one made in 2024 does not.
+    let (carol_id, _) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    for (at, follower) in [
+        ("2023-03-01", ctx.bob_id.parse::<i64>().unwrap()),
+        ("2024-03-01", carol_id),
+    ] {
+        sqlx::query(
+            "INSERT INTO follows (id, created_at, updated_at, account_id, target_account_id)
+             VALUES ((SELECT COALESCE(max(id), 0) + 1 FROM follows), $1::timestamp, now(), $2, $3)",
+        )
+        .bind(at)
+        .bind(follower)
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    generate(&ctx, 2023).await;
+
+    let body: Value = ctx
+        .api
+        .get("/api/v1/annual_reports/2023", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let report = &body["annual_reports"][0];
+    assert_eq!(report["schema_version"], 2);
+    assert_eq!(
+        report["data"],
+        serde_json::json!({
+            "archetype": "lurker",
+            "top_statuses": {
+                "by_reblogs": ids[0].to_string(),
+                "by_favourites": null,
+                "by_replies": null,
+            },
+            "time_series": [{ "month": 12, "statuses": 3, "followers": 1 }],
+            "top_hashtags": [{ "name": "AnnualTag", "count": 3 }],
+        })
+    );
+    // `account_ids` for schema 2 is the report's own account.
+    let accounts = body["accounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0]["id"], ctx.alice_id);
+    assert_eq!(body["statuses"][0]["id"], ids[0].to_string());
+}
+
+/// `TopHashtags` asks for more than one use, and `TopStatuses` for a post
+/// with stats.
+#[tokio::test]
+async fn test_annual_report_leaves_out_a_single_use_and_unboosted_posts() {
+    let ctx = TestContext::new("annrep-single").await;
+    post_in(&ctx, 2023, "only #annualtag").await;
+    generate(&ctx, 2023).await;
+    let data: Value = sqlx::query_scalar("SELECT data FROM generated_annual_reports")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(data["top_hashtags"], serde_json::json!([]));
+    assert!(data["top_statuses"]["by_reblogs"].is_null());
+}
+
+/// Migration 033: a report eunha labelled schema 1 becomes schema 2, as its
+/// data is, and one Mastodon made in 2024 is left as it is.
+#[tokio::test]
+async fn test_migration_033_labels_eunhas_reports_schema_2() {
+    let ctx = TestContext::new("annrep-mig033").await;
+    let alice_id: i64 = ctx.alice_id.parse().unwrap();
+    let bob_id: i64 = ctx.bob_id.parse().unwrap();
+    let eunhas = serde_json::json!({
+        "archetype": "oracle",
+        "top_statuses": { "by_reblogs": "1", "by_favourites": "2", "by_replies": "3" },
+        "time_series": [{ "month": 12, "statuses": 3, "followers": 0 }],
+        "top_hashtags": [],
+    });
+    let mastodons = serde_json::json!({
+        "top_statuses": { "by_reblogs": "1", "by_favourites": "2", "by_replies": "3" },
+        "most_reblogged_accounts": [],
+        "commonly_interacted_with_accounts": [],
+    });
+    for (account_id, data) in [(alice_id, &eunhas), (bob_id, &mastodons)] {
+        sqlx::query(
+            "INSERT INTO generated_annual_reports (account_id, year, data, schema_version, created_at, updated_at)
+             VALUES ($1, 2024, $2, 1, now(), now())",
+        )
+        .bind(account_id)
+        .bind(data)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/033_annual_report_schema.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let rows: Vec<(i64, i32, Value)> = sqlx::query_as(
+        "SELECT account_id, schema_version, data FROM generated_annual_reports ORDER BY account_id",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    let alice = rows.iter().find(|r| r.0 == alice_id).unwrap();
+    assert_eq!(alice.1, 2);
+    assert_eq!(
+        alice.2["top_statuses"],
+        serde_json::json!({ "by_reblogs": "1", "by_favourites": null, "by_replies": null })
+    );
+    assert_eq!(alice.2["archetype"], "oracle");
+    let bob = rows.iter().find(|r| r.0 == bob_id).unwrap();
+    assert_eq!((bob.1, &bob.2), (1, &mastodons));
+}

@@ -8,8 +8,8 @@ use chrono::{Datelike, TimeZone, Utc};
 use serde::Serialize;
 
 use super::{
-    accounts::{apply_account_stats, batch_account_emojis, batch_account_roles},
-    convert::{account_from_db, status_from_db},
+    accounts::{batch_account_emojis, batch_account_roles},
+    convert::status_from_db,
     status_serialize::{
         batch_quote_data, batch_reblog_data, batch_status_cards, batch_status_emojis,
         batch_status_media, batch_status_mentions, batch_status_polls, batch_statuses_tags,
@@ -25,7 +25,8 @@ use crate::{
     state::AppState,
 };
 
-const SCHEMA_VERSION: i32 = 1;
+/// `AnnualReport::SCHEMA`.
+const SCHEMA_VERSION: i32 = 2;
 
 /// `AnnualReport.current_campaign`: the year whose reports are on offer,
 /// while the `wrapstodon` setting is on and it is 10 to 31 December (UTC).
@@ -78,203 +79,136 @@ pub struct AnnualReportsResponse {
 
 // ── Data generation ────────────────────────────────────────────────────────
 
+/// `AnnualReport#data`: each of `AnnualReport::SOURCES` in turn, over
+/// `report_statuses`, the account's posts (deleted ones aside) whose ids fall
+/// in [`year_as_snowflake_range`].
 async fn generate_report_data(
     state: &AppState,
     account_id: i64,
     year: i32,
 ) -> AppResult<serde_json::Value> {
-    let start = Utc
-        .with_ymd_and_hms(year, 1, 1, 0, 0, 0)
-        .unwrap()
-        .naive_utc();
-    let end = Utc
-        .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
-        .unwrap()
-        .naive_utc();
+    let (first, last) = year_as_snowflake_range(year);
 
-    // Count different post types for archetype
-    let reblog_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses
-         WHERE account_id = $1 AND deleted_at IS NULL
-           AND reblog_of_id IS NOT NULL
-           AND created_at >= $2 AND created_at < $3",
+    // `AnnualReport::Archetype`, and `TimeSeries`' count of posts.
+    let counts = sqlx::query!(
+        r#"SELECT
+             COUNT(*) FILTER (WHERE reblog_of_id IS NOT NULL) AS "reblogs!",
+             COUNT(*) FILTER (WHERE in_reply_to_id IS NOT NULL
+                                AND in_reply_to_account_id <> $1) AS "replies!",
+             COUNT(*) FILTER (WHERE (reply = FALSE OR in_reply_to_account_id = account_id)
+                                AND reblog_of_id IS NULL) AS "standalone!",
+             COUNT(*) FILTER (WHERE poll_id IS NOT NULL) AS "polls!",
+             COUNT(*) AS "statuses!"
+           FROM statuses
+           WHERE account_id = $1 AND deleted_at IS NULL AND id BETWEEN $2 AND $3"#,
         account_id,
-        start,
-        end,
+        first,
+        last,
     )
     .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
+    .await?;
+    let archetype = archetype(
+        counts.reblogs,
+        counts.replies,
+        counts.standalone,
+        counts.polls,
+    );
 
-    let reply_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses
-         WHERE account_id = $1 AND deleted_at IS NULL
-           AND in_reply_to_id IS NOT NULL
-           AND in_reply_to_account_id != $1
-           AND reblog_of_id IS NULL
-           AND created_at >= $2 AND created_at < $3",
-        account_id,
-        start,
-        end,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-
-    let standalone_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses
-         WHERE account_id = $1 AND deleted_at IS NULL
-           AND reblog_of_id IS NULL
-           AND (in_reply_to_id IS NULL OR in_reply_to_account_id = $1)
-           AND created_at >= $2 AND created_at < $3",
-        account_id,
-        start,
-        end,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-
-    let poll_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses s
-         JOIN polls p ON p.status_id = s.id
-         WHERE s.account_id = $1 AND s.deleted_at IS NULL
-           AND s.created_at >= $2 AND s.created_at < $3",
-        account_id,
-        start,
-        end,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-
-    let total = reblog_count + reply_count + standalone_count;
-
-    let archetype = if total < AVERAGE_POSTS_PER_YEAR {
-        "lurker"
-    } else if reblog_count > standalone_count * 2 {
-        "booster"
-    } else if poll_count > standalone_count / 10 {
-        "pollster"
-    } else if reply_count > standalone_count * 2 {
-        "replier"
-    } else {
-        "oracle"
-    };
-
-    // Top statuses by reblogs, favourites, replies (public/unlisted originals only)
-    let top_by_reblogs: Option<i64> = sqlx::query_scalar!(
+    // `AnnualReport::TopStatuses`: the most boosted public or unlisted post,
+    // among those with stats; Mastodon leaves the other two empty.
+    let by_reblogs = sqlx::query_scalar!(
         r#"SELECT s.id FROM statuses s
-           LEFT JOIN status_stats ss ON ss.status_id = s.id
-           WHERE s.account_id = $1 AND s.deleted_at IS NULL
-             AND s.reblog_of_id IS NULL
+           JOIN status_stats ss ON ss.status_id = s.id
+           WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.id BETWEEN $2 AND $3
              AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
-             AND s.created_at >= $2 AND s.created_at < $3
-           ORDER BY COALESCE(ss.reblogs_count, 0) DESC LIMIT 1"#,
+           ORDER BY ss.reblogs_count DESC LIMIT 1"#,
         account_id,
-        start,
-        end,
+        first,
+        last,
     )
     .fetch_optional(&state.db)
     .await?;
 
-    let top_by_favourites: Option<i64> = sqlx::query_scalar!(
-        r#"SELECT s.id FROM statuses s
-           LEFT JOIN status_stats ss ON ss.status_id = s.id
-           WHERE s.account_id = $1 AND s.deleted_at IS NULL
-             AND s.reblog_of_id IS NULL
-             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
-             AND ($4::bigint IS NULL OR s.id != $4)
-             AND s.created_at >= $2 AND s.created_at < $3
-           ORDER BY COALESCE(ss.favourites_count, 0) DESC LIMIT 1"#,
+    // `AnnualReport::TimeSeries`: the follows of the account made in the
+    // year, by `DATE_PART`.
+    let followers = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM follows
+           WHERE target_account_id = $1 AND DATE_PART('year', created_at) = $2"#,
         account_id,
-        start,
-        end,
-        top_by_reblogs,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    let top_by_replies: Option<i64> = sqlx::query_scalar!(
-        r#"SELECT s.id FROM statuses s
-           LEFT JOIN status_stats ss ON ss.status_id = s.id
-           WHERE s.account_id = $1 AND s.deleted_at IS NULL
-             AND s.reblog_of_id IS NULL
-             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
-             AND ($4::bigint IS NULL OR s.id != $4)
-             AND ($5::bigint IS NULL OR s.id != $5)
-             AND s.created_at >= $2 AND s.created_at < $3
-           ORDER BY COALESCE(ss.replies_count, 0) DESC LIMIT 1"#,
-        account_id,
-        start,
-        end,
-        top_by_reblogs,
-        top_by_favourites,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Time series: total statuses and new followers for the year
-    let statuses_in_year: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses
-         WHERE account_id = $1 AND deleted_at IS NULL
-           AND created_at >= $2 AND created_at < $3",
-        account_id,
-        start,
-        end,
+        f64::from(year),
     )
     .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-
-    let followers_in_year: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM follows
-         WHERE target_account_id = $1
-           AND created_at >= $2 AND created_at < $3",
-        account_id,
-        start,
-        end,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-
-    // Top hashtag
-    let top_hashtag = sqlx::query!(
-        "SELECT t.name, COUNT(*) as count
-         FROM statuses_tags st
-         JOIN tags t ON t.id = st.tag_id
-         JOIN statuses s ON s.id = st.status_id
-         WHERE s.account_id = $1 AND s.deleted_at IS NULL
-           AND s.created_at >= $2 AND s.created_at < $3
-         GROUP BY t.name
-         ORDER BY count DESC LIMIT 1",
-        account_id,
-        start,
-        end,
-    )
-    .fetch_optional(&state.db)
     .await?;
 
-    let top_hashtags: Vec<serde_json::Value> = top_hashtag
-        .into_iter()
-        .map(|r| serde_json::json!({ "name": r.name, "count": r.count.unwrap_or(0) }))
-        .collect();
+    // `AnnualReport::TopHashtags`: the hashtag used most, by its display
+    // name, when it was used more than once.
+    let top_hashtags: Vec<serde_json::Value> = sqlx::query!(
+        r#"SELECT COALESCE(t.display_name, t.name) AS "name!", COUNT(*) AS "count!"
+           FROM tags t
+           JOIN statuses_tags st ON st.tag_id = t.id
+           JOIN statuses s ON s.id = st.status_id
+           WHERE s.deleted_at IS NULL
+             AND s.id IN (SELECT id FROM statuses
+                          WHERE account_id = $1 AND deleted_at IS NULL
+                            AND id BETWEEN $2 AND $3)
+           GROUP BY COALESCE(t.display_name, t.name)
+           HAVING COUNT(*) > 1
+           ORDER BY COUNT(*) DESC LIMIT 1"#,
+        account_id,
+        first,
+        last,
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| serde_json::json!({ "name": r.name, "count": r.count }))
+    .collect();
 
     Ok(serde_json::json!({
         "archetype": archetype,
         "top_statuses": {
-            "by_reblogs": top_by_reblogs.map(|id| id.to_string()),
-            "by_favourites": top_by_favourites.map(|id| id.to_string()),
-            "by_replies": top_by_replies.map(|id| id.to_string()),
+            "by_reblogs": by_reblogs.map(|id| id.to_string()),
+            "by_favourites": null,
+            "by_replies": null,
         },
         "time_series": [{
             "month": 12,
-            "statuses": statuses_in_year,
-            "followers": followers_in_year,
+            "statuses": counts.statuses,
+            "followers": followers,
         }],
         "top_hashtags": top_hashtags,
     }))
+}
+
+/// `AnnualReport::Archetype#archetype`.
+fn archetype(reblogs: i64, replies: i64, standalone: i64, polls: i64) -> &'static str {
+    if standalone + replies + reblogs < AVERAGE_POSTS_PER_YEAR {
+        "lurker"
+    } else if reblogs > standalone * 2 {
+        "booster"
+    } else if (polls as f64) > (standalone as f64) * 0.1 {
+        // `standalone_count * 0.1`, a float.
+        "pollster"
+    } else if replies > standalone * 2 {
+        "replier"
+    } else {
+        "oracle"
+    }
+}
+
+#[cfg(test)]
+mod archetype_tests {
+    use super::archetype;
+
+    #[test]
+    fn is_mastodons() {
+        assert_eq!(archetype(10, 10, 10, 10), "lurker");
+        assert_eq!(archetype(100, 0, 40, 0), "booster");
+        // 5 polls against 45 standalone posts: more than 4.5.
+        assert_eq!(archetype(0, 70, 45, 5), "pollster");
+        assert_eq!(archetype(0, 70, 50, 5), "oracle");
+        assert_eq!(archetype(0, 200, 50, 0), "replier");
+    }
 }
 
 /// `AnnualReport#eligible?`: every source is, which comes to
@@ -327,19 +261,12 @@ async fn build_response(
     account: &DbAccount,
     viewer_id: Option<i64>,
 ) -> AppResult<AnnualReportsResponse> {
-    // Collect status IDs referenced in all reports
+    // `AnnualReportsPresenter#statuses`: every report's `status_ids`.
     let mut top_status_ids: Vec<i64> = Vec::new();
     for report in &reports {
-        if let Some(data) = &report.data {
-            let top = &data["top_statuses"];
-            for key in ["by_reblogs", "by_favourites", "by_replies"] {
-                if let Some(id_str) = top[key].as_str() {
-                    if let Ok(id) = id_str.parse::<i64>() {
-                        if !top_status_ids.contains(&id) {
-                            top_status_ids.push(id);
-                        }
-                    }
-                }
+        for id in report.data.as_ref().map(status_ids).unwrap_or_default() {
+            if !top_status_ids.contains(&id) {
+                top_status_ids.push(id);
             }
         }
     }
@@ -350,7 +277,8 @@ async fn build_response(
     } else {
         let statuses = sqlx::query_as!(
             DbStatus,
-            "SELECT * FROM statuses WHERE id = ANY($1) AND deleted_at IS NULL",
+            // `Status.where(id:)`, under `default_scope { recent.kept }`.
+            "SELECT * FROM statuses WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY id DESC",
             &top_status_ids,
         )
         .fetch_all(&state.db)
@@ -441,19 +369,93 @@ async fn build_response(
         result
     };
 
-    let account_emojis = batch_account_emojis(state, std::slice::from_ref(account)).await;
-    let account_roles = batch_account_roles(state, std::slice::from_ref(account)).await;
-    let mut api_account = account_from_db(&state.urls, account);
-    api_account.emojis = account_emojis.get(&account.id).cloned().unwrap_or_default();
-    api_account.roles = account_roles.get(&account.id).cloned().unwrap_or_default();
-    apply_account_stats(state, &mut api_account, account.id).await;
-    let api_accounts = vec![api_account];
+    // `AnnualReportsPresenter#accounts`: every report's `account_ids`.
+    let mut account_ids: Vec<i64> = Vec::new();
+    for report in &reports {
+        let owner = report.account_id.parse().unwrap_or(account.id);
+        for id in report_account_ids(report.schema_version, owner, report.data.as_ref()) {
+            if !account_ids.contains(&id) {
+                account_ids.push(id);
+            }
+        }
+    }
+    let accounts = if account_ids.is_empty() {
+        vec![]
+    } else {
+        sqlx::query_as::<_, DbAccount>("SELECT * FROM accounts WHERE id = ANY($1) ORDER BY id")
+            .bind(&account_ids)
+            .fetch_all(&state.db)
+            .await?
+    };
+    let api_accounts = super::accounts::batch_accounts_to_api(state, &accounts).await;
 
     Ok(AnnualReportsResponse {
         annual_reports: reports,
         accounts: api_accounts,
         statuses: api_statuses,
     })
+}
+
+/// `GeneratedAnnualReport#status_ids`: the values of `top_statuses`.
+fn status_ids(data: &serde_json::Value) -> Vec<i64> {
+    data["top_statuses"]
+        .as_object()
+        .into_iter()
+        .flat_map(|top| top.values())
+        .filter_map(json_id)
+        .collect()
+}
+
+/// `GeneratedAnnualReport#account_ids`: for schema 1, the accounts most
+/// boosted and most interacted with; for schema 2, the report's own.
+fn report_account_ids(
+    schema_version: i32,
+    account_id: i64,
+    data: Option<&serde_json::Value>,
+) -> Vec<i64> {
+    match schema_version {
+        1 => [
+            "most_reblogged_accounts",
+            "commonly_interacted_with_accounts",
+        ]
+        .iter()
+        .flat_map(|key| {
+            data.and_then(|d| d[*key].as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| json_id(&entry["account_id"]))
+        })
+        .collect(),
+        2 => vec![account_id],
+        _ => vec![],
+    }
+}
+
+/// An id as the report's JSON holds it, a string or a number.
+fn json_id(value: &serde_json::Value) -> Option<i64> {
+    value
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| value.as_i64())
+}
+
+#[cfg(test)]
+mod presenter_tests {
+    use serde_json::json;
+
+    #[test]
+    fn ids_are_the_presenters() {
+        let v2 = json!({ "top_statuses": { "by_reblogs": "5", "by_favourites": null } });
+        assert_eq!(super::status_ids(&v2), [5]);
+        assert_eq!(super::report_account_ids(2, 9, Some(&v2)), [9]);
+        let v1 = json!({
+            "top_statuses": { "by_reblogs": "5", "by_replies": "7" },
+            "most_reblogged_accounts": [{ "account_id": "3", "count": 2 }],
+            "commonly_interacted_with_accounts": [{ "account_id": 4, "count": 1 }],
+        });
+        assert_eq!(super::status_ids(&v1), [5, 7]);
+        assert_eq!(super::report_account_ids(1, 9, Some(&v1)), [3, 4]);
+    }
 }
 
 fn db_row_to_report(

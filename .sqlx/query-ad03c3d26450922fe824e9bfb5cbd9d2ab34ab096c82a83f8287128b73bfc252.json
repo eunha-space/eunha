@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s\n           JOIN status_stats ss ON ss.status_id = s.id\n           WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.id BETWEEN $2 AND $3\n             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */\n           ORDER BY ss.reblogs_count DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ad03c3d26450922fe824e9bfb5cbd9d2ab34ab096c82a83f8287128b73bfc252"
+}

@@ -603,9 +603,18 @@ Annual reports
 
 While the `wrapstodon` setting is on, from 10 to 31 December, members can
 generate a report of their year (`POST /api/v1/annual_reports/:year/generate`,
-see [remote replies](./remote-replies) for how the client waits for it). Each
-report gets a random share key, and the API's `share_url` is the page that
-shows it to anyone with the link, at Mastodon's address:
+see [remote replies](./remote-replies) for how the client waits for it). The
+report is Mastodon's schema 2, made from its sources over the posts whose ids
+fall in the year: an archetype from the counts of posts, replies, boosts and
+polls; the most boosted public or unlisted post that has stats (the most
+favourited and most replied are left empty, as Mastodon leaves them); the
+posts of the year and the follows made in it; and the hashtag used most, more
+than once, by its display name. The API answers with the report's accounts
+(for schema 2, its owner; for a Mastodon 2024 report, the accounts it names)
+and its posts. Reports eunha made before migration 033 were labelled schema 1;
+see [migrations](./migrations). Each report gets a random share key, and the
+API's `share_url` is the page that shows it to anyone with the link, at
+Mastodon's address:
 `https://<domain>/@<username>/wrapstodon/<year>/<share_key>`. A report imported
 without a share key has no `share_url`.
 
