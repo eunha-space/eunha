@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, options, multiple FROM polls WHERE status_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "options",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "multiple",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b63f60ed4b5debd0e5c938cc72e4e6dabc9a9c5ead69e3b29c7c9342d3efd10c"
+}

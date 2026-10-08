@@ -155,3 +155,126 @@ async fn test_remote_media_keep_the_order_the_object_gives() {
             .unwrap();
     assert_eq!(attached, 4);
 }
+
+fn question(ctx: &TestContext, uri: &str, actor: &str, options: &[&str], extra: Value) -> Value {
+    let mut note = json!({
+        "id": uri, "type": "Question", "attributedTo": actor,
+        "content": "<p>which?</p>", "to": [PUBLIC],
+        "cc": [format!("https://{}/users/alice", ctx.domain)],
+        "published": "2026-01-01T00:00:00Z",
+        "oneOf": options.iter().map(|o| json!({"type": "Note", "name": o})).collect::<Vec<_>>(),
+    });
+    if let (Some(note), Some(extra)) = (note.as_object_mut(), extra.as_object()) {
+        for (k, v) in extra {
+            note.insert(k.clone(), v.clone());
+        }
+    }
+    note
+}
+
+async fn poll_options(ctx: &TestContext, status_id: i64) -> Option<Vec<String>> {
+    sqlx::query_scalar("SELECT options FROM polls WHERE status_id = $1")
+        .bind(status_id)
+        .fetch_optional(&ctx.db)
+        .await
+        .unwrap()
+}
+
+/// A `Question` with no option makes a poll that is not valid, which the
+/// status saves with it: `Status.create!` raises and the status is not
+/// taken, and an edit to one is not kept. An update that is not an edit
+/// leaves a poll's options as they were.
+#[tokio::test]
+async fn test_a_poll_with_no_options_is_refused_with_its_status() {
+    let ctx = TestContext::new("inbound-empty-poll").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+
+    let empty = format!("{remy}/statuses/empty");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(&remy, question(&ctx, &empty, &remy, &[], json!({}))),
+    )
+    .await;
+    assert_eq!(status_id(&ctx, &empty).await, None);
+
+    let poll = format!("{remy}/statuses/poll");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(&remy, question(&ctx, &poll, &remy, &["a", "b"], json!({}))),
+    )
+    .await;
+    let id = status_id(&ctx, &poll).await.unwrap();
+
+    // An edit to no options is refused whole: its text is not taken either.
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(
+            &remy,
+            question(
+                &ctx,
+                &poll,
+                &remy,
+                &[],
+                json!({"content": "<p>edited</p>", "updated": "2026-01-02T00:00:00Z"}),
+            ),
+            1,
+        ),
+    )
+    .await;
+    let text: String = sqlx::query_scalar("SELECT text FROM statuses WHERE id = $1")
+        .bind(id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(text, "<p>which?</p>");
+    assert_eq!(
+        poll_options(&ctx, id).await,
+        Some(vec!["a".into(), "b".into()])
+    );
+
+    // An update that is not an edit does not change the options.
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(
+            &remy,
+            question(&ctx, &poll, &remy, &["c", "d"], json!({})),
+            2,
+        ),
+    )
+    .await;
+    assert_eq!(
+        poll_options(&ctx, id).await,
+        Some(vec!["a".into(), "b".into()])
+    );
+
+    // An edit that does replaces them, and its votes go.
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(
+            &remy,
+            question(
+                &ctx,
+                &poll,
+                &remy,
+                &["c", "d"],
+                json!({"updated": "2026-01-03T00:00:00Z"}),
+            ),
+            3,
+        ),
+    )
+    .await;
+    assert_eq!(
+        poll_options(&ctx, id).await,
+        Some(vec!["c".into(), "d".into()])
+    );
+}

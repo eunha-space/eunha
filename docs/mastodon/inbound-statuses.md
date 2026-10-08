@@ -109,3 +109,19 @@ which leaves the follow a request again. An `Undo` naming its object by id
 alone is tried as the sender's boost, follow or request, and block, in that
 order. What is not found yet is remembered, so that it is skipped when it
 arrives.
+
+
+Attachments and polls
+---------------------
+
+A status's attachments are taken in the order its object lists them, at most
+four, and that order is recorded (`ordered_media_attachment_ids`) and is the
+order they are shown in. An edit keeps an attachment it still lists at its
+URL, updated in place, records the new order, and leaves one it no longer
+lists attached to the status, where the edit history can still show it.
+
+A `Question` is a poll (`PollParser`). One with no option is not a valid
+poll, and since the status is saved with its poll, the status is refused
+whole; an edit to one is not kept, any of it. An update that does not say
+the status was edited leaves a poll's options and multiplicity as they were,
+and an edit that changes them resets its votes.

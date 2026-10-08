@@ -775,6 +775,15 @@ pub(super) async fn handle_update(
                 return implicit_status_update(state, activity, object, note_uri, quote_policy)
                     .await;
             }
+            // `update_poll!` saving a `Question` with no option raises
+            // `RecordInvalid` inside the edit's transaction, and none of the
+            // edit is kept.
+            if super::poll_parser::PollParser::parse(object)
+                .is_some_and(|poll| poll.options.is_empty())
+            {
+                tracing::debug!(note_uri, "refused an edit whose poll has no options");
+                return Ok(());
+            }
             let text_changed = previous
                 .as_ref()
                 .is_some_and(|p| p.text != text || p.spoiler_text != spoiler_text);
@@ -1002,7 +1011,7 @@ pub(super) async fn handle_update(
             // An edit: `update_index('statuses', :proper)`.
             crate::search::elasticsearch::indexing::status(state, row.id).await;
 
-            sync_remote_poll(state, row.id, row.account_id, object).await?;
+            sync_remote_poll(state, row.id, row.account_id, object, true).await?;
             // `update_counts!`.
             super::status_parser::store_untrusted_counts(state, row.id, object).await?;
 
@@ -1113,7 +1122,11 @@ async fn implicit_status_update(
     let Some(row) = row else {
         return create_from_update(state, activity, object).await;
     };
-    sync_remote_poll(state, row.id, row.account_id, object).await?;
+    // `update_poll!(allow_significant_changes: false)`; a poll that is not
+    // valid raises, and nothing after it runs.
+    if !sync_remote_poll(state, row.id, row.account_id, object, false).await? {
+        return Ok(());
+    }
     // `update_counts!`.
     super::status_parser::store_untrusted_counts(state, row.id, object).await?;
     // `update_quote_approval!`, then `broadcast_updates!` if the quote

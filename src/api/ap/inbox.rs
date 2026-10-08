@@ -473,19 +473,50 @@ pub async fn drain_inbox_queue(state: &AppState) -> anyhow::Result<usize> {
 }
 
 /// `ProcessStatusUpdateService#update_poll!`: the poll as its status now
-/// has it, fetched just now (`last_fetched_at`).
+/// has it, fetched just now (`last_fetched_at`). Without
+/// `allow_significant_changes` (an update that is not an edit), a poll whose
+/// options or multiplicity changed is left as it was; with it, its votes are
+/// reset (`reset_votes!`). Returns `false` when the poll would not save,
+/// having no options, which raises `RecordInvalid` upstream.
 pub(super) async fn sync_remote_poll(
     state: &AppState,
     status_id: i64,
     account_id: i64,
     object: &Value,
-) -> AppResult<()> {
+    allow_significant_changes: bool,
+) -> AppResult<bool> {
     let Some(poll) = poll_parser::PollParser::parse(object) else {
-        return Ok(());
+        return Ok(true);
     };
-    // A poll with no options is not valid (`validates :options, presence`).
+    // `poll_parser.significantly_changes?(previous_poll || polls.new)`: a
+    // new poll has no options and is not multiple.
+    let previous = sqlx::query!(
+        "SELECT id, options, multiple FROM polls WHERE status_id = $1",
+        status_id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let changed = match &previous {
+        Some(previous) => poll.options != previous.options || poll.multiple != previous.multiple,
+        None => !poll.options.is_empty() || poll.multiple,
+    };
+    if changed && !allow_significant_changes {
+        return Ok(true);
+    }
+    // `validates :options, presence: true`.
     if poll.options.is_empty() {
-        return Ok(());
+        return Ok(false);
+    }
+    let mut poll = poll;
+    if changed {
+        if let Some(previous) = &previous {
+            // `reset_votes!`.
+            sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", previous.id)
+                .execute(&state.db)
+                .await?;
+            poll.cached_tallies = vec![0; poll.options.len()];
+            poll.voters_count = Some(0);
+        }
     }
     let votes_count = poll.votes_count();
     let poll_parser::PollParser {
@@ -556,7 +587,7 @@ pub(super) async fn sync_remote_poll(
         }
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Store a remote `FeaturedCollection` the account `owner_id` features, and

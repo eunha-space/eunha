@@ -438,6 +438,14 @@ pub(super) async fn create(
     // `StatusParser#language`.
     let language = super::status_parser::language(object);
 
+    // `process_poll`: a `Question` with no option is a poll that is not valid
+    // (`validates :options, presence: true`), which the status saves with it,
+    // so `Status.create!` raises `RecordInvalid` and the status is not taken.
+    if super::poll_parser::PollParser::parse(object).is_some_and(|poll| poll.options.is_empty()) {
+        tracing::debug!(note_uri, "refused a status whose poll has no options");
+        return Ok(());
+    }
+
     let status_id = crate::snowflake::next_id();
     let created_at = published.unwrap_or_else(|| chrono::Utc::now().naive_utc());
 
