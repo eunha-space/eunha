@@ -70,7 +70,8 @@ async fn test_announcement_shape() {
     assert!(ann.get("reactions").is_some(), "reactions missing");
 }
 
-/// POST /api/v1/announcements/:id/dismiss marks it as dismissed (204).
+/// POST /api/v1/announcements/:id/dismiss marks it as dismissed, and answers
+/// `{}`.
 #[tokio::test]
 async fn test_announcement_dismiss() {
     let ctx = TestContext::new("ann-dismiss").await;
@@ -85,6 +86,8 @@ async fn test_announcement_dismiss() {
         )
         .await;
     assert_eq!(resp.status(), StatusCode::OK, "dismiss should return 200");
+    // `render_empty`.
+    assert_eq!(resp.json::<Value>().await.unwrap(), serde_json::json!({}));
 
     // After dismissing, dismissed announcements should not appear when with_dismissed=false (default).
     // Mastodon hides dismissed announcements unless explicitly requested.
@@ -135,6 +138,7 @@ async fn test_announcement_reaction_add() {
         StatusCode::OK,
         "adding reaction should return 200"
     );
+    assert_eq!(resp.json::<Value>().await.unwrap(), serde_json::json!({}));
 
     // Reaction should appear in the announcement's reactions list.
     let anns: Vec<Value> = ctx

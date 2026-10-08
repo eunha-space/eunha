@@ -1,6 +1,5 @@
 use axum::{
     extract::{Extension, Path},
-    http::StatusCode,
     Json,
 };
 
@@ -177,7 +176,7 @@ pub async fn dismiss_announcement(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<StatusCode> {
+) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:accounts")?;
 
     let exists = sqlx::query_scalar!(
@@ -198,7 +197,8 @@ pub async fn dismiss_announcement(
     .execute(&state.db)
     .await?;
 
-    Ok(StatusCode::OK)
+    // `render_empty`.
+    Ok(Json(serde_json::json!({})))
 }
 
 // ── PUT /api/v1/announcements/:id/reactions/:name ─────────────────────────
@@ -207,7 +207,7 @@ pub async fn add_reaction(
     state: AppState,
     Path((id, name)): Path<(i64, String)>,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<StatusCode> {
+) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:favourites")?;
 
     // Mastodon's set_announcement only finds published announcements (404 otherwise).
@@ -279,7 +279,8 @@ pub async fn add_reaction(
         publish_reaction_later(&state, id, name).await;
     }
 
-    Ok(StatusCode::OK)
+    // `render_empty`.
+    Ok(Json(serde_json::json!({})))
 }
 
 // ── DELETE /api/v1/announcements/:id/reactions/:name ─────────────────────
@@ -288,7 +289,7 @@ pub async fn remove_reaction(
     state: AppState,
     Path((id, name)): Path<(i64, String)>,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<StatusCode> {
+) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:favourites")?;
     let deleted = sqlx::query!(
         "DELETE FROM announcement_reactions WHERE announcement_id = $1 AND account_id = $2 AND name = $3",
@@ -300,7 +301,8 @@ pub async fn remove_reaction(
         publish_reaction_later(&state, id, name).await;
     }
 
-    Ok(StatusCode::OK)
+    // `render_empty`.
+    Ok(Json(serde_json::json!({})))
 }
 
 /// `PublishAnnouncementReactionWorker.perform_async`.
