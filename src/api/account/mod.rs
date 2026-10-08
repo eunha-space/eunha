@@ -29,7 +29,10 @@ pub fn router() -> Router {
         .route("/auth", post(registration_post))
         .route(
             "/auth/setup",
-            get(setup_page).post(setup_post).put(setup_post),
+            get(setup_page)
+                .post(setup_post)
+                .put(setup_post)
+                .patch(setup_post),
         )
         .route("/account/logout", post(logout_post))
         .route("/account/sso", post(sso_post))
@@ -43,7 +46,9 @@ pub fn router() -> Router {
         .route("/auth/password/new", get(password_reset::new_page))
         .route(
             "/auth/password",
-            post(password_reset::request).put(password_reset::update),
+            post(password_reset::request)
+                .put(password_reset::update)
+                .patch(password_reset::update),
         )
         .route(
             "/auth/password/edit",

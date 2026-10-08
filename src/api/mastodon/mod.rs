@@ -245,7 +245,9 @@ pub fn router() -> Router {
         .route("/api/v1/collections", post(collections::create_collection))
         .route(
             "/api/v1/collections/{id}",
-            put(collections::update_collection).delete(collections::delete_collection),
+            put(collections::update_collection)
+                .patch(collections::update_collection)
+                .delete(collections::delete_collection),
         )
         .route(
             "/api/v1/collections/{id}/items",
@@ -267,7 +269,9 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1_alpha/collections/{id}",
-            put(collections::update_collection).delete(collections::delete_collection),
+            put(collections::update_collection)
+                .patch(collections::update_collection)
+                .delete(collections::delete_collection),
         )
         .route(
             "/api/v1_alpha/collections/{id}/items",
@@ -303,7 +307,9 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/statuses/{id}",
-            delete(statuses::delete_status).put(statuses::edit_status),
+            delete(statuses::delete_status)
+                .put(statuses::edit_status)
+                .patch(statuses::edit_status),
         )
         .route(
             "/api/v1/statuses/{id}/favourite",
@@ -346,7 +352,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/statuses/{id}/interaction_policy",
-            put(statuses::update_interaction_policy),
+            put(statuses::update_interaction_policy).patch(statuses::update_interaction_policy),
         )
         .route(
             "/api/v1/statuses/{id}/quotes",
@@ -368,6 +374,7 @@ pub fn router() -> Router {
             "/api/v1/lists/{id}",
             get(lists::get_list)
                 .put(lists::update_list)
+                .patch(lists::update_list)
                 .delete(lists::delete_list),
         )
         .route(
@@ -452,11 +459,13 @@ pub fn router() -> Router {
         .route(
             "/api/v1/notifications/policy",
             get(notifications::get_notification_policy_v1)
+                .put(notifications::update_notification_policy_v1)
                 .patch(notifications::update_notification_policy_v1),
         )
         .route(
             "/api/v2/notifications/policy",
             get(notifications::get_notification_policy)
+                .put(notifications::update_notification_policy)
                 .patch(notifications::update_notification_policy),
         )
         // Media — get / update / delete
@@ -464,6 +473,7 @@ pub fn router() -> Router {
             "/api/v1/media/{id}",
             get(media::get_media)
                 .put(media::update_media)
+                .patch(media::update_media)
                 .delete(media::delete_media),
         )
         // Bookmarks / Favourites
@@ -534,7 +544,9 @@ pub fn router() -> Router {
         .route("/api/v1/admin/reports", get(admin::list_admin_reports))
         .route(
             "/api/v1/admin/reports/{id}",
-            get(admin::get_admin_report).patch(admin::update_admin_report),
+            get(admin::get_admin_report)
+                .put(admin::update_admin_report)
+                .patch(admin::update_admin_report),
         )
         .route(
             "/api/v1/admin/reports/{id}/resolve",
@@ -561,7 +573,9 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/admin/custom_emojis/{id}",
-            patch(admin::update_admin_custom_emoji).delete(admin::delete_admin_custom_emoji),
+            put(admin::update_admin_custom_emoji)
+                .patch(admin::update_admin_custom_emoji)
+                .delete(admin::delete_admin_custom_emoji),
         )
         .route(
             "/api/v1/admin/domain_blocks",
@@ -570,6 +584,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/domain_blocks/{id}",
             get(admin::get_admin_domain_block)
+                .put(admin::update_admin_domain_block)
                 .patch(admin::update_admin_domain_block)
                 .delete(admin::delete_domain_block),
         )
@@ -588,6 +603,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/ip_blocks/{id}",
             get(admin::get_ip_block)
+                .put(admin::update_ip_block)
                 .patch(admin::update_ip_block)
                 .delete(admin::delete_ip_block),
         )
@@ -663,7 +679,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/admin/email_subscriptions/additional_footer_text",
-            put(admin::update_email_footer_text),
+            put(admin::update_email_footer_text).patch(admin::update_email_footer_text),
         )
         .route(
             "/api/v1/admin/email_subscriptions/accounts/{id}",
@@ -688,7 +704,9 @@ pub fn router() -> Router {
         .route("/api/v1/admin/tags", get(admin::list_admin_tags))
         .route(
             "/api/v1/admin/tags/{id}",
-            get(admin::get_admin_tag).patch(admin::update_admin_tag),
+            get(admin::get_admin_tag)
+                .put(admin::update_admin_tag)
+                .patch(admin::update_admin_tag),
         )
         .route(
             "/api/v1/admin/canonical_email_blocks",
@@ -714,7 +732,8 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/terms_of_service/draft",
             get(admin::admin_terms_of_service_draft)
-                .put(admin::update_admin_terms_of_service_draft),
+                .put(admin::update_admin_terms_of_service_draft)
+                .patch(admin::update_admin_terms_of_service_draft),
         )
         .route(
             "/api/v1/admin/terms_of_service/generate",
@@ -772,6 +791,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/warning_presets/{id}",
             get(admin::get_warning_preset)
+                .put(admin::update_warning_preset)
                 .patch(admin::update_warning_preset)
                 .delete(admin::delete_warning_preset),
         )
@@ -782,6 +802,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/username_blocks/{id}",
             get(admin::get_username_block)
+                .put(admin::update_username_block)
                 .patch(admin::update_username_block)
                 .delete(admin::delete_username_block),
         )
@@ -816,7 +837,7 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/admin/accounts/{id}/role",
-            put(admin::change_user_role),
+            put(admin::change_user_role).patch(admin::change_user_role),
         )
         .route(
             "/api/v1/admin/accounts/{id}/two_factor_authentication",
@@ -841,7 +862,9 @@ pub fn router() -> Router {
         // Server administration Mastodon has only as server-rendered admin pages
         .route(
             "/api/v1/admin/settings",
-            get(admin::get_admin_settings).patch(admin::update_admin_settings),
+            get(admin::get_admin_settings)
+                .put(admin::update_admin_settings)
+                .patch(admin::update_admin_settings),
         )
         .route(
             "/api/v1/admin/site_uploads/{id}",
@@ -854,6 +877,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/rules/{id}",
             get(admin::get_admin_rule)
+                .put(admin::update_admin_rule)
                 .patch(admin::update_admin_rule)
                 .delete(admin::delete_admin_rule),
         )
@@ -868,6 +892,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/roles/{id}",
             get(admin::get_admin_role)
+                .put(admin::update_admin_role)
                 .patch(admin::update_admin_role)
                 .delete(admin::delete_admin_role),
         )
@@ -878,6 +903,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/announcements/{id}",
             get(admin::get_admin_announcement)
+                .put(admin::update_admin_announcement)
                 .patch(admin::update_admin_announcement)
                 .delete(admin::delete_admin_announcement),
         )
@@ -992,6 +1018,7 @@ pub fn router() -> Router {
         .route(
             "/api/v1/admin/webhooks/{id}",
             get(admin::get_admin_webhook)
+                .put(admin::update_admin_webhook)
                 .patch(admin::update_admin_webhook)
                 .delete(admin::delete_admin_webhook),
         )
@@ -1111,6 +1138,7 @@ pub fn router() -> Router {
             "/api/v1/filters/{id}",
             get(filters::get_filter_v1)
                 .put(filters::update_filter_v1)
+                .patch(filters::update_filter_v1)
                 .delete(filters::delete_filter_v1),
         )
         // Filters v2
@@ -1122,6 +1150,7 @@ pub fn router() -> Router {
             "/api/v2/filters/{id}",
             get(filters::get_filter_v2)
                 .put(filters::update_filter_v2)
+                .patch(filters::update_filter_v2)
                 .delete(filters::delete_filter_v2),
         )
         .route(
@@ -1132,6 +1161,7 @@ pub fn router() -> Router {
             "/api/v2/filters/keywords/{id}",
             get(filters::get_filter_keyword)
                 .put(filters::update_filter_keyword)
+                .patch(filters::update_filter_keyword)
                 .delete(filters::delete_filter_keyword),
         )
         .route(
@@ -1161,6 +1191,7 @@ pub fn router() -> Router {
             get(push::get_subscription)
                 .post(push::create_subscription)
                 .put(push::update_subscription)
+                .patch(push::update_subscription)
                 .delete(push::delete_subscription),
         )
         .route(
@@ -1197,6 +1228,7 @@ pub fn router() -> Router {
             "/api/v1/scheduled_statuses/{id}",
             get(scheduled_statuses::get_scheduled_status)
                 .put(scheduled_statuses::update_scheduled_status)
+                .patch(scheduled_statuses::update_scheduled_status)
                 .delete(scheduled_statuses::delete_scheduled_status),
         )
         .layer(middleware::from_fn(require_auth));
@@ -1207,10 +1239,6 @@ pub fn router() -> Router {
     let uploads = Router::new()
         .route("/api/v1/media", post(media::upload_media))
         .route("/api/v2/media", post(media::upload_media))
-        .route(
-            "/api/v2/media/{id}",
-            get(media::get_media).put(media::update_media),
-        )
         .route(
             "/api/v1/accounts/update_credentials",
             patch(accounts::update_credentials),
@@ -1277,10 +1305,6 @@ pub fn router() -> Router {
             get(accounts::get_account_featured_tags),
         )
         .route(
-            "/api/v1/accounts/{id}/pins",
-            get(accounts::get_account_pins),
-        )
-        .route(
             "/api/v1/accounts/{id}/statuses",
             get(accounts::get_account_statuses),
         )
@@ -1332,7 +1356,6 @@ pub fn router() -> Router {
             "/api/v1/statuses/{id}/history",
             get(statuses::get_status_history),
         )
-        .route("/api/v1/statuses/{id}/card", get(statuses::get_status_card))
         // Polls (public read)
         .route("/api/v1/polls/{id}", get(polls::get_poll))
         // Search
@@ -1388,7 +1411,9 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/announcements/{id}/reactions/{name}",
-            put(announcements::add_reaction).delete(announcements::remove_reaction),
+            put(announcements::add_reaction)
+                .patch(announcements::add_reaction)
+                .delete(announcements::remove_reaction),
         )
         .route(
             "/api/v1/conversations",

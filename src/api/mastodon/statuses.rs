@@ -1447,43 +1447,6 @@ pub async fn reblogged_by(
     Ok((resp_headers, Json(result)))
 }
 
-// ── GET /api/v1/statuses/:id/card ─────────────────────────────────────────
-
-pub async fn get_status_card(
-    state: AppState,
-    Path(id): Path<i64>,
-    auth: Option<Extension<AuthenticatedUser>>,
-) -> AppResult<Json<serde_json::Value>> {
-    let status = sqlx::query_as!(
-        DbStatus,
-        "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-        id
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
-    let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
-
-    match viewer_id {
-        Some(vid) => check_status_visible(&state, &status, vid).await?,
-        None => {
-            if !matches!(
-                status.visibility,
-                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-            ) {
-                return Err(AppError::NotFound);
-            }
-        }
-    }
-
-    let card = super::status_serialize::fetch_status_card(&state, id, viewer_id).await;
-    Ok(Json(match card {
-        Some(c) => serde_json::to_value(c).unwrap_or(serde_json::Value::Null),
-        None => serde_json::Value::Null,
-    }))
-}
-
 // ── PATCH /api/v1/statuses/:id/interaction_policy ─────────────────────────
 
 #[derive(Debug, serde::Deserialize, Default)]

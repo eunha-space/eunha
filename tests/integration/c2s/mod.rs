@@ -37,6 +37,7 @@ mod notifications;
 mod polls;
 mod push;
 mod reports;
+mod routes;
 mod scope;
 mod search;
 mod search_elasticsearch;

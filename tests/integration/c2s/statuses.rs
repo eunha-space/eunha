@@ -2131,9 +2131,9 @@ async fn test_unpin_requires_auth() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// ── GET /api/v1/accounts/:id/pins ────────────────────────────────────────────
+// ── GET /api/v1/accounts/:id/statuses?pinned=true ────────────────────────────
 
-/// Pinned statuses appear in GET /api/v1/accounts/{id}/pins.
+/// Pinned statuses appear in GET /api/v1/accounts/{id}/statuses?pinned=true.
 #[tokio::test]
 async fn test_account_pins_endpoint() {
     let ctx = TestContext::new("acct-pins").await;
@@ -2154,7 +2154,10 @@ async fn test_account_pins_endpoint() {
 
     let resp = ctx
         .api
-        .get(&format!("/api/v1/accounts/{}/pins", ctx.alice_id), None)
+        .get(
+            &format!("/api/v1/accounts/{}/statuses?pinned=true", ctx.alice_id),
+            None,
+        )
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let pins: Vec<Value> = resp.json().await.unwrap();
@@ -2163,7 +2166,7 @@ async fn test_account_pins_endpoint() {
     assert_eq!(pins[0]["pinned"].as_bool(), Some(true));
 }
 
-/// Unpinning removes the status from GET /api/v1/accounts/{id}/pins.
+/// Unpinning removes the status from GET /api/v1/accounts/{id}/statuses?pinned=true.
 #[tokio::test]
 async fn test_account_pins_removes_after_unpin() {
     let ctx = TestContext::new("acct-pins-rm").await;
@@ -2191,7 +2194,10 @@ async fn test_account_pins_removes_after_unpin() {
 
     let pins: Vec<Value> = ctx
         .api
-        .get(&format!("/api/v1/accounts/{}/pins", ctx.alice_id), None)
+        .get(
+            &format!("/api/v1/accounts/{}/statuses?pinned=true", ctx.alice_id),
+            None,
+        )
         .await
         .json()
         .await
@@ -2199,14 +2205,17 @@ async fn test_account_pins_removes_after_unpin() {
     assert!(pins.is_empty());
 }
 
-/// GET /api/v1/accounts/{id}/pins returns empty array for an account with no pins.
+/// GET /api/v1/accounts/{id}/statuses?pinned=true returns empty array for an account with no pins.
 #[tokio::test]
 async fn test_account_pins_empty() {
     let ctx = TestContext::new("acct-pins-empty").await;
 
     let pins: Vec<Value> = ctx
         .api
-        .get(&format!("/api/v1/accounts/{}/pins", ctx.alice_id), None)
+        .get(
+            &format!("/api/v1/accounts/{}/statuses?pinned=true", ctx.alice_id),
+            None,
+        )
         .await
         .json()
         .await
@@ -5826,7 +5835,8 @@ async fn test_context_thread_filter_warn_annotates_status() {
     );
 }
 
-/// GET /api/v1/statuses/:id/card returns null when no preview card exists.
+/// A status with no link has a null `card`. Mastodon 4 no longer routes
+/// `GET /api/v1/statuses/:id/card`; the card comes with the status.
 #[tokio::test]
 async fn test_status_card_null_when_no_url() {
     let ctx = TestContext::new("status-card-null").await;
@@ -5837,37 +5847,13 @@ async fn test_status_card_null_when_no_url() {
         .await;
     let id = status["id"].as_str().unwrap();
 
-    let resp = ctx
-        .api
-        .get(&format!("/api/v1/statuses/{id}/card"), None)
-        .await;
+    let resp = ctx.api.get(&format!("/api/v1/statuses/{id}"), None).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(
-        body.is_null(),
+        body["card"].is_null(),
         "card should be null when status has no link, got: {body}"
     );
-}
-
-/// GET /api/v1/statuses/:id/card returns 404 for a non-existent status.
-#[tokio::test]
-async fn test_status_card_not_found() {
-    let ctx = TestContext::new("status-card-404").await;
-
-    let resp = ctx.api.get("/api/v1/statuses/999999999/card", None).await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-}
-
-/// GET /api/v1/statuses/:id/card returns 404 for a private status viewed without auth.
-#[tokio::test]
-async fn test_status_card_private_unauthenticated_is_404() {
-    let ctx = TestContext::new("status-card-priv").await;
-
-    let status = ctx
-        .api
-        .post_status(&ctx.alice_token, "private status for card", "private")
-        .await;
-    let id = status["id"].as_str().unwrap();
 
     let resp = ctx
         .api
