@@ -84,6 +84,11 @@ jobs:
           SQLX_OFFLINE: "true"
         run: cargo build --locked
 
+      # Media uploads are transcoded with ffmpeg, as in the container image,
+      # and the media tests make their videos and audio with it.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Tests
         run: cargo test --locked
 

@@ -499,7 +499,9 @@ pub fn router() -> Router {
             get(media::get_media)
                 .put(media::update_media)
                 .patch(media::update_media)
-                .delete(media::delete_media),
+                .delete(media::delete_media)
+                // A thumbnail at `IMAGE_LIMIT`.
+                .layer(DefaultBodyLimit::max(media::UPDATE_BODY_LIMIT)),
         )
         // Bookmarks / Favourites
         .route("/api/v1/bookmarks", get(bookmarks::get_bookmarks))
@@ -1259,17 +1261,18 @@ pub fn router() -> Router {
         )
         .layer(middleware::from_fn(require_auth));
 
-    // File-upload routes carry a generous body limit (25 MB, matching Mastodon).
+    // File-upload routes carry the body limit their largest upload needs.
     // Kept separate so the cap applies only here; everything else inherits the
     // app-wide default in `build_app`.
     let uploads = Router::new()
         .route("/api/v1/media", post(media::upload_media))
-        .route("/api/v2/media", post(media::upload_media))
+        .route("/api/v2/media", post(media::upload_media_v2))
         .route(
             "/api/v1/accounts/update_credentials",
             patch(accounts::update_credentials),
         )
-        .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
+        // A file at `VIDEO_LIMIT` and a thumbnail at `IMAGE_LIMIT`.
+        .layer(DefaultBodyLimit::max(media::UPLOAD_BODY_LIMIT))
         .layer(middleware::from_fn(require_auth));
 
     let public = Router::new()

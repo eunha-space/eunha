@@ -5,6 +5,7 @@ use crate::{
     error::{AppError, AppResult},
 };
 
+pub mod colors;
 pub mod picture;
 pub mod profile;
 pub mod transcode;
@@ -239,7 +240,21 @@ pub fn attachment_keys(id: i64, file: Option<&str>, thumbnail: Option<&str>) -> 
             keys.push(key);
         }
     }
-    // Eunha keeps a custom thumbnail's preview where the file's would be.
+    // The small style of a GIF or a video is a PNG, and of a converted
+    // image a JPEG, under the file's name with that extension.
+    if let Some(name) = file.filter(|n| !n.is_empty()) {
+        let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+        for format in ["png", "jpeg"] {
+            let small = format!("{stem}.{format}");
+            if small != name {
+                let key = format!("media_attachments/files/{partition}/small/{small}");
+                keys.push(format!("cache/{key}"));
+                keys.push(key);
+            }
+        }
+    }
+    // Eunha once kept an upload's small style as `small.<ext>`, recorded as
+    // its thumbnail.
     if let Some(name) = thumbnail.filter(|n| !n.is_empty()) {
         let key = format!("media_attachments/files/{partition}/small/{name}");
         keys.push(format!("cache/{key}"));

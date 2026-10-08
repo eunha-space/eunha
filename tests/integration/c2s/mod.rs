@@ -30,6 +30,7 @@ mod lists;
 mod markers;
 mod media;
 mod media_order;
+mod media_processing;
 mod moderation;
 mod moderation_tools;
 mod moves;

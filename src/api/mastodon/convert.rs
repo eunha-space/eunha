@@ -182,6 +182,9 @@ pub fn media_thumbnail_original_url(
     urls: &InstanceUrls,
     m: &models::MediaAttachment,
 ) -> Option<String> {
+    if legacy_small(m).is_some() {
+        return None;
+    }
     let filename = m.thumbnail_file_name.as_deref().filter(|f| !f.is_empty())?;
     Some(format!(
         "{}/media_attachments/thumbnails/{}/original/{filename}",
@@ -190,26 +193,54 @@ pub fn media_thumbnail_original_url(
     ))
 }
 
+/// Until it named its files as Paperclip does, eunha kept an upload's small
+/// style as `small.<ext>` and recorded that name in `thumbnail_file_name`,
+/// beside an original named `original.<ext>`: that name, for such a row.
+fn legacy_small(m: &models::MediaAttachment) -> Option<&str> {
+    let thumbnail = m.thumbnail_file_name.as_deref()?;
+    let file = m.file_file_name.as_deref()?;
+    (thumbnail.starts_with("small.") && file.starts_with("original.")).then_some(thumbnail)
+}
+
+/// The name of a file's `small` style, which `MediaAttachment.file_styles`
+/// gives by its content type: a PNG for a GIF or a video, a JPEG for an
+/// image libvips converts, the original's own format for any other image,
+/// and none for audio.
+pub fn small_style_name(file_name: &str, content_type: Option<&str>) -> Option<String> {
+    use super::media::{IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    let format = match content_type.unwrap_or_default() {
+        "image/gif" | "video/webm" | "video/quicktime" => "png",
+        "image/heic" | "image/heif" | "image/avif" => "jpeg",
+        image if IMAGE_MIME_TYPES.contains(&image) => return Some(file_name.to_owned()),
+        video if VIDEO_MIME_TYPES.contains(&video) => "png",
+        _ => return None,
+    };
+    Some(format!("{stem}.{format}"))
+}
+
+/// `REST::MediaAttachmentSerializer#preview_url`: the thumbnail when there
+/// is one, else the file's small style when it has one.
 pub fn media_preview_url(urls: &InstanceUrls, m: &models::MediaAttachment) -> Option<String> {
-    if let Some(filename) = &m.thumbnail_file_name {
-        if !filename.is_empty() {
-            return Some(format!(
-                "{}/media_attachments/files/{}/small/{}",
-                urls.media_base,
-                crate::media::int_to_path(m.id),
-                filename
-            ));
-        }
+    let partition = crate::media::int_to_path(m.id);
+    if let Some(small) = legacy_small(m) {
+        return Some(format!(
+            "{}/media_attachments/files/{partition}/small/{small}",
+            urls.media_base
+        ));
     }
-    if let Some(filename) = &m.file_file_name {
-        if !filename.is_empty() {
-            return Some(format!(
-                "{}/media_attachments/files/{}/small/{}",
-                urls.media_base,
-                crate::media::int_to_path(m.id),
-                filename
-            ));
-        }
+    if let Some(url) = media_thumbnail_original_url(urls, m) {
+        return Some(url);
+    }
+    if let Some(filename) = m.file_file_name.as_deref().filter(|f| !f.is_empty()) {
+        return small_style_name(filename, m.file_content_type.as_deref()).map(|small| {
+            format!(
+                "{}/media_attachments/files/{partition}/small/{small}",
+                urls.media_base
+            )
+        });
     }
     m.thumbnail_remote_url
         .as_deref()
@@ -764,7 +795,10 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
     types::MediaAttachment {
         id: m.id.to_string(),
         media_type: super::media::media_type_str(m.r#type).to_string(),
-        url: if unfetched {
+        // `not_processed?`: no file to show yet.
+        url: if m.processing.is_some_and(|p| p != 2) {
+            None
+        } else if unfetched {
             Some(proxy("original"))
         } else {
             media_url(urls, m)
