@@ -187,7 +187,8 @@ pub async fn build_note(
                   EXISTS(SELECT 1 FROM follow_requests fr
                          WHERE fr.account_id = a.id AND fr.target_account_id = $2) AS "has_request!"
            FROM mentions m JOIN accounts a ON a.id = m.account_id
-           WHERE m.status_id = $1"#,
+           -- `active_mentions`: a silent one is neither addressed nor tagged.
+           WHERE m.status_id = $1 AND NOT m.silent"#,
         s.id,
         s.account_id,
     )

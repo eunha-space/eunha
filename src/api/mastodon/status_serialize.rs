@@ -526,7 +526,7 @@ pub async fn fetch_status_mentions(
         r#"SELECT a.id as account_id, a.username, a.domain, a.url
            FROM accounts a
            JOIN mentions m ON m.account_id = a.id
-           WHERE m.status_id = $1
+           WHERE m.status_id = $1 AND NOT m.silent
            ORDER BY m.id ASC"#,
         status_id,
     )
@@ -598,7 +598,7 @@ pub async fn batch_status_mentions(
         r#"SELECT m.status_id, a.id as account_id, a.username, a.domain, a.url
            FROM accounts a
            JOIN mentions m ON m.account_id = a.id
-           WHERE m.status_id = ANY($1::bigint[])
+           WHERE m.status_id = ANY($1::bigint[]) AND NOT m.silent
            ORDER BY m.id ASC"#,
         status_ids,
     )

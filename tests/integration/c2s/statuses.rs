@@ -1398,6 +1398,72 @@ async fn test_status_history_after_edit() {
     assert_eq!(history[0]["account"]["id"], json!(ctx.alice_id));
 }
 
+/// `ProcessMentionsService` on an edit: a mention the text no longer makes
+/// turns silent, so whoever it named keeps seeing the direct post but is no
+/// longer shown as mentioned; mentioning them again makes it active again.
+/// An account the author blocks is never mentioned.
+#[tokio::test]
+async fn test_an_edit_silences_the_mentions_it_drops() {
+    let ctx = TestContext::new("edit-mentions-silent").await;
+    let (carol_id, _) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/block"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "hi @bob and @carol", "direct")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    let sid: i64 = id.parse().unwrap();
+    let mentions = |ctx: &TestContext| {
+        let db = ctx.db.clone();
+        async move {
+            sqlx::query_as::<_, (String, bool)>(
+                "SELECT a.username, m.silent FROM mentions m JOIN accounts a ON a.id = m.account_id
+                 WHERE m.status_id = $1 ORDER BY a.username",
+            )
+            .bind(sid)
+            .fetch_all(&db)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(mentions(&ctx).await, [("bob".to_owned(), false)]);
+
+    let edited: Value = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.alice_token),
+            &json!({"status": "never mind"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(edited["mentions"], json!([]));
+    assert_eq!(mentions(&ctx).await, [("bob".to_owned(), true)]);
+    let seen = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}"), Some(&ctx.bob_token))
+        .await;
+    assert_eq!(seen.status(), StatusCode::OK, "bob keeps access");
+
+    ctx.api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.alice_token),
+            &json!({"status": "hi again @bob"}),
+        )
+        .await;
+    assert_eq!(mentions(&ctx).await, [("bob".to_owned(), false)]);
+}
+
 /// Migration 034: a local post's history as eunha wrote it — each edit
 /// recording the version it replaced, stamped with that version's own time —
 /// gains its current version as the last row; a history as Mastodon wrote

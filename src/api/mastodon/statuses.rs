@@ -2144,24 +2144,55 @@ pub async fn store_status_mentions(
     status_id: i64,
     resolved: &[(String, Account)],
 ) -> AppResult<()> {
-    // `ProcessMentionsService` takes away only the active mentions no longer
-    // in the text: a silent one, which `Quote#ensure_quoted_access` made so
-    // that the quoted author can see the quote, stays.
-    sqlx::query!(
-        "DELETE FROM mentions WHERE status_id = $1 AND NOT silent",
-        status_id
+    // `assign_mentions!`: never mention an account the author blocks, or one
+    // on a domain the author blocks; such a mention, even one made before,
+    // is destroyed.
+    let ids: Vec<i64> = resolved.iter().map(|(_, account)| account.id).collect();
+    let blocked: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT a.id FROM accounts a, statuses s
+           WHERE s.id = $1 AND a.id = ANY($2)
+             AND (EXISTS (SELECT 1 FROM blocks b
+                          WHERE b.account_id = s.account_id AND b.target_account_id = a.id)
+                  OR EXISTS (SELECT 1 FROM account_domain_blocks d
+                             WHERE d.account_id = s.account_id AND d.domain = a.domain))"#,
+        status_id,
+        &ids,
     )
-    .execute(&state.db)
+    .fetch_all(&state.db)
     .await?;
-    for (_, account) in resolved {
+    if !blocked.is_empty() {
         sqlx::query!(
-            r#"INSERT INTO mentions (status_id, account_id, created_at, updated_at) VALUES ($1, $2, now(), now())
-               ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()"#,
-            status_id, account.id,
+            "DELETE FROM mentions WHERE status_id = $1 AND account_id = ANY($2)",
+            status_id,
+            &blocked,
         )
         .execute(&state.db)
         .await?;
     }
+    let current: Vec<i64> = ids.into_iter().filter(|id| !blocked.contains(id)).collect();
+    for account_id in &current {
+        sqlx::query!(
+            r#"INSERT INTO mentions (status_id, account_id, created_at, updated_at) VALUES ($1, $2, now(), now())
+               ON CONFLICT (account_id, status_id) DO UPDATE SET silent = false, updated_at = now()
+               WHERE mentions.silent"#,
+            status_id, account_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    // A mention the text no longer makes is kept, silently: withdrawing
+    // access from someone who was already notified would confuse more than
+    // it helps, so whoever an edit stops mentioning can still see a private
+    // or direct post. (One already silent, which `Quote#ensure_quoted_access`
+    // made, stays as it is.)
+    sqlx::query!(
+        r#"UPDATE mentions SET silent = true
+           WHERE status_id = $1 AND NOT silent AND NOT (account_id = ANY($2))"#,
+        status_id,
+        &current,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(())
 }
 

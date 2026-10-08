@@ -54,6 +54,7 @@ export default defineConfig({
           { text: "Content formatting", link: "/mastodon/formatting" },
           { text: "Remote actors", link: "/mastodon/remote-actors" },
           { text: "What other servers fetch", link: "/mastodon/serving" },
+          { text: "Posting and editing", link: "/mastodon/statuses" },
           { text: "Quotes", link: "/mastodon/quotes" },
           { text: "Inbound statuses", link: "/mastodon/inbound-statuses" },
           { text: "Streaming", link: "/mastodon/streaming" },
