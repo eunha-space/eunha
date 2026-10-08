@@ -733,3 +733,48 @@ pub fn media_type_str(type_int: Option<i32>) -> &'static str {
         _ => "unknown",
     }
 }
+
+// ── GET /media_proxy/:id/(*any) ───────────────────────────────────────────
+
+/// `MediaProxyController#show`, for an attachment of a post anyone may see
+/// (`MediaAttachment.attached.find`, `authorize :download?`): a redirect to
+/// its file, its small version when one is asked for. Eunha downloads no
+/// remote media, so an attachment without a file has nothing to give: one
+/// from a domain blocked with `reject_media`, which upstream does not fetch
+/// either, or one of a type it does not take, which upstream fails to fetch.
+pub async fn media_proxy(
+    state: AppState,
+    Path(id): Path<i64>,
+) -> AppResult<axum::response::Response> {
+    proxy(&state, id, false).await
+}
+
+/// [`media_proxy`] with a style after the id (`/media_proxy/:id/small`).
+pub async fn media_proxy_style(
+    state: AppState,
+    Path((id, style)): Path<(i64, String)>,
+) -> AppResult<axum::response::Response> {
+    proxy(&state, id, style.starts_with("small")).await
+}
+
+async fn proxy(state: &AppState, id: i64, small: bool) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let media = sqlx::query_as!(
+        crate::db::models::MediaAttachment,
+        r#"SELECT m.* FROM media_attachments m JOIN statuses s ON s.id = m.status_id
+           WHERE m.id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)"#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .filter(|m| m.file_file_name.as_deref().is_some_and(|f| !f.is_empty()))
+    .ok_or(AppError::NotFound)?;
+    let url = if small {
+        super::convert::media_preview_url(&state.urls, &media)
+    } else {
+        None
+    }
+    .or_else(|| super::convert::media_url(&state.urls, &media))
+    .ok_or(AppError::NotFound)?;
+    Ok(axum::response::Redirect::to(&url).into_response())
+}

@@ -118,13 +118,19 @@ pub async fn actor_is_suspended(state: &AppState, actor_uri: &str) -> bool {
     matches!(lookup(state, &domain).await, Some(b) if b.is_suspend())
 }
 
-/// True when remote media from `actor_uri`'s domain should not be stored
-/// (`reject_media`, or a full suspend which implies it).
-pub async fn actor_media_rejected(state: &AppState, actor_uri: &str) -> bool {
-    let Some(domain) = ojak::origin::host_of(actor_uri) else {
-        return false;
-    };
-    matches!(lookup(state, &domain).await, Some(b) if b.reject_media || b.is_suspend())
+/// `MediaAttachment#skip_download`'s `DomainBlock.reject_media?(account.domain)`:
+/// whether the remote account `account_id`'s media is stored without its file.
+pub async fn account_media_rejected(state: &AppState, account_id: i64) -> bool {
+    let domain = sqlx::query_scalar!("SELECT domain FROM accounts WHERE id = $1", account_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+    match domain {
+        Some(domain) => matches!(lookup(state, &domain).await, Some(b) if b.reject_media),
+        None => false,
+    }
 }
 
 /// All domains blocked at suspend severity, for bulk outbound delivery

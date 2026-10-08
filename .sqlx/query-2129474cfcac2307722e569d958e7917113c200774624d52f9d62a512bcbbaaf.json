@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO media_attachments (id, account_id, status_id, remote_url, description, blurhash, type, thumbnail_remote_url, file_content_type, file_meta, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now()) RETURNING id",
+  "query": "INSERT INTO media_attachments (id, account_id, status_id, remote_url, description, blurhash, type, thumbnail_remote_url, file_content_type, file_meta, processing, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, 2, now(), now()) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -27,5 +27,5 @@
       false
     ]
   },
-  "hash": "d8f213a1e9e29794338ac57f61da1b2990aaa71537a09725eb7ce0f1cef7cb6f"
+  "hash": "2129474cfcac2307722e569d958e7917113c200774624d52f9d62a512bcbbaaf"
 }

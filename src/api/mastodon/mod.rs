@@ -1262,6 +1262,8 @@ pub fn router() -> Router {
             "/api/v1/accounts/{id}/email_subscriptions",
             post(email_subscriptions::create),
         )
+        .route("/media_proxy/{id}", get(media::media_proxy))
+        .route("/media_proxy/{id}/{*style}", get(media::media_proxy_style))
         .route(
             "/email_subscriptions/confirmation",
             get(email_subscriptions::confirmation),

@@ -521,14 +521,12 @@ pub(super) async fn create(
     // `attach_counts`: the counts the status's server reports.
     super::status_parser::store_untrusted_counts(state, inserted_id, object).await?;
 
-    // Media attachments. Domains blocked with `reject_media` (or fully
-    // suspended) federate text but not media, so skip storing attachments.
-    let attachments: Vec<Value> =
-        if crate::federation::moderation::actor_media_rejected(state, actor_uri).await {
-            Vec::new()
-        } else {
-            super::attachment::attachments_of(object)
-        };
+    // `process_attachments`. From a domain blocked with `reject_media`
+    // (`skip_download?`) each attachment is still recorded, as an attachment
+    // whose file is never fetched.
+    let attachments = super::attachment::attachments_of(object);
+    let skip_download =
+        crate::federation::moderation::account_media_rejected(state, account_id).await;
     let mut media_ids: Vec<i64> = Vec::new();
     for att in &attachments {
         // Mastodon caps a status at MEDIA_ATTACHMENTS_LIMIT (4).
@@ -538,12 +536,19 @@ pub(super) async fn create(
         let Some(media) = super::attachment::remote_media(att) else {
             continue;
         };
+        let media = if skip_download {
+            media.not_downloaded()
+        } else {
+            media
+        };
         let media_id = crate::snowflake::next_id();
+        // `set_processing`: a remote attachment is `complete` (2).
         match sqlx::query_scalar!(
             r#"INSERT INTO media_attachments
                  (id, account_id, status_id, remote_url, description, blurhash,
-                  type, thumbnail_remote_url, file_content_type, file_meta, created_at, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())
+                  type, thumbnail_remote_url, file_content_type, file_meta, processing,
+                  created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, 2, now(), now())
                RETURNING id"#,
             media_id,
             account_id,

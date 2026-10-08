@@ -342,3 +342,114 @@ async fn test_an_edit_that_is_no_longer_a_poll_destroys_it() {
     assert_eq!(status_poll, None);
     assert_eq!(votes, 0);
 }
+
+/// From a domain blocked with `reject_media`, an attachment is recorded as
+/// Mastodon records one it does not download (`skip_download`): its URLs,
+/// description and blurhash, no file and so `unknown`, with no content type,
+/// and the focus alone for its meta. The API points its `url` and
+/// `preview_url` at the media proxy, which has nothing to give for it.
+#[tokio::test]
+async fn test_media_from_a_reject_media_domain_is_recorded_without_its_file() {
+    let ctx = TestContext::new("inbound-reject-media").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, reject_media, created_at, updated_at)
+         VALUES ('remote.invalid', 2, true, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let note_uri = format!("{remy}/statuses/rejected");
+    let attachment = |name: &str| {
+        json!({
+            "type": "Document", "mediaType": "image/png",
+            "url": format!("https://remote.invalid/media/{name}.png"),
+            "name": name, "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+            "width": 640, "height": 480, "focalPoint": [0.5, -0.25],
+        })
+    };
+    let note = |names: &[&str], updated: Option<&str>| {
+        json!({
+            "id": note_uri, "type": "Note", "attributedTo": remy,
+            "content": "<p>pictures</p>", "to": [PUBLIC],
+            "cc": [format!("https://{}/users/alice", ctx.domain)],
+            "published": "2026-01-01T00:00:00Z",
+            "updated": updated,
+            "attachment": names.iter().map(|n| attachment(n)).collect::<Vec<_>>(),
+        })
+    };
+    send(&ctx, &remy, &key, &create(&remy, note(&["one"], None))).await;
+    let id = status_id(&ctx, &note_uri).await.unwrap();
+
+    // An edit adding one records it the same way.
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(
+            &remy,
+            note(&["one", "two"], Some("2026-01-02T00:00:00Z")),
+            1,
+        ),
+    )
+    .await;
+
+    type Row = (
+        i64,
+        i32,
+        Option<String>,
+        Option<String>,
+        Option<Value>,
+        Option<String>,
+        Option<i32>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, type, remote_url, file_content_type, file_meta::jsonb, file_file_name, processing
+         FROM media_attachments WHERE status_id = $1 ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 2);
+    for (_, kind, remote_url, content_type, meta, file, processing) in &rows {
+        assert_eq!(*kind, 4);
+        assert!(remote_url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://remote.invalid/media/"));
+        assert_eq!(*content_type, None);
+        assert_eq!(*meta, Some(json!({"focus": {"x": 0.5, "y": -0.25}})));
+        assert_eq!(*file, None);
+        assert_eq!(*processing, Some(2));
+    }
+
+    let status: Value = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}"), Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let media = &status["media_attachments"][0];
+    let media_id = rows[0].0;
+    assert_eq!(media["type"], "unknown");
+    assert_eq!(
+        media["url"],
+        format!("https://{}/media_proxy/{media_id}/original", ctx.domain)
+    );
+    assert_eq!(
+        media["preview_url"],
+        format!("https://{}/media_proxy/{media_id}/small", ctx.domain)
+    );
+    assert_eq!(media["remote_url"], "https://remote.invalid/media/one.png");
+    assert_eq!(media["description"], "one");
+    assert_eq!(media["blurhash"], "LEHV6nWB2yk8pyo0adR*.7kCMdnj");
+    assert_eq!(media["meta"], json!({"focus": {"x": 0.5, "y": -0.25}}));
+
+    let proxied = ctx
+        .api
+        .get(&format!("/media_proxy/{media_id}/original"), None)
+        .await;
+    assert_eq!(proxied.status(), reqwest::StatusCode::NOT_FOUND);
+}

@@ -835,6 +835,8 @@ pub(super) async fn handle_update(
             )
             .fetch_all(&state.db)
             .await?;
+            let skip_download =
+                crate::federation::moderation::account_media_rejected(state, row.account_id).await;
             let mut media_ids: Vec<i64> = Vec::new();
             for att in &attachments {
                 if media_ids.len() >= 4 {
@@ -842,6 +844,13 @@ pub(super) async fn handle_update(
                 }
                 let Some(media) = super::attachment::remote_media(att) else {
                     continue;
+                };
+                // `skip_download`: a new attachment from a domain blocked
+                // with `reject_media` is recorded without its file.
+                let media = if skip_download {
+                    media.not_downloaded()
+                } else {
+                    media
                 };
                 let focus = media
                     .file_meta
@@ -873,7 +882,7 @@ pub(super) async fn handle_update(
                 }
                 let media_id = crate::snowflake::next_id();
                 if let Ok(id) = sqlx::query_scalar!(
-                    r#"INSERT INTO media_attachments (id, account_id, status_id, remote_url, description, blurhash, type, thumbnail_remote_url, file_content_type, file_meta, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now()) RETURNING id"#,
+                    r#"INSERT INTO media_attachments (id, account_id, status_id, remote_url, description, blurhash, type, thumbnail_remote_url, file_content_type, file_meta, processing, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, 2, now(), now()) RETURNING id"#,
                     media_id, row.account_id, row.id, media.remote_url, media.description, media.blurhash, media.kind, media.thumbnail_remote_url, media.file_content_type, media.file_meta,
                 ).fetch_one(&state.db).await { media_ids.push(id); }
             }

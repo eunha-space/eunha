@@ -68,6 +68,26 @@ pub(super) fn attachments_of(object: &Value) -> Vec<Value> {
     }
 }
 
+impl RemoteMedia {
+    /// The row as Mastodon stores an attachment it does not download
+    /// (`skip_download`, a domain blocked with `reject_media`): no file, so
+    /// `set_unknown_type` leaves it `unknown` with no content type, and its
+    /// `file_meta` is the focus alone, which `focus=` writes.
+    pub fn not_downloaded(self) -> Self {
+        let file_meta = self
+            .file_meta
+            .as_ref()
+            .and_then(|meta| meta.get("focus"))
+            .map(|focus| serde_json::json!({ "focus": focus }));
+        Self {
+            kind: 4,
+            file_content_type: None,
+            file_meta,
+            ..self
+        }
+    }
+}
+
 /// The media `att` names, or `None` when it has no `url`
 /// (`remote_url.blank?`).
 pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {

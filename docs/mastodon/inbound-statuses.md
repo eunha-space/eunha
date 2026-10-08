@@ -120,6 +120,15 @@ order they are shown in. An edit keeps an attachment it still lists at its
 URL, updated in place, records the new order, and leaves one it no longer
 lists attached to the status, where the edit history can still show it.
 
+From a domain blocked with `reject_media`, attachments are recorded as Mastodon
+records those it does not download: their URLs, description and blurhash, no
+file, so of the `unknown` type with no content type, and only the focus for
+their meta. The API, as Mastodon's does for an attachment it has no file for,
+points their `url` and `preview_url` at `/media_proxy/:id/original` and
+`/media_proxy/:id/small`, which answers 404 for them, as for any remote
+attachment of a type it does not know; every other remote
+attachment is shown from its own server, since eunha keeps no copies.
+
 A `Question` is a poll (`PollParser`). One with no option is not a valid
 poll, and since the status is saved with its poll, the status is refused
 whole; an edit to one is not kept, any of it. An update that does not say

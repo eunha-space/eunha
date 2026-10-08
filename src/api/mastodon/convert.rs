@@ -652,11 +652,30 @@ fn ensure_media_dims(file_meta: Option<serde_json::Value>, media_type: &str) -> 
 }
 
 pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types::MediaAttachment {
+    // An attachment Mastodon never fetched and cannot show, of a type it does
+    // not know (`unknown`): from a domain blocked with `reject_media`, or of a
+    // type it does not take. `REST::MediaAttachmentSerializer` points its
+    // `url` and `preview_url` at the media proxy (`needs_redownload?`) and
+    // gives `meta` as it is stored. Eunha shows other remote attachments from
+    // their own servers, keeping no copies (a recorded divergence); one of
+    // these it must not, and the proxy has nothing to give for it.
+    let unfetched = m.r#type == Some(4)
+        && m.file_file_name.as_deref().is_none_or(str::is_empty)
+        && m.remote_url.as_deref().is_some_and(|u| !u.is_empty());
+    let proxy = |style: &str| format!("https://{}/media_proxy/{}/{style}", urls.local_domain, m.id);
     types::MediaAttachment {
         id: m.id.to_string(),
         media_type: super::media::media_type_str(m.r#type).to_string(),
-        url: media_url(urls, m),
-        preview_url: media_preview_url(urls, m),
+        url: if unfetched {
+            Some(proxy("original"))
+        } else {
+            media_url(urls, m)
+        },
+        preview_url: if unfetched {
+            Some(proxy("small"))
+        } else {
+            media_preview_url(urls, m)
+        },
         remote_url: m
             .remote_url
             .as_deref()
@@ -670,7 +689,11 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
         text_url: None,
         description: m.description.clone(),
         blurhash: m.blurhash.clone(),
-        meta: Some(media_meta_for_serialization(m)),
+        meta: if unfetched {
+            m.file_meta.clone()
+        } else {
+            Some(media_meta_for_serialization(m))
+        },
     }
 }
 

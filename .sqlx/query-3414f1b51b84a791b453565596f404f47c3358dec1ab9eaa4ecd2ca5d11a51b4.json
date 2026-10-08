@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_attachments\n                 (id, account_id, status_id, remote_url, description, blurhash,\n                  type, thumbnail_remote_url, file_content_type, file_meta, processing,\n                  created_at, updated_at)\n               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, 2, now(), now())\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Json"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3414f1b51b84a791b453565596f404f47c3358dec1ab9eaa4ecd2ca5d11a51b4"
+}
