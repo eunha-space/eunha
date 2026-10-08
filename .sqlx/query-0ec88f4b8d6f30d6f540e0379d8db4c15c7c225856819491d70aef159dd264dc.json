@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.uri AS \"uri?\", a.uri AS \"account_uri?\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_uri?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "0ec88f4b8d6f30d6f540e0379d8db4c15c7c225856819491d70aef159dd264dc"
+}
