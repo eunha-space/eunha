@@ -467,3 +467,92 @@ async fn test_a_local_vote_schedules_the_poll_update() {
     assert_eq!(count, 1);
     assert!(later);
 }
+
+/// `VoteService` makes the votes in one transaction, each validated by
+/// `VoteValidator` with its messages: a choice repeated, or a second choice
+/// on a poll that takes one, is "already voted", and a vote that fails keeps
+/// none of those before it.
+#[tokio::test]
+async fn test_votes_are_all_or_nothing() {
+    let ctx = TestContext::new("poll-vote-validator").await;
+    let single = post_poll_status(&ctx).await;
+    let multiple: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "all that apply", "poll": {
+                "options": ["Red", "Green", "Blue"], "expires_in": 86400, "multiple": true}}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let vote = |poll: &Value, token: &str, choices: Value| {
+        let path = format!(
+            "/api/v1/polls/{}/votes",
+            poll["poll"]["id"].as_str().unwrap()
+        );
+        let token = token.to_owned();
+        let api = &ctx.api;
+        async move {
+            let resp = api
+                .post_json(&path, Some(&token), &json!({ "choices": choices }))
+                .await;
+            let status = resp.status();
+            (status, resp.json::<Value>().await.unwrap())
+        }
+    };
+    let votes = |poll: &Value| {
+        let id: i64 = poll["poll"]["id"].as_str().unwrap().parse().unwrap();
+        let db = ctx.db.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM poll_votes WHERE poll_id = $1")
+                .bind(id)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+        }
+    };
+
+    for (poll, choices, message) in [
+        (
+            &single,
+            json!([0, 1]),
+            "Validation failed: You have already voted on this poll",
+        ),
+        (
+            &multiple,
+            json!([0, 0]),
+            "Validation failed: You have already voted on this poll",
+        ),
+        (
+            &multiple,
+            json!([1, 7]),
+            "Validation failed: The chosen vote option does not exist",
+        ),
+    ] {
+        let (status, error) = vote(poll, &ctx.bob_token, choices.clone()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{choices}");
+        assert_eq!(error["error"], message, "{choices}");
+        assert_eq!(votes(poll).await, 0, "{choices}: none of the votes kept");
+    }
+    let (status, error) = vote(&single, &ctx.alice_token, json!([0])).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        error["error"],
+        "Validation failed: You cannot vote in your own polls"
+    );
+
+    let (status, poll) = vote(&multiple, &ctx.bob_token, json!([0, 2])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(poll["votes_count"], 2);
+    assert_eq!(poll["voters_count"], 1);
+    let (status, error) = vote(&multiple, &ctx.bob_token, json!([1, 2])).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        error["error"],
+        "Validation failed: You have already voted on this poll"
+    );
+    assert_eq!(votes(&multiple).await, 2);
+}

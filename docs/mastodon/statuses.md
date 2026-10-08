@@ -95,3 +95,17 @@ private or direct post, but the post no longer shows them as mentioned, is not
 addressed to them, and does not tag them. Naming them again makes the mention
 active again. An account the author blocks, or one on a domain the author
 blocks, is never mentioned, and a mention of it made before is removed.
+
+
+Votes
+-----
+
+`POST /api/v1/polls/:id/votes` makes a vote for each choice in one
+transaction, as `VoteService` does, each checked as `VoteValidator` checks
+it: the poll has not ended, the choice exists, the voter is not the poll's
+author, and the voter has not voted already — on a poll with one choice, at
+all; on one with several, for that choice, a choice given twice included.
+One vote that fails keeps none of them, and the answer is a 422 listing what
+failed (*Validation failed: You have already voted on this poll*, *The chosen
+vote option does not exist*, *You cannot vote in your own polls*, *The poll has
+already ended*). Votes are counted once they are all made.
