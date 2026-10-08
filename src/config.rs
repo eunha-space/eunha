@@ -456,6 +456,11 @@ pub struct InstanceConfig {
     /// available locales, or else `en`.
     #[serde(default)]
     pub default_locale: Option<String>,
+    /// Mastodon's `FORCE_DEFAULT_LOCALE`: speak the default locale to anyone
+    /// who has not chosen one, whatever their browser asks for in
+    /// `Accept-Language`.
+    #[serde(default)]
+    pub force_default_locale: bool,
     /// Mastodon's `LIMITED_FEDERATION_MODE`: federate only with the domains on
     /// the allow list, refuse the API to anyone not signed in, and hide the
     /// peers and activity APIs.
@@ -806,6 +811,38 @@ fn adopt_mastodon_env() {
                 // Safety: called once, before any threads read the environment.
                 unsafe { std::env::set_var(eunha, value) };
             }
+        }
+    }
+    if std::env::var_os("INSTANCE__FORCE_DEFAULT_LOCALE").is_none() {
+        if let Some(value) = std::env::var_os("FORCE_DEFAULT_LOCALE") {
+            // Safety: called once, before any threads read the environment.
+            unsafe {
+                std::env::set_var(
+                    "INSTANCE__FORCE_DEFAULT_LOCALE",
+                    force_default_locale_from_env(&value),
+                )
+            };
+        }
+    }
+}
+
+/// `ENV['FORCE_DEFAULT_LOCALE'] == 'true'`: that spelling alone forces it.
+fn force_default_locale_from_env(value: &std::ffi::OsStr) -> &'static str {
+    if value == "true" {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+#[cfg(test)]
+mod force_default_locale_tests {
+    #[test]
+    fn only_true_forces_it() {
+        let forced = |v: &str| super::force_default_locale_from_env(std::ffi::OsStr::new(v));
+        assert_eq!(forced("true"), "true");
+        for value in ["TRUE", "1", "yes", "false", ""] {
+            assert_eq!(forced(value), "false", "{value}");
         }
     }
 }

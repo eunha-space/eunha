@@ -113,6 +113,7 @@ pub fn build_app() -> Router {
         .layer(axum_middleware::from_fn(rate_limit::layer))
         .layer(axum_middleware::from_fn(middleware::authenticate))
         .layer(axum_middleware::from_fn(telemetry::observe))
+        .layer(axum_middleware::from_fn(middleware::force_default_locale))
         // `check_self_destruct!`, once the request's instance is known.
         .layer(axum_middleware::from_fn(self_destruct::gate))
         .layer(axum_middleware::from_fn(middleware::resolve_instance))

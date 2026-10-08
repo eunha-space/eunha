@@ -727,6 +727,53 @@ async fn test_a_sign_up_keeps_only_an_available_locale() {
     }
 }
 
+/// `FORCE_DEFAULT_LOCALE`: `Localized#requested_locale` does not ask
+/// `Accept-Language`, so the web sign-up saves the default locale unless
+/// `lang` names another.
+#[tokio::test]
+async fn test_a_forced_default_locale_ignores_accept_language() {
+    let ctx = TestContext::with_instance("signup-forced-locale", |instance| {
+        instance.default_locale = Some("ko".into());
+        instance.force_default_locale = true;
+    })
+    .await;
+    for (username, query, expected) in [("carol", "", "ko"), ("dave", "?lang=ja", "ja")] {
+        let response = ctx
+            .api
+            .http
+            .post(ctx.api.url(&format!("/auth{query}")))
+            .header("host", &ctx.api.host)
+            .header("accept-language", "pt-BR,en;q=0.8")
+            .form(&[
+                ("username", username),
+                ("email", &format!("{username}@example.com")),
+                ("password", "a-long-enough-password"),
+                ("agreement", "1"),
+            ])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{username}");
+        assert_eq!(
+            stored_locale(&ctx, username).await.as_deref(),
+            Some(expected),
+            "{username}"
+        );
+    }
+    // The sign-up page itself is in the default locale too.
+    let page = ctx
+        .api
+        .http
+        .get(ctx.api.url("/auth/signup"))
+        .header("host", &ctx.api.host)
+        .header("accept-language", "en")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    assert!(page.text().await.unwrap().contains(r#"lang="ko""#));
+}
+
 /// `Auth::RegistrationsController#build_resource`: the web sign-up saves
 /// `I18n.locale`, the locale the page was asked in, not one the form gives.
 #[tokio::test]

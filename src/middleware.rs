@@ -447,6 +447,25 @@ pub async fn api_cache_control(req: Request, next: Next) -> Response {
     response
 }
 
+/// `Localized#requested_locale` with `FORCE_DEFAULT_LOCALE`: the browser's
+/// `Accept-Language` is not asked, so a request names the instance's default
+/// locale unless `lang` or the user's own locale says otherwise. Everything
+/// that reads the header then reads the default in its place.
+pub async fn force_default_locale(mut req: Request, next: Next) -> Response {
+    let forced = req
+        .extensions()
+        .get::<AppState>()
+        .filter(|state| state.instance.force_default_locale)
+        .map(|state| state.instance.default_locale());
+    if let Some(locale) = forced {
+        req.headers_mut().insert(
+            axum::http::header::ACCEPT_LANGUAGE,
+            axum::http::HeaderValue::from_static(locale),
+        );
+    }
+    next.run(req).await
+}
+
 /// Log failed requests (4xx/5xx) with their method, path and status.
 ///
 /// Never the body, nor the query string: a refused password grant, sign-up or

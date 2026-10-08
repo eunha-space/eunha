@@ -802,6 +802,7 @@ impl TestContext {
                 email_subscriptions: true,
                 authorized_fetch: None,
                 default_locale: None,
+                force_default_locale: false,
                 limited_federation_mode: false,
                 disallow_unauthenticated_api_access: false,
                 disable_automatic_switching_to_approved_registrations: false,

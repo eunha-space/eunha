@@ -189,6 +189,8 @@ experimental_features = ["fasp"]
 # Mastodon's DEFAULT_LOCALE: the locale used when nobody has said which they
 # want. One of Mastodon's available locales, or else `en`.
 default_locale = "en"
+# Mastodon's FORCE_DEFAULT_LOCALE: ignore the browser's Accept-Language.
+force_default_locale = false
 ~~~~
 
 `default_locale` is Mastodon's `I18n.default_locale`, and a lone instance
@@ -198,6 +200,15 @@ a post that names none, what mail, Web Push notifications, the notes a move
 leaves and an email subscription are written in for someone with no locale of
 their own, the locale a request names none of, and the language asked for
 when fetching a link preview.
+
+`force_default_locale` is Mastodon's `FORCE_DEFAULT_LOCALE`, which a lone
+instance configured from the environment also takes, forced only by the value
+`true` as Mastodon's check is. When it is on, a request's `Accept-Language` is
+not asked: eunha reads every request as asking for the default locale, so the
+locale a web sign-up saves, the language a translation is into, trends, an
+email subscription and the server-rendered pages (which speak English or
+Korean) all take `default_locale` unless a `lang` parameter or the user's own
+locale names another, as `Localized` does.
 
 `experimental_features` turns on what Mastodon keeps behind
 `EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under
