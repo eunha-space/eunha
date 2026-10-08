@@ -116,7 +116,7 @@ impl AuthenticatedUser {
 pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Response {
     if let Some(token) = extract_bearer(&req) {
         if let Some(tok) = sqlx::query!(
-            r#"SELECT t.id, u.account_id AS "account_id?", t.application_id, t.scopes,
+            r#"SELECT t.id, t.resource_owner_id, u.account_id AS "account_id?", t.application_id, t.scopes,
                       t.expires_in, t.created_at, t.revoked_at, t.last_used_at, u.id as "user_id?",
                       u.current_sign_in_at AS "current_sign_in_at?",
                       u.disabled as "disabled?", a.suspended_at AS "suspended_at?",
@@ -138,6 +138,10 @@ pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Resp
         .ok()
         .flatten()
         {
+            req.extensions_mut().insert(crate::rate_limit::RequestToken {
+                id: tok.id,
+                user_id: tok.resource_owner_id,
+            });
             let valid =
                 tok.revoked_at.is_none() && token_not_expired(tok.created_at, tok.expires_in);
             // Mastodon's `Api::BaseController#require_not_suspended!`: an

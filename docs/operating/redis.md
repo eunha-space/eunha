@@ -28,7 +28,9 @@ emailed to an account's subscribers, the daily activity counts
 (`activity:logins:<day>`, `activity:accounts:local:<day>`,
 `activity:statuses:local:<day>`, `activity:interactions:<day>`) and what is
 rendered from them (`cache:api/v1/instances/activity/show`,
-`active_user_count/<weeks>`), the donation campaign last fetched for each seed
+`active_user_count/<weeks>`), the [rate limits](./rate-limits)‘ counts
+(`cache:rack::attack:*` for the throttles, `rate_limit:<id>:<family>:*` for
+what an account creates), the donation campaign last fetched for each seed
 and locale (`cache:donation_campaign_request:*`, `cache:donation_campaign:*`),
 sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of

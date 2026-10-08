@@ -219,6 +219,7 @@ pub async fn edit_status(
         .iter()
         .map(|m| m.description.clone())
         .collect();
+    crate::rate_limit::record(&state, auth.account_id, crate::rate_limit::STATUSES).await?;
     sqlx::query!(
         r#"INSERT INTO status_edits (status_id, account_id, text, spoiler_text, sensitive, ordered_media_attachment_ids, media_descriptions, poll_options, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())"#,

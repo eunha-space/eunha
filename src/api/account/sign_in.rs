@@ -89,6 +89,11 @@ async fn store(state: &AppState, token: &str, attempt: &Attempt) -> bool {
     stored.is_ok()
 }
 
+/// The user a pending sign-in is for: Mastodon's `session[:attempt_user_id]`.
+pub(crate) async fn attempt_user_id(state: &AppState, token: &str) -> Option<i64> {
+    load(state, token).await.map(|attempt| attempt.user_id)
+}
+
 async fn load(state: &AppState, token: &str) -> Option<Attempt> {
     if token.is_empty() || !token.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;

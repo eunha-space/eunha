@@ -46,7 +46,7 @@ than per instance. Three things follow from that:
 `eunha --tenants <dir> migrate` migrates every tenant's database, and
 `--check` exits non-zero if any of them is behind.
 
-Sharing a process also means sharing its capacity, and two limits keep one
+Sharing a process also means sharing its capacity, and these limits keep one
 instance from taking more than its share:
 
  -  **Requests in flight, per instance.** Past `max_concurrent_requests` in
@@ -54,6 +54,9 @@ instance from taking more than its share:
     `Retry-After` rather than queued, and its neighbours carry on. Unset, a
     lone instance has no limit and one among several has 64. A streaming
     connection counts only while it is being opened.
+ -  **Mastodon's [rate limits](./rate-limits), per instance.** Each instance
+    counts its own clients' requests under its own key prefix, so one
+    instance's clients never use up another's.
  -  **Deliveries in flight, per process.** `process_delivery_concurrency` in
     `[workers]`, 256 by default, caps outbound ActivityPub deliveries across
     every instance, first come first served, so one with a large fan-out

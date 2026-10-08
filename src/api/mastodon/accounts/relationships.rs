@@ -260,6 +260,7 @@ pub async fn follow(
         }
     }
 
+    crate::rate_limit::record(state, source.id, crate::rate_limit::FOLLOWS).await?;
     let requester = source;
     // Remote account: always use follow_requests and send a Follow activity.
     if target.domain.is_some() {

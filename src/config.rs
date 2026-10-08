@@ -364,9 +364,19 @@ pub struct LimitsConfig {
     /// process must all name the same value.
     #[serde(default)]
     pub process_database_connections: Option<u64>,
+    /// Whether Mastodon's rate limits apply to this instance: the
+    /// `Rack::Attack` throttles and the `RateLimiter` families. Unset, they
+    /// do, as they always do in Mastodon.
+    #[serde(default)]
+    pub rate_limits: Option<bool>,
 }
 
 impl LimitsConfig {
+    /// Whether the rate limits apply.
+    pub fn rate_limits(&self) -> bool {
+        self.rate_limits.unwrap_or(true)
+    }
+
     /// The in-flight request limit, given whether this instance shares its
     /// process with others.
     pub fn request_limit(&self, shared: bool) -> Option<usize> {

@@ -44,6 +44,7 @@ pub mod privacy_policy;
 pub mod push;
 pub mod quotes;
 pub mod rails_encryption;
+pub mod rate_limit;
 pub mod redis_keys;
 pub mod redis_lock;
 pub mod relays;
@@ -108,6 +109,8 @@ pub fn build_app() -> Router {
         // compressed body would no longer match.
         .merge(fasp::api::router())
         .layer(axum_middleware::from_fn(middleware::log_failures))
+        // `Rack::Attack`, once the token a request carries is known.
+        .layer(axum_middleware::from_fn(rate_limit::layer))
         .layer(axum_middleware::from_fn(middleware::authenticate))
         .layer(axum_middleware::from_fn(telemetry::observe))
         // `check_self_destruct!`, once the request's instance is known.
@@ -123,11 +126,13 @@ pub fn build_app() -> Router {
 async fn fallback(state: state::AppState, req: Request) -> axum::response::Response {
     let uri = req.uri().clone();
     if uri.path().starts_with("/api/") {
-        (
+        let mut response = (
             axum::http::StatusCode::NOT_FOUND,
             axum::Json(serde_json::json!({"error": "not found"})),
         )
-            .into_response()
+            .into_response();
+        response.extensions_mut().insert(rate_limit::Unrouted);
+        response
     } else {
         let viewer = req
             .extensions()

@@ -38,6 +38,7 @@ mod notifications;
 mod oauth_server;
 mod polls;
 mod push;
+mod rate_limits;
 mod reports;
 mod routes;
 mod scope;

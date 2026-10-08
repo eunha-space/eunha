@@ -825,6 +825,10 @@ impl TestContext {
             workers: Default::default(),
             limits: Default::default(),
         };
+        // Mastodon's rate limits would have the tests, which all come from
+        // one address and post far more than a person does, refused; a test
+        // of the limits turns them back on.
+        config.limits.rate_limits = Some(false);
         configure(&mut config);
         // The site's identity and registrations are read from the settings
         // alone, as Mastodon reads them; each test instance has the

@@ -478,6 +478,7 @@ pub(crate) async fn process_status(
     } else {
         0
     };
+    crate::rate_limit::record(&state, account.id, crate::rate_limit::STATUSES).await?;
     let status = sqlx::query_as!(
         DbStatus,
         r#"INSERT INTO statuses

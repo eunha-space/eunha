@@ -193,6 +193,7 @@ pub async fn follow_tag(
         .await?
         .ok_or(AppError::NotFound)?;
 
+    crate::rate_limit::record_tag_follow(&state, auth.account_id, tag_id).await?;
     sqlx::query!(
         "INSERT INTO tag_follows (account_id, tag_id, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT DO NOTHING",
         auth.account_id,

@@ -28,6 +28,7 @@ export default defineConfig({
           { text: "The job queue", link: "/operating/jobs" },
           { text: "Invites", link: "/operating/invites" },
           { text: "Moderation", link: "/operating/moderation" },
+          { text: "Rate limits", link: "/operating/rate-limits" },
           { text: "Search", link: "/operating/search" },
           { text: "Account security", link: "/operating/accounts" },
           { text: "Administration", link: "/operating/administration" },

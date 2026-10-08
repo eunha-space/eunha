@@ -1225,3 +1225,29 @@ so there is no session for the server to redirect to or to read."""
 evidence = "tests/integration/c2s/annual_reports.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "rate-limits-on-eunha-pages"
+kind = "behaviour"
+summary = "Throttles sign-ins and password changes at eunha's own pages, and lets an instance turn its rate limits off"
+mastodon = """
+Throttles sign-ins at `POST /auth/sign_in`, password changes at `PUT /auth` \
+and `PUT /auth/password`, and account setup at `PUT /auth/setup`, its own \
+server-rendered pages, and always applies its `Rack::Attack` throttles and \
+`RateLimiter` families."""
+eunha = """
+Counts the same throttles for eunha's pages that do those things: a sign-in \
+at `POST /account/login`, or at `POST /oauth/authorize` with an email, a \
+password or a pending second-factor step; a password change at \
+`POST /account/password`; and account setup posted as well as put. \
+`rate_limits = false` in `[limits]` turns the throttles and the families \
+off for an instance, and the test instances have them off."""
+why = """
+Eunha's sign-in and account pages are at other paths than Mastodon's, and \
+the throttles exist to limit what those pages do, not their paths. The \
+switch is for eunha's own tests, which come from one address and post far \
+more than a person does, and for deployments that limit requests in front of \
+eunha; unset, the limits apply as Mastodon's do."""
+evidence = "tests/integration/c2s/rate_limits.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
