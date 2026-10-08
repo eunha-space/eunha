@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.id, n.from_account_id FROM notifications n\n           JOIN accounts a ON a.id = n.from_account_id\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n           WHERE n.account_id = $1 AND n.group_key = $2\n             AND ($3::bigint IS NULL OR n.id < $3)\n             AND ($4::bigint IS NULL OR n.id > $4)\n           ORDER BY n.id DESC\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5ebb881f6a09430b8dbd8f06eb549fd01300286e8acf4f9553fc1ee40b894cc4"
+}

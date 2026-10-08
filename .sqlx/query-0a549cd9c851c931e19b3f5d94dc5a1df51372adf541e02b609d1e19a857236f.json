@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT created_at FROM accounts WHERE id = $1",
+  "query": "SELECT created_at FROM statuses WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "c5f01ac013c36fae434c94c88dbe00cacba2c71df8b35de0a41677f4b2b234cc"
+  "hash": "0a549cd9c851c931e19b3f5d94dc5a1df51372adf541e02b609d1e19a857236f"
 }

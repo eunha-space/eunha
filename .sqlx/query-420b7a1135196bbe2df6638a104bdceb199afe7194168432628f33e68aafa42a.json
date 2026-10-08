@@ -1,23 +1,28 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM mentions WHERE status_id = $1 AND account_id = $2",
+  "query": "SELECT id, created_at FROM quotes WHERE status_id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
         "Int8"
       ]
     },
     "nullable": [
+      false,
       false
     ]
   },
-  "hash": "2431adf40bf161054736e39a71c2d30985380615af745c3105d15080e06c6162"
+  "hash": "420b7a1135196bbe2df6638a104bdceb199afe7194168432628f33e68aafa42a"
 }

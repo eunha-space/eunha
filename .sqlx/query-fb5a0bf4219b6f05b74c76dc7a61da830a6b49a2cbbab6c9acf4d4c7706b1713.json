@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.id,\n               CASE n.activity_type\n                   -- `status&.reblog` for a boost, the boost being the activity.\n                   WHEN 'Status'    THEN CASE WHEN n.\"type\" = 'reblog' THEN st.reblog_of_id ELSE n.activity_id END\n                   WHEN 'Mention'   THEN m.status_id\n                   WHEN 'Favourite' THEN f.status_id\n                   WHEN 'Poll'      THEN p.status_id\n                   WHEN 'Quote'     THEN q.status_id\n                   ELSE NULL\n               END AS \"status_id: i64\"\n           FROM notifications n\n           LEFT JOIN statuses  st ON st.id = n.activity_id AND n.activity_type = 'Status' AND n.\"type\" = 'reblog'\n           LEFT JOIN mentions   m ON m.id = n.activity_id AND n.activity_type = 'Mention'\n           LEFT JOIN favourites f ON f.id = n.activity_id AND n.activity_type = 'Favourite'\n           LEFT JOIN polls      p ON p.id = n.activity_id AND n.activity_type = 'Poll'\n           LEFT JOIN quotes     q ON q.id = n.activity_id AND n.activity_type = 'Quote'\n           WHERE n.id = ANY($1::bigint[])\n             AND n.activity_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "fb5a0bf4219b6f05b74c76dc7a61da830a6b49a2cbbab6c9acf4d4c7706b1713"
+}
