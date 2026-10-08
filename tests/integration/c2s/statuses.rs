@@ -5053,9 +5053,9 @@ async fn test_notifications_since_id_excludes_anchor() {
     );
 }
 
-/// Reply to a non-existent status returns 422.
+/// Reply to a non-existent status is `set_thread`'s 404.
 #[tokio::test]
-async fn test_reply_to_nonexistent_status_returns_422() {
+async fn test_reply_to_nonexistent_status_returns_404() {
     let ctx = TestContext::new("reply-nonexist").await;
 
     let resp = ctx
@@ -5072,8 +5072,8 @@ async fn test_reply_to_nonexistent_status_returns_422() {
         .await;
     assert_eq!(
         resp.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "replying to non-existent status should return 422",
+        StatusCode::NOT_FOUND,
+        "replying to non-existent status should return 404",
     );
 }
 
