@@ -10,7 +10,7 @@ use ojak::federation::CollectionDocument;
 use serde_json::{json, Value};
 use url::Url;
 
-use super::objects::AccountRef;
+use super::objects::{AccountRef, Reader};
 use crate::db::models::Account;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -47,7 +47,7 @@ impl Query {
 
     /// `truthy_param?`: `ActiveModel::Type::Boolean` of the value, which is
     /// true unless it is missing, blank, or one of Rails' false values.
-    fn truthy(&self, name: &str) -> bool {
+    pub fn truthy(&self, name: &str) -> bool {
         self.get(name).is_some_and(|value| {
             !value.is_empty()
                 && !matches!(value, "0" | "f" | "F" | "false" | "FALSE" | "off" | "OFF")
@@ -56,7 +56,13 @@ impl Query {
 
     /// The `min_id` to page from, when it is a number.
     fn min_id(&self) -> Option<i64> {
-        self.get("min_id").and_then(|id| id.trim().parse().ok())
+        self.number("min_id")
+    }
+
+    /// The parameter `name`, when it is a number.
+    #[must_use]
+    pub fn number(&self, name: &str) -> Option<i64> {
+        self.get(name).and_then(|id| id.trim().parse().ok())
     }
 }
 
@@ -77,11 +83,18 @@ fn parse(uri: &str) -> AppResult<Url> {
     Url::parse(uri).map_err(|error| AppError::Internal(error.into()))
 }
 
-/// A local post's own URI, and its author, when `who` may be shown it: the
-/// account's own post, public or unlisted, by an account that is still
-/// there (`@account.statuses.find` and `authorize @status, :show?`).
-async fn servable(state: &AppState, who: AccountRef<'_>, id: i64) -> AppResult<(Account, String)> {
-    let account = super::objects::servable_status(state, who, id).await?;
+/// A local post's own URI, its author, and whether it is distributable,
+/// when `reader` may be shown it (`@account.statuses.find` and
+/// `authorize @status, :show?`).
+async fn servable(
+    state: &AppState,
+    who: AccountRef<'_>,
+    id: i64,
+    reader: Option<&Reader>,
+) -> AppResult<(Account, String, bool)> {
+    let servable = super::objects::servable_status(state, who, id, reader).await?;
+    let distributable = servable.distributable();
+    let account = servable.account;
     let uri = crate::federation::tag::status_uri(
         &state.instance.domain,
         account.id,
@@ -89,7 +102,7 @@ async fn servable(state: &AppState, who: AccountRef<'_>, id: i64) -> AppResult<(
         &account.username,
         id,
     );
-    Ok((account, uri))
+    Ok((account, uri, distributable))
 }
 
 /// `TagManager#uri_for` a local post: beneath its author's actor.
@@ -145,14 +158,16 @@ async fn embedded_or_uri(
 /// `ActivityPub::RepliesController#index`: the replies to a local post. The
 /// author's own come first, sixty to a page; the page after the last of
 /// them goes on to everyone else's (`only_other_accounts`), by accounts that
-/// are not suspended. A local reply is embedded, a remote one named.
+/// are not suspended. A local reply is embedded, a remote one named. Says
+/// too whether the post is distributable, which its caching depends on.
 pub async fn replies(
     state: &AppState,
     who: AccountRef<'_>,
     status_id: i64,
     query: &Query,
-) -> AppResult<Value> {
-    let (account, status_uri) = servable(state, who, status_id).await?;
+    reader: Option<&Reader>,
+) -> AppResult<(Value, bool)> {
+    let (account, status_uri, distributable) = servable(state, who, status_id, reader).await?;
     let replies_uri = parse(&format!("{status_uri}/replies"))?;
     let only_other_accounts = query.truthy("only_other_accounts");
     let min_id = query.min_id();
@@ -244,7 +259,7 @@ pub async fn replies(
     } else {
         json!(ACTIVITY_STREAMS)
     };
-    Ok(document)
+    Ok((document, distributable))
 }
 
 /// Who liked a local post, or who boosted it: only how many
@@ -254,8 +269,9 @@ pub async fn interactions(
     who: AccountRef<'_>,
     status_id: i64,
     which: Interactions,
-) -> AppResult<Value> {
-    let (_, status_uri) = servable(state, who, status_id).await?;
+    reader: Option<&Reader>,
+) -> AppResult<(Value, bool)> {
+    let (_, status_uri, distributable) = servable(state, who, status_id, reader).await?;
     let counts = sqlx::query!(
         r#"SELECT GREATEST(favourites_count, 0) AS "favourites!",
                   GREATEST(reblogs_count, 0) AS "reblogs!"
@@ -275,7 +291,7 @@ pub async fn interactions(
     }
     .to_value();
     document["@context"] = json!(ACTIVITY_STREAMS);
-    Ok(document)
+    Ok((document, distributable))
 }
 
 /// Which of a post's interactions.
@@ -286,7 +302,10 @@ pub enum Interactions {
 }
 
 /// The local conversation `/contexts/{account}-{status}` names: one of ours
-/// (no `uri`) started by that post.
+/// (no `uri`) started by that post. When there is none,
+/// `ActivityPub::ContextsController` fails on the `nil` it found
+/// (`@conversation.statuses`), a 500, and so does this; an id that is not
+/// two numbers is not routed there, a 404.
 async fn local_conversation(state: &AppState, id: &str) -> AppResult<(i64, i64, i64)> {
     let (account_id, status_id) = id
         .split_once('-')
@@ -301,7 +320,11 @@ async fn local_conversation(state: &AppState, id: &str) -> AppResult<(i64, i64, 
     )
     .fetch_optional(&state.db)
     .await?
-    .ok_or(AppError::NotFound)?;
+    .ok_or_else(|| {
+        AppError::Internal(anyhow::anyhow!(
+            "no local conversation {account_id}-{status_id}, as Mastodon fails on it"
+        ))
+    })?;
     Ok((conversation, account_id, status_id))
 }
 

@@ -138,52 +138,142 @@ pub async fn load_local_account(
     account.ok_or(AppError::NotFound)
 }
 
-/// The author of the local post `id`, when the post may be served to
-/// anyone: `who`'s own, public or unlisted, and not deleted, by an account
-/// that is still there (`@account.statuses.find`, and `StatusPolicy#show?`
-/// for a reader who may be anyone). Private and direct posts are not served
-/// over ActivityPub GET.
+/// Who signed a request, as an account eunha knows: Mastodon's
+/// `signed_request_account`, the `current_account` its policies ask about.
+#[derive(Clone, Debug)]
+pub struct Reader {
+    pub id: i64,
+    pub domain: Option<String>,
+}
+
+/// The account whose actor is `signer`, if eunha knows it.
+pub(crate) async fn reader(state: &AppState, signer: Option<&str>) -> AppResult<Option<Reader>> {
+    let Some(signer) = signer else {
+        return Ok(None);
+    };
+    Ok(sqlx::query!(
+        "SELECT id, domain FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
+        signer,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .map(|r| Reader {
+        id: r.id,
+        domain: r.domain,
+    }))
+}
+
+/// A local post that may be served, and what its serving depends on.
+pub(crate) struct Servable {
+    pub account: crate::db::models::Account,
+    pub visibility: i32,
+    pub reblog_of_id: Option<i64>,
+    /// `@status.quote&.pending?`.
+    pub quote_pending: bool,
+}
+
+impl Servable {
+    /// `Status#distributable?`: public or unlisted.
+    pub fn distributable(&self) -> bool {
+        matches!(
+            self.visibility,
+            crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+        )
+    }
+}
+
+/// `StatusPolicy#show?` for `reader`, who may be no one: a direct or limited
+/// post to whoever it mentions, a followers-only one to its author's
+/// followers too, and any other to everyone but whom its author blocks or
+/// whose domain it blocks. Nothing of an unavailable author's.
+pub(crate) async fn may_show(
+    state: &AppState,
+    author_id: i64,
+    status_id: i64,
+    visibility: i32,
+    reader: Option<&Reader>,
+) -> AppResult<bool> {
+    use crate::db::models::vis;
+    let mentioned = |reader: &Reader| {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM mentions WHERE status_id = $1 AND account_id = $2) AS "e!""#,
+            status_id,
+            reader.id,
+        )
+        .fetch_one(&state.db)
+    };
+    Ok(match visibility {
+        vis::DIRECT | vis::LIMITED => match reader {
+            Some(reader) => reader.id == author_id || mentioned(reader).await?,
+            None => false,
+        },
+        vis::PRIVATE => match reader {
+            Some(reader) => {
+                reader.id == author_id
+                    || sqlx::query_scalar!(
+                        r#"SELECT EXISTS (SELECT 1 FROM follows
+                                          WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+                        reader.id,
+                        author_id,
+                    )
+                    .fetch_one(&state.db)
+                    .await?
+                    || mentioned(reader).await?
+            }
+            None => false,
+        },
+        _ => match reader {
+            Some(reader) => {
+                let blocked = sqlx::query_scalar!(
+                    r#"SELECT (EXISTS (SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2)
+                               OR EXISTS (SELECT 1 FROM account_domain_blocks
+                                          WHERE account_id = $1 AND domain = $3)) AS "b!""#,
+                    author_id,
+                    reader.id,
+                    reader.domain,
+                )
+                .fetch_one(&state.db)
+                .await?;
+                !blocked
+            }
+            None => true,
+        },
+    })
+}
+
+/// The local post `id` of `who`'s, when `reader` may be shown it
+/// (`@account.statuses.find` and `authorize @status, :show?`).
 pub(crate) async fn servable_status(
     state: &AppState,
     who: AccountRef<'_>,
     id: i64,
-) -> AppResult<crate::db::models::Account> {
+    reader: Option<&Reader>,
+) -> AppResult<Servable> {
     let account = load_local_account(state, who).await?;
-    // An unavailable account's objects are not dereferenceable, matching
-    // `StatusPolicy#show?` on the REST side.
+    // `StatusPolicy#show?`: nothing of an unavailable author's.
     if account.is_unavailable() {
         return Err(AppError::NotFound);
     }
-    let owner_ok = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-             SELECT 1 FROM statuses s
-             WHERE s.id = $1 AND s.account_id = $2
-               AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
-           )"#,
+    let status = sqlx::query!(
+        r#"SELECT s.visibility, s.reblog_of_id,
+                  EXISTS (SELECT 1 FROM quotes q WHERE q.status_id = s.id AND q.state = 0) AS "quote_pending!"
+           FROM statuses s
+           WHERE s.id = $1 AND s.account_id = $2 AND s.deleted_at IS NULL"#,
         id,
         account.id,
     )
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await?
-    .unwrap_or(false);
-    if !owner_ok {
+    .ok_or(AppError::NotFound)?;
+    if !may_show(state, account.id, id, status.visibility, reader).await? {
         return Err(AppError::NotFound);
     }
-    Ok(account)
-}
-
-/// Load a status bundle, enforcing that it belongs to the addressed account and
-/// is publicly dereferenceable (public or unlisted), as [`servable_status`].
-pub(crate) async fn status_bundle(
-    state: &AppState,
-    domain: &str,
-    who: AccountRef<'_>,
-    id: i64,
-) -> AppResult<super::note::NoteBundle> {
-    servable_status(state, who, id).await?;
-    super::note::build_note(state, domain, id)
-        .await?
-        .ok_or(AppError::NotFound)
+    Ok(Servable {
+        account,
+        visibility: status.visibility,
+        reblog_of_id: status.reblog_of_id,
+        quote_pending: status.quote_pending,
+    })
 }
 
 /// A local account's profile hashtags (`Account#tags`, the `accounts_tags`

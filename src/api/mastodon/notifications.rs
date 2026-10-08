@@ -467,7 +467,7 @@ pub async fn get_notifications(
             }
             map.insert(s.id, api);
         }
-        hydrate_status_stats(&state, map.values_mut()).await;
+        hydrate_status_stats(&state, map.values_mut(), auth.account_id).await;
         map
     } else {
         std::collections::HashMap::new()
@@ -967,7 +967,7 @@ pub async fn get_notifications_v2(
             }
             map.insert(s.id, api);
         }
-        hydrate_status_stats(&state, map.values_mut()).await;
+        hydrate_status_stats(&state, map.values_mut(), auth.account_id).await;
         map
     } else {
         std::collections::HashMap::new()
@@ -1644,7 +1644,7 @@ pub async fn get_notification_requests(
             }
             last_status_map.insert(s.id, api);
         }
-        hydrate_status_stats(&state, last_status_map.values_mut()).await;
+        hydrate_status_stats(&state, last_status_map.values_mut(), auth.account_id).await;
     }
 
     // Batch-fetch account emojis/roles for notification request senders

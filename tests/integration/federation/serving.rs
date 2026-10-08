@@ -57,15 +57,16 @@ async fn test_a_browser_is_sent_to_the_page() {
         assert_eq!(resp.headers()["location"], page.as_str(), "{path}");
         assert_eq!(resp.headers()["vary"], "Accept", "{path}");
     }
+    // What `AccountsController` varies by.
     let resp = ctx.api.ap_get("/users/alice", None).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers()["vary"], "Accept");
+    assert_eq!(resp.headers()["vary"], "Accept, Accept-Language, Cookie");
 }
 
-/// The outbox links its pages by cursor, newest first, each item the
-/// `Create` that posted it.
+/// The outbox links its pages as `OutboxesController` does, newest first,
+/// each item the `Create` that posted it.
 #[tokio::test]
-async fn test_the_outbox_is_paged_by_cursor() {
+async fn test_the_outbox_is_paged_as_mastodon_pages_it() {
     let ctx = TestContext::new("serving-outbox").await;
     for text in ["first", "second"] {
         let resp = ctx
@@ -105,15 +106,16 @@ async fn test_the_outbox_is_paged_by_cursor() {
         .unwrap()
         .contains("second"));
 
-    // Past the oldest status there is nothing.
-    let older: Value = ctx
+    // A page short of twenty is the last; the newer ones are above it.
+    assert!(page.get("next").is_none(), "{page}");
+    let newer: Value = ctx
         .api
-        .ap_get(&path_of(page["next"].as_str().unwrap()), None)
+        .ap_get(&path_of(page["prev"].as_str().unwrap()), None)
         .await
         .json()
         .await
         .unwrap();
-    assert_eq!(older["orderedItems"], json!([]));
+    assert_eq!(newer["orderedItems"], json!([]));
 }
 
 /// Mastodon serves an account under both of its URI schemes, and names its

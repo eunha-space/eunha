@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tagged_objects (status_id, object_type, object_id, ap_type, uri, created_at, updated_at)\n           VALUES ($1, 'Collection', $2, 'FeaturedCollection', $3, now(), now())\n           ON CONFLICT (status_id, object_type, object_id)\n             WHERE object_type IS NOT NULL AND object_id IS NOT NULL\n             DO UPDATE SET ap_type = 'FeaturedCollection', updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1f067dc76a47c5074c092777da0d9ff63fc4df4d2aa9726bc5f5813ee0a8f27"
+}

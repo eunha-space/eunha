@@ -17,6 +17,7 @@ mod objects;
 mod ownership;
 mod private_addresses;
 mod quote;
+mod served_to_signers;
 mod serving;
 mod signature;
 mod signature_rfc9421;

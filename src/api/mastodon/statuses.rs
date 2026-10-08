@@ -374,7 +374,7 @@ pub async fn get_statuses_batch(
     }
     indexed.sort_by_key(|(i, _)| *i);
     let mut out: Vec<Status> = indexed.into_iter().map(|(_, s)| s).collect();
-    hydrate_status_stats(&state, out.iter_mut()).await;
+    hydrate_status_stats(&state, out.iter_mut(), viewer_id).await;
     Ok(Json(out))
 }
 

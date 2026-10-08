@@ -833,7 +833,7 @@ async fn build_status_list(
         }
         result.push(api);
     }
-    hydrate_status_stats(state, result.iter_mut()).await;
+    hydrate_status_stats(state, result.iter_mut(), viewer_id).await;
     Ok(result)
 }
 

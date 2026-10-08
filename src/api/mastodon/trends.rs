@@ -351,7 +351,7 @@ pub(crate) async fn statuses_query(
         }
         result.push(api);
     }
-    hydrate_status_stats(&state, result.iter_mut()).await;
+    hydrate_status_stats(&state, result.iter_mut(), viewer_id).await;
 
     Ok(result
         .into_iter()

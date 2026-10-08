@@ -786,7 +786,7 @@ pub async fn build_status_with_app(
         rb.poll = fetch_status_poll(state, rid, None).await?;
         rb.card = fetch_status_card(state, rid, viewer_account_id).await;
     }
-    hydrate_status_stats(state, std::iter::once(&mut api)).await;
+    hydrate_status_stats(state, std::iter::once(&mut api), viewer_account_id).await;
     Ok(api)
 }
 
@@ -861,7 +861,9 @@ pub async fn batch_status_stats(
 pub async fn hydrate_status_stats<'a>(
     state: &AppState,
     statuses: impl IntoIterator<Item = &'a mut super::types::Status>,
+    viewer: impl Into<Option<i64>>,
 ) {
+    let viewer = viewer.into();
     let mut refs: Vec<&mut super::types::Status> = statuses.into_iter().collect();
     let mut account_ids: Vec<i64> = Vec::new();
     let mut status_ids: Vec<i64> = Vec::new();
@@ -885,7 +887,7 @@ pub async fn hydrate_status_stats<'a>(
     let account_stats = batch_account_stats(state, &account_ids).await;
     let status_stats = batch_status_stats(state, &status_ids).await;
     let noindex = super::accounts::batch_noindex(state, &account_ids).await;
-    let tagged_collections = super::collections::tagged_collections(state, &status_ids)
+    let tagged_collections = super::collections::tagged_collections(state, &status_ids, viewer)
         .await
         .unwrap_or_default();
     // `AccountSerializer#email_subscriptions`, while the feature is enabled.

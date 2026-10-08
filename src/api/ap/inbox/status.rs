@@ -901,6 +901,8 @@ pub(super) async fn handle_update(
                     tracing::warn!(%error, "could not move an edited status's featured tags");
                 }
             }
+            // `update_tagged_objects!`.
+            crate::federation::tagged_collections::update(state, row.id, object).await;
             // An edit: `update_index('statuses', :proper)`.
             crate::search::elasticsearch::indexing::status(state, row.id).await;
 

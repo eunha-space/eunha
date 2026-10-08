@@ -318,7 +318,7 @@ pub async fn get_status_context(
                 }
                 result.push(api);
             }
-            hydrate_status_stats(&state, result.iter_mut()).await;
+            hydrate_status_stats(&state, result.iter_mut(), viewer_id).await;
             Ok(result)
         }
     };

@@ -214,7 +214,7 @@ pub async fn get_bookmarks(
         }
         result.push(api);
     }
-    hydrate_status_stats(&state, result.iter_mut()).await;
+    hydrate_status_stats(&state, result.iter_mut(), auth.account_id).await;
 
     // Link header cursors use sort_ids (bookmark creation order), not status IDs.
     let bounds = sort_ids

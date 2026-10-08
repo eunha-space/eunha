@@ -382,7 +382,7 @@ async fn build_response(
             }
             result.push(api);
         }
-        hydrate_status_stats(state, result.iter_mut()).await;
+        hydrate_status_stats(state, result.iter_mut(), viewer_id).await;
         result
     };
 

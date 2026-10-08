@@ -37,10 +37,7 @@ pub fn hashtag(domain: &str, username: &str, tag_name: &str, display_name: &str)
 /// as it was featured, or else the tag's.
 #[must_use]
 pub fn display_name(featured: Option<&str>, tag_display: Option<&str>, tag_name: &str) -> String {
-    featured
-        .or(tag_display.filter(|d| !d.is_empty()))
-        .unwrap_or(tag_name)
-        .to_owned()
+    featured.or(tag_display).unwrap_or(tag_name).to_owned()
 }
 
 /// The hashtags `account_id` features, in the order they were featured.

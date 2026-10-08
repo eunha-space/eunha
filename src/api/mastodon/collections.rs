@@ -239,11 +239,12 @@ pub(crate) async fn render(
 
 /// `REST::StatusSerializer#tagged_collections` for each of `status_ids`:
 /// the collections its `tagged_objects` name (`FeaturedCollection`s), as
-/// `REST::CollectionSerializer` writes them, for a reader who is no one in
-/// particular.
+/// `REST::CollectionSerializer` writes them for the account `viewer`,
+/// who reads them: their owner sees pending items too.
 pub(crate) async fn tagged_collections(
     state: &AppState,
     status_ids: &[i64],
+    viewer: Option<i64>,
 ) -> AppResult<std::collections::HashMap<i64, Vec<Value>>> {
     let mut by_status: std::collections::HashMap<i64, Vec<Value>> =
         std::collections::HashMap::new();
@@ -266,7 +267,7 @@ pub(crate) async fn tagged_collections(
             by_status
                 .entry(row.status_id)
                 .or_default()
-                .push(collection_entity(state, domain, &c, None).await?);
+                .push(collection_entity(state, domain, &c, viewer).await?);
         }
     }
     Ok(by_status)

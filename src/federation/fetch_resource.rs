@@ -167,7 +167,7 @@ fn mime_type(content_type: &str) -> String {
 }
 
 /// `JsonLdHelper#supported_context?`.
-fn supported_context(json: &Value) -> bool {
+pub(crate) fn supported_context(json: &Value) -> bool {
     match json.get("@context") {
         Some(Value::String(s)) => s == AS_CONTEXT,
         Some(Value::Array(items)) => items.iter().any(|v| v.as_str() == Some(AS_CONTEXT)),

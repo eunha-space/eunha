@@ -602,7 +602,9 @@ pub async fn patch_profile(
 
     let domain = &instance.domain;
     let featured_tag_rows = sqlx::query!(
-        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at
+        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
+                  -- `FeaturedTag#display_name`
+                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!"
            FROM featured_tags ft
            JOIN tags t ON t.id = ft.tag_id
            WHERE ft.account_id = $1
@@ -616,7 +618,7 @@ pub async fn patch_profile(
         .into_iter()
         .map(|r| crate::api::mastodon::types::FeaturedTag {
             id: r.id.to_string(),
-            name: r.name.clone(),
+            name: r.display_name,
             url: format!("https://{}/@{}/tagged/{}", domain, account.username, r.name),
             statuses_count: r.statuses_count.to_string(),
             last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),
@@ -774,7 +776,9 @@ async fn build_profile(
 
     let domain = &domain.to_string();
     let featured_tag_rows = sqlx::query!(
-        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at
+        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
+                  -- `FeaturedTag#display_name`
+                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!"
            FROM featured_tags ft
            JOIN tags t ON t.id = ft.tag_id
            WHERE ft.account_id = $1
@@ -788,7 +792,7 @@ async fn build_profile(
         .into_iter()
         .map(|r| crate::api::mastodon::types::FeaturedTag {
             id: r.id.to_string(),
-            name: r.name.clone(),
+            name: r.display_name,
             url: format!("https://{}/@{}/tagged/{}", domain, account.username, r.name),
             statuses_count: r.statuses_count.to_string(),
             last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),

@@ -224,7 +224,11 @@ async fn a_thread_is_served_as_its_context() {
     assert_eq!(page["items"].as_array().map(Vec::len), Some(2));
 
     let resp = ctx.api.ap_get("/contexts/1-2", None).await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        resp.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "as Mastodon fails on a conversation it does not find"
+    );
 }
 
 /// The actor names what Mastodon's names, and its featured hashtags and
@@ -470,4 +474,148 @@ async fn featuring_a_hashtag_is_announced_to_followers() {
     let removes = delivered("Remove").await;
     assert_eq!(removes.len(), 1, "{removes:?}");
     assert_eq!(removes[0]["object"]["name"].as_str(), Some("#Cats"));
+}
+
+/// The collections the status at `uri` links to, once they are `want`, or
+/// what they are when they never become it.
+async fn eventually_tagged(db: &sqlx::PgPool, uri: &str, want: Vec<i64>) {
+    let tagged = || async {
+        let mut ids: Vec<i64> = sqlx::query_scalar(
+            r#"SELECT t.object_id FROM tagged_objects t JOIN statuses s ON s.id = t.status_id
+               WHERE s.uri = $1 AND t.ap_type = 'FeaturedCollection'"#,
+        )
+        .bind(uri)
+        .fetch_all(db)
+        .await
+        .unwrap();
+        ids.sort_unstable();
+        ids
+    };
+    for _ in 0..50 {
+        if tagged().await == want {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(tagged().await, want);
+}
+
+/// `Create#process_tagged_collection` and
+/// `ProcessStatusUpdateService#update_tagged_objects!`: the collections a
+/// remote post's `FeaturedCollection` tags name are what it links to, and
+/// an edit that no longer names one drops it.
+#[tokio::test]
+async fn a_remote_post_links_to_the_collections_it_tags() {
+    let ctx = TestContext::new("ap-tagged-in").await;
+    let (priv_pem, pub_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let rob = "https://remote.invalid/users/rob";
+    let rob_id = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key,
+                                 inbox_url, outbox_url, created_at, updated_at)
+           VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, $3, $2 || '/inbox',
+                   $2 || '/outbox', now(), now())"#,
+    )
+    .bind(rob_id)
+    .bind(rob)
+    .bind(&pub_pem)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    // Alice follows rob, so that his posts are taken in.
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(rob_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let remote_collection = "https://remote.invalid/collections/7";
+    let remote_cid: i64 = sqlx::query_scalar(
+        r#"INSERT INTO collections (account_id, name, uri, local, sensitive, discoverable, created_at, updated_at)
+           VALUES ($1, 'Rob''s', $2, false, false, true, now(), now()) RETURNING id"#,
+    )
+    .bind(rob_id)
+    .bind(remote_collection)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let mine: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Alice's", "discoverable": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let local_cid: i64 = mine["collection"]["id"].as_str().unwrap().parse().unwrap();
+    let local_collection = format!(
+        "https://{}/ap/users/{}/collections/{local_cid}",
+        ctx.domain, ctx.alice_id
+    );
+
+    let note_id = format!("{rob}/statuses/1");
+    let note = |tags: Value, updated: Option<&str>| {
+        let mut note = json!({
+            "id": &note_id,
+            "type": "Note",
+            "attributedTo": rob,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "content": "<p>see these</p>",
+            "published": "2026-01-01T00:00:00Z",
+            "tag": tags,
+        });
+        if let Some(updated) = updated {
+            note["updated"] = json!(updated);
+        }
+        note
+    };
+    let send = |activity: Value| {
+        let api = &ctx.api;
+        let pem = priv_pem.clone();
+        async move {
+            let resp = api
+                .post_signed("/inbox", &activity, &format!("{rob}#main-key"), &pem)
+                .await;
+            assert!(resp.status().is_success(), "{}", resp.status());
+        }
+    };
+    send(json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{rob}/statuses/1/activity"),
+        "type": "Create",
+        "actor": rob,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": note(
+            json!([
+                {"type": "FeaturedCollection", "id": remote_collection},
+                {"type": "FeaturedCollection", "id": local_collection},
+            ]),
+            None,
+        ),
+    }))
+    .await;
+    let mut both = vec![remote_cid, local_cid];
+    both.sort_unstable();
+    eventually_tagged(&ctx.db, &note_id, both).await;
+
+    send(json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{rob}/statuses/1#updates/1"),
+        "type": "Update",
+        "actor": rob,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": note(
+            json!([{"type": "FeaturedCollection", "id": local_collection}]),
+            Some("2026-01-02T00:00:00Z"),
+        ),
+    }))
+    .await;
+    eventually_tagged(&ctx.db, &note_id, vec![local_cid]).await;
 }

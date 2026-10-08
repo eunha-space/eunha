@@ -16,13 +16,45 @@ Who may fetch what
 
 In authorized fetch mode every route below needs a signed request
 (`require_account_signature!`), except the instance actor, `/actor`, whose
-key a peer has to fetch before it can sign. A post, and its replies, likes
-and shares, is served only when it is public or unlisted, by an account that
-is still there, to a signer its author does not block (`StatusPolicy#show?`
-for a reader who may be anyone). An account's collections are not there for
-a signer the account blocks; its featured posts and hashtags are shown empty
-to one, in authorized fetch mode, as `ActivityPub::CollectionsController`
-shows them.
+key a peer has to fetch before it can sign. Whoever signed a request is the
+reader Mastodon's policies ask about, in either mode. A post, its activity,
+and its replies, likes and shares are served as `StatusPolicy#show?` allows
+that reader, by an account that is still there: a public or unlisted one to
+anyone its author does not block, by account or by domain; a followers-only
+one to a follower or an account it mentions; a direct one to an account it
+mentions. A quote's stamp is served as its quoted post is. A boost's
+activity is its `Announce`; a boost has no Note. An account's collections
+are not there for a signer the account blocks; its featured posts and
+hashtags are shown empty to one, in authorized fetch mode, as
+`ActivityPub::CollectionsController` shows them.
+
+
+How long a cache may keep them
+------------------------------
+
+Each response says what it varies by and how long it may be cached, as the
+controller that serves it in Mastodon says (`vary_by`, `expires_in`):
+
+ -  A response that asks nothing of caches is `private, no-store`, as
+    `ApplicationController#set_cache_control_defaults` makes it, and so is
+    any that varies by `Signature` and was fetched with one
+    (`CacheConcern#enforce_cache_control!`).
+ -  The actor, a post, its activity, followers, following, collections and
+    their items vary by `Accept, Accept-Language, Cookie`, and by `Signature`
+    in authorized fetch mode. Replies, likes, shares, featured posts and
+    hashtags, threads and stamps vary by `Signature` in authorized fetch mode
+    alone, and an outbox page whenever it is a page. The instance actor varies
+    by nothing.
+ -  An actor is kept three minutes, publicly unless it was fetched signed in
+    authorized fetch mode; a public or unlisted post three minutes (five
+    seconds while its quote is pending), and its activity three minutes,
+    publicly only then and in public fetch mode; replies, likes and shares
+    not at all; featured posts and hashtags, threads, an outbox and a
+    collection item three minutes; an outbox page a minute, publicly only
+    unsigned; a paged collection's pages not at all; a collection thirty
+    seconds after a change and five minutes otherwise; a stamp thirty
+    seconds; the instance actor ten minutes. “Publicly” is in public fetch
+    mode, unless it says otherwise.
 
 
 The actor
@@ -68,12 +100,19 @@ and `atomUri`, as `ActivityPub::NoteSerializer` does, and each is served:
  -  `/contexts/{account}-{status}` and its `items`: a thread started here,
     named by the post that started it, which a post that answers nothing
     becomes (`Status#update_conversation`), with its public and unlisted
-    posts sixty to a page, each by its URI.
+    posts sixty to a page, each by its URI. A context of two numbers with no
+    conversation behind it is a 500, as Mastodon fails on it.
 
 
 An account's collections
 ------------------------
 
+ -  `…/outbox`: its posts and boosts, newest first, twenty to a page, each as
+    the `Create` or `Announce` that posted it, as `AccountStatusesFilter`
+    picks them for the signer (its followers-only posts to a follower, and
+    any that mention the signer). Pages are `?page=true`, `?max_id=…&page=true`
+    and `?min_id=…&page=true`, as `OutboxesController` writes them, the last
+    being the one up from `min_id=0`.
  -  `…/collections/featured`: its pinned posts, newest pin first, a public or
     unlisted one embedded and any other named.
  -  `…/collections/tags`: the hashtags it features, each linking to its posts
@@ -85,7 +124,8 @@ An account's collections
     account consented to being in one at
     `/ap/users/{id}/feature_authorizations/{i}`.
 
-Eunha still answers at `/users/{username}/collections` and
+Eunha issues stamps at the `/ap/users/{id}` address, as Mastodon does, and
+still answers at `/users/{username}/collections` and
 `/users/{username}/feature_authorizations/{i}`, where it named these before;
 *divergences.toml* records why.
 
@@ -107,8 +147,12 @@ Collections a post links to
 ---------------------------
 
 A status's `tagged_collections` in the REST API are the collections its
-`tagged_objects` name, as `REST::CollectionSerializer` writes them. Mastodon
-4.7.1 never makes one for a local post (`ProcessLinksService` is never
-called). It makes a remote post's as its `Create` is processed, resolving an
-unknown collection later (`TaggedCollectionResolveWorker`); eunha does not
-yet, so it shows only the ones a Mastodon on the same database made.
+`tagged_objects` name, as `REST::CollectionSerializer` writes them for the
+reader: the collection's owner sees its pending items too. Mastodon 4.7.1
+never makes one for a local post (`ProcessLinksService` is never called). A
+remote post's are the collections its `FeaturedCollection` tags name, ours
+or a known account's, fetched when unknown
+(`FetchRemoteFeaturedCollectionService`), as its `Create` is processed and
+again when it is edited (`update_tagged_objects!`), which drops those it no
+longer names. One that could not be reached is tried again half a minute to
+ten minutes later (`TaggedCollectionResolveWorker`).

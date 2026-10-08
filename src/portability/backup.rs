@@ -598,7 +598,7 @@ async fn dump_outbox(state: &AppState, archive: &mut Archive, account: &Account)
 /// `TagManager#to` and `#cc` (the boosted author first in `cc`), and
 /// carrying the boosted post inline when it is one of the account's own
 /// followers-only posts, its URI otherwise.
-async fn announce_item(
+pub(crate) async fn announce_item(
     state: &AppState,
     account: &Account,
     status_id: i64,

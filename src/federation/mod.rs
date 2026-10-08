@@ -20,4 +20,5 @@ pub mod process_account;
 pub mod replies;
 pub mod tag;
 pub mod tag_manager;
+pub mod tagged_collections;
 pub mod webfinger;

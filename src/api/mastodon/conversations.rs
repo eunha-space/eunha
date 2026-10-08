@@ -251,7 +251,7 @@ pub async fn get_conversations(
             }
             enriched_map.insert(s.id, api);
         }
-        hydrate_status_stats(&state, enriched_map.values_mut()).await;
+        hydrate_status_stats(&state, enriched_map.values_mut(), auth.account_id).await;
     }
 
     let participant_roles_map = batch_account_roles(

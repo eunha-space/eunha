@@ -879,10 +879,10 @@ a consent stamp at `/ap/users/{id}/feature_authorizations/{item}`, and has no \
 `/users/{username}/collections` or \
 `/users/{username}/feature_authorizations/{item}`."""
 eunha = """
-Names and serves them where Mastodon does, and still answers at \
+Names, issues and serves them where Mastodon does, and still answers at \
 `/users/{username}/collections`, which its actors named until they named \
 `featured_collections`, and at `/users/{username}/feature_authorizations/{item}`, \
-where the stamps it has already sent in its `Accept`s are."""
+where the stamps it issued before are."""
 why = """
 Peers stored those addresses: an actor's `featuredCollections` until they next \
 refresh it, and a stamp's URI for as long as they keep the item, which they \

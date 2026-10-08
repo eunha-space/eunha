@@ -1108,9 +1108,10 @@ pub(super) async fn handle_feature_request(
     .await?;
 
     let domain = &instance.domain;
+    // `ap_account_feature_authorization_url`.
     let authorization_uri = format!(
-        "https://{domain}/users/{}/feature_authorizations/{item_id}",
-        local.username
+        "https://{domain}/ap/users/{}/feature_authorizations/{item_id}",
+        local.id
     );
     sqlx::query!(
         "UPDATE collection_items SET approval_uri = $2 WHERE id = $1",

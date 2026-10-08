@@ -71,9 +71,9 @@ pub fn federation() -> Federation<AppState> {
                 .flatten()
         })
         .actor("instance", "/actor", |ctx: Ctx, _: String| async move {
-            super::objects::instance_actor_json(ctx.data())
-                .await
-                .map(Found::Found)
+            let actor = super::objects::instance_actor_json(ctx.data()).await?;
+            expires_in(&ctx, Vary::Nothing, 600, true).await;
+            Ok::<_, AppError>(Found::Found(actor))
         })
         .object(
             "collection",
@@ -82,17 +82,7 @@ pub fn federation() -> Federation<AppState> {
                 let Some(id) = number(&values["id"]) else {
                     return Ok(Found::NotFound);
                 };
-                let signer = signer(&ctx).await;
-                found(
-                    super::collections::collection_document(
-                        ctx.data(),
-                        domain(&ctx),
-                        None,
-                        id,
-                        signer.as_deref(),
-                    )
-                    .await,
-                )
+                collection(&ctx, None, id).await
             },
         )
         .object(
@@ -102,17 +92,7 @@ pub fn federation() -> Federation<AppState> {
                 let Some(id) = number(&values["id"]) else {
                     return Ok(Found::NotFound);
                 };
-                let signer = signer(&ctx).await;
-                found(
-                    super::collections::feature_authorization_document(
-                        ctx.data(),
-                        domain(&ctx),
-                        AccountRef::Username(&values["username"]),
-                        id,
-                        signer.as_deref(),
-                    )
-                    .await,
-                )
+                feature_authorization(&ctx, AccountRef::Username(&values["username"]), id).await
             },
         )
         // What Mastodon serves only under `/ap/users/{id}`: an account's
@@ -123,11 +103,11 @@ pub fn federation() -> Federation<AppState> {
             "/ap/users/{id}/featured_collections",
             |ctx: Ctx, values: Values| async move {
                 let Some(id) = number(&values["id"]) else {
-                    return Ok(Found::NotFound);
+                    return Ok::<_, AppError>(Found::NotFound);
                 };
                 let signer = signer(&ctx).await;
                 let page = ctx.query_value("page");
-                found(
+                let document = found(
                     super::collections::featured_collections(
                         ctx.data(),
                         domain(&ctx),
@@ -136,7 +116,14 @@ pub fn federation() -> Federation<AppState> {
                         signer.as_deref(),
                     )
                     .await,
-                )
+                )?;
+                if matches!(document, Found::Found(_)) {
+                    // `expires_in(page_requested? ? 0 : 3.minutes, public: public_fetch_mode?)`.
+                    let requested = page.is_some_and(|page| !page.is_empty());
+                    let public = public_fetch_mode(&ctx).await;
+                    expires_in(&ctx, Vary::Page, if requested { 0 } else { 180 }, public).await;
+                }
+                Ok(document)
             },
         )
         .object(
@@ -148,17 +135,7 @@ pub fn federation() -> Federation<AppState> {
                 else {
                     return Ok(Found::NotFound);
                 };
-                let signer = signer(&ctx).await;
-                found(
-                    super::collections::collection_document(
-                        ctx.data(),
-                        domain(&ctx),
-                        Some(owner),
-                        id,
-                        signer.as_deref(),
-                    )
-                    .await,
-                )
+                collection(&ctx, Some(owner), id).await
             },
         )
         .object(
@@ -167,10 +144,10 @@ pub fn federation() -> Federation<AppState> {
             |ctx: Ctx, values: Values| async move {
                 let (Some(owner), Some(id)) = (number(&values["id"]), number(&values["item_id"]))
                 else {
-                    return Ok(Found::NotFound);
+                    return Ok::<_, AppError>(Found::NotFound);
                 };
                 let signer = signer(&ctx).await;
-                found(
+                let document = found(
                     super::collections::collection_item_document(
                         ctx.data(),
                         domain(&ctx),
@@ -179,7 +156,12 @@ pub fn federation() -> Federation<AppState> {
                         signer.as_deref(),
                     )
                     .await,
-                )
+                )?;
+                if matches!(document, Found::Found(_)) {
+                    let public = public_fetch_mode(&ctx).await;
+                    expires_in(&ctx, Vary::Page, 180, public).await;
+                }
+                Ok(document)
             },
         )
         .object(
@@ -191,34 +173,25 @@ pub fn federation() -> Federation<AppState> {
                 else {
                     return Ok(Found::NotFound);
                 };
-                let signer = signer(&ctx).await;
-                found(
-                    super::collections::feature_authorization_document(
-                        ctx.data(),
-                        domain(&ctx),
-                        AccountRef::Id(account),
-                        id,
-                        signer.as_deref(),
-                    )
-                    .await,
-                )
+                feature_authorization(&ctx, AccountRef::Id(account), id).await
             },
         )
         // A thread started here, which its posts name as their `context`
         // (`ActivityPub::ContextsController`).
         .object("context", "/contexts/{id}", |ctx: Ctx, values: Values| async move {
             let query = super::status_collections::Query::parse(ctx.query());
-            found(super::status_collections::context(ctx.data(), &values["id"], &query).await)
+            let document = super::status_collections::context(ctx.data(), &values["id"], &query).await;
+            cached_for_public(&ctx, Vary::Signature, 180, found(document)).await
         })
         .object(
             "context_items",
             "/contexts/{id}/items",
             |ctx: Ctx, values: Values| async move {
                 let query = super::status_collections::Query::parse(ctx.query());
-                found(
+                let document =
                     super::status_collections::context_items(ctx.data(), &values["id"], &query)
-                        .await,
-                )
+                        .await;
+                cached_for_public(&ctx, Vary::Signature, 180, found(document)).await
             },
         )
         // The instance actor's outbox (`Account.representative`'s).
@@ -387,7 +360,13 @@ pub fn federation() -> Federation<AppState> {
                                 return Ok(Found::Gone(None));
                             }
                         }
-                        found(super::objects::actor_json(ctx.data(), domain(&ctx), &account).await)
+                        let actor = super::objects::actor_json(ctx.data(), domain(&ctx), &account).await?;
+                        // `expires_in 3.minutes, public: !(authorized_fetch_mode? &&
+                        // signed_request_account.present?)`.
+                        let signed = ctx.signer().await.is_some();
+                        let public = !(!public_fetch_mode(&ctx).await && signed);
+                        expires_in(&ctx, Vary::Page, 180, public).await;
+                        Ok(Found::Found(actor))
                     },
                 )
                 .object(
@@ -417,14 +396,25 @@ pub fn federation() -> Federation<AppState> {
                         else {
                             return Ok(Found::NotFound);
                         };
-                        found(
-                            super::collections::quote_authorization_document(
-                                ctx.data(),
-                                who,
-                                id,
-                            )
-                            .await,
+                        let reader = reader(&ctx).await?;
+                        match super::collections::quote_authorization_document(
+                            ctx.data(),
+                            who,
+                            id,
+                            reader.as_ref(),
                         )
+                        .await
+                        {
+                            Ok((document, distributable)) => {
+                                // `expires_in 30.seconds, public: true if
+                                // @quote.quoted_status.distributable? && public_fetch_mode?`.
+                                if distributable && public_fetch_mode(&ctx).await {
+                                    expires_in(&ctx, Vary::Signature, 30, true).await;
+                                }
+                                Ok(Found::Found(document))
+                            }
+                            Err(error) => found(Err(error)),
+                        }
                     },
                 )
                 .object(
@@ -435,10 +425,10 @@ pub fn federation() -> Federation<AppState> {
                         let Some(who) = who else {
                             return Ok(Found::NotFound);
                         };
-                        found(
+                        let document =
                             super::collections::account_collections(ctx.data(), domain(&ctx), who)
-                                .await,
-                        )
+                                .await;
+                        cached_for_public(&ctx, Vary::Page, 180, found(document)).await
                     },
                 )
                 .collection(
@@ -474,10 +464,16 @@ pub fn federation() -> Federation<AppState> {
                             return Ok(Found::NotFound);
                         };
                         let query = super::status_collections::Query::parse(ctx.query());
-                        found(
-                            super::status_collections::replies(ctx.data(), who, status_id, &query)
-                                .await,
+                        let reader = reader(&ctx).await?;
+                        let document = super::status_collections::replies(
+                            ctx.data(),
+                            who,
+                            status_id,
+                            &query,
+                            reader.as_ref(),
                         )
+                        .await;
+                        of_status(&ctx, document).await
                     },
                 );
         for (kind, which) in [
@@ -491,65 +487,64 @@ pub fn federation() -> Federation<AppState> {
                     let Some((who, status_id)) = scheme.status(&values) else {
                         return Ok(Found::NotFound);
                     };
-                    found(
-                        super::status_collections::interactions(ctx.data(), who, status_id, which)
-                            .await,
+                    let reader = reader(&ctx).await?;
+                    let document = super::status_collections::interactions(
+                        ctx.data(),
+                        who,
+                        status_id,
+                        which,
+                        reader.as_ref(),
                     )
+                    .await;
+                    of_status(&ctx, document).await
                 },
             );
         }
         // Every ActivityPub controller of Mastodon's runs
-        // `require_account_signature!` in authorized fetch mode; a status is
-        // also hidden from a signer its author blocks (`StatusPolicy#show?`).
-        for kind in [
-            "actor",
-            "account_collections",
-            "outbox",
-            "followers",
-            "following",
-            "featured",
-            "featured_tags",
+        // `require_account_signature!` in authorized fetch mode, and says
+        // what its response varies by (`vary_by`) before anything else.
+        for (kind, vary) in [
+            ("actor", Vary::Page),
+            ("account_collections", Vary::Page),
+            ("outbox", Vary::Outbox),
+            ("followers", Vary::Page),
+            ("following", Vary::Page),
+            ("featured", Vary::Signature),
+            ("featured_tags", Vary::Signature),
+            ("status", Vary::Page),
+            ("status_activity", Vary::Page),
+            ("quote_authorization", Vary::Signature),
+            ("replies", Vary::Signature),
+            ("likes", Vary::Signature),
+            ("shares", Vary::Signature),
         ] {
-            builder = builder.guard(&scheme.kind(kind), |ctx: Ctx, _| async move {
+            builder = builder.guard(&scheme.kind(kind), move |ctx: Ctx, _| async move {
+                vary_by(&ctx, vary).await;
                 require_signature(&ctx).await
             });
-        }
-        // `ActivityPub::RepliesController`, `LikesController` and
-        // `SharesController` authorize the post as `StatusesController` does.
-        for kind in [
-            "status",
-            "status_activity",
-            "quote_authorization",
-            "replies",
-            "likes",
-            "shares",
-        ] {
-            builder =
-                builder.guard(
-                    &scheme.kind(kind),
-                    move |ctx: Ctx, values: Values| async move {
-                        status_guard(&ctx, scheme, &values).await
-                    },
-                );
         }
     }
     // The instance actor is exempt, as `InstanceActorsController` is: a peer
     // in authorized fetch mode has to fetch its key before it can sign.
-    for kind in [
-        "collection",
-        "feature_authorization",
-        "featured_collections",
-        "account_collection",
-        "collection_item",
-        "feature_authorization_by_id",
-        "context",
-        "context_items",
-        "instance_outbox",
+    builder = builder.guard("instance", |ctx: Ctx, _| async move {
+        vary_by(&ctx, Vary::Nothing).await;
+        Ok::<_, AppError>(Access::Allow)
+    });
+    for (kind, vary) in [
+        ("collection", Vary::Page),
+        ("feature_authorization", Vary::Signature),
+        ("featured_collections", Vary::Page),
+        ("account_collection", Vary::Page),
+        ("collection_item", Vary::Page),
+        ("feature_authorization_by_id", Vary::Signature),
+        ("context", Vary::Signature),
+        ("context_items", Vary::Signature),
+        ("instance_outbox", Vary::Outbox),
     ] {
-        builder = builder.guard(
-            kind,
-            |ctx: Ctx, _| async move { require_signature(&ctx).await },
-        );
+        builder = builder.guard(kind, move |ctx: Ctx, _| async move {
+            vary_by(&ctx, vary).await;
+            require_signature(&ctx).await
+        });
     }
     // A status's page, /@{username}/{id}, is where Mastodon also serves its
     // Note to whoever asks for ActivityPub (`statuses#show`). Anything else
@@ -675,26 +670,148 @@ async fn require_signature(ctx: &Ctx) -> AppResult<Access> {
     })
 }
 
-/// A status, as `StatusesController` serves it to ActivityPub: signed in
-/// authorized fetch mode, and not there for a signer its author blocks, or
-/// whose domain the author blocks (`StatusPolicy#show?`, with the signer as
-/// the current account).
-async fn status_guard(ctx: &Ctx, scheme: Scheme, values: &Values) -> AppResult<Access> {
-    let access = require_signature(ctx).await?;
-    if access != Access::Allow {
-        return Ok(access);
+/// What a response varies by (`vary_by`), as each of Mastodon's
+/// ActivityPub controllers says.
+#[derive(Clone, Copy)]
+enum Vary {
+    /// Nothing (`InstanceActorsController`).
+    Nothing,
+    /// `'Signature' if authorized_fetch_mode?`.
+    Signature,
+    /// `'Accept, Accept-Language, Cookie'`, and `Signature` outside public
+    /// fetch mode: the controllers that also serve a page.
+    Page,
+    /// `'Signature' if authorized_fetch_mode? || page_requested?`
+    /// (`OutboxesController`).
+    Outbox,
+}
+
+impl Vary {
+    async fn value(self, ctx: &Ctx) -> Option<&'static str> {
+        let authorized = !public_fetch_mode(ctx).await;
+        match self {
+            Self::Nothing => None,
+            Self::Signature => authorized.then_some("Signature"),
+            Self::Page => Some(if authorized {
+                "Accept, Accept-Language, Cookie, Signature"
+            } else {
+                "Accept, Accept-Language, Cookie"
+            }),
+            Self::Outbox => (authorized || outbox_page_requested(ctx)).then_some("Signature"),
+        }
     }
-    let identifier = match scheme {
-        Scheme::Username => &values["username"],
-        Scheme::Id => &values["id"],
-    };
-    let Some(owner) = scheme.account(ctx, identifier).await? else {
-        return Ok(Access::Allow);
-    };
-    if signer_blocked(ctx, owner.id).await? {
-        return Ok(Access::NotFound);
+}
+
+/// `public_fetch_mode?`: not authorized fetch mode.
+async fn public_fetch_mode(ctx: &Ctx) -> bool {
+    !crate::settings::authorized_fetch_mode(ctx.data()).await
+}
+
+/// `vary_by`, and `ApplicationController#set_cache_control_defaults`:
+/// nothing a cache may keep unless the controller says otherwise.
+async fn vary_by(ctx: &Ctx, vary: Vary) {
+    ctx.set_response_header("vary", vary.value(ctx).await);
+    ctx.set_response_header("cache-control", Some("private, no-store"));
+}
+
+/// `expires_in seconds, public:`, then `CacheConcern#enforce_cache_control!`:
+/// a response that varies by a signature the request carried is kept by no
+/// cache.
+async fn expires_in(ctx: &Ctx, vary: Vary, seconds: u32, public: bool) {
+    let signed = vary
+        .value(ctx)
+        .await
+        .is_some_and(|vary| vary.contains("Signature"))
+        && ctx.request_header("signature").is_some();
+    if signed {
+        ctx.set_response_header("cache-control", Some("private, no-store"));
+        return;
     }
-    Ok(Access::Allow)
+    let scope = if public { "public" } else { "private" };
+    ctx.set_response_header(
+        "cache-control",
+        Some(&format!("max-age={seconds}, {scope}")),
+    );
+}
+
+/// A document found, cached for `seconds`, publicly in public fetch mode.
+async fn cached_for_public(
+    ctx: &Ctx,
+    vary: Vary,
+    seconds: u32,
+    document: AppResult<Found<Value>>,
+) -> AppResult<Found<Value>> {
+    let document = document?;
+    if matches!(document, Found::Found(_)) {
+        let public = public_fetch_mode(ctx).await;
+        expires_in(ctx, vary, seconds, public).await;
+    }
+    Ok(document)
+}
+
+/// A post's replies, likes or shares: `expires_in 0, public:
+/// @status.distributable? && public_fetch_mode?`.
+async fn of_status(ctx: &Ctx, document: AppResult<(Value, bool)>) -> AppResult<Found<Value>> {
+    match document {
+        Ok((document, distributable)) => {
+            let public = distributable && public_fetch_mode(ctx).await;
+            expires_in(ctx, Vary::Signature, 0, public).await;
+            Ok(Found::Found(document))
+        }
+        Err(error) => found(Err(error)),
+    }
+}
+
+/// Who signed the request, as an account eunha knows
+/// (`signed_request_account`).
+async fn reader(ctx: &Ctx) -> AppResult<Option<super::objects::Reader>> {
+    let signer = signer(ctx).await;
+    super::objects::reader(ctx.data(), signer.as_deref()).await
+}
+
+/// `CollectionsController#show` on a collection: cached for thirty
+/// seconds when it was updated in the last quarter hour and five minutes
+/// otherwise, publicly, in public fetch mode alone.
+async fn collection(ctx: &Ctx, owner: Option<i64>, id: i64) -> AppResult<Found<Value>> {
+    let signer = signer(ctx).await;
+    match super::collections::collection_document(
+        ctx.data(),
+        domain(ctx),
+        owner,
+        id,
+        signer.as_deref(),
+    )
+    .await
+    {
+        Ok((document, updated_at)) => {
+            if public_fetch_mode(ctx).await {
+                let recent =
+                    updated_at > chrono::Utc::now().naive_utc() - chrono::Duration::minutes(15);
+                expires_in(ctx, Vary::Page, if recent { 30 } else { 300 }, true).await;
+            }
+            Ok(Found::Found(document))
+        }
+        Err(error) => found(Err(error)),
+    }
+}
+
+/// `ActivityPub::FeatureAuthorizationsController#show`: `expires_in
+/// 30.seconds, public: true if public_fetch_mode?`.
+async fn feature_authorization(ctx: &Ctx, who: AccountRef<'_>, id: i64) -> AppResult<Found<Value>> {
+    let signer = signer(ctx).await;
+    let document = super::collections::feature_authorization_document(
+        ctx.data(),
+        domain(ctx),
+        who,
+        id,
+        signer.as_deref(),
+    )
+    .await;
+    let document = found(document)?;
+    if matches!(document, Found::Found(_)) && public_fetch_mode(ctx).await {
+        expires_in(ctx, Vary::Signature, 30, true).await;
+    }
+    Ok(document)
 }
 
 /// Whether the verified signer of the request is an account `owner_id`
@@ -951,28 +1068,84 @@ impl<'a> AccountUris<'a> {
     }
 }
 
+/// `StatusesController#show` and `#activity`: a post that the signer, if
+/// any, may be shown (`StatusPolicy#show?`), as its Note, or as the
+/// activity that posted it: its `Create`, or a boost's `Announce`.
 async fn status(
     ctx: &Ctx,
     scheme: Scheme,
     values: &Values,
     activity: bool,
 ) -> AppResult<Found<Value>> {
-    let identifier = match scheme {
-        Scheme::Username => &values["username"],
-        Scheme::Id => &values["id"],
-    };
-    let (Some(who), Some(status_id)) = (scheme.who(identifier), number(&values["status_id"]))
-    else {
+    let Some((who, status_id)) = scheme.status(values) else {
         return Ok(Found::NotFound);
     };
-    let bundle = super::objects::status_bundle(ctx.data(), domain(ctx), who, status_id).await;
-    found(bundle.map(|bundle| {
-        if activity {
-            bundle.into_create()
-        } else {
-            bundle.into_note()
+    let reader = reader(ctx).await?;
+    let servable =
+        match super::objects::servable_status(ctx.data(), who, status_id, reader.as_ref()).await {
+            Ok(servable) => servable,
+            Err(error) => return found(Err(error)),
+        };
+    let public = servable.distributable() && public_fetch_mode(ctx).await;
+    let document = match servable.reblog_of_id {
+        // A boost's page is the boosted post's (`redirect_to_original`),
+        // which is no ActivityPub document.
+        Some(_) if !activity => return Ok(Found::NotFound),
+        Some(reblog_of_id) => {
+            let row = sqlx::query!(
+                "SELECT visibility, created_at FROM statuses WHERE id = $1",
+                status_id,
+            )
+            .fetch_one(&ctx.data().db)
+            .await?;
+            let Some(mut announce) = crate::portability::backup::announce_item(
+                ctx.data(),
+                &servable.account,
+                status_id,
+                reblog_of_id,
+                row.visibility,
+                row.created_at,
+            )
+            .await?
+            else {
+                return Ok(Found::NotFound);
+            };
+            let context = if announce["object"].is_object() {
+                super::note::note_context()
+            } else {
+                json!("https://www.w3.org/ns/activitystreams")
+            };
+            if let Some(members) = announce.as_object_mut() {
+                let mut with_context = serde_json::Map::new();
+                with_context.insert("@context".into(), context);
+                with_context.append(members);
+                *members = with_context;
+            }
+            announce
         }
-    }))
+        None => {
+            let Some(bundle) = super::note::build_note(ctx.data(), domain(ctx), status_id).await?
+            else {
+                return Ok(Found::NotFound);
+            };
+            if activity {
+                bundle.into_create()
+            } else {
+                bundle.into_note()
+            }
+        }
+    };
+    if activity {
+        // `expires_in 3.minutes, public: @status.distributable? &&
+        // public_fetch_mode?`.
+        expires_in(ctx, Vary::Page, 180, public).await;
+    } else if public {
+        // `expires_in @status.quote&.pending? ? 5.seconds : 3.minutes,
+        // public: true if @status.distributable? && public_fetch_mode?`.
+        let seconds = if servable.quote_pending { 5 } else { 180 };
+        expires_in(ctx, Vary::Page, seconds, true).await;
+    }
+    Ok(Found::Found(document))
 }
 
 /// An outbox cursor: the newest page, or the page before or after a status.
@@ -997,9 +1170,45 @@ impl OutboxCursor {
     }
 }
 
-/// A page of the outbox of the local account `account_id`: its own public
-/// and unlisted statuses, newest first, twenty to a page, as the `Create`
-/// activities that posted them; boosts are not in it.
+/// `OutboxesController::LIMIT`.
+const OUTBOX_PAGE: i64 = 20;
+
+/// Whether an outbox request asks for a page (`truthy_param?(:page)`).
+fn outbox_page_requested(ctx: &Ctx) -> bool {
+    super::status_collections::Query::parse(ctx.query()).truthy("page")
+}
+
+/// The query an outbox cursor is written as, as `outbox_url(page: true,
+/// …)` writes it: `page=true`, with the `max_id` or `min_id` it pages from.
+fn outbox_query(cursor: &str) -> String {
+    match cursor.split_once(':') {
+        Some(("max", id)) => format!("max_id={id}&page=true"),
+        Some(("min", id)) => format!("min_id={id}&page=true"),
+        _ => "page=true".to_owned(),
+    }
+}
+
+/// The cursor an outbox request asks for: none without `page`, and
+/// otherwise the `max_id` or `min_id` it gives, or the newest page.
+fn outbox_cursor(query: &str) -> Option<String> {
+    let query = super::status_collections::Query::parse(Some(query));
+    if !query.truthy("page") {
+        return None;
+    }
+    if let Some(id) = query.number("max_id") {
+        return Some(format!("max:{id}"));
+    }
+    if let Some(id) = query.number("min_id") {
+        return Some(format!("min:{id}"));
+    }
+    Some(String::new())
+}
+
+/// A page of the outbox of the local account `account_id`, as
+/// `OutboxesController` pages `AccountStatusesFilter`'s results for the
+/// signer: its public and unlisted posts and boosts, its followers-only
+/// ones too to a follower, and any that mention the signer, twenty to a
+/// page, newest first, each as the `Create` or `Announce` that posted it.
 async fn outbox_page(ctx: &Ctx, account_id: i64, cursor: Option<&str>) -> AppResult<Option<Page>> {
     let Some(cursor) = OutboxCursor::parse(cursor.unwrap_or_default()) else {
         return Ok(None);
@@ -1009,39 +1218,94 @@ async fn outbox_page(ctx: &Ctx, account_id: i64, cursor: Option<&str>) -> AppRes
         OutboxCursor::Below(id) => (Some(id), None),
         OutboxCursor::Above(id) => (None, Some(id)),
     };
-    // `AccountStatusesFilter#blocked?`: a signer the account blocks sees
-    // none of it.
-    if signer_blocked(ctx, account_id).await? {
+    // `expires_in(1.minute, public: public_fetch_mode? &&
+    // signed_request_account.nil?)`.
+    let reader = reader(ctx).await?;
+    let public = public_fetch_mode(ctx).await && ctx.signer().await.is_none();
+    expires_in(ctx, Vary::Outbox, 60, public).await;
+    let state = ctx.data();
+    let owner = sqlx::query!(
+        r#"SELECT (suspended_at IS NOT NULL OR requested_deletion_at IS NOT NULL) AS "unavailable!"
+           FROM accounts WHERE id = $1"#,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    // `AccountStatusesFilter`: nothing of an unavailable account's, nor for
+    // a signer it blocks.
+    if owner.is_none_or(|owner| owner.unavailable) || signer_blocked(ctx, account_id).await? {
         return Ok(Some(Page::default()));
     }
-    let state = ctx.data();
-    let status_ids: Vec<i64> = sqlx::query_scalar!(
-        r#"SELECT s.id
+    let reader_id = reader.as_ref().map(|reader| reader.id);
+    let mut rows = sqlx::query!(
+        r#"SELECT s.id, s.reblog_of_id, s.visibility, s.created_at
            FROM statuses s
-           WHERE s.account_id = $1
-             AND s.deleted_at IS NULL
-             AND s.reblog_of_id IS NULL
-             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
-             AND ($2::bigint IS NULL OR s.id < $2)
-             AND ($3::bigint IS NULL OR s.id > $3)
-           ORDER BY s.id DESC
-           LIMIT 20"#,
+           WHERE s.account_id = $1 AND s.deleted_at IS NULL
+             AND (s.visibility IN (0, 1) /* distributable_visibility */
+                  OR ($2::bigint IS NOT NULL
+                      AND ((s.visibility = 2 AND EXISTS (SELECT 1 FROM follows
+                                WHERE account_id = $2 AND target_account_id = $1))
+                           OR EXISTS (SELECT 1 FROM mentions m
+                                      WHERE m.status_id = s.id AND m.account_id = $2))))
+             -- `filtered_reblogs_scope`: no boost of whom the signer
+             -- blocks, is blocked by or mutes, nor of a domain it blocks.
+             AND (s.reblog_of_id IS NULL OR $2::bigint IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM statuses r JOIN accounts ra ON ra.id = r.account_id
+                   WHERE r.id = s.reblog_of_id
+                     AND (EXISTS (SELECT 1 FROM blocks b WHERE (b.account_id = $2 AND b.target_account_id = ra.id)
+                                                            OR (b.account_id = ra.id AND b.target_account_id = $2))
+                          OR EXISTS (SELECT 1 FROM mutes mu WHERE mu.account_id = $2 AND mu.target_account_id = ra.id)
+                          OR (ra.domain IS NOT NULL AND EXISTS (SELECT 1 FROM account_domain_blocks d
+                                                                WHERE d.account_id = $2 AND d.domain = ra.domain)))))
+             AND ($3::bigint IS NULL OR s.id < $3)
+             AND ($4::bigint IS NULL OR s.id > $4)
+           -- `paginate_by_min_id` reads up from `min_id`, the others down.
+           ORDER BY CASE WHEN $4::bigint IS NULL THEN -s.id ELSE s.id END
+           LIMIT $5"#,
         account_id,
+        reader_id,
         max_id,
         min_id,
+        OUTBOX_PAGE,
     )
     .fetch_all(&state.db)
     .await?;
-    let mut items = Vec::with_capacity(status_ids.len());
-    for id in &status_ids {
-        if let Some(bundle) = super::note::build_note(state, domain(ctx), *id).await? {
-            items.push(bundle.into_create());
+    if min_id.is_some() {
+        rows.reverse();
+    }
+    let account = load_local_account(state, AccountRef::Id(account_id)).await?;
+    let mut items = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let item = match row.reblog_of_id {
+            Some(reblog_of_id) => {
+                crate::portability::backup::announce_item(
+                    state,
+                    &account,
+                    row.id,
+                    reblog_of_id,
+                    row.visibility,
+                    row.created_at,
+                )
+                .await?
+            }
+            None => super::note::build_note(state, domain(ctx), row.id)
+                .await?
+                .map(super::note::NoteBundle::into_create),
+        };
+        if let Some(mut item) = item {
+            // An item embedded in the collection, without its own context.
+            if let Some(members) = item.as_object_mut() {
+                members.remove("@context");
+            }
+            items.push(item);
         }
     }
     Ok(Some(Page {
         items,
-        next: status_ids.last().map(|id| format!("max:{id}")),
-        prev: status_ids.first().map(|id| format!("min:{id}")),
+        next: (rows.len() as i64 == OUTBOX_PAGE)
+            .then(|| rows.last().map(|row| format!("max:{}", row.id)))
+            .flatten(),
+        prev: rows.first().map(|row| format!("min:{}", row.id)),
     }))
 }
 
@@ -1058,48 +1322,73 @@ async fn statuses_count(ctx: &Ctx, account_id: i64) -> AppResult<u64> {
     Ok(u64::try_from(count).unwrap_or(0))
 }
 
+/// An outbox's documents as `ActivityPub::OutboxSerializer` writes them:
+/// paged as Mastodon pages them, its last page the one up from nought, and
+/// its context the embedded posts'.
+fn outbox_documents(collection: Collection<AppState>) -> Collection<AppState> {
+    collection
+        .page_query(outbox_query, outbox_cursor)
+        .last_cursor(|_, _| async { Ok::<_, AppError>(Some("min:0".to_owned())) })
+        .context(|items| {
+            if items.is_empty() {
+                json!("https://www.w3.org/ns/activitystreams")
+            } else {
+                super::note::note_context()
+            }
+        })
+}
+
+/// The collection itself: `expires_in 3.minutes, public: public_fetch_mode?`.
+async fn outbox_first(ctx: &Ctx) -> First {
+    let public = public_fetch_mode(ctx).await;
+    expires_in(ctx, Vary::Outbox, 180, public).await;
+    First::At(String::new())
+}
+
 /// An account's outbox ([`outbox_page`]).
 fn outbox(scheme: Scheme) -> Collection<AppState> {
-    Collection::new(
-        move |ctx: Ctx, identifier: String, cursor: Option<String>| async move {
+    outbox_documents(
+        Collection::new(
+            move |ctx: Ctx, identifier: String, cursor: Option<String>| async move {
+                let Some(account) = scheme.account(&ctx, &identifier).await? else {
+                    return Ok::<_, AppError>(None);
+                };
+                outbox_page(&ctx, account.id, cursor.as_deref()).await
+            },
+        )
+        .count(move |ctx: Ctx, identifier: String| async move {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
-            outbox_page(&ctx, account.id, cursor.as_deref()).await
-        },
+            Ok(Some(statuses_count(&ctx, account.id).await?))
+        })
+        .first_cursor(move |ctx: Ctx, identifier: String| async move {
+            match scheme.account(&ctx, &identifier).await? {
+                Some(_) => Ok::<_, AppError>(Some(outbox_first(&ctx).await)),
+                None => Ok(None),
+            }
+        })
+        .uri(move |ctx: Ctx, identifier: String| async move {
+            scheme.own_uri(&ctx, &identifier, Own::Outbox).await
+        }),
     )
-    .count(move |ctx: Ctx, identifier: String| async move {
-        let Some(account) = scheme.account(&ctx, &identifier).await? else {
-            return Ok::<_, AppError>(None);
-        };
-        Ok(Some(statuses_count(&ctx, account.id).await?))
-    })
-    .first_cursor(move |ctx: Ctx, identifier: String| async move {
-        Ok::<_, AppError>(
-            scheme
-                .account(&ctx, &identifier)
-                .await?
-                .map(|_| First::At(String::new())),
-        )
-    })
-    .last_cursor(|_, _| async { Ok::<_, AppError>(Some("min:0".to_owned())) })
-    .uri(move |ctx: Ctx, identifier: String| async move {
-        scheme.own_uri(&ctx, &identifier, Own::Outbox).await
-    })
 }
 
 /// The instance actor's outbox, `/actor/outbox`: `OutboxesController` on
 /// `Account.representative`, which posts nothing.
 fn instance_outbox() -> Collection<AppState> {
     use crate::federation::instance_actor::INSTANCE_ACTOR_ID;
-    Collection::new(|ctx: Ctx, _: String, cursor: Option<String>| async move {
-        outbox_page(&ctx, INSTANCE_ACTOR_ID, cursor.as_deref()).await
-    })
-    .count(|ctx: Ctx, _: String| async move {
-        Ok::<_, AppError>(Some(statuses_count(&ctx, INSTANCE_ACTOR_ID).await?))
-    })
-    .first_cursor(|_, _| async { Ok::<_, AppError>(Some(First::At(String::new()))) })
-    .last_cursor(|_, _| async { Ok::<_, AppError>(Some("min:0".to_owned())) })
+    outbox_documents(
+        Collection::new(|ctx: Ctx, _: String, cursor: Option<String>| async move {
+            outbox_page(&ctx, INSTANCE_ACTOR_ID, cursor.as_deref()).await
+        })
+        .count(|ctx: Ctx, _: String| async move {
+            Ok::<_, AppError>(Some(statuses_count(&ctx, INSTANCE_ACTOR_ID).await?))
+        })
+        .first_cursor(|ctx: Ctx, _| async move {
+            Ok::<_, AppError>(Some(outbox_first(&ctx).await))
+        }),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -1128,6 +1417,10 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
+            // `expires_in(page_requested? ? 0 : 3.minutes, public:
+            // public_fetch_mode?)`.
+            let public = public_fetch_mode(&ctx).await;
+            expires_in(&ctx, Vary::Page, 0, public).await;
             if account.hide_collections.unwrap_or(false) {
                 return Ok(Some(Page::default()));
             }
@@ -1202,6 +1495,8 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
         Ok(Some(u64::try_from(total).unwrap_or(0)))
     })
     .first_cursor(move |ctx: Ctx, identifier: String| async move {
+        let public = public_fetch_mode(&ctx).await;
+        expires_in(&ctx, Vary::Page, 180, public).await;
         Ok::<_, AppError>(scheme.account(&ctx, &identifier).await?.map(|account| {
             if account.hide_collections.unwrap_or(false) {
                 First::Hidden
@@ -1224,6 +1519,9 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
+            // `expires_in 3.minutes, public: public_fetch_mode?`.
+            let public = public_fetch_mode(&ctx).await;
+            expires_in(&ctx, Vary::Signature, 180, public).await;
             // `ActivityPub::CollectionsController#check_authorization`: in
             // authorized fetch mode, a signer the account blocks is shown it
             // empty.
@@ -1286,6 +1584,8 @@ fn featured_tags(scheme: Scheme) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
+            let public = public_fetch_mode(&ctx).await;
+            expires_in(&ctx, Vary::Signature, 180, public).await;
             // `check_authorization`, as for the featured posts.
             if crate::settings::authorized_fetch_mode(ctx.data()).await
                 && signer_blocked(&ctx, account.id).await?

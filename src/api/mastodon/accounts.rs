@@ -420,7 +420,7 @@ pub async fn get_account_statuses(
             api_status.pinned = Some(true);
             result.push(api_status);
         }
-        hydrate_status_stats(&state, result.iter_mut()).await;
+        hydrate_status_stats(&state, result.iter_mut(), viewer_id).await;
         return Ok((HeaderMap::new(), Json(result)));
     }
 
@@ -672,7 +672,7 @@ pub async fn get_account_statuses(
         }
         result.push(api);
     }
-    hydrate_status_stats(&state, result.iter_mut()).await;
+    hydrate_status_stats(&state, result.iter_mut(), viewer_id).await;
 
     let bounds = result
         .first()
@@ -1318,7 +1318,9 @@ pub async fn get_account_featured_tags(
 ) -> AppResult<Json<Vec<super::types::FeaturedTag>>> {
     let domain = &instance.domain;
     let rows = sqlx::query!(
-        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at, a.username, a.domain
+        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
+                  -- `FeaturedTag#display_name`
+                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!", a.username, a.domain
            FROM featured_tags ft
            JOIN tags t ON t.id = ft.tag_id
            JOIN accounts a ON a.id = ft.account_id
@@ -1341,7 +1343,7 @@ pub async fn get_account_featured_tags(
             };
             super::types::FeaturedTag {
                 id: r.id.to_string(),
-                name: r.name.clone(),
+                name: r.display_name,
                 url,
                 statuses_count: r.statuses_count.to_string(),
                 last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),

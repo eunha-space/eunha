@@ -307,14 +307,15 @@ fn with_context(body: &mut Value, context: Value) {
 /// `CollectionsController#show`: a local collection, at `/collections/{id}`
 /// or, when `owner` names its owner, at
 /// `/ap/users/{account_id}/collections/{id}`; not there for a signer its
-/// owner blocks.
+/// owner blocks. Says too when it was last updated, which its caching
+/// depends on.
 pub async fn collection_document(
     state: &AppState,
     domain: &str,
     owner: Option<i64>,
     id: i64,
     signer: Option<&str>,
-) -> AppResult<Value> {
+) -> AppResult<(Value, chrono::NaiveDateTime)> {
     let c = load_ap_collection(state, id)
         .await?
         .filter(|c| owner.is_none_or(|owner| owner == c.owner_id))
@@ -324,7 +325,7 @@ pub async fn collection_document(
     }
     let mut body = featured_collection_body(state, domain, &c).await?;
     with_context(&mut body, collection_context());
-    Ok(body)
+    Ok((body, c.updated_at))
 }
 
 /// `CollectionItemsController#show`: an item of one of the local account
@@ -551,46 +552,67 @@ pub async fn feature_authorization_document(
 /// local account authorized a quote of one of its posts, at
 /// `/users/{username}/quote_authorizations/{id}` (or under `/ap/users/{id}`).
 /// Only an accepted quote of `who`'s whose two statuses are both still there
-/// has one, and only a quoted status the reader may see.
+/// has one, and only a quoted status `reader` may be shown
+/// (`StatusPolicy#show?`). Says too whether the quoted status is
+/// distributable, which its caching depends on.
 pub async fn quote_authorization_document(
     state: &AppState,
     who: AccountRef<'_>,
     id: i64,
-) -> AppResult<Value> {
+    reader: Option<&super::objects::Reader>,
+) -> AppResult<(Value, bool)> {
     let account = super::objects::load_local_account(state, who).await?;
     let quote = crate::quotes::find(&state.db, id)
         .await?
         .filter(|q| q.accepted() && q.quoted_account_id == Some(account.id))
         .ok_or(AppError::NotFound)?;
     let quoted_status_id = quote.quoted_status_id.ok_or(AppError::NotFound)?;
-    // `@quote.status.present? && @quote.quoted_status.present?`, and
-    // `authorize @quote.quoted_status, :show?` for a reader who may be
-    // anyone: an accepted quote of somebody else's is of a public or
-    // unlisted post (`Quote#validate_visibility`).
+    // `@quote.status.present? && @quote.quoted_status.present?`.
     let statuses = sqlx::query!(
-        r#"SELECT id, visibility FROM statuses
+        r#"SELECT id, account_id, visibility FROM statuses
            WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL"#,
         &[quote.status_id, quoted_status_id][..],
     )
     .fetch_all(&state.db)
     .await?;
-    let quoted_visible = statuses.iter().any(|s| {
-        s.id == quoted_status_id
-            && matches!(
-                s.visibility,
-                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-            )
-    });
-    if !statuses.iter().any(|s| s.id == quote.status_id) || !quoted_visible {
+    let Some(quoted) = statuses.iter().find(|s| s.id == quoted_status_id) else {
+        return Err(AppError::NotFound);
+    };
+    if !statuses.iter().any(|s| s.id == quote.status_id) {
         return Err(AppError::NotFound);
     }
+    // `authorize @quote.quoted_status, :show?`, its author unavailable
+    // included.
+    let author_unavailable = sqlx::query_scalar!(
+        r#"SELECT (suspended_at IS NOT NULL OR requested_deletion_at IS NOT NULL) AS "u!"
+           FROM accounts WHERE id = $1"#,
+        quoted.account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if author_unavailable
+        || !super::objects::may_show(
+            state,
+            quoted.account_id,
+            quoted.id,
+            quoted.visibility,
+            reader,
+        )
+        .await?
+    {
+        return Err(AppError::NotFound);
+    }
+    let distributable = matches!(
+        quoted.visibility,
+        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+    );
 
     let mut body = crate::quotes::authorization_object(state, &quote, true)
         .await
         .map_err(AppError::Internal)?
         .ok_or(AppError::NotFound)?;
     body["@context"] = crate::federation::consent::quote_authorization_context();
-    Ok(body)
+    Ok((body, distributable))
 }
 
 // ── Activity builders (for outbound distribution to followers) ─────────────────

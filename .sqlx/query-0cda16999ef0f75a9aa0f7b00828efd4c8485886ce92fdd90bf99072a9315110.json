@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.visibility, s.reblog_of_id,\n                  EXISTS (SELECT 1 FROM quotes q WHERE q.status_id = s.id AND q.state = 0) AS \"quote_pending!\"\n           FROM statuses s\n           WHERE s.id = $1 AND s.account_id = $2 AND s.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "quote_pending!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "0cda16999ef0f75a9aa0f7b00828efd4c8485886ce92fdd90bf99072a9315110"
+}

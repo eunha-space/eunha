@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM tagged_objects\n           WHERE status_id = $1 AND (uri IS NULL OR NOT (uri = ANY($2)))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81ef89438b766e7c7f0489a013bf549845b3cb8d318ae66be259d200fdbdb404"
+}

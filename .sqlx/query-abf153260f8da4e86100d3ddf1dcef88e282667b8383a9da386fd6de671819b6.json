@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.reblog_of_id, s.visibility, s.created_at\n           FROM statuses s\n           WHERE s.account_id = $1 AND s.deleted_at IS NULL\n             AND (s.visibility IN (0, 1) /* distributable_visibility */\n                  OR ($2::bigint IS NOT NULL\n                      AND ((s.visibility = 2 AND EXISTS (SELECT 1 FROM follows\n                                WHERE account_id = $2 AND target_account_id = $1))\n                           OR EXISTS (SELECT 1 FROM mentions m\n                                      WHERE m.status_id = s.id AND m.account_id = $2))))\n             -- `filtered_reblogs_scope`: no boost of whom the signer\n             -- blocks, is blocked by or mutes, nor of a domain it blocks.\n             AND (s.reblog_of_id IS NULL OR $2::bigint IS NULL OR NOT EXISTS (\n                   SELECT 1 FROM statuses r JOIN accounts ra ON ra.id = r.account_id\n                   WHERE r.id = s.reblog_of_id\n                     AND (EXISTS (SELECT 1 FROM blocks b WHERE (b.account_id = $2 AND b.target_account_id = ra.id)\n                                                            OR (b.account_id = ra.id AND b.target_account_id = $2))\n                          OR EXISTS (SELECT 1 FROM mutes mu WHERE mu.account_id = $2 AND mu.target_account_id = ra.id)\n                          OR (ra.domain IS NOT NULL AND EXISTS (SELECT 1 FROM account_domain_blocks d\n                                                                WHERE d.account_id = $2 AND d.domain = ra.domain)))))\n             AND ($3::bigint IS NULL OR s.id < $3)\n             AND ($4::bigint IS NULL OR s.id > $4)\n           -- `paginate_by_min_id` reads up from `min_id`, the others down.\n           ORDER BY CASE WHEN $4::bigint IS NULL THEN -s.id ELSE s.id END\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "abf153260f8da4e86100d3ddf1dcef88e282667b8383a9da386fd6de671819b6"
+}

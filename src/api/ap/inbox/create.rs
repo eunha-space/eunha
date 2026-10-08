@@ -734,6 +734,11 @@ pub(super) async fn create(
         .await;
     }
 
+    // `process_tagged_collection` and `attach_tagged_objects`: the
+    // collections its `FeaturedCollection` tags name, those not reached
+    // resolved later (`TaggedCollectionResolveWorker`).
+    crate::federation::tagged_collections::attach(state, inserted_id, object).await;
+
     // Poll
     let poll_items = object.get("oneOf").or_else(|| object.get("anyOf"));
     if let Some(items) = poll_items.and_then(|v| v.as_array()) {
