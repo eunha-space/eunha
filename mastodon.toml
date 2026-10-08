@@ -3,7 +3,7 @@
 # This file is the single source of truth for the "which Mastodon are we?"
 # question. Three things are kept in sync with it:
 #
-#   * `Cargo.toml`'s version build metadata (`0.2.0+mastodon.4.7.1`), which
+#   * `Cargo.toml`'s version build metadata (`0.2.0+mastodon.4.7.2`), which
 #     build.rs verifies against this file — a mismatch fails the build.
 #   * `migrations/`, which must reproduce this release's schema exactly.
 #   * The version string reported by `/api/v1/instance`, `/api/v2/instance`
@@ -14,8 +14,8 @@
 
 [mastodon]
 # Upstream release tag, without the leading `v`.
-version = "4.7.1"
-released_at = "2026-09-01"
+version = "4.7.2"
+released_at = "2026-09-15"
 
 # Newest migration in that release, i.e. the `define(version: ...)` in
 # upstream `db/schema.rb`. `eunha-schema check` compares this against

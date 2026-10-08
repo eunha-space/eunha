@@ -32,7 +32,7 @@ eunha = "Browser email confirmations show the result on the sign-in page regardl
 why = "An account switcher can have a different account active, hiding the newly registered account's confirmation result on the timeline."
 evidence = "tests/integration/surfaces/auth_pages.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "integrity-proofs-on-outgoing-activities"
@@ -57,7 +57,7 @@ servers that matter. Off by default because an instance's traffic should look \
 like Mastodon's until its administrator decides otherwise."""
 evidence = "tests/integration/federation/integrity_proofs.rs"
 since = "4.7.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "invite-tree"
@@ -76,7 +76,7 @@ An instance that grew by invitation has a shape worth seeing. It is served under
 an endpoint Mastodon defines."""
 evidence = "tests/integration/surfaces/invite_tree.rs"
 since = "4.6.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "update-check-asks-about-mastodon"
@@ -101,7 +101,7 @@ on the database. An operator who wants the end-of-support warning names the \
 server and gets it."""
 evidence = "tests/integration/surfaces/software_updates.rs"
 since = "4.7.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "keypairs-migration-recorded-at-runtime"
@@ -120,7 +120,7 @@ database to skip work still outstanding. Leaving it unrecorded is safe either \
 way: Mastodon runs it and moves the keys, or runs it and finds nothing to do."""
 evidence = "tests/integration/federation/keypairs.rs"
 since = "4.7.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "invites-rest-api"
@@ -144,7 +144,7 @@ what its own UI would allow, so a client that guessed at them is not misled \
 about what it is talking to."""
 evidence = "tests/integration/c2s/invites.rs"
 since = "4.6.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "moderation-tools-rest-api"
@@ -177,7 +177,7 @@ paths upstream's admin API would use, and answer only what its pages would \
 allow."""
 evidence = "tests/integration/c2s/moderation_tools.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "server-administration-rest-api"
@@ -214,7 +214,7 @@ sit at the paths upstream's admin API would use, and answer only what its \
 pages would allow."""
 evidence = "tests/integration/c2s/server_admin/mod.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "account-moves-rest-api"
@@ -240,7 +240,7 @@ these sit outside `/api/eunha/` at the paths upstream would plausibly use, and \
 answer only what its forms would allow."""
 evidence = "tests/integration/c2s/moves.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "admin-granted-invites"
@@ -267,7 +267,7 @@ limit — so there is no allowance to keep books on, and an invite is still just
 an invite."""
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.0"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "command-line-force-checks-before-deleting"
@@ -291,7 +291,7 @@ would lose the account for nothing; checking first changes no outcome of a \
 command that succeeds."""
 evidence = "tests/integration/surfaces/accounts_commands.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "admin-custom-emoji-rest-api"
@@ -313,7 +313,7 @@ client would look for them if upstream had them, and answer with the \
 permission its admin pages check."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "private-tenant-prometheus-metrics"
@@ -324,7 +324,7 @@ eunha = "Uses an opt-in loopback-only listener at /metrics, with canonical tenan
 why = "Operators need service-level attribution while several tenants share one process, without exposing diagnostics through their public API routes."
 evidence = "src/telemetry.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "preview-card-charset-sniffing"
@@ -345,7 +345,7 @@ cleanly is a better answer than a guess; the guess is still made for pages \
 that declare nothing or declare wrongly."""
 evidence = "src/preview_card/extract.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "email-subscriptions-rest-api"
@@ -368,7 +368,7 @@ what its forms would allow; the owner's switch, which upstream would keep \
 among the user's settings, is under `/api/eunha/`."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "terms-of-service-rest-api"
@@ -396,7 +396,7 @@ admin API, mirror its admin routes, and answer only what its forms would \
 allow."""
 evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "email-subscription-unsubscribe-token"
@@ -420,7 +420,7 @@ that keeps working is what an unsubscribe link is for, so the ones eunha \
 mailed before the secret was configured are still honoured."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "notification-email-unsubscribe-token"
@@ -444,7 +444,7 @@ working is what an unsubscribe link is for, and one in a mail eunha sent, \
 before or after the secret was configured, should not be refused."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "terms-of-service-interstitial-api"
@@ -469,7 +469,7 @@ meaning, so a Mastodon web app on the same database would show the same \
 users the same page."""
 evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "async-refresh-ids-signed-without-rails"
@@ -490,7 +490,7 @@ rather than serving beside it, so no Mastodon process ever has to read an id \
 eunha handed out, or the reverse."""
 evidence = "tests/integration/c2s/async_refreshes.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "data-portability-rest-api"
@@ -519,7 +519,7 @@ inherit, so moving one's data in and out needs an API to call. It sits under \
 could expect."""
 evidence = "tests/integration/surfaces/portability.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "two-factor-rest-api"
@@ -544,7 +544,7 @@ change that weakens the account asks for the password with it rather than \
 trusting the scope alone."""
 evidence = "tests/integration/surfaces/two_factor.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "pending-sign-in-in-redis"
@@ -564,7 +564,7 @@ Eunha's sign-in forms — the OAuth authorization page and the account pages —
 have no server-side session to keep it in."""
 evidence = "tests/integration/surfaces/two_factor.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "sessions-and-authorized-apps-rest-api"
@@ -590,7 +590,7 @@ session because it is served as static files with no server-side session \
 of its own."""
 evidence = "tests/integration/surfaces/sessions.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "reset-password-token-digest"
@@ -611,7 +611,7 @@ password; the cost is that a link Mastodon mailed does not work on eunha, \
 which matters only for a reset in flight when an instance switches."""
 evidence = "tests/integration/surfaces/password_reset.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "account-deletion-rest-api"
@@ -630,7 +630,7 @@ one upstream would use for it, and the challenge keeps a token alone from \
 being enough."""
 evidence = "tests/integration/c2s/accounts.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "email-change-rest-api"
@@ -653,7 +653,7 @@ an API to call. The password stays the challenge, so a token alone is not \
 enough to move the account to an address its holder controls."""
 evidence = "tests/integration/surfaces/email_change.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "web-preferences-rest-api"
@@ -681,7 +681,7 @@ need an API to call. Settings Mastodon already serves through \
 `update_credentials` stay there."""
 evidence = "tests/integration/surfaces/preferences.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "deepl-endpoint-setting"
@@ -700,7 +700,7 @@ tests need to stand a fake DeepL in for the real one without patching the \
 binary."""
 evidence = "tests/integration/c2s/translations.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "fasp-admin-rest-api"
@@ -728,7 +728,7 @@ section out. Like `server-administration-rest-api`, the endpoints sit where \
 upstream's admin API would put them."""
 evidence = "tests/fasp.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "remote-account-images-not-downloaded"
@@ -750,7 +750,7 @@ bytes, and clients load them from the servers they came from. Writing the \
 columns as Mastodon writes them keeps a shared database correct for both."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 
 [[divergence]]
@@ -773,7 +773,7 @@ routes site-local addresses. The guard lives in ojak, which other \
 applications share."""
 evidence = "tests/integration/federation/private_addresses.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "embedded-note-attribution-fetched"
@@ -794,7 +794,7 @@ another account wrote, and the real author's copy could then never take its \
 URI. Fetching it from its id asks the server that owns it who wrote it."""
 evidence = "tests/integration/federation/ownership.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "web-multi-account-switcher"
@@ -805,7 +805,7 @@ eunha = "The web client saves OAuth logins for multiple accounts on the same ori
 why = "Members can use personal and staff accounts without separate browser profiles."
 evidence = "frontend/e2e/account-switcher.spec.ts"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 
 [[divergence]]
@@ -823,7 +823,7 @@ application. It cannot infer approval bypass from the presence of a code. \
 Registration still validates the invite again when submitted."""
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 
 [[divergence]]
@@ -835,7 +835,7 @@ eunha = "New staff grants always bypass review, keep email confirmation and invi
 why = "A staff grant is permission to admit the granted number of people. Requiring another staff decision contradicts that action; changing the receiving member’s role would affect unrelated links. Keeping metadata outside public preserves Mastodon’s database schema."
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 
 [[divergence]]
@@ -847,7 +847,7 @@ eunha = "The desktop sidebar and mobile drawer omit Federated for visitors and s
 why = "Keep the sidebar focused on the member's home feed and local community."
 evidence = "frontend/e2e/nav.spec.ts"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "collection-notification-push-titles"
@@ -867,7 +867,7 @@ A title that names a missing translation key tells the reader nothing, and is \
 plainly an omission upstream rather than a choice."""
 evidence = "src/push.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"
 
 [[divergence]]
 id = "earlier-collection-addresses-still-served"
@@ -890,4 +890,4 @@ re-verify by fetching it. Answering at both costs nothing and breaks nothing \
 they hold."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.1"
-reviewed_for = "4.7.1"
+reviewed_for = "4.7.2"

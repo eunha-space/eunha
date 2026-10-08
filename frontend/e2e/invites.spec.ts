@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const instance = {
-  domain: 'example.invalid', title: 'Example', version: '4.7.1',
+  domain: 'example.invalid', title: 'Example', version: '4.7.2',
   description: '', configuration: {}, languages: ['en'], rules: [],
   usage: { users: { active_month: 2 } }, contact: { email: '', account: null },
   registrations: { enabled: true, approval_required: true, reason_required: true },

@@ -6,7 +6,7 @@ repeated as build metadata in `Cargo.toml`'s version, which `build.rs` checks
 the two agree on. Releases are tagged the same way:
 
 ~~~~
-v0.2.0+mastodon.4.7.1
+v0.2.0+mastodon.4.7.2
 ~~~~
 
 Eunha's own version moves independently; the part after `+` names the Mastodon

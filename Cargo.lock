@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "eunha"
-version = "0.2.0+mastodon.4.7.1"
+version = "0.2.0+mastodon.4.7.2"
 dependencies = [
  "aes-gcm",
  "anyhow",

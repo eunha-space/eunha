@@ -1,6 +1,6 @@
 [package]
 name = "eunha"
-version = "0.2.0+mastodon.4.7.1"
+version = "0.2.0+mastodon.4.7.2"
 edition = "2021"
 license = "AGPL-3.0-only"
 default-run = "eunha"
