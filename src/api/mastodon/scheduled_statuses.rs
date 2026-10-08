@@ -181,6 +181,7 @@ pub(crate) async fn load(
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateScheduledStatusForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub scheduled_at: Option<String>,
 }
 
@@ -188,7 +189,7 @@ pub async fn update_scheduled_status(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<UpdateScheduledStatusForm>,
+    super::extractors::Params(form): super::extractors::Params<UpdateScheduledStatusForm>,
 ) -> AppResult<Json<ScheduledStatus>> {
     auth.require_scope("write:statuses")?;
     let scheduled_at = form

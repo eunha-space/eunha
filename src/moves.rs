@@ -176,9 +176,20 @@ async fn challenge(
 /// What a migration, redirect or alias form submits.
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct MoveForm {
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::string"
+    )]
     pub acct: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_string"
+    )]
     pub current_password: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_string"
+    )]
     pub current_username: Option<String>,
 }
 

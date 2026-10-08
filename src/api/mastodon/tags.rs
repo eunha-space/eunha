@@ -105,6 +105,10 @@ pub async fn get_tag(
 
 #[derive(Debug, serde::Deserialize)]
 pub struct FollowedTagsParams {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     limit: Option<i64>,
     max_id: Option<String>,
     since_id: Option<String>,

@@ -7,17 +7,25 @@ use super::*;
 
 #[derive(Debug, Deserialize)]
 pub struct EditMediaAttribute {
+    #[serde(default, deserialize_with = "rails::string")]
     pub id: String,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct EditStatusForm {
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub status: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub spoiler_text: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub sensitive: Option<bool>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_present_strings")]
     pub media_ids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "rails::nested_attributes")]
     pub media_attributes: Option<Vec<EditMediaAttribute>>,
     // Double-option so we can tell an absent `poll` (no change) from an explicit
     // `poll: null` (remove the poll) — Mastodon keys off `options.key?(:poll)`.
@@ -25,22 +33,22 @@ pub struct EditStatusForm {
     pub poll: Option<Option<PollForm>>,
     /// `update_options[:quote_approval_policy] = quote_approval_policy if
     /// status_params[:quote_approval_policy].present?`
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub quote_approval_policy: Option<String>,
 }
 
-fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+fn double_option<'de, D>(de: D) -> Result<Option<Option<PollForm>>, D::Error>
 where
-    T: serde::Deserialize<'de>,
     D: serde::Deserializer<'de>,
 {
-    serde::Deserialize::deserialize(de).map(Some)
+    super::poll_form(de).map(Some)
 }
 
 pub async fn edit_status(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<EditStatusForm>,
+    super::super::extractors::Params(form): super::super::extractors::Params<EditStatusForm>,
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
     let (status, account) = fetch_status_with_account(&state, id).await?;

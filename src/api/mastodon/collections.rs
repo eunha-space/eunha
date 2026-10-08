@@ -55,7 +55,15 @@ fn tag_url(domain: &str, name: &str) -> String {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct OffsetParams {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub offset: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub limit: Option<i64>,
 }
 
@@ -406,13 +414,19 @@ pub async fn show_collection(
 
 #[derive(Debug, Deserialize, Default)]
 pub struct CreateCollectionForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub sensitive: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub discoverable: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub tag_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::extractors::rails::strings")]
     pub account_ids: Vec<String>,
 }
 
@@ -426,7 +440,7 @@ pub async fn create_collection(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateCollectionForm>,
+    super::extractors::Params(form): super::extractors::Params<CreateCollectionForm>,
 ) -> AppResult<Json<Value>> {
     auth.require_scope("write:collections")?;
 
@@ -520,11 +534,17 @@ pub async fn create_collection(
 
 #[derive(Debug, Deserialize, Default)]
 pub struct UpdateCollectionForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub sensitive: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub discoverable: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub tag_name: Option<String>,
 }
 
@@ -533,7 +553,7 @@ pub async fn update_collection(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(id): Path<i64>,
-    Json(form): Json<UpdateCollectionForm>,
+    super::extractors::Params(form): super::extractors::Params<UpdateCollectionForm>,
 ) -> AppResult<Json<Value>> {
     auth.require_scope("write:collections")?;
     let c = load_collection(&state, id)
@@ -1209,6 +1229,7 @@ pub(crate) async fn update_item_count<'e>(
 
 #[derive(Debug, Deserialize)]
 pub struct AddItemForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub account_id: Option<String>,
 }
 
@@ -1218,7 +1239,7 @@ pub async fn add_collection_item(
     Extension(ResolvedInstance(_instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(collection_id): Path<i64>,
-    Json(form): Json<AddItemForm>,
+    super::extractors::Params(form): super::extractors::Params<AddItemForm>,
 ) -> AppResult<Json<Value>> {
     auth.require_scope("write:collections")?;
     let c = load_collection(&state, collection_id)

@@ -12,7 +12,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::super::extractors::{QueryOrJson, RubyInt};
+use super::super::extractors::{Params, RubyInt};
 use super::{instances, perm, require_permission};
 use crate::{
     error::{AppError, AppResult},
@@ -238,7 +238,7 @@ fn round_significant(number: f64, precision: i32) -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct MeasuresRequest {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::super::extractors::rails::strings")]
     pub keys: Vec<String>,
     pub start_at: Option<String>,
     pub end_at: Option<String>,
@@ -252,7 +252,7 @@ pub struct MeasuresRequest {
 pub async fn get_measures(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    QueryOrJson(body): QueryOrJson<MeasuresRequest>,
+    Params(body): Params<MeasuresRequest>,
 ) -> AppResult<Json<Vec<Value>>> {
     require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
     let window = Window::parse(body.start_at.as_deref(), body.end_at.as_deref());
@@ -510,7 +510,7 @@ async fn tag_servers_measure(
 
 #[derive(Debug, Deserialize)]
 pub struct DimensionsRequest {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::super::extractors::rails::strings")]
     pub keys: Vec<String>,
     pub start_at: Option<String>,
     pub end_at: Option<String>,
@@ -527,7 +527,7 @@ pub async fn get_dimensions(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     headers: HeaderMap,
-    QueryOrJson(body): QueryOrJson<DimensionsRequest>,
+    Params(body): Params<DimensionsRequest>,
 ) -> AppResult<Json<Vec<Value>>> {
     require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
     let window = Window::parse(body.start_at.as_deref(), body.end_at.as_deref());
@@ -731,7 +731,7 @@ pub struct RetentionRequest {
 pub async fn get_retention(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    QueryOrJson(body): QueryOrJson<RetentionRequest>,
+    Params(body): Params<RetentionRequest>,
 ) -> AppResult<Json<Vec<Value>>> {
     require_permission(&state, auth.account_id, perm::VIEW_DASHBOARD).await?;
 

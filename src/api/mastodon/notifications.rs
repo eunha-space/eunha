@@ -1682,6 +1682,10 @@ pub async fn get_notification_group_accounts(
 
 #[derive(Debug, Deserialize)]
 pub struct UnreadCountParams {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub limit: Option<i64>,
 }
 
@@ -2559,7 +2563,7 @@ fn parse_notif_filters(
     let include_filtered = pairs
         .iter()
         .find(|(k, _)| k == "include_filtered")
-        .map(|(_, v)| matches!(v.as_ref(), "true" | "1"))
+        .map(|(_, v)| super::extractors::rails::truthy(v))
         .unwrap_or(false);
 
     (types, exclude_types, account_id, include_filtered)

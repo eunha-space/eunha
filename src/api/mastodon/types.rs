@@ -894,6 +894,10 @@ pub struct NotificationRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationPagination {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub limit: Option<i64>,
     pub max_id: Option<String>,
     pub since_id: Option<String>,

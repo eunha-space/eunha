@@ -741,7 +741,7 @@ pub async fn api_create_account(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
     req_headers: HeaderMap,
-    super::extractors::FormOrJson(form): super::extractors::FormOrJson<ApiCreateAccountForm>,
+    super::extractors::Params(form): super::extractors::Params<ApiCreateAccountForm>,
 ) -> Result<Json<super::types::Token>, SignupError> {
     // `doorkeeper_authorize!` and `require_client_credentials!`.
     let Some((owner, scopes, app_id)) = app_token(&state, &req_headers).await else {
@@ -864,7 +864,7 @@ pub struct ResendConfirmationForm {
 pub async fn resend_email_confirmation(
     state: AppState,
     auth: Option<Extension<crate::middleware::AuthenticatedUser>>,
-    super::extractors::FormOrJson(form): super::extractors::FormOrJson<ResendConfirmationForm>,
+    super::extractors::Params(form): super::extractors::Params<ResendConfirmationForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     // `doorkeeper_authorize! :write, :'write:accounts'`.
     let Some(Extension(auth)) = auth else {

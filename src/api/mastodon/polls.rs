@@ -102,7 +102,7 @@ pub async fn vote_poll(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<PollVoteForm>,
+    super::extractors::Params(form): super::extractors::Params<PollVoteForm>,
 ) -> AppResult<Json<Poll>> {
     auth.require_scope("write:statuses")?;
     let poll = fetch_shown_poll(&state, id, Some(auth.account_id)).await?;

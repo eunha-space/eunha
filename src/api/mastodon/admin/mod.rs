@@ -352,8 +352,11 @@ fn admin_tag_url(domain: &str, name: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateAdminTagForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub trendable: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub usable: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub listable: Option<bool>,
 }
 
@@ -464,7 +467,7 @@ pub async fn update_admin_tag(
     Extension(auth): Extension<AuthenticatedUser>,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Path(id): Path<i64>,
-    Json(form): Json<UpdateAdminTagForm>,
+    super::extractors::Params(form): super::extractors::Params<UpdateAdminTagForm>,
 ) -> AppResult<Json<AdminTag>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;

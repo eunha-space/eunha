@@ -2,129 +2,13 @@ use axum::{
     extract::{FromRequest, Multipart},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 
-/// Accepts JSON body, multipart/form-data body, or application/x-www-form-urlencoded body.
-/// Mirrors Rails' transparent parameter handling.
-pub struct FormOrJson<T>(pub T);
-
-impl<T, S> FromRequest<S> for FormOrJson<T>
-where
-    T: serde::de::DeserializeOwned + Send + 'static,
-    S: Send + Sync,
-{
-    type Rejection = Response;
-
-    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
-        let content_type = req
-            .headers()
-            .get(axum::http::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
-        if content_type.contains("application/json") {
-            Json::<T>::from_request(req, state)
-                .await
-                .map(|Json(v)| FormOrJson(v))
-                .map_err(IntoResponse::into_response)
-        } else if content_type.contains("multipart/form-data") {
-            let mut multipart = Multipart::from_request(req, state)
-                .await
-                .map_err(IntoResponse::into_response)?;
-            let mut pairs: Vec<(String, String)> = Vec::new();
-            while let Some(field) = multipart
-                .next_field()
-                .await
-                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())?
-            {
-                let name = field.name().unwrap_or("").to_string();
-                let value = field.text().await.map_err(|e| {
-                    (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response()
-                })?;
-                pairs.push((name, value));
-            }
-            let encoded = serde_urlencoded::to_string(&pairs)
-                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())?;
-            serde_urlencoded::from_str::<T>(&encoded)
-                .map(FormOrJson)
-                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())
-        } else {
-            let bytes = axum::body::Bytes::from_request(req, state)
-                .await
-                .map_err(IntoResponse::into_response)?;
-            serde_urlencoded::from_bytes::<T>(&bytes)
-                .map(FormOrJson)
-                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())
-        }
-    }
-}
-
-/// Accepts a JSON body OR URL query parameters (using serde_qs for bracket-notation
-/// arrays like `keys[0]=...`). Used for POST endpoints where clients like Nicolium
-/// pass params in the query string instead of the body.
-pub struct QueryOrJson<T>(pub T);
-
-impl<T, S> FromRequest<S> for QueryOrJson<T>
-where
-    T: serde::de::DeserializeOwned + Send + 'static,
-    S: Send + Sync,
-{
-    type Rejection = Response;
-
-    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
-        let content_type = req
-            .headers()
-            .get(axum::http::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
-        if content_type.contains("application/json") {
-            let (parts, body) = req.into_parts();
-            let req = axum::extract::Request::from_parts(parts, body);
-            Json::<T>::from_request(req, state)
-                .await
-                .map(|Json(v)| QueryOrJson(v))
-                .map_err(IntoResponse::into_response)
-        } else {
-            let (parts, _body) = req.into_parts();
-            let query = parts.uri.query().unwrap_or("");
-            serde_qs::from_str::<T>(query)
-                .map(QueryOrJson)
-                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())
-        }
-    }
-}
-
-/// Rails' `params`: the query string and the body (JSON, form-encoded or
-/// multipart), merged with the body winning, then read as `T`. Repeated keys
-/// and `key[]` both collect into an array under `key`. Values from a query
-/// string or a form arrive as strings; [`FlexId`], [`FlexBool`] and
-/// [`FlexIds`] read either form.
+/// Rails' `params`, read as `T`: see [`NestedParams`] for how the query
+/// string and the body become one hash. Values from a query string or a
+/// form arrive as strings; [`FlexId`], [`FlexBool`], [`RubyInt`],
+/// [`FlexIds`] and the [`rails`] casts read either form.
 pub struct Params<T>(pub T);
-
-fn merge_pairs(
-    into: &mut serde_json::Map<String, serde_json::Value>,
-    pairs: Vec<(String, String)>,
-) {
-    use serde_json::Value;
-    let mut arrays: std::collections::HashMap<String, Vec<Value>> = Default::default();
-    for (key, value) in pairs {
-        if let Some(base) = key.strip_suffix("[]") {
-            arrays
-                .entry(base.to_owned())
-                .or_default()
-                .push(Value::String(value));
-        } else {
-            into.insert(key, Value::String(value));
-        }
-    }
-    for (key, values) in arrays {
-        into.insert(key, Value::Array(values));
-    }
-}
 
 impl<T, S> FromRequest<S> for Params<T>
 where
@@ -134,64 +18,154 @@ where
     type Rejection = Response;
 
     async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
-        use serde_json::Value;
-        let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e).into_response();
-        let mut merged = serde_json::Map::new();
-        let query = req.uri().query().unwrap_or("").to_owned();
-        merge_pairs(
-            &mut merged,
-            url::form_urlencoded::parse(query.as_bytes())
-                .into_owned()
-                .collect(),
-        );
-
-        let content_type = req
-            .headers()
-            .get(axum::http::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        if content_type.contains("application/json") {
-            let bytes = axum::body::Bytes::from_request(req, state)
-                .await
-                .map_err(IntoResponse::into_response)?;
-            if !bytes.is_empty() {
-                match serde_json::from_slice::<Value>(&bytes) {
-                    Ok(Value::Object(body)) => merged.extend(body),
-                    Ok(_) => {}
-                    Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string()).into_response()),
-                }
-            }
-        } else if content_type.contains("multipart/form-data") {
-            let mut multipart = Multipart::from_request(req, state)
-                .await
-                .map_err(IntoResponse::into_response)?;
-            let mut pairs = vec![];
-            while let Some(field) = multipart
-                .next_field()
-                .await
-                .map_err(|e| unprocessable(e.to_string()))?
-            {
-                let name = field.name().unwrap_or("").to_string();
-                let value = field
-                    .text()
-                    .await
-                    .map_err(|e| unprocessable(e.to_string()))?;
-                pairs.push((name, value));
-            }
-            merge_pairs(&mut merged, pairs);
-        } else {
-            let bytes = axum::body::Bytes::from_request(req, state)
-                .await
-                .map_err(IntoResponse::into_response)?;
-            merge_pairs(
-                &mut merged,
-                url::form_urlencoded::parse(&bytes).into_owned().collect(),
-            );
-        }
-        serde_json::from_value::<T>(Value::Object(merged))
+        let NestedParams(value) = NestedParams::from_request(req, state).await?;
+        serde_json::from_value::<T>(value)
             .map(Params)
-            .map_err(|e| unprocessable(e.to_string()))
+            .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response())
+    }
+}
+
+/// Casts for fields Rails reads from `params`, where a form or a query
+/// string gives every value as a string and a JSON body may give either.
+/// Use with `#[serde(default, deserialize_with = "…")]`.
+pub mod rails {
+    use serde::Deserialize;
+    use serde_json::Value;
+
+    /// `ActiveModel::Type::Boolean#cast`: blank is nil, the false values
+    /// (`false`, `0`, `"0"`, `"f"`, `"F"`, `"false"`, `"FALSE"`, `"off"`,
+    /// `"OFF"`) are false, anything else is true.
+    pub fn cast_bool(value: &Value) -> Option<bool> {
+        match value {
+            Value::Null => None,
+            Value::Bool(b) => Some(*b),
+            Value::Number(n) => Some(n.as_f64() != Some(0.0)),
+            Value::String(s) if s.is_empty() => None,
+            Value::String(s) => Some(!matches!(
+                s.as_str(),
+                "0" | "f" | "F" | "false" | "FALSE" | "off" | "OFF"
+            )),
+            _ => Some(true),
+        }
+    }
+
+    /// `truthy_param?` of a form value: [`cast_bool`] of the string, nil
+    /// as false.
+    pub fn truthy(value: &str) -> bool {
+        cast_bool(&Value::String(value.to_owned())).unwrap_or(false)
+    }
+
+    /// An optional boolean as [`cast_bool`] reads it.
+    pub fn opt_bool<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+        Ok(cast_bool(&Value::deserialize(d)?))
+    }
+
+    /// A boolean as `truthy_param?` reads it: nil is false.
+    pub fn bool<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+        Ok(cast_bool(&Value::deserialize(d)?).unwrap_or(false))
+    }
+
+    /// `ActiveModel::Type::Integer#cast`: a number, or a string's `to_i`;
+    /// blank is nil.
+    pub fn cast_int(value: &Value) -> Option<i64> {
+        match value {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f.trunc() as i64)),
+            Value::Bool(b) => Some(i64::from(*b)),
+            Value::String(s) if s.trim().is_empty() => None,
+            Value::String(s) => Some(crate::search::ruby_to_i(s)),
+            _ => None,
+        }
+    }
+
+    /// An optional integer as [`cast_int`] reads it.
+    pub fn opt_int<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+        Ok(cast_int(&Value::deserialize(d)?))
+    }
+
+    /// An optional string: a number or a boolean as its text, as Rails
+    /// hands a JSON scalar to a string attribute.
+    pub fn opt_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+        Ok(match Value::deserialize(d)? {
+            Value::Null => None,
+            Value::String(s) => Some(s),
+            Value::Number(n) => Some(n.to_string()),
+            Value::Bool(b) => Some(b.to_string()),
+            _ => None,
+        })
+    }
+
+    /// [`opt_string`], blank as nil: what a `.present?` check reads.
+    pub fn opt_present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+        opt_string(d).map(|s| s.filter(|s| !s.is_empty()))
+    }
+
+    /// A string, nil as empty: what a required text field reads.
+    pub fn string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+        opt_string(d).map(Option::unwrap_or_default)
+    }
+
+    /// `accepts_nested_attributes_for`'s collection: an array of hashes,
+    /// or a form's hash of them by index (`keywords_attributes[0][keyword]`),
+    /// whose values are taken in order; a lone hash with an `id` is one.
+    pub fn nested_attributes<'de, D, T>(d: D) -> Result<Option<Vec<T>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        T: serde::de::DeserializeOwned,
+    {
+        let items = match Value::deserialize(d)? {
+            Value::Null => return Ok(None),
+            Value::Array(items) => items,
+            Value::Object(map) if map.contains_key("id") => vec![Value::Object(map)],
+            Value::Object(map) => map.into_iter().map(|(_, v)| v).collect(),
+            _ => vec![],
+        };
+        items
+            .into_iter()
+            .filter(Value::is_object)
+            .map(|v| serde_json::from_value(v).map_err(serde::de::Error::custom))
+            .collect::<Result<Vec<T>, _>>()
+            .map(Some)
+    }
+
+    /// A list of strings, as `param: []` permits: an array, a lone value
+    /// as one, nil as none. Non-scalar items are dropped, as `permit`
+    /// drops them.
+    pub fn strings<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+        let items = match Value::deserialize(d)? {
+            Value::Array(items) => items,
+            Value::Null => vec![],
+            // A form's `ids[0]=…&ids[1]=…` is a hash of its values.
+            Value::Object(map) => map.into_iter().map(|(_, v)| v).collect(),
+            other => vec![other],
+        };
+        Ok(items
+            .into_iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s),
+                Value::Number(n) => Some(n.to_string()),
+                Value::Bool(b) => Some(b.to_string()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// [`opt_strings`] without its blank items, as a form's empty
+    /// `media_ids[]` field is no id.
+    pub fn opt_present_strings<'de, D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<Vec<String>>, D::Error> {
+        opt_strings(d).map(|v| v.map(|v| v.into_iter().filter(|s| !s.is_empty()).collect()))
+    }
+
+    /// [`strings`], `None` when absent.
+    pub fn opt_strings<'de, D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<Vec<String>>, D::Error> {
+        let value = Value::deserialize(d)?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        strings(value).map(Some).map_err(serde::de::Error::custom)
     }
 }
 
@@ -280,8 +254,9 @@ impl<'de> serde::Deserialize<'de> for FlexBool {
     }
 }
 
-/// Rails' `params` with Rack's nesting: the query string and the body,
-/// merged with the body winning, where a form's `subscription[keys][auth]`
+/// Rails' `params` with Rack's nesting: the body and the query string,
+/// merged as `request_parameters.merge(query_parameters)` merges them (the
+/// query string's top-level keys winning), where a form's `subscription[keys][auth]`
 /// is `{"subscription": {"keys": {"auth": …}}}` and `ids[]` an array, as
 /// `Rack::QueryParser#normalize_params` builds them. A JSON body is taken as
 /// it is, its booleans and numbers kept; form values are strings. Names that
@@ -386,10 +361,10 @@ where
             )
                 .into_response()
         };
-        let mut merged = serde_json::Map::new();
+        let mut query_parameters = serde_json::Map::new();
         let query = req.uri().query().unwrap_or("").to_owned();
         nest_pairs(
-            &mut merged,
+            &mut query_parameters,
             url::form_urlencoded::parse(query.as_bytes())
                 .into_owned()
                 .collect(),
@@ -401,14 +376,18 @@ where
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
+        let mut request_parameters = serde_json::Map::new();
         if content_type.contains("application/json") {
             let bytes = axum::body::Bytes::from_request(req, state)
                 .await
                 .map_err(IntoResponse::into_response)?;
             if !bytes.is_empty() {
                 match serde_json::from_slice::<Value>(&bytes) {
-                    Ok(Value::Object(body)) => merged.extend(body),
-                    Ok(_) => {}
+                    Ok(Value::Object(body)) => request_parameters = body,
+                    // `ActionDispatch::Request#parse_formatted_parameters`.
+                    Ok(other) => {
+                        request_parameters.insert("_json".into(), other);
+                    }
                     Err(e) => return Err((StatusCode::BAD_REQUEST, e.to_string()).into_response()),
                 }
             }
@@ -429,18 +408,20 @@ where
                     .map_err(|e| unprocessable(e.to_string()))?;
                 pairs.push((name, value));
             }
-            nest_pairs(&mut merged, pairs).map_err(invalid)?;
+            nest_pairs(&mut request_parameters, pairs).map_err(invalid)?;
         } else {
             let bytes = axum::body::Bytes::from_request(req, state)
                 .await
                 .map_err(IntoResponse::into_response)?;
             nest_pairs(
-                &mut merged,
+                &mut request_parameters,
                 url::form_urlencoded::parse(&bytes).into_owned().collect(),
             )
             .map_err(invalid)?;
         }
-        Ok(NestedParams(Value::Object(merged)))
+        // `request_parameters.merge(query_parameters)`.
+        request_parameters.extend(query_parameters);
+        Ok(NestedParams(Value::Object(request_parameters)))
     }
 }
 

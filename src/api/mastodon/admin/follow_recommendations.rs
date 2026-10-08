@@ -36,6 +36,10 @@ pub struct AdminFollowRecommendation {
 pub struct FollowRecommendationFilter {
     pub language: Option<String>,
     pub status: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub page: Option<i64>,
 }
 

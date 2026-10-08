@@ -20,7 +20,7 @@ pub async fn get_relationships(
 
     let with_suspended = pairs
         .iter()
-        .any(|(k, v)| k == "with_suspended" && (v == "true" || v == "1"));
+        .any(|(k, v)| k == "with_suspended" && crate::api::mastodon::extractors::rails::truthy(v));
 
     let mut ids: Vec<i64> = pairs
         .iter()
@@ -55,8 +55,20 @@ pub async fn get_relationships(
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FollowParams {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub reblogs: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub notify: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_strings"
+    )]
     pub languages: Option<Vec<String>>,
 }
 
@@ -64,13 +76,14 @@ pub async fn follow_account(
     state: AppState,
     Path(target_id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<FollowParams>>,
+    crate::api::mastodon::extractors::Params(params): crate::api::mastodon::extractors::Params<
+        FollowParams,
+    >,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
     if auth.account_id == target_id {
         return Err(AppError::Forbidden);
     }
-    let params = body.map(|Json(p)| p).unwrap_or_default();
     let requester = fetch_account(&state, auth.account_id).await?;
     let target = fetch_account(&state, target_id).await?;
     follow(

@@ -300,6 +300,7 @@ pub async fn list_featured_tags(
 
 #[derive(Debug, Deserialize)]
 pub struct FeaturedTagForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::string")]
     pub name: String,
 }
 
@@ -307,7 +308,7 @@ pub async fn feature_tag(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<FeaturedTagForm>,
+    super::extractors::Params(form): super::extractors::Params<FeaturedTagForm>,
 ) -> AppResult<Json<FeaturedTag>> {
     auth.require_scope("write:accounts")?;
     let username = sqlx::query_scalar!(

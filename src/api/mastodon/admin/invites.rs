@@ -42,6 +42,10 @@ pub struct AdminInvite {
 pub struct InviteFilter {
     pub available: Option<String>,
     pub expired: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub page: Option<i64>,
 }
 

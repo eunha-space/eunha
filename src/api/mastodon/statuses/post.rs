@@ -21,7 +21,10 @@ pub async fn post_status(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let form = extract_post_status_form(request).await?;
+    let form = match extract_post_status_form(request).await {
+        Ok(form) => form,
+        Err(rejection) => return Ok(*rejection),
+    };
     let account = fetch_account(&state, auth.account_id).await?;
 
     // `preprocess_attributes!`'s `@scheduled_at`: a time in the past is
@@ -1063,95 +1066,19 @@ async fn replay_idempotent(
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 
-async fn extract_post_status_form(request: axum::extract::Request) -> AppResult<PostStatusForm> {
-    let ct = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    if ct.contains("application/json") {
-        return axum::extract::Json::<PostStatusForm>::from_request(request, &())
+/// `status_params`: the query string and the body, JSON, form-encoded or
+/// multipart, read as Rails reads them (`media_ids[]`, `poll[options][]`,
+/// `sensitive=1`, `"expires_in": "300"`).
+async fn extract_post_status_form(
+    request: axum::extract::Request,
+) -> Result<PostStatusForm, Box<axum::response::Response>> {
+    use axum::response::IntoResponse;
+    let super::super::extractors::NestedParams(params) =
+        super::super::extractors::NestedParams::from_request(request, &())
             .await
-            .map(|axum::extract::Json(f)| f)
-            .map_err(|e| AppError::Unprocessable(e.to_string()));
-    }
-
-    if ct.contains("multipart/form-data") {
-        let mut multipart = Multipart::from_request(request, &())
-            .await
-            .map_err(|e| AppError::Unprocessable(e.to_string()))?;
-        let mut form = PostStatusForm::default();
-        let mut media_ids: Vec<String> = Vec::new();
-        while let Some(field) = multipart
-            .next_field()
-            .await
-            .map_err(|e| AppError::Unprocessable(e.to_string()))?
-        {
-            let name = field.name().unwrap_or("").to_string();
-            let text = field
-                .text()
-                .await
-                .map_err(|e| AppError::Unprocessable(e.to_string()))?;
-            match name.as_str() {
-                "status" => form.status = Some(text),
-                "in_reply_to_id" => {
-                    form.in_reply_to_id = if text.is_empty() { None } else { Some(text) }
-                }
-                "quoted_status_id" | "quote_id" => {
-                    form.quoted_status_id = if text.is_empty() { None } else { Some(text) }
-                }
-                "quote_approval_policy" => {
-                    form.quote_approval_policy = if text.is_empty() { None } else { Some(text) }
-                }
-                "spoiler_text" => {
-                    form.spoiler_text = if text.is_empty() { None } else { Some(text) }
-                }
-                "visibility" => form.visibility = Some(text),
-                "language" => form.language = if text.is_empty() { None } else { Some(text) },
-                "sensitive" => form.sensitive = Some(text == "true" || text == "1"),
-                "scheduled_at" => {
-                    form.scheduled_at = if text.is_empty() { None } else { Some(text) }
-                }
-                "media_ids[]" | "media_ids" => {
-                    if !text.is_empty() {
-                        media_ids.push(text);
-                    }
-                }
-                name if name.starts_with("poll[options]") || name == "poll[options][]" => {
-                    if !text.is_empty() {
-                        let p = form.poll.get_or_insert_with(PollForm::default);
-                        p.options.push(text);
-                    }
-                }
-                "poll[expires_in]" => {
-                    if let Ok(n) = text.parse::<i64>() {
-                        form.poll.get_or_insert_with(PollForm::default).expires_in = Some(n);
-                    }
-                }
-                "poll[multiple]" => {
-                    form.poll.get_or_insert_with(PollForm::default).multiple =
-                        Some(text == "true" || text == "1");
-                }
-                "poll[hide_totals]" => {
-                    form.poll.get_or_insert_with(PollForm::default).hide_totals =
-                        Some(text == "true" || text == "1");
-                }
-                _ => {}
-            }
-        }
-        if !media_ids.is_empty() {
-            form.media_ids = Some(media_ids);
-        }
-        return Ok(form);
-    }
-
-    // Fall back to URL-encoded form
-    axum::extract::Form::<PostStatusForm>::from_request(request, &())
-        .await
-        .map(|axum::extract::Form(f)| f)
-        .map_err(|e| AppError::Unprocessable(e.to_string()))
+            .map_err(Box::new)?;
+    serde_json::from_value(params)
+        .map_err(|e| Box::new(AppError::Unprocessable(e.to_string()).into_response()))
 }
 
 // ── GET /api/v1/statuses/:id ───────────────────────────────────────────────

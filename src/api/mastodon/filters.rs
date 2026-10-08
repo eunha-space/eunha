@@ -5,7 +5,10 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::types::{Filter, FilterKeyword, FilterStatus, FilterV1};
+use super::{
+    extractors::{rails, Params},
+    types::{Filter, FilterKeyword, FilterStatus, FilterV1},
+};
 use crate::{
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
@@ -152,10 +155,15 @@ pub async fn get_filter_v2(
 
 #[derive(Debug, Deserialize)]
 pub struct CreateFilterForm {
+    #[serde(default, deserialize_with = "rails::string")]
     pub title: String,
+    #[serde(default, deserialize_with = "rails::strings")]
     pub context: Vec<String>,
+    #[serde(default, deserialize_with = "rails::opt_int")]
     pub expires_in: Option<i64>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub filter_action: Option<String>,
+    #[serde(default, deserialize_with = "rails::nested_attributes")]
     pub keywords_attributes: Option<Vec<KeywordAttr>>,
 }
 
@@ -203,17 +211,20 @@ fn validate_filter_form(form: &CreateFilterForm) -> AppResult<()> {
 
 #[derive(Debug, Deserialize)]
 pub struct KeywordAttr {
+    #[serde(default, deserialize_with = "rails::opt_int")]
     pub id: Option<i64>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub keyword: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub whole_word: Option<bool>,
-    #[serde(rename = "_destroy")]
+    #[serde(rename = "_destroy", default, deserialize_with = "rails::opt_bool")]
     pub destroy: Option<bool>,
 }
 
 pub async fn create_filter_v2(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateFilterForm>,
+    Params(form): Params<CreateFilterForm>,
 ) -> AppResult<(StatusCode, Json<Filter>)> {
     auth.require_scope("write:filters")?;
     validate_filter_form(&form)?;
@@ -264,7 +275,7 @@ pub async fn update_filter_v2(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateFilterForm>,
+    Params(form): Params<CreateFilterForm>,
 ) -> AppResult<Json<Filter>> {
     auth.require_scope("write:filters")?;
     validate_filter_form(&form)?;
@@ -407,7 +418,9 @@ pub async fn get_filter_keywords(
 
 #[derive(Debug, Deserialize)]
 pub struct CreateKeywordForm {
+    #[serde(default, deserialize_with = "rails::string")]
     pub keyword: String,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub whole_word: Option<bool>,
 }
 
@@ -415,9 +428,12 @@ pub async fn create_filter_keyword(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateKeywordForm>,
+    Params(form): Params<CreateKeywordForm>,
 ) -> AppResult<(StatusCode, Json<FilterKeyword>)> {
     auth.require_scope("write:filters")?;
+    if form.keyword.trim().is_empty() {
+        return Err(AppError::Unprocessable("Keyword can't be blank".into()));
+    }
     let exists = sqlx::query_scalar!(
         "SELECT 1 FROM custom_filters WHERE id = $1 AND account_id = $2",
         id,
@@ -483,9 +499,12 @@ pub async fn update_filter_keyword(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateKeywordForm>,
+    Params(form): Params<CreateKeywordForm>,
 ) -> AppResult<Json<FilterKeyword>> {
     auth.require_scope("write:filters")?;
+    if form.keyword.trim().is_empty() {
+        return Err(AppError::Unprocessable("Keyword can't be blank".into()));
+    }
     let updated = sqlx::query!(
         r#"UPDATE custom_filter_keywords fk
            SET keyword = $2, whole_word = $3, updated_at = now()
@@ -577,6 +596,7 @@ pub async fn get_filter_statuses(
 
 #[derive(Debug, Deserialize)]
 pub struct AddFilterStatusForm {
+    #[serde(default, deserialize_with = "rails::string")]
     pub status_id: String,
 }
 
@@ -584,7 +604,7 @@ pub async fn add_filter_status(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<AddFilterStatusForm>,
+    Params(form): Params<AddFilterStatusForm>,
 ) -> AppResult<(StatusCode, Json<FilterStatus>)> {
     auth.require_scope("write:filters")?;
     let exists = sqlx::query_scalar!(
@@ -741,19 +761,28 @@ pub async fn get_filter_v1(
 
 #[derive(Debug, Deserialize)]
 pub struct CreateFilterV1Form {
+    #[serde(default, deserialize_with = "rails::string")]
     pub phrase: String,
+    #[serde(default, deserialize_with = "rails::strings")]
     pub context: Vec<String>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub irreversible: Option<bool>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub whole_word: Option<bool>,
+    #[serde(default, deserialize_with = "rails::opt_int")]
     pub expires_in: Option<i64>,
 }
 
 pub async fn create_filter_v1(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateFilterV1Form>,
+    Params(form): Params<CreateFilterV1Form>,
 ) -> AppResult<(StatusCode, Json<FilterV1>)> {
     auth.require_scope("write:filters")?;
+    // The keyword the phrase becomes, which `CustomFilterKeyword` requires.
+    if form.phrase.trim().is_empty() {
+        return Err(AppError::Unprocessable("Keyword can't be blank".into()));
+    }
     let action = crate::db::models::filter_action::from_str(if form.irreversible == Some(true) {
         "hide"
     } else {
@@ -812,9 +841,13 @@ pub async fn update_filter_v1(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateFilterV1Form>,
+    Params(form): Params<CreateFilterV1Form>,
 ) -> AppResult<Json<FilterV1>> {
     auth.require_scope("write:filters")?;
+    // The keyword the phrase becomes, which `CustomFilterKeyword` requires.
+    if form.phrase.trim().is_empty() {
+        return Err(AppError::Unprocessable("Keyword can't be blank".into()));
+    }
     let action = crate::db::models::filter_action::from_str(if form.irreversible == Some(true) {
         "hide"
     } else {

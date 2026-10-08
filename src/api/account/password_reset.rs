@@ -153,7 +153,7 @@ pub struct ResetForm {
 pub async fn update(
     state: AppState,
     headers: HeaderMap,
-    crate::api::mastodon::extractors::FormOrJson(form): crate::api::mastodon::extractors::FormOrJson<
+    crate::api::mastodon::extractors::Params(form): crate::api::mastodon::extractors::Params<
         ResetForm,
     >,
 ) -> Response {

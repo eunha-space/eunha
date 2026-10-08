@@ -28,8 +28,20 @@ use crate::{
 pub struct PublicTimelineQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub local: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub remote: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub only_media: Option<bool>,
 }
 
@@ -374,8 +386,20 @@ pub async fn list_timeline(
 pub struct TagTimelineQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub local: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub remote: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub only_media: Option<bool>,
 }
 

@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::extractors::FormOrJson;
+use super::extractors::Params;
 use crate::state::AppState;
 
 /// A row of `oauth_access_tokens`, with its application's uid.
@@ -189,7 +189,7 @@ pub struct IntrospectParams {
 pub async fn introspect(
     state: AppState,
     headers: HeaderMap,
-    FormOrJson(params): FormOrJson<IntrospectParams>,
+    Params(params): Params<IntrospectParams>,
 ) -> Response {
     let token = find_token(&state, params.token.as_deref().unwrap_or_default()).await;
     let now = now();

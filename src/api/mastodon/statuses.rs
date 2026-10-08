@@ -1,10 +1,12 @@
 use axum::{
-    extract::{Extension, FromRequest, Multipart, Path, Query, RawQuery},
-    http::{header, HeaderMap, Uri},
+    extract::{Extension, FromRequest, Path, Query, RawQuery},
+    http::{HeaderMap, Uri},
     response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
+
+use super::extractors::rails;
 use std::collections::HashMap;
 
 use super::{
@@ -38,9 +40,13 @@ pub use quotes::{get_status_quotes, revoke_quote};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct PollForm {
+    #[serde(default, deserialize_with = "rails::strings")]
     pub options: Vec<String>,
+    #[serde(default, deserialize_with = "rails::opt_int")]
     pub expires_in: Option<i64>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub multiple: Option<bool>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub hide_totals: Option<bool>,
 }
 
@@ -142,19 +148,43 @@ fn validate_poll_form(poll: &PollForm) -> AppResult<()> {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct PostStatusForm {
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub status: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_present")]
     pub in_reply_to_id: Option<String>,
-    #[serde(alias = "quote_id")]
+    #[serde(alias = "quote_id", default, deserialize_with = "rails::opt_present")]
     pub quoted_status_id: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_present")]
     pub quote_approval_policy: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_present")]
     pub spoiler_text: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub sensitive: Option<bool>,
+    #[serde(default, deserialize_with = "rails::opt_present")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub visibility: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_present_strings")]
     pub media_ids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "poll_form")]
     pub poll: Option<PollForm>,
+    #[serde(default, deserialize_with = "rails::opt_present")]
     pub scheduled_at: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_strings")]
     pub allowed_mentions: Option<Vec<String>>,
+}
+
+/// `poll`: a hash of its parameters; anything else (a form's lone `poll=`)
+/// is none.
+pub(crate) fn poll_form<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<PollForm>, D::Error> {
+    match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Object(map) => serde_json::from_value(serde_json::Value::Object(map))
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        _ => Ok(None),
+    }
 }
 
 // ── GET /api/v1/statuses (batch) ──────────────────────────────────────────
@@ -714,6 +744,7 @@ pub async fn unfavourite_status(
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ReblogForm {
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub visibility: Option<String>,
 }
 
@@ -721,7 +752,7 @@ pub async fn reblog_status(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<ReblogForm>>,
+    super::extractors::Params(form): super::extractors::Params<ReblogForm>,
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
     let (fetched, _) = fetch_status_with_account(&state, id).await?;
@@ -746,7 +777,7 @@ pub async fn reblog_status(
     }
 
     // Reject an unrecognized requested visibility rather than coercing to direct.
-    if let Some(v) = body.as_ref().and_then(|b| b.visibility.as_deref()) {
+    if let Some(v) = form.visibility.as_deref() {
         if !matches!(v, "public" | "unlisted" | "private" | "direct") {
             return Err(AppError::Unprocessable(format!(
                 "Validation failed: Visibility is not included in the list: {v}"
@@ -767,7 +798,7 @@ pub async fn reblog_status(
         // Hidden originals keep their own visibility (Mastodon: reblogged_status.hidden?).
         original.visibility
     } else {
-        match body.as_ref().and_then(|b| b.visibility.as_deref()) {
+        match form.visibility.as_deref() {
             Some(v) => crate::db::models::vis::from_str(v),
             // Mastodon falls back to the booster's default posting privacy.
             None => {

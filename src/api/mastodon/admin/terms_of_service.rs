@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{perm, require_permission};
 use crate::{
-    api::mastodon::{convert::mastodon_date, extractors::FormOrJson},
+    api::mastodon::{convert::mastodon_date, extractors::Params},
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
     moderation::action_log,
@@ -145,7 +145,7 @@ pub struct DraftForm {
 pub async fn update_admin_terms_of_service_draft(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    FormOrJson(form): FormOrJson<DraftForm>,
+    Params(form): Params<DraftForm>,
 ) -> AppResult<Json<AdminTermsOfService>> {
     authorize(&state, &auth, "admin:write").await?;
     let mut t = draft(&state).await?;
@@ -260,7 +260,7 @@ pub async fn admin_terms_of_service_generator(
 pub async fn generate_admin_terms_of_service(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    FormOrJson(form): FormOrJson<Generator>,
+    Params(form): Params<Generator>,
 ) -> AppResult<Json<AdminTermsOfService>> {
     authorize(&state, &auth, "admin:write").await?;
     let errors = form.errors();

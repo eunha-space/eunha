@@ -147,6 +147,10 @@ pub struct InstanceFilter {
     pub limited: Option<String>,
     pub by_domain: Option<String>,
     pub availability: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub page: Option<i64>,
 }
 

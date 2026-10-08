@@ -59,13 +59,14 @@ pub async fn get_domain_blocks(
 
 #[derive(Debug, Deserialize)]
 pub struct DomainBlockForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::string")]
     pub domain: String,
 }
 
 pub async fn block_domain(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<DomainBlockForm>,
+    super::extractors::Params(form): super::extractors::Params<DomainBlockForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:blocks")?;
     block_domain_for(&state, auth.account_id, &form.domain.to_lowercase()).await?;
@@ -322,7 +323,7 @@ pub async fn preview_domain_block(
 pub async fn unblock_domain(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<DomainBlockForm>,
+    super::extractors::Params(form): super::extractors::Params<DomainBlockForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:blocks")?;
     sqlx::query!(

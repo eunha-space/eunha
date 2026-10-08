@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::extractors::FormOrJson;
+use super::extractors::Params;
 
 use super::types::{AppCredentials, CredentialApplication};
 use crate::{
@@ -213,7 +213,7 @@ fn application_errors(name: &str, redirect_uri: &str, scopes: &str, website: &st
 pub async fn register_app(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    FormOrJson(form): FormOrJson<RegisterAppForm>,
+    Params(form): Params<RegisterAppForm>,
 ) -> AppResult<Json<CredentialApplication>> {
     let client_id = generate_token(32);
     let client_secret = generate_token(64);
@@ -413,7 +413,7 @@ fn token_response(token: String, scopes: String, created_at: chrono::NaiveDateTi
 pub async fn issue_token(
     state: AppState,
     headers: axum::http::HeaderMap,
-    FormOrJson(form): FormOrJson<TokenRequest>,
+    Params(form): Params<TokenRequest>,
 ) -> AppResult<Response> {
     use crate::api::mastodon::oauth_client;
 
@@ -582,7 +582,7 @@ pub struct RevokeRequest {
 pub async fn revoke_token(
     state: AppState,
     headers: axum::http::HeaderMap,
-    FormOrJson(form): FormOrJson<RevokeRequest>,
+    Params(form): Params<RevokeRequest>,
 ) -> AppResult<Response> {
     use crate::api::mastodon::oauth_client;
 

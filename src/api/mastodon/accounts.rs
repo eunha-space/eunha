@@ -130,6 +130,10 @@ pub async fn fetch_account_role(state: &AppState, account_id: i64) -> Option<sup
 #[derive(Debug, Deserialize)]
 pub struct LookupQuery {
     pub acct: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub resolve: Option<bool>,
 }
 
@@ -255,10 +259,30 @@ pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json
 pub struct StatusesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub only_media: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub exclude_replies: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub exclude_reblogs: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub exclude_direct: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub pinned: Option<bool>,
     pub tagged: Option<String>,
 }
@@ -1028,6 +1052,7 @@ pub(super) async fn build_relationship(
 
 #[derive(Debug, Deserialize)]
 pub struct NoteForm {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub comment: Option<String>,
 }
 
@@ -1035,7 +1060,7 @@ pub async fn set_account_note(
     state: AppState,
     Path(target_id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<NoteForm>,
+    super::extractors::Params(form): super::extractors::Params<NoteForm>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:accounts")?;
     let comment = form.comment.unwrap_or_default();
@@ -1225,9 +1250,21 @@ pub async fn get_familiar_followers(
 
 #[derive(Debug, Deserialize)]
 pub struct DirectoryQuery {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub offset: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub limit: Option<i64>,
     pub order: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub local: Option<bool>,
 }
 

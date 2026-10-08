@@ -989,7 +989,7 @@ pub async fn registration_post(
     client_ip: ClientIpExt,
     headers: HeaderMap,
     uri: axum::http::Uri,
-    crate::api::mastodon::extractors::FormOrJson(mut form): crate::api::mastodon::extractors::FormOrJson<
+    crate::api::mastodon::extractors::Params(mut form): crate::api::mastodon::extractors::Params<
         crate::api::mastodon::signup::ApiCreateAccountForm,
     >,
 ) -> Response {

@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::{
     accounts::batch_accounts_to_api,
+    extractors::{rails, Params},
     types::{Account, List},
 };
 use crate::{
@@ -51,8 +52,11 @@ pub async fn get_list(
 
 #[derive(Debug, Deserialize)]
 pub struct ListForm {
-    pub title: String,
+    #[serde(default, deserialize_with = "rails::opt_string")]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub replies_policy: Option<String>,
+    #[serde(default, deserialize_with = "rails::opt_bool")]
     pub exclusive: Option<bool>,
 }
 
@@ -66,10 +70,11 @@ const LIST_PER_ACCOUNT_LIMIT: i64 = 50;
 /// Validate list title + replies_policy the way Mastodon's List model does.
 /// Applies to both create and update.
 fn validate_list_form(form: &ListForm) -> AppResult<()> {
-    if form.title.trim().is_empty() {
+    let title = form.title.as_deref().unwrap_or("");
+    if title.trim().is_empty() {
         return Err(AppError::Unprocessable("Title can't be blank".into()));
     }
-    if form.title.chars().count() > LIST_TITLE_MAX {
+    if title.chars().count() > LIST_TITLE_MAX {
         return Err(AppError::Unprocessable(format!(
             "Title is too long (maximum is {LIST_TITLE_MAX} characters)"
         )));
@@ -86,7 +91,7 @@ fn validate_list_form(form: &ListForm) -> AppResult<()> {
 pub async fn create_list(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<ListForm>,
+    Params(form): Params<ListForm>,
 ) -> AppResult<Json<List>> {
     auth.require_scope("write:lists")?;
     validate_list_form(&form)?;
@@ -113,7 +118,7 @@ pub async fn create_list(
            VALUES ($1, $2, $3, $4, now(), now())
            RETURNING *"#,
         auth.account_id,
-        form.title,
+        form.title.unwrap_or_default(),
         replies_policy_int,
         form.exclusive.unwrap_or(false),
     )
@@ -129,10 +134,15 @@ pub async fn update_list(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<ListForm>,
+    Params(mut form): Params<ListForm>,
 ) -> AppResult<Json<List>> {
     auth.require_scope("write:lists")?;
-    fetch_list(&state, id, auth.account_id).await?;
+    let current = fetch_list(&state, id, auth.account_id).await?;
+    // `@list.update!(list_params)`: only what was given changes.
+    form.title.get_or_insert(current.title);
+    form.replies_policy
+        .get_or_insert_with(|| models::replies::to_str(current.replies_policy).to_owned());
+    form.exclusive.get_or_insert(current.exclusive);
     validate_list_form(&form)?;
 
     let list = sqlx::query_as!(
@@ -140,7 +150,7 @@ pub async fn update_list(
         r#"UPDATE lists SET title = $1, replies_policy = $2, exclusive = $3, updated_at = now()
            WHERE id = $4 AND account_id = $5
            RETURNING *"#,
-        form.title,
+        form.title.unwrap_or_default(),
         models::replies::from_str(form.replies_policy.as_deref().unwrap_or("list")),
         form.exclusive.unwrap_or(false),
         id,
@@ -235,6 +245,7 @@ pub async fn get_list_accounts(
 
 #[derive(Debug, Deserialize)]
 pub struct ListAccountsForm {
+    #[serde(default, deserialize_with = "rails::strings")]
     pub account_ids: Vec<String>,
 }
 
@@ -243,7 +254,7 @@ pub async fn add_list_accounts(
     Path(id): Path<i64>,
     Extension(ResolvedInstance(_instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<ListAccountsForm>,
+    Params(form): Params<ListAccountsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:lists")?;
     fetch_list(&state, id, auth.account_id).await?;
@@ -316,7 +327,7 @@ pub async fn remove_list_accounts(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<ListAccountsForm>,
+    Params(form): Params<ListAccountsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:lists")?;
     fetch_list(&state, id, auth.account_id).await?;

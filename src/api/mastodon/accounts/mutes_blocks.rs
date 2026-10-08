@@ -9,8 +9,16 @@ use super::*;
 #[derive(Debug, Deserialize, Default)]
 pub struct MuteParams {
     /// Whether to also mute notifications from this account (default true).
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub notifications: Option<bool>,
     /// Mute duration in seconds; 0 or absent means indefinite.
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_int"
+    )]
     pub duration: Option<i64>,
 }
 
@@ -18,7 +26,9 @@ pub async fn mute_account(
     state: AppState,
     Path(target_id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<MuteParams>>,
+    crate::api::mastodon::extractors::Params(params): crate::api::mastodon::extractors::Params<
+        MuteParams,
+    >,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:mutes")?;
     // Mastodon MuteService: muting yourself is a no-op.
@@ -27,7 +37,6 @@ pub async fn mute_account(
             .await
             .map(Json);
     }
-    let params = body.map(|Json(p)| p).unwrap_or_default();
     let hide_notifications = params.notifications.unwrap_or(true);
     mute(
         &state,

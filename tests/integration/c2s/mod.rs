@@ -19,6 +19,7 @@ mod featured_tags;
 mod feed_access;
 mod filters;
 mod follow_requests;
+mod form_params;
 mod formatting;
 mod gates;
 mod home_feed;

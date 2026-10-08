@@ -10,7 +10,9 @@ use super::*;
 pub async fn move_account(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<crate::moves::MoveForm>,
+    crate::api::mastodon::extractors::Params(form): crate::api::mastodon::extractors::Params<
+        crate::moves::MoveForm,
+    >,
 ) -> AppResult<Json<crate::moves::Migration>> {
     auth.require_scope("write:accounts")?;
     crate::moves::create_migration(&state, auth.account_id, &form)
@@ -24,7 +26,9 @@ pub async fn move_account(
 pub async fn create_redirect(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<crate::moves::MoveForm>,
+    crate::api::mastodon::extractors::Params(form): crate::api::mastodon::extractors::Params<
+        crate::moves::MoveForm,
+    >,
 ) -> AppResult<Json<ApiAccount>> {
     auth.require_scope("write:accounts")?;
     crate::moves::create_redirect(&state, auth.account_id, &form).await?;
@@ -55,14 +59,19 @@ pub async fn list_aliases(
 
 #[derive(Debug, Deserialize)]
 pub struct CreateAliasForm {
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::string"
+    )]
     pub acct: String,
 }
 
 pub async fn create_alias(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Json(form): Json<CreateAliasForm>,
+    crate::api::mastodon::extractors::Params(form): crate::api::mastodon::extractors::Params<
+        CreateAliasForm,
+    >,
 ) -> AppResult<Json<crate::moves::Alias>> {
     auth.require_scope("write:accounts")?;
     crate::moves::create_alias(&state, auth.account_id, &form.acct)
