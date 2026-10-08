@@ -163,6 +163,12 @@ struct RoleRow {
     collection_limit: i32,
 }
 
+/// `UserRole.everyone.can?(privilege)`: the everyone role's own
+/// permissions, which are its computed ones.
+pub async fn everyone_can(db: &PgPool, privilege: i64) -> AppResult<bool> {
+    Ok(everyone_permissions(db).await? & privilege == privilege)
+}
+
 async fn everyone_permissions(db: &PgPool) -> AppResult<i64> {
     // `UserRole.everyone` creates the row when it is missing, with
     // `Flags::DEFAULT`; reading it as that is the same answer.

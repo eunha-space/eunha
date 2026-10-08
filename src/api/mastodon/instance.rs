@@ -178,11 +178,35 @@ pub async fn get_extended_description(state: AppState) -> AppResult<Json<Extende
 
 // ── GET /api/v1/instance ──────────────────────────────────────────────────
 
+/// `Mastodon::Version.source_url`: where eunha's source is.
+const SOURCE_URL: &str = "https://github.com/eunha-space/eunha";
+
+/// The alt text of [`default_thumbnail_url`]'s picture, as Mastodon keeps
+/// `about.default_thumbnail_description` for its own.
+pub const DEFAULT_THUMBNAIL_DESCRIPTION: &str =
+    "A cream-colored rabbit with one lilac ear peeks out of a mint-green planetary ring against a dark navy sky.";
+
+/// `frontend_asset_url('images/preview.png')`: the picture an instance with
+/// no thumbnail of its own is shown with, from the web frontend.
+fn default_thumbnail_url(base_url: &str) -> String {
+    format!("{base_url}/images/preview.png")
+}
+
+/// `Rails.configuration.x.streaming_api_base_url`: the streaming server's
+/// origin, which clients add `/api/v1/streaming` to.
+fn streaming_api_base_url(domain: &str) -> String {
+    format!("wss://{domain}")
+}
+
+/// `InstancePresenter#languages`: `[I18n.default_locale]`.
+fn languages() -> Vec<String> {
+    vec![super::DEFAULT_LOCALE.to_string()]
+}
+
 pub async fn get_instance_v1(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
 ) -> AppResult<Json<InstanceV1>> {
-    let streaming_url = format!("wss://{}/api/v1/streaming", instance.domain);
     let (user_count, status_count, domain_count) = fetch_stats(&state).await;
     let settings = crate::settings::Snapshot::load(&state).await;
     let contact_account = fetch_contact_account(&state, &settings).await;
@@ -198,21 +222,27 @@ pub async fn get_instance_v1(
         email: settings.site_contact_email(&instance),
         version: crate::version::compatible_string(),
         urls: InstanceV1Urls {
-            streaming_api: streaming_url,
+            streaming_api: streaming_api_base_url(&instance.domain),
         },
         stats: InstanceV1Stats {
             user_count,
             status_count,
             domain_count,
         },
+        // `full_asset_url(thumbnail.file.url(:'@1x'))`, else
+        // `frontend_asset_url('images/preview.png')`.
         thumbnail: thumbnail
             .and_then(|t| t.url(&state, "@1x"))
-            .or_else(|| instance.icon_url.clone())
-            .unwrap_or_else(|| format!("{base_url}/instance-thumbnail.png")),
-        languages: vec!["ko".to_string(), "en".to_string()],
+            .unwrap_or_else(|| default_thumbnail_url(&base_url)),
+        languages: languages(),
         registrations: registrations.enabled(),
         approval_required: registrations.approval_required(),
-        invites_enabled: false,
+        // `UserRole.everyone.can?(:invite_users)`.
+        invites_enabled: crate::moderation::role::everyone_can(
+            &state.db,
+            crate::moderation::role::flag::INVITE_USERS,
+        )
+        .await?,
         configuration: serde_json::json!({
             "accounts": { "max_featured_tags": 10 },
             "statuses": {
@@ -328,72 +358,62 @@ pub async fn get_instance_v2(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
 ) -> AppResult<Json<InstanceV2>> {
-    let streaming_url = format!("wss://{}/api/v1/streaming", instance.domain);
     let base_url = format!("https://{}", instance.domain);
     let settings = crate::settings::Snapshot::load(&state).await;
     let contact_account = fetch_contact_account(&state, &settings).await;
     let registrations = settings.registrations_mode(&instance);
     let thumbnail = crate::site_uploads::find(&state, "thumbnail").await?;
     let app_icon = crate::site_uploads::find(&state, "app_icon").await?;
-    // `InstancePresenter::UsagePresenter#users`: `active_user_count(4)`.
-    let active_month = crate::activity_tracker::active_user_count(&state, 4).await;
+    // `usage`: `active_user_count(4)`, or none to show in limited
+    // federation mode.
+    let active_month = if state.instance.limited_federation_mode {
+        0
+    } else {
+        crate::activity_tracker::active_user_count(&state, 4).await
+    };
 
     Ok(Json(InstanceV2 {
         domain: instance.domain.clone(),
         title: settings.site_title(&instance),
         version: crate::version::compatible_string(),
-        source_url: "https://github.com/limeburst/eunha".to_string(),
+        source_url: SOURCE_URL.to_string(),
         description: settings.site_short_description(&instance),
         usage: InstanceUsage {
             users: InstanceUsageUsers { active_month },
         },
         thumbnail: match &thumbnail {
-            Some(upload) => InstanceThumbnail {
-                url: upload.url(&state, "@1x").unwrap_or_default(),
-                blurhash: upload.blurhash.clone(),
-                versions: Some(serde_json::json!({
+            Some(upload) => serde_json::json!({
+                "url": upload.url(&state, "@1x"),
+                "blurhash": upload.blurhash,
+                "versions": {
                     "@1x": upload.url(&state, "@1x"),
                     "@2x": upload.url(&state, "@2x"),
-                })),
-                description: Some(settings.string("thumbnail_description")),
-            },
-            None => InstanceThumbnail {
-                url: instance
-                    .icon_url
-                    .clone()
-                    .unwrap_or_else(|| format!("{base_url}/instance-thumbnail.png")),
-                blurhash: None,
-                versions: None,
-                description: None,
-            },
+                },
+                "description": settings.string("thumbnail_description"),
+            }),
+            None => serde_json::json!({
+                "url": default_thumbnail_url(&base_url),
+                "description": DEFAULT_THUMBNAIL_DESCRIPTION,
+            }),
         },
-        // `SiteUpload::ANDROID_ICON_SIZES` of the uploaded app icon, or else
-        // the configured icon.
-        icon: match &app_icon {
-            Some(upload) => crate::site_uploads::ANDROID_ICON_SIZES
-                .iter()
-                .map(|size| {
-                    serde_json::json!({
-                        "src": upload.url(&state, &size.to_string()),
-                        "size": format!("{size}x{size}"),
-                    })
-                })
-                .collect(),
-            None => instance
-                .icon_url
-                .as_ref()
-                .map(|url| {
-                    vec![
-                        serde_json::json!({ "src": url, "size": "192x192" }),
-                        serde_json::json!({ "src": url, "size": "512x512" }),
-                    ]
-                })
-                .unwrap_or_default(),
-        },
-        languages: vec!["ko".to_string(), "en".to_string()],
+        // Each of `SiteUpload::ANDROID_ICON_SIZES`: the uploaded app icon's,
+        // else the frontend's own `icons/android-chrome-#{size}x#{size}.png`.
+        icon: crate::site_uploads::ANDROID_ICON_SIZES
+            .iter()
+            .map(|size| {
+                let src = app_icon
+                    .as_ref()
+                    .and_then(|upload| upload.url(&state, &size.to_string()))
+                    .unwrap_or_else(|| {
+                        format!("{base_url}/icons/android-chrome-{size}x{size}.png")
+                    });
+                serde_json::json!({ "src": src, "size": format!("{size}x{size}") })
+            })
+            .collect(),
+        languages: languages(),
         configuration: InstanceConfiguration {
             urls: InstanceUrls {
-                streaming: streaming_url,
+                streaming: streaming_api_base_url(&instance.domain),
                 // `InstancePresenter#status_page_url`.
                 status: Some(settings.string("status_page_url")).filter(|u| !u.is_empty()),
                 about: Some(format!("{base_url}/about")),
@@ -517,8 +537,9 @@ pub async fn get_instance_v2(
             account: contact_account,
         },
         rules: crate::moderation::rules::serialize(&state, None).await?,
-        api_versions: serde_json::json!({ "mastodon": 9 }),
-        wrapstodon: None,
+        // `Mastodon::Version.api_versions`.
+        api_versions: serde_json::json!({ "mastodon": 11 }),
+        wrapstodon: super::annual_reports::current_campaign(&state).await,
     }))
 }
 
@@ -615,15 +636,18 @@ async fn activity_weeks(state: &AppState) -> AppResult<Vec<ActivityWeek>> {
     Ok(weeks)
 }
 
+/// `InstancePresenter#user_count`, `#status_count` and `#domain_count`.
 async fn fetch_stats(state: &AppState) -> (i64, i64, i64) {
+    // `User.confirmed.joins(:account).merge(Account.without_suspended).count`.
     let user_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM accounts WHERE domain IS NULL AND suspended_at IS NULL AND requested_deletion_at IS NULL",
+        r#"SELECT COUNT(*) AS "n!" FROM users u JOIN accounts a ON a.id = u.account_id
+           WHERE u.confirmed_at IS NOT NULL AND a.suspended_at IS NULL"#,
     )
     .fetch_one(&state.db)
     .await
-    .unwrap_or(Some(0))
     .unwrap_or(0);
 
+    // `Account.local.joins(:account_stat).sum('account_stats.statuses_count')`.
     let status_count = sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(ast.statuses_count), 0)::bigint
            FROM account_stats ast
@@ -635,13 +659,12 @@ async fn fetch_stats(state: &AppState) -> (i64, i64, i64) {
     .unwrap_or(Some(0))
     .unwrap_or(0);
 
-    let domain_count = sqlx::query_scalar!(
-        "SELECT COUNT(DISTINCT domain) FROM accounts WHERE domain IS NOT NULL",
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or(Some(0))
-    .unwrap_or(0);
+    // `Instance.count`: the `instances` view, which the scheduler refreshes,
+    // blocked and allowed domains included.
+    let domain_count = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "n!" FROM instances"#)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0);
 
     (user_count, status_count, domain_count)
 }

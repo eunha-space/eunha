@@ -54,10 +54,18 @@ async fn limited_federation_requires_an_authenticated_user() {
     );
 
     // The instance itself stays open, and says the mode it is in.
+    eunha::activity_tracker::record(
+        &ctx.state,
+        eunha::activity_tracker::LOGINS,
+        ctx.alice_id.parse().unwrap(),
+    )
+    .await;
     let instance = ctx.api.get("/api/v2/instance", None).await;
     assert_eq!(instance.status(), StatusCode::OK);
     let instance: Value = instance.json().await.unwrap();
     assert_eq!(instance["configuration"]["limited_federation"], json!(true));
+    // `usage`: nobody active to show.
+    assert_eq!(instance["usage"]["users"]["active_month"], json!(0));
     assert_eq!(
         ctx.api.get("/api/v1/instance", None).await.status(),
         StatusCode::OK

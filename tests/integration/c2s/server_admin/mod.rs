@@ -569,7 +569,7 @@ async fn test_site_uploads() {
     assert!(v2["thumbnail"]["url"]
         .as_str()
         .unwrap()
-        .ends_with("/instance-thumbnail.png"));
+        .ends_with("/images/preview.png"));
 }
 
 /// The content retention periods drive the vacuum: remote posts and cached

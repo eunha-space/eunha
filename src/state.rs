@@ -83,6 +83,12 @@ impl AppState {
                  `eunha settings import-config` whenever asked; remove them"
             );
         }
+        if config.instance.icon_url.is_some() {
+            tracing::warn!(
+                "[instance] icon_url is no longer read; upload an app icon and a thumbnail \
+                 in the server settings instead, and remove it"
+            );
+        }
         let http = reqwest::Client::builder()
             .user_agent(crate::version::USER_AGENT)
             .timeout(std::time::Duration::from_secs(30))

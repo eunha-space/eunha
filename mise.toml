@@ -66,7 +66,7 @@ description = "Diff the database against Mastodon's schema for the tracked relea
 run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- check"
 
 [tasks."site:images"]
-description = "Regenerate site/og.png and site/apple-touch-icon.png from the brand symbol"
+description = "Regenerate site/og.png, site/apple-touch-icon.png and the frontend's default instance images from the brand symbol"
 run = "node scripts/build_site_images.mjs"
 
 [tasks."container:build"]

@@ -38,6 +38,14 @@ Paperclip stores it and rendered in Mastodon's styles: the thumbnail at
 size, the favicon at 16, 32 and 48 pixels.
 `DELETE /api/v1/admin/site_uploads/:id` removes one.
 
+With no thumbnail uploaded, the instance API names the web frontend's own
+picture, `/images/preview.png`, and describes it, where Mastodon names and
+describes its mascots; with no app icon, it names the frontend's
+`/icons/android-chrome-<size>x<size>.png` at each Android size. Both are cut
+from the brand symbol by `mise run site:images`. The `icon_url` key of the
+instance configuration, which eunha showed before it had uploads, is no longer
+read, and a server that finds it set warns.
+
 ### What the settings drive
 
 The web client keeps the last loaded instance branding while navigating,
@@ -71,7 +79,7 @@ both visitors and signed-in members. The timeline remains available at
 | `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                               |
 | `authorized_fetch`                                               | signed fetches, unless the instance configuration decides                              |
 | `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                |
-| `wrapstodon`                                                     | annual reports                                                                         |
+| `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December           |
 | `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                              |
 | `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))            |
 | `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))       |

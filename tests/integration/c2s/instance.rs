@@ -3,21 +3,72 @@ use serde_json::{json, Value};
 
 use crate::helpers::TestContext;
 
-/// GET /api/v1/instance returns valid instance data.
+/// GET /api/v1/instance: `REST::V1::InstanceSerializer`.
 #[tokio::test]
 async fn test_instance_v1() {
     let ctx = TestContext::new("instance-v1").await;
 
-    let resp = ctx.api.get("/api/v1/instance", None).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = resp.json().await.unwrap();
-
-    assert!(body["uri"].as_str().is_some(), "uri field missing");
+    let v1 = || async {
+        let resp = ctx.api.get("/api/v1/instance", None).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        resp.json::<Value>().await.unwrap()
+    };
+    let body = v1().await;
+    assert_eq!(body["uri"], json!(ctx.domain));
     assert!(body["title"].as_str().is_some(), "title field missing");
     assert!(body["version"].as_str().is_some(), "version field missing");
+    // `streaming_api_base_url`, which clients add the path to.
+    assert_eq!(
+        body["urls"]["streaming_api"],
+        json!(format!("wss://{}", ctx.domain))
+    );
+    // `[I18n.default_locale]`.
+    assert_eq!(body["languages"], json!(["en"]));
+    // `frontend_asset_url('images/preview.png')` with no thumbnail uploaded.
+    assert_eq!(
+        body["thumbnail"],
+        json!(format!("https://{}/images/preview.png", ctx.domain))
+    );
+    // `UserRole.everyone.can?(:invite_users)`, which it can by default.
+    assert_eq!(body["invites_enabled"], json!(true));
+    // `User.confirmed.joins(:account).merge(Account.without_suspended)`.
+    let users = body["stats"]["user_count"].as_i64().unwrap();
+    assert!(users >= 2, "alice and bob are confirmed: {body}");
+
+    sqlx::query("UPDATE user_roles SET permissions = 0 WHERE id = -99")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    // `Instance.count`: the `instances` view, a blocked domain with no
+    // accounts included once it is refreshed.
+    let domains_before = body["stats"]["domain_count"].as_i64().unwrap();
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at)
+         VALUES ('blocked.example', 1, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("REFRESH MATERIALIZED VIEW instances")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let body = v1().await;
+    assert_eq!(body["invites_enabled"], json!(false));
+    assert_eq!(body["stats"]["user_count"].as_i64().unwrap(), users - 1);
+    assert_eq!(
+        body["stats"]["domain_count"].as_i64().unwrap(),
+        domains_before + 1
+    );
 }
 
-/// GET /api/v2/instance returns valid instance data including usage.
+/// GET /api/v2/instance: `REST::InstanceSerializer`.
 #[tokio::test]
 async fn test_instance_v2() {
     let ctx = TestContext::new("instance-v2").await;
@@ -26,8 +77,76 @@ async fn test_instance_v2() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
 
-    assert!(body["domain"].as_str().is_some(), "domain field missing");
+    assert_eq!(body["domain"], json!(ctx.domain));
     assert!(body["version"].as_str().is_some(), "version field missing");
+    assert_eq!(body["api_versions"], json!({"mastodon": 11}));
+    assert_eq!(body["languages"], json!(["en"]));
+    assert_eq!(
+        body["configuration"]["urls"]["streaming"],
+        json!(format!("wss://{}", ctx.domain))
+    );
+    // No thumbnail uploaded: the frontend's picture and its description,
+    // without a blurhash or versions.
+    assert_eq!(
+        body["thumbnail"],
+        json!({
+            "url": format!("https://{}/images/preview.png", ctx.domain),
+            "description": eunha::api::mastodon::instance::DEFAULT_THUMBNAIL_DESCRIPTION,
+        })
+    );
+    // No app icon uploaded: every `ANDROID_ICON_SIZES` entry, from the
+    // frontend.
+    let icons = body["icon"].as_array().unwrap();
+    let sizes: Vec<&str> = icons.iter().map(|i| i["size"].as_str().unwrap()).collect();
+    assert_eq!(
+        sizes,
+        [
+            "36x36", "48x48", "72x72", "96x96", "144x144", "192x192", "256x256", "384x384",
+            "512x512"
+        ]
+    );
+    assert_eq!(
+        icons[0]["src"],
+        json!(format!(
+            "https://{}/icons/android-chrome-36x36.png",
+            ctx.domain
+        ))
+    );
+    // `AnnualReport.current_campaign`: the year from 10 December, while the
+    // `wrapstodon` setting is on.
+    let now = chrono::Utc::now();
+    use chrono::Datelike;
+    let campaign = if now.month() == 12 && now.day() >= 10 {
+        json!(now.year())
+    } else {
+        Value::Null
+    };
+    assert_eq!(body["wrapstodon"], campaign);
+    crate::helpers::set_setting(&ctx.db, "wrapstodon", "false").await;
+    let body: Value = ctx
+        .api
+        .get("/api/v2/instance", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["wrapstodon"], Value::Null);
+}
+
+/// The pictures the instance API names when nothing was uploaded are served
+/// by the web frontend.
+#[test]
+fn test_instance_default_images_exist() {
+    let public = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/public");
+    assert!(public.join("images/preview.png").is_file());
+    for size in [36, 48, 72, 96, 144, 192, 256, 384, 512] {
+        assert!(
+            public
+                .join(format!("icons/android-chrome-{size}x{size}.png"))
+                .is_file(),
+            "missing the {size}px icon"
+        );
+    }
 }
 
 /// GET /api/v1/instance/extended_description returns 200.

@@ -1132,3 +1132,25 @@ inspection is plainly an upstream slip rather than a choice."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "instance-default-pictures"
+kind = "behaviour"
+summary = "Names eunha's own pictures for an instance that uploaded none"
+mastodon = """
+With no thumbnail uploaded, the instance API names the frontend's \
+`images/preview.png`, its mascots, described by \
+`about.default_thumbnail_description`; with no app icon, the frontend's \
+`icons/android-chrome-<size>x<size>.png` at each size, all under the \
+digested asset paths of its build."""
+eunha = """
+Names the web frontend's `/images/preview.png` and \
+`/icons/android-chrome-<size>x<size>.png`, cut from eunha's symbol, and \
+describes that picture instead."""
+why = """
+Mastodon's pictures are its own branding, and their description describes \
+them; eunha's frontend has neither a build that digests its paths nor the \
+mascots, so it names pictures it serves and says what is in them."""
+evidence = "tests/integration/c2s/instance.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

@@ -418,6 +418,8 @@ pub struct InstanceConfig {
     pub approval_required: bool,
     pub vapid_private_key: String,
     pub vapid_public_key: String,
+    /// The icon eunha showed for an instance before it served the uploaded
+    /// app icon and thumbnail, or the web frontend's; not read any more.
     pub icon_url: Option<String>,
     /// The privacy policy eunha served before it read `site_terms`, which
     /// `eunha settings import-config` copies there; not read otherwise.

@@ -26,6 +26,36 @@ use crate::{
 };
 
 const SCHEMA_VERSION: i32 = 1;
+
+/// `AnnualReport.current_campaign`: the year whose reports are on offer,
+/// while the `wrapstodon` setting is on and it is 10 to 31 December (UTC).
+pub(crate) async fn current_campaign(state: &AppState) -> Option<i32> {
+    if !crate::settings::boolean(state, "wrapstodon").await {
+        return None;
+    }
+    campaign_at(Utc::now())
+}
+
+/// The date half of [`current_campaign`].
+fn campaign_at(now: chrono::DateTime<Utc>) -> Option<i32> {
+    (now.month() == 12 && (10..=31).contains(&now.day())).then(|| now.year())
+}
+
+#[cfg(test)]
+mod campaign_tests {
+    use chrono::TimeZone;
+
+    #[test]
+    fn runs_from_the_tenth_of_december_to_the_end_of_the_year() {
+        let at =
+            |m, d| super::campaign_at(chrono::Utc.with_ymd_and_hms(2026, m, d, 12, 0, 0).unwrap());
+        assert_eq!(at(12, 9), None);
+        assert_eq!(at(12, 10), Some(2026));
+        assert_eq!(at(12, 31), Some(2026));
+        assert_eq!(at(11, 20), None);
+        assert_eq!(at(1, 5), None);
+    }
+}
 const AVERAGE_POSTS_PER_YEAR: i64 = 113;
 
 // ── Response types ─────────────────────────────────────────────────────────

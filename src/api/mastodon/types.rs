@@ -242,7 +242,9 @@ pub struct InstanceV2 {
     pub source_url: String,
     pub description: String,
     pub usage: InstanceUsage,
-    pub thumbnail: InstanceThumbnail,
+    /// `thumbnail`: an uploaded one with its blurhash and versions, or the
+    /// frontend's with only its URL and description.
+    pub thumbnail: serde_json::Value,
     pub icon: Vec<serde_json::Value>,
     pub languages: Vec<String>,
     pub configuration: InstanceConfiguration,
@@ -250,7 +252,8 @@ pub struct InstanceV2 {
     pub contact: InstanceContact,
     pub rules: Vec<Rule>,
     pub api_versions: serde_json::Value,
-    pub wrapstodon: Option<serde_json::Value>,
+    /// `AnnualReport.current_campaign`.
+    pub wrapstodon: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -261,17 +264,6 @@ pub struct InstanceUsage {
 #[derive(Debug, Serialize)]
 pub struct InstanceUsageUsers {
     pub active_month: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct InstanceThumbnail {
-    pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blurhash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub versions: Option<serde_json::Value>,
-    /// The thumbnail's alt text. Sent even when unset, as Mastodon does.
-    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
