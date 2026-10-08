@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis\n           (shortcode, image_file_name, image_content_type, visible_in_picker,\n            created_at, updated_at)\n         VALUES ('hidden', 'a.png', 'image/png', false, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d491911c02a0473c213aee5d7893503fa8590edaa8fe47b63b35e8f7a7f5c446"
+}

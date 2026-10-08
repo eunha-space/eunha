@@ -4,14 +4,14 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    extract::{Extension, Multipart, Path, Query},
-    http::StatusCode,
+    extract::{Extension, Path, Query},
     Json,
 };
 use serde::{Deserialize, Serialize};
 
 mod accounts;
 mod blocks;
+mod custom_emojis;
 mod email_subscriptions;
 mod federation;
 mod reports;
@@ -42,6 +42,7 @@ mod webhooks;
 
 pub use accounts::*;
 pub use blocks::*;
+pub use custom_emojis::*;
 pub use email_subscriptions::*;
 pub use federation::*;
 pub use reports::*;
@@ -328,223 +329,6 @@ fn parse_redis_info_field(info: &str, field: &str) -> Option<String> {
         .find(|l| l.starts_with(field))
         .and_then(|l| l.split_once(':').map(|x| x.1))
         .map(|v| v.trim().to_string())
-}
-
-// ── Admin CustomEmoji type ────────────────────────────────────────────────
-
-#[derive(Debug, Serialize)]
-pub struct AdminCustomEmoji {
-    pub id: String,
-    pub shortcode: String,
-    pub url: String,
-    pub static_url: String,
-    pub visible_in_picker: bool,
-    pub disabled: bool,
-    pub category: Option<String>,
-}
-
-// ── GET /api/v1/admin/custom_emojis ──────────────────────────────────────
-
-pub async fn list_admin_custom_emojis(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<AdminCustomEmoji>>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
-
-    let rows = sqlx::query!(
-        "SELECT id, shortcode, image_remote_url, visible_in_picker, disabled
-         FROM custom_emojis WHERE domain IS NULL ORDER BY shortcode",
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| {
-                let url = r.image_remote_url.unwrap_or_default();
-                AdminCustomEmoji {
-                    id: r.id.to_string(),
-                    shortcode: r.shortcode,
-                    url: url.clone(),
-                    static_url: url,
-                    visible_in_picker: r.visible_in_picker,
-                    disabled: r.disabled,
-                    category: None,
-                }
-            })
-            .collect(),
-    ))
-}
-
-// ── POST /api/v1/admin/custom_emojis ─────────────────────────────────────
-
-pub async fn create_admin_custom_emoji(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    mut multipart: Multipart,
-) -> AppResult<Json<AdminCustomEmoji>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
-
-    let mut shortcode = String::new();
-    let mut image_bytes: Option<Vec<u8>> = None;
-    let mut content_type = "image/png".to_string();
-
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "shortcode" => {
-                shortcode = field.text().await.unwrap_or_default();
-            }
-            "image" => {
-                content_type = field.content_type().unwrap_or("image/png").to_string();
-                image_bytes = field.bytes().await.ok().map(|b| b.to_vec());
-            }
-            _ => {}
-        }
-    }
-
-    if shortcode.is_empty() {
-        return Err(AppError::Unprocessable("shortcode is required".into()));
-    }
-    let image_data =
-        image_bytes.ok_or_else(|| AppError::Unprocessable("image is required".into()))?;
-
-    // Upload to storage
-    let ext = match content_type.as_str() {
-        "image/gif" => "gif",
-        "image/webp" => "webp",
-        _ => "png",
-    };
-    let key = format!("emoji/{}.{}", shortcode, ext);
-    state
-        .storage
-        .store(&image_data, &key, &content_type)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("storage: {e}")))?;
-    let url = state.storage.public_url(&key);
-
-    let row = if let Some(row) = sqlx::query!(
-        r#"UPDATE custom_emojis
-           SET image_remote_url = $2, disabled = false, visible_in_picker = true, updated_at = now()
-           WHERE shortcode = $1 AND domain IS NULL
-           RETURNING id, shortcode, image_remote_url, visible_in_picker, disabled"#,
-        shortcode,
-        url,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        (
-            row.id,
-            row.shortcode,
-            row.image_remote_url,
-            row.visible_in_picker,
-            row.disabled,
-        )
-    } else {
-        let row = sqlx::query!(
-            r#"INSERT INTO custom_emojis (shortcode, image_remote_url, visible_in_picker, created_at, updated_at)
-               VALUES ($1, $2, true, now(), now())
-               RETURNING id, shortcode, image_remote_url, visible_in_picker, disabled"#,
-            shortcode, url,
-        )
-        .fetch_one(&state.db)
-        .await?;
-        (
-            row.id,
-            row.shortcode,
-            row.image_remote_url,
-            row.visible_in_picker,
-            row.disabled,
-        )
-    };
-
-    let url = row.2.unwrap_or_default();
-    Ok(Json(AdminCustomEmoji {
-        id: row.0.to_string(),
-        shortcode: row.1,
-        url: url.clone(),
-        static_url: url,
-        visible_in_picker: row.3,
-        disabled: row.4,
-        category: None,
-    }))
-}
-
-// ── DELETE /api/v1/admin/custom_emojis/:id ───────────────────────────────
-
-pub async fn delete_admin_custom_emoji(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
-    sqlx::query!("DELETE FROM custom_emojis WHERE id = $1", id,)
-        .execute(&state.db)
-        .await?;
-    Ok(StatusCode::OK)
-}
-
-// ── PATCH /api/v1/admin/custom_emojis/:id ────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct PatchEmojiForm {
-    pub shortcode: Option<String>,
-    pub visible_in_picker: Option<bool>,
-    pub disabled: Option<bool>,
-}
-
-pub async fn update_admin_custom_emoji(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Path(id): Path<i64>,
-    Json(form): Json<PatchEmojiForm>,
-) -> AppResult<Json<AdminCustomEmoji>> {
-    require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
-    if let Some(sc) = &form.shortcode {
-        sqlx::query!(
-            "UPDATE custom_emojis SET shortcode = $1 WHERE id = $2",
-            sc,
-            id
-        )
-        .execute(&state.db)
-        .await?;
-    }
-    if let Some(v) = form.visible_in_picker {
-        sqlx::query!(
-            "UPDATE custom_emojis SET visible_in_picker = $1 WHERE id = $2",
-            v,
-            id
-        )
-        .execute(&state.db)
-        .await?;
-    }
-    if let Some(d) = form.disabled {
-        sqlx::query!(
-            "UPDATE custom_emojis SET disabled = $1 WHERE id = $2",
-            d,
-            id
-        )
-        .execute(&state.db)
-        .await?;
-    }
-    let row = sqlx::query!(
-        "SELECT id, shortcode, image_remote_url, visible_in_picker, disabled FROM custom_emojis WHERE id = $1",
-        id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let url = row.image_remote_url.unwrap_or_default();
-    Ok(Json(AdminCustomEmoji {
-        id: row.id.to_string(),
-        shortcode: row.shortcode,
-        url: url.clone(),
-        static_url: url,
-        visible_in_picker: row.visible_in_picker,
-        disabled: row.disabled,
-        category: None,
-    }))
 }
 
 // ── Admin Tags ────────────────────────────────────────────────────────────

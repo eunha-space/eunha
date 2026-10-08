@@ -194,6 +194,18 @@ pub fn federation() -> Federation<AppState> {
                 cached_for_public(&ctx, Vary::Signature, 180, found(document)).await
             },
         )
+        // `EmojisController#show`: a local emoji, `expires_in 3.minutes,
+        // public: true` whatever the fetch mode.
+        .object("emoji", "/emojis/{id}", |ctx: Ctx, values: Values| async move {
+            let Some(id) = number(&values["id"]) else {
+                return Ok::<_, AppError>(Found::NotFound);
+            };
+            let document = found(super::note::emoji_object(ctx.data(), id).await)?;
+            if matches!(document, Found::Found(_)) {
+                expires_in(&ctx, Vary::Signature, 180, true).await;
+            }
+            Ok(document)
+        })
         // The instance actor's outbox (`Account.representative`'s).
         .collection("instance_outbox", "/actor/outbox", instance_outbox())
         .handle(|ctx: Ctx, username: String| async move { by_username(&ctx, &username).await })

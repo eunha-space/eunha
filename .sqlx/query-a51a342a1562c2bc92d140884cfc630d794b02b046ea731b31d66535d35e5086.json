@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT image_file_name, image_content_type, image_file_size, image_updated_at,\n                image_storage_schema_version, image_remote_url\n         FROM custom_emojis WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "image_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "image_content_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "image_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "image_updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "image_remote_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "a51a342a1562c2bc92d140884cfc630d794b02b046ea731b31d66535d35e5086"
+}

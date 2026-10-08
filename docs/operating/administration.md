@@ -620,6 +620,39 @@ from Mastodon's page, and what limited federation mode does to it, is recorded
 as the `shared-wrapstodon-page` divergence.
 
 
+Custom emoji
+------------
+
+`/api/v1/admin/custom_emojis` lists, uploads, lists or unlists, enables or
+disables and deletes the server's own custom emoji, with the
+`manage_custom_emojis` permission (`admin-custom-emoji-rest-api`). An upload
+is a multipart `shortcode`, `image` and optional `visible_in_picker`, checked
+as `CustomEmoji` checks one: a PNG, GIF or WebP image under 256 KB (the type
+is read from the bytes, as Paperclip asks `file`), a GIF no larger than
+1280×720 pixels, and a shortcode of letters, digits and underscores, two to
+128 characters long, that no other local emoji has. What fails answers `422`
+with Mastodon's messages, such as
+`Validation failed: Shortcode has already been taken`.
+
+The image is stored as Paperclip stores it, so a Mastodon on the same database
+and bucket shows it: `image_file_name` (sixteen random hex digits and the
+type's extension), `image_content_type`, `image_file_size`,
+`image_updated_at` and `image_storage_schema_version`, and the files at
+`custom_emojis/images/<id partition>/original/<name>` as uploaded and
+`custom_emojis/images/<id partition>/static/<name>.png`, a PNG of its first
+frame without the original's metadata. `url` and `static_url` are those two,
+and an emoji's ActivityPub `icon` the original, at the emoji's own
+`/emojis/<id>`. Deleting an emoji deletes both files. Each change is written
+to the audit log as Mastodon's pages write it: `create`, `update` for listing,
+unlisting or a new shortcode, `enable`, `disable` and `destroy`.
+
+`GET /api/v1/custom_emojis` lists what Mastodon's does: local emoji that are
+enabled and visible in the picker, each with its `category` and whether it is
+the category's `featured` one when it has a category. A remote emoji is shown
+from the server it came from rather than from a copy
+(`remote-account-images-not-downloaded`).
+
+
 The dashboard
 -------------
 

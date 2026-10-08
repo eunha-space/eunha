@@ -684,7 +684,7 @@ fn media_attachment_ap(urls: &convert::InstanceUrls, m: &models::MediaAttachment
 }
 
 /// Scan two text sources for `:shortcode:` tokens and emit `Emoji` tags for any
-/// matching enabled local custom emoji that has a resolvable image URL. Used for
+/// matching enabled local custom emoji. Used for
 /// both status content (text + spoiler) and actor profiles (display name + note).
 pub(crate) async fn emoji_tags_for(
     state: &AppState,
@@ -705,7 +705,8 @@ pub(crate) async fn emoji_tags_for(
     }
 
     let rows = sqlx::query!(
-        r#"SELECT shortcode, image_remote_url, uri, updated_at
+        r#"SELECT id, shortcode, image_file_name, image_content_type,
+                  image_storage_schema_version, updated_at
            FROM custom_emojis
            WHERE domain IS NULL AND disabled = false AND shortcode = ANY($1)"#,
         &shortcodes,
@@ -715,17 +716,85 @@ pub(crate) async fn emoji_tags_for(
 
     Ok(rows
         .into_iter()
-        .filter_map(|r| {
-            let image = r.image_remote_url.filter(|u| !u.is_empty())?;
-            Some(json!({
-                "type": "Emoji",
-                "id": r.uri,
-                "name": format!(":{}:", r.shortcode),
-                "updated": iso8601(r.updated_at.and_utc()),
-                "icon": { "type": "Image", "url": image },
-            }))
+        .map(|r| {
+            emoji_document(
+                state,
+                r.id,
+                &r.shortcode,
+                r.updated_at,
+                crate::custom_emoji::ImageRef {
+                    id: r.id,
+                    domain: None,
+                    image_file_name: r.image_file_name.as_deref(),
+                    image_remote_url: None,
+                    image_storage_schema_version: r.image_storage_schema_version,
+                },
+                r.image_content_type.as_deref(),
+            )
         })
         .collect())
+}
+
+/// The document `/emojis/:id` serves: `CustomEmoji.local.find(id)` through
+/// `ActivityPub::EmojiSerializer` and the adapter's `@context`.
+pub(crate) async fn emoji_object(state: &AppState, id: i64) -> AppResult<Value> {
+    let row = sqlx::query!(
+        r#"SELECT id, shortcode, image_file_name, image_content_type,
+                  image_storage_schema_version, updated_at
+           FROM custom_emojis WHERE id = $1 AND domain IS NULL"#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(crate::error::AppError::NotFound)?;
+    let mut document = emoji_document(
+        state,
+        row.id,
+        &row.shortcode,
+        row.updated_at,
+        crate::custom_emoji::ImageRef {
+            id: row.id,
+            domain: None,
+            image_file_name: row.image_file_name.as_deref(),
+            image_remote_url: None,
+            image_storage_schema_version: row.image_storage_schema_version,
+        },
+        row.image_content_type.as_deref(),
+    );
+    let mut with_context = serde_json::Map::new();
+    with_context.insert(
+        "@context".into(),
+        super::context_helper::serialized_context(&["activitystreams"], &["emoji", "focal_point"]),
+    );
+    if let Value::Object(fields) = document.take() {
+        with_context.extend(fields);
+    }
+    Ok(Value::Object(with_context))
+}
+
+/// `ActivityPub::EmojiSerializer` for a local emoji, without the adapter's
+/// `@context`: its id is `emoji_url`, and its icon the original image, as
+/// `ActivityPub::ImageSerializer` writes one.
+pub(crate) fn emoji_document(
+    state: &AppState,
+    id: i64,
+    shortcode: &str,
+    updated_at: chrono::NaiveDateTime,
+    image: crate::custom_emoji::ImageRef<'_>,
+    content_type: Option<&str>,
+) -> Value {
+    let domain = &state.instance.domain;
+    json!({
+        "id": format!("https://{domain}/emojis/{id}"),
+        "type": "Emoji",
+        "name": format!(":{shortcode}:"),
+        "updated": iso8601(updated_at.and_utc()),
+        "icon": {
+            "type": "Image",
+            "mediaType": content_type,
+            "url": image.url(&state.storage, domain, "original"),
+        },
+    })
 }
 
 static EMOJI_RE: once_cell::sync::Lazy<regex::Regex> =

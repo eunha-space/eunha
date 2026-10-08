@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis (shortcode, image_remote_url, created_at, updated_at)\n         VALUES ('party', $1, now(), now()) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "45b80a6d2bdc1d2a5ae7e77ba7f02df9cf15a0a092f5fac252912a2953afe592"
+}

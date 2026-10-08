@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE custom_emojis SET shortcode = $1 WHERE id = $2",
+  "query": "UPDATE custom_emojis SET shortcode = $1, updated_at = now() WHERE id = $2",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "40846b3c182e71906ec6213d9d2c98e589bfd371f5e7f8ae93aa81d163c974a6"
+  "hash": "3d5b99d4b3cf33b7690c45420e2c5c2865fd392c1ad7e6238042f56a3ecb8fba"
 }

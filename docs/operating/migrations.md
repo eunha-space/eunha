@@ -98,6 +98,35 @@ database migrated by the tests have none either. Whoever is dropped can sign up
 again.
 
 
+Custom emoji eunha uploaded
+---------------------------
+
+Eunha used to store an uploaded custom emoji at `emoji/<shortcode>.<ext>` in
+the media bucket and its URL in `image_remote_url`, leaving Paperclip's file
+columns empty. Mastodon finds no image for such a row, and eunha now reads
+only the columns too, so `eunha migrate` moves each one to where Paperclip
+keeps a local emoji, as [administration](./administration#custom-emoji)
+describes: it reads the image back from its old key, stores it and its
+`static` PNG under `custom_emojis/images/`, writes `image_file_name`,
+`image_content_type`, `image_file_size`, `image_updated_at` and
+`image_storage_schema_version`, clears `image_remote_url`, and deletes the old
+object. The paths cannot be made to match without moving the files: Paperclip
+names an emoji's by its id and a random file name, not its shortcode.
+
+~~~~ console
+$ eunha migrate
+Migrations applied.
+3 custom emoji(s) moved to where Mastodon keeps them.
+~~~~
+
+It runs on every `eunha migrate` and finds nothing once they are moved. An
+emoji whose image is not at its old key, or whose URL is not eunha's, is left
+as it was and named, and shows Mastodon's missing image until it is uploaded
+again. With `--tenants`, each instance's own bucket is used; a single instance
+needs its media storage in the configuration or the environment, or the
+emoji wait for the next `eunha migrate` that has it.
+
+
 Notifications written before migration 032
 ------------------------------------------
 

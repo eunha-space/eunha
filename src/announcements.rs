@@ -151,7 +151,7 @@ pub async fn unpublish(state: &AppState, id: i64) {
 /// every signed-in user's stream.
 pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::Result<()> {
     let row = sqlx::query!(
-        r#"SELECT count(*) AS "count!", max(ce.image_remote_url) AS url
+        r#"SELECT count(*) AS "count!", max(ce.id) AS emoji_id
            FROM announcement_reactions ar
            LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id
            WHERE ar.announcement_id = $1 AND ar.name = $2"#,
@@ -160,14 +160,34 @@ pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::
     )
     .fetch_one(&state.db)
     .await?;
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "name": name,
         "count": row.count,
         "me": false,
-        "url": row.url,
-        "static_url": row.url,
-        "announcement_id": id.to_string(),
     });
+    // `REST::ReactionSerializer#url` and `#static_url`, for a custom emoji.
+    if let Some(emoji_id) = row.emoji_id {
+        if let Some(emoji) = sqlx::query!(
+            "SELECT domain, image_file_name, image_remote_url, image_storage_schema_version
+             FROM custom_emojis WHERE id = $1",
+            emoji_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            let image = crate::custom_emoji::ImageRef {
+                id: emoji_id,
+                domain: emoji.domain.as_deref(),
+                image_file_name: emoji.image_file_name.as_deref(),
+                image_remote_url: emoji.image_remote_url.as_deref(),
+                image_storage_schema_version: emoji.image_storage_schema_version,
+            };
+            let domain = &state.instance.domain;
+            payload["url"] = image.url(&state.storage, domain, "original").into();
+            payload["static_url"] = image.url(&state.storage, domain, "static").into();
+        }
+    }
+    payload["announcement_id"] = id.to_string().into();
     crate::streaming::fan_out::to_active_accounts(
         state,
         serde_json::json!({"event": "announcement.reaction", "payload": payload}),

@@ -43,11 +43,14 @@ pub async fn render(
     let all_reactions = sqlx::query!(
         r#"SELECT ar.announcement_id, ar.name,
                   COUNT(*) AS "count!",
-                  ce.image_remote_url AS "image_remote_url?"
+                  ce.id AS "emoji_id?", ce.domain AS "emoji_domain?",
+                  ce.image_file_name AS "image_file_name?",
+                  ce.image_remote_url AS "image_remote_url?",
+                  ce.image_storage_schema_version AS "image_storage_schema_version?"
            FROM announcement_reactions ar
            LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id
            WHERE ar.announcement_id = ANY($1::bigint[])
-           GROUP BY ar.announcement_id, ar.name, ce.image_remote_url
+           GROUP BY ar.announcement_id, ar.name, ce.id
            ORDER BY ar.announcement_id, MIN(ar.created_at)"#,
         &ann_ids,
     )
@@ -74,7 +77,18 @@ pub async fn render(
         std::collections::HashMap::new();
     for row in all_reactions {
         let me = my_reactions.contains(&(row.announcement_id, row.name.clone()));
-        let url = row.image_remote_url;
+        // `REST::ReactionSerializer#url` and `#static_url`, for a custom
+        // emoji's reaction.
+        let image = row.emoji_id.map(|id| crate::custom_emoji::ImageRef {
+            id,
+            domain: row.emoji_domain.as_deref(),
+            image_file_name: row.image_file_name.as_deref(),
+            image_remote_url: row.image_remote_url.as_deref(),
+            image_storage_schema_version: row.image_storage_schema_version,
+        });
+        let domain = &state.instance.domain;
+        let url = image.map(|i| i.url(&state.storage, domain, "original"));
+        let static_url = image.map(|i| i.url(&state.storage, domain, "static"));
         reactions_by_ann
             .entry(row.announcement_id)
             .or_default()
@@ -82,8 +96,8 @@ pub async fn render(
                 name: row.name,
                 count: row.count,
                 me,
-                url: url.clone(),
-                static_url: url,
+                url,
+                static_url,
             });
     }
 

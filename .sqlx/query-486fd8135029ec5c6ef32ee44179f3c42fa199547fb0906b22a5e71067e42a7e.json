@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emoji_categories (name, created_at, updated_at)\n         VALUES ('Cats', now(), now()) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "486fd8135029ec5c6ef32ee44179f3c42fa199547fb0906b22a5e71067e42a7e"
+}

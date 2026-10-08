@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis\n             (shortcode, visible_in_picker, image_file_name, image_content_type,\n              image_file_size, image_updated_at, image_storage_schema_version,\n              created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, now(), 1, now(), now())\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8fdcdf9bed00bce3ded0090b7fbb39ab03a751d0178879f7d8f202d49448a328"
+}

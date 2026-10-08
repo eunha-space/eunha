@@ -11,6 +11,7 @@ pub mod config;
 pub mod conversation;
 pub mod counters;
 pub mod crypto;
+pub mod custom_emoji;
 pub mod db;
 pub mod delete_account;
 pub mod divergence;

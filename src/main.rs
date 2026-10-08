@@ -770,6 +770,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
         String,
         anyhow::Result<config::InstanceConfig>,
         Option<eunha::rails_encryption::Encryptor>,
+        Option<config::MediaStorageConfig>,
     );
     let encryptor = |config: &config::Config| {
         config.active_record_encryption.as_ref().map(|keys| {
@@ -786,6 +787,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
                     tenant.config.database_url,
                     Ok(tenant.config.instance),
                     encryptor,
+                    Some(tenant.config.media_storage),
                 )
             })
             .collect(),
@@ -794,11 +796,12 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
             migration_database_url()?,
             config::Config::instance_from_env(),
             config::Config::from_env().ok().as_ref().and_then(encryptor),
+            config::Config::from_env().ok().map(|c| c.media_storage),
         )],
     };
 
     let mut behind = false;
-    for (label, database_url, instance, encryptor) in targets {
+    for (label, database_url, instance, encryptor, media_storage) in targets {
         let db = tenants::connect(
             &database_url,
             &config::DatabasePoolConfig {
@@ -847,6 +850,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
                 }
                 migrate::run(&db).await?;
                 println!("{label}Migrations applied.");
+                move_custom_emojis(&label, &db, media_storage.as_ref()).await?;
                 // The one-time `eunha settings import-config` an instance that
                 // was serving before eunha read the settings alone is owed, so
                 // that no deploy has to remember it.
@@ -872,6 +876,38 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
     }
     if behind {
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Move the local custom emojis eunha uploaded before it stored them as
+/// Mastodon does into Paperclip's layout, when the media storage is known.
+async fn move_custom_emojis(
+    label: &str,
+    db: &sqlx::PgPool,
+    media_storage: Option<&config::MediaStorageConfig>,
+) -> anyhow::Result<()> {
+    let waiting = eunha::custom_emoji::eunha_uploads_waiting(db).await?;
+    if waiting == 0 {
+        return Ok(());
+    }
+    let Some(media_storage) = media_storage else {
+        println!(
+            "{label}{waiting} custom emoji(s) left where eunha uploaded them, for want of a \
+             media storage configuration; the next `eunha migrate` that can read it moves them."
+        );
+        return Ok(());
+    };
+    let storage = eunha::media::Storage::from_config(media_storage).await;
+    let report = eunha::custom_emoji::move_eunha_uploads(db, &storage).await?;
+    if report.moved > 0 {
+        println!(
+            "{label}{} custom emoji(s) moved to where Mastodon keeps them.",
+            report.moved
+        );
+    }
+    for (id, url) in &report.missing {
+        println!("{label}custom emoji {id}: no image found at {url}; left as it was.");
     }
     Ok(())
 }

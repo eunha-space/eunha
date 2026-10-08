@@ -34,7 +34,8 @@ const ACTOR_EXTENSIONS: [&str; 12] = [
 /// The `@context` of an actor document, as `ActivityPub::Adapter` folds it
 /// from `ActivityPub::ActorSerializer` and the nested serializers it used:
 /// `Emoji` when it has custom emoji tags, `Hashtag` when it has profile
-/// hashtags, `focalPoint` when it has an avatar or header image. The
+/// hashtags, `focalPoint` when it has an avatar, a header or an emoji's
+/// image. The
 /// Multikey context, Mastodon's only by way of eunha's integrity proofs, is
 /// there when the actor publishes an `assertionMethod`.
 fn actor_context(emoji: bool, hashtag: bool, image: bool, multikey: bool) -> Value {
@@ -45,7 +46,8 @@ fn actor_context(emoji: bool, hashtag: bool, image: bool, multikey: bool) -> Val
     if hashtag {
         extensions.push("hashtag");
     }
-    if image {
+    // An emoji's icon is an `ActivityPub::ImageSerializer` too.
+    if image || emoji {
         extensions.push("focal_point");
     }
     let mut context = super::context_helper::serialized_context(

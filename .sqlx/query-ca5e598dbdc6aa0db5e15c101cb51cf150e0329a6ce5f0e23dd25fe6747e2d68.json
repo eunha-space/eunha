@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ce.id, ce.shortcode, ce.domain, ce.image_file_name, ce.image_remote_url,\n                  ce.image_storage_schema_version, ce.visible_in_picker, ce.disabled,\n                  c.name AS \"category?\"\n           FROM custom_emojis ce\n           LEFT JOIN custom_emoji_categories c ON c.id = ce.category_id\n           WHERE ce.domain IS NULL AND ($1::bigint IS NULL OR ce.id = $1)\n           ORDER BY ce.shortcode",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "shortcode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "image_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "image_remote_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "visible_in_picker",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "category?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "ca5e598dbdc6aa0db5e15c101cb51cf150e0329a6ce5f0e23dd25fe6747e2d68"
+}

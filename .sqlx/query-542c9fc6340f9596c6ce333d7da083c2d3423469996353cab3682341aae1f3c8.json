@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM custom_emojis\n                         WHERE shortcode = $1 AND domain IS NULL\n                           AND ($2::bigint IS NULL OR id <> $2)) AS \"taken!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "taken!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "542c9fc6340f9596c6ce333d7da083c2d3423469996353cab3682341aae1f3c8"
+}

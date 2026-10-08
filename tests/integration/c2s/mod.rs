@@ -11,6 +11,7 @@ mod blocks;
 mod bookmarks;
 mod collections;
 mod conversations;
+mod custom_emojis;
 mod domain_blocks;
 mod email_subscriptions;
 mod favourites;

@@ -195,24 +195,51 @@ pub fn scan_emoji_shortcodes(text: &str) -> Vec<String> {
 
 /// A `custom_emojis` row, as much of it as the entity needs.
 pub struct EmojiRow {
+    pub id: i64,
     pub shortcode: String,
     pub domain: Option<String>,
+    pub image_file_name: Option<String>,
     pub image_remote_url: Option<String>,
+    pub image_storage_schema_version: Option<i32>,
     pub visible_in_picker: bool,
 }
 
-/// The `CustomEmoji` entity for `row`, shown from the URL it was stored
-/// with: eunha keeps no copy of a remote emoji's image
-/// (`remote-account-images-not-downloaded`).
-pub fn custom_emoji_entity(row: &EmojiRow, category: Option<String>) -> types::CustomEmoji {
-    let url = row.image_remote_url.clone().unwrap_or_default();
+impl EmojiRow {
+    pub fn image(&self) -> crate::custom_emoji::ImageRef<'_> {
+        crate::custom_emoji::ImageRef {
+            id: self.id,
+            domain: self.domain.as_deref(),
+            image_file_name: self.image_file_name.as_deref(),
+            image_remote_url: self.image_remote_url.as_deref(),
+            image_storage_schema_version: self.image_storage_schema_version,
+        }
+    }
+}
+
+/// `REST::CustomEmojiSerializer` for `row`: a local emoji's `original` and
+/// `static` styles where Paperclip keeps them, and a remote one's URL as it
+/// was stored, since eunha keeps no copy of a remote emoji's image
+/// (`remote-account-images-not-downloaded`). `category` and `featured` are
+/// there when the category was loaded and the emoji has one — the
+/// category's name and its `featured_emoji_id`.
+pub fn custom_emoji_entity(
+    state: &crate::state::AppState,
+    row: &EmojiRow,
+    category: Option<(String, Option<i64>)>,
+) -> types::CustomEmoji {
+    let image = row.image();
+    let domain = &state.instance.domain;
+    let (category, featured) = match category {
+        Some((name, featured_id)) => (Some(name), Some(featured_id == Some(row.id))),
+        None => (None, None),
+    };
     types::CustomEmoji {
         shortcode: row.shortcode.clone(),
-        url: url.clone(),
-        static_url: url,
+        url: image.url(&state.storage, domain, "original"),
+        static_url: image.url(&state.storage, domain, "static"),
         visible_in_picker: row.visible_in_picker,
         category,
-        featured: None,
+        featured,
     }
 }
 
@@ -242,7 +269,8 @@ pub async fn emojis_from_texts<K: std::hash::Hash + Eq + Clone>(
     }
     let rows = sqlx::query_as!(
         EmojiRow,
-        r#"SELECT DISTINCT ce.shortcode, ce.domain, ce.image_remote_url, ce.visible_in_picker
+        r#"SELECT DISTINCT ce.id, ce.shortcode, ce.domain, ce.image_file_name, ce.image_remote_url,
+                  ce.image_storage_schema_version, ce.visible_in_picker
            FROM custom_emojis ce
            JOIN unnest($1::text[], $2::text[]) AS q(shortcode, domain)
              ON ce.shortcode = q.shortcode
@@ -262,7 +290,7 @@ pub async fn emojis_from_texts<K: std::hash::Hash + Eq + Clone>(
         let emojis: Vec<types::CustomEmoji> = found
             .iter()
             .filter_map(|code| by_key.get(&(domain.as_deref(), code.as_str())))
-            .map(|row| custom_emoji_entity(row, None))
+            .map(|row| custom_emoji_entity(state, row, None))
             .collect();
         if !emojis.is_empty() {
             result.insert(key, emojis);

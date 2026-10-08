@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ar.announcement_id, ar.name,\n                  COUNT(*) AS \"count!\",\n                  ce.id AS \"emoji_id?\", ce.domain AS \"emoji_domain?\",\n                  ce.image_file_name AS \"image_file_name?\",\n                  ce.image_remote_url AS \"image_remote_url?\",\n                  ce.image_storage_schema_version AS \"image_storage_schema_version?\"\n           FROM announcement_reactions ar\n           LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id\n           WHERE ar.announcement_id = ANY($1::bigint[])\n           GROUP BY ar.announcement_id, ar.name, ce.id\n           ORDER BY ar.announcement_id, MIN(ar.created_at)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "announcement_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "emoji_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "emoji_domain?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "image_file_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "image_remote_url?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "image_storage_schema_version?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e7f211af342707384ef03077b175e4d1db755e30cddbbc6ac07164b46517e943"
+}

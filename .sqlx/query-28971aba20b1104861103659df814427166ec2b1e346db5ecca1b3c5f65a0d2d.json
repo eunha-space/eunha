@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\", max(ce.id) AS emoji_id\n           FROM announcement_reactions ar\n           LEFT JOIN custom_emojis ce ON ce.id = ar.custom_emoji_id\n           WHERE ar.announcement_id = $1 AND ar.name = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "emoji_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "28971aba20b1104861103659df814427166ec2b1e346db5ecca1b3c5f65a0d2d"
+}

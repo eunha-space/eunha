@@ -74,13 +74,20 @@ its bio, which `update_credentials` keeps in `accounts_tags` as
 `UpdateAccountService#process_hashtags` does. `movedTo` and `alsoKnownAs` are
 there only when they say something. Its `@context` is folded as
 `ActivityPub::Adapter` folds it: `Emoji`, `Hashtag` and `focalPoint` only
-when the document has an emoji, a hashtag or an image, and the Multikey
+when the document has an emoji, a hashtag or an image (an emoji's icon is
+one), and the Multikey
 context only when the actor publishes an `assertionMethod`
 ([integrity proofs](./divergences.md)).
 
 The instance actor, `/actor`, is the same serializer limited to what
 `InstanceActorsController` keeps. Its inbox is `/actor/inbox` and its outbox
 `/actor/outbox`.
+
+A local custom emoji's `Emoji` tag, in a post or a profile, has the emoji's
+own URI, `/emojis/{id}`, and that is served too, as `EmojisController` serves
+it: the `Emoji` with its `icon` (the original image, its `mediaType` and
+URL), to anyone, signed or not, kept three minutes publicly whatever the
+fetch mode.
 
 
 A post's collections

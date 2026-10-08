@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis (shortcode, image_remote_url, created_at, updated_at)\n         VALUES ('gone', $1, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b9d1c5a65f5f3188f13a025f7361b26e1f102431f7f7adc04a57e606ed15d1fa"
+}

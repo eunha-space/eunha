@@ -303,8 +303,10 @@ server-rendered admin pages alone. The REST API only lists the enabled ones, \
 at `/api/v1/custom_emojis`."""
 eunha = """
 Serves `/api/v1/admin/custom_emojis`: list, upload (multipart), update \
-`visible_in_picker` and `disabled`, and delete, behind upstream's own \
-`manage_custom_emojis` permission."""
+`visible_in_picker`, `disabled` and the shortcode, and delete, behind \
+upstream's own `manage_custom_emojis` permission. An upload is validated, \
+stored and logged as `CustomEmoji` and `Admin::CustomEmojisController` do \
+it."""
 why = """
 Eunha has no server-rendered admin; its moderation pages are a client of the \
 REST API, and custom emoji are the one moderation-adjacent area Mastodon \

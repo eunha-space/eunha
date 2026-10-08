@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ce.id, ce.shortcode, ce.domain, ce.image_file_name, ce.image_remote_url,\n                  ce.image_storage_schema_version, ce.visible_in_picker\n           FROM custom_emojis ce\n           JOIN unnest($1::text[], $2::text[]) AS q(shortcode, domain)\n             ON ce.shortcode = q.shortcode\n            AND ce.domain IS NOT DISTINCT FROM NULLIF(q.domain, '')\n           WHERE NOT ce.disabled",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "shortcode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "image_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "image_remote_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "image_storage_schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "visible_in_picker",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "657076208ec7582d176be0d07370c2f1f2cdc70aee3d91478831798290899010"
+}

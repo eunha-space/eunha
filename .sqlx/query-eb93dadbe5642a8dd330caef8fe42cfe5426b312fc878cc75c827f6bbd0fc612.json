@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE custom_emojis SET disabled = $1 WHERE id = $2",
+  "query": "UPDATE custom_emojis SET disabled = $1, updated_at = now() WHERE id = $2",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "4a15ffba62a229b0d633702d925f4bb3d86214dabcebc4fd6183eafc526f5c6d"
+  "hash": "eb93dadbe5642a8dd330caef8fe42cfe5426b312fc878cc75c827f6bbd0fc612"
 }
