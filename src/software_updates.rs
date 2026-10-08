@@ -101,6 +101,10 @@ pub async fn run_for_process(tenants: Arc<crate::tenants::Tenants>) {
 fn by_url(states: Vec<AppState>) -> Vec<(String, Vec<AppState>)> {
     let mut groups: Vec<(String, Vec<AppState>)> = Vec::new();
     for state in states {
+        // A self-destructing instance runs no schedule but its own.
+        if crate::self_destruct::enabled(&state.instance) {
+            continue;
+        }
         let Some(url) = state
             .config
             .software_update_url

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM eunha.ojak_queue WHERE failed_at IS NULL)\n                + (SELECT count(*) FROM eunha.jobs WHERE dead_at IS NULL) AS \"enqueued!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enqueued!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "709b9aba843aa2cb86df4617e4d905d39c5c4b23e740ef219d2e2a6ce4ec4488"
+}

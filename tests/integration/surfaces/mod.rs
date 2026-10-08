@@ -21,6 +21,7 @@ mod portability;
 mod preferences;
 mod preview_cards;
 mod schema_compatibility;
+mod self_destruct;
 mod sessions;
 mod sign_up;
 mod signup_approval;

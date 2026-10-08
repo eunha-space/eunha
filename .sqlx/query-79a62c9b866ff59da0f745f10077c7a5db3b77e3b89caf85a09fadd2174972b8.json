@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"jobs!\" FROM eunha.jobs WHERE dead_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "jobs!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "79a62c9b866ff59da0f745f10077c7a5db3b77e3b89caf85a09fadd2174972b8"
+}

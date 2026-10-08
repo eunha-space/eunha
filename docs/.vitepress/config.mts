@@ -41,6 +41,7 @@ export default defineConfig({
           { text: "Translation", link: "/operating/translation" },
           { text: "Auxiliary service providers", link: "/operating/fasp" },
           { text: "Update notices", link: "/operating/update-notices" },
+          { text: "Self-destruct", link: "/operating/self-destruct" },
         ],
       },
       {

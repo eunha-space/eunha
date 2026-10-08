@@ -470,6 +470,13 @@ pub struct InstanceConfig {
         deserialize_with = "crate::secret_key_base::deserialize_optional"
     )]
     pub secret_key_base: Option<crate::secret_key_base::SecretKeyBase>,
+    /// Mastodon's `SELF_DESTRUCT`: the value `eunha self-destruct` prints,
+    /// which signs this instance's domain. While it verifies, the instance
+    /// refuses nearly every request and tells every server it knows that its
+    /// accounts are gone (docs/operating/self-destruct.md); any other value
+    /// changes nothing.
+    #[serde(default)]
+    pub self_destruct: Option<String>,
     /// Mastodon's `DEEPL_*` and `LIBRE_TRANSLATE_*`: the machine translation
     /// service, if any (`[instance.translation]`).
     #[serde(default)]
@@ -728,8 +735,8 @@ fn adopt_mastodon_elasticsearch_env() {
     }
 }
 
-/// Accept Mastodon's own spelling of its secrets, the translation service
-/// and the donation campaigns.
+/// Accept Mastodon's own spelling of its secrets, the translation service,
+/// the donation campaigns and self-destruct mode.
 ///
 /// Eunha's environment keys nest with `__`, so its name for the primary key is
 /// `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY` — but the values themselves come
@@ -757,6 +764,7 @@ fn adopt_mastodon_env() {
             "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
         ("SECRET_KEY_BASE", "INSTANCE__SECRET_KEY_BASE"),
+        ("SELF_DESTRUCT", "INSTANCE__SELF_DESTRUCT"),
         (
             "DONATION_CAMPAIGNS_URL",
             "INSTANCE__DONATION_CAMPAIGNS__API_URL",

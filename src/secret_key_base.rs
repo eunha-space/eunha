@@ -2,8 +2,8 @@
 //!
 //! An instance configured with its Mastodon's `SECRET_KEY_BASE`
 //! (`instance.secret_key_base`) mints and accepts exactly what that Mastodon
-//! does: async refresh ids, the signed GlobalIDs in unsubscribe links, and
-//! Devise's digest of a password reset token. Without it, eunha keeps its own
+//! does: async refresh ids, the signed GlobalIDs in unsubscribe links,
+//! Devise's digest of a password reset token, and the `SELF_DESTRUCT` value. Without it, eunha keeps its own
 //! schemes, which no Mastodon reads (see the divergences that name
 //! `secret_key_base`).
 //!
@@ -61,6 +61,7 @@ pub struct SecretKeyBase(Arc<Inner>);
 struct Inner {
     secret: String,
     async_refreshes: OnceLock<[u8; KEY_LEN]>,
+    self_destruct: OnceLock<[u8; KEY_LEN]>,
     signed_global_ids: OnceLock<[u8; KEY_LEN]>,
     reset_password_token: OnceLock<[u8; KEY_LEN]>,
 }
@@ -89,6 +90,7 @@ impl SecretKeyBase {
         Self(Arc::new(Inner {
             secret: secret.into(),
             async_refreshes: OnceLock::new(),
+            self_destruct: OnceLock::new(),
             signed_global_ids: OnceLock::new(),
             reset_password_token: OnceLock::new(),
         }))
@@ -116,6 +118,16 @@ impl SecretKeyBase {
         }
     }
 
+    fn self_destruct(&self) -> Verifier<'_> {
+        Verifier {
+            key: self
+                .0
+                .self_destruct
+                .get_or_init(|| self.app_key(crate::self_destruct::VERIFY_PURPOSE)),
+            encoding: Encoding::Strict,
+        }
+    }
+
     fn signed_global_ids(&self) -> Verifier<'_> {
         Verifier {
             key: self
@@ -137,6 +149,23 @@ impl SecretKeyBase {
     pub fn verify_async_refresh_id(&self, id: &str) -> Option<String> {
         match self.async_refreshes().verify(id, None, Utc::now())? {
             Value::String(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    /// `tootctl self-destruct`'s value:
+    /// `message_verifier('self-destruct').generate(local_domain)`.
+    pub fn self_destruct_value(&self, domain: &str) -> String {
+        self.self_destruct()
+            .generate(&Value::String(domain.to_owned()), None, None)
+    }
+
+    /// `SelfDestructHelper.self_destruct?`'s
+    /// `message_verifier('self-destruct').verify(value)`: the domain a value
+    /// signs.
+    pub fn verify_self_destruct(&self, value: &str) -> Option<String> {
+        match self.self_destruct().verify(value, None, Utc::now())? {
+            Value::String(domain) => Some(domain),
             _ => None,
         }
     }
@@ -413,6 +442,8 @@ mod tests {
     const ASYNC_REFRESH_ID: &str = "ImFzeW5jX3JlZnJlc2hlczp2MTphY2NvdW50czoxMjM6cmVmcmVzaF9mb2xsb3dlcnMi--509406b78242a360e365efdfc925d0e7c576618f";
     const USER_SGID: &str = "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL21hc3RvZG9uL1VzZXIvMSIsImV4cCI6IjIwMjYtMTEtMDJUMDc6MjU6MDEuMTIzWiIsInB1ciI6InVuc3Vic2NyaWJlIn19--daf96e133c227720ee735a3e422158b568435e39";
     const SUBSCRIPTION_SGID: &str = "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL21hc3RvZG9uL0VtYWlsU3Vic2NyaXB0aW9uLzQyIiwiZXhwIjoiMjAyNi0xMS0wMlQwNzoyNTowMS4xMjNaIiwicHVyIjoidW5zdWJzY3JpYmUifX0=--30f11c153b2ac1e70a2a9a0d7ab435ff60e4a55e";
+    /// `message_verifier('self-destruct').generate('example.com')`.
+    const SELF_DESTRUCT: &str = "ImV4YW1wbGUuY29tIg==--d98e70d05297ffc5945339fd0796bb8aafb0222f";
     const RESET_DIGEST: &str = "a5106b6b4dc0e29d5f7eef97ecf87a7734d60218ca010180d6cf0aea936391a7";
 
     #[test]
@@ -423,6 +454,20 @@ mod tests {
         assert_eq!(
             skb.verify_async_refresh_id(ASYNC_REFRESH_ID).as_deref(),
             Some(key)
+        );
+    }
+
+    #[test]
+    fn self_destruct_values_are_rails_message_verifier_output() {
+        let skb = secret();
+        assert_eq!(skb.self_destruct_value("example.com"), SELF_DESTRUCT);
+        assert_eq!(
+            skb.verify_self_destruct(SELF_DESTRUCT).as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            SecretKeyBase::new("another secret").verify_self_destruct(SELF_DESTRUCT),
+            None
         );
     }
 

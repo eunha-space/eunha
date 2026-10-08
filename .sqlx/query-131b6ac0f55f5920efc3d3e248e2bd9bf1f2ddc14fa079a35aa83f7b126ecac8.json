@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id FROM accounts a\n         JOIN account_deletion_requests r ON r.account_id = a.id\n         WHERE a.domain IS NULL ORDER BY a.id LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "131b6ac0f55f5920efc3d3e248e2bd9bf1f2ddc14fa079a35aa83f7b126ecac8"
+}

@@ -805,6 +805,7 @@ impl TestContext {
                 disable_followers_synchronization: false,
                 translation: Default::default(),
                 secret_key_base: None,
+                self_destruct: None,
                 experimental_features: Vec::new(),
                 elasticsearch: Default::default(),
                 donation_campaigns: Default::default(),

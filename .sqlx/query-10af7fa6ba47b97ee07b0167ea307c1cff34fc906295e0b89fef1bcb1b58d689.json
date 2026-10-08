@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM accounts WHERE domain IS NULL AND requested_deletion_at IS NULL\n         ORDER BY id ASC LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "10af7fa6ba47b97ee07b0167ea307c1cff34fc906295e0b89fef1bcb1b58d689"
+}

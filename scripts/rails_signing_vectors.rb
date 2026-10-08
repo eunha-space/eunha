@@ -74,6 +74,7 @@ end
 expires_at = Time.utc(2026, 11, 2, 7, 25, 1, 123_456)
 puts "secret_key_base: #{SECRET}"
 puts "async_refreshes: #{message_verifier('async_refreshes', 'async_refreshes:v1:accounts:123:refresh_followers')}"
+puts "self-destruct: #{message_verifier('self-destruct', 'example.com')}"
 puts "sgid User/1: #{signed_global_id('gid://mastodon/User/1', 'unsubscribe', expires_at)}"
 puts "sgid EmailSubscription/42: #{signed_global_id('gid://mastodon/EmailSubscription/42', 'unsubscribe', expires_at)}"
 puts "reset_password_token: #{devise_digest('reset_password_token', 'sxyzAbCdEfGhIjKlMnOp')}"

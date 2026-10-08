@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT coalesce(nullif(shared_inbox_url, ''), inbox_url) AS \"inbox!\"\n           FROM accounts\n           WHERE protocol = 1 AND domain IS NOT NULL\n             AND coalesce(nullif(shared_inbox_url, ''), inbox_url) <> ''",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3bc09875d9f1e5eed715867bbd3907a66031f6295e2ddf6960737899878a4a57"
+}

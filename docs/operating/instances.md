@@ -180,6 +180,9 @@ disable_followers_synchronization = false
 # Mastodon's EXPERIMENTAL_FEATURES. The one eunha knows is `fasp` (see
 # auxiliary service providers); unknown names are ignored.
 experimental_features = ["fasp"]
+# Mastodon's SELF_DESTRUCT: what `eunha self-destruct` prints (see
+# self-destruct). Takes effect when the instance restarts.
+# self_destruct = "…"
 ~~~~
 
 `experimental_features` turns on what Mastodon keeps behind
@@ -361,7 +364,9 @@ byte for byte, and reads what that Mastodon handed out before the switch:
  -  the unsubscribe links in notification emails and email subscription
     mails, signed GlobalIDs (`to_sgid(for: 'unsubscribe')`) that expire after
     a month;
- -  `users.reset_password_token`, Devise's keyed digest of the token mailed.
+ -  `users.reset_password_token`, Devise's keyed digest of the token mailed;
+ -  the [`self_destruct`](./self-destruct) value,
+    `message_verifier('self-destruct')`.
 
 Without it, each of these uses a scheme of eunha's own (the divergences that
 name `secret_key_base`), and what Mastodon issued is not recognised. What

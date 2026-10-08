@@ -165,6 +165,19 @@ enum Command {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    /// Erase the instance from the federation, as `tootctl self-destruct`
+    /// does: print the `self_destruct` value that, once configured, has the
+    /// instance tell every server it knows that its accounts are gone, and
+    /// refuse nearly everything else. Asks for the domain and a confirmation
+    /// first. Run again once the value is set to see how far it has got.
+    ///
+    /// Nothing local is erased; drop the database once every notice is out.
+    SelfDestruct {
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST")]
+        instance: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -668,6 +681,10 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             return rehearse_migration(&source_database_url, clone_name, replace, drop_clone).await;
         }
+        Some(Command::SelfDestruct { instance }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            return self_destruct(config).await;
+        }
         None => {}
     }
 
@@ -1133,6 +1150,71 @@ fn command_config(
     tenants::find(tenants::load_dir(dir)?, instance)
         .map(|tenant| tenant.config)
         .with_context(|| format!("no tenant in {} answers to {instance}", dir.display()))
+}
+
+/// `Mastodon::CLI::Federation#self_destruct`.
+async fn self_destruct(config: config::Config) -> anyhow::Result<()> {
+    use eunha::self_destruct::{self, Progress};
+    let instance = &config.instance;
+    if self_destruct::enabled(instance) {
+        println!(
+            "Self-destruct mode is already enabled for {}",
+            instance.domain
+        );
+        let db = command_database(&config).await?;
+        match self_destruct::progress(&db).await? {
+            Progress::AccountsPending(n) => {
+                println!("{n} accounts are still pending deletion.")
+            }
+            Progress::Delivering => println!("Deletion notices are still being processed"),
+            Progress::Retrying => println!(
+                "At least one delivery attempt for each deletion notice has been made, \
+                 but some have failed and are scheduled for retry"
+            ),
+            Progress::Done => println!(
+                "Every deletion notice has been sent! You can safely delete all data \
+                 and decommission the instance."
+            ),
+        }
+        return Ok(());
+    }
+
+    let typed = prompt("Type in the domain of the server to confirm: ")?;
+    anyhow::ensure!(
+        typed == instance.domain,
+        "Domains do not match. Stopping self-destruct initiation."
+    );
+    println!(
+        "This operation WILL NOT be reversible.\n\
+         While the data won't be erased locally, the instance will be in a BROKEN STATE \
+         afterwards.\n\
+         The deletion process itself may take a long time, and is handled by the \
+         instance's background tasks, so keep it running until it has finished (run \
+         this command again to see how far it has got)."
+    );
+    let answer = prompt("Are you sure you want to proceed? (y/N) ")?;
+    anyhow::ensure!(
+        matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes"),
+        "Operation cancelled. Self-destruct will not begin."
+    );
+    println!(
+        "To switch the instance to self-destruct mode, set this in its [instance] \
+         configuration (or SELF_DESTRUCT in its environment) and restart it:\n\n  \
+         self_destruct = \"{}\"\n\n\
+         Run this command again to see how far the self-destruct has got.",
+        self_destruct::value(instance)
+    );
+    Ok(())
+}
+
+/// A line read from the terminal after `question`, trimmed.
+fn prompt(question: &str) -> anyhow::Result<String> {
+    use std::io::Write as _;
+    print!("{question}");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(line.trim().to_owned())
 }
 
 /// The instance a one-off command acts for, as a server would: its mail goes

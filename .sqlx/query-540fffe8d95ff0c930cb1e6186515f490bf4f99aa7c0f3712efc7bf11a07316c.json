@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM accounts\n                   WHERE domain IS NULL AND suspended_at IS NULL\n                     AND requested_deletion_at IS NULL)\n                + (SELECT count(*) FROM accounts a\n                   JOIN account_deletion_requests r ON r.account_id = a.id\n                   WHERE a.domain IS NULL AND a.suspended_at IS NOT NULL) AS \"pending!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "540fffe8d95ff0c930cb1e6186515f490bf4f99aa7c0f3712efc7bf11a07316c"
+}

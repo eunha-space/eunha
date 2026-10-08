@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET requested_deletion_at = now(), updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "404ebd582fcb1687641e97f2b9b28f849ba26f3c9f72928a2a2d49941922f77f"
+}

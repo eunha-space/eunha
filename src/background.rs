@@ -18,7 +18,61 @@ pub const STOP_GRACE: Duration = Duration::from_secs(20);
 /// instance can wait for them.
 pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
     let _tenant = crate::tenants::span(&state.instance.domain).entered();
-    let mut tasks = vec![
+    // The schedules. A self-destructing instance runs its own alone, as
+    // Mastodon replaces `Sidekiq.schedule` with `SelfDestructScheduler`.
+    let mut tasks = if crate::self_destruct::enabled(&state.instance) {
+        tracing::warn!("self-destruct mode: running no schedule but the self-destruct");
+        vec![until_stopped(
+            &state,
+            "self-destruct",
+            crate::self_destruct::run(state.clone()),
+        )]
+    } else {
+        schedules(&state)
+    };
+    tasks.push(until_stopped(
+        &state,
+        "media queue",
+        crate::api::mastodon::media::run_media_queue(state.clone()),
+    ));
+    tasks.push(until_stopped(
+        &state,
+        "archive queue",
+        crate::portability::backup::run_queue(state.clone()),
+    ));
+
+    // Queue loops are sized from `[workers]` in config. Each loop claims work
+    // with `FOR UPDATE SKIP LOCKED`, so adding loops within this process scales
+    // the same way adding processes would.
+    let workers = state.config.workers.sanitized();
+    for _ in 0..workers.delivery_workers {
+        let deliverer = state.deliverer.clone();
+        let stop = state.stop.clone();
+        tasks.push(until_stopped(&state, "delivery queue", async move {
+            deliverer.run_until(stop.cancelled_owned()).await;
+        }));
+    }
+    for index in 0..workers.job_workers {
+        tasks.push(until_stopped(
+            &state,
+            "job queue",
+            crate::jobs::run(state.clone(), index),
+        ));
+    }
+    tracing::info!(
+        job_workers = workers.job_workers,
+        job_concurrency = workers.job_concurrency,
+        delivery_workers = workers.delivery_workers,
+        delivery_concurrency = workers.delivery_concurrency,
+        "background queues started"
+    );
+    tasks
+}
+
+/// The timed tasks: what Mastodon's *config/sidekiq.yml* schedules.
+fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
+    let state = state.clone();
+    vec![
         until_stopped(
             &state,
             "scheduled statuses",
@@ -45,16 +99,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             &state,
             "delivery cleanup",
             crate::federation::delivery::run_delivery_cleanup(state.clone()),
-        ),
-        until_stopped(
-            &state,
-            "media queue",
-            crate::api::mastodon::media::run_media_queue(state.clone()),
-        ),
-        until_stopped(
-            &state,
-            "archive queue",
-            crate::portability::backup::run_queue(state.clone()),
         ),
         until_stopped(
             &state,
@@ -98,34 +142,7 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "search indexing",
             crate::search::elasticsearch::indexing::run(state.clone()),
         ),
-    ];
-
-    // Queue loops are sized from `[workers]` in config. Each loop claims work
-    // with `FOR UPDATE SKIP LOCKED`, so adding loops within this process scales
-    // the same way adding processes would.
-    let workers = state.config.workers.sanitized();
-    for _ in 0..workers.delivery_workers {
-        let deliverer = state.deliverer.clone();
-        let stop = state.stop.clone();
-        tasks.push(until_stopped(&state, "delivery queue", async move {
-            deliverer.run_until(stop.cancelled_owned()).await;
-        }));
-    }
-    for index in 0..workers.job_workers {
-        tasks.push(until_stopped(
-            &state,
-            "job queue",
-            crate::jobs::run(state.clone(), index),
-        ));
-    }
-    tracing::info!(
-        job_workers = workers.job_workers,
-        job_concurrency = workers.job_concurrency,
-        delivery_workers = workers.delivery_workers,
-        delivery_concurrency = workers.delivery_concurrency,
-        "background queues started"
-    );
-    tasks
+    ]
 }
 
 /// Spawn `work`, one of the loops above, which returns by itself once the

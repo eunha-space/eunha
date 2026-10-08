@@ -51,6 +51,7 @@ pub mod remove_status;
 pub mod schema_check;
 pub mod search;
 pub mod secret_key_base;
+pub mod self_destruct;
 pub mod sessions;
 pub mod settings;
 pub mod settings_import;
@@ -107,6 +108,8 @@ pub fn build_app() -> Router {
         .layer(axum_middleware::from_fn(middleware::log_failures))
         .layer(axum_middleware::from_fn(middleware::authenticate))
         .layer(axum_middleware::from_fn(telemetry::observe))
+        // `check_self_destruct!`, once the request's instance is known.
+        .layer(axum_middleware::from_fn(self_destruct::gate))
         .layer(axum_middleware::from_fn(middleware::resolve_instance))
         .layer(axum_middleware::from_fn(remote_ip::deny_blocked))
         .layer(axum_middleware::from_fn(remote_ip::layer))
