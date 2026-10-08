@@ -368,6 +368,12 @@ async fn test_followers_are_moved_from_a_previous_domain() {
     .await
     .unwrap();
     assert_eq!(follow["id"], uri.as_str(), "an Undo names the new Follow");
+    // Named as `generate_uri_for` names a follow made here.
+    assert!(
+        uri.strip_prefix(&format!("https://{}/", ctx.domain))
+            .is_some_and(|rest| uuid::Uuid::parse_str(rest).is_ok()),
+        "{uri}"
+    );
     let status = eunha::accounts::batch_status(&ctx.db, "move:test")
         .await
         .unwrap();

@@ -1036,5 +1036,30 @@ Redirecting a signed-in user to an arbitrary address is an open redirect; a \
 client that asked for authorization properly registered the URI it is told \
 about, so it sees no difference."""
 evidence = "tests/integration/c2s/oauth_server.rs"
+
+id = "domain-change-migration"
+kind = "addition"
+summary = "Carries an instance's accounts, follows and posts across a change of domain"
+mastodon = """
+Has no way to change `LOCAL_DOMAIN`, which `.env.production.sample` says \
+"identifies your server and cannot be changed safely later"; `tootctl` has no \
+command for it. \
+Actors never name ids under an earlier domain, and nothing rewrites the ids \
+already given out."""
+eunha = """
+`instance.previous_domains` lists the domains an instance had, and each local \
+actor names its id under them in `alsoKnownAs`. `eunha rename-domain --from \
+OLD --to NEW` rewrites the ids local accounts, posts, follows, follow requests \
+and blocks were given. `eunha accounts move --from OLD` sends each account's \
+followers a `Move` from its old actor to its new one, signed with the old \
+actor's key id, and follows again, from the new actor, the remote accounts it \
+followed or asked to follow: a `Follow` whose id is a new `generate_uri_for` \
+id, recorded on the row so that a later `Undo` names it."""
+why = """
+An operator who must change domains would otherwise lose every follower and \
+every followed account's deliveries. The `Move` reuses upstream's account \
+migration, which servers already believe once the new actor lists the old one; \
+the refollow is what a `FollowService` would send from the new actor."""
+evidence = "tests/integration/federation/forwarding.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"

@@ -122,3 +122,22 @@ Then, for every local account:
 
 The notes are written in the author's language where eunha has it (English and
 Korean, from upstream's `move_handler.*` strings).
+
+
+Domain changes
+--------------
+
+Mastodon cannot change its domain once it has federated; eunha can (the
+`domain-change-migration` divergence). List the old domain in
+`instance.previous_domains`, so that each local actor names its old id in
+`alsoKnownAs`, and then:
+
+ -  `eunha rename-domain --from OLD --to NEW` rewrites the ids local accounts,
+    posts, follows, follow requests and blocks were given; a second run
+    changes nothing.
+ -  `eunha accounts move --from OLD` sends each account's followers a `Move`
+    from its old actor to its new one, signed with the old actor's key id,
+    which their servers hold from when they followed. It also follows again,
+    from the new actor, every remote account the account followed or asked to
+    follow, with a new id of the form `https://<domain>/<uuid>` that is
+    recorded on the row. `--dry-run` reports what would be sent.

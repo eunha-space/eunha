@@ -1111,7 +1111,10 @@ pub async fn move_followers(
             let key_id: String = now.key_id()?.into();
             let mut refollowed = 0;
             for (table, id, target, inbox) in &following {
-                let follow_id = format!("{new}#follows/{}", crate::snowflake::next_id());
+                // `set_uri`'s id, as the `Follow` of a request made
+                // through `FollowService` carries.
+                let follow_id =
+                    crate::federation::relationships::generate_uri(&state.instance.domain);
                 let activity = crate::federation::activity::follow(&follow_id, &new, target)?;
                 refollowed += crate::federation::delivery::deliver_to_inboxes_in_batch(
                     state,
