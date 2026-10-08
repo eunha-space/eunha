@@ -234,23 +234,16 @@ impl<'de> serde::Deserialize<'de> for FlexIds {
     }
 }
 
-/// `ActiveModel::Type::Boolean#cast`: everything but the false values
-/// (`false`, `0`, `"0"`, `"f"`, `"false"`, `"off"`, and their capitalisations)
-/// is true; an empty string is nil.
+/// `truthy_param?`: [`rails::cast_bool`], nil (absent, null or blank) as
+/// false.
 #[derive(Debug, Clone, Copy)]
 pub struct FlexBool(pub bool);
 
 impl<'de> serde::Deserialize<'de> for FlexBool {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(FlexBool(match serde_json::Value::deserialize(d)? {
-            serde_json::Value::Bool(b) => b,
-            serde_json::Value::Number(n) => n.as_f64() != Some(0.0),
-            serde_json::Value::String(s) => {
-                !matches!(s.to_lowercase().as_str(), "false" | "0" | "f" | "off" | "")
-            }
-            serde_json::Value::Null => false,
-            _ => true,
-        }))
+        Ok(FlexBool(
+            rails::cast_bool(&serde_json::Value::deserialize(d)?).unwrap_or(false),
+        ))
     }
 }
 
@@ -573,6 +566,26 @@ mod tests {
             super::normalize_params(&mut params, name, json!(value))?;
         }
         Ok(serde_json::Value::Object(params))
+    }
+
+    #[test]
+    fn booleans_cast_as_active_model_casts_them() {
+        use super::rails::cast_bool;
+        for falsy in [json!(false), json!(0), json!("0"), json!("f"), json!("F")] {
+            assert_eq!(cast_bool(&falsy), Some(false), "{falsy}");
+        }
+        for falsy in ["false", "FALSE", "off", "OFF"] {
+            assert_eq!(cast_bool(&json!(falsy)), Some(false), "{falsy}");
+        }
+        // Only the spellings ActiveModel lists are false.
+        for truthy in ["1", "t", "true", "on", "yes", "False", "Off", "no"] {
+            assert_eq!(cast_bool(&json!(truthy)), Some(true), "{truthy}");
+        }
+        assert_eq!(cast_bool(&json!("")), None);
+        assert_eq!(cast_bool(&serde_json::Value::Null), None);
+        assert_eq!(super::rails::cast_int(&json!("300")), Some(300));
+        assert_eq!(super::rails::cast_int(&json!("12abc")), Some(12));
+        assert_eq!(super::rails::cast_int(&json!("")), None);
     }
 
     #[test]
