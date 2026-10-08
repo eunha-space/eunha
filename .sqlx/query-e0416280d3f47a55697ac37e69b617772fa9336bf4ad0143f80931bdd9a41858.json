@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notifications SET filtered = false\n             WHERE account_id = $1 AND from_account_id = $2 AND filtered",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0416280d3f47a55697ac37e69b617772fa9336bf4ad0143f80931bdd9a41858"
+}

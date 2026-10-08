@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM notifications WHERE id = $1 AND account_id = $2",
+  "query": "SELECT n.* FROM notifications n\n         JOIN accounts a ON a.id = n.from_account_id\n           AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n         WHERE n.id = $1 AND n.account_id = $2",
   "describe": {
     "columns": [
       {
@@ -73,5 +73,5 @@
       true
     ]
   },
-  "hash": "5c7b8bdbe84e7ff3cc37763d3e96c0976c369ce57d0ae1b9824a05f50eb2e7f1"
+  "hash": "f7b97c575fe0a4b962c42291d4649c222110fdfcc5ec16d4a5229524e346810f"
 }

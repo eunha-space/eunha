@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 NOT EXISTS (\n                   SELECT 1 FROM accounts\n                   WHERE id = $1 AND suspended_at IS NULL AND requested_deletion_at IS NULL\n                 )\n                 OR EXISTS (\n                   SELECT 1 FROM account_domain_blocks adb\n                   JOIN accounts sender ON sender.id = $2\n                   WHERE adb.account_id = $1 AND adb.domain = sender.domain\n                     AND NOT EXISTS (\n                       SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2\n                     )\n                 )\n                 OR EXISTS (\n                   SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2\n                 )\n                 -- `muting_notifications?` asks only whether the mute is\n                 -- there: an expired one still mutes until it is removed.\n                 OR EXISTS (\n                   SELECT 1 FROM mutes\n                   WHERE account_id = $1 AND target_account_id = $2 AND hide_notifications\n                 ) AS \"dropped!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dropped!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1a93e4eb2cf2811786b69b9e848a649a02bf820420e07635fb5991217d2844d7"
+}

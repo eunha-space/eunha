@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM notifications n\n               JOIN mentions m ON n.activity_type = 'Mention' AND m.id = n.activity_id\n               JOIN statuses s ON s.id = m.status_id\n               WHERE n.account_id = $1 AND n.from_account_id = $2 AND n.filtered\n                 AND n.\"type\" = 'mention' AND s.visibility = $3\n               ORDER BY n.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d4ac542308373fd1c22e3d96cb373caacb784af45e36b5fad3d9dec75b057741"
+}
