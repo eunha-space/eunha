@@ -467,19 +467,23 @@ pub async fn create_collection(
         _ => None,
     };
 
-    // `CreateCollectionService#build_items`: an account the owner may not
-    // feature refuses the whole collection.
+    // `CreateCollectionService`: `Account.find(account_ids)`, every one of
+    // them or a 404, suspended or not, then `build_items`, where an account
+    // the owner may not feature refuses the whole collection.
+    let mut account_ids = Vec::with_capacity(form.account_ids.len());
     for raw in &form.account_ids {
-        if let Ok(aid) = raw.parse::<i64>() {
-            if !crate::federation::featured_collections::may_feature(
-                &state.db,
-                auth.account_id,
-                aid,
-            )
+        let aid = raw.trim().parse::<i64>().map_err(|_| AppError::NotFound)?;
+        sqlx::query_scalar!("SELECT id FROM accounts WHERE id = $1", aid)
+            .fetch_optional(&state.db)
             .await?
-            {
-                return Err(AppError::Forbidden);
-            }
+            .ok_or(AppError::NotFound)?;
+        account_ids.push(aid);
+    }
+    for &aid in &account_ids {
+        if !crate::federation::featured_collections::may_feature(&state.db, auth.account_id, aid)
+            .await?
+        {
+            return Err(AppError::Forbidden);
         }
     }
 
@@ -500,10 +504,8 @@ pub async fn create_collection(
     .await?;
 
     // Add initial accounts, if any.
-    for raw in &form.account_ids {
-        if let Ok(aid) = raw.parse::<i64>() {
-            let _ = add_item(&state, new_id, aid, false).await;
-        }
+    for aid in account_ids {
+        let _ = add_item(&state, new_id, aid, false).await;
     }
 
     let c = load_collection(&state, new_id)
@@ -696,19 +698,13 @@ async fn add_item(
     distribute: bool,
 ) -> AppResult<Value> {
     let target = sqlx::query!(
-        r#"SELECT domain, suspended_at, requested_deletion_at, uri, inbox_url, shared_inbox_url
+        r#"SELECT domain, uri, inbox_url, shared_inbox_url
            FROM accounts WHERE id = $1"#,
         account_id,
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-
-    if target.suspended_at.is_some() || target.requested_deletion_at.is_some() {
-        return Err(AppError::Unprocessable(
-            "This account cannot be added to collections".into(),
-        ));
-    }
 
     let owner_id = sqlx::query_scalar!(
         "SELECT account_id FROM collections WHERE id = $1",
@@ -1228,15 +1224,30 @@ pub async fn add_collection_item(
     let c = load_collection(&state, collection_id)
         .await?
         .ok_or(AppError::NotFound)?;
+
+    // `set_account`, before either policy: a blank `account_id` is a 422,
+    // and the account is found among those that have not asked to be
+    // deleted (`Account.without_requested_deletion.find`). A suspended
+    // account is found, and left to `AccountPolicy#feature?`.
+    let raw = form
+        .account_id
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| AppError::Unprocessable("`account_id` parameter is missing".into()))?;
+    let account_id = match raw.trim().parse::<i64>() {
+        Ok(id) => sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE id = $1 AND requested_deletion_at IS NULL",
+            id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?,
+        Err(_) => return Err(AppError::NotFound),
+    };
+
     if c.account_id != auth.account_id {
         return Err(AppError::Forbidden);
     }
-
-    let account_id = form
-        .account_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok())
-        .ok_or_else(|| AppError::Unprocessable("`account_id` parameter is missing".into()))?;
 
     let item = add_item(&state, collection_id, account_id, true).await?;
     Ok(Json(json!({ "collection_item": item })))

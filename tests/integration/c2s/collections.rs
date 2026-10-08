@@ -770,3 +770,96 @@ async fn test_collection_notifications() {
     assert_eq!(added.len(), 1);
     assert!(added[0]["collection"].is_null(), "{added:?}");
 }
+
+/// `CollectionItemsController#set_account`: a blank `account_id` is a 422
+/// and an account that asked to be deleted a 404
+/// (`Account.without_requested_deletion.find`), both before the policies;
+/// a suspended account is found, and added if the owner may feature it.
+#[tokio::test]
+async fn test_add_item_finds_the_account_as_mastodon_does() {
+    let ctx = TestContext::new("coll-add-lookup").await;
+    let create = |name: &'static str| {
+        let ctx = &ctx;
+        async move {
+            let c: Value = ctx
+                .api
+                .post_json(
+                    "/api/v1/collections",
+                    Some(&ctx.alice_token),
+                    &json!({ "name": name }),
+                )
+                .await
+                .json()
+                .await
+                .unwrap();
+            c["collection"]["id"].as_str().unwrap().to_string()
+        }
+    };
+    let add = |cid: String, token: String, body: Value| {
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .post_json(
+                    &format!("/api/v1/collections/{cid}/items"),
+                    Some(&token),
+                    &body,
+                )
+                .await
+        }
+    };
+    let first = create("First").await;
+    let second = create("Second").await;
+
+    // Someone else's collection: the account is looked up first.
+    let blank = add(
+        first.clone(),
+        ctx.bob_token.clone(),
+        json!({ "account_id": "" }),
+    )
+    .await;
+    assert_eq!(blank.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let unknown = add(
+        first.clone(),
+        ctx.bob_token.clone(),
+        json!({ "account_id": "1" }),
+    )
+    .await;
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    let not_owner = add(
+        first.clone(),
+        ctx.bob_token.clone(),
+        json!({ "account_id": ctx.alice_id }),
+    )
+    .await;
+    assert_eq!(not_owner.status(), StatusCode::FORBIDDEN);
+
+    // A suspended account is added.
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let suspended = add(
+        first.clone(),
+        ctx.alice_token.clone(),
+        json!({ "account_id": ctx.bob_id }),
+    )
+    .await;
+    assert_eq!(suspended.status(), StatusCode::OK);
+    let item: Value = suspended.json().await.unwrap();
+    assert_eq!(item["collection_item"]["state"], "accepted");
+
+    // One that asked to be deleted is not found.
+    sqlx::query("UPDATE accounts SET requested_deletion_at = now() WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let deleted = add(
+        second,
+        ctx.alice_token.clone(),
+        json!({ "account_id": ctx.bob_id }),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NOT_FOUND);
+}

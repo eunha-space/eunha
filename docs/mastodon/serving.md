@@ -145,7 +145,10 @@ the collection's owner, or the owner itself; a remote one when its
 `feature_approval_policy` answers `automatic` or `manual` for the owner (an
 account that has said nothing answers `missing`, and is not featured); and
 never when either blocks the other. Adding one that may not be featured, or
-creating a collection with one, is a 403.
+creating a collection with one, is a 403. Suspension is not among the
+conditions, so a suspended account may be added; adding an account that has
+asked to be deleted is a 404, as is naming an account that does not exist,
+and both are answered before whether the collection is the caller's.
 
 Adding a local account sends the item's `Add` (a `FeaturedItem`) to the
 collection's reach, as `CollectionRawDistributionWorker` sends it: the
