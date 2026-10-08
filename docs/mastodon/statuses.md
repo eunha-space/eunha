@@ -37,6 +37,32 @@ schedule that would not pass the validations above, is a 422 with Mastodon's
 bare *Record invalid*.
 
 
+Editing
+-------
+
+`PUT /api/v1/statuses/:id` says what the post now is, whole: Mastodon's
+controller gives `UpdateStatusService` the text, content warning,
+sensitivity, attachments and poll every time, each none when the request
+leaves it out. An edit that does not give the attachments takes them off the
+post (they stay attached, for its history), one that does not give the poll
+removes it with its votes, and one that does not say `sensitive` marks the
+post not sensitive unless it has a content warning. Only the language, which
+falls back to the post's, and the quote policy, kept unless one is given, are
+kept when left out.
+
+A blank text, on a post that quotes nothing, becomes the content warning
+given; the post's content warning is then left as it was, and the warning
+given does not mark it sensitive. `media_attributes` change the next
+attachments' `description` and `focus` (`x,y`, each read as `to_f`). A poll
+given is validated as on posting, its votes reset when its options or
+multiplicity change, and it ends `expires_in` from now.
+
+An edit that changes nothing is no edit: the post is answered as it was. One
+that does is validated as a new post is (text required unless the post now
+has media or quotes, its length, disallowed hashtags), and nothing of a
+refused edit is kept.
+
+
 Edit history
 ------------
 

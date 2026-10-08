@@ -725,25 +725,31 @@ async fn destroy(state: &AppState, status: &Status, account: &Account) -> Result
 /// towards.
 pub(crate) async fn destroy_poll(db: &sqlx::PgPool, poll_id: i64) -> Result<()> {
     let mut tx = db.begin().await?;
-    let mut touched = destroy_notifications(&mut tx, "Poll", &[poll_id], false).await?;
+    destroy_poll_in(&mut tx, poll_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [`destroy_poll`] inside a transaction the caller holds.
+pub(crate) async fn destroy_poll_in(conn: &mut PgConnection, poll_id: i64) -> Result<()> {
+    let mut touched = destroy_notifications(&mut *conn, "Poll", &[poll_id], false).await?;
     sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", poll_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query!(
         "UPDATE statuses SET poll_id = NULL WHERE poll_id = $1",
         poll_id
     )
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
     sqlx::query!("DELETE FROM polls WHERE id = $1", poll_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     touched.sort_unstable();
     touched.dedup();
     for (account_id, from_account_id) in touched {
-        reconsider_notification_request(&mut tx, account_id, from_account_id).await?;
+        reconsider_notification_request(&mut *conn, account_id, from_account_id).await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 

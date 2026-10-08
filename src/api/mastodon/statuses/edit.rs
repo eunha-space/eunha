@@ -11,6 +11,59 @@ pub struct EditMediaAttribute {
     pub id: String,
     #[serde(default, deserialize_with = "rails::opt_string")]
     pub description: Option<String>,
+    /// `"x,y"`, or `[x, y]`.
+    pub focus: Option<serde_json::Value>,
+}
+
+/// `MediaAttachment::MAX_DESCRIPTION_LENGTH`.
+const MAX_DESCRIPTION_LENGTH: usize = 10_000;
+
+/// What an edit's `media_attributes` entry changes of one of the next
+/// attachments.
+struct MediaUpdate {
+    id: i64,
+    description: Option<String>,
+    focus: Option<serde_json::Value>,
+}
+
+/// `MediaAttachment#focus=`: `x,y` (or a pair), each `to_f`, as the
+/// `{x, y}` kept in `file_meta`; nothing for a blank one.
+fn focus_point(value: &serde_json::Value) -> Option<serde_json::Value> {
+    // Ruby's `String#to_f`: the longest leading number, else 0.
+    fn to_f(s: &str) -> f64 {
+        let s = s.trim_start();
+        let mut end = 0;
+        let bytes = s.as_bytes();
+        if matches!(bytes.first(), Some(b'+' | b'-')) {
+            end = 1;
+        }
+        let mut seen_dot = false;
+        let mut seen_digit = false;
+        while let Some(&b) = bytes.get(end) {
+            match b {
+                b'0'..=b'9' => seen_digit = true,
+                b'.' if !seen_dot => seen_dot = true,
+                _ => break,
+            }
+            end += 1;
+        }
+        if !seen_digit {
+            return 0.0;
+        }
+        s[..end].trim_end_matches('.').parse().unwrap_or(0.0)
+    }
+    let number = |v: &serde_json::Value| match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => Some(to_f(s)),
+        _ => None,
+    };
+    let parts: Vec<Option<f64>> = match value {
+        serde_json::Value::String(s) if !blank(s) => s.split(',').map(|p| Some(to_f(p))).collect(),
+        serde_json::Value::Array(items) if !items.is_empty() => items.iter().map(number).collect(),
+        _ => return None,
+    };
+    let at = |i: usize| parts.get(i).copied().flatten();
+    Some(serde_json::json!({ "x": at(0), "y": at(1) }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +80,7 @@ pub struct EditStatusForm {
     pub media_ids: Option<Vec<String>>,
     #[serde(default, deserialize_with = "rails::nested_attributes")]
     pub media_attributes: Option<Vec<EditMediaAttribute>>,
-    // Double-option so we can tell an absent `poll` (no change) from an explicit
-    // `poll: null` (remove the poll) — Mastodon keys off `options.key?(:poll)`.
+    /// `poll`, absent and `null` alike meaning the post has no poll now.
     #[serde(default, deserialize_with = "double_option")]
     pub poll: Option<Option<PollForm>>,
     /// `update_options[:quote_approval_policy] = quote_approval_policy if
@@ -63,24 +115,38 @@ pub async fn edit_status(
 
     let instance_domain = state.instance.domain.clone();
 
-    // Compute the proposed new values.
-    let new_text = form.status.clone().unwrap_or_else(|| status.text.clone());
-    let new_spoiler = form
-        .spoiler_text
+    // The controller always gives `UpdateStatusService` the text, content
+    // warning, sensitivity, language, attachments and poll, each `nil` when
+    // the request leaves it out: an edit says what the post now is, whole.
+
+    // `update_immediate_attributes!`: `@options[:text].presence || ''`, and,
+    // for a post that quotes nothing, a blank text becomes the content
+    // warning given (`@options.delete(:spoiler_text)`), which then no longer
+    // changes the content warning or marks the post sensitive.
+    let quotes = crate::quotes::find_by_status(&state.db, id)
+        .await?
+        .is_some();
+    let mut new_text = form
+        .status
         .clone()
-        .unwrap_or_else(|| status.spoiler_text.clone());
-    // Mastodon StatusLengthValidator: spoiler + body, URLs as 23 chars, mentions
-    // without their domain, counted in grapheme clusters.
-    if crate::api::mastodon::formatting::countable_length(&new_text, &new_spoiler) > 500 {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Text character limit of 500 exceeded".into(),
-        ));
+        .filter(|text| !blank(text))
+        .unwrap_or_default();
+    let mut spoiler_given = form.spoiler_text.clone();
+    let mut spoiler_key = true;
+    if blank(&new_text) && !quotes {
+        new_text = spoiler_given.take().unwrap_or_default();
+        spoiler_key = false;
     }
-    // Mastodon forces sensitive when a content warning is present.
-    let new_sensitive = form.sensitive.unwrap_or(status.sensitive) || !new_spoiler.is_empty();
-    // `UpdateStatusService`: `valid_locale_cascade(options[:language],
-    // status.language, user's preferred posting language,
-    // I18n.default_locale)`.
+    let new_spoiler = if spoiler_key {
+        spoiler_given.clone().unwrap_or_default()
+    } else {
+        status.spoiler_text.clone()
+    };
+    // `@options[:sensitive] || @options[:spoiler_text].present?`.
+    let new_sensitive =
+        form.sensitive.unwrap_or(false) || spoiler_given.as_deref().is_some_and(|s| !blank(s));
+    // `valid_locale_cascade(options[:language], status.language, user's
+    // preferred posting language, I18n.default_locale)`.
     let preferred = crate::api::mastodon::accounts::user_defaults(&state, status.account_id)
         .await
         .language;
@@ -91,77 +157,82 @@ pub async fn edit_status(
         Some(state.instance.default_locale()),
     ]);
 
-    // `update_media_attachments! if @options.key?(:media_ids)`: the next
-    // attachments, validated, in the order asked for. The media changed when
-    // that order is not the one the status had (`ordered_media_attachments`),
-    // or when a `media_attributes` entry for one of them changes its
-    // description (`significantly_changed?`).
-    let previous_media: Vec<crate::db::models::MediaAttachment> =
-        crate::api::mastodon::status_serialize::fetch_status_media(&state, id).await?;
-    let next_media: Option<Vec<i64>> = match form.media_ids.as_deref() {
-        Some(ids) => Some(validate_media(&state, auth.account_id, Some(ids), Some(id)).await?),
+    // `update_media_attachments!`: the next attachments, validated, in the
+    // order asked for (none when none are given). The attachments changed
+    // when that order is not the one the status had, or when a
+    // `media_attributes` entry changes one of them (`significantly_changed?`:
+    // its description, thumbnail or focus).
+    let previous_media: Vec<i64> =
+        crate::api::mastodon::status_serialize::fetch_status_media(&state, id)
+            .await?
+            .iter()
+            .map(|m| m.id)
+            .collect();
+    let next_media: Vec<i64> =
+        validate_media(&state, auth.account_id, form.media_ids.as_deref(), Some(id)).await?;
+    let current_attributes = sqlx::query!(
+        "SELECT id, description, file_meta FROM media_attachments WHERE id = ANY($1)",
+        &next_media,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut media_updates: Vec<MediaUpdate> = Vec::new();
+    let mut media_changed = previous_media != next_media;
+    for attr in form.media_attributes.iter().flatten() {
+        let Some(current) = attr
+            .id
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .and_then(|media_id| current_attributes.iter().find(|m| m.id == media_id))
+        else {
+            continue;
+        };
+        if let Some(description) = &attr.description {
+            // `validates :description, length: { maximum: MAX_DESCRIPTION_LENGTH }`.
+            if description.chars().count() > MAX_DESCRIPTION_LENGTH {
+                return Err(AppError::Unprocessable(format!(
+                    "Validation failed: Description is too long (maximum is {MAX_DESCRIPTION_LENGTH} characters)"
+                )));
+            }
+        }
+        let focus = attr.focus.as_ref().and_then(focus_point);
+        let current_focus = current
+            .file_meta
+            .as_ref()
+            .and_then(|meta| meta.get("focus"))
+            .cloned();
+        let description_changed = attr
+            .description
+            .as_ref()
+            .is_some_and(|d| current.description.as_deref() != Some(d.as_str()));
+        let focus_changed = focus
+            .as_ref()
+            .is_some_and(|f| current_focus.as_ref() != Some(f));
+        media_changed |= description_changed || focus_changed;
+        media_updates.push(MediaUpdate {
+            id: current.id,
+            description: attr.description.clone(),
+            focus,
+        });
+    }
+
+    // `update_poll!`: a poll given is validated and saved, its votes reset
+    // when its options or multiplicity changed; none given takes away the
+    // poll the post had. Either changes the poll (`@poll_changed`), since a
+    // poll given again ends `expires_in` from now.
+    let given_poll = form.poll.as_ref().and_then(Option::as_ref);
+    let prepared_poll = match given_poll {
+        Some(pf) => Some(validate_poll_form(pf)?),
         None => None,
     };
-    let media_descriptions: Vec<(i64, String)> = match (&next_media, &form.media_attributes) {
-        (Some(next), Some(attrs)) => attrs
-            .iter()
-            .filter_map(|attr| {
-                let media_id = attr.id.parse::<i64>().ok()?;
-                let description = attr.description.clone()?;
-                next.contains(&media_id).then_some((media_id, description))
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
-    let descriptions_changed = if media_descriptions.is_empty() {
-        false
-    } else {
-        let ids: Vec<i64> = media_descriptions.iter().map(|(id, _)| *id).collect();
-        let current = sqlx::query!(
-            "SELECT id, description FROM media_attachments WHERE id = ANY($1)",
-            &ids,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        media_descriptions.iter().any(|(media_id, description)| {
-            current
-                .iter()
-                .find(|m| m.id == *media_id)
-                .is_some_and(|m| m.description.as_deref() != Some(description.as_str()))
-        })
-    };
-    let media_changed = descriptions_changed
-        || next_media
-            .as_ref()
-            .is_some_and(|next| previous_media.iter().map(|m| m.id).collect::<Vec<_>>() != *next);
-
-    // Poll editing (Mastodon UpdateStatusService#update_poll!): a poll in the
-    // request creates or updates one; changing options resets votes.
-    if let Some(Some(pf)) = &form.poll {
-        validate_poll_form(pf)?;
-    }
     let existing_poll = sqlx::query!(
-        "SELECT id, options, multiple, hide_totals, expires_at FROM polls WHERE status_id = $1",
-        id,
+        "SELECT id, options, multiple, expires_at FROM polls WHERE id = $1",
+        status.poll_id,
     )
     .fetch_optional(&state.db)
     .await?;
-    let poll_changed = match (&form.poll, &existing_poll) {
-        (Some(Some(pf)), Some(ep)) => {
-            pf.options != ep.options
-                || pf.multiple.unwrap_or(false) != ep.multiple
-                || pf.hide_totals.unwrap_or(false) != ep.hide_totals
-                // `@poll_changed = true if @previous_expires_at !=
-                // preloadable_poll&.expires_at`: `expires_in=` counts from
-                // now, so a poll given again ends at another time.
-                || pf.expires_in.is_some()
-                || ep.expires_at.is_some()
-        }
-        (Some(Some(_)), None) => true, // adding a poll
-        (Some(None), Some(_)) => true, // explicit poll:null removes it
-        (Some(None), None) => false,
-        (None, _) => false, // absent: no change
-    };
+    let poll_changed = given_poll.is_some() || existing_poll.is_some();
 
     // `@status.quote_approval_policy = @options[:quote_approval_policy] if
     // @options[:quote_approval_policy].present?`, then `downgrade_quote_policy`
@@ -184,13 +255,14 @@ pub async fn edit_status(
         0
     };
 
-    // Mastodon only records an edit (and bumps edited_at / notifies) when the
-    // submission actually changes the status; a no-op edit returns it as-is.
+    // `raise NoChangesSubmittedError unless significant_changes?`: an edit
+    // that changes nothing is no edit, and returns the post as it was.
     let significant = new_text != status.text
         || new_spoiler != status.spoiler_text
         || new_sensitive != status.sensitive
         || new_language != status.language
         || new_quote_policy != status.quote_approval_policy
+        || status.ordered_media_attachment_ids.as_ref() != Some(&next_media)
         || media_changed
         || poll_changed;
 
@@ -198,6 +270,23 @@ pub async fn edit_status(
         return Ok(Json(
             serialize_status(&state, &status, Some(auth.account_id)).await?,
         ));
+    }
+
+    // `@status.save!`: `Status`'s validations, text required unless the post
+    // now has media or quotes.
+    let errors = status_errors(
+        &state,
+        &new_text,
+        &new_spoiler,
+        !next_media.is_empty() || quotes,
+        None,
+    )
+    .await?;
+    if !errors.is_empty() {
+        return Err(AppError::Unprocessable(format!(
+            "Validation failed: {}",
+            errors.join(", ")
+        )));
     }
 
     // `rate_limit by: :account, family: :statuses` on the edit
@@ -213,56 +302,58 @@ pub async fn edit_status(
     let mut tx = state.db.begin().await?;
     crate::status_snapshot::create_previous_edit(&mut tx, id).await?;
 
-    // `update_media_attachments!`: the descriptions given for the next
-    // attachments, the added ones attached, and the order recorded. An
-    // attachment taken off stays attached, so that the versions in the
-    // history that showed it still can.
-    if let Some(next) = &next_media {
-        for (media_id, description) in &media_descriptions {
-            sqlx::query!(
-                "UPDATE media_attachments SET description = $1, updated_at = now() WHERE id = $2",
-                description,
-                media_id,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+    // `update_media_attachments!`: `media.update!(attributes.slice(:thumbnail,
+    // :description, :focus))` for the next attachments, the added ones
+    // attached, and the order recorded. An attachment taken off stays
+    // attached, so that the versions in the history that showed it still
+    // can.
+    for update in &media_updates {
         sqlx::query!(
-            "UPDATE media_attachments SET status_id = $1 WHERE id = ANY($2) AND status_id IS NULL",
-            id,
-            next,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query!(
-            "UPDATE statuses SET ordered_media_attachment_ids = $2 WHERE id = $1",
-            id,
-            next,
+            r#"UPDATE media_attachments
+               SET description = COALESCE($2, description),
+                   file_meta = CASE WHEN $3::jsonb IS NULL THEN file_meta
+                       ELSE jsonb_set(COALESCE(file_meta::jsonb, '{}'::jsonb), '{focus}', $3::jsonb)::json END,
+                   updated_at = now()
+               WHERE id = $1"#,
+            update.id,
+            update.description,
+            update.focus,
         )
         .execute(&mut *tx)
         .await?;
     }
+    sqlx::query!(
+        "UPDATE media_attachments SET status_id = $1 WHERE id = ANY($2) AND status_id IS NULL",
+        id,
+        &next_media,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "UPDATE statuses SET ordered_media_attachment_ids = $2 WHERE id = $1",
+        id,
+        &next_media,
+    )
+    .execute(&mut *tx)
+    .await?;
 
-    // `update_poll!`: a poll in the request creates or updates one, and
-    // changing its options resets the votes; an explicit `poll: null`
-    // removes it.
-    match &form.poll {
-        Some(Some(pf)) => {
+    // `update_poll!`.
+    match (given_poll, prepared_poll) {
+        (Some(pf), Some(opts)) => {
             let expires_at = pf
                 .expires_in
                 .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
-            let opts: Vec<String> = pf.options.clone();
             match &existing_poll {
                 Some(ep) => {
+                    // `@options[:poll][:options] != poll.options ||
+                    // multiple != poll.multiple`: `reset_votes!`.
                     let options_changed =
-                        ep.options != opts || ep.multiple != pf.multiple.unwrap_or(false);
+                        ep.options != pf.options || ep.multiple != pf.multiple.unwrap_or(false);
                     if options_changed {
                         sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
                             .execute(&mut *tx)
                             .await?;
                     }
-                    // `reset_votes!` when the options changed, the tallies
-                    // kept otherwise.
                     sqlx::query!(
                         r#"UPDATE polls
                              SET options = $2, multiple = $3, hide_totals = $4, expires_at = $5,
@@ -312,20 +403,14 @@ pub async fn edit_status(
                 }
             }
         }
-        Some(None) => {
+        _ => {
+            // `previous_poll.destroy`, its votes and notifications with it.
             if let Some(ep) = &existing_poll {
-                sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", ep.id)
-                    .execute(&mut *tx)
-                    .await?;
-                sqlx::query!("UPDATE statuses SET poll_id = NULL WHERE id = $1", id)
-                    .execute(&mut *tx)
-                    .await?;
-                sqlx::query!("DELETE FROM polls WHERE id = $1", ep.id)
-                    .execute(&mut *tx)
-                    .await?;
+                crate::remove_status::destroy_poll_in(&mut tx, ep.id)
+                    .await
+                    .map_err(AppError::Internal)?;
             }
         }
-        None => {}
     }
 
     // `update_immediate_attributes!`.
@@ -349,12 +434,9 @@ pub async fn edit_status(
         crate::preview_card::reset(&state, id).await;
         crate::preview_card::crawl(&state, id).await;
     }
-    // `queue_poll_notifications!`, with the poll's end before the edit when
-    // the edit gave a poll (`@previous_expires_at`).
-    let previous_expires_at = match &form.poll {
-        Some(_) => existing_poll.as_ref().and_then(|p| p.expires_at),
-        None => None,
-    };
+    // `queue_poll_notifications!`, with the poll's end before the edit
+    // (`@previous_expires_at`).
+    let previous_expires_at = existing_poll.as_ref().and_then(|p| p.expires_at);
     if let Err(error) = crate::api::mastodon::polls::queue_poll_notifications(
         &state,
         id,
