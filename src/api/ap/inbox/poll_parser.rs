@@ -101,7 +101,7 @@ fn expires_at(json: &Value, now: NaiveDateTime) -> Option<NaiveDateTime> {
 /// is anything else `DateTime.parse` would raise on. What `DateTime.parse`
 /// reads beyond these, such as month names in free text or a time with no
 /// date, is not read.
-pub(super) fn to_datetime(value: &str) -> Option<NaiveDateTime> {
+pub(crate) fn to_datetime(value: &str) -> Option<NaiveDateTime> {
     let value = value.trim();
     if value.is_empty() {
         return None;

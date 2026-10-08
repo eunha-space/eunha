@@ -27,14 +27,30 @@ pub async fn post_status(
     };
     let account = fetch_account(&state, auth.account_id).await?;
 
-    // `preprocess_attributes!`'s `@scheduled_at`: a time in the past is
-    // ignored, and the status posts now. Whether the request schedules is
-    // decided before `with_idempotency`, which looks its duplicate up by it.
-    let scheduled_at = match form.scheduled_at.as_deref() {
+    // `set_thread`: the post replied to, which the poster must be able to
+    // see (`authorize(@thread, :show?)`); one that is not there, or that
+    // they may not see, is a 404 of its own.
+    if let Some(parent) = form.in_reply_to_id.as_deref().filter(|id| !blank(id)) {
+        find_thread(&state, auth.account_id, parent).await?;
+    }
+    // `set_quoted_status` and `quote_approval_policy`: the controller's,
+    // which run before the service, for a scheduled post as for any other.
+    let quoted = match form.quoted_status_id.as_deref() {
+        Some(qid) => Some(find_quotable(&state, &account, qid).await?),
+        None => None,
+    };
+    let quote_policy = requested_quote_policy(&state, account.id, &form).await?;
+
+    // `preprocess_attributes!`'s `@scheduled_at`, `String#to_datetime`: a
+    // time without a zone is UTC, a blank one none, and one that does not
+    // parse raises `ArgumentError`, turned into a bare `RecordInvalid`. A
+    // time in the past is ignored, and the status posts now. Whether the
+    // request schedules is decided before `with_idempotency`, which looks
+    // its duplicate up by it.
+    let scheduled_at = match form.scheduled_at.as_deref().filter(|s| !blank(s)) {
         Some(s) => {
-            let t = chrono::DateTime::parse_from_rfc3339(s)
-                .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
-                .map_err(|_| AppError::Unprocessable("Invalid scheduled_at format".into()))?;
+            let t = crate::api::ap::inbox::poll_parser::to_datetime(s)
+                .ok_or_else(|| AppError::Unprocessable("Record invalid".into()))?;
             (t > chrono::Utc::now().naive_utc()).then_some(t)
         }
         None => None,
@@ -77,49 +93,32 @@ pub async fn post_status(
     let parsed_media_ids =
         validate_media(&state, account.id, form.media_ids.as_deref(), None).await?;
 
-    let mut text = form.status.clone().unwrap_or_default();
-    let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
-    // Mastodon PostStatusService#preprocess_attributes promotes a lone content
-    // warning (no body, no quote) into the body, leaving no CW. `sensitive` is
-    // still forced on below because the CW was present when it was evaluated.
-    let spoiler_was_present = !spoiler_text.is_empty();
-    if text.is_empty() && spoiler_was_present && form.quoted_status_id.is_none() {
-        text = std::mem::take(&mut spoiler_text);
-    }
-    if text.is_empty()
-        && form.media_ids.as_ref().is_none_or(|m| m.is_empty())
-        && form.poll.is_none()
-    {
-        return Err(AppError::Unprocessable(
-            "Status must have text or media".into(),
-        ));
-    }
-    // Mastodon StatusLengthValidator: spoiler + body, URLs as 23 chars, mentions
-    // without their domain, counted in grapheme clusters.
-    if crate::api::mastodon::formatting::countable_length(&text, &spoiler_text) > 500 {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Text character limit of 500 exceeded".into(),
-        ));
-    }
-
-    // Validate poll options before inserting anything
-    if let Some(ref poll_form) = form.poll {
-        validate_poll_form(poll_form)?;
-    }
-
-    // `set_quoted_status` and `quote_approval_policy`: the controller's,
-    // which run before the service, for a scheduled post as for any other.
-    let quoted = match form.quoted_status_id.as_deref() {
-        Some(qid) => Some(find_quotable(&state, &account, qid).await?),
-        None => None,
-    };
-    let quote_policy = requested_quote_policy(&state, account.id, &form).await?;
-
     // Handle scheduled statuses. Mastodon's PostStatusService ignores a
     // scheduled_at in the past (posts immediately); otherwise ScheduledStatus
     // must be at least MINIMUM_OFFSET (5 min) in the future and is bounded by
     // total (300) and daily (25) per-account limits.
     if let Some(scheduled_at) = scheduled_at {
+        // `schedule_status!`: the post it would be is validated
+        // (`status_for_validation.valid?`), and one that is not valid is a
+        // bare `RecordInvalid`.
+        let (text, spoiler_text) = promote_spoiler_text(&form, quoted.is_some());
+        let poll_options = form
+            .poll
+            .as_ref()
+            .map(|p| (prepare_poll_options(&p.options), p.expires_in));
+        let errors = status_errors(
+            &state,
+            &text,
+            &spoiler_text,
+            !parsed_media_ids.is_empty() || quoted.is_some(),
+            poll_options
+                .as_ref()
+                .map(|(options, expires_in)| (options.as_slice(), *expires_in)),
+        )
+        .await?;
+        if !errors.is_empty() {
+            return Err(AppError::Unprocessable("Record invalid".into()));
+        }
         let now = chrono::Utc::now().naive_utc();
         if scheduled_at <= now + chrono::Duration::minutes(5) {
             return Err(AppError::Unprocessable(
@@ -151,24 +150,12 @@ pub async fn post_status(
                 "Validation failed: Daily number of scheduled statuses exceeded".into(),
             ));
         }
-        // `set_thread`: the post replied to must be there, and is kept by
-        // its id (`thread&.id`).
-        let in_reply_to = match form.in_reply_to_id.as_deref() {
-            Some(id) => {
-                let parent = id.parse::<i64>().ok();
-                let found = match parent {
-                    Some(parent) => crate::conversation::thread(&state.db, parent).await?,
-                    None => None,
-                };
-                if found.is_none() {
-                    return Err(AppError::Unprocessable(
-                        "in_reply_to_id does not exist".into(),
-                    ));
-                }
-                parent
-            }
-            None => None,
-        };
+        // The post replied to, which `set_thread` found, kept by its id
+        // (`thread&.id`).
+        let in_reply_to = form
+            .in_reply_to_id
+            .as_deref()
+            .and_then(|id| id.trim().parse::<i64>().ok());
         let params = serde_json::json!({
             "text": text,
             "visibility": form.visibility,
@@ -338,24 +325,14 @@ pub(crate) async fn process_status(
         status_id,
     } = posting;
     let state = state.clone();
-    let mut text = form.status.clone().unwrap_or_default();
-    let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
-    let spoiler_was_present = !spoiler_text.is_empty();
-    if text.is_empty() && spoiler_was_present && quoted.is_none() {
-        text = std::mem::take(&mut spoiler_text);
-    }
-    if text.is_empty() && parsed_media_ids.is_empty() && form.poll.is_none() {
-        return Err(AppError::Unprocessable("Status must have text or media".into()).into());
-    }
-    if crate::api::mastodon::formatting::countable_length(&text, &spoiler_text) > 500 {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Text character limit of 500 exceeded".into(),
-        )
-        .into());
-    }
-    if let Some(ref poll_form) = form.poll {
-        validate_poll_form(poll_form)?;
-    }
+    let (text, spoiler_text) = promote_spoiler_text(form, quoted.is_some());
+    // `@options[:spoiler_text].present?`, as it was before any promotion.
+    let spoiler_was_present = form.spoiler_text.as_deref().is_some_and(|s| !blank(s));
+    // `poll_attributes`, its options as `Poll#prepare_options` leaves them.
+    let poll_options = form
+        .poll
+        .as_ref()
+        .map(|p| (prepare_poll_options(&p.options), p.expires_in));
 
     // Reject an unrecognized visibility rather than silently coercing it (the
     // fallback maps unknown strings to `direct`, which would turn a typo into a
@@ -455,6 +432,23 @@ pub(crate) async fn process_status(
             });
             return Err(PostError::UnexpectedMentions(body));
         }
+    }
+
+    // `@status.save!`: `Status`'s validations, the poll's with them.
+    let errors = status_errors(
+        &state,
+        &text,
+        &spoiler_text,
+        !parsed_media_ids.is_empty() || quoted.is_some(),
+        poll_options
+            .as_ref()
+            .map(|(options, expires_in)| (options.as_slice(), *expires_in)),
+    )
+    .await?;
+    if !errors.is_empty() {
+        return Err(
+            AppError::Unprocessable(format!("Validation failed: {}", errors.join(", "))).into(),
+        );
     }
 
     let uri = crate::federation::tag::status_uri(
@@ -608,7 +602,10 @@ pub(crate) async fn process_status(
         let expires_at = poll_form
             .expires_in
             .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
-        let poll_options: Vec<String> = poll_form.options.clone();
+        let poll_options: Vec<String> = poll_options
+            .as_ref()
+            .map(|(o, _)| o.clone())
+            .unwrap_or_default();
         let poll_id = sqlx::query_scalar!(
             // `PostStatusService#poll_attributes` (`voters_count: 0`) and
             // `Poll#prepare_cached_tallies`, a zero for each option.
@@ -820,6 +817,44 @@ pub(crate) async fn process_status(
 
 /// `set_quoted_status`: `Status.find(quoted_status_id)&.proper`, then
 /// `authorize(@quoted_status, :quote?)`; any failure is the same 404.
+/// `@text` and the content warning as `preprocess_attributes!` leaves them:
+/// a content warning with no text, on a post that quotes nothing, becomes
+/// the text, and the post has no content warning.
+fn promote_spoiler_text(form: &PostStatusForm, quotes: bool) -> (String, String) {
+    let text = form.status.clone().unwrap_or_default();
+    let spoiler_text = form.spoiler_text.clone().unwrap_or_default();
+    if blank(&text) && !blank(&spoiler_text) && !quotes {
+        (spoiler_text, String::new())
+    } else {
+        (text, spoiler_text)
+    }
+}
+
+/// `set_thread`: `Status.find(in_reply_to_id)` and `authorize(@thread,
+/// :show?)`, a 404 with `statuses.errors.in_reply_not_found` when either
+/// fails.
+async fn find_thread(state: &AppState, viewer_id: i64, id: &str) -> AppResult<DbStatus> {
+    let not_found = || {
+        AppError::NotFoundMsg(
+            "The post you are trying to reply to does not appear to exist.".into(),
+        )
+    };
+    let id = id.trim().parse::<i64>().map_err(|_| not_found())?;
+    let thread = sqlx::query_as!(
+        DbStatus,
+        "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(not_found)?;
+    match check_status_visible(state, &thread, viewer_id).await {
+        Ok(()) => Ok(thread),
+        Err(AppError::NotFound) => Err(not_found()),
+        Err(error) => Err(error),
+    }
+}
+
 async fn find_quotable(state: &AppState, account: &Account, id: &str) -> AppResult<DbStatus> {
     let quoted_not_found = || {
         AppError::NotFoundMsg("The post you are trying to quote does not appear to exist.".into())

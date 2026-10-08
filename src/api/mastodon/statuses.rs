@@ -87,63 +87,142 @@ const POLL_MAX_OPTION_CHARS: usize = 50;
 const POLL_MIN_EXPIRATION: i64 = 5 * 60; // 5 minutes
 const POLL_MAX_EXPIRATION: i64 = 2_629_746; // ActiveSupport `1.month`
 
-/// Validate a poll submission the way Mastodon validates the `Poll` model on a
-/// local status: option count, non-blank, per-option length, uniqueness, and
-/// expiration presence/bounds. Used by both the create and edit paths.
-fn validate_poll_form(poll: &PollForm) -> AppResult<()> {
+/// Ruby's `String#blank?`: empty, or nothing but whitespace.
+pub(crate) fn blank(s: &str) -> bool {
+    s.chars().all(char::is_whitespace)
+}
+
+/// `Poll#prepare_options`: `options.map(&:strip).compact_blank`, run before
+/// a local poll is validated and saved. (`strip` takes off ASCII whitespace
+/// and NUL; `compact_blank` drops any option then blank.)
+pub(crate) fn prepare_poll_options(options: &[String]) -> Vec<String> {
+    options
+        .iter()
+        .map(|o| {
+            o.trim_matches(|c: char| {
+                matches!(c, '\0' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ')
+            })
+            .to_owned()
+        })
+        .filter(|o| !blank(o))
+        .collect()
+}
+
+/// The errors a local `Poll` with these options and `expires_in` fails
+/// validation with, in the order Rails adds them: `options` and `expires_at`
+/// present, `PollOptionsValidator`, `PollExpirationValidator`. `nested` names
+/// the attributes as a status's `poll_attributes` do (`Poll options`), for a
+/// poll saved with its status; otherwise as the poll's own (`Options`).
+fn poll_errors(options: &[String], expires_in: Option<i64>, nested: bool) -> Vec<String> {
     use unicode_segmentation::UnicodeSegmentation;
 
-    if poll.options.len() < 2 {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Poll must have at least 2 options".into(),
+    let (opts, expires) = if nested {
+        ("Poll options", "Poll expires at")
+    } else {
+        ("Options", "Expires at")
+    };
+    let mut errors = Vec::new();
+    if options.is_empty() {
+        errors.push(format!("{opts} can't be blank"));
+    }
+    if expires_in.is_none() {
+        errors.push(format!("{expires} can't be blank"));
+    }
+    if options.len() <= 1 {
+        errors.push(format!("{opts} must have more than one item"));
+    }
+    if options.len() > POLL_MAX_OPTIONS {
+        errors.push(format!(
+            "{opts} can't contain more than {POLL_MAX_OPTIONS} items"
         ));
     }
-    if poll.options.len() > POLL_MAX_OPTIONS {
-        return Err(AppError::Unprocessable(format!(
-            "Validation failed: Poll can have at most {POLL_MAX_OPTIONS} options"
-        )));
-    }
-    if poll.options.iter().any(|o| o.trim().is_empty()) {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Poll options cannot be blank".into(),
-        ));
-    }
-    if poll
-        .options
+    if options
         .iter()
         .any(|o| o.graphemes(true).count() > POLL_MAX_OPTION_CHARS)
     {
-        return Err(AppError::Unprocessable(format!(
-            "Validation failed: Poll options cannot be longer than {POLL_MAX_OPTION_CHARS} characters"
-        )));
-    }
-    // Duplicate options (Mastodon: `options.uniq.size == options.size`).
-    let mut seen = std::collections::HashSet::new();
-    if !poll.options.iter().all(|o| seen.insert(o)) {
-        return Err(AppError::Unprocessable(
-            "Validation failed: Poll options must be unique".into(),
+        errors.push(format!(
+            "{opts} cannot be longer than {POLL_MAX_OPTION_CHARS} characters each"
         ));
     }
-    // Local polls require an expiration, bounded to [5 minutes, 1 month].
-    match poll.expires_in {
-        None => {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Poll expiration can't be blank".into(),
-            ))
+    let mut seen = std::collections::HashSet::new();
+    if !options.iter().all(|o| seen.insert(o)) {
+        errors.push(format!("{opts} contain duplicate items"));
+    }
+    match expires_in {
+        Some(secs) if secs > POLL_MAX_EXPIRATION => {
+            errors.push(format!("{expires} is too far into the future"));
         }
         Some(secs) if secs < POLL_MIN_EXPIRATION => {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Poll duration is too short".into(),
-            ));
+            errors.push(format!("{expires} is too soon"));
         }
-        Some(secs) if secs > POLL_MAX_EXPIRATION => {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Poll duration is too long".into(),
-            ));
-        }
-        Some(_) => {}
+        _ => {}
     }
-    Ok(())
+    errors
+}
+
+/// `poll.save!` for a poll an edit gives: its options prepared, then
+/// validated as the poll's own, `Validation failed: …` when it is not valid.
+fn validate_poll_form(poll: &PollForm) -> AppResult<Vec<String>> {
+    let options = prepare_poll_options(&poll.options);
+    let errors = poll_errors(&options, poll.expires_in, false);
+    if errors.is_empty() {
+        Ok(options)
+    } else {
+        Err(AppError::Unprocessable(format!(
+            "Validation failed: {}",
+            errors.join(", ")
+        )))
+    }
+}
+
+/// The errors a local post fails `Status`'s validations with, in the order
+/// Rails adds them: `text` present unless the post has media, is a boost or
+/// quotes (`blank?`, so whitespace is no text, and a poll does not count),
+/// `StatusLengthValidator`, `DisallowedHashtagsValidator`, then, for a post
+/// saved with its poll, the poll's own (`poll_attributes`).
+pub(crate) async fn status_errors(
+    state: &AppState,
+    text: &str,
+    spoiler_text: &str,
+    exempt_from_text: bool,
+    poll: Option<(&[String], Option<i64>)>,
+) -> AppResult<Vec<String>> {
+    let mut errors = Vec::new();
+    if !exempt_from_text && blank(text) {
+        errors.push("Text can't be blank".to_owned());
+    }
+    if crate::api::mastodon::formatting::countable_length(text, spoiler_text) > 500 {
+        errors.push("Text character limit of 500 exceeded".to_owned());
+    }
+    // `Tag.matching_name(Extractor.extract_hashtags(text)).reject(&:usable?)`.
+    let names: Vec<String> = extract_hashtags(text)
+        .iter()
+        .map(|tag| crate::search::tags::normalize(tag))
+        .filter(|name| !name.is_empty())
+        .collect();
+    if !names.is_empty() {
+        let disallowed: Vec<String> = sqlx::query_scalar!(
+            "SELECT name FROM tags WHERE lower(name) = ANY($1) AND usable = false ORDER BY id",
+            &names,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        match disallowed.len() {
+            0 => {}
+            1 => errors.push(format!(
+                "Text contained a disallowed hashtag: {}",
+                disallowed[0]
+            )),
+            _ => errors.push(format!(
+                "Text contained the disallowed hashtags: {}",
+                disallowed.join(", ")
+            )),
+        }
+    }
+    if let Some((options, expires_in)) = poll {
+        errors.extend(poll_errors(options, expires_in, true));
+    }
+    Ok(errors)
 }
 
 #[derive(Debug, Deserialize, Default)]

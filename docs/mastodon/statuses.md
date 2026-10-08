@@ -6,6 +6,37 @@ around a post do, as Mastodon's `PostStatusService` and `UpdateStatusService`
 do it. The handlers are in *src/api/mastodon/statuses/*.
 
 
+Posting
+-------
+
+Before anything else, the post replied to must be there and visible to the
+poster (`set_thread`), or the answer is a 404, *The post you are trying to
+reply to does not appear to exist.*; so must the post quoted, with its own
+message.
+
+A content warning with no text, on a post that quotes nothing, becomes the
+text, and the post is still marked sensitive. Then the post must pass
+`Status`'s validations, answered as a 422 *Validation failed: …* listing what
+failed:
+
+ -  it needs text unless it has media or quotes a post; text that is only
+    whitespace is none, and a poll does not stand in for it (*Text can't be
+    blank*);
+ -  at most 500 characters, the content warning included;
+ -  no hashtag a moderator made unusable (*Text contained a disallowed
+    hashtag: …*);
+ -  a poll whose options, once each is stripped and the blank ones dropped
+    (`Poll#prepare_options`), are two to four, unique and at most fifty
+    characters each, ending five minutes to a month from now (*Poll options
+    must have more than one item*, *Poll expires at is too soon*, and so on).
+
+`scheduled_at` is read as `String#to_datetime` reads it: ISO 8601 with or
+without a zone (UTC when there is none), or RFC 2822; a blank one schedules
+nothing, and one in the past posts now. One that does not parse, or a post to
+schedule that would not pass the validations above, is a 422 with Mastodon's
+bare *Record invalid*.
+
+
 Edit history
 ------------
 

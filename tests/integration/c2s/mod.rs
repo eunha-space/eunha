@@ -47,6 +47,7 @@ mod search;
 mod search_elasticsearch;
 mod server_admin;
 mod status_removal;
+mod status_validation;
 mod statuses;
 mod tags;
 mod terms_of_service;

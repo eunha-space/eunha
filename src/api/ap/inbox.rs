@@ -9,7 +9,7 @@ mod feature;
 mod fetch;
 pub(crate) mod follow;
 mod moderation;
-mod poll_parser;
+pub(crate) mod poll_parser;
 pub(crate) mod quote;
 mod status;
 pub(crate) mod status_parser;
