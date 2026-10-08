@@ -264,7 +264,7 @@ impl Service<'_> {
             .header(reqwest::header::ACCEPT, "text/html")
             .header(
                 reqwest::header::ACCEPT_LANGUAGE,
-                format!("{}, *;q=0.5", crate::api::mastodon::DEFAULT_LOCALE),
+                format!("{}, *;q=0.5", self.state.instance.default_locale()),
             )
             .header(
                 reqwest::header::USER_AGENT,

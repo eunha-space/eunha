@@ -441,6 +441,11 @@ pub struct InstanceConfig {
     /// regardless.
     #[serde(default)]
     pub authorized_fetch: Option<bool>,
+    /// Mastodon's `DEFAULT_LOCALE`: the locale the instance speaks when nobody
+    /// has said which they want (`I18n.default_locale`). One of Mastodon's
+    /// available locales, or else `en`.
+    #[serde(default)]
+    pub default_locale: Option<String>,
     /// Mastodon's `LIMITED_FEDERATION_MODE`: federate only with the domains on
     /// the allow list, refuse the API to anyone not signed in, and hide the
     /// peers and activity APIs.
@@ -623,6 +628,15 @@ impl InstanceConfig {
         keys
     }
 
+    /// `I18n.default_locale`: `default_locale` when it is one of
+    /// `I18n.available_locales`, else `en`.
+    pub fn default_locale(&self) -> &'static str {
+        self.default_locale
+            .as_deref()
+            .and_then(crate::languages::available_locale)
+            .unwrap_or("en")
+    }
+
     /// `Mastodon::Feature.<name>_enabled?`.
     pub fn feature_enabled(&self, name: &str) -> bool {
         self.experimental_features.iter().any(|f| f.trim() == name)
@@ -766,6 +780,7 @@ fn adopt_mastodon_env() {
             "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
         ("SECRET_KEY_BASE", "INSTANCE__SECRET_KEY_BASE"),
+        ("DEFAULT_LOCALE", "INSTANCE__DEFAULT_LOCALE"),
         ("SELF_DESTRUCT", "INSTANCE__SELF_DESTRUCT"),
         (
             "DONATION_CAMPAIGNS_URL",

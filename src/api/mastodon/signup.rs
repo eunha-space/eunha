@@ -482,7 +482,8 @@ pub async fn register(
     // `normalizes :username, with: squish`: the case is kept as entered.
     let username = form.username.trim().to_string();
     let email = form.email.trim().to_lowercase();
-    let locale = form.locale.clone().unwrap_or_else(|| "en".into());
+    // `locale` as given, none when not, for `I18n.default_locale` to stand in.
+    let locale = form.locale.clone().filter(|l| !l.is_empty());
     // `User`'s validations, every one of them, in the order the model runs
     // them, so that a refusal names everything wrong at once.
     let mut errors = crate::email_subscriptions::ValidationErrors::default();
@@ -616,7 +617,7 @@ pub async fn register(
             role_id: None,
             approved,
             invite_id,
-            locale: Some(locale.as_str()),
+            locale: locale.as_deref(),
             app_id: app.as_ref().map(|a| a.id),
             sign_up_ip,
             invite_request: reason,

@@ -518,7 +518,10 @@ async fn envelope(
     let footer = crate::settings::string(state, FOOTER_SETTING).await;
     crate::email::SubscriptionEnvelope {
         to: sub.email.clone(),
-        locale: sub.locale.clone(),
+        // `@subscription.locale.presence || I18n.default_locale`.
+        locale: Some(sub.locale.clone())
+            .filter(|l| !l.trim().is_empty())
+            .unwrap_or_else(|| state.instance.default_locale().to_owned()),
         name: display_name(account),
         domain: state.instance.domain.clone(),
         list_id: format!("<{}.{}>", account.username, state.instance.domain),
@@ -783,10 +786,6 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
     if statuses.is_empty() {
         return Ok(Distribution::default());
     }
-    let mut mailed = vec![];
-    for status in &statuses {
-        mailed.push(mailed_status(state, status, &account, None, "en").await);
-    }
     let excerpt = truncate(&statuses[0].text, 17);
     let sign_up_url = if crate::settings::registrations_mode(state).await.enabled() {
         format!("https://{}/auth/signup", state.instance.domain)
@@ -796,6 +795,10 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
     let mut recipients = vec![];
     for sub in &subscribers {
         let envelope = envelope(state, sub, &account).await;
+        let mut mailed = vec![];
+        for status in &statuses {
+            mailed.push(mailed_status(state, status, &account, None, &envelope.locale).await);
+        }
         if let Err(error) = state
             .mailer()
             .send_subscription_notification(

@@ -650,7 +650,11 @@ pub async fn send_reset_password_instructions(
         "https://{}/auth/password/edit?reset_password_token={token}",
         state.instance.domain
     );
-    let locale = user.locale.unwrap_or_else(|| "en".into());
+    // `@resource.locale.presence || I18n.default_locale`.
+    let locale = user
+        .locale
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| state.instance.default_locale().into());
     if let Err(error) = state
         .mailer()
         .send_password_reset(&user.email, &user.username, &url, &locale)
@@ -793,7 +797,11 @@ pub async fn send_confirmation_instructions(
         "https://{}/auth/confirm?token={}{back_to_app}",
         state.instance.domain, user.token
     );
-    let locale = user.locale.unwrap_or_else(|| "en".into());
+    // `@resource.locale.presence || I18n.default_locale`.
+    let locale = user
+        .locale
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| state.instance.default_locale().into());
     let domain = &state.instance.domain;
     let email = state.mailer();
     let sent = if user.reconfirming {

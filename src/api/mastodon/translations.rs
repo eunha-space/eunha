@@ -91,7 +91,7 @@ pub(crate) async fn requested_locale(
     {
         return Ok(locale.to_string());
     }
-    Ok(super::DEFAULT_LOCALE.to_string())
+    Ok(state.instance.default_locale().to_string())
 }
 
 /// `Api::V1::Statuses::BaseController#set_status`: `Status.find` and

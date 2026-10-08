@@ -599,3 +599,36 @@ async fn test_api_vary() {
         Some("Authorization")
     );
 }
+
+/// `I18n.default_locale` from `default_locale` (Mastodon's `DEFAULT_LOCALE`):
+/// the instance's languages, and the language of a post that names none.
+#[tokio::test]
+async fn test_instance_default_locale() {
+    let ctx = TestContext::with_instance_config("instance-default-locale", |instance| {
+        instance.default_locale = Some("ko".into());
+    })
+    .await;
+    for path in ["/api/v1/instance", "/api/v2/instance"] {
+        let body: Value = ctx.api.get(path, None).await.json().await.unwrap();
+        assert_eq!(body["languages"], json!(["ko"]), "{path}");
+    }
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "어떤 말로 썼을까", "public")
+        .await;
+    assert_eq!(status["language"], "ko");
+
+    // One that is not among Mastodon's available locales is `en`.
+    let ctx = TestContext::with_instance_config("instance-default-locale-bad", |instance| {
+        instance.default_locale = Some("xx".into());
+    })
+    .await;
+    let body: Value = ctx
+        .api
+        .get("/api/v2/instance", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["languages"], json!(["en"]));
+}

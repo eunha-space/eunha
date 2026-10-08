@@ -54,10 +54,6 @@ use axum::{
     Router,
 };
 
-/// The locale a status falls back to when neither the request nor the author
-/// names one — Mastodon's `I18n.default_locale`, which upstream ships as `en`.
-pub const DEFAULT_LOCALE: &str = "en";
-
 /// Build a `Link: <...>; rel="next", <...>; rel="prev"` header value for
 /// paginated list endpoints. Returns `None` when `ids` is empty.
 ///

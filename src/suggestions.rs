@@ -198,8 +198,13 @@ pub async fn get(
         .fetch_optional(&state.db)
         .await?
         .flatten()
-        .unwrap_or_else(|| "en".to_owned());
-    let locale = locale.split(['_', '-']).next().unwrap_or("en").to_owned();
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| state.instance.default_locale().to_owned());
+    let locale = locale
+        .split(['_', '-'])
+        .next()
+        .unwrap_or_default()
+        .to_owned();
 
     let mut order: Vec<i64> = vec![];
     let mut sources: HashMap<i64, Vec<String>> = HashMap::new();

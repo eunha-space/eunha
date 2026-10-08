@@ -29,7 +29,7 @@ pub struct CreateForm {
 
 /// `Localized#requested_locale`, short of a signed-in user's own: `lang`, then
 /// `Accept-Language`, then the default.
-fn requested_locale(lang: Option<&str>, headers: &HeaderMap) -> String {
+fn requested_locale(lang: Option<&str>, headers: &HeaderMap, default: &str) -> String {
     use crate::languages::valid_locale;
     if valid_locale(lang) {
         return lang.unwrap_or_default().to_string();
@@ -48,7 +48,7 @@ fn requested_locale(lang: Option<&str>, headers: &HeaderMap) -> String {
             return primary.to_string();
         }
     }
-    super::DEFAULT_LOCALE.to_string()
+    default.to_string()
 }
 
 /// `create`: subscribe an address to a local account's posts. Mastodon's
@@ -77,7 +77,11 @@ pub async fn create(
     if account.is_unavailable() || !subs::offered_by(&state, account.id).await {
         return Ok(StatusCode::NOT_FOUND.into_response());
     }
-    let locale = requested_locale(form.lang.as_deref(), &headers);
+    let locale = requested_locale(
+        form.lang.as_deref(),
+        &headers,
+        state.instance.default_locale(),
+    );
     match subs::create(
         &state,
         account.id,
@@ -437,8 +441,8 @@ mod tests {
     fn locale_comes_from_lang_then_accept_language() {
         let mut headers = HeaderMap::new();
         headers.insert("accept-language", "ko-KR,ko;q=0.9".parse().unwrap());
-        assert_eq!(requested_locale(Some("ja"), &headers), "ja");
-        assert_eq!(requested_locale(None, &headers), "ko");
-        assert_eq!(requested_locale(None, &HeaderMap::new()), "en");
+        assert_eq!(requested_locale(Some("ja"), &headers, "en"), "ja");
+        assert_eq!(requested_locale(None, &headers, "en"), "ko");
+        assert_eq!(requested_locale(None, &HeaderMap::new(), "de"), "de");
     }
 }

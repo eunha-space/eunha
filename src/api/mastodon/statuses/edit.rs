@@ -80,7 +80,7 @@ pub async fn edit_status(
         form.language.as_deref(),
         status.language.as_deref(),
         preferred.as_deref(),
-        Some(crate::api::mastodon::DEFAULT_LOCALE),
+        Some(state.instance.default_locale()),
     ]);
 
     // `update_media_attachments! if @options.key?(:media_ids)`: the next

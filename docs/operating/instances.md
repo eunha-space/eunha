@@ -183,7 +183,18 @@ experimental_features = ["fasp"]
 # Mastodon's SELF_DESTRUCT: what `eunha self-destruct` prints (see
 # self-destruct). Takes effect when the instance restarts.
 # self_destruct = "…"
+# Mastodon's DEFAULT_LOCALE: the locale used when nobody has said which they
+# want. One of Mastodon's available locales, or else `en`.
+default_locale = "en"
 ~~~~
+
+`default_locale` is Mastodon's `I18n.default_locale`, and a lone instance
+configured from the environment also takes `DEFAULT_LOCALE` itself. It is the
+instance's `languages` in both versions of the instance API, the language of
+a post that names none, what mail, Web Push notifications, the notes a move
+leaves and an email subscription are written in for someone with no locale of
+their own, the locale a request names none of, and the language asked for
+when fetching a link preview.
 
 `experimental_features` turns on what Mastodon keeps behind
 `EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under

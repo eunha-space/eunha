@@ -65,9 +65,14 @@ pub async fn list_follow_recommendations(
         .fetch_optional(&state.db)
         .await?
         .flatten()
-        .unwrap_or_else(|| "en".to_owned()),
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| state.instance.default_locale().to_owned()),
     };
-    let language = language.split(['_', '-']).next().unwrap_or("en").to_owned();
+    let language = language
+        .split(['_', '-'])
+        .next()
+        .unwrap_or_default()
+        .to_owned();
 
     let suppressed = filter.status.as_deref() == Some("suppressed");
     let rows: Vec<RecommendationRow> = if suppressed {

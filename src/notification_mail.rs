@@ -175,7 +175,12 @@ pub async fn deliver(state: &AppState, notification_id: i64) -> anyhow::Result<(
     let Some(from) = load_account(state, n.from_account_id).await? else {
         return Ok(());
     };
-    let locale = user.locale.clone().unwrap_or_else(|| "en".into());
+    // `account.user_locale || I18n.default_locale`.
+    let locale = user
+        .locale
+        .clone()
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| state.instance.default_locale().into());
     let domain = &state.instance.domain;
 
     let mut status = None;

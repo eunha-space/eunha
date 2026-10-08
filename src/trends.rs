@@ -848,9 +848,13 @@ pub async fn preferred_languages(
     }
     let locale = locale
         .or_else(|| accept_language(headers))
-        .unwrap_or_else(|| "en".to_owned());
+        .unwrap_or_else(|| state.instance.default_locale().to_owned());
     // `I18n.locale.to_s.split(/[_-]/).first`
-    vec![locale.split(['-', '_']).next().unwrap_or("en").to_owned()]
+    vec![locale
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_owned()]
 }
 
 /// The first `Accept-Language` tag Mastodon knows the language of.

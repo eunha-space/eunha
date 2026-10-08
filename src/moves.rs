@@ -921,11 +921,13 @@ async fn copy_account_notes(
     .fetch_all(&state.db)
     .await?;
     for note in notes {
-        let text = move_handler_text(
-            note.locale.as_deref(),
-            "copy_account_note_text",
-            &source.acct(),
-        );
+        // `note.account.user_locale.presence || I18n.default_locale`.
+        let locale = note
+            .locale
+            .as_deref()
+            .filter(|l| !l.is_empty())
+            .unwrap_or(state.instance.default_locale());
+        let text = move_handler_text(Some(locale), "copy_account_note_text", &source.acct());
         let existing: Option<String> = sqlx::query_scalar!(
             "SELECT comment FROM account_notes WHERE account_id = $1 AND target_account_id = $2",
             note.account_id,
@@ -1093,7 +1095,11 @@ async fn add_account_note_if_needed(
     target: &Account,
     key: &str,
 ) -> AppResult<()> {
-    let text = move_handler_text(locale, key, &source.acct());
+    // `account.user_locale.presence || I18n.default_locale`.
+    let locale = locale
+        .filter(|l| !l.is_empty())
+        .unwrap_or(state.instance.default_locale());
+    let text = move_handler_text(Some(locale), key, &source.acct());
     sqlx::query!(
         r#"INSERT INTO account_notes (account_id, target_account_id, comment, created_at, updated_at)
            VALUES ($1, $2, $3, now(), now())

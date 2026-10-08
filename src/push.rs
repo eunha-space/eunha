@@ -296,7 +296,7 @@ async fn render(
     let locale = subscriber
         .locale
         .filter(|l| !l.trim().is_empty())
-        .unwrap_or_else(|| crate::api::mastodon::DEFAULT_LOCALE.to_owned());
+        .unwrap_or_else(|| state.instance.default_locale().to_owned());
     // `display_name.presence || username`.
     let name = if from.display_name.trim().is_empty() {
         from.username.clone()

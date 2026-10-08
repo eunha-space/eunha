@@ -388,7 +388,7 @@ pub(crate) async fn process_status(
     let language = crate::languages::valid_locale_cascade(&[
         form.language.as_deref(),
         defaults.language.as_deref(),
-        Some(crate::api::mastodon::DEFAULT_LOCALE),
+        Some(state.instance.default_locale()),
     ]);
     let in_reply_to_id = form
         .in_reply_to_id

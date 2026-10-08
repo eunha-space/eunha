@@ -199,8 +199,8 @@ fn streaming_api_base_url(domain: &str) -> String {
 }
 
 /// `InstancePresenter#languages`: `[I18n.default_locale]`.
-fn languages() -> Vec<String> {
-    vec![super::DEFAULT_LOCALE.to_string()]
+fn languages(state: &AppState) -> Vec<String> {
+    vec![state.instance.default_locale().to_string()]
 }
 
 pub async fn get_instance_v1(
@@ -234,7 +234,7 @@ pub async fn get_instance_v1(
         thumbnail: thumbnail
             .and_then(|t| t.url(&state, "@1x"))
             .unwrap_or_else(|| default_thumbnail_url(&base_url)),
-        languages: languages(),
+        languages: languages(&state),
         registrations: registrations.enabled(),
         approval_required: registrations.approval_required(),
         // `UserRole.everyone.can?(:invite_users)`.
@@ -410,7 +410,7 @@ pub async fn get_instance_v2(
                 serde_json::json!({ "src": src, "size": format!("{size}x{size}") })
             })
             .collect(),
-        languages: languages(),
+        languages: languages(&state),
         configuration: InstanceConfiguration {
             urls: InstanceUrls {
                 streaming: streaming_api_base_url(&instance.domain),
