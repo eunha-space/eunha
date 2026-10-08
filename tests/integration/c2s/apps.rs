@@ -79,7 +79,7 @@ async fn test_register_app_rejects_unknown_scope() {
         .post_json(
             "/api/v1/apps",
             None,
-            &json!({ "client_name": "Bad", "scopes": "read write:everything" }),
+            &json!({ "client_name": "Bad", "redirect_uris": "urn:ietf:wg:oauth:2.0:oob", "scopes": "read write:everything" }),
         )
         .await;
     assert_eq!(
@@ -93,7 +93,7 @@ async fn test_register_app_rejects_unknown_scope() {
         .post_json(
             "/api/v1/apps",
             None,
-            &json!({ "client_name": "Good", "scopes": "read:statuses write:statuses push" }),
+            &json!({ "client_name": "Good", "redirect_uris": "urn:ietf:wg:oauth:2.0:oob", "scopes": "read:statuses write:statuses push" }),
         )
         .await;
     assert_eq!(
@@ -101,6 +101,78 @@ async fn test_register_app_rejects_unknown_scope() {
         StatusCode::OK,
         "known granular scopes should be accepted"
     );
+}
+
+/// `Doorkeeper::Application.create!`: the redirect URIs as
+/// `RedirectUriValidator` takes them under Mastodon's configuration (none is
+/// not allowed, `data:`, `javascript:` and `vbscript:` are forbidden, plain
+/// `http` is fine), with the scopes, name and website, each refusal a 422
+/// naming everything wrong. An array of redirect URIs is taken a line each.
+#[tokio::test]
+async fn test_register_app_validates_as_doorkeeper_does() {
+    let ctx = TestContext::new("apps-validations").await;
+    let register = |body: Value| {
+        let api = &ctx.api;
+        async move { api.post_json("/api/v1/apps", None, &body).await }
+    };
+    let refused = |body: Value| {
+        let register = &register;
+        async move {
+            let resp = register(body).await;
+            assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            resp.json::<Value>().await.unwrap()["error"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+
+    assert_eq!(
+        refused(json!({ "redirect_uris": "" })).await,
+        "Validation failed: Application name can't be blank, Redirect URI can't be blank"
+    );
+    assert_eq!(
+        refused(json!({ "client_name": "A", "redirect_uris": "javascript:alert(1)" })).await,
+        "Validation failed: Redirect URI is forbidden by the server., Redirect URI must specify a scheme."
+    );
+    assert_eq!(
+        refused(json!({ "client_name": "A", "redirect_uris": "https://a.example/cb#x" })).await,
+        "Validation failed: Redirect URI cannot contain a fragment."
+    );
+    assert_eq!(
+        refused(json!({ "client_name": "A", "redirect_uris": "callback" })).await,
+        "Validation failed: Redirect URI must be an absolute URI."
+    );
+    assert_eq!(
+        refused(json!({ "client_name": "A", "redirect_uris": "https://a.example/<b>" })).await,
+        "Validation failed: Redirect URI must be a valid URI."
+    );
+    assert_eq!(
+        refused(json!({
+            "client_name": "x".repeat(61),
+            "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+            "scopes": "read,write",
+            "website": "ftp://a.example",
+        }))
+        .await,
+        "Validation failed: Scopes doesn't match those configured on the server., \
+         Application name is too long (maximum is 60 characters), \
+         Application website is not a valid URL"
+    );
+
+    let ok = register(json!({
+        "client_name": "Native",
+        "redirect_uris": ["http://localhost:4000/cb", "com.example.app:/oauth"],
+        "scopes": "read read write",
+    }))
+    .await;
+    assert_eq!(ok.status(), StatusCode::OK);
+    let body: Value = ok.json().await.unwrap();
+    assert_eq!(
+        body["redirect_uris"],
+        json!(["http://localhost:4000/cb", "com.example.app:/oauth"])
+    );
+    assert_eq!(body["scopes"], json!(["read", "write"]));
 }
 
 /// Registered app response includes the redirect_uri and redirect_uris fields.

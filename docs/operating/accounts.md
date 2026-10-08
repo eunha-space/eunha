@@ -134,6 +134,15 @@ credentials grant without `scope` gets the default scopes the application has,
 code that is unknown, expired, used, another client's, or given with another
 redirect URI or a wrong PKCE verifier is `invalid_grant`, both 400.
 
+`POST /api/v1/apps` validates the application as `Doorkeeper::Application`
+does under Mastodon's configuration, and answers 422
+`Validation failed: …` naming everything wrong: a name, at most 60
+characters; redirect URIs, a line each or an array, which may not be left
+out, each `urn:ietf:wg:oauth:2.0:oob` or an absolute URI without a fragment,
+not `data:`, `javascript:` or `vbscript:`, and `http` as well as `https`;
+scopes among those Doorkeeper is configured with, separated by spaces, `read`
+when none are given; and a website, if any, an `http` or `https` URL.
+
 A signed-out browser is asked to sign in on the authorization page itself,
 where Mastodon sends it to its sign-in page; signing in starts a session and
 comes back to the page with a 302. A signed-in user is shown Mastodon's

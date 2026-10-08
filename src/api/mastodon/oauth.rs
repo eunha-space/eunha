@@ -62,14 +62,154 @@ pub async fn verify_app_credentials(
 
 // ── POST /api/v1/apps ──────────────────────────────────────────────────────
 
+/// `redirect_uris`, a string of lines or an array of them.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum RedirectUris {
+    One(String),
+    Many(Vec<String>),
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RegisterAppForm {
-    pub client_name: String,
-    pub redirect_uris: Option<String>,
+    pub client_name: Option<String>,
+    pub redirect_uris: Option<RedirectUris>,
     pub scopes: Option<String>,
     pub website: Option<String>,
 }
 
+/// `ApplicationExtension::APP_NAME_LIMIT`.
+const APP_NAME_LIMIT: usize = 60;
+/// `APP_REDIRECT_URI_LIMIT` and `APP_WEBSITE_LIMIT`.
+const APP_URI_LIMIT: usize = 2_000;
+
+/// What `Doorkeeper::RedirectUriValidator` makes of one redirect URI, with
+/// Mastodon's `forbid_redirect_uri` and `force_ssl_in_redirect_uri false`:
+/// the errors, in its order, or `invalid_uri` alone when Ruby's `URI.parse`
+/// would raise.
+fn redirect_uri_errors(uri: &str) -> Result<Vec<&'static str>, ()> {
+    // `URI::RFC3986_Parser`: no spaces, controls, non-ASCII or the
+    // characters it never allows.
+    if uri
+        .chars()
+        .any(|c| !c.is_ascii_graphic() || "<>\"{}|\\^`".contains(c))
+        || uri.matches('#').count() > 1
+    {
+        return Err(());
+    }
+    let scheme_end = uri.find(':').filter(|&i| {
+        let scheme = &uri[..i];
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    });
+    let (scheme, rest) = match scheme_end {
+        Some(i) => (Some(uri[..i].to_ascii_lowercase()), &uri[i + 1..]),
+        None => (None, uri),
+    };
+    let (rest, fragment) = match rest.split_once('#') {
+        Some((rest, fragment)) => (rest, Some(fragment)),
+        None => (rest, None),
+    };
+    let host = rest.strip_prefix("//").map(|authority| {
+        let authority = authority.split(['/', '?']).next().unwrap_or("");
+        let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        if host.starts_with('[') {
+            host.split_inclusive(']').next().unwrap_or("").to_owned()
+        } else {
+            host.split(':').next().unwrap_or("").to_owned()
+        }
+    });
+    let opaque = scheme.is_some() && !rest.is_empty() && !rest.starts_with('/');
+    let mut errors = Vec::new();
+    if matches!(scheme.as_deref(), Some("data" | "vbscript" | "javascript")) {
+        errors.push("is forbidden by the server.");
+    }
+    if fragment.is_some() {
+        errors.push("cannot contain a fragment.");
+    }
+    if opaque || scheme.as_deref() == Some("localhost") {
+        errors.push("must specify a scheme.");
+    }
+    if scheme.is_none() && host.as_deref().unwrap_or("").is_empty() {
+        errors.push("must be an absolute URI.");
+    }
+    if matches!(scheme.as_deref(), Some("http" | "https"))
+        && host.as_deref().unwrap_or("").is_empty()
+    {
+        errors.push("must be a valid URI.");
+    }
+    Ok(errors)
+}
+
+/// `URLValidator`, for the website: `http` or `https`, with a host.
+fn website_valid(website: &str) -> bool {
+    url::Url::parse(website)
+        .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some())
+}
+
+/// `Doorkeeper::Application.create!`'s validations, Doorkeeper's then
+/// `ApplicationExtension`'s, as `RecordInvalid` lists them.
+fn application_errors(name: &str, redirect_uri: &str, scopes: &str, website: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+    if name.trim().is_empty() {
+        errors.push("Application name can't be blank".to_owned());
+    }
+    // `RedirectUriValidator`; `allow_blank_redirect_uri` is false while the
+    // authorization code flow is on.
+    if redirect_uri.trim().is_empty() {
+        errors.push("Redirect URI can't be blank".to_owned());
+    } else {
+        let mut uri_errors = Vec::new();
+        for uri in redirect_uri.split_whitespace() {
+            if uri == OOB_REDIRECT_URI || uri == "urn:ietf:wg:oauth:2.0:oob:auto" {
+                continue;
+            }
+            match redirect_uri_errors(uri) {
+                Ok(found) => uri_errors.extend(found),
+                Err(()) => {
+                    uri_errors.push("must be a valid URI.");
+                    break;
+                }
+            }
+        }
+        errors.extend(uri_errors.into_iter().map(|e| format!("Redirect URI {e}")));
+    }
+    // `enforce_configured_scopes`: `scopes_match_configured`.
+    if !scopes.trim().is_empty()
+        && (scopes.contains(['\n', '\r', '\t'])
+            || !scopes
+                .split_whitespace()
+                .all(|s| VALID_OAUTH_SCOPES.contains(&s)))
+    {
+        errors.push("Scopes doesn't match those configured on the server.".to_owned());
+    }
+    if name.chars().count() > APP_NAME_LIMIT {
+        errors.push(format!(
+            "Application name is too long (maximum is {APP_NAME_LIMIT} characters)"
+        ));
+    }
+    if redirect_uri.chars().count() > APP_URI_LIMIT {
+        errors.push(format!(
+            "Redirect URI is too long (maximum is {APP_URI_LIMIT} characters)"
+        ));
+    }
+    if !website.trim().is_empty() {
+        if !website_valid(website) {
+            errors.push("Application website is not a valid URL".to_owned());
+        }
+        if website.chars().count() > APP_URI_LIMIT {
+            errors.push(format!(
+                "Application website is too long (maximum is {APP_URI_LIMIT} characters)"
+            ));
+        }
+    }
+    errors
+}
+
+/// `Api::V1::AppsController#create`: `Doorkeeper::Application.create!`,
+/// whose validations answer `422` with `Validation failed: …`.
 pub async fn register_app(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -77,11 +217,35 @@ pub async fn register_app(
 ) -> AppResult<Json<CredentialApplication>> {
     let client_id = generate_token(32);
     let client_secret = generate_token(64);
-    let redirect_uris = form
-        .redirect_uris
-        .unwrap_or_else(|| "urn:ietf:wg:oauth:2.0:oob".into());
-    let scopes = normalize_scopes(&form.scopes.unwrap_or_else(|| "read".into()));
-    validate_oauth_scopes(&scopes)?;
+    // `redirect_uri=`: an array is joined a line each.
+    let redirect_uris = match form.redirect_uris {
+        Some(RedirectUris::One(uris)) => uris,
+        Some(RedirectUris::Many(uris)) => uris.join("\n"),
+        None => String::new(),
+    };
+    // `app_scopes_or_default`, stored as `Scopes#to_s`: each scope once.
+    let mut scope_list: Vec<&str> = Vec::new();
+    let requested = form.scopes.unwrap_or_else(|| DEFAULT_SCOPES.to_owned());
+    for scope in requested.split_whitespace() {
+        if !scope_list.contains(&scope) {
+            scope_list.push(scope);
+        }
+    }
+    let scopes = scope_list.join(" ");
+    let name = form.client_name.unwrap_or_default();
+    let website = form.website.filter(|w| !w.is_empty());
+    let errors = application_errors(
+        &name,
+        &redirect_uris,
+        &requested,
+        website.as_deref().unwrap_or(""),
+    );
+    if !errors.is_empty() {
+        return Err(AppError::Unprocessable(format!(
+            "Validation failed: {}",
+            errors.join(", ")
+        )));
+    }
 
     let app = sqlx::query_as!(
         OauthApplication,
@@ -89,12 +253,12 @@ pub async fn register_app(
              (name, uid, secret, redirect_uri, scopes, website, created_at, updated_at)
            VALUES ($1,$2,$3,$4,$5,$6,now(),now())
            RETURNING *"#,
-        form.client_name,
+        name,
         client_id,
         client_secret,
         redirect_uris,
         scopes,
-        form.website,
+        website,
     )
     .fetch_one(&state.db)
     .await?;
@@ -559,18 +723,6 @@ const VALID_OAUTH_SCOPES: &[&str] = &[
     "admin:write:email_domain_blocks",
     "admin:write:canonical_email_blocks",
 ];
-
-/// Reject app registration requesting a scope Mastodon wouldn't configure.
-fn validate_oauth_scopes(scopes: &str) -> AppResult<()> {
-    for scope in scopes.split(' ').filter(|s| !s.is_empty()) {
-        if !VALID_OAUTH_SCOPES.contains(&scope) {
-            return Err(AppError::Unprocessable(
-                "The requested scope is invalid, unknown, or malformed.".into(),
-            ));
-        }
-    }
-    Ok(())
-}
 
 /// Whether every requested scope is within the granted (app) scope set.
 /// Doorkeeper rejects an authorization requesting scopes the app didn't register.
