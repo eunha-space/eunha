@@ -321,11 +321,8 @@ pub async fn batch_admin_account_statuses(
                 None => {
                     // `Report.new(account: current_account, target_account:)`,
                     // whose `set_uri` gives a local reporter's report an id.
-                    let uri = format!(
-                        "https://{}/payloads/{}",
-                        state.instance.domain,
-                        uuid::Uuid::new_v4()
-                    );
+                    let uri =
+                        crate::federation::relationships::generate_uri(&state.instance.domain);
                     let id = sqlx::query_scalar!(
                         r#"INSERT INTO reports
                              (account_id, target_account_id, status_ids, comment, uri,

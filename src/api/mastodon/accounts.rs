@@ -44,7 +44,8 @@ pub use aliases::{
 mod relationships;
 pub use relationships::{
     follow, follow_account, get_account_followers, get_account_following, get_relationships,
-    reject_follow, unfollow, unfollow_account, FollowOptions, FollowOutcome,
+    reject_follow, send_accept_follow, send_reject_follow, unfollow, unfollow_account,
+    FollowOptions, FollowOutcome,
 };
 mod credentials;
 pub use credentials::{
@@ -1071,6 +1072,8 @@ pub async fn set_account_note(
 
 // ── POST /api/v1/accounts/:id/remove_from_followers ───────────────────────
 
+/// `RemoveFromFollowersService`: the follow goes, with its notification,
+/// and a remote follower is sent the `RejectFollowSerializer` of it.
 pub async fn remove_from_followers(
     state: AppState,
     Path(requester_id): Path<i64>,
@@ -1078,63 +1081,37 @@ pub async fn remove_from_followers(
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
     let deleted = sqlx::query!(
-        "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
+        "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
         requester_id,
         auth.account_id,
     )
     .fetch_optional(&state.db)
     .await?;
 
-    if let Some(ref row) = deleted {
+    if let Some(follow) = deleted {
+        // `has_one :notification, dependent: :destroy`.
+        sqlx::query!(
+            "DELETE FROM notifications WHERE activity_type = 'Follow' AND activity_id = $1",
+            follow.id,
+        )
+        .execute(&state.db)
+        .await?;
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(&state, &[requester_id, auth.account_id])
             .await;
         crate::counters::on_follow_removed(&state, requester_id, auth.account_id).await?;
 
-        // Tell a removed remote follower they're no longer following us
-        // (Mastodon RemoveFromFollowersService → Reject(Follow)).
-        if let Some(follow_uri) = row.uri.clone().filter(|s| !s.is_empty()) {
+        let follower = fetch_account(&state, requester_id).await?;
+        if follower.domain.is_some() {
             let remover = fetch_account(&state, auth.account_id).await?;
-            let follower = fetch_account(&state, requester_id).await?;
-            if follower.domain.is_some()
-                && crate::federation::keypair::has_signing_key(&state, remover.id)
-                    .await
-                    .unwrap_or(false)
-            {
-                let actor_url =
-                    crate::federation::tag::account_uri_of(&state.instance.domain, &remover);
-                let key_id = format!("{actor_url}#main-key");
-                let reject_id = format!(
-                    "https://{}/activities/{}",
-                    state.instance.domain,
-                    crate::snowflake::next_id()
-                );
-                if let Ok(activity) = crate::federation::activity::reject_follow(
-                    &reject_id,
-                    &actor_url,
-                    &follow_uri,
-                    follower.uri.as_deref().unwrap_or_default(),
-                    &actor_url,
-                ) {
-                    let inbox = if !follower.shared_inbox_url.is_empty() {
-                        follower.shared_inbox_url.clone()
-                    } else {
-                        follower.inbox_url.clone()
-                    };
-                    if !inbox.is_empty() {
-                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                            &state,
-                            activity,
-                            vec![inbox],
-                            key_id,
-                        )
-                        .await
-                        {
-                            tracing::warn!(error = %e, "failed to enqueue Reject(Follow) for removed follower");
-                        }
-                    }
-                }
-            }
+            send_reject_follow(
+                &state,
+                &remover,
+                &follower,
+                Some(follow.id),
+                follow.uri.as_deref(),
+            )
+            .await;
         }
     }
 

@@ -194,74 +194,35 @@ pub async fn block_account(
         .map(Json)
 }
 
-/// Mastodon's `BlockService`: `account_id` blocks `target_id`, which ends
-/// the follows and requests between them, and tells a remote target.
+/// Mastodon's `BlockService`: `account_id` blocks `target_id`. The follows
+/// between them end through `UnfollowService` and the target's request to
+/// follow is rejected (`RejectFollowService`), each telling a remote
+/// account; then the block is made, with an id of its own (`set_uri`), and
+/// a remote target is sent it.
 pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     // Mastodon BlockService: blocking yourself is a no-op.
     if account_id == target_id {
         return Ok(());
     }
-    sqlx::query!(
-        r#"INSERT INTO blocks (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())
-           ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
-        account_id, target_id
-    )
-    .execute(&state.db)
-    .await?;
 
-    // `UnfollowService` for each direction unmerges from the lists that held
-    // the other account, whose memberships go with the follow.
-    let blocker_lists = crate::home_feed::lists_with_account(state, account_id, target_id).await;
-    let target_lists = crate::home_feed::lists_with_account(state, target_id, account_id).await;
-    // Remove accepted follows in both directions and update counts. Capture the
-    // direction + Follow activity uri so we can federate the termination.
-    let deleted = sqlx::query!(
-        "DELETE FROM follows WHERE (account_id = $1 AND target_account_id = $2) OR (account_id = $2 AND target_account_id = $1) RETURNING account_id, target_account_id, uri",
-        account_id, target_id
-    )
-    .fetch_all(&state.db)
-    .await?;
-    for row in &deleted {
-        // `AccountStat`'s `update_index('accounts', :account)`.
-        crate::search::elasticsearch::indexing::accounts(
-            state,
-            &[row.account_id, row.target_account_id],
+    // `handle_following_relationships`.
+    let follows = |a: i64, b: i64| async move {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM follows
+                              WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+            a,
+            b,
         )
-        .await;
-        let _ =
-            crate::counters::on_follow_removed(state, row.account_id, row.target_account_id).await;
+        .fetch_one(&state.db)
+        .await
+    };
+    if follows(account_id, target_id).await? {
+        super::unfollow(state, account_id, target_id, false).await?;
     }
-    // Also delete any pending follow requests in both directions, keeping uris.
-    let deleted_requests = sqlx::query!(
-        "DELETE FROM follow_requests WHERE (account_id = $1 AND target_account_id = $2) OR (account_id = $2 AND target_account_id = $1) RETURNING account_id, uri",
-        account_id, target_id
-    )
-    .fetch_all(&state.db)
-    .await?;
-    // Mirror Mastodon's FollowRequest dependent: :destroy — clear follow_request
-    // notifications in both directions between blocker and blocked.
-    sqlx::query!(
-        "DELETE FROM notifications WHERE type = 'follow_request' AND ((account_id = $1 AND from_account_id = $2) OR (account_id = $2 AND from_account_id = $1))",
-        account_id, target_id,
-    )
-    .execute(&state.db)
-    .await?;
-
-    // `UnfollowService`'s `UnmergeWorker`s, for each follow that went.
-    for row in &deleted {
-        let lists = if row.account_id == account_id {
-            blocker_lists.clone()
-        } else {
-            target_lists.clone()
-        };
-        crate::home_feed::unmerge_from_home_and_lists(
-            state,
-            row.target_account_id,
-            row.account_id,
-            lists,
-        )
-        .await;
+    if follows(target_id, account_id).await? {
+        super::unfollow(state, target_id, account_id, false).await?;
     }
+    super::reject_follow(state, target_id, account_id).await?;
 
     // `handle_collections`: out of each other's collections.
     crate::api::mastodon::collections::handle_block(state, account_id, target_id).await?;
@@ -276,132 +237,76 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     .execute(&state.db)
     .await?;
 
+    // `account.block!(target_account)`, which finds a block already made.
+    sqlx::query!(
+        r#"INSERT INTO blocks (account_id, target_account_id, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())
+           ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
+        account_id,
+        target_id,
+        crate::federation::relationships::generate_uri(&state.instance.domain),
+    )
+    .execute(&state.db)
+    .await?;
+    let block = sqlx::query!(
+        "SELECT id, uri FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+        account_id,
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
     // `BlockWorker.perform_async(account.id, target_account.id)`.
     queue_block_worker(state, account_id, target_id).await;
 
-    // Federate to a remote target (Mastodon BlockService#handle_following_relationships
-    // + the Block itself): Undo(Follow) for our follow, Reject(Follow) for their
-    // follow / pending request.
-    if let Some(target) = sqlx::query!(
-        "SELECT uri, inbox_url, shared_inbox_url, domain FROM accounts WHERE id = $1",
-        target_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        // A remote target without an actor id cannot be addressed.
-        let target_uri = target.uri.clone().unwrap_or_default();
-        if target.domain.is_some() && !target_uri.is_empty() {
-            if let Some(actor_row) = sqlx::query!(
-                "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
-                account_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            {
-                if crate::federation::keypair::has_signing_key(state, account_id)
-                    .await
-                    .unwrap_or(false)
-                {
-                    let domain = state.instance.domain.clone();
-                    let actor_url = crate::federation::tag::account_uri(
-                        &domain,
-                        account_id,
-                        actor_row.id_scheme,
-                        &actor_row.username,
-                    );
-                    let key_id = format!("{}#main-key", actor_url);
-                    let inbox = if !target.shared_inbox_url.is_empty() {
-                        target.shared_inbox_url.clone()
-                    } else {
-                        target.inbox_url.clone()
-                    };
-
-                    let activity_id = || {
-                        format!(
-                            "https://{}/activities/{}",
-                            domain,
-                            crate::snowflake::next_id()
-                        )
-                    };
-                    let mut activities: Vec<serde_json::Value> = Vec::new();
-
-                    for f in &deleted {
-                        let Some(uri) = f.uri.clone().filter(|s| !s.is_empty()) else {
-                            continue;
-                        };
-                        if f.account_id == account_id {
-                            // Our follow of the remote target -> Undo(Follow).
-                            if let Ok(a) = crate::federation::activity::undo_follow(
-                                &activity_id(),
-                                &actor_url,
-                                &uri,
-                                &actor_url,
-                                &target_uri,
-                            ) {
-                                activities.push(a);
-                            }
-                        } else {
-                            // The remote target's follow of us -> Reject(Follow).
-                            if let Ok(a) = crate::federation::activity::reject_follow(
-                                &activity_id(),
-                                &actor_url,
-                                &uri,
-                                &target_uri,
-                                &actor_url,
-                            ) {
-                                activities.push(a);
-                            }
-                        }
-                    }
-                    for r in &deleted_requests {
-                        // The remote target's pending request to us -> Reject(Follow).
-                        if r.account_id == target_id {
-                            if let Some(uri) = r.uri.clone().filter(|s| !s.is_empty()) {
-                                if let Ok(a) = crate::federation::activity::reject_follow(
-                                    &activity_id(),
-                                    &actor_url,
-                                    &uri,
-                                    &target_uri,
-                                    &actor_url,
-                                ) {
-                                    activities.push(a);
-                                }
-                            }
-                        }
-                    }
-
-                    // The Block activity itself.
-                    let block_id = format!(
-                        "https://{}/users/{}/blocks/{}",
-                        domain, actor_row.username, target_id
-                    );
-                    if let Ok(b) =
-                        crate::federation::activity::block(&block_id, &actor_url, &target_uri)
-                    {
-                        activities.push(b);
-                    }
-
-                    if !inbox.is_empty() {
-                        for act in activities {
-                            if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                                state,
-                                act,
-                                vec![inbox.clone()],
-                                key_id.clone(),
-                            )
-                            .await
-                            {
-                                tracing::warn!(error = %e, "failed to enqueue block-related activity");
-                            }
-                        }
-                    }
-                }
+    // `create_notification(block) if !target_account.local?`: the
+    // `BlockSerializer` of it, to the target's inbox.
+    let target = fetch_account(state, target_id).await?;
+    if target.domain.is_some() {
+        let blocker = fetch_account(state, account_id).await?;
+        if let Some(target_uri) = target.stored_uri() {
+            let actor_url =
+                crate::federation::tag::account_uri_of(&state.instance.domain, &blocker);
+            if let Ok(activity) = crate::federation::relationships::block(
+                &actor_url,
+                target_uri,
+                block.id,
+                block.uri.as_deref(),
+            ) {
+                deliver_as(state, &blocker, &target, activity, "Block").await;
             }
         }
     }
 
     Ok(())
+}
+
+/// `ActivityPub::DeliveryWorker` of `activity` from the local `actor` to the
+/// remote `target`'s inbox, when the actor can sign it.
+async fn deliver_as(
+    state: &AppState,
+    actor: &Account,
+    target: &Account,
+    activity: serde_json::Value,
+    what: &str,
+) {
+    if target.inbox_url.is_empty()
+        || !crate::federation::keypair::has_signing_key(state, actor.id)
+            .await
+            .unwrap_or(false)
+    {
+        return;
+    }
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+        state,
+        activity,
+        vec![target.inbox_url.clone()],
+        crate::federation::tag::key_id_of(&state.instance.domain, actor),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, what, "failed to enqueue an activity about a block");
+    }
 }
 
 // ── POST /api/v1/accounts/:id/unblock ─────────────────────────────────────
@@ -418,80 +323,34 @@ pub async fn unblock_account(
         .map(Json)
 }
 
-/// Mastodon's `UnblockService`: the block goes, and a remote target is told.
+/// Mastodon's `UnblockService`: the block goes, and a remote target is sent
+/// the `UndoBlockSerializer` of it.
 pub async fn unblock(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     // Mastodon UnblockService: a no-op (and no Undo) when not actually blocking.
-    let was_blocking = sqlx::query!(
-        "DELETE FROM blocks WHERE account_id = $1 AND target_account_id = $2 RETURNING account_id",
+    let Some(block) = sqlx::query!(
+        "DELETE FROM blocks WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
         account_id,
         target_id
     )
     .fetch_optional(&state.db)
     .await?
-    .is_some();
-    if !was_blocking {
+    else {
         return Ok(());
-    }
+    };
 
-    // Send Undo(Block) activity to remote target
-    if let Some(target) = sqlx::query!(
-        "SELECT uri, inbox_url, shared_inbox_url, domain FROM accounts WHERE id = $1",
-        target_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        // A remote target without an actor id cannot be addressed.
-        let target_uri = target.uri.clone().unwrap_or_default();
-        if target.domain.is_some() && !target_uri.is_empty() {
-            if let Some(actor_row) = sqlx::query!(
-                "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
-                account_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            {
-                if crate::federation::keypair::has_signing_key(state, account_id)
-                    .await
-                    .unwrap_or(false)
-                {
-                    let domain = state.instance.domain.clone();
-                    let actor_url = crate::federation::tag::account_uri(
-                        &domain,
-                        account_id,
-                        actor_row.id_scheme,
-                        &actor_row.username,
-                    );
-                    let block_id = format!(
-                        "https://{}/users/{}/blocks/{}",
-                        domain, actor_row.username, target_id
-                    );
-                    let undo_id = format!("{}#undo", block_id);
-                    let undo = crate::federation::activity::undo_block(
-                        &undo_id,
-                        &actor_url,
-                        &block_id,
-                        &target_uri,
-                    )?;
-                    let key_id = format!("{}#main-key", actor_url);
-                    let inbox = if !target.shared_inbox_url.is_empty() {
-                        target.shared_inbox_url
-                    } else {
-                        target.inbox_url
-                    };
-                    if !inbox.is_empty() {
-                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                            state,
-                            undo,
-                            vec![inbox],
-                            key_id,
-                        )
-                        .await
-                        {
-                            tracing::warn!(error = %e, "failed to enqueue Undo(Block)");
-                        }
-                    }
-                }
+    let target = fetch_account(state, target_id).await?;
+    if target.domain.is_some() {
+        let blocker = fetch_account(state, account_id).await?;
+        if let Some(target_uri) = target.stored_uri() {
+            let actor_url =
+                crate::federation::tag::account_uri_of(&state.instance.domain, &blocker);
+            if let Ok(undo) = crate::federation::relationships::undo_block(
+                &actor_url,
+                target_uri,
+                block.id,
+                block.uri.as_deref(),
+            ) {
+                deliver_as(state, &blocker, &target, undo, "Undo(Block)").await;
             }
         }
     }

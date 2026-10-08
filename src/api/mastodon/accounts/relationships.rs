@@ -263,12 +263,9 @@ pub async fn follow(
     let requester = source;
     // Remote account: always use follow_requests and send a Follow activity.
     if target.domain.is_some() {
-        let follow_uri = format!(
-            "https://{}/users/{}/follows/{}",
-            state.instance.domain,
-            requester.username,
-            crate::snowflake::next_id()
-        );
+        // `set_uri`: the request's id, which the `Follow` carries
+        // (`FollowSerializer#id`).
+        let follow_uri = crate::federation::relationships::generate_uri(&state.instance.domain);
         sqlx::query!(
             r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, now(), now())
@@ -375,9 +372,10 @@ pub async fn follow(
     // source.silenced?).
     if (target.locked && !options.bypass_locked) || requester.silenced_at.is_some() {
         sqlx::query!(
-            r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, now(), now())"#,
+            r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, now(), now())"#,
             source.id, target_id, show_reblogs, notify, &languages,
+            crate::federation::relationships::generate_uri(&state.instance.domain),
         )
         .execute(&state.db)
         .await?;
@@ -396,9 +394,10 @@ pub async fn follow(
     }
 
     sqlx::query!(
-        r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, now(), now())"#,
+        r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now(), now())"#,
         source.id, target_id, show_reblogs, notify, &languages,
+        crate::federation::relationships::generate_uri(&state.instance.domain),
     )
     .execute(&state.db)
     .await?;
@@ -611,7 +610,7 @@ async fn send_undo_follow(
 /// `ActivityPub::DeliveryWorker` of a `RejectFollowSerializer` of the remote
 /// `follower`'s follow (or request) `id` of the local `followee`, to the
 /// follower's inbox.
-pub(crate) async fn send_reject_follow(
+pub async fn send_reject_follow(
     state: &AppState,
     followee: &Account,
     follower: &Account,
@@ -635,7 +634,7 @@ pub(crate) async fn send_reject_follow(
 /// `ActivityPub::DeliveryWorker` of an `AcceptFollowSerializer` of the remote
 /// `follower`'s request `id` of the local `followee`, to the follower's
 /// inbox.
-pub(crate) async fn send_accept_follow(
+pub async fn send_accept_follow(
     state: &AppState,
     followee: &Account,
     follower: &Account,

@@ -137,7 +137,11 @@ pub async fn authorize(
         request.show_reblogs,
         request.notify,
         request.languages.as_deref(),
-        request.uri,
+        // `set_uri`, for a request that came without one.
+        request
+            .uri
+            .clone()
+            .unwrap_or_else(|| crate::federation::relationships::generate_uri(&state.instance.domain)),
     )
     .fetch_one(&state.db)
     .await?;

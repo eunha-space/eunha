@@ -36,18 +36,14 @@ pub(super) async fn handle_follow(
                     .await?
                     .filter(|s| !s.is_empty());
             if let Some(inbox) = inbox {
-                let reject_id = format!(
-                    "https://{}/activities/{}",
-                    instance.domain,
-                    crate::snowflake::next_id()
-                );
                 let key_id = crate::federation::instance_actor::key_id(&instance.domain);
-                if let Ok(reject) = crate::federation::activity::reject_follow(
-                    &reject_id,
+                // `reject_follow_request!`: a `Reject` of a
+                // `FollowRequest.new`, which has no id of its own.
+                if let Ok(reject) = crate::federation::relationships::reject_follow(
                     object_uri,
-                    activity_uri,
                     actor_uri,
-                    object_uri,
+                    None,
+                    Some(activity_uri),
                 ) {
                     if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
                         state,
@@ -138,31 +134,12 @@ pub(super) async fn handle_follow(
         return Ok(());
     }
 
-    // Fetch the follower's account for push notification details and to decide
-    // whether a silenced follower must go through a request.
-    let follower = sqlx::query!(
-        "SELECT display_name, username, domain, avatar_remote_url, silenced_at FROM accounts WHERE id = $1",
-        follower_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    let follower_silenced = follower.as_ref().is_some_and(|f| f.silenced_at.is_some());
+    let follower = crate::api::mastodon::accounts::fetch_account(state, follower_id).await?;
 
-    // Details for any Accept/Reject we sign as the (local) target and deliver
-    // back to the follower. `object_uri` is the target's own actor URL.
-    let key_id = format!("{object_uri}#main-key");
-    let can_sign = crate::federation::keypair::has_signing_key(state, target.id)
-        .await
-        .unwrap_or(false);
-    let follower_inbox =
-        sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", follower_id,)
-            .fetch_optional(&state.db)
-            .await?
-            .filter(|s| !s.is_empty());
-
-    // Reject the follow up front (Mastodon ActivityPub::Activity::Follow) when
-    // the target blocks the follower — directly or by domain — or has moved.
-    let follower_domain = follower.as_ref().and_then(|f| f.domain.clone());
+    // Reject the follow up front when the target blocks the follower —
+    // directly or by domain — or has moved (`instance_actor?` was answered
+    // above): a `Reject` of a `FollowRequest.new`, which has no id of its
+    // own (`reject_follow_request!`).
     let should_reject = target.moved_to_account_id.is_some()
         || sqlx::query_scalar!(
             r#"SELECT EXISTS(
@@ -172,251 +149,97 @@ pub(super) async fn handle_follow(
                ) AS "exists!""#,
             target.id,
             follower_id,
-            follower_domain,
+            follower.domain,
         )
         .fetch_one(&state.db)
         .await?;
     if should_reject {
-        if can_sign {
-            if let Some(ref inbox) = follower_inbox {
-                let reject_id = format!(
-                    "https://{}/activities/{}",
-                    instance.domain,
-                    crate::snowflake::next_id()
-                );
-                if let Ok(reject) = crate::federation::activity::reject_follow(
-                    &reject_id,
-                    object_uri,
-                    activity_uri,
-                    actor_uri,
-                    object_uri,
-                ) {
-                    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                        state,
-                        reject,
-                        vec![inbox.clone()],
-                        key_id.clone(),
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "failed to enqueue Reject(Follow)");
-                    }
-                }
-            }
-        }
+        crate::api::mastodon::accounts::send_reject_follow(
+            state,
+            &target,
+            &follower,
+            None,
+            Some(activity_uri),
+        )
+        .await;
         return Ok(());
     }
 
-    // Fast-forward a repeat Follow: if the follower already follows the target,
-    // refresh the stored uri and re-send Accept rather than opening a new
-    // request (matches Mastodon's existing-follow fast path).
-    let already_follows = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-             SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2
-           ) AS "exists!""#,
+    // "Fast-forward repeat follow requests": a follow already there takes
+    // the Follow's id and is accepted again (`AuthorizeFollowService` with
+    // `skip_follow_request:`, an `Accept` of a `FollowRequest.new`).
+    let refollowed = sqlx::query!(
+        "UPDATE follows SET uri = $3, updated_at = now() WHERE account_id = $1 AND target_account_id = $2",
         follower_id,
         target.id,
+        Some(activity_uri).filter(|uri| !uri.is_empty()),
     )
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await?;
-    if already_follows {
-        sqlx::query!(
-            "UPDATE follows SET uri = $3, updated_at = now() WHERE account_id = $1 AND target_account_id = $2",
-            follower_id,
-            target.id,
-            activity_uri,
+    if refollowed.rows_affected() > 0 {
+        crate::api::mastodon::accounts::send_accept_follow(
+            state,
+            &target,
+            &follower,
+            None,
+            Some(activity_uri),
         )
-        .execute(&state.db)
-        .await?;
-        if can_sign {
-            if let Some(ref inbox) = follower_inbox {
-                let accept_id = format!(
-                    "https://{}/activities/{}",
-                    instance.domain,
-                    crate::snowflake::next_id()
-                );
-                if let Ok(accept) = crate::federation::activity::accept_follow(
-                    &accept_id,
-                    object_uri,
-                    activity_uri,
-                    actor_uri,
-                    object_uri,
-                ) {
-                    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                        state,
-                        accept,
-                        vec![inbox.clone()],
-                        key_id.clone(),
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "failed to enqueue Accept(Follow)");
-                    }
-                }
-            }
-        }
+        .await;
         return Ok(());
     }
 
-    // Decide what to do via eunha's follow policy (federation::follow); eunha executes
-    // the returned Actions against Postgres + delivery.
-    let (Ok(follow_id), Ok(actor_iri), Ok(object_iri)) = (
-        crate::federation::portable::iri(activity_uri),
-        crate::federation::portable::iri(actor_uri),
-        crate::federation::portable::iri(object_uri),
-    ) else {
+    // `FollowRequest.create!(uri: @json['id'])`, whose `set_uri` names a
+    // Follow that came without an id.
+    let uri = Some(activity_uri)
+        .filter(|uri| !uri.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| crate::federation::relationships::generate_uri(&state.instance.domain));
+    let created = sqlx::query_scalar!(
+        r#"INSERT INTO follow_requests (account_id, target_account_id, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())
+           ON CONFLICT (account_id, target_account_id) DO NOTHING
+           RETURNING id"#,
+        follower_id,
+        target.id,
+        uri,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if created.is_none() {
+        // Another delivery of the same Follow made it first.
         return Ok(());
-    };
-    let follow = ojak_vocab::Follow {
-        id: Some(follow_id),
-        actors: vec![ojak_vocab::AnyActor::Iri(actor_iri)],
-        objects: vec![ojak_vocab::AnyObject::Iri(object_iri.clone())],
-        ..Default::default()
-    };
-    let accept_id = format!(
-        "https://{}/activities/{}",
-        instance.domain,
-        crate::snowflake::next_id()
-    );
-    let Ok(accept_iri) = accept_id.parse::<ojak_vocab::Iri>() else {
-        return Ok(());
-    };
+    }
 
+    let acct = follower.acct().to_string();
+    let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &follower);
     // A locked target, or a silenced follower, holds the follow as a request
-    // (Mastodon: target.locked? || account.silenced?).
-    let actions = crate::federation::follow::on_follow(
-        follow,
-        &object_iri,
-        target.locked || follower_silenced,
-        accept_iri,
-    );
-
-    for action in actions {
-        match action {
-            crate::federation::follow::Action::RecordFollowRequest => {
-                sqlx::query!(
-                    r#"INSERT INTO follow_requests (account_id, target_account_id, uri, created_at, updated_at)
-                       VALUES ($1, $2, $3, now(), now())
-                       ON CONFLICT (account_id, target_account_id) DO UPDATE SET uri = EXCLUDED.uri"#,
-                    follower_id,
-                    target.id,
-                    activity_uri,
-                )
-                .execute(&state.db)
-                .await?;
-
-                if let Some(ref f) = follower {
-                    let acct = match &f.domain {
-                        Some(d) => format!("{}@{}", f.username, d),
-                        None => f.username.clone(),
-                    };
-                    crate::push::create_and_push(
-                        state,
-                        target.id,
-                        follower_id,
-                        "follow_request",
-                        None,
-                        format!("{} wants to follow you", f.display_name),
-                        acct,
-                        f.avatar_remote_url.clone().unwrap_or_default(),
-                    )
-                    .await;
-                }
-            }
-            crate::federation::follow::Action::RecordFollow => {
-                // `RETURNING` distinguishes a new follow from a redelivery of
-                // one already recorded: federation repeats, and counting on
-                // every arrival would inflate the follower count.
-                let created = sqlx::query_scalar!(
-                    r#"INSERT INTO follows (account_id, target_account_id, uri, created_at, updated_at)
-                       VALUES ($1, $2, $3, now(), now())
-                       ON CONFLICT (account_id, target_account_id) DO UPDATE SET uri = EXCLUDED.uri
-                       RETURNING (xmax = 0) AS "inserted!""#,
-                    follower_id,
-                    target.id,
-                    activity_uri,
-                )
-                .fetch_one(&state.db)
-                .await?;
-
-                // Mastodon's Follow counter callbacks are unconditional, so a
-                // follow from another instance moves the same two counts as one
-                // made here.
-                if created {
-                    // `AccountStat`'s `update_index('accounts', :account)`.
-                    crate::search::elasticsearch::indexing::accounts(
-                        state,
-                        &[follower_id, target.id],
-                    )
-                    .await;
-                    if let Err(e) =
-                        crate::counters::on_follow_created(state, follower_id, target.id).await
-                    {
-                        tracing::error!(error = %e, "failed to count a federated follow");
-                    }
-                }
-
-                if let Some(ref f) = follower {
-                    let acct = match &f.domain {
-                        Some(d) => format!("{}@{}", f.username, d),
-                        None => f.username.clone(),
-                    };
-                    crate::push::create_and_push(
-                        state,
-                        target.id,
-                        follower_id,
-                        "follow",
-                        None,
-                        format!("{} followed you", f.display_name),
-                        acct,
-                        f.avatar_remote_url.clone().unwrap_or_default(),
-                    )
-                    .await;
-                }
-            }
-            crate::federation::follow::Action::SendAccept(accept) => {
-                if !crate::federation::keypair::has_signing_key(state, target.id)
-                    .await
-                    .unwrap_or(false)
-                {
-                    tracing::warn!(username = %target.username, "local account has no private key; cannot send Accept");
-                    continue;
-                }
-                let follower_inbox = sqlx::query_scalar!(
-                    "SELECT inbox_url FROM accounts WHERE id = $1",
-                    follower_id,
-                )
-                .fetch_optional(&state.db)
-                .await?
-                .filter(|s| !s.is_empty());
-                let Some(inbox) = follower_inbox else {
-                    tracing::warn!(
-                        actor_uri,
-                        "cannot send Accept: remote actor has no inbox URL"
-                    );
-                    continue;
-                };
-                let activity = crate::federation::activity::document(&*accept);
-                let actor_url = crate::federation::tag::account_uri(
-                    &instance.domain,
-                    target.id,
-                    target.id_scheme,
-                    &target.username,
-                );
-                let key_id = format!("{actor_url}#main-key");
-                tracing::debug!(inbox, actor_uri, "enqueueing Accept");
-                if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                    state,
-                    activity,
-                    vec![inbox],
-                    key_id,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "failed to enqueue Accept");
-                }
-            }
-        }
+    // (`target_account.locked? || @account.silenced?`); otherwise
+    // `AuthorizeFollowService` makes it a follow and sends the `Accept`.
+    if target.locked || follower.silenced_at.is_some() {
+        crate::push::create_and_push(
+            state,
+            target.id,
+            follower_id,
+            "follow_request",
+            None,
+            format!("{} wants to follow you", follower.display_name),
+            acct,
+            avatar,
+        )
+        .await;
+    } else {
+        crate::api::mastodon::accounts::authorize_follow(state, follower_id, target.id).await?;
+        crate::push::create_and_push(
+            state,
+            target.id,
+            follower_id,
+            "follow",
+            None,
+            format!("{} followed you", follower.display_name),
+            acct,
+            avatar,
+        )
+        .await;
     }
 
     Ok(())

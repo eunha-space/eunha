@@ -225,11 +225,12 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
 
     if inviter.locked {
         let inserted = sqlx::query!(
-            r#"INSERT INTO follow_requests (account_id, target_account_id, created_at, updated_at)
-               VALUES ($1, $2, now(), now())
+            r#"INSERT INTO follow_requests (account_id, target_account_id, uri, created_at, updated_at)
+               VALUES ($1, $2, $3, now(), now())
                ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
             follower_account_id,
             target_id,
+            crate::federation::relationships::generate_uri(&state.instance.domain),
         )
         .execute(&state.db)
         .await;
@@ -253,11 +254,12 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
     }
 
     let inserted = sqlx::query!(
-        r#"INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
-           VALUES ($1, $2, now(), now())
+        r#"INSERT INTO follows (account_id, target_account_id, uri, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())
            ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
         follower_account_id,
         target_id,
+        crate::federation::relationships::generate_uri(&state.instance.domain),
     )
     .execute(&state.db)
     .await;

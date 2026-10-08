@@ -6,7 +6,6 @@ pub mod delivery_failures;
 pub mod featured;
 pub mod fetch;
 pub mod fetch_resource;
-pub mod follow;
 pub mod followers_synchronization;
 pub mod forwarder;
 pub mod handle;

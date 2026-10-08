@@ -1,10 +1,15 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING uri",
+  "query": "SELECT id, uri FROM blocks WHERE account_id = $1 AND target_account_id = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
         "name": "uri",
         "type_info": "Varchar"
       }
@@ -16,8 +21,9 @@
       ]
     },
     "nullable": [
+      false,
       true
     ]
   },
-  "hash": "d8c0edaf79abe0bd639dec3dbc0553f67c553d1a4870c704b2b1cc85c8a49dcd"
+  "hash": "bdf7bcd04fff4985465a34143fd97fd1682d8d02352ab1c599ea52c6ab2729b0"
 }

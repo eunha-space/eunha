@@ -29,11 +29,7 @@ const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
 
 /// `ActivityPub::TagManager#generate_uri_for(nil)`.
 fn payload_uri(state: &AppState) -> String {
-    format!(
-        "https://{}/payloads/{}",
-        state.instance.domain,
-        uuid::Uuid::new_v4()
-    )
+    crate::federation::relationships::generate_uri(&state.instance.domain)
 }
 
 /// `DeliveryFailureTracker.reset!(inbox_url)`: the relay's host is delivered

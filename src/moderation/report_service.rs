@@ -92,13 +92,9 @@ pub async fn call(
 
     // `set_uri`: a local reporter's report gets an id of its own.
     let uri = options.uri.clone().or_else(|| {
-        source.is_local().then(|| {
-            format!(
-                "https://{}/payloads/{}",
-                state.instance.domain,
-                uuid::Uuid::new_v4()
-            )
-        })
+        source
+            .is_local()
+            .then(|| crate::federation::relationships::generate_uri(&state.instance.domain))
     });
 
     let mut tx = state.db.begin().await?;
@@ -411,7 +407,7 @@ async fn forward_report(
     let actor = crate::federation::instance_actor::actor_url(domain);
     let flag = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
-        "id": report.uri.unwrap_or_else(|| format!("https://{domain}/payloads/{}", uuid::Uuid::new_v4())),
+        "id": report.uri.unwrap_or_else(|| crate::federation::relationships::generate_uri(domain)),
         "type": "Flag",
         "actor": actor,
         "content": report.comment,

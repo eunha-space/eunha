@@ -474,3 +474,139 @@ async fn test_unlocking_authorizes_requests_as_authorize_follow_service_does() {
     .unwrap();
     assert_eq!(follows, 0);
 }
+
+/// Whether `uri` is what `generate_uri_for` makes: a UUID under the root.
+fn generated(ctx: &TestContext, uri: Option<&str>) -> bool {
+    uri.and_then(|uri| uri.strip_prefix(&format!("https://{}/", ctx.domain)))
+        .is_some_and(|rest| uuid::Uuid::parse_str(rest).is_ok())
+}
+
+async fn uri_of(ctx: &TestContext, table: &str, from: i64, to: i64) -> Option<String> {
+    sqlx::query_scalar(&format!(
+        "SELECT uri FROM {table} WHERE account_id = $1 AND target_account_id = $2"
+    ))
+    .bind(from)
+    .bind(to)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// Follows, requests and blocks made here get an id of their own
+/// (`before_validation :set_uri, on: :create`), which the activities about
+/// them carry: the `Follow` sent is the request's id, the `Block` the
+/// block's, and the `Undo` of a block names it, as the serializers do.
+#[tokio::test]
+async fn test_local_rows_get_a_uri_the_activities_carry() {
+    let ctx = TestContext::new("follows-local-uris").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    let (rita, rita_uri) = seed_remote(&ctx, "rita").await;
+
+    // A local follow.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{bob}/follow"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert!(generated(
+        &ctx,
+        uri_of(&ctx, "follows", alice, bob).await.as_deref()
+    ));
+
+    // A remote one is a request whose id the Follow carries.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{rita}/follow"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let request_uri = uri_of(&ctx, "follow_requests", alice, rita).await;
+    assert!(generated(&ctx, request_uri.as_deref()));
+    let follows = queued(&ctx, "Follow").await;
+    assert_eq!(follows.len(), 1, "{follows:?}");
+    assert_eq!(follows[0].0["id"], request_uri.as_deref().unwrap());
+
+    // The Block carries the block's id. `BlockService` asks only whether
+    // the blocker follows, so its own request is left, as upstream leaves it.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{rita}/block"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let block_uri = uri_of(&ctx, "blocks", alice, rita).await;
+    assert!(generated(&ctx, block_uri.as_deref()));
+    assert!(exists(&ctx, "follow_requests", alice, rita).await);
+    let blocks = queued(&ctx, "Block").await;
+    assert_eq!(blocks.len(), 1, "{blocks:?}");
+    assert_eq!(blocks[0].0["id"], block_uri.as_deref().unwrap());
+    assert_eq!(blocks[0].0["object"], rita_uri.as_str());
+    let block_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(alice)
+    .bind(rita)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{rita}/unblock"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let undos = queued(&ctx, "Undo").await;
+    assert_eq!(undos.len(), 1, "{undos:?}");
+    assert_eq!(
+        undos[0].0["id"],
+        format!("{alice_uri}#blocks/{block_id}/undo")
+    );
+    assert_eq!(undos[0].0["object"]["id"], block_uri.as_deref().unwrap());
+}
+
+/// A Follow of an unlocked account is held as a request and authorized
+/// (`AuthorizeFollowService`), so the `Accept` is named after the request.
+#[tokio::test]
+async fn test_an_inbound_follow_is_accepted_by_its_request() {
+    let ctx = TestContext::new("follows-inbound-accept").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    let (rita, rita_uri) = seed_remote(&ctx, "rita").await;
+    receive(
+        &ctx,
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": "https://rita.invalid/follows/1",
+            "type": "Follow",
+            "actor": rita_uri,
+            "object": alice_uri,
+        }),
+    )
+    .await;
+    assert_eq!(
+        uri_of(&ctx, "follows", rita, alice).await.as_deref(),
+        Some("https://rita.invalid/follows/1")
+    );
+    let accepts = queued(&ctx, "Accept").await;
+    assert_eq!(accepts.len(), 1, "{accepts:?}");
+    let id = accepts[0].0["id"].as_str().unwrap();
+    let request_id: i64 = id
+        .strip_prefix(&format!("{alice_uri}#accepts/follows/"))
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("{id}"));
+    assert!(request_id > 0);
+    assert_eq!(
+        accepts[0].0["object"]["id"],
+        "https://rita.invalid/follows/1"
+    );
+}
