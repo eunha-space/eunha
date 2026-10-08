@@ -258,6 +258,11 @@ either.
  -  Every hour, collection items that were rejected or revoked more than a day
     ago are deleted (`CollectionItemCleanupScheduler`), and their collections'
     item counts recounted.
+ -  A second after the instance starts, and then daily, remote collections
+    stored under an account other than the one they are attributed to are
+    fetched again and given to that account
+    (`RepairRemoteCollectionsScheduler`); see
+    [inbound statuses](../mastodon/inbound-statuses.md#pins-featured-hashtags-and-collections).
  -  Every minute, the posts that members' automated deletion policies say
     should go are deleted; see
     [accounts](./accounts.md#automated-post-deletion).

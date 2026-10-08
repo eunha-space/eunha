@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.uri AS \"uri!\" FROM collections c\n           JOIN accounts a ON a.id = c.account_id\n           WHERE c.local = false AND c.uri IS NOT NULL\n             AND substring(c.uri from '/ap/users/\\d+/')\n                 <> substring(a.collections_url from '/ap/users/\\d+/')\n             AND ($1::bigint IS NULL OR c.id >= $1)\n           ORDER BY c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "15a2d2aeebe8079b20243030af77ade7d519ed084e3abc97063c292aff6dd354"
+}

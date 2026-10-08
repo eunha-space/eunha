@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE collections SET account_id = $2, updated_at = now()\n             WHERE id = $1 AND account_id <> $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c408d400e336b2228dd2e96d0813ef387c858c1f2efc38f943a13052ab9b685"
+}

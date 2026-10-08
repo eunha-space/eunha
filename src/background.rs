@@ -119,6 +119,11 @@ fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             &state,
+            "remote collection repair",
+            crate::federation::featured_collections::run_repair(state.clone()),
+        ),
+        until_stopped(
+            &state,
             "announcement schedule",
             crate::announcements::run_schedule(state.clone()),
         ),
@@ -984,6 +989,12 @@ mod schedule_tests {
             (crate::auto_close_registrations::INTERVAL, HOUR),
             // collection_item_cleanup_scheduler: interval: 1 hour
             (crate::collection_item_cleanup::EVERY, HOUR),
+            // repair_remote_collections_scheduler: every: ['24h', first_in: '1s']
+            (crate::federation::featured_collections::REPAIR_EVERY, DAY),
+            (
+                crate::federation::featured_collections::REPAIR_FIRST_IN,
+                Duration::from_secs(1),
+            ),
         ];
         for (index, (ours, mastodon)) in schedules.into_iter().enumerate() {
             assert_eq!(ours, mastodon, "schedule {index}");

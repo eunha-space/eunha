@@ -737,3 +737,56 @@ async fn a_local_collection_s_request_is_answered_by_the_featured_account() {
         ))
     );
 }
+
+/// `RepairRemoteCollectionsScheduler`: a remote collection stored under an
+/// account other than the one it is attributed to goes to that account.
+#[tokio::test]
+async fn a_collection_stored_under_the_wrong_account_is_repaired() {
+    let ctx = TestContext::reaching_loopback("collection-repair").await;
+    let store = Remote::default();
+    let base = spawn_remote(&store).await;
+    let (rob_id, rob, _) = account(&ctx, &base, "rob").await;
+    let (mallory_id, _, _) = account(&ctx, &base, "mallory").await;
+    for (id, n) in [(rob_id, 1), (mallory_id, 2)] {
+        sqlx::query("UPDATE accounts SET collections_url = $2 WHERE id = $1")
+            .bind(id)
+            .bind(format!("{base}/ap/users/{n}/featured_collections"))
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+    }
+    let uri = format!("{base}/ap/users/1/collections/5");
+    store.put(
+        "/ap/users/1/collections/5",
+        json!({"@context": AS, "id": uri, "type": "FeaturedCollection", "attributedTo": rob,
+               "name": "Rob's", "sensitive": false, "discoverable": true, "orderedItems": []}),
+    );
+    sqlx::query(
+        "INSERT INTO collections (account_id, name, discoverable, local, sensitive, item_count,
+                                  original_number_of_items, uri, created_at, updated_at)
+         VALUES ($1, 'Rob''s', true, false, false, 0, 0, $2, now(), now())",
+    )
+    .bind(mallory_id)
+    .bind(&uri)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let db = ctx.db.clone();
+    let state = ctx.state.clone();
+    assert!(
+        eventually(async || {
+            eunha::federation::featured_collections::repair_remote_collections(&state)
+                .await
+                .unwrap();
+            sqlx::query_scalar::<_, i64>("SELECT account_id FROM collections WHERE uri = $1")
+                .bind(&uri)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+                == rob_id
+        })
+        .await,
+        "the collection is rob's again"
+    );
+}

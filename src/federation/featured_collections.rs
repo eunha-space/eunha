@@ -3,8 +3,9 @@
 //! `ActivityPub::ProcessFeaturedItemService`,
 //! `ActivityPub::VerifyFeaturedItemService` and
 //! `ActivityPub::FetchRemoteFeaturedCollectionService`, with their workers
-//! (`ProcessFeaturedItemWorker`, `VerifyFeaturedItemWorker`); and
-//! `AccountPolicy#feature?`, which says who may feature whom.
+//! (`ProcessFeaturedItemWorker`, `VerifyFeaturedItemWorker`) and
+//! `Scheduler::RepairRemoteCollectionsScheduler`; and `AccountPolicy#feature?`,
+//! which says who may feature whom.
 //!
 //! A remote collection belongs to the account that sent it, and only to that
 //! account: it is stored only from its own host, attributed to that account,
@@ -784,4 +785,121 @@ impl crate::jobs::Job for VerifyFeaturedItemWorker {
         ))
         .await
     }
+}
+
+// ── Scheduler::RepairRemoteCollectionsScheduler ───────────────────────────
+
+/// The scheduler runs every 24 hours (`every: ['24h', first_in: '1s']`)…
+pub const REPAIR_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+/// …the first time a second in.
+pub const REPAIR_FIRST_IN: Duration = Duration::from_secs(1);
+/// sidekiq-unique-jobs' `lock_ttl: 1.day`.
+const REPAIR_LOCK_TTL_MS: usize = 24 * 60 * 60 * 1000;
+/// `remote_collection_repair:last_known_good`.
+const LAST_KNOWN_GOOD: &str = "remote_collection_repair:last_known_good";
+
+/// Run the repair a second after the instance starts, then daily.
+pub async fn run_repair(state: AppState) {
+    crate::background::rest(&state.stop, REPAIR_FIRST_IN).await;
+    loop {
+        if state.stop.is_cancelled() {
+            break;
+        }
+        if let Err(error) = repair_remote_collections(&state).await {
+            tracing::error!(%error, "remote collection repair failed");
+        }
+        crate::background::rest(&state.stop, REPAIR_EVERY).await;
+    }
+}
+
+/// `Scheduler::RepairRemoteCollectionsScheduler#perform`: a remote
+/// collection whose `/ap/users/<id>/` differs from its owner's
+/// `collections_url`'s was stored under the wrong account (eunha once
+/// stored a collection under whichever account sent it); it is fetched
+/// again and given to the account it is attributed to. Once every one has
+/// been put right, the highest collection id is remembered, and the next
+/// run starts there. Once at a time across the instance's processes.
+pub async fn repair_remote_collections(state: &AppState) -> anyhow::Result<()> {
+    let Some(_lock) = crate::redis_lock::try_acquire(
+        state,
+        "remote_collections_repair_scheduler:lock",
+        REPAIR_LOCK_TTL_MS,
+    )
+    .await
+    else {
+        return Ok(());
+    };
+    let max_id = sqlx::query_scalar!("SELECT MAX(id) FROM collections")
+        .fetch_one(&state.db)
+        .await?;
+    let key = state.redis_keys.key(LAST_KNOWN_GOOD);
+    let mut redis = state.redis.clone();
+    let last_known_good: Option<String> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .unwrap_or(None);
+    let last_known_good = last_known_good.and_then(|id| id.parse::<i64>().ok());
+
+    let affected = sqlx::query!(
+        r#"SELECT c.id, c.uri AS "uri!" FROM collections c
+           JOIN accounts a ON a.id = c.account_id
+           WHERE c.local = false AND c.uri IS NOT NULL
+             AND substring(c.uri from '/ap/users/\d+/')
+                 <> substring(a.collections_url from '/ap/users/\d+/')
+             AND ($1::bigint IS NULL OR c.id >= $1)
+           ORDER BY c.id"#,
+        last_known_good,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut successful = true;
+    for collection in affected {
+        let json = json_ld::fetch_resource(state, &collection.uri, None, RaiseOn::None).await?;
+        let Some(attributed_to) = json
+            .as_ref()
+            .filter(|json| json.is_object())
+            .and_then(|json| json.get("attributedTo"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            successful = false;
+            continue;
+        };
+        let known = sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE uri = $1 ORDER BY id LIMIT 1",
+            attributed_to,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        let account_id = match known {
+            Some(id) => Some(id),
+            None => crate::api::ap::inbox::fetch_remote_account(state, &attributed_to)
+                .await
+                .ok(),
+        };
+        let Some(account_id) = account_id else {
+            successful = false;
+            continue;
+        };
+        sqlx::query!(
+            "UPDATE collections SET account_id = $2, updated_at = now()
+             WHERE id = $1 AND account_id <> $2",
+            collection.id,
+            account_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    if successful {
+        let value = max_id.map(|id| id.to_string()).unwrap_or_default();
+        let _: redis::RedisResult<()> = redis::cmd("SET")
+            .arg(&key)
+            .arg(value)
+            .query_async(&mut redis)
+            .await;
+    }
+    Ok(())
 }
