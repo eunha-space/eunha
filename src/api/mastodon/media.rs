@@ -61,8 +61,23 @@ pub async fn upload_media(
 
     let (_, content_type, data) =
         file_field.ok_or_else(|| AppError::Unprocessable("missing file field".into()))?;
-    validate_media_description(description.as_deref())?;
     let media_type = classify_media_type(&content_type);
+    // Mastodon 4.7.2 no longer lets libvips load HEIF ("Temporarily disable
+    // HEIF support"), so processing a HEIC, HEIF or AVIF image fails, whatever
+    // type it was declared as, when the file is assigned and before any
+    // validation; `rescue Paperclip::Error` answers it. The types are still
+    // advertised.
+    if media_type == "image" && is_heif(&data) {
+        tracing::warn!("refusing a HEIF upload, as Mastodon 4.7.2 does");
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Error processing thumbnail for uploaded media",
+            })),
+        )
+            .into_response());
+    }
+    validate_media_description(description.as_deref())?;
     let media_id = crate::snowflake::next_id();
 
     // Video / gifv / audio: transcode in the background (Mastodon's "larger media
@@ -657,6 +672,32 @@ fn validate_media_description(description: Option<&str>) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+/// Whether `data` is an ISO base media file whose brand is HEIF's or AVIF's,
+/// which libvips reads with `heifload`. The brands are the ones libheif
+/// recognises as an image rather than a video.
+fn is_heif(data: &[u8]) -> bool {
+    const BRANDS: &[&[u8; 4]] = &[
+        b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs", b"mif1", b"msf1",
+        b"avif", b"avis",
+    ];
+    if data.len() < 12 || &data[4..8] != b"ftyp" {
+        return false;
+    }
+    let size = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let end = size.clamp(12, data.len());
+    // The major brand, then the compatible brands after the minor version.
+    std::iter::once(&data[8..12])
+        .chain(
+            data.get(16..end)
+                .unwrap_or_default()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| c.as_slice()),
+        )
+        .any(|brand| BRANDS.iter().any(|b| b.as_slice() == brand))
 }
 
 fn classify_media_type(content_type: &str) -> &'static str {

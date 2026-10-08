@@ -79,6 +79,68 @@ async fn test_media_upload_v2() {
     assert_eq!(media["type"].as_str(), Some("image"));
 }
 
+/// The start of an ISO base media file with major brand `brand`, which is all
+/// libvips needs to pick `heifload` for it.
+fn ftyp(brand: &[u8; 4]) -> Vec<u8> {
+    let mut data = vec![0, 0, 0, 24];
+    data.extend_from_slice(b"ftyp");
+    data.extend_from_slice(brand);
+    data.extend_from_slice(&[0, 0, 0, 0]);
+    data.extend_from_slice(b"mif1");
+    data.extend_from_slice(brand);
+    data.extend_from_slice(&[0; 64]);
+    data
+}
+
+/// Mastodon 4.7.2 blocks libvips' HEIF loader, so a HEIC, HEIF or AVIF image
+/// fails processing whatever type it was sent as, and the upload is answered
+/// with `processing_error`'s 500 on both versions of the endpoint. The types
+/// stay advertised, as upstream still lists them.
+#[tokio::test]
+async fn test_media_upload_refuses_heif_as_mastodon_4_7_2_does() {
+    let ctx = TestContext::new("media-heif").await;
+    for (path, name, content_type, data) in [
+        ("/api/v1/media", "photo.heic", "image/heic", ftyp(b"heic")),
+        ("/api/v2/media", "photo.heif", "image/heif", ftyp(b"mif1")),
+        ("/api/v2/media", "photo.avif", "image/avif", ftyp(b"avif")),
+        ("/api/v1/media", "photo.jpg", "image/jpeg", ftyp(b"avif")),
+    ] {
+        let resp = ctx
+            .api
+            .post_multipart_file(path, &ctx.alice_token, name, content_type, data, &[])
+            .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{path} {content_type}"
+        );
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            body["error"],
+            "Error processing thumbnail for uploaded media"
+        );
+    }
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM media_attachments")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0);
+
+    let instance: Value = ctx
+        .api
+        .get("/api/v2/instance", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let types = instance["configuration"]["media_attachments"]["supported_mime_types"]
+        .as_array()
+        .unwrap();
+    for advertised in ["image/heic", "image/heif", "image/avif"] {
+        assert!(types.iter().any(|t| t == advertised), "{advertised}");
+    }
+}
+
 /// POST /api/v1/media with a description stores it.
 #[tokio::test]
 async fn test_media_upload_with_description() {
