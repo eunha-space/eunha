@@ -25,6 +25,7 @@ pub mod media;
 pub mod notifications;
 pub mod oauth;
 pub mod oauth_metadata;
+pub mod oauth_tokens;
 pub mod oembed;
 pub mod polls;
 pub mod preview_cards;
@@ -1448,6 +1449,27 @@ pub fn router() -> Router {
         .route("/oauth/authorize/native", get(oauth::authorize_native))
         .route("/oauth/token", post(oauth::issue_token))
         .route("/oauth/revoke", post(oauth::revoke_token))
+        .route("/oauth/token/info", get(oauth_tokens::token_info))
+        .route("/oauth/introspect", post(oauth_tokens::introspect))
+        .route(
+            "/oauth/applications",
+            get(oauth_tokens::applications_forbidden).post(oauth_tokens::applications_forbidden),
+        )
+        .route(
+            "/oauth/applications/new",
+            get(oauth_tokens::applications_forbidden),
+        )
+        .route(
+            "/oauth/applications/{id}",
+            get(oauth_tokens::applications_forbidden)
+                .put(oauth_tokens::applications_forbidden)
+                .patch(oauth_tokens::applications_forbidden)
+                .delete(oauth_tokens::applications_forbidden),
+        )
+        .route(
+            "/oauth/applications/{id}/edit",
+            get(oauth_tokens::applications_forbidden),
+        )
         .route(
             "/oauth/userinfo",
             get(oauth_metadata::userinfo).post(oauth_metadata::userinfo),

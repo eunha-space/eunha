@@ -323,3 +323,131 @@ async fn denying_sends_access_denied_to_the_client() {
     let resp = deny(Some(cookie), elsewhere).await.unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
+
+/// A client-credentials token of a newly registered app.
+async fn client_token(ctx: &TestContext, client_id: &str, client_secret: &str) -> String {
+    let body: Value = ctx
+        .api
+        .post_form(
+            "/oauth/token",
+            None,
+            &[
+                ("grant_type", "client_credentials"),
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    body["access_token"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn token_info_describes_the_bearer_token() {
+    let ctx = TestContext::new("oauth-token-info").await;
+    let resp = ctx
+        .api
+        .get("/oauth/token/info", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["scope"],
+        serde_json::json!(["read", "write", "follow", "push"])
+    );
+    assert!(body["resource_owner_id"].is_number());
+    assert!(body["expires_in"].is_null());
+    assert!(body["application"]["uid"].is_string());
+    assert!(body["created_at"].is_number());
+
+    let resp = ctx.api.get("/oauth/token/info", Some("nonsense")).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert!(resp.headers().contains_key("www-authenticate"));
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"], "invalid_token");
+    assert_eq!(body["error_description"], "The access token is invalid");
+
+    sqlx::query("UPDATE oauth_access_tokens SET revoked_at = now() WHERE token = $1")
+        .bind(&ctx.alice_token)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = ctx
+        .api
+        .get("/oauth/token/info", Some(&ctx.alice_token))
+        .await;
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error_description"], "The access token was revoked");
+}
+
+#[tokio::test]
+async fn introspection_answers_a_client_about_its_own_tokens() {
+    let ctx = TestContext::new("oauth-introspect").await;
+    let (client_id, client_secret) = register_app(&ctx, CALLBACK).await;
+    let token = client_token(&ctx, &client_id, &client_secret).await;
+
+    let introspect = |auth: Option<(&str, &str)>, bearer: Option<&str>, about: &str| {
+        let mut req = ctx
+            .api
+            .http
+            .post(ctx.api.url("/oauth/introspect"))
+            .header("host", &ctx.api.host)
+            .form(&[("token", about.to_owned())]);
+        if let Some((id, secret)) = auth {
+            req = req.basic_auth(id, Some(secret));
+        }
+        if let Some(bearer) = bearer {
+            req = req.bearer_auth(bearer);
+        }
+        req.send()
+    };
+
+    let resp = introspect(Some((&client_id, &client_secret)), None, &token)
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["active"], true);
+    assert_eq!(body["scope"], "read write");
+    assert_eq!(body["client_id"], client_id.as_str());
+    assert_eq!(body["token_type"], "Bearer");
+    assert!(body["iat"].is_number());
+    assert!(body.get("exp").is_none());
+
+    // Another application's token is none of this client's business.
+    let resp = introspect(Some((&client_id, &client_secret)), None, &ctx.alice_token)
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body, serde_json::json!({"active": false}));
+
+    // A token of the same application may ask about another of it.
+    let other = client_token(&ctx, &client_id, &client_secret).await;
+    let resp = introspect(None, Some(&other), &token).await.unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["active"], true);
+
+    let resp = introspect(Some((&client_id, "wrong")), None, &token)
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let resp = introspect(None, None, &token).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[tokio::test]
+async fn the_applications_pages_are_closed() {
+    let ctx = TestContext::new("oauth-applications").await;
+    for path in [
+        "/oauth/applications",
+        "/oauth/applications/new",
+        "/oauth/applications/1",
+    ] {
+        let resp = ctx.api.get(path, Some(&ctx.alice_token)).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+}

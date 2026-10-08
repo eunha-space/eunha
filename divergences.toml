@@ -582,7 +582,8 @@ and `/api/eunha/v1/login_activities` (paged by `max_id`) to a token with \
 `read:accounts` or `write:accounts`, with Mastodon's revocation effects. \
 Eunha's web client signs in through OAuth like any other app, so it is listed \
 among the authorized apps; the sessions are the server-rendered account \
-pages' sign-ins."""
+pages' sign-ins. Doorkeeper's `/oauth/authorized_applications`, a page (or \
+JSON) for a browser session, is not served."""
 why = """
 Eunha's settings page is a single-page app holding a token, so these pages \
 need an API to call. The web client is an OAuth client rather than a \

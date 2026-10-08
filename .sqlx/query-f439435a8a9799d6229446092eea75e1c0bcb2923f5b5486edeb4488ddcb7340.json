@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.application_id, t.resource_owner_id, t.scopes, t.created_at,\n                  t.expires_in, t.revoked_at, a.uid AS \"uid?\"\n           FROM oauth_access_tokens t\n           LEFT JOIN oauth_applications a ON a.id = t.application_id\n           WHERE t.token = $1 OR t.refresh_token = $1\n           ORDER BY (t.token = $1) DESC\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "resource_owner_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "scopes",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_in",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "revoked_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "uid?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "f439435a8a9799d6229446092eea75e1c0bcb2923f5b5486edeb4488ddcb7340"
+}

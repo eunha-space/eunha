@@ -122,6 +122,17 @@ copy. `DELETE /oauth/authorize`, from a signed-in browser, turns the client
 away: it is sent `access_denied`, with its `state`, at a redirect URI it
 registered (an unregistered one is refused, where Doorkeeper would follow it).
 
+`GET /oauth/token/info` describes the bearer token as Doorkeeper does (its
+scopes, owner, application and remaining lifetime), or answers 401
+`invalid_token` saying whether it is unknown, revoked or expired.
+`POST /oauth/introspect` is RFC 7662 introspection: a client, by HTTP Basic or
+its id and secret in the request, or a bearer token other than the one asked
+about, learns whether a token of its own application is active, with its
+scope, client and issue time, and gets `{"active":false}` about anything else.
+The `/oauth/applications` pages answer 403 to everyone, as Mastodon configures
+Doorkeeper's `admin_authenticator`; authorized apps are under
+[their own heading](#authorized-apps-and-sign-in-history).
+
 `GET` and `POST /oauth/userinfo` is OpenID Connect's UserInfo endpoint, for a
 token with the `profile` scope (401 without a token, 403 without the scope):
 `iss` the instance's root URL, `sub` the actor's URI, `name`,
