@@ -114,3 +114,31 @@ async fn routes_mastodon_lacks_are_not_answered() {
         }
     }
 }
+
+/// `namespace :web` is Mastodon's own web UI's; eunha serves none of it
+/// (`mastodon-web-ui-endpoints-not-served` in divergences.toml).
+#[tokio::test]
+async fn mastodon_web_ui_endpoints_are_not_served() {
+    let ctx = TestContext::new("routes-api-web").await;
+    let status_id = ctx
+        .api
+        .post_status(&ctx.alice_token, "embed me", "public")
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (method, path) in [
+        (Method::PUT, "/api/web/settings".to_owned()),
+        (Method::PATCH, "/api/web/settings".to_owned()),
+        (Method::GET, format!("/api/web/embeds/{status_id}")),
+        (Method::POST, "/api/web/push_subscriptions".to_owned()),
+        (Method::PUT, "/api/web/push_subscriptions/1".to_owned()),
+        (
+            Method::DELETE,
+            "/api/web/push_subscriptions/token".to_owned(),
+        ),
+    ] {
+        let got = status(&ctx, method.clone(), &path, &ctx.alice_token).await;
+        assert_eq!(got, StatusCode::NOT_FOUND, "{method} {path}");
+    }
+}
