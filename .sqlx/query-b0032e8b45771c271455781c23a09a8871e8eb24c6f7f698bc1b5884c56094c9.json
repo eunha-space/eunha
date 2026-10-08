@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.id, ci.collection_id FROM collection_items ci\n           JOIN collections c ON c.id = ci.collection_id AND c.local\n           WHERE ci.activity_uri = $1 AND ci.account_id = $2\n           ORDER BY ci.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b0032e8b45771c271455781c23a09a8871e8eb24c6f7f698bc1b5884c56094c9"
+}

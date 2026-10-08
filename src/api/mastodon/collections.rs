@@ -4,8 +4,11 @@
 //! (`pending` / `accepted` / `rejected` / `revoked`). Local accounts added to a
 //! local collection are auto-accepted; remote accounts start `pending`.
 //!
-//! This implements the local REST surface. ActivityPub federation of
-//! collections (Add/Remove/feature-request distribution) is not yet wired up.
+//! This implements the local REST surface, and what it sends: the `Add`,
+//! `Update` and `Remove` of a collection to its owner's followers, the
+//! `Add` and `Remove` of an item to the collection's reach, and the
+//! `FeatureRequest` asking a remote account to be featured. Remote
+//! collections are kept by `crate::federation::featured_collections`.
 
 use axum::{
     extract::{Path, Query},
@@ -464,6 +467,22 @@ pub async fn create_collection(
         _ => None,
     };
 
+    // `CreateCollectionService#build_items`: an account the owner may not
+    // feature refuses the whole collection.
+    for raw in &form.account_ids {
+        if let Ok(aid) = raw.parse::<i64>() {
+            if !crate::federation::featured_collections::may_feature(
+                &state.db,
+                auth.account_id,
+                aid,
+            )
+            .await?
+            {
+                return Err(AppError::Forbidden);
+            }
+        }
+    }
+
     let new_id = sqlx::query_scalar!(
         r#"INSERT INTO collections
              (account_id, name, description, language, sensitive, discoverable, local, tag_id, item_count, created_at, updated_at)
@@ -483,7 +502,7 @@ pub async fn create_collection(
     // Add initial accounts, if any.
     for raw in &form.account_ids {
         if let Ok(aid) = raw.parse::<i64>() {
-            let _ = add_item(&state, new_id, aid).await;
+            let _ = add_item(&state, new_id, aid, false).await;
         }
     }
 
@@ -664,8 +683,18 @@ pub async fn delete_collection(
 // ── Collection items ──────────────────────────────────────────────────────
 
 /// Insert (or no-op on conflict) an item adding `account_id` to `collection_id`.
-/// Local accounts are auto-accepted; remote accounts start pending.
-async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppResult<Value> {
+/// Local accounts are auto-accepted; remote accounts start pending, and are
+/// asked with a `FeatureRequest`. `AddAccountToCollectionService`, which
+/// refuses an account the owner may not feature (`AccountPolicy#feature?`)
+/// and, with `distribute`, sends the `Add` of a local account's item to the
+/// collection's reach; `CreateCollectionService` sends the collection's own
+/// `Add` instead.
+async fn add_item(
+    state: &AppState,
+    collection_id: i64,
+    account_id: i64,
+    distribute: bool,
+) -> AppResult<Value> {
     let target = sqlx::query!(
         r#"SELECT domain, suspended_at, requested_deletion_at, uri, inbox_url, shared_inbox_url
            FROM accounts WHERE id = $1"#,
@@ -679,6 +708,18 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
         return Err(AppError::Unprocessable(
             "This account cannot be added to collections".into(),
         ));
+    }
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT account_id FROM collections WHERE id = $1",
+        collection_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if !crate::federation::featured_collections::may_feature(&state.db, owner_id, account_id)
+        .await?
+    {
+        return Err(AppError::Forbidden);
     }
 
     // Enforce MAX_ITEMS pending+accepted.
@@ -762,6 +803,14 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
             )
             .await;
         }
+        // `distribute_add_activity`.
+        if distribute {
+            if let Some(activity) =
+                ap_coll::add_featured_item_activity(state, domain, row.id).await?
+            {
+                distribute_collection_raw(state, collection_id, activity).await?;
+            }
+        }
     }
 
     // Send the FeatureRequest asking the remote account for consent.
@@ -771,11 +820,8 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
                 .await
                 .unwrap_or(false)
             {
-                let inbox = if !target.shared_inbox_url.is_empty() {
-                    target.shared_inbox_url.clone()
-                } else {
-                    target.inbox_url.clone()
-                };
+                // `FeatureRequestWorker#inboxes`: the account's own inbox.
+                let inbox = target.inbox_url.clone();
                 let account_uri = target.uri.clone().unwrap_or_default();
                 if !inbox.is_empty() && !account_uri.is_empty() {
                     let actor_url = crate::federation::tag::account_uri(
@@ -1042,8 +1088,42 @@ pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) ->
         "target": ap_coll::collection_uri(domain, owner.id, item.collection_id),
         "object": ap_coll::item_uri(domain, owner.id, item_id),
     });
-    // `CollectionReachFinder#inboxes`: the owner's reach, and the inboxes of
-    // the accounts the collection features.
+    distribute_collection_raw(state, item.collection_id, activity).await
+}
+
+/// `ActivityPub::CollectionRawDistributionWorker`: `activity`, as it is and
+/// with no Linked Data Signature, from the local collection's owner to the
+/// collection's reach (`CollectionReachFinder#inboxes`): the owner's reach,
+/// and the inboxes of the remote accounts the collection features or has
+/// asked to.
+pub(crate) async fn distribute_collection_raw(
+    state: &AppState,
+    collection_id: i64,
+    activity: Value,
+) -> AppResult<()> {
+    let Some(owner_id) = sqlx::query_scalar!(
+        "SELECT account_id FROM collections WHERE id = $1 AND local",
+        collection_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    if owner_signing_username(state, owner_id).await.is_none() {
+        return Ok(());
+    }
+    let Some(owner) = sqlx::query_as!(
+        Account,
+        "SELECT * FROM accounts WHERE id = $1 AND domain IS NULL",
+        owner_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let actor = crate::federation::tag::account_uri_of(&state.instance.domain, &owner);
     let mut inboxes = crate::federation::delivery::account_reach_inboxes(state, owner.id)
         .await
         .map_err(AppError::Internal)?;
@@ -1052,8 +1132,9 @@ pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) ->
             r#"SELECT DISTINCT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url
                                     ELSE a.inbox_url END AS "inbox!"
                FROM collection_items ci JOIN accounts a ON a.id = ci.account_id
-               WHERE ci.collection_id = $1 AND a.domain IS NOT NULL AND a.inbox_url <> ''"#,
-            item.collection_id,
+               WHERE ci.collection_id = $1 AND ci.state IN (0, 1)
+                 AND a.domain IS NOT NULL AND a.inbox_url <> ''"#,
+            collection_id,
         )
         .fetch_all(&state.db)
         .await?,
@@ -1063,7 +1144,6 @@ pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) ->
     if inboxes.is_empty() {
         return Ok(());
     }
-    // Rendered as it is, with no Linked Data Signature.
     if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
         state,
         activity,
@@ -1072,7 +1152,7 @@ pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) ->
     )
     .await
     {
-        tracing::warn!(error = %e, "failed to enqueue a featured item's removal");
+        tracing::warn!(error = %e, "failed to enqueue a collection's activity");
     }
     Ok(())
 }
@@ -1139,7 +1219,7 @@ pub struct AddItemForm {
 /// POST /api/v1/collections/{id}/items
 pub async fn add_collection_item(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    Extension(ResolvedInstance(_instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(collection_id): Path<i64>,
     Json(form): Json<AddItemForm>,
@@ -1158,15 +1238,7 @@ pub async fn add_collection_item(
         .and_then(|s| s.parse::<i64>().ok())
         .ok_or_else(|| AppError::Unprocessable("`account_id` parameter is missing".into()))?;
 
-    let item = add_item(&state, collection_id, account_id).await?;
-    distribute_collection(
-        &state,
-        &instance.domain,
-        collection_id,
-        auth.account_id,
-        false,
-    )
-    .await;
+    let item = add_item(&state, collection_id, account_id, true).await?;
     Ok(Json(json!({ "collection_item": item })))
 }
 

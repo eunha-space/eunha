@@ -661,7 +661,7 @@ pub(super) async fn handle_accept_reject(
             return Ok(());
         }
         // `feature_request_from_object`.
-        if answer_feature_request(state, activity, account_id, uri, accept).await? {
+        if super::feature::answer_feature_request(state, activity, uri, accept).await? {
             return Ok(());
         }
     }
@@ -751,65 +751,6 @@ async fn reject_follow_request(state: &AppState, request_id: i64) -> AppResult<(
     .execute(&state.db)
     .await?;
     Ok(())
-}
-
-/// `feature_request_from_object` (`CollectionItem.local.find_by(activity_uri:,
-/// account_id: @account.id)`), and its answer, `accept_feature_request!` or
-/// `reject_feature_request!`. Says whether the object was one.
-async fn answer_feature_request(
-    state: &AppState,
-    activity: &Value,
-    account_id: i64,
-    object_uri: &str,
-    accept: bool,
-) -> AppResult<bool> {
-    let Some(item) = sqlx::query!(
-        r#"SELECT ci.id, ci.state FROM collection_items ci
-           JOIN collections c ON c.id = ci.collection_id
-           WHERE c.local AND ci.activity_uri = $1 AND ci.account_id = $2
-           LIMIT 1"#,
-        object_uri,
-        account_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    else {
-        return Ok(false);
-    };
-    if item.state != 0 {
-        return Ok(true);
-    }
-    if accept {
-        let approval_uri = activity
-            .get("result")
-            .and_then(|r| {
-                if r.is_string() {
-                    r.as_str()
-                } else {
-                    r.get("id").and_then(|i| i.as_str())
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        sqlx::query!(
-            r#"UPDATE collection_items
-               SET state = 1, approval_uri = $2,
-                   approval_last_verified_at = now(), updated_at = now()
-               WHERE id = $1"#,
-            item.id,
-            approval_uri.as_deref(),
-        )
-        .execute(&state.db)
-        .await?;
-    } else {
-        sqlx::query!(
-            "UPDATE collection_items SET state = 2, updated_at = now() WHERE id = $1",
-            item.id,
-        )
-        .execute(&state.db)
-        .await?;
-    }
-    Ok(true)
 }
 
 /// `FollowRequest#authorize!` of the follow request `request_id`.

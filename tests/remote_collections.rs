@@ -1,7 +1,8 @@
-//! Remote collections as Mastodon keeps them
+//! Remote collections and feature consent as Mastodon keeps them
 //! (`ProcessFeaturedCollectionService`, `ProcessFeaturedItemService`,
-//! `VerifyFeaturedItemService`, and the `Add` and `Remove` around them),
-//! against a fake remote server.
+//! `VerifyFeaturedItemService`, `FeatureRequest`, and the `Add`, `Remove`,
+//! `Accept`, `Reject` and `Delete` around them), against a fake remote
+//! server.
 //!
 //! A test binary of its own because it has to let eunha fetch from 127.0.0.1.
 //! The SSRF guard's allowlist is process-wide and set once, so granting it in
@@ -113,6 +114,33 @@ async fn eventually(mut done: impl AsyncFnMut() -> bool) -> bool {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     false
+}
+
+/// Give a local account a key to sign with.
+async fn give_key(ctx: &TestContext, account_id: i64) {
+    let (private_pem, public_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
+        .bind(account_id)
+        .bind(private_pem)
+        .bind(public_pem)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+}
+
+/// The activities of `kind` queued for `inbox`, oldest first.
+async fn queued_for(ctx: &TestContext, kind: &str, inbox: &str) -> Vec<Value> {
+    sqlx::query_scalar(
+        "SELECT payload->'activity' FROM eunha.ojak_queue
+         WHERE payload->'activity'->>'type' = $1 AND payload->>'inbox' = $2
+         ORDER BY id",
+    )
+    .bind(kind)
+    .bind(inbox)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap()
 }
 
 /// A collection's row: owner, name, description, language, total, url and
@@ -446,4 +474,266 @@ async fn pins_and_featured_hashtags_are_the_senders_own() {
     )
     .await;
     assert!(pins().await.is_empty());
+}
+
+/// A `FeatureRequest` is answered as `AccountPolicy#feature?` says: refused
+/// with a `Reject`, or accepted with an `Accept` naming the stamp, each sent
+/// to the sender's own inbox. Only the sender's own collection, asked for
+/// from its own host, is answered.
+#[tokio::test]
+async fn feature_requests_are_answered_as_the_policy_says() {
+    let ctx = TestContext::reaching_loopback("feature-policy").await;
+    let store = Remote::default();
+    let base = spawn_remote(&store).await;
+    let (_, rob, rob_pem) = account(&ctx, &base, "rob").await;
+    let (_, mallory, mallory_pem) = account(&ctx, &base, "mallory").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    let collection_uri = format!("{base}/collections/1");
+    deliver(
+        &ctx,
+        &rob,
+        &rob_pem,
+        &json!({"@context": AS, "id": format!("{rob}#adds/1"), "type": "Add", "actor": rob,
+                "target": format!("{rob}/featured_collections"),
+                "object": featured_collection(&base, &rob, "Rob's", vec![])}),
+    )
+    .await;
+    let request = |actor: &str, id: String| {
+        json!({"@context": AS, "id": id, "type": "FeatureRequest", "actor": actor,
+               "object": alice_uri, "instrument": collection_uri})
+    };
+    let items = || async {
+        sqlx::query_as::<_, (i64, i32, Option<String>, Option<String>)>(
+            "SELECT ci.id, ci.state, ci.activity_uri, ci.approval_uri FROM collection_items ci
+             JOIN collections c ON c.id = ci.collection_id WHERE c.uri = $1",
+        )
+        .bind(&collection_uri)
+        .fetch_all(&ctx.db)
+        .await
+        .unwrap()
+    };
+
+    // Alice is locked and rob does not follow her: refused.
+    sqlx::query("UPDATE accounts SET locked = true WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    deliver(
+        &ctx,
+        &rob,
+        &rob_pem,
+        &request(&rob, format!("{base}/feature_requests/1")),
+    )
+    .await;
+    assert!(items().await.is_empty());
+    let rejects = queued_for(&ctx, "Reject", &format!("{rob}/inbox")).await;
+    assert_eq!(rejects.len(), 1, "{rejects:?}");
+    assert_eq!(
+        rejects[0]["object"],
+        json!(format!("{base}/feature_requests/1"))
+    );
+    assert_eq!(
+        rejects[0]["id"],
+        json!(format!("{alice_uri}#rejects/feature_requests/"))
+    );
+
+    sqlx::query("UPDATE accounts SET locked = false WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    // Named on another host than its sender's (whether it is turned away at
+    // the door or ignored inside), or for a collection that is not the
+    // sender's: not answered.
+    ctx.api
+        .post_signed(
+            "/inbox",
+            &request(&rob, "https://elsewhere.invalid/feature_requests/2".into()),
+            &format!("{rob}#main-key"),
+            &rob_pem,
+        )
+        .await;
+    deliver(
+        &ctx,
+        &mallory,
+        &mallory_pem,
+        &request(&mallory, format!("{base}/feature_requests/3")),
+    )
+    .await;
+    assert!(items().await.is_empty());
+    assert!(queued_for(&ctx, "Accept", &format!("{rob}/inbox"))
+        .await
+        .is_empty());
+    assert!(queued_for(&ctx, "Reject", &format!("{mallory}/inbox"))
+        .await
+        .is_empty());
+
+    // Accepted: an item with the request's id and no authorization of its
+    // own, and an Accept naming alice's stamp at rob's own inbox.
+    deliver(
+        &ctx,
+        &rob,
+        &rob_pem,
+        &request(&rob, format!("{base}/feature_requests/4")),
+    )
+    .await;
+    let accepted = items().await;
+    assert_eq!(accepted.len(), 1);
+    let (item_id, state, activity_uri, approval_uri) = accepted[0].clone();
+    assert_eq!(state, 1);
+    assert_eq!(activity_uri, Some(format!("{base}/feature_requests/4")));
+    assert_eq!(approval_uri, None);
+    let accepts = queued_for(&ctx, "Accept", &format!("{rob}/inbox")).await;
+    assert_eq!(accepts.len(), 1, "{accepts:?}");
+    assert_eq!(
+        accepts[0]["result"],
+        json!(format!(
+            "https://{}/ap/users/{alice}/feature_authorizations/{item_id}",
+            ctx.domain
+        ))
+    );
+    assert!(queued_for(&ctx, "Accept", &format!("{base}/inbox"))
+        .await
+        .is_empty());
+}
+
+/// A local collection's request is answered only by the account it asked:
+/// accepted under an authorization on that account's host, whose `Add` goes
+/// to the collection's reach, and taken back by deleting it, whose `Remove`
+/// goes there too. An account that may not be featured is not asked.
+#[tokio::test]
+async fn a_local_collection_s_request_is_answered_by_the_featured_account() {
+    let ctx = TestContext::reaching_loopback("feature-answer").await;
+    let store = Remote::default();
+    let base = spawn_remote(&store).await;
+    let (rob_id, rob, rob_pem) = account(&ctx, &base, "rob").await;
+    let (mallory_id, mallory, mallory_pem) = account(&ctx, &base, "mallory").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    // Mallory follows alice, so her reach is his server.
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(mallory_id)
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let c: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Friends"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let cid = c["collection"]["id"].as_str().unwrap().to_owned();
+    let add_rob = || {
+        let api = &ctx.api;
+        let token = ctx.alice_token.clone();
+        let path = format!("/api/v1/collections/{cid}/items");
+        let body = json!({"account_id": rob_id.to_string()});
+        async move { api.post_json(&path, Some(&token), &body).await }
+    };
+
+    // Rob says nothing of who may feature him: he is not asked.
+    assert_eq!(add_rob().await.status(), StatusCode::FORBIDDEN);
+    assert!(queued_for(&ctx, "FeatureRequest", &format!("{rob}/inbox"))
+        .await
+        .is_empty());
+
+    // Anyone may: he is asked, at his own inbox.
+    sqlx::query("UPDATE accounts SET feature_approval_policy = $2 WHERE id = $1")
+        .bind(rob_id)
+        .bind(eunha::db::models::feature_policy::PUBLIC << 16)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(add_rob().await.status(), StatusCode::OK);
+    let requests = queued_for(&ctx, "FeatureRequest", &format!("{rob}/inbox")).await;
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    let request_uri = requests[0]["id"].as_str().unwrap().to_owned();
+    let item = || async {
+        sqlx::query_as::<_, (i64, i32, Option<String>, Option<chrono::NaiveDateTime>)>(
+            "SELECT id, state, approval_uri, approval_last_verified_at
+             FROM collection_items WHERE collection_id = $1",
+        )
+        .bind(cid.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+    };
+    assert_eq!(item().await.1, 0);
+
+    let accept = |actor: &str, result: String| {
+        json!({"@context": AS, "id": format!("{actor}#accepts/1"), "type": "Accept",
+               "actor": actor, "object": request_uri, "result": result})
+    };
+    // Mallory cannot answer for rob, nor rob with a stamp elsewhere.
+    deliver(
+        &ctx,
+        &mallory,
+        &mallory_pem,
+        &accept(&mallory, format!("{base}/stamps/1")),
+    )
+    .await;
+    deliver(
+        &ctx,
+        &rob,
+        &rob_pem,
+        &accept(&rob, "https://elsewhere.invalid/stamps/1".into()),
+    )
+    .await;
+    assert_eq!(item().await.1, 0);
+
+    let stamp = format!("{base}/users/rob/feature_authorizations/1");
+    deliver(&ctx, &rob, &rob_pem, &accept(&rob, stamp.clone())).await;
+    let (item_id, state, approval_uri, verified_at) = item().await;
+    assert_eq!(
+        (state, approval_uri.as_deref(), verified_at),
+        (1, Some(stamp.as_str()), None)
+    );
+    // The item's `Add` reaches the collection's members.
+    let adds: Vec<Value> = queued_for(&ctx, "Add", &format!("{base}/inbox"))
+        .await
+        .into_iter()
+        .filter(|add| add["object"]["type"] == "FeaturedItem")
+        .collect();
+    assert_eq!(adds.len(), 1, "{adds:?}");
+    assert_eq!(adds[0]["object"]["type"], "FeaturedItem");
+    assert_eq!(adds[0]["object"]["featuredObject"], json!(rob));
+    assert_eq!(adds[0]["object"]["featureAuthorization"], json!(stamp));
+
+    // Rob takes it back: revoked, and its `Remove` sent.
+    deliver(
+        &ctx,
+        &rob,
+        &rob_pem,
+        &json!({"@context": AS, "id": format!("{stamp}#delete"), "type": "Delete",
+                "actor": rob, "object": stamp}),
+    )
+    .await;
+    assert_eq!(item().await.1, 3);
+    let removes: Vec<Value> = sqlx::query_scalar(
+        "SELECT payload->'activity' FROM eunha.ojak_queue
+         WHERE payload->'activity'->>'type' = 'Remove'",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(removes.len(), 1, "{removes:?}");
+    assert_eq!(
+        removes[0]["object"],
+        json!(format!(
+            "https://{}/ap/users/{alice}/collection_items/{item_id}",
+            ctx.domain
+        ))
+    );
 }

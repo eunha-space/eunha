@@ -219,6 +219,75 @@ async fn test_add_revoke_delete_item() {
     assert_eq!(column().await, 0);
 }
 
+/// `AccountPolicy#feature?`: an account that cannot be discovered, or a
+/// locked one its owner does not follow, or one either blocks, is not
+/// featured, neither added to a collection nor in a new one.
+#[tokio::test]
+async fn test_only_a_featureable_account_is_featured() {
+    let ctx = TestContext::new("coll-feature-policy").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let c: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Featured"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let cid = c["collection"]["id"].as_str().unwrap().to_string();
+    let add = || async {
+        ctx.api
+            .post_json(
+                &format!("/api/v1/collections/{cid}/items"),
+                Some(&ctx.alice_token),
+                &json!({"account_id": ctx.bob_id}),
+            )
+            .await
+            .status()
+    };
+    let set = |sql: &'static str| {
+        let db = ctx.db.clone();
+        async move {
+            sqlx::query(sql).bind(bob).execute(&db).await.unwrap();
+        }
+    };
+
+    set("UPDATE accounts SET discoverable = false WHERE id = $1").await;
+    assert_eq!(add().await, StatusCode::FORBIDDEN);
+    let created = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "With bob", "account_ids": [ctx.bob_id]}),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::FORBIDDEN);
+
+    set("UPDATE accounts SET discoverable = true, locked = true WHERE id = $1").await;
+    assert_eq!(add().await, StatusCode::FORBIDDEN);
+
+    block(&ctx.db, bob, alice).await;
+    sqlx::query("INSERT INTO follows (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())")
+        .bind(alice)
+        .bind(bob)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(add().await, StatusCode::FORBIDDEN);
+
+    sqlx::query("DELETE FROM blocks WHERE account_id = $1")
+        .bind(bob)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(add().await, StatusCode::OK);
+}
+
 /// Only the owner may update or delete a collection.
 #[tokio::test]
 async fn test_update_and_ownership() {

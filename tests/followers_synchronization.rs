@@ -298,6 +298,8 @@ async fn a_feature_request_is_stamped_where_mastodon_stamps_it() {
             "type": "FeaturedCollection",
             "name": "Rob's",
             "attributedTo": rob,
+            "sensitive": false,
+            "discoverable": true,
             "totalItems": 0,
             "orderedItems": [],
         }),
@@ -325,31 +327,32 @@ async fn a_feature_request_is_stamped_where_mastodon_stamps_it() {
     .await;
     assert!(status.is_success(), "{status}");
     let db = ctx.db.clone();
-    let mut stamp = None;
+    let mut item = None;
     assert!(
         eventually(async || {
-            stamp = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT ci.approval_uri FROM collection_items ci
+            item = sqlx::query_scalar::<_, i64>(
+                "SELECT ci.id FROM collection_items ci
                  JOIN collections c ON c.id = ci.collection_id
-                 WHERE c.uri = $1 AND ci.account_id = $2",
+                 WHERE c.uri = $1 AND ci.account_id = $2 AND ci.state = 1",
             )
             .bind(&collection)
             .bind(alice)
             .fetch_optional(&db)
             .await
-            .unwrap()
-            .flatten();
-            stamp.is_some()
+            .unwrap();
+            item.is_some()
         })
         .await,
         "the request is accepted"
     );
-    let stamp = stamp.unwrap();
-    let prefix = format!(
-        "https://{}/ap/users/{}/feature_authorizations/",
-        ctx.domain, ctx.alice_id
+    // The stamp is named by the item, which keeps no authorization of its
+    // own (`approval_uri` stays nil, as Mastodon leaves it).
+    let stamp = format!(
+        "https://{}/ap/users/{}/feature_authorizations/{}",
+        ctx.domain,
+        ctx.alice_id,
+        item.unwrap()
     );
-    assert!(stamp.starts_with(&prefix), "{stamp}");
     let served: Value = ctx
         .api
         .ap_get(

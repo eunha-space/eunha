@@ -374,6 +374,66 @@ pub async fn collection_item_document(
     Ok(body)
 }
 
+/// `ActivityPub::AddFeaturedItemSerializer`: the item `item_id` of a local
+/// collection, added, from the collection's owner. `None` when the item is
+/// not one of a local collection's.
+pub async fn add_featured_item_activity(
+    state: &AppState,
+    domain: &str,
+    item_id: i64,
+) -> AppResult<Option<Value>> {
+    let Some(r) = sqlx::query!(
+        r#"SELECT ci.id, ci.created_at, ci.approval_uri, c.id AS collection_id,
+                  o.id AS owner_id, o.username AS owner_username, o.id_scheme AS owner_id_scheme,
+                  a.id AS "account_id?", a.uri AS account_uri, a.username AS "username?",
+                  a.id_scheme, (a.domain IS NULL) AS "local?"
+           FROM collection_items ci
+           JOIN collections c ON c.id = ci.collection_id AND c.local
+           JOIN accounts o ON o.id = c.account_id AND o.domain IS NULL
+           LEFT JOIN accounts a ON a.id = ci.account_id
+           WHERE ci.id = $1"#,
+        item_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let account = match (r.account_id, r.username) {
+        (Some(id), Some(username)) => Some((
+            id,
+            r.local.unwrap_or(false),
+            username,
+            r.id_scheme,
+            r.account_uri,
+        )),
+        _ => None,
+    };
+    let object = featured_item(
+        domain,
+        r.owner_id,
+        r.id,
+        account,
+        r.approval_uri,
+        r.created_at,
+    );
+    Ok(Some(json!({
+        "@context": super::context_helper::serialized_context(
+            &["activitystreams"],
+            &["featured_collections"],
+        ),
+        "type": "Add",
+        "actor": crate::federation::tag::account_uri(
+            domain,
+            r.owner_id,
+            r.owner_id_scheme,
+            &r.owner_username,
+        ),
+        "target": collection_uri(domain, r.owner_id, r.collection_id),
+        "object": object,
+    })))
+}
+
 /// `ActivityPub::FeaturedCollectionsController#index`: the local account
 /// `owner`'s collections, five to a page (`?page=`), each page embedding
 /// its FeaturedCollections; not there for a signer the account blocks.

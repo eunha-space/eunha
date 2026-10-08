@@ -820,9 +820,58 @@ pub mod feature_policy {
         flags | sub(policy.get("manualApproval"))
     }
 
+    /// `Account#feature_policy_for_account` for a remote account whose
+    /// bitmap is `bitmap`: `automatic`, `manual`, `missing`, `unknown` or
+    /// `denied`, given whether the other account is the account itself,
+    /// follows it (`followed_by?`) and is followed by it (`following?`).
+    #[must_use]
+    pub fn for_account(
+        bitmap: i32,
+        is_self: bool,
+        follows_it: bool,
+        followed_by_it: bool,
+    ) -> &'static str {
+        if is_self {
+            return "automatic";
+        }
+        if bitmap == 0 {
+            return "missing";
+        }
+        let allows = |sub: i32| {
+            sub & PUBLIC != 0
+                || (sub & FOLLOWERS != 0 && follows_it)
+                || (sub & FOLLOWING != 0 && followed_by_it)
+        };
+        let (auto, manual) = (automatic(bitmap), manual(bitmap));
+        if allows(auto) {
+            "automatic"
+        } else if allows(manual) {
+            "manual"
+        } else if (auto | manual) & UNSUPPORTED != 0 {
+            "unknown"
+        } else {
+            "denied"
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn answers_for_an_account() {
+            assert_eq!(for_account(0, true, false, false), "automatic");
+            assert_eq!(for_account(0, false, true, true), "missing");
+            assert_eq!(for_account(PUBLIC << 16, false, false, false), "automatic");
+            assert_eq!(for_account(FOLLOWERS, false, false, false), "denied");
+            assert_eq!(for_account(FOLLOWERS, false, true, false), "manual");
+            assert_eq!(
+                for_account(FOLLOWING << 16, false, false, true),
+                "automatic"
+            );
+            assert_eq!(for_account(UNSUPPORTED, false, false, false), "unknown");
+            assert_eq!(for_account(DISABLED << 16, false, true, true), "denied");
+        }
 
         #[test]
         fn parses_can_feature() {

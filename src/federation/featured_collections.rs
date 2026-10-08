@@ -3,7 +3,8 @@
 //! `ActivityPub::ProcessFeaturedItemService`,
 //! `ActivityPub::VerifyFeaturedItemService` and
 //! `ActivityPub::FetchRemoteFeaturedCollectionService`, with their workers
-//! (`ProcessFeaturedItemWorker`, `VerifyFeaturedItemWorker`).
+//! (`ProcessFeaturedItemWorker`, `VerifyFeaturedItemWorker`); and
+//! `AccountPolicy#feature?`, which says who may feature whom.
 //!
 //! A remote collection belongs to the account that sent it, and only to that
 //! account: it is stored only from its own host, attributed to that account,
@@ -32,6 +33,52 @@ const PROCESSING_DELAY_SECS: std::ops::RangeInclusive<u64> = 30..=600;
 const PENDING: i32 = 0;
 const ACCEPTED: i32 = 1;
 const REJECTED: i32 = 2;
+
+// ── AccountPolicy#feature? ────────────────────────────────────────────────
+
+/// `AccountPolicy.new(owner, target).feature?`: whether `owner` may feature
+/// `target` in a collection. `Account#featureable_by?` — a local account
+/// when it is discoverable and either unlocked, followed by `owner` or
+/// `owner` itself; a remote one when its `feature_approval_policy` answers
+/// `automatic` or `manual` for `owner` — and neither blocks the other.
+pub async fn may_feature(db: &sqlx::PgPool, owner_id: i64, target_id: i64) -> sqlx::Result<bool> {
+    let Some(target) = sqlx::query!(
+        r#"SELECT (a.domain IS NULL) AS "local!", COALESCE(a.discoverable, false) AS "discoverable!",
+                  a.locked, a.feature_approval_policy,
+                  EXISTS (SELECT 1 FROM follows
+                          WHERE account_id = $1 AND target_account_id = $2) AS "followed_by_owner!",
+                  EXISTS (SELECT 1 FROM follows
+                          WHERE account_id = $2 AND target_account_id = $1) AS "follows_owner!",
+                  EXISTS (SELECT 1 FROM blocks
+                          WHERE (account_id = $1 AND target_account_id = $2)
+                             OR (account_id = $2 AND target_account_id = $1)) AS "blocked!"
+           FROM accounts a WHERE a.id = $2"#,
+        owner_id,
+        target_id,
+    )
+    .fetch_optional(db)
+    .await?
+    else {
+        return Ok(false);
+    };
+    if target.blocked {
+        return Ok(false);
+    }
+    let featureable = if target.local {
+        target.discoverable && (!target.locked || target.followed_by_owner || owner_id == target_id)
+    } else {
+        matches!(
+            crate::db::models::feature_policy::for_account(
+                target.feature_approval_policy,
+                owner_id == target_id,
+                target.followed_by_owner,
+                target.follows_owner,
+            ),
+            "automatic" | "manual"
+        )
+    };
+    Ok(featureable)
+}
 
 // ── Locks ─────────────────────────────────────────────────────────────────
 

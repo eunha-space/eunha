@@ -136,6 +136,36 @@ still answers at `/users/{username}/collections` and
 *divergences.toml* records why.
 
 
+Featuring accounts
+------------------
+
+An account may be featured in a collection only as `AccountPolicy#feature?`
+allows: a local one when it is discoverable and either unlocked, followed by
+the collection's owner, or the owner itself; a remote one when its
+`feature_approval_policy` answers `automatic` or `manual` for the owner (an
+account that has said nothing answers `missing`, and is not featured); and
+never when either blocks the other. Adding one that may not be featured, or
+creating a collection with one, is a 403.
+
+Adding a local account sends the item's `Add` (a `FeaturedItem`) to the
+collection's reach, as `CollectionRawDistributionWorker` sends it: the
+owner's followers and the remote accounts the collection features or has
+asked to. A collection's own `Add` goes to the owner's followers when it is
+created, and its `Update` when it is edited. Adding a remote account asks it
+with a `FeatureRequest` at its own inbox; when it accepts with an
+authorization on its own host, the item is accepted under that
+authorization and its `Add` sent to the collection's reach, and when it
+rejects, the item is rejected. Taking an item out, or the featured account
+deleting its authorization, sends the item's `Remove` to the same reach.
+
+A remote collection asking to feature a local account is answered the same
+way: when the request comes from the sender's own host, for one of the
+sender's own collections, the account is featured if the policy allows it,
+told so, and an `Accept` naming its stamp goes to the sender's inbox; if
+not, a `Reject`. The item keeps no authorization of its own; the stamp is
+named by the item.
+
+
 Featured hashtags
 -----------------
 

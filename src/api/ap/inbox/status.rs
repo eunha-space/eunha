@@ -73,7 +73,7 @@ pub(super) async fn handle_delete(
     // (`CollectionItem.local.find_by(approval_uri:, account_id: @account.id)`),
     // revoked (`DeleteCollectionItemService` with `revoke: true`).
     if let Some(item) = sqlx::query!(
-        r#"SELECT ci.id, ci.collection_id, c.account_id AS owner_id
+        r#"SELECT ci.id
            FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
            WHERE c.local AND ci.approval_uri = $1 AND ci.account_id = $2
            ORDER BY ci.id LIMIT 1"#,
@@ -83,20 +83,7 @@ pub(super) async fn handle_delete(
     .fetch_optional(&state.db)
     .await?
     {
-        sqlx::query!(
-            "UPDATE collection_items SET state = 3, updated_at = now() WHERE id = $1",
-            item.id,
-        )
-        .execute(&state.db)
-        .await?;
-        crate::api::mastodon::collections::distribute_collection(
-            state,
-            &state.instance.domain,
-            item.collection_id,
-            item.owner_id,
-            false,
-        )
-        .await;
+        crate::api::mastodon::collections::delete_item(state, item.id, true).await?;
         return Ok(());
     }
 

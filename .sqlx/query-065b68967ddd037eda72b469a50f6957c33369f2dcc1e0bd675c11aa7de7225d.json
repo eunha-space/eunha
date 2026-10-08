@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.id, ci.created_at, ci.approval_uri, c.id AS collection_id,\n                  o.id AS owner_id, o.username AS owner_username, o.id_scheme AS owner_id_scheme,\n                  a.id AS \"account_id?\", a.uri AS account_uri, a.username AS \"username?\",\n                  a.id_scheme, (a.domain IS NULL) AS \"local?\"\n           FROM collection_items ci\n           JOIN collections c ON c.id = ci.collection_id AND c.local\n           JOIN accounts o ON o.id = c.account_id AND o.domain IS NULL\n           LEFT JOIN accounts a ON a.id = ci.account_id\n           WHERE ci.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 2,
+        "name": "approval_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "collection_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "owner_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "owner_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "owner_id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "account_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "account_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "username?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "local?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "065b68967ddd037eda72b469a50f6957c33369f2dcc1e0bd675c11aa7de7225d"
+}

@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (a.domain IS NULL) AS \"local!\", COALESCE(a.discoverable, false) AS \"discoverable!\",\n                  a.locked, a.feature_approval_policy,\n                  EXISTS (SELECT 1 FROM follows\n                          WHERE account_id = $1 AND target_account_id = $2) AS \"followed_by_owner!\",\n                  EXISTS (SELECT 1 FROM follows\n                          WHERE account_id = $2 AND target_account_id = $1) AS \"follows_owner!\",\n                  EXISTS (SELECT 1 FROM blocks\n                          WHERE (account_id = $1 AND target_account_id = $2)\n                             OR (account_id = $2 AND target_account_id = $1)) AS \"blocked!\"\n           FROM accounts a WHERE a.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "discoverable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "locked",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "feature_approval_policy",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "followed_by_owner!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "follows_owner!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bb444a25f04bc94ffb8a59fa6ec673fbdfbfcaa6612d0eb806d97530f1087af9"
+}

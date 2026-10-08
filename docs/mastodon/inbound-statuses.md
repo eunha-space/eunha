@@ -95,7 +95,8 @@ Deletes and undos
 
 A `Delete` of the sender itself purges the account, once at a time. A
 `Delete` of an authorization the sender gave to be featured revokes the item
-of the local collection holding it. Otherwise, a URI on the sender's host is
+of the local collection holding it, and sends the item's `Remove` to the
+collection's reach. Otherwise, a URI on the sender's host is
 remembered as deleted for six hours, so that its `Create` arriving late is
 skipped, and tombstoned; then the sender's own status with that URI, or with
 the object's `atomUri`, is forwarded and removed by `RemoveStatusService`,

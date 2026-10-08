@@ -5,6 +5,7 @@ use crate::{error::AppResult, state::AppState};
 mod attachment;
 mod collection;
 pub(crate) mod create;
+mod feature;
 mod fetch;
 pub(crate) mod follow;
 mod moderation;
@@ -14,6 +15,7 @@ mod status;
 pub(crate) mod status_parser;
 use collection::{handle_add, handle_remove};
 use create::handle_create;
+use feature::handle_feature_request;
 pub use fetch::{
     fetch_remote_account, fetch_remote_poll, fetch_remote_status, fetch_remote_status_by_url,
     fetch_remote_status_prefetched, fetch_remote_status_with, resolve_or_fetch_remote_account,
@@ -21,7 +23,7 @@ pub use fetch::{
 };
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
-use quote::{handle_feature_request, handle_quote_request};
+use quote::handle_quote_request;
 use status::{handle_announce, handle_delete, handle_like, handle_update};
 
 /// `StatusParser#quote_policy` for a remote post by `account_id`, read
@@ -373,7 +375,7 @@ pub(super) async fn process_activity(
             "handled"
         }
         "FeatureRequest" => {
-            handle_feature_request(state, instance, activity).await?;
+            handle_feature_request(state, activity).await?;
             "handled"
         }
         _ => "ignored",

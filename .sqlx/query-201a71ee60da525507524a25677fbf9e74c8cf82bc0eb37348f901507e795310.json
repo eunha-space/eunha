@@ -1,34 +1,34 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT uri, inbox_url, shared_inbox_url FROM accounts WHERE id = $1",
+  "query": "SELECT id, uri AS \"uri!\", inbox_url FROM accounts\n           WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "uri",
-        "type_info": "Varchar"
+        "name": "id",
+        "type_info": "Int8"
       },
       {
         "ordinal": 1,
-        "name": "inbox_url",
+        "name": "uri!",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
-        "name": "shared_inbox_url",
+        "name": "inbox_url",
         "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
-      true,
       false,
+      true,
       false
     ]
   },
-  "hash": "62ebbbb0e5ddf2c9d6aac65a1ffe3221f494d2ed95608e981eeec3075c38a025"
+  "hash": "201a71ee60da525507524a25677fbf9e74c8cf82bc0eb37348f901507e795310"
 }
