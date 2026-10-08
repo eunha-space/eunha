@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Form, Query},
+    extract::{Extension, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     Json,
@@ -892,11 +892,23 @@ pub struct AuthorizationExtras {
     pub code_challenge_method: Option<String>,
     #[serde(default)]
     pub response_mode: Option<String>,
+    /// Mastodon's own: when true, the authorization page asks even though a
+    /// token would let it answer at once (`can_authorize_response?`).
+    #[serde(default)]
+    pub force_login: Option<String>,
 }
 
 impl AuthorizationExtras {
     fn present(value: &Option<String>) -> Option<&str> {
         value.as_deref().filter(|v| !v.is_empty())
+    }
+
+    /// `truthy_param?('force_login')`: `ActiveModel::Type::Boolean` casts
+    /// anything but a blank or one of its false values to true.
+    fn force_login(&self) -> bool {
+        Self::present(&self.force_login).is_some_and(|value| {
+            !matches!(value, "0" | "f" | "F" | "false" | "FALSE" | "off" | "OFF")
+        })
     }
 
     /// `PreAuthorization#validate_response_mode`, `#validate_code_challenge_method`:
@@ -929,6 +941,7 @@ impl AuthorizationExtras {
             ("code_challenge", &self.code_challenge),
             ("code_challenge_method", &self.code_challenge_method),
             ("response_mode", &self.response_mode),
+            ("force_login", &self.force_login),
         ] {
             if let Some(value) = Self::present(value) {
                 query.append_pair(key, value);
@@ -936,6 +949,15 @@ impl AuthorizationExtras {
         }
         query.finish()
     }
+}
+
+/// `redirect_to`, which Rails answers with a `302`.
+fn found(location: &str) -> Response {
+    (
+        StatusCode::FOUND,
+        [(axum::http::header::LOCATION, location.to_owned())],
+    )
+        .into_response()
 }
 
 /// Where the browser goes with what the authorization page decided.
@@ -949,7 +971,7 @@ enum Outcome {
 impl IntoResponse for Outcome {
     fn into_response(self) -> Response {
         match self {
-            Outcome::Redirect(url) => Redirect::to(&url).into_response(),
+            Outcome::Redirect(url) => found(&url),
             Outcome::FormPost(action, fields) => {
                 let escape = |s: &str| {
                     s.replace('&', "&amp;")
@@ -1027,12 +1049,21 @@ pub struct AuthorizeParams {
     pub redirect_uri: String,
     pub response_type: Option<String>,
     pub scope: Option<String>,
-    pub force_login: Option<String>,
     pub lang: Option<String>,
     #[serde(flatten)]
     pub extras: AuthorizationExtras,
 }
 
+/// `Oauth::AuthorizationsController#new`. A signed-in user is asked to
+/// authorize or deny the client (`render :new`), unless Doorkeeper may
+/// answer at once: the application is the instance's own
+/// (`skip_authorization`, `superapp`), or it is confidential, the user holds
+/// an unrevoked token of it with the same scopes (`matching_token?`), and
+/// the request does not say `force_login` (`can_authorize_response?`).
+///
+/// Without a session the page asks the person to sign in first, where
+/// Mastodon's `authenticate_resource_owner!` sends them to its sign-in page
+/// to come back (`oauth-authorization-page-signs-in` in divergences.toml).
 pub async fn authorize_form(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -1091,16 +1122,202 @@ pub async fn authorize_form(
         )
             .into_response();
     }
-    render_authorize(
-        &instance,
+    let Some(user_id) = crate::api::account::signed_in_user(&headers, &state).await else {
+        return render_authorize(
+            &instance,
+            &app.name,
+            &params.client_id,
+            &params.redirect_uri,
+            scope,
+            &params.extras,
+            locale,
+            "",
+        );
+    };
+    let here = format!(
+        "/oauth/authorize?{}",
+        params
+            .extras
+            .query(&params.client_id, &params.redirect_uri, scope)
+    );
+    // `require_functional!`: an address still unconfirmed sends the user to
+    // `auth/setup`, the page kept to come back to (`store_current_location`).
+    if !user_confirmed(&state, user_id).await {
+        return crate::api::account::redirect_storing_location("/auth/setup", &here);
+    }
+    let answer_at_once = app.superapp
+        || (!params.extras.force_login()
+            && app.confidential
+            && matching_token(&state, app.id, user_id, scope).await);
+    if answer_at_once {
+        return match issue_grant(
+            &state,
+            &params.client_id,
+            &params.redirect_uri,
+            Some(scope.to_owned()),
+            user_id,
+            &params.extras,
+        )
+        .await
+        {
+            Ok(outcome) => outcome.into_response(),
+            Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
+        };
+    }
+    render_consent(
+        &state,
         &app.name,
         &params.client_id,
         &params.redirect_uri,
         scope,
         &params.extras,
         locale,
-        "",
+        user_id,
+        &here,
     )
+    .await
+}
+
+/// `AccessTokenMixin.matching_token_for`: an unrevoked token the user holds
+/// of the application, expired or not, whose scopes are the requested ones
+/// (`scopes_match?`, in any order).
+async fn matching_token(state: &AppState, application_id: i64, user_id: i64, scope: &str) -> bool {
+    let wanted: std::collections::BTreeSet<&str> = scope.split_whitespace().collect();
+    let held: Vec<Option<String>> = sqlx::query_scalar!(
+        r#"SELECT scopes FROM oauth_access_tokens
+           WHERE application_id = $1 AND resource_owner_id = $2 AND revoked_at IS NULL"#,
+        application_id,
+        user_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    held.iter().any(|scopes| {
+        scopes
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .collect::<std::collections::BTreeSet<_>>()
+            == wanted
+    })
+}
+
+/// `ScopeTransformer::Scope`: what `grouped_scopes` makes of one scope, its
+/// key (`admin/accounts`, `follow`, `all`…) and the access it gives.
+fn scope_group(scope: &str) -> (String, Vec<&'static str>) {
+    let mut parts: Vec<&str> = scope.split(':').collect();
+    let namespace = (parts.first() == Some(&"admin") && parts.len() > 1).then(|| {
+        parts.remove(0);
+        "admin"
+    });
+    let (access, term): (Option<&'static str>, Option<&str>) = match parts.as_slice() {
+        ["read"] => (Some("read"), None),
+        ["write"] => (Some("write"), None),
+        ["read", term] => (Some("read"), Some(*term)),
+        ["write", term] => (Some("write"), Some(*term)),
+        [term] => (None, Some(*term)),
+        _ => (None, Some(scope)),
+    };
+    let term = term.unwrap_or("all");
+    let access = if term == "profile" {
+        vec!["read"]
+    } else {
+        access.map_or_else(|| vec!["read", "write"], |a| vec![a])
+    };
+    let key = match namespace {
+        Some(namespace) => format!("{namespace}/{term}"),
+        None => term.to_owned(),
+    };
+    (key, access)
+}
+
+/// `ApplicationHelper#grouped_scopes`: the scopes merged by key, in the order
+/// they first appear, each with its access.
+fn grouped_scopes(scope: &str) -> Vec<(String, String)> {
+    let mut groups: Vec<(String, Vec<&'static str>)> = Vec::new();
+    for scope in scope.split_whitespace() {
+        let (key, access) = scope_group(scope);
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            // `merge!`: the accesses together, deduplicated and sorted.
+            Some((_, existing)) => {
+                existing.extend(access);
+                existing.sort_unstable();
+                existing.dedup();
+            }
+            None => groups.push((key, access)),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(key, access)| (key, access.join("/")))
+        .collect()
+}
+
+/// `doorkeeper.authorizations.new`: the authorize-or-deny page.
+#[allow(clippy::too_many_arguments)]
+async fn render_consent(
+    state: &AppState,
+    app_name: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    scope: &str,
+    extras: &AuthorizationExtras,
+    locale: crate::locale::Locale,
+    user_id: i64,
+    here: &str,
+) -> Response {
+    let username = sqlx::query_scalar!(
+        "SELECT a.username FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1",
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_default();
+    let permissions: Vec<minijinja::Value> = grouped_scopes(scope)
+        .into_iter()
+        .map(|(key, access)| {
+            minijinja::context! {
+                title => locale.t(&format!("scope_title_{key}")),
+                access => locale.t(&format!("scope_access_{access}")),
+            }
+        })
+        .collect();
+    let prompt = minijinja::Value::from_safe_string(locale.t("authorization_prompt_html").replace(
+        "%{client_name}",
+        &format!("<strong>{}</strong>", escape_html(app_name)),
+    ));
+    let html = crate::templates::render(
+        "authorize_consent.html",
+        minijinja::context! {
+            lang => locale.as_str(),
+            domain => state.instance.domain,
+            username => username,
+            client_id => client_id,
+            redirect_uri => redirect_uri,
+            scope => scope,
+            extras => extras,
+            permissions => permissions,
+            prompt => prompt,
+            continue_to => here,
+            t_title => locale.t("authorization_required"),
+            t_review_permissions => locale.t("review_permissions"),
+            t_authorize => locale.t("authorize_button"),
+            t_deny => locale.t("deny_button"),
+            t_signed_in_as => locale.t("signed_in_as"),
+            t_logout => locale.t("logout"),
+        },
+    );
+    Html(html).into_response()
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// The sign-in form of the authorization page.
@@ -1167,15 +1384,81 @@ pub struct AuthorizeForm {
     pub step: crate::api::account::sign_in::Submitted,
 }
 
-/// Sign in on the authorization page, then grant the code. The password,
-/// then whatever [`crate::api::account::sign_in`] asks for, as Mastodon's
-/// session sign-in would before `Oauth::AuthorizationsController` answers.
+#[derive(Debug, Default, Deserialize)]
+struct MethodOverride {
+    #[serde(rename = "_method")]
+    method: Option<String>,
+}
+
+/// `POST /oauth/authorize`, three things in one. With `_method=delete`, the
+/// deny button's form, it is `DELETE` (`Rack::MethodOverride`). With an
+/// email and password, or a step after them, it is the authorization page's
+/// sign-in. Otherwise it is the authorize button:
+/// `Oauth::AuthorizationsController#create`, for a signed-in user.
 pub async fn authorize_submit(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
     headers: axum::http::HeaderMap,
-    Form(form): Form<AuthorizeForm>,
+    uri: axum::http::Uri,
+    body: axum::body::Bytes,
+) -> Response {
+    let method: MethodOverride = serde_urlencoded::from_bytes(&body).unwrap_or_default();
+    if method
+        .method
+        .is_some_and(|m| m.eq_ignore_ascii_case("delete"))
+    {
+        return authorize_deny(state, headers, uri, body).await;
+    }
+    let Ok(form) = serde_urlencoded::from_bytes::<AuthorizeForm>(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Missing required parameter: client_id.",
+        )
+            .into_response();
+    };
+    if form.email.is_some() || form.password.is_some() || form.step.is_attempt() {
+        return sign_in_to_authorize(state, instance, client_ip, headers, form).await;
+    }
+
+    // `create`: `authenticate_resource_owner!` sends a signed-out browser to
+    // sign in, then back to the page.
+    let scope = form.scope.clone().unwrap_or_else(|| "read".to_string());
+    let page = format!(
+        "/oauth/authorize?{}",
+        form.extras
+            .query(&form.client_id, &form.redirect_uri, &scope)
+    );
+    let Some(user_id) = crate::api::account::signed_in_user(&headers, &state).await else {
+        return found(&page);
+    };
+    if !user_confirmed(&state, user_id).await {
+        return crate::api::account::redirect_storing_location("/auth/setup", &page);
+    }
+    match issue_grant(
+        &state,
+        &form.client_id,
+        &form.redirect_uri,
+        Some(scope),
+        user_id,
+        &form.extras,
+    )
+    .await
+    {
+        Ok(outcome) => outcome.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
+    }
+}
+
+/// Sign in on the authorization page, then back to it, as Mastodon's
+/// session sign-in returns to the page it was sent from. The password,
+/// then whatever [`crate::api::account::sign_in`] asks for.
+async fn sign_in_to_authorize(
+    state: AppState,
+    instance: crate::config::InstanceConfig,
+    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
+    headers: axum::http::HeaderMap,
+    form: AuthorizeForm,
 ) -> Response {
     use crate::api::account::sign_in::{self, Continuation, Step};
 
@@ -1246,33 +1529,38 @@ pub async fn authorize_submit(
                 redirect_uri,
                 scope,
                 extras,
-                ..
+                lang,
             },
         ) => {
-            // `require_functional!`, which the authorization page runs once
-            // the user is signed in: an address still unconfirmed sends them
-            // to `auth/setup`, signed in, the page kept to come back to
-            // (`store_current_location`).
-            if !user_confirmed(&state, user_id).await {
-                let back = format!(
-                    "/oauth/authorize?{}",
-                    extras.query(&client_id, &redirect_uri, &scope)
-                );
-                return crate::api::account::sign_in_and_redirect(
-                    &state,
-                    user_id,
-                    ip,
-                    user_agent.as_deref(),
-                    "/auth/setup",
-                    Some(&back),
-                )
-                .await;
-            }
-            let scope = (!scope.is_empty()).then_some(scope);
-            match issue_grant(&state, &client_id, &redirect_uri, scope, user_id, &extras).await {
-                Ok(outcome) => outcome.into_response(),
-                Err(_) => form_error(locale.t("invalid_credentials")),
-            }
+            // Signed in, back to the page (`after_sign_in_path_for`, the
+            // stored location), which asks to authorize or answers at once.
+            // An address still unconfirmed goes on to `auth/setup`, where
+            // the page's `require_functional!` would send it, with the page
+            // kept to come back to.
+            let scope = if scope.is_empty() {
+                "read".to_owned()
+            } else {
+                scope
+            };
+            let back = format!(
+                "/oauth/authorize?{}&lang={}",
+                extras.query(&client_id, &redirect_uri, &scope),
+                urlencoding::encode(&lang)
+            );
+            let (target, return_to) = if user_confirmed(&state, user_id).await {
+                (back.as_str(), None)
+            } else {
+                ("/auth/setup", Some(back.as_str()))
+            };
+            crate::api::account::sign_in_and_redirect(
+                &state,
+                user_id,
+                ip,
+                user_agent.as_deref(),
+                target,
+                return_to,
+            )
+            .await
         }
         Step::SignedIn(_, Continuation::Account) | Step::Restart(_) => {
             form_error(locale.t("session_timeout"))
@@ -1283,7 +1571,9 @@ pub async fn authorize_submit(
 }
 
 /// The password half of a sign-in: the user it belongs to, or `None`, with
-/// the failure recorded.
+/// the failure recorded. A suspended account, or one being deleted, is
+/// refused as the account pages refuse it, since the session it would start
+/// is not one the authorization page can use.
 async fn check_password(
     state: &AppState,
     email: &str,
@@ -1296,7 +1586,8 @@ async fn check_password(
            FROM users u
            JOIN accounts a ON a.id = u.account_id
            WHERE lower(u.email) = lower($1)
-             AND u.disabled = false"#,
+             AND u.disabled = false
+             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL"#,
         email.trim(),
     )
     .fetch_optional(&state.db)

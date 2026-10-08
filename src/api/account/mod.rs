@@ -402,6 +402,23 @@ pub(crate) fn sign_in_redirect(path: &str) -> Response {
     redirect_to_sign_in(path)
 }
 
+/// A `302` to `target`, with `return_to` kept as the page to come back to
+/// (`store_location_for`).
+pub(crate) fn redirect_storing_location(target: &str, return_to: &str) -> Response {
+    let cookie = format!(
+        "{RETURN_TO_COOKIE}={}; HttpOnly; SameSite=Lax; Path=/",
+        urlencoding::encode(return_to)
+    );
+    (
+        axum::http::StatusCode::FOUND,
+        [
+            (header::LOCATION, target.to_owned()),
+            (header::SET_COOKIE, cookie),
+        ],
+    )
+        .into_response()
+}
+
 fn stored_location(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     let value = cookie_header
@@ -530,12 +547,38 @@ pub async fn sso_post(
 
 // ── POST /account/logout ───────────────────────────────────────────────────────
 
+#[derive(Debug, Default, Deserialize)]
+struct LogoutForm {
+    /// `destroy_user_session_path(continue: true)` from the authorization
+    /// page: where to sign in again and come back to.
+    #[serde(rename = "continue")]
+    continue_to: Option<String>,
+}
+
 /// `Warden::Manager.before_logout`: the session deactivated.
-pub async fn logout_post(state: AppState, headers: HeaderMap) -> Response {
+pub async fn logout_post(state: AppState, headers: HeaderMap, body: axum::body::Bytes) -> Response {
     if let Some(session_id) = extract_session_token(&headers) {
         if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
             crate::sessions::kill_streams(&state, tokens).await;
         }
+    }
+
+    // `Auth::SessionsController#destroy` with `continue`: signed out, and on
+    // to sign in again for the page it came from — the authorization page,
+    // which asks a signed-out browser to sign in.
+    let form: LogoutForm = serde_urlencoded::from_bytes(&body).unwrap_or_default();
+    if let Some(path) = form
+        .continue_to
+        .filter(|p| p.starts_with("/oauth/authorize?") && !p.contains('\\'))
+    {
+        return (
+            axum::http::StatusCode::FOUND,
+            [
+                (header::LOCATION, path),
+                (header::SET_COOKIE, clear_cookie().to_owned()),
+            ],
+        )
+            .into_response();
     }
 
     if is_htmx(&headers) {
@@ -1151,5 +1194,9 @@ pub async fn sign_in_and_redirect(
             h.append(header::SET_COOKIE, value);
         }
     }
-    (h, Redirect::to(target)).into_response()
+    // `redirect_to`, a `302`.
+    if let Ok(location) = HeaderValue::from_str(target) {
+        h.insert(header::LOCATION, location);
+    }
+    (axum::http::StatusCode::FOUND, h).into_response()
 }

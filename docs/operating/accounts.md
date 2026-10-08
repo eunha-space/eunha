@@ -118,9 +118,21 @@ The authorization page takes Doorkeeper's parameters: `response_type=code`
 `/oauth/token` then requires. The client may authenticate to `/oauth/token`
 with HTTP Basic or in the request. A client whose redirect URI is
 `urn:ietf:wg:oauth:2.0:oob` is shown the code at `/oauth/authorize/native` to
-copy. `DELETE /oauth/authorize`, from a signed-in browser, turns the client
-away: it is sent `access_denied`, with its `state`, at a redirect URI it
-registered (an unregistered one is refused, where Doorkeeper would follow it).
+copy.
+
+A signed-out browser is asked to sign in on the authorization page itself,
+where Mastodon sends it to its sign-in page; signing in starts a session and
+comes back to the page with a 302. A signed-in user is shown Mastodon's
+choice: the client's name, the permissions it asks for grouped as Mastodon
+groups them, and **Authorize** and **Deny**, with who is signed in and a
+logout that comes back to the page. The page answers at once, without asking,
+for the instance's own app (`superapp`), and for a confidential client the
+user already holds an unrevoked token of with the same scopes, unless the
+request says `force_login=true`. The code, and a denial, come back with a
+302, as Rails redirects. **Deny** posts `_method=delete`, which is
+`DELETE /oauth/authorize`: from a signed-in browser it turns the client away,
+sending `access_denied`, with its `state`, to a redirect URI it registered (an
+unregistered one is refused, where Doorkeeper would follow it).
 
 `POST /oauth/revoke` is RFC 7009 revocation as Doorkeeper answers it. The
 request names its client, by HTTP Basic or in the request, with the client's
@@ -168,11 +180,13 @@ Multiple accounts in the web client
 The account menu in the desktop sidebar and mobile drawer lists accounts signed
 in on this instance in this browser. Choose **Add account** to sign in through
 OAuth without removing the current account, then choose an account in the menu
-to switch to it. Signing in again to the same account replaces its saved token.
-Only completed OAuth logins are saved in the switcher. Legacy `eunha:token`
-logins are no longer read or migrated; sign in again. Tokens live only in
-`eunha:accounts`, and `eunha:active-account` selects the account used for API
-requests.
+to switch to it. It asks with `force_login=true`, so the authorization page
+always asks; when the browser is still signed in to the account pages, use the
+page's logout to sign in as the other account. Signing in again to the same
+account replaces its saved token. Only completed OAuth logins are saved in the
+switcher. Legacy `eunha:token` logins are no longer read or migrated; sign in
+again. Tokens live only in `eunha:accounts`, and `eunha:active-account` selects
+the account used for API requests.
 
 Accounts and their OAuth tokens are kept in this browser's local storage, scoped
 to the instance's origin. Switching reloads the home page and clears the

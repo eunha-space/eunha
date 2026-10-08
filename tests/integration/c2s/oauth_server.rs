@@ -109,22 +109,23 @@ async fn register_app(ctx: &TestContext, redirect_uris: &str) -> (String, String
     )
 }
 
-/// Sign in on the authorization page with these fields besides the client's.
+/// Press the authorization page's authorize button as alice, signed in,
+/// with these fields besides the client's.
 async fn authorize(
     ctx: &TestContext,
     client_id: &str,
     redirect_uri: &str,
     fields: &[(&str, &str)],
 ) -> reqwest::Response {
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", PASSWORD).await;
     let mut form = vec![
         ("client_id", client_id),
         ("redirect_uri", redirect_uri),
         ("scope", "read"),
-        ("email", "alice@test.invalid"),
-        ("password", PASSWORD),
     ];
     form.extend_from_slice(fields);
-    ctx.api.post_form("/oauth/authorize", None, &form).await
+    crate::helpers::approve_authorization(&ctx.api, &cookie, &form).await
 }
 
 fn location(resp: &reqwest::Response) -> url::Url {
@@ -322,6 +323,202 @@ async fn denying_sends_access_denied_to_the_client() {
     );
     let resp = deny(Some(cookie), elsewhere).await.unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// `Oauth::AuthorizationsController#new` for a signed-in user: the
+/// authorize-or-deny page, until a confidential client holds a token with
+/// the same scopes, when the code comes at once (`can_authorize_response?`)
+/// unless `force_login` says to ask; the instance's own app never asks
+/// (`skip_authorization`). Both buttons answer with a `302`.
+#[tokio::test]
+async fn the_page_asks_until_a_matching_token_exists() {
+    let ctx = TestContext::new("oauth-consent").await;
+    let (client_id, client_secret) = register_app(&ctx, CALLBACK).await;
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", PASSWORD).await;
+    let page_path = |extra: &str| {
+        format!(
+            "/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={}&scope=read&state=s{extra}",
+            urlencoding::encode(CALLBACK)
+        )
+    };
+    let get = |path: String, cookie: Option<String>| {
+        let mut req = ctx
+            .api
+            .http
+            .get(ctx.api.url(&path))
+            .header("host", &ctx.api.host);
+        if let Some(cookie) = cookie {
+            req = req.header("cookie", cookie);
+        }
+        req.send()
+    };
+
+    // Signed out: the page asks to sign in first.
+    let signed_out = get(page_path(""), None).await.unwrap();
+    assert_eq!(signed_out.status(), StatusCode::OK);
+    assert!(signed_out
+        .text()
+        .await
+        .unwrap()
+        .contains(r#"name="password""#));
+
+    // Signed in: authorize or deny.
+    let page = get(page_path(""), Some(cookie.clone())).await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let page = page.text().await.unwrap();
+    assert!(page.contains("Authorization required"), "{page}");
+    assert!(page.contains("Review permissions"));
+    assert!(page.contains("Full access to your account"));
+    assert!(page.contains("Read-only access"));
+    assert!(page.contains(r#"name="_method" value="delete""#));
+    assert!(page.contains(">Deny<"));
+    assert!(page.contains(">Authorize<"));
+    assert!(page.contains("@alice@"));
+
+    // Deny, as the page's form sends it.
+    let denied = crate::helpers::approve_authorization(
+        &ctx.api,
+        &cookie,
+        &[
+            ("_method", "delete"),
+            ("client_id", &client_id),
+            ("redirect_uri", CALLBACK),
+            ("scope", "read"),
+            ("state", "s"),
+        ],
+    )
+    .await;
+    assert_eq!(denied.status(), StatusCode::FOUND);
+    assert_eq!(
+        param(&location(&denied), "error").as_deref(),
+        Some("access_denied")
+    );
+
+    // Authorize: a `302` with the code.
+    let granted = crate::helpers::approve_authorization(
+        &ctx.api,
+        &cookie,
+        &[
+            ("client_id", &client_id),
+            ("redirect_uri", CALLBACK),
+            ("scope", "read"),
+            ("state", "s"),
+        ],
+    )
+    .await;
+    assert_eq!(granted.status(), StatusCode::FOUND);
+    let code = param(&location(&granted), "code").expect("a code");
+    let token = ctx
+        .api
+        .post_form(
+            "/oauth/token",
+            None,
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", &code),
+                ("redirect_uri", CALLBACK),
+                ("client_id", &client_id),
+                ("client_secret", &client_secret),
+            ],
+        )
+        .await;
+    assert_eq!(token.status(), StatusCode::OK);
+
+    // A matching token: the code at once.
+    let at_once = get(page_path(""), Some(cookie.clone())).await.unwrap();
+    assert_eq!(at_once.status(), StatusCode::FOUND);
+    let to = location(&at_once);
+    assert_eq!(to.as_str().split('?').next(), Some(CALLBACK));
+    assert!(param(&to, "code").is_some());
+    assert_eq!(param(&to, "state").as_deref(), Some("s"));
+
+    // Unless `force_login`, or other scopes, or a public client.
+    let forced = get(page_path("&force_login=true"), Some(cookie.clone()))
+        .await
+        .unwrap();
+    assert_eq!(forced.status(), StatusCode::OK);
+    let not_forced = get(page_path("&force_login=false"), Some(cookie.clone()))
+        .await
+        .unwrap();
+    assert_eq!(not_forced.status(), StatusCode::FOUND);
+    let other_scopes = get(
+        page_path("").replace("scope=read", "scope=read+write"),
+        Some(cookie.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(other_scopes.status(), StatusCode::OK);
+    sqlx::query("UPDATE oauth_applications SET confidential = false WHERE uid = $1")
+        .bind(&client_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let public = get(page_path(""), Some(cookie.clone())).await.unwrap();
+    assert_eq!(public.status(), StatusCode::OK);
+
+    // The instance's own app never asks, `force_login` or not.
+    sqlx::query("UPDATE oauth_applications SET superapp = true WHERE uid = $1")
+        .bind(&client_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let superapp = get(page_path("&force_login=true"), Some(cookie))
+        .await
+        .unwrap();
+    assert_eq!(superapp.status(), StatusCode::FOUND);
+    assert!(param(&location(&superapp), "code").is_some());
+}
+
+/// Signing in on the authorization page starts a session and comes back to
+/// the page with a `302`; signing out from the page with `continue` comes
+/// back to it signed out.
+#[tokio::test]
+async fn signing_in_on_the_page_comes_back_to_it() {
+    let ctx = TestContext::new("oauth-sign-in-back").await;
+    let (client_id, _) = register_app(&ctx, CALLBACK).await;
+    let signed_in = ctx
+        .api
+        .post_form(
+            "/oauth/authorize",
+            None,
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", CALLBACK),
+                ("scope", "read"),
+                ("state", "xyz"),
+                ("force_login", "true"),
+                ("email", "alice@test.invalid"),
+                ("password", PASSWORD),
+            ],
+        )
+        .await;
+    assert_eq!(signed_in.status(), StatusCode::FOUND);
+    let back = location(&signed_in);
+    assert_eq!(back.path(), "/oauth/authorize");
+    assert_eq!(param(&back, "state").as_deref(), Some("xyz"));
+    assert_eq!(param(&back, "force_login").as_deref(), Some("true"));
+    assert!(crate::helpers::session_cookie_of(&signed_in).is_some());
+    let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM oauth_access_grants")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(grants, 0, "the page asks before granting");
+
+    let cookie = crate::helpers::session_cookie_of(&signed_in).unwrap();
+    let continue_to = format!("{}?{}", back.path(), back.query().unwrap());
+    let signed_out = ctx
+        .api
+        .http
+        .post(ctx.api.url("/account/logout"))
+        .header("host", &ctx.api.host)
+        .header("cookie", &cookie)
+        .form(&[("continue", continue_to.as_str())])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(signed_out.status(), StatusCode::FOUND);
+    assert_eq!(location(&signed_out).path(), "/oauth/authorize");
 }
 
 /// A client-credentials token of a newly registered app.

@@ -53,7 +53,8 @@ The recorded decisions cover:
  -  Mastodon's web UI endpoints under `/api/web`, which eunha does not serve;
  -  self-destruct mode in eunha's terms;
  -  where an OAuth denial is sent;
- -  the tooling for changing an instance's domain.
+ -  the tooling for changing an instance's domain;
+ -  where a signed-out browser signs in to authorize an OAuth client.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

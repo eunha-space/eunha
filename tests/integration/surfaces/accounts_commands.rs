@@ -77,6 +77,18 @@ async fn sign_in(ctx: &TestContext, email: &str, password: &str) -> Option<Strin
             ],
         )
         .await;
+    // Signed in, then the authorize button.
+    let cookie = crate::helpers::session_cookie_of(&authorized)?;
+    let authorized = crate::helpers::approve_authorization(
+        &ctx.api,
+        &cookie,
+        &[
+            ("client_id", client_id),
+            ("redirect_uri", redirect_uri),
+            ("scope", "read"),
+        ],
+    )
+    .await;
     let location = authorized.headers().get("location")?.to_str().ok()?;
     let code = url::Url::parse(location)
         .ok()?

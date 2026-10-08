@@ -1066,3 +1066,27 @@ the refollow is what a `FollowService` would send from the new actor."""
 evidence = "tests/integration/federation/forwarding.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "oauth-authorization-page-signs-in"
+kind = "behaviour"
+summary = "Asks a signed-out browser to sign in on the authorization page itself"
+mastodon = """
+`GET /oauth/authorize` without a session runs `authenticate_resource_owner!`, \
+which redirects to the sign-in page (`new_user_session_url`) with the page \
+stored to come back to (`store_current_location`); signing in returns there, \
+to authorize or deny."""
+eunha = """
+Answers with a sign-in form on the authorization page, with the client's \
+name, a language switch and the sign-up link, and keeps the request in the \
+form. Signing in there starts a session and redirects (`302`) back to the \
+page, which then asks to authorize or deny, or answers at once, as \
+Mastodon's does; the consent page's logout comes back to it signed out."""
+why = """
+The page carries the request through the second factor and the setup a \
+role requires (`pending-sign-in-in-redis`), which the account pages' sign-in \
+does not; once signed in, everything Doorkeeper decides is as Mastodon \
+decides it."""
+evidence = "tests/integration/c2s/oauth_server.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

@@ -1044,6 +1044,36 @@ pub async fn account_session_cookie(api: &ApiClient, email: &str, password: &str
     cookie
 }
 
+/// The `account_session` cookie a response sets, if it sets one.
+pub fn session_cookie_of(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|v| v.starts_with("account_session=") && !v.starts_with("account_session=;"))
+        .map(|v| v.split(';').next().unwrap().to_string())
+}
+
+/// `POST /oauth/authorize` as the authorization page's authorize button
+/// sends it, from a browser signed in with `cookie`.
+pub async fn approve_authorization(
+    api: &ApiClient,
+    cookie: &str,
+    fields: &[(&str, &str)],
+) -> reqwest::Response {
+    let mut form = vec![("response_type", "code")];
+    form.extend_from_slice(fields);
+    api.http
+        .post(api.url("/oauth/authorize"))
+        .header("host", &api.host)
+        .header("cookie", cookie)
+        .form(&form)
+        .send()
+        .await
+        .unwrap()
+}
+
 /// The uid and secret of the client `token` was issued to.
 pub async fn client_of(ctx: &TestContext, token: &str) -> (String, String) {
     let row = sqlx::query!(

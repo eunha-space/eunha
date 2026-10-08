@@ -172,6 +172,66 @@ button.danger,
   color: var(--primary-foreground);
 }
 
+/* The authorization page's authorize-or-deny choice, as Mastodon's
+   oauth/authorizations/new lays it out. */
+.account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted-foreground);
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-header .username {
+  color: var(--foreground);
+}
+
+.account-header button.logout-link {
+  width: auto;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.oauth-prompt h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.permissions-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+}
+
+.permissions-list__item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.permissions-list__item__title {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.permissions-list__item__type {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+.actions form + form button {
+  margin-top: 0.6rem;
+}
+
 /* Explanatory copy above a form, e.g. the account deletion warnings */
 .hint {
   font-size: 0.85rem;

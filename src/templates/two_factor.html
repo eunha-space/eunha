@@ -32,6 +32,7 @@
     {% if oauth.extras.code_challenge %}<input type="hidden" name="code_challenge" value="{{ oauth.extras.code_challenge }}">{% endif %}
     {% if oauth.extras.code_challenge_method %}<input type="hidden" name="code_challenge_method" value="{{ oauth.extras.code_challenge_method }}">{% endif %}
     {% if oauth.extras.response_mode %}<input type="hidden" name="response_mode" value="{{ oauth.extras.response_mode }}">{% endif %}
+    {% if oauth.extras.force_login %}<input type="hidden" name="force_login" value="{{ oauth.extras.force_login }}">{% endif %}
     {% endif %}
   {% endmacro %}
 

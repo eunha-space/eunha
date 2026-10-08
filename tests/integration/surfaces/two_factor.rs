@@ -312,8 +312,25 @@ async fn test_sign_in_asks_for_the_second_factor() {
         &[("attempt", &attempt), ("otp_attempt", &codes[0])],
     )
     .await;
-    assert_eq!(granted.status(), StatusCode::SEE_OTHER);
+    // Signed in, and back to the authorization page.
+    assert_eq!(granted.status(), StatusCode::FOUND);
     assert!(granted.headers()["location"]
+        .to_str()
+        .unwrap()
+        .starts_with("/oauth/authorize?"));
+    let cookie = crate::helpers::session_cookie_of(&granted).expect("signed in");
+    let approved = crate::helpers::approve_authorization(
+        &ctx.api,
+        &cookie,
+        &[
+            ("client_id", &client_id),
+            ("redirect_uri", "https://client.example/cb"),
+            ("scope", "read"),
+        ],
+    )
+    .await;
+    assert_eq!(approved.status(), StatusCode::FOUND);
+    assert!(approved.headers()["location"]
         .to_str()
         .unwrap()
         .starts_with("https://client.example/cb?code="));
@@ -535,11 +552,12 @@ async fn test_a_role_requiring_two_factor_forces_setup() {
     assert_eq!(body.matches("<li>").count(), 10);
 
     let resumed = authorize(&ctx, &client_id, &[("attempt", &attempt), ("resume", "1")]).await;
-    assert_eq!(resumed.status(), StatusCode::SEE_OTHER);
+    assert_eq!(resumed.status(), StatusCode::FOUND);
     assert!(resumed.headers()["location"]
         .to_str()
         .unwrap()
-        .contains("code="));
+        .starts_with("/oauth/authorize?"));
+    assert!(crate::helpers::session_cookie_of(&resumed).is_some());
 
     let ok = ctx
         .api
@@ -741,7 +759,7 @@ async fn test_security_keys_register_and_sign_in() {
         &[("attempt", &attempt), ("credential", &assertion)],
     )
     .await;
-    assert_eq!(granted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(granted.status(), StatusCode::FOUND);
     let count: i64 =
         sqlx::query_scalar("SELECT sign_count FROM webauthn_credentials WHERE user_id = $1")
             .bind(alice_user)

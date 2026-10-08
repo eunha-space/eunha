@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ t_title }} - {{ domain }}</title>
+<script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body class="centered">
+<div class="card">
+  <div class="account-header">
+    <span>{{ t_signed_in_as }} <strong class="username">@{{ username }}@{{ domain }}</strong></span>
+    <form method="POST" action="/account/logout" class="logout-form">
+      <input type="hidden" name="continue" value="{{ continue_to }}">
+      <button type="submit" class="logout-link" title="{{ t_logout }}" aria-label="{{ t_logout }}">{{ t_logout }}</button>
+    </form>
+  </div>
+  <div class="oauth-prompt">
+    <h1>{{ t_title }}</h1>
+    <p class="sub">{{ prompt }}</p>
+    <h2>{{ t_review_permissions }}</h2>
+    <ul class="permissions-list">
+      {% for permission in permissions %}
+      <li class="permissions-list__item">
+        <span class="permissions-list__item__title">{{ permission.title }}</span>
+        <span class="permissions-list__item__type">{{ permission.access }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% macro fields() %}
+      <input type="hidden" name="client_id" value="{{ client_id }}">
+      <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+      <input type="hidden" name="code_challenge" value="{{ extras.code_challenge or '' }}">
+      <input type="hidden" name="code_challenge_method" value="{{ extras.code_challenge_method or '' }}">
+      <input type="hidden" name="state" value="{{ extras.state or '' }}">
+      <input type="hidden" name="response_type" value="code">
+      <input type="hidden" name="scope" value="{{ scope }}">
+    {% endmacro %}
+    <div class="actions">
+      <form method="POST" action="/oauth/authorize">
+        {{ fields() }}
+        <button type="submit" class="btn">{{ t_authorize }}</button>
+      </form>
+      <form method="POST" action="/oauth/authorize">
+        <input type="hidden" name="_method" value="delete">
+        {{ fields() }}
+        <button type="submit" class="btn danger negative">{{ t_deny }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

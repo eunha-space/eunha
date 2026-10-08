@@ -25,7 +25,9 @@ use crate::{
 /// How long a pending sign-in lasts.
 const ATTEMPT_TTL_SECONDS: u64 = 3600;
 
-/// Where a sign-in goes once it is done.
+/// Where a sign-in goes once it is done. Short-lived and passed by value
+/// a step at a time, so the size of the OAuth variant does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Continuation {
