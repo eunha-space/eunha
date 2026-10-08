@@ -514,11 +514,11 @@ async fn test_delete_status_requires_auth() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// ── soft delete ───────────────────────────────────────────────────────────────
+// ── deletion ───────────────────────────────────────────────────────────────────
 
-/// Deleted status returns 404 on GET.
+/// A deleted status is destroyed, and GET finds nothing: 404, as `Status.find`.
 #[tokio::test]
-async fn test_deleted_status_returns_410() {
+async fn test_deleted_status_returns_404() {
     let ctx = TestContext::new("del-410").await;
 
     let status = ctx
@@ -534,10 +534,10 @@ async fn test_deleted_status_returns_410() {
     assert_eq!(del_resp.status(), StatusCode::OK);
 
     let get_resp = ctx.api.get(&format!("/api/v1/statuses/{id}"), None).await;
-    assert_eq!(get_resp.status(), StatusCode::GONE);
+    assert_eq!(get_resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// Non-existent status returns 404 (distinct from deleted which returns 410).
+/// Non-existent status returns 404.
 #[tokio::test]
 async fn test_nonexistent_status_returns_404() {
     let ctx = TestContext::new("nonexist-404").await;
@@ -5672,7 +5672,7 @@ async fn test_delete_original_cascades_to_reblogs() {
         "delete original should succeed"
     );
 
-    // Bob's reblog should now be gone (410 because it existed then was deleted).
+    // Bob's reblog is destroyed with it, so it is not found.
     let after = ctx
         .api
         .get(
@@ -5682,8 +5682,8 @@ async fn test_delete_original_cascades_to_reblogs() {
         .await;
     assert_eq!(
         after.status(),
-        StatusCode::GONE,
-        "reblog should be 410 after original is deleted (cascade)",
+        StatusCode::NOT_FOUND,
+        "reblog should be gone after original is deleted (cascade)",
     );
 }
 

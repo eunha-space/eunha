@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE featured_tags\n           SET statuses_count = statuses_count + 1, last_status_at = $3, updated_at = now()\n           WHERE account_id = $1 AND tag_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9ba368edb538a8ca2e96d99785a4d3fb90d52dbab5af28d8254bb100b00b97f"
+}

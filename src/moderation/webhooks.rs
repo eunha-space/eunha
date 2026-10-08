@@ -31,6 +31,41 @@ pub async fn trigger(state: &AppState, event: &'static str, object: Object) {
     .await;
 }
 
+/// `Status`'s `after_update_commit :trigger_update_webhooks`: `status.updated`
+/// for a local status (`local?`, which a status without a `uri` is too). Call
+/// it wherever Mastodon saves a change to a status through its model, not
+/// where it writes the column directly (`update_column`, `update_all`).
+pub async fn status_updated(state: &AppState, status_id: i64) {
+    let local = sqlx::query_scalar!(
+        r#"SELECT (local IS TRUE OR uri IS NULL) AS "local!" FROM statuses WHERE id = $1"#,
+        status_id
+    )
+    .fetch_optional(&state.db)
+    .await;
+    match local {
+        Ok(Some(true)) => trigger(state, "status.updated", Object::Status(status_id)).await,
+        Ok(_) => {}
+        Err(error) => tracing::warn!(status_id, %error, "could not read a status for webhooks"),
+    }
+}
+
+/// `Account`'s `after_update_commit :trigger_update_webhooks`:
+/// `account.updated` for a local account. As with [`status_updated`], only
+/// where Mastodon saves the account through its model.
+pub async fn account_updated(state: &AppState, account_id: i64) {
+    let local = sqlx::query_scalar!(
+        r#"SELECT (domain IS NULL) AS "local!" FROM accounts WHERE id = $1"#,
+        account_id
+    )
+    .fetch_optional(&state.db)
+    .await;
+    match local {
+        Ok(Some(true)) => trigger(state, "account.updated", Object::Account(account_id)).await,
+        Ok(_) => {}
+        Err(error) => tracing::warn!(account_id, %error, "could not read an account for webhooks"),
+    }
+}
+
 /// `TriggerWebhookWorker`.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct TriggerWebhookWorker {
@@ -140,10 +175,12 @@ async fn serialize(state: &AppState, object: Object) -> anyhow::Result<Option<Va
             .map_err(|e| anyhow::anyhow!("{e:?}"))?
             .map(serde_json::to_value)
             .transpose()?,
+        // `Status.find(id)`, under the default scope: a discarded status is
+        // not found, and its event goes nowhere.
         Object::Status(id) => {
             let Some(status) = sqlx::query_as!(
                 crate::db::models::Status,
-                "SELECT * FROM statuses WHERE id = $1",
+                "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
                 id
             )
             .fetch_optional(&state.db)

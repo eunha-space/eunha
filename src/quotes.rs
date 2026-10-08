@@ -622,11 +622,11 @@ async fn try_distribute_update(
     Ok(())
 }
 
-/// What `RemoveStatusService` does with the quote a removed status made: an
-/// accepted quote of a local post is revoked while there is a chance
-/// (`RevokeQuoteService`), and the status's destruction takes any other
-/// accepted quote off the quoted post's count (`Quote#destroy`). Eunha keeps
-/// the deleted status, and the quote row with it.
+/// What `RemoveStatusService` does with the quote a removed status made
+/// before the status goes: an accepted quote of a local post is revoked while
+/// there is a chance (`RevokeQuoteService`). Any other accepted quote stays
+/// counted until the status is destroyed, whose `has_one :quote, dependent:
+/// :destroy` takes it off the quoted post's count ([`destroy`]).
 pub async fn status_removed(state: &AppState, status_id: i64) {
     let quote = match find_by_status(&state.db, status_id).await {
         Ok(Some(quote)) => quote,
@@ -655,7 +655,5 @@ pub async fn status_removed(state: &AppState, status_id: i64) {
         if let Err(error) = revoke(state, &quote, true).await {
             tracing::warn!(status_id, %error, "could not revoke a removed status's quote");
         }
-    } else {
-        count(&state.db, quote.quoted_status_id, false).await;
     }
 }

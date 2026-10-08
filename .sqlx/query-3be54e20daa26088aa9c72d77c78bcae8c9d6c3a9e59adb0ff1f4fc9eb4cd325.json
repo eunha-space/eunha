@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM statuses\n           WHERE reblog_of_id = $1 AND (deleted_at IS NULL OR deleted_at = $2)\n           ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3be54e20daa26088aa9c72d77c78bcae8c9d6c3a9e59adb0ff1f4fc9eb4cd325"
+}

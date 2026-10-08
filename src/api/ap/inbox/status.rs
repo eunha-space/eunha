@@ -101,67 +101,55 @@ pub(super) async fn handle_delete(
                 return Ok(());
             }
 
-            // Delete(Note/Tombstone) — soft-delete the status. Serialize against
-            // a concurrent Create for this uri (same `create:{uri}` lock) so we
+            // Delete(Note/Tombstone): `delete_status`. Serialize against a
+            // concurrent Create for this uri (same `create:{uri}` lock) so we
             // observe its committed status and it observes our tombstone.
             let _create_lock = acquire_create_lock(state, uri).await;
-            // Read what is about to be deleted, so the parent's reply count can
-            // be put back. Only a reply that was counted is subtracted, matching
-            // what `Create` counted on the way in.
-            let deleted_reply = sqlx::query!(
-                r#"SELECT id, reblog_of_id, account_id, in_reply_to_id, visibility FROM statuses
-                   WHERE uri = $1 AND deleted_at IS NULL"#,
-                uri,
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            // `forwarder.forward! if forwarder.forwardable?`, before the
-            // status goes, to the followers of the local accounts that shared
-            // it.
-            if let Some(row) = &deleted_reply {
-                let sender: Option<i64> = sqlx::query_scalar!(
-                    "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL",
-                    actor_uri,
-                )
-                .fetch_optional(&state.db)
-                .await?;
-                if sender == Some(row.account_id)
-                    && crate::federation::forwarder::forwardable(state, activity, row.id).await
-                {
-                    crate::federation::forwarder::forward(state, row.account_id, activity, row.id)
+            let actor_id =
+                sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri,)
+                    .fetch_optional(&state.db)
+                    .await?;
+            // `Status.find_by(uri:, account: @account)`, or by its `atomUri`.
+            let atom_uri = activity
+                .get("object")
+                .filter(|o| o.is_object())
+                .and_then(|o| o.get("atomUri"))
+                .and_then(|u| u.as_str())
+                .filter(|u| !u.is_empty());
+            let mut target = None;
+            if let Some(actor_id) = actor_id {
+                for candidate in std::iter::once(uri).chain(atom_uri) {
+                    target = sqlx::query_scalar!(
+                        "SELECT id FROM statuses
+                         WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+                        candidate,
+                        actor_id,
+                    )
+                    .fetch_optional(&state.db)
+                    .await?;
+                    if target.is_some() {
+                        break;
+                    }
+                }
+            }
+            if let (Some(status_id), Some(actor_id)) = (target, actor_id) {
+                // `forwarder.forward! if forwarder.forwardable?`, before the
+                // status goes, to the followers of the local accounts that
+                // shared it.
+                if crate::federation::forwarder::forwardable(state, activity, status_id).await {
+                    crate::federation::forwarder::forward(state, actor_id, activity, status_id)
                         .await;
                 }
-            }
-            let deleted =
-                sqlx::query!("UPDATE statuses SET deleted_at = now() WHERE uri = $1", uri,)
-                    .execute(&state.db)
-                    .await?;
-            if let Some(row) = &deleted_reply {
-                // `RemoveStatusService`.
-                crate::streaming::fan_out::remove(state, row.id).await;
-                crate::fasp::events::status_deleted(state, row.id).await;
-                // `RemoveStatusService`: the quote the status made.
-                crate::quotes::status_removed(state, row.id).await;
-                if let Err(e) = crate::counters::on_status_deleted(
-                    &state.db,
-                    row.account_id,
-                    row.visibility,
-                    row.in_reply_to_id,
-                )
-                .await
-                {
-                    tracing::error!(error = %e, "failed to uncount a deleted federated status");
-                }
-                crate::search::elasticsearch::indexing::status(
+                crate::remove_status::call(
                     state,
-                    row.reblog_of_id.unwrap_or(row.id),
+                    status_id,
+                    crate::remove_status::Options::default(),
                 )
-                .await;
-                crate::search::elasticsearch::indexing::account(state, row.account_id).await;
-            }
-            // If the status isn't known yet (out-of-order delivery), remember the
-            // Delete so a late Create with this URI is skipped.
-            if deleted.rows_affected() == 0 {
+                .await?;
+            } else {
+                // If the status isn't known yet (out-of-order delivery),
+                // remember the Delete so a late Create with this URI is
+                // skipped.
                 delete_later(state, actor_uri, uri).await;
                 // `delete_status || revoke_quote`
                 if may_be_stamp {
@@ -170,10 +158,6 @@ pub(super) async fn handle_delete(
             }
 
             // Create a tombstone so that a subsequent Create with the same URI is rejected.
-            let actor_id =
-                sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri,)
-                    .fetch_optional(&state.db)
-                    .await?;
             if let Some(actor_id) = actor_id {
                 let tombstone_id = crate::snowflake::next_id();
                 let _ = sqlx::query!(
@@ -193,36 +177,10 @@ pub(super) async fn handle_delete(
     Ok(())
 }
 
-/// `RemoveStatusService` for a remote status whose server says it is gone:
-/// it is deleted as a `Delete` from its author deletes it.
+/// `RemoveStatusService` with `redraft: false` for a remote status whose
+/// server says it is gone (`FetchRemoteStatusService#fetch_status`).
 pub(super) async fn remove_remote_status(state: &AppState, status_id: i64) -> AppResult<()> {
-    let Some(row) = sqlx::query!(
-        r#"UPDATE statuses SET deleted_at = now()
-           WHERE id = $1 AND deleted_at IS NULL
-           RETURNING reblog_of_id, account_id, in_reply_to_id, visibility"#,
-        status_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    else {
-        return Ok(());
-    };
-    crate::streaming::fan_out::remove(state, status_id).await;
-    crate::fasp::events::status_deleted(state, status_id).await;
-    crate::quotes::status_removed(state, status_id).await;
-    if let Err(e) = crate::counters::on_status_deleted(
-        &state.db,
-        row.account_id,
-        row.visibility,
-        row.in_reply_to_id,
-    )
-    .await
-    {
-        tracing::error!(error = %e, "failed to uncount a removed status");
-    }
-    crate::search::elasticsearch::indexing::status(state, row.reblog_of_id.unwrap_or(status_id))
-        .await;
-    crate::search::elasticsearch::indexing::account(state, row.account_id).await;
+    crate::remove_status::call(state, status_id, crate::remove_status::Options::default()).await?;
     Ok(())
 }
 
@@ -884,9 +842,13 @@ pub(super) async fn handle_update(
             }
 
             // Replace hashtags
-            sqlx::query!("DELETE FROM statuses_tags WHERE status_id = $1", row.id)
-                .execute(&state.db)
-                .await?;
+            let previous_tags: Vec<i64> = sqlx::query_scalar!(
+                "DELETE FROM statuses_tags WHERE status_id = $1 RETURNING tag_id",
+                row.id
+            )
+            .fetch_all(&state.db)
+            .await?;
+            let mut current_tags: Vec<i64> = vec![];
             let tags_arr: Vec<Value> = match object.get("tag") {
                 Some(Value::Array(arr)) => arr.clone(),
                 Some(obj @ Value::Object(_)) => vec![obj.clone()],
@@ -912,6 +874,31 @@ pub(super) async fn handle_update(
                     let _ = sqlx::query!("INSERT INTO statuses_tags (status_id, tag_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", row.id, tid)
                         .execute(&state.db).await;
                     crate::search::elasticsearch::indexing::tags(state, &[tid]).await;
+                    if !current_tags.contains(&tid) {
+                        current_tags.push(tid);
+                    }
+                }
+            }
+            // `update_tags!`: the featured tags the edit added or took away.
+            if let Some(counted) = sqlx::query!(
+                "SELECT visibility, created_at FROM statuses WHERE id = $1",
+                row.id
+            )
+            .fetch_optional(&state.db)
+            .await?
+            {
+                if let Err(error) = crate::featured_tags::update_for_status(
+                    &state.db,
+                    row.account_id,
+                    row.id,
+                    counted.visibility,
+                    counted.created_at,
+                    &previous_tags,
+                    &current_tags,
+                )
+                .await
+                {
+                    tracing::warn!(%error, "could not move an edited status's featured tags");
                 }
             }
             // An edit: `update_index('statuses', :proper)`.

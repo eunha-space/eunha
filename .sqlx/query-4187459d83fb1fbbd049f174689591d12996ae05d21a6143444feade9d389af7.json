@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS (SELECT 1 FROM reports\n                           WHERE target_account_id = $1 AND action_taken_at IS NULL\n                             AND $2 = ANY(status_ids))\n                   OR EXISTS (SELECT 1 FROM account_warnings\n                              WHERE target_account_id = $1 AND $2::text = ANY(status_ids)))\n           AS \"reported!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reported!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4187459d83fb1fbbd049f174689591d12996ae05d21a6143444feade9d389af7"
+}

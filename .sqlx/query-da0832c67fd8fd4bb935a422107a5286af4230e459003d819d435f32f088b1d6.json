@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM statuses\n               WHERE deleted_at IS NOT NULL\n                 AND deleted_at <= now() - make_interval(days => $1)\n                 AND id > $2\n               ORDER BY id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "da0832c67fd8fd4bb935a422107a5286af4230e459003d819d435f32f088b1d6"
+}

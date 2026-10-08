@@ -142,6 +142,8 @@ pub async fn suspend(
         .await?;
     }
     tx.commit().await?;
+    // `update!`: the `account.updated` webhook of a local account.
+    crate::moderation::webhooks::account_updated(state, account_id).await;
 
     // Terminate the account's streaming connections (Mastodon publishes a
     // `kill` event on `timeline:system:{id}` for a local account).
@@ -166,6 +168,7 @@ pub async fn mark_deleted(state: &AppState, account_id: i64) -> Result<()> {
     .await?
     .unwrap_or(false);
     tx.commit().await?;
+    crate::moderation::webhooks::account_updated(state, account_id).await;
     if local {
         state.streaming.kill_account(account_id).await;
     }
@@ -254,6 +257,7 @@ pub async fn unsuspend(state: &AppState, account_id: i64) -> Result<()> {
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    crate::moderation::webhooks::account_updated(state, account_id).await;
     Ok(())
 }
 
@@ -708,7 +712,9 @@ async fn purge_profile(state: &AppState, account: &Account, options: &Options) -
     )
     .execute(&state.db)
     .await?;
-    // Turning `discoverable` off is news to providers.
+    // `@account.save!`: the webhook of a local account, and turning
+    // `discoverable` off is news to providers.
+    crate::moderation::webhooks::account_updated(state, account.id).await;
     crate::fasp::events::account_updated(state, account.id, was_discoverable).await;
 
     // statuses_count / followers_count / following_count live in account_stats.
@@ -826,20 +832,8 @@ async fn purge_statuses(
         .await;
     }
 
-    // Recompute the featured-tag counters that pointed at the removed statuses.
-    sqlx::query!(
-        r#"UPDATE featured_tags ft SET
-             statuses_count = (
-               SELECT COUNT(*) FROM statuses_tags st JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL),
-             last_status_at = (
-               SELECT MAX(s.created_at) FROM statuses_tags st JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL)
-           WHERE ft.account_id = $1"#,
-        account.id,
-    )
-    .execute(&state.db)
-    .await?;
+    // `BatchedRemoveStatusService` leaves the featured tags' counts alone:
+    // `purge_associations` deletes the featured tags themselves.
     Ok(())
 }
 

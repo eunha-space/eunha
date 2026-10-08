@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM (\n             SELECT 1 FROM notifications\n             WHERE account_id = $1 AND from_account_id = $2 AND filtered\n               AND \"type\" IN ('mention', 'quote')\n             LIMIT 100) n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7aeb7eb07e242aaeeedc4d7a0231a717a83cb95eabdc6630d00b013f17ed2a3f"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM statuses_tags WHERE status_id = $1",
+  "query": "DELETE FROM bookmarks WHERE status_id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "2ce33c29eeeef2b47a49abfdd426629f39381ed28862a9339b360c3bf58c30fb"
+  "hash": "a0048fe443b631dbac84b453338f7a70134a1cf8b9126d2f38253cc7cc113d26"
 }

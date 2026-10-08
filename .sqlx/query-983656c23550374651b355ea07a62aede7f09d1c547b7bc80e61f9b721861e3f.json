@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE featured_tags\n                   SET statuses_count = statuses_count - 1, updated_at = now()\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "983656c23550374651b355ea07a62aede7f09d1c547b7bc80e61f9b721861e3f"
+}

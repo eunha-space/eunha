@@ -519,54 +519,47 @@ pub(super) async fn handle_undo(
             }
         }
         Some("Announce") => {
-            // Delete the remote boost status by its announce URI
-            let announce_uri = object
+            // `undo_announce`: the actor's status with the Announce's id, or
+            // its `atomUri`, removed by `RemoveStatusService`; one not seen
+            // yet is remembered, so that the Announce is skipped.
+            let announce = object.filter(|o| o.is_object());
+            let announce_uri = announce
                 .and_then(|o| o.get("id"))
                 .and_then(|i| i.as_str())
                 .unwrap_or("");
             if !announce_uri.is_empty() {
-                // Announced to providers while the boost is still there.
-                if crate::fasp::enabled(state) {
-                    if let Some(boost_id) =
-                        sqlx::query_scalar!("SELECT id FROM statuses WHERE uri = $1", announce_uri)
-                            .fetch_optional(&state.db)
-                            .await?
-                    {
-                        crate::fasp::events::status_deleted(state, boost_id).await;
+                let atom_uri = announce
+                    .and_then(|o| o.get("atomUri"))
+                    .and_then(|u| u.as_str())
+                    .filter(|u| !u.is_empty());
+                let actor_id =
+                    sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", actor_uri)
+                        .fetch_optional(&state.db)
+                        .await?;
+                let mut boost_id = None;
+                if let Some(actor_id) = actor_id {
+                    for candidate in std::iter::once(announce_uri).chain(atom_uri) {
+                        boost_id = sqlx::query_scalar!(
+                            "SELECT id FROM statuses
+                             WHERE uri = $1 AND account_id = $2 AND deleted_at IS NULL",
+                            candidate,
+                            actor_id,
+                        )
+                        .fetch_optional(&state.db)
+                        .await?;
+                        if boost_id.is_some() {
+                            break;
+                        }
                     }
                 }
-                let deleted = sqlx::query!(
-                    "DELETE FROM statuses WHERE uri = $1 RETURNING id, reblog_of_id, account_id, visibility",
-                    announce_uri,
-                )
-                .fetch_optional(&state.db)
-                .await?;
-                match deleted {
-                    Some(row) => {
-                        if let Some(original_id) = row.reblog_of_id {
-                            crate::feed::unpush_boost(state, row.account_id, row.id, original_id)
-                                .await;
-                            sqlx::query!(
-                                r#"UPDATE status_stats SET reblogs_count = (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL), untrusted_reblogs_count = CASE WHEN untrusted_reblogs_count IS NULL THEN NULL ELSE LEAST(GREATEST(untrusted_reblogs_count + (SELECT COUNT(*) FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL) - reblogs_count, 0), 100000000) END, updated_at = now() WHERE status_id = $1"#,
-                                original_id,
-                            ).execute(&state.db).await?;
-                        }
-                        if let Err(e) = crate::counters::on_status_deleted(
-                            &state.db,
-                            row.account_id,
-                            row.visibility,
-                            None,
+                match boost_id {
+                    Some(boost_id) => {
+                        crate::remove_status::call(
+                            state,
+                            boost_id,
+                            crate::remove_status::Options::default(),
                         )
-                        .await
-                        {
-                            tracing::error!(error = %e, "failed to uncount an undone boost");
-                        }
-                        if let Some(original_id) = row.reblog_of_id {
-                            crate::search::elasticsearch::indexing::status(state, original_id)
-                                .await;
-                        }
-                        crate::search::elasticsearch::indexing::account(state, row.account_id)
-                            .await;
+                        .await?;
                     }
                     None => delete_later(state, actor_uri, announce_uri).await,
                 }

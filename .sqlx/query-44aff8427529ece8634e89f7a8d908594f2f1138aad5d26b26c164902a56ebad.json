@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications WHERE id IN (\n                 SELECT DISTINCT ON (activity_id) id FROM notifications\n                 WHERE activity_type = $1 AND activity_id = ANY($2)\n                 ORDER BY activity_id, id)\n               RETURNING account_id, from_account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "44aff8427529ece8634e89f7a8d908594f2f1138aad5d26b26c164902a56ebad"
+}

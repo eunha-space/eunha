@@ -151,17 +151,27 @@ pub async fn on_status_created(
     Ok(())
 }
 
-/// A status stopped existing, however it went.
+/// A status was destroyed: `Status#decrement_counter_caches`, its
+/// `after_destroy_commit`.
 ///
 /// The mirror of [`on_status_created`] under the same conditions, so that what
 /// was never counted is never subtracted — a direct message that lowered the
-/// post count on deletion would walk it down one DM at a time.
+/// post count on deletion would walk it down one DM at a time. A discarded
+/// status is still counted: Mastodon uncounts a status only when its row goes,
+/// which for one kept for moderators is when the daily cleanup purges it
+/// ([`crate::remove_status`]).
+///
+/// The boosted and replied-to statuses are `belongs_to` associations under
+/// `Status`'s default scope, so one already discarded is not found, and its
+/// count is left alone. A boost of a remote status takes one off the count
+/// its server reported too (`untrusted_reblogs_count`), when there is one.
 ///
 /// Call only when a row was actually removed.
-pub async fn on_status_deleted(
+pub async fn on_status_destroyed(
     db: &PgPool,
     account_id: i64,
     visibility: i32,
+    reblog_of_id: Option<i64>,
     in_reply_to_id: Option<i64>,
 ) -> sqlx::Result<()> {
     if !vis::counted(visibility) {
@@ -177,11 +187,29 @@ pub async fn on_status_deleted(
     .execute(db)
     .await?;
 
+    if let Some(original_id) = reblog_of_id {
+        sqlx::query!(
+            r#"UPDATE status_stats ss
+               SET reblogs_count = GREATEST(ss.reblogs_count - 1, 0),
+                   untrusted_reblogs_count = CASE
+                     WHEN ss.untrusted_reblogs_count IS NULL OR s.local OR s.uri IS NULL
+                       THEN ss.untrusted_reblogs_count
+                     ELSE GREATEST(ss.untrusted_reblogs_count - 1, 0) END,
+                   updated_at = now()
+               FROM statuses s
+               WHERE ss.status_id = $1 AND s.id = ss.status_id AND s.deleted_at IS NULL"#,
+            original_id,
+        )
+        .execute(db)
+        .await?;
+    }
+
     if let Some(parent_id) = in_reply_to_id.filter(|_| vis::distributable(visibility)) {
         sqlx::query!(
             "UPDATE status_stats
              SET replies_count = GREATEST(replies_count - 1, 0), updated_at = now()
-             WHERE status_id = $1",
+             WHERE status_id = $1
+               AND EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND deleted_at IS NULL)",
             parent_id,
         )
         .execute(db)

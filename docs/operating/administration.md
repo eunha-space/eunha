@@ -185,6 +185,28 @@ everything.
 Eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon.
 
+### Deleted posts
+
+A post is removed as Mastodon's `RemoveStatusService` removes it, whether its
+author deletes it, a moderator does, its server sends a `Delete` (or an `Undo`
+of a boost), or its server answers 404 for a public post. It is discarded at
+once, with the boosts of it, taken off every feed, stream and featured tag
+count, and, when local, deleted on the servers that have it. Then the row is
+destroyed with its favourites, bookmarks, mentions, poll, quote, edits and the
+notifications about them; only then does it stop counting in its author's
+posts and its parent's replies.
+
+A post cited by an unresolved report or by a strike is kept, discarded, for
+moderators, and so is a local post a moderator deleted from a report. The
+daily user cleanup (Mastodon's `Scheduler::UserCleanupScheduler`) queues a
+`RemovalWorker` that destroys every post discarded more than thirty days
+earlier.
+
+Deleting a post through the API keeps its media for delete-and-redraft: the
+attachments are left unattached, for the new post to take, and the daily
+vacuum deletes them if nothing does. `delete_media=true` deletes them, and
+their files, with the post. A kept post keeps its media.
+
 
 Server rules
 ------------

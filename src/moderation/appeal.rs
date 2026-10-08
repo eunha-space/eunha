@@ -278,11 +278,9 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
         _ => {}
     }
 
-    // `Account#trigger_update_webhooks` for what changed on the account.
-    if matches!(
-        strike.action,
-        action::SENSITIVE | action::SILENCE | action::SUSPEND
-    ) {
+    // `Account#trigger_update_webhooks` for what changed on the account; an
+    // unsuspension's came from `delete_account::unsuspend`.
+    if matches!(strike.action, action::SENSITIVE | action::SILENCE) {
         let local = sqlx::query_scalar!(
             r#"SELECT (domain IS NULL) AS "local!" FROM accounts WHERE id = $1"#,
             target_id
@@ -325,6 +323,8 @@ async fn unmark_statuses_as_sensitive(state: &AppState, strike: &Strike) -> AppR
     .fetch_all(&state.db)
     .await?;
     for status in statuses {
+        // `UpdateStatusService` saved it: `status.updated` for a local post.
+        super::webhooks::status_updated(state, status.id).await;
         let Some(account) = sqlx::query_as!(
             crate::db::models::Account,
             "SELECT * FROM accounts WHERE id = $1",

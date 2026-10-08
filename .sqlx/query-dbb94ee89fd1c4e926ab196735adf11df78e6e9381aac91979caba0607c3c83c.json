@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET deleted_at = $2\n               WHERE reblog_of_id = $1\n                 AND (deleted_at IS NULL OR deleted_at = $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamp",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dbb94ee89fd1c4e926ab196735adf11df78e6e9381aac91979caba0607c3c83c"
+}

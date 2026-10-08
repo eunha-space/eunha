@@ -390,6 +390,9 @@ pub async fn create_from_command(
     )
     .await;
     if reattach.is_some() {
+        // The reattached account is saved with the user: its
+        // `after_update_commit`.
+        crate::moderation::webhooks::account_updated(state, account_id).await;
         crate::fasp::events::account_updated(state, account_id, false).await;
     } else {
         crate::fasp::events::account_created(state, account_id).await;

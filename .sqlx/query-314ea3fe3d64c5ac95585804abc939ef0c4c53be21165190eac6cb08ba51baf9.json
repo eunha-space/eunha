@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL RETURNING id, visibility",
+  "query": "SELECT id, state, quoted_status_id FROM quotes WHERE status_id = $1",
   "describe": {
     "columns": [
       {
@@ -10,20 +10,25 @@
       },
       {
         "ordinal": 1,
-        "name": "visibility",
+        "name": "state",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "quoted_status_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
         "Int8"
       ]
     },
     "nullable": [
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "2d7f450190ecd4fb906be47305a10e2e28cd688a1906c1305ec802e6dff840ad"
+  "hash": "314ea3fe3d64c5ac95585804abc939ef0c4c53be21165190eac6cb08ba51baf9"
 }

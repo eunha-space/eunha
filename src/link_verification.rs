@@ -241,6 +241,8 @@ async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Resu
         )
         .execute(&state.db)
         .await?;
+        // `account.save! if account.changed?`.
+        crate::moderation::webhooks::account_updated(state, account_id).await;
     }
 
     Ok(())

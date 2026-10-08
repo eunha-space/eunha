@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO featured_tags\n             (account_id, tag_id, name, statuses_count, last_status_at, created_at, updated_at)\n           VALUES ($1, $2, $3,\n             -- `before_create :reset_data`: `visible_tagged_account_statuses`.\n             (SELECT count(*) FROM statuses s\n              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2\n              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)),\n             (SELECT s.created_at FROM statuses s\n              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2\n              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)\n              ORDER BY s.id DESC LIMIT 1),\n             now(), now())\n           ON CONFLICT (account_id, tag_id) DO UPDATE SET name = EXCLUDED.name",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "28d86047d12a57f136e6f937e7e703f8d7c433bb20d06c2834d2510a0df7a307"
+}

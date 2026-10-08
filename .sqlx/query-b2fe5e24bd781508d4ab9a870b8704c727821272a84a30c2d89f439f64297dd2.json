@@ -1,21 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT inbox_url, shared_inbox_url, domain FROM accounts WHERE id = (SELECT account_id FROM statuses WHERE id = $1)",
+  "query": "SELECT id, file_file_name, thumbnail_file_name FROM media_attachments WHERE status_id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "inbox_url",
-        "type_info": "Varchar"
+        "name": "id",
+        "type_info": "Int8"
       },
       {
         "ordinal": 1,
-        "name": "shared_inbox_url",
+        "name": "file_file_name",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
-        "name": "domain",
+        "name": "thumbnail_file_name",
         "type_info": "Varchar"
       }
     ],
@@ -26,9 +26,9 @@
     },
     "nullable": [
       false,
-      false,
+      true,
       true
     ]
   },
-  "hash": "5c076167f4c3f49149c0d33be003d484feb78ef621934499b2cafb5e47ac475d"
+  "hash": "b2fe5e24bd781508d4ab9a870b8704c727821272a84a30c2d89f439f64297dd2"
 }

@@ -515,6 +515,28 @@ pub(super) async fn create(
 
     // `ActivityPub::Activity::Create#process_status`: `Trends.tags.register`.
     crate::trends::register_tags(state, inserted_id).await;
+    // `# Update featured tags`: a public or unlisted post's tags counted in.
+    if let Ok(Some(row)) = sqlx::query!(
+        "SELECT visibility, created_at FROM statuses WHERE id = $1",
+        inserted_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    {
+        if let Err(error) = crate::featured_tags::update_for_status(
+            &state.db,
+            account_id,
+            inserted_id,
+            row.visibility,
+            row.created_at,
+            &[],
+            &tag_ids,
+        )
+        .await
+        {
+            tracing::warn!(%error, "could not count a status into its featured tags");
+        }
+    }
 
     // Mentions — resolve accounts and notify local ones
     let actor_info = sqlx::query!(

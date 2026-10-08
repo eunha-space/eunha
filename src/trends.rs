@@ -710,6 +710,14 @@ async fn request_status_reviews(state: &AppState) -> anyhow::Result<Vec<ReviewIt
         )
         .execute(&state.db)
         .await?;
+        // `status.account.touch(:requested_review_at)`, whose
+        // `after_update_commit` a local account's webhook is.
+        let mut touched = accounts.clone();
+        touched.sort_unstable();
+        touched.dedup();
+        for account_id in touched {
+            crate::moderation::webhooks::account_updated(state, account_id).await;
+        }
         for status in statuses {
             // `ActivityPub::TagManager#url_for`.
             let url = if status.local.unwrap_or(false) {

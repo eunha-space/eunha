@@ -320,6 +320,7 @@ async fn move_service(
     .execute(&state.db)
     .await?;
     crate::search::elasticsearch::indexing::account(state, source.id).await;
+    crate::moderation::webhooks::account_updated(state, source.id).await;
     queue_move_worker(state, source.id, target.id).await;
     distribute_update(state, source.id).await;
     distribute_move(state, migration_id, source.id, target).await;
@@ -435,6 +436,7 @@ pub async fn create_redirect(state: &AppState, account_id: i64, form: &MoveForm)
     .execute(&state.db)
     .await?;
     crate::search::elasticsearch::indexing::account(state, account_id).await;
+    crate::moderation::webhooks::account_updated(state, account_id).await;
     distribute_update(state, account_id).await;
     Ok(())
 }
@@ -451,6 +453,7 @@ pub async fn cancel_redirect(state: &AppState, account_id: i64) -> AppResult<()>
     .await?;
     if cleared.rows_affected() > 0 {
         crate::search::elasticsearch::indexing::account(state, account_id).await;
+        crate::moderation::webhooks::account_updated(state, account_id).await;
         distribute_update(state, account_id).await;
     }
     Ok(())
@@ -547,6 +550,7 @@ pub async fn create_alias(state: &AppState, account_id: i64, acct: &str) -> AppR
     )
     .execute(&state.db)
     .await?;
+    crate::moderation::webhooks::account_updated(state, account_id).await;
     distribute_update(state, account_id).await;
 
     Ok(Alias {
@@ -579,6 +583,7 @@ pub async fn destroy_alias(state: &AppState, account_id: i64, alias_id: i64) -> 
     )
     .execute(&state.db)
     .await?;
+    crate::moderation::webhooks::account_updated(state, account_id).await;
     Ok(())
 }
 

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM statuses_tags WHERE status_id = $1 RETURNING tag_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d97feb07a023696d09b290755d94a20adfe80fe79b7ef2e75d1ae9d73894a41"
+}

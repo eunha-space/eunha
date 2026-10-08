@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notification_requests SET notifications_count = $3, updated_at = now()\n               WHERE account_id = $1 AND from_account_id = $2 AND notifications_count <> $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2db94fe9c591ada2857640770cf228583fee09c1584669aa84d9f9d9ebf2b4a1"
+}

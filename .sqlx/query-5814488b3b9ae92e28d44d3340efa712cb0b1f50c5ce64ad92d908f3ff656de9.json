@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM statuses WHERE uri = $1 RETURNING id, reblog_of_id, account_id, visibility",
+  "query": "SELECT id, tag_id, statuses_count, last_status_at FROM featured_tags\n           WHERE account_id = $1 AND tag_id = ANY($2) ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -10,31 +10,32 @@
       },
       {
         "ordinal": 1,
-        "name": "reblog_of_id",
+        "name": "tag_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 2,
-        "name": "account_id",
+        "name": "statuses_count",
         "type_info": "Int8"
       },
       {
         "ordinal": 3,
-        "name": "visibility",
-        "type_info": "Int4"
+        "name": "last_status_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8",
+        "Int8Array"
       ]
     },
     "nullable": [
       false,
-      true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "52ea65d9092bbd6e499f49b3ef01b12ab174d7aed542dce18360f31d75fd284b"
+  "hash": "5814488b3b9ae92e28d44d3340efa712cb0b1f50c5ce64ad92d908f3ff656de9"
 }

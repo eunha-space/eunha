@@ -40,6 +40,7 @@ mod scope;
 mod search;
 mod search_elasticsearch;
 mod server_admin;
+mod status_removal;
 mod statuses;
 mod tags;
 mod terms_of_service;

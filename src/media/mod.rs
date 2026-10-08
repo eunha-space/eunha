@@ -221,6 +221,32 @@ pub fn int_to_path(id: i64) -> String {
         .join("/")
 }
 
+/// Every object a media attachment's files may be kept under, which is what
+/// Paperclip removes when a `MediaAttachment` is destroyed: the file's
+/// `original` and `small` styles, the custom thumbnail's, and the same under
+/// `cache/`, where a remote attachment's copy is kept.
+pub fn attachment_keys(id: i64, file: Option<&str>, thumbnail: Option<&str>) -> Vec<String> {
+    let partition = int_to_path(id);
+    let mut keys = vec![];
+    for (attachment, name) in [("files", file), ("thumbnails", thumbnail)] {
+        let Some(name) = name.filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        for style in ["original", "small"] {
+            let key = format!("media_attachments/{attachment}/{partition}/{style}/{name}");
+            keys.push(format!("cache/{key}"));
+            keys.push(key);
+        }
+    }
+    // Eunha keeps a custom thumbnail's preview where the file's would be.
+    if let Some(name) = thumbnail.filter(|n| !n.is_empty()) {
+        let key = format!("media_attachments/files/{partition}/small/{name}");
+        keys.push(format!("cache/{key}"));
+        keys.push(key);
+    }
+    keys
+}
+
 fn random_hex() -> String {
     let bytes = Uuid::new_v4().into_bytes();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()

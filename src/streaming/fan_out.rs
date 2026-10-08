@@ -628,12 +628,13 @@ async fn filter_from_tags(state: &AppState, s: &Subject, receiver: i64) -> anyho
 }
 
 /// `RemoveStatusService#call`, for its streaming messages: `delete` to the
-/// homes and lists the status was pushed to, the accounts it mentions, and
-/// the public and hashtag streams; then the same for each boost of it
-/// discarded with it. Call it after the status was discarded and before the
-/// feeds let go of it.
-pub async fn remove(state: &AppState, status_id: i64) {
-    if let Err(error) = try_remove(state, status_id, true).await {
+/// homes and lists the status was pushed to, and, unless `skip_streaming`,
+/// to the accounts it mentions and the public and hashtag streams. Each boost
+/// of it is removed by a `RemoveStatusService` of its own
+/// ([`crate::remove_status`]). Call it after the status was discarded and
+/// before the feeds let go of it.
+pub async fn remove(state: &AppState, status_id: i64, skip_streaming: bool) {
+    if let Err(error) = try_remove(state, status_id, true, skip_streaming).await {
         tracing::warn!(%error, status_id, "could not stream a deletion");
     }
 }
@@ -642,26 +643,8 @@ pub async fn remove(state: &AppState, status_id: i64) {
 /// homes, lists and public and hashtag streams, but not the mentioned
 /// accounts, and its boosts are removed by the caller.
 pub async fn remove_batched(state: &AppState, status_id: i64) {
-    if let Err(error) = try_remove(state, status_id, false).await {
+    if let Err(error) = try_remove(state, status_id, false, false).await {
         tracing::warn!(%error, status_id, "could not stream a deletion");
-    }
-}
-
-/// [`remove`] for a boost already deleted from the database: `delete` to the
-/// homes and lists it was pushed to. Call it before the feeds let go of it.
-pub async fn remove_boost(state: &AppState, boost_id: i64, booster_id: i64) {
-    let result = async {
-        let local = sqlx::query_scalar!(
-            r#"SELECT domain IS NULL AS "local!" FROM accounts WHERE id = $1"#,
-            booster_id
-        )
-        .fetch_one(&state.db)
-        .await?;
-        unpush(state, boost_id, booster_id, local).await
-    }
-    .await;
-    if let Err(error) = result {
-        tracing::warn!(%error, boost_id, "could not stream a deletion");
     }
 }
 
@@ -734,11 +717,17 @@ async fn unpush(
     Ok(())
 }
 
-/// `whole` is a `RemoveStatusService` of the status itself, which also
-/// streams to the mentioned accounts and removes the boosts.
-async fn try_remove(state: &AppState, status_id: i64, whole: bool) -> anyhow::Result<()> {
+/// `mentions` is a `RemoveStatusService`, which also streams to the
+/// mentioned accounts (`remove_from_mentions`); `skip_streaming` leaves out
+/// the mentioned, hashtag and public streams, as its option of that name does.
+async fn try_remove(
+    state: &AppState,
+    status_id: i64,
+    mentions: bool,
+    skip_streaming: bool,
+) -> anyhow::Result<()> {
     let Some(status) = sqlx::query!(
-        r#"SELECT s.id, s.account_id, s.visibility, s.reblog_of_id, s.deleted_at,
+        r#"SELECT s.id, s.account_id, s.visibility, s.reblog_of_id,
                   a.domain IS NULL AS "local!",
                   (s.ordered_media_attachment_ids IS NOT NULL
                    AND cardinality(s.ordered_media_attachment_ids) > 0
@@ -755,37 +744,21 @@ async fn try_remove(state: &AppState, status_id: i64, whole: bool) -> anyhow::Re
     unpush(state, status.id, status.account_id, status.local).await?;
 
     // A boost mentions nobody and carries no hashtags or media.
-    if status.reblog_of_id.is_some() {
+    if status.reblog_of_id.is_some() || skip_streaming {
         return Ok(());
     }
 
     // `remove_from_mentions`.
-    let mentioned = sqlx::query_scalar!(
-        "SELECT account_id FROM mentions WHERE status_id = $1 AND NOT silent",
-        status.id
-    )
-    .fetch_all(&state.db)
-    .await?;
-    if whole {
-        for account_id in mentioned {
-            bus.delete(&format!("timeline:{account_id}"), status.id)
-                .await;
-        }
-    }
-
-    // `remove_reblogs`: the boosts discarded with it, each its own removal,
-    // which for a boost is only its homes and lists.
-    if whole {
-        let reblogs = sqlx::query_scalar!(
-            r#"SELECT id FROM statuses
-               WHERE reblog_of_id = $1 AND (deleted_at IS NULL OR deleted_at = $2)"#,
-            status.id,
-            status.deleted_at,
+    if mentions {
+        let mentioned = sqlx::query_scalar!(
+            "SELECT account_id FROM mentions WHERE status_id = $1 AND NOT silent",
+            status.id
         )
         .fetch_all(&state.db)
         .await?;
-        for reblog in reblogs {
-            Box::pin(try_remove(state, reblog, false)).await?;
+        for account_id in mentioned {
+            bus.delete(&format!("timeline:{account_id}"), status.id)
+                .await;
         }
     }
 

@@ -253,11 +253,21 @@ the webhook is enabled and subscribed to the event:
 | ------------------ | -------------------------------------------------- |
 | `account.created`  | a sign-up or `eunha accounts create` makes a user  |
 | `account.approved` | an account is approved                             |
-| `account.updated`  | a profile is edited, or a moderator acts on it     |
+| `account.updated`  | a local account is saved                           |
 | `report.created`   | a report is filed, locally or by another server    |
 | `report.updated`   | a report is resolved, reopened, assigned or edited |
 | `status.created`   | a local post is published                          |
-| `status.updated`   | a local post is edited                             |
+| `status.updated`   | a local post is saved                              |
+
+As in Mastodon, the two `updated` events follow the model's
+`after_update_commit`: an account is saved when its profile is edited or its
+avatar or header removed, when a moderator suspends, silences or sensitizes
+it or undoes that, when it asks to be deleted or is purged, when it moves,
+redirects or gains or loses an alias, when its profile links are verified,
+and when one of its posts asks for trend review. A post is saved when it is
+edited, when its quote policy changes, when a moderator marks it sensitive or
+an appeal undoes that, and when it is discarded; the last finds no post to
+send, as Mastodon's worker finds none, and goes nowhere.
 
 The request is a POST of `{"event", "created_at", "object"}`. The object is
 the admin account, the admin report, or the status entity. Each request is
@@ -344,7 +354,10 @@ outranks the author's. Notes themselves are not logged.
 for a role with `manage_reports`. Its `moderation_action` is one of:
 
  -  `delete`, which removes the reported posts and collections, logging each,
-    and keeps a remote server from sending them again;
+    and keeps a remote server from sending them again; a local account's
+    posts are kept, discarded, for thirty days (see
+    [deleted posts](./administration#deleted-posts)), a remote one's
+    destroyed at once;
  -  `mark_as_sensitive`, which marks those carrying media or a link preview
     sensitive, as an edit when the account is local, and the reported
     collections too;

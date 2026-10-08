@@ -130,8 +130,18 @@ pub async fn feature_tag(
     }
 
     let row = sqlx::query!(
-        r#"INSERT INTO featured_tags (account_id, tag_id, name, created_at, updated_at)
-           VALUES ($1, $2, $3, now(), now())
+        r#"INSERT INTO featured_tags
+             (account_id, tag_id, name, statuses_count, last_status_at, created_at, updated_at)
+           VALUES ($1, $2, $3,
+             -- `before_create :reset_data`: `visible_tagged_account_statuses`.
+             (SELECT count(*) FROM statuses s
+              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2
+              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)),
+             (SELECT s.created_at FROM statuses s
+              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2
+              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
+              ORDER BY s.id DESC LIMIT 1),
+             now(), now())
            ON CONFLICT (account_id, tag_id) DO UPDATE SET name = EXCLUDED.name
            RETURNING id, statuses_count, last_status_at"#,
         auth.account_id,
@@ -217,8 +227,18 @@ pub async fn feature_tag_by_name(
     }
 
     sqlx::query!(
-        r#"INSERT INTO featured_tags (account_id, tag_id, name, created_at, updated_at)
-           VALUES ($1, $2, $3, now(), now())
+        r#"INSERT INTO featured_tags
+             (account_id, tag_id, name, statuses_count, last_status_at, created_at, updated_at)
+           VALUES ($1, $2, $3,
+             -- `before_create :reset_data`: `visible_tagged_account_statuses`.
+             (SELECT count(*) FROM statuses s
+              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2
+              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)),
+             (SELECT s.created_at FROM statuses s
+              JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2
+              WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
+              ORDER BY s.id DESC LIMIT 1),
+             now(), now())
            ON CONFLICT (account_id, tag_id) DO UPDATE SET name = EXCLUDED.name"#,
         auth.account_id,
         tag_id,

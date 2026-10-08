@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE featured_tags SET\n                     statuses_count = statuses_count - 1,\n                     last_status_at = (\n                       SELECT s.created_at FROM statuses s\n                       JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2\n                       WHERE s.account_id = $3 AND s.deleted_at IS NULL\n                         AND s.visibility IN (0, 1) AND s.id < $4\n                       ORDER BY s.id DESC LIMIT 1),\n                     updated_at = now()\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff24f172808692c3eaa04ce608b8c7e080c88f3e3848830d765aa03b40efe0a5"
+}

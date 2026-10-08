@@ -106,9 +106,10 @@ pub async fn save(
         if !statuses.is_empty() || !collections.is_empty() {
             authorize(may)?;
         }
-        // `delete_statuses!`: each one is discarded (by `RemovalWorker`
-        // below) and logged.
+        // `delete_statuses!`: each one, discarded or not, is discarded with
+        // its boosts and logged, and `RemovalWorker` below removes it.
         for status in &statuses {
+            crate::remove_status::discard_with_reblogs_in(&mut tx, status).await?;
             action_log::log(
                 &mut *tx,
                 actor_id,
@@ -116,9 +117,7 @@ pub async fn save(
                 &Target::status(status.id, &acct, status_uri(status)),
             )
             .await?;
-            if status.deleted_at.is_none() {
-                to_remove.push(status.clone());
-            }
+            to_remove.push(status.clone());
         }
         // `delete_collections!`.
         for collection in &collections {
@@ -269,6 +268,15 @@ pub async fn save(
         }
     }
     tx.commit().await?;
+    // The discarded posts' `after_update_commit`s.
+    for status in &to_remove {
+        crate::remove_status::after_discard(state, status.id).await;
+    }
+    // A local post marked sensitive was saved by `UpdateStatusService`: its
+    // `status.updated` webhook.
+    for status in &to_update {
+        super::webhooks::status_updated(state, status.id).await;
+    }
 
     super::webhooks::trigger(
         state,
@@ -298,10 +306,16 @@ pub async fn save(
         .await;
     }
 
-    // `RemovalWorker` for each post, and what the collections' owners'
-    // followers are told.
+    // `RemovalWorker` for each post, a local one kept for the strike
+    // (`preserve`) and a remote one destroyed (`immediate`), and what the
+    // collections' owners' followers are told.
+    let options = crate::remove_status::Options {
+        preserve: target.is_local(),
+        immediate: !target.is_local(),
+        ..Default::default()
+    };
     for status in &to_remove {
-        crate::api::mastodon::statuses::remove_status(state, status, &target).await?;
+        crate::remove_status::call(state, status.id, options).await?;
     }
     for status in &to_update {
         let Some(updated) =

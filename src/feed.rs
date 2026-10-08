@@ -1383,45 +1383,6 @@ pub async fn fanout_remove_status(
     fanout_remove_boost(redis, keys, db, author_id, status_id, reblog_of_id).await;
 }
 
-/// Take a boost already deleted from the database out of its author's
-/// followers' feeds and lists, putting back another boost of the same post it
-/// held back. Runs inline under [`sync_fanout`], otherwise in a task.
-pub async fn unpush_boost(
-    state: &crate::state::AppState,
-    author_id: i64,
-    boost_id: i64,
-    reblog_of_id: i64,
-) {
-    let mut redis = state.redis.clone();
-    let keys = state.redis_keys.clone();
-    let db = state.db.clone();
-    let work = async move {
-        fanout_remove_boost(
-            &mut redis,
-            &keys,
-            &db,
-            author_id,
-            boost_id,
-            Some(reblog_of_id),
-        )
-        .await;
-        fanout_remove_boost_from_lists(
-            &mut redis,
-            &keys,
-            &db,
-            author_id,
-            boost_id,
-            Some(reblog_of_id),
-        )
-        .await;
-    };
-    if sync_fanout() {
-        work.await;
-    } else {
-        crate::tenants::spawn(work);
-    }
-}
-
 /// `RemoveStatusService#remove_from_self` and `#remove_from_followers`:
 /// `FeedManager#unpush_from_home` for the author, when local, and each
 /// follower who signed in recently (`followers_for_local_distribution`), for

@@ -21,7 +21,6 @@ use super::{
 use crate::{
     db::models::{Account, Status as DbStatus},
     error::{AppError, AppResult},
-    feed,
     middleware::{AuthenticatedUser, ResolvedInstance},
     push,
     state::AppState,
@@ -500,237 +499,50 @@ pub async fn get_status(
 
 // ── DELETE /api/v1/statuses/:id ────────────────────────────────────────────
 
+#[derive(Debug, Default, Deserialize)]
+pub struct DeleteStatusParams {
+    #[serde(default)]
+    pub delete_media: Option<super::extractors::FlexBool>,
+}
+
+/// `Api::V1::StatusesController#destroy`: the status rendered as it was, then
+/// discarded with its boosts and unpinned, and removed by
+/// `RemovalWorker`, which keeps its media for a redraft unless
+/// `delete_media` is given. Eunha removes it before answering.
 pub async fn delete_status(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
+    super::extractors::Params(params): super::extractors::Params<DeleteStatusParams>,
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
-    let (status, account) = fetch_status_with_account(&state, id).await?;
+    let (status, _account) = fetch_status_with_account(&state, id).await?;
     // Mastodon scopes to `current_account.statuses.find`, so another user's
     // status is a 404 (not 403) — it also avoids confirming the status exists.
     if status.account_id != auth.account_id {
         return Err(AppError::NotFound);
     }
 
-    remove_status(&state, &status, &account).await?;
-
+    // Rendered before `discard_with_reblogs`, for the media's own URLs.
     let mut s = serialize_status(&state, &status, None).await?;
     s.text = Some(status.text.clone());
+
+    crate::remove_status::discard_with_reblogs(&state, &status).await?;
+    sqlx::query!("DELETE FROM status_pins WHERE status_id = $1", id)
+        .execute(&state.db)
+        .await?;
+    let delete_media = params.delete_media.is_some_and(|b| b.0);
+    crate::remove_status::call(
+        &state,
+        id,
+        crate::remove_status::Options {
+            redraft: !delete_media,
+            ..Default::default()
+        },
+    )
+    .await?;
+
     Ok(Json(s))
-}
-
-/// `RemoveStatusService`: discard a status and its boosts, uncount it, take it
-/// off every feed, and tell other servers. For the author's own deletion and
-/// for a moderator's (`Admin::ModerationAction`).
-pub(crate) async fn remove_status(
-    state: &AppState,
-    status: &DbStatus,
-    account: &Account,
-) -> AppResult<()> {
-    let id = status.id;
-    // Cascade-delete any reblogs of this status before soft-deleting the original.
-    // Mastodon deletes reblogs when the original is removed, at the same time
-    // (`discard_with_reblogs`), which is how they are told apart afterwards.
-    let discarded_at = chrono::Utc::now().naive_utc();
-    let deleted_reblogs = sqlx::query!(
-        r#"UPDATE statuses SET deleted_at = $2
-           WHERE reblog_of_id = $1 AND deleted_at IS NULL
-           RETURNING account_id, visibility"#,
-        id,
-        discarded_at,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    // Each of those boosts was a status of its author's, and stops being one.
-    for reblog in &deleted_reblogs {
-        if let Err(e) = crate::counters::on_status_deleted(
-            &state.db,
-            reblog.account_id,
-            reblog.visibility,
-            None,
-        )
-        .await
-        {
-            tracing::error!(error = %e, "failed to uncount a cascaded reblog");
-        }
-    }
-    let reblogger_ids: Vec<i64> = deleted_reblogs.iter().map(|r| r.account_id).collect();
-
-    sqlx::query!(
-        "UPDATE statuses SET deleted_at = $2 WHERE id = $1",
-        id,
-        discarded_at
-    )
-    .execute(&state.db)
-    .await?;
-    crate::fasp::events::status_deleted(state, id).await;
-
-    if let Err(e) = crate::counters::on_status_deleted(
-        &state.db,
-        account.id,
-        status.visibility,
-        status.in_reply_to_id,
-    )
-    .await
-    {
-        tracing::error!(status_id = id, error = %e, "failed to uncount a deleted status");
-    }
-    crate::search::elasticsearch::indexing::status(state, status.reblog_of_id.unwrap_or(id)).await;
-    crate::search::elasticsearch::indexing::account(state, account.id).await;
-
-    // The quote this status made: revoked if it was an accepted quote of a
-    // local post, uncounted if it was any other accepted quote.
-    crate::quotes::status_removed(state, id).await;
-
-    // Decrement original's reblogs_count if this was a boost
-    if let Some(original_id) = status.reblog_of_id {
-        let _ = sqlx::query!(
-            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
-                 untrusted_reblogs_count = CASE
-                   WHEN untrusted_reblogs_count IS NULL
-                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))
-                   THEN untrusted_reblogs_count
-                   ELSE GREATEST(untrusted_reblogs_count - 1, 0) END,
-                 updated_at = now()
-               WHERE status_id = $1"#,
-            original_id
-        )
-        .execute(&state.db)
-        .await;
-    }
-
-    // Recalculate featured_tags counts now that this status is soft-deleted
-    sqlx::query!(
-        r#"UPDATE featured_tags ft
-           SET statuses_count = (
-               SELECT COUNT(*) FROM statuses_tags st
-               JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL
-           ),
-           last_status_at = (
-               SELECT MAX(s.created_at) FROM statuses_tags st
-               JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL
-           )
-           WHERE ft.account_id = $1"#,
-        account.id,
-    )
-    .execute(&state.db)
-    .await?;
-
-    crate::streaming::fan_out::remove(state, id).await;
-
-    // Remove from follower feeds and list feeds in background
-    {
-        let mut redis = state.redis.clone();
-        let redis_keys = state.redis_keys.clone();
-        let db = state.db.clone();
-        let author_id = account.id;
-        if feed::sync_fanout() {
-            feed::fanout_remove_status(&mut redis, &redis_keys, &db, author_id, id).await;
-            feed::fanout_remove_from_lists(&mut redis, &redis_keys, &db, author_id, id).await;
-        } else {
-            crate::tenants::spawn(async move {
-                feed::fanout_remove_status(&mut redis, &redis_keys, &db, author_id, id).await;
-                feed::fanout_remove_from_lists(&mut redis, &redis_keys, &db, author_id, id).await;
-            });
-        }
-    }
-
-    // Mastodon destroys the pin when a status is deleted.
-    let _ = sqlx::query!("DELETE FROM status_pins WHERE status_id = $1", id)
-        .execute(&state.db)
-        .await;
-
-    // Federate the removal (Mastodon RemoveStatusService): a reblog sends
-    // Undo(Announce); any other status sends Delete(Tombstone). Reach is the
-    // full StatusReachFinder (unsafe) audience.
-    if crate::federation::keypair::has_signing_key(state, account.id)
-        .await
-        .unwrap_or(false)
-    {
-        let domain = &state.instance.domain;
-        let actor_url = crate::federation::tag::account_uri_of(domain, account);
-        let key_id = format!("{}#main-key", actor_url);
-        use crate::db::models::vis;
-        let distributable = matches!(status.visibility, vis::PUBLIC | vis::UNLISTED);
-        let is_public = status.visibility == vis::PUBLIC;
-        let followers_allowed = matches!(
-            status.visibility,
-            vis::PUBLIC | vis::UNLISTED | vis::PRIVATE
-        );
-
-        let plan: Option<(serde_json::Value, Option<i64>)> =
-            if let Some(original_id) = status.reblog_of_id {
-                let original = sqlx::query!(
-                    "SELECT account_id, uri FROM statuses WHERE id = $1",
-                    original_id,
-                )
-                .fetch_optional(&state.db)
-                .await?;
-                let original_uri = original
-                    .as_ref()
-                    .and_then(|r| r.uri.clone())
-                    .unwrap_or_default();
-                let announce_id = format!("{actor_url}/statuses/{}/activity", id);
-                let undo_id = format!("{announce_id}#undo");
-                let undo = crate::federation::activity::undo_announce(
-                    &undo_id,
-                    &actor_url,
-                    &announce_id,
-                    &original_uri,
-                )?;
-                Some((undo, original.map(|r| r.account_id)))
-            } else if let Some(ref status_uri) = status.uri {
-                let mut activity = crate::federation::activity::delete(
-                    &format!("{status_uri}#delete"),
-                    &actor_url,
-                    status_uri,
-                )?;
-                activity["to"] = serde_json::json!([crate::federation::activity::AS_PUBLIC]);
-                if let Some(obj) = activity.get_mut("object").and_then(|o| o.as_object_mut()) {
-                    obj.insert("atomUri".to_string(), serde_json::json!(status_uri));
-                }
-                Some((activity, None))
-            } else {
-                None
-            };
-
-        if let Some((activity, reblog_of_account_id)) = plan {
-            let inboxes = crate::federation::delivery::status_reach_inboxes(
-                state,
-                id,
-                account.id,
-                status.in_reply_to_account_id,
-                distributable,
-                true,
-                is_public,
-                followers_allowed,
-                reblog_of_account_id,
-                &reblogger_ids,
-            )
-            .await
-            .unwrap_or_default();
-            if !inboxes.is_empty() {
-                // `always_sign`, for a status that `sign?`s.
-                let signed = crate::federation::delivery::LinkedData::for_status(
-                    distributable,
-                    crate::federation::delivery::LinkedData::Always,
-                );
-                if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
-                    state, activity, inboxes, key_id, signed,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "failed to enqueue status removal delivery");
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 // ── POST /api/v1/statuses/:id/favourite ───────────────────────────────────
@@ -1149,144 +961,29 @@ pub async fn unreblog_status(
     // When iOS sends the reblog wrapper's ID, resolve it to the original.
     let original_id = status_raw.reblog_of_id.unwrap_or(id);
 
-    // The boost's deletion is announced to providers while it is still there
-    // to describe.
-    if crate::fasp::enabled(&state) {
-        if let Some(boost_id) = sqlx::query_scalar!(
-            "SELECT id FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL",
-            auth.account_id,
-            original_id
-        )
-        .fetch_optional(&state.db)
-        .await?
-        {
-            crate::fasp::events::status_deleted(&state, boost_id).await;
-        }
-    }
-
-    let deleted = sqlx::query!(
-        "DELETE FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL RETURNING id, visibility",
-        auth.account_id, original_id
+    // `current_account.statuses.find_by(reblog_of_id:)`.
+    let boost_id = sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 AND deleted_at IS NULL",
+        auth.account_id,
+        original_id
     )
     .fetch_optional(&state.db)
     .await?;
 
-    if let Some(ref del) = deleted {
-        sqlx::query!(
-            r#"UPDATE status_stats SET reblogs_count = GREATEST(reblogs_count - 1, 0),
-                 untrusted_reblogs_count = CASE
-                   WHEN untrusted_reblogs_count IS NULL
-                     OR EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND (COALESCE(local, false) OR uri IS NULL))
-                   THEN untrusted_reblogs_count
-                   ELSE GREATEST(untrusted_reblogs_count - 1, 0) END,
-                 updated_at = now()
-               WHERE status_id = $1"#,
-            original_id
-        )
-        .execute(&state.db)
-        .await?;
-        crate::search::elasticsearch::indexing::status(&state, original_id).await;
-        crate::search::elasticsearch::indexing::account(&state, auth.account_id).await;
-        // `RemoveStatusService`: `unpush_from_home_timelines` and
-        // `unpush_from_list_timelines`, which bring back a boost of the same
-        // post this one held back.
-        crate::streaming::fan_out::remove_boost(&state, del.id, auth.account_id).await;
-        crate::feed::unpush_boost(&state, auth.account_id, del.id, original_id).await;
-        sqlx::query!(
-            r#"UPDATE account_stats SET statuses_count = GREATEST(statuses_count - 1, 0), updated_at = now()
-               WHERE account_id = $1"#,
-            auth.account_id
-        )
-        .execute(&state.db)
-        .await?;
-
-        // Send Undo(Announce) to followers and original status author (if remote)
-        let boost_id = del.id;
-        if let Some(actor_row) = sqlx::query!(
-            "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
-            auth.account_id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        {
-            if crate::federation::keypair::has_signing_key(&state, auth.account_id)
-                .await
-                .unwrap_or(false)
-            {
-                let domain = state.instance.domain.clone();
-                let actor_url = crate::federation::tag::account_uri(
-                    &domain,
-                    auth.account_id,
-                    actor_row.id_scheme,
-                    &actor_row.username,
-                );
-                let announce_id = format!("{actor_url}/statuses/{boost_id}/activity");
-                let original_uri =
-                    sqlx::query_scalar!("SELECT uri FROM statuses WHERE id = $1", original_id)
-                        .fetch_optional(&state.db)
-                        .await?
-                        .flatten()
-                        .unwrap_or_default();
-                let undo_id = format!("{}#undo", announce_id);
-                let undo = crate::federation::activity::undo_announce(
-                    &undo_id,
-                    &actor_url,
-                    &announce_id,
-                    &original_uri,
-                )?;
-                let key_id = format!("{}#main-key", actor_url);
-                // `RemoveStatusService`: `always_sign`, for a boost that
-                // `sign?`s.
-                let signed = crate::federation::delivery::LinkedData::for_status(
-                    matches!(
-                        del.visibility,
-                        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-                    ),
-                    crate::federation::delivery::LinkedData::Always,
-                );
-
-                // Deliver to remote original author's inbox
-                if let Some(orig_acc) = sqlx::query!(
-                    "SELECT inbox_url, shared_inbox_url, domain FROM accounts WHERE id = (SELECT account_id FROM statuses WHERE id = $1)",
-                    original_id,
-                ).fetch_optional(&state.db).await? {
-                    if orig_acc.domain.is_some() {
-                        let inbox = if !orig_acc.shared_inbox_url.is_empty() { orig_acc.shared_inbox_url } else { orig_acc.inbox_url };
-                        if !inbox.is_empty() {
-                            if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
-                                &state,
-                                undo.clone(),
-                                vec![inbox],
-                                key_id.clone(),
-                                signed,
-                            )
-                            .await
-                            {
-                                tracing::warn!(error = %e, "failed to enqueue Undo(Announce) to original author");
-                            }
-                        }
-                    }
-                }
-
-                if let Err(e) = crate::federation::delivery::fanout_to_followers_signed(
-                    &state,
-                    undo,
-                    auth.account_id,
-                    key_id,
-                    signed,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "failed to enqueue Undo(Announce) fanout");
-                }
-            }
-        }
-    }
-
     let (original, _) = fetch_status_with_account(&state, original_id).await?;
-    Ok(Json(
-        serialize_status(&state, &original, Some(auth.account_id)).await?,
-    ))
+    let mut rendered = serialize_status(&state, &original, Some(auth.account_id)).await?;
+    if let Some(boost_id) = boost_id {
+        // `count = [@reblog.reblogs_count - 1, 0].max`, then `@status.discard`
+        // and `RemovalWorker`.
+        let count = (rendered.reblogs_count - 1).max(0);
+        crate::remove_status::discard(&state, boost_id).await?;
+        crate::remove_status::call(&state, boost_id, crate::remove_status::Options::default())
+            .await?;
+        rendered = serialize_status(&state, &original, Some(auth.account_id)).await?;
+        rendered.reblogs_count = count;
+        rendered.reblogged = Some(false);
+    }
+    Ok(Json(rendered))
 }
 
 // ── POST /api/v1/statuses/:id/bookmark ────────────────────────────────────
@@ -1777,6 +1474,9 @@ pub async fn update_interaction_policy(
         )
         .execute(&state.db)
         .await?;
+        // `@status.update!`: its `after_update_commit`s.
+        crate::moderation::webhooks::status_updated(&state, id).await;
+        crate::fasp::events::status_updated(&state, id).await;
     }
     let status = sqlx::query_as!(DbStatus, "SELECT * FROM statuses WHERE id = $1", id)
         .fetch_one(&state.db)
@@ -2263,13 +1963,20 @@ pub async fn store_statuses_tags(
     account_id: i64,
     hashtags: &[String],
 ) -> AppResult<()> {
-    sqlx::query!("DELETE FROM statuses_tags WHERE status_id = $1", status_id)
-        .execute(&state.db)
-        .await?;
+    let previous: Vec<i64> = sqlx::query_scalar!(
+        "DELETE FROM statuses_tags WHERE status_id = $1 RETURNING tag_id",
+        status_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut current: Vec<i64> = vec![];
     for tag_name in hashtags {
         let Some(tag_id) = crate::tags::find_or_create(&state.db, tag_name).await? else {
             continue;
         };
+        if !current.contains(&tag_id) {
+            current.push(tag_id);
+        }
         sqlx::query!(
             "INSERT INTO statuses_tags (status_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
             status_id,
@@ -2280,24 +1987,25 @@ pub async fn store_statuses_tags(
         // `Tag`'s `update_index('tags', :self)`.
         crate::search::elasticsearch::indexing::tags(state, &[tag_id]).await;
     }
-    // Recalculate statuses_count and last_status_at for all featured tags of this account
-    sqlx::query!(
-        r#"UPDATE featured_tags ft
-           SET statuses_count = (
-               SELECT COUNT(*) FROM statuses_tags st
-               JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL
-           ),
-           last_status_at = (
-               SELECT MAX(s.created_at) FROM statuses_tags st
-               JOIN statuses s ON s.id = st.status_id
-               WHERE st.tag_id = ft.tag_id AND s.account_id = $1 AND s.deleted_at IS NULL
-           )
-           WHERE ft.account_id = $1"#,
-        account_id,
+    // `ProcessHashtagsService#update_featured_tags!`.
+    if let Some(row) = sqlx::query!(
+        "SELECT visibility, created_at FROM statuses WHERE id = $1",
+        status_id
     )
-    .execute(&state.db)
-    .await?;
+    .fetch_optional(&state.db)
+    .await?
+    {
+        crate::featured_tags::update_for_status(
+            &state.db,
+            account_id,
+            status_id,
+            row.visibility,
+            row.created_at,
+            &previous,
+            &current,
+        )
+        .await?;
+    }
     Ok(())
 }
 

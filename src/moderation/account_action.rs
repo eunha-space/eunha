@@ -250,7 +250,9 @@ pub async fn save(
         )
         .await;
     }
-    if target.is_local() && kind != "none" && kind != "disable" {
+    // A suspension's comes from `delete_account::suspend` below, which
+    // saves the account.
+    if target.is_local() && !matches!(kind.as_str(), "none" | "disable" | "suspend") {
         super::webhooks::trigger(
             state,
             "account.updated",

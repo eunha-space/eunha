@@ -504,6 +504,8 @@ async fn do_update_credentials(
     crate::search::elasticsearch::indexing::account(state, auth.account_id).await;
 
     let account = fetch_account(state, auth.account_id).await?;
+    // `UpdateAccountService`'s `account.update`: its `after_update_commit`s.
+    crate::moderation::webhooks::account_updated(state, auth.account_id).await;
     crate::fasp::events::account_updated(state, auth.account_id, discoverable_changed).await;
     Ok(account)
 }
@@ -526,12 +528,6 @@ pub async fn update_credentials(
     let account = do_update_credentials(&state, &auth, parts).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::verify(&state, auth.account_id).await;
-    crate::moderation::webhooks::trigger(
-        &state,
-        "account.updated",
-        crate::moderation::webhooks::Object::Account(auth.account_id),
-    )
-    .await;
     build_credential_account_response(&state, &auth, account).await
 }
 
@@ -804,6 +800,8 @@ pub async fn delete_profile_avatar(
     )
     .execute(&state.db)
     .await?;
+    // `UpdateAccountService` with `avatar: nil`.
+    crate::moderation::webhooks::account_updated(&state, auth.account_id).await;
     let account = sqlx::query_as!(
         crate::db::models::Account,
         "SELECT * FROM accounts WHERE id = $1",
@@ -832,6 +830,8 @@ pub async fn delete_profile_header(
     )
     .execute(&state.db)
     .await?;
+    // `UpdateAccountService` with `header: nil`.
+    crate::moderation::webhooks::account_updated(&state, auth.account_id).await;
     let account = sqlx::query_as!(
         crate::db::models::Account,
         "SELECT * FROM accounts WHERE id = $1",

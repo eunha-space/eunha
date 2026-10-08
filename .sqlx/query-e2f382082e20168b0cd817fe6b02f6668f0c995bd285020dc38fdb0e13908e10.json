@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET deleted_at = $2 WHERE id = $1",
+  "query": "UPDATE statuses SET deleted_at = $2, updated_at = now() WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "59573d4a3bea3afca4f71dbbc4917ab6edebd372d533ffbc80f2c3e1d2cdec14"
+  "hash": "e2f382082e20168b0cd817fe6b02f6668f0c995bd285020dc38fdb0e13908e10"
 }

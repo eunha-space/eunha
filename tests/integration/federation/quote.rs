@@ -755,7 +755,14 @@ async fn test_deleting_a_quote_of_a_local_post_revokes_it() {
         .delete(&format!("/api/v1/statuses/{quote_id}"), &ctx.bob_token)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(quote_state(&ctx, quote_id).await, 3);
+    // Revoked, then destroyed with its status, which counts it down no
+    // further.
+    let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM quotes WHERE status_id = $1")
+        .bind(quote_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(quotes, 0);
     assert_eq!(
         quotes_count(&ctx, original_id).await,
         0,

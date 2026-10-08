@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_stats SET quotes_count = GREATEST(quotes_count - 1, 0), updated_at = now()\n                   WHERE status_id = $1\n                     AND EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND deleted_at IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86b4ce801d002c8da62561e61c6f7b55030381d7b5fecc134fb43b78f1d2285e"
+}
