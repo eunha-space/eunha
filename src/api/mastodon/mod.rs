@@ -114,7 +114,7 @@ pub(crate) fn offset_link_headers(
     let extra = non_pagination_query(uri.query());
     let extra = extra
         .split('&')
-        .filter(|kv| !kv.is_empty() && !kv.starts_with("offset="))
+        .filter(|kv| !kv.is_empty() && !kv.starts_with("offset=") && !kv.starts_with("limit="))
         .collect::<Vec<_>>()
         .join("&");
     let sep = if extra.is_empty() { "" } else { "&" };
@@ -140,7 +140,8 @@ pub(crate) fn offset_link_headers(
     resp_headers
 }
 
-/// Strip pagination-specific keys from a query string and return the rest.
+/// Strip the cursor keys from a query string and return the rest. `limit`
+/// stays, as Mastodon's `pagination_params` keep it in the links they make.
 pub(crate) fn non_pagination_query(raw_query: Option<&str>) -> String {
     raw_query
         .unwrap_or("")
@@ -150,7 +151,6 @@ pub(crate) fn non_pagination_query(raw_query: Option<&str>) -> String {
                 && !kv.starts_with("max_id=")
                 && !kv.starts_with("min_id=")
                 && !kv.starts_with("since_id=")
-                && !kv.starts_with("limit=")
         })
         .collect::<Vec<_>>()
         .join("&")

@@ -2243,6 +2243,8 @@ async fn test_v2_notifications_page_by_groups() {
         link.contains(&format!("max_id={follow_id}")),
         "the next page is past the follow: {link}"
     );
+    // `pagination_params` keeps the `limit` asked for.
+    assert_eq!(link.matches("limit=2").count(), 2, "{link}");
     let body: Value = resp.json().await.unwrap();
     let groups = body["notification_groups"].as_array().unwrap();
     assert_eq!(groups.len(), 2, "{body}");
