@@ -179,6 +179,29 @@ pub(crate) fn link_headers(
     resp_headers
 }
 
+/// [`link_headers`] for a controller whose `next_path` is given only
+/// `if records_continue?` — the page came back full — and whose
+/// `prev_path` unless the page is empty.
+pub(crate) fn link_headers_continuing(
+    req_headers: &HeaderMap,
+    uri: &axum::http::Uri,
+    bounds: Option<(&str, &str)>,
+    records_continue: bool,
+) -> HeaderMap {
+    let mut resp_headers = link_headers(req_headers, uri, bounds);
+    if !records_continue {
+        let prev = resp_headers
+            .get(axum::http::header::LINK)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split_once(", ").map(|(_, prev)| prev.to_owned()));
+        resp_headers.remove(axum::http::header::LINK);
+        if let Some(val) = prev.and_then(|p| p.parse().ok()) {
+            resp_headers.insert(axum::http::header::LINK, val);
+        }
+    }
+    resp_headers
+}
+
 pub fn router() -> Router {
     let auth_required = Router::new()
         // Accounts — authenticated

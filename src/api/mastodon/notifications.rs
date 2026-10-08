@@ -1610,41 +1610,72 @@ pub async fn dismiss_notification_group(
 
 // ── GET /api/v2/notifications/:group_key/accounts ────────────────────────
 
+/// `Api::V2::Notifications::AccountsController#index`: the sender of each of
+/// the group's notifications from an account not suspended, newest first,
+/// 40 to a page by `max_id` and `since_id`. Only a stored key names a group
+/// here, so an `ungrouped-<id>` key has none.
 pub async fn get_notification_group_accounts(
     state: AppState,
     Path(group_key): Path<String>,
+    Query(pagination): Query<PaginationParams>,
+    uri: Uri,
+    req_headers: HeaderMap,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> AppResult<Json<Vec<super::types::Account>>> {
+) -> AppResult<impl IntoResponse> {
     auth.require_scope("read:notifications")?;
-    let notifs = notifications_for_group_key(&state, auth.account_id, &group_key).await?;
-    if notifs.is_empty() {
-        return Err(AppError::NotFound);
-    }
-
-    // Distinct source accounts, newest first (the notifications are id DESC).
-    let mut ordered_ids: Vec<i64> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for n in &notifs {
-        if seen.insert(n.from_account_id) {
-            ordered_ids.push(n.from_account_id);
-        }
-    }
-
-    let accounts: Vec<Account> = sqlx::query_as!(
-        Account,
-        "SELECT * FROM accounts WHERE id = ANY($1::bigint[])",
-        &ordered_ids,
+    let limit = pagination.limit_clamped(40, 80);
+    let parse = |v: &Option<String>| v.as_deref().and_then(|s| s.parse::<i64>().ok());
+    let rows = sqlx::query!(
+        r#"SELECT n.id, n.from_account_id FROM notifications n
+           JOIN accounts a ON a.id = n.from_account_id
+             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+           WHERE n.account_id = $1 AND n.group_key = $2
+             AND ($3::bigint IS NULL OR n.id < $3)
+             AND ($4::bigint IS NULL OR n.id > $4)
+           ORDER BY n.id DESC
+           LIMIT $5"#,
+        auth.account_id,
+        group_key,
+        parse(&pagination.max_id),
+        parse(&pagination.since_id),
+        limit,
     )
     .fetch_all(&state.db)
     .await?;
-    let account_map: std::collections::HashMap<i64, Account> =
-        accounts.into_iter().map(|a| (a.id, a)).collect();
 
-    let ordered: Vec<Account> = ordered_ids
+    let mut ids: Vec<i64> = rows.iter().map(|r| r.from_account_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let accounts: Vec<Account> = sqlx::query_as!(
+        Account,
+        "SELECT * FROM accounts WHERE id = ANY($1::bigint[])",
+        &ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let rendered: std::collections::HashMap<String, super::types::Account> =
+        batch_accounts_to_api(&state, &accounts)
+            .await
+            .into_iter()
+            .map(|a| (a.id.clone(), a))
+            .collect();
+    // `@paginated_notifications.map(&:from_account)`: one for each.
+    let result: Vec<super::types::Account> = rows
         .iter()
-        .filter_map(|id| account_map.get(id).cloned())
+        .filter_map(|r| rendered.get(&r.from_account_id.to_string()).cloned())
         .collect();
-    Ok(Json(batch_accounts_to_api(&state, &ordered).await))
+
+    let bounds = rows
+        .first()
+        .zip(rows.last())
+        .map(|(n, o)| (n.id.to_string(), o.id.to_string()));
+    let headers = super::link_headers_continuing(
+        &req_headers,
+        &uri,
+        bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
+        rows.len() as i64 == limit,
+    );
+    Ok((headers, Json(result)))
 }
 
 // ── GET /api/v1/notifications/unread_count ───────────────────────────────

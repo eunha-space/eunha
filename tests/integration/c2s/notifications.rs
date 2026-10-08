@@ -2440,3 +2440,74 @@ async fn test_notifications_fall_back_for_unsupported_types() {
         );
     }
 }
+
+/// `Api::V2::Notifications::AccountsController`: a sender for each of the
+/// group's notifications, paged by them, none from a suspended account, and
+/// nothing for an `ungrouped-` key.
+#[tokio::test]
+async fn test_group_accounts_page_by_notification() {
+    let ctx = TestContext::new("notif-group-accounts-page").await;
+    let (carol_id, _, sid, follow_id) = two_groups(&ctx).await;
+    let body: Value = ctx
+        .api
+        .get(
+            "/api/v2/notifications?types[]=favourite",
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let key = body["notification_groups"][0]["group_key"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(key.starts_with(&format!("favourite-{sid}-")));
+    let path = format!("/api/v2/notifications/{key}/accounts");
+
+    let resp = ctx
+        .api
+        .get(&format!("{path}?limit=1"), Some(&ctx.bob_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let link = resp.headers()["link"].to_str().unwrap().to_owned();
+    assert!(link.contains("rel=\"next\""), "{link}");
+    let page: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0]["id"], json!(carol_id));
+
+    let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;
+    let link = resp.headers()["link"].to_str().unwrap().to_owned();
+    assert!(
+        !link.contains("rel=\"next\""),
+        "a short page is the last: {link}"
+    );
+    assert!(link.contains("rel=\"prev\""), "{link}");
+    let all: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(carol_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let left: Vec<Value> = ctx
+        .api
+        .get(&path, Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0]["id"], json!(ctx.alice_id));
+
+    let resp = ctx
+        .api
+        .get(
+            &format!("/api/v2/notifications/ungrouped-{follow_id}/accounts"),
+            Some(&ctx.bob_token),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.json::<Vec<Value>>().await.unwrap().is_empty());
+}
