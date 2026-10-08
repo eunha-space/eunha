@@ -126,6 +126,7 @@ again. With `--tenants`, each instance's own bucket is used; a single instance
 needs its media storage in the configuration or the environment, or the
 emoji wait for the next `eunha migrate` that has it.
 
+
 Annual reports generated before migration 033
 ---------------------------------------------
 
