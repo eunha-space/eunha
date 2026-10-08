@@ -120,14 +120,31 @@ order they are shown in. An edit keeps an attachment it still lists at its
 URL, updated in place, records the new order, and leaves one it no longer
 lists attached to the status, where the edit history can still show it.
 
+An attachment's description is its `summary`, or else its `name`, the first
+not blank, stripped and cut to ten thousand characters; its blurhash is kept
+only when Mastodon could use it (`supported_blurhash?`: the characters a
+blurhash is written in, and at most five components each way).
+
 From a domain blocked with `reject_media`, attachments are recorded as Mastodon
 records those it does not download: their URLs, description and blurhash, no
 file, so of the `unknown` type with no content type, and only the focus for
 their meta. The API, as Mastodon's does for an attachment it has no file for,
 points their `url` and `preview_url` at `/media_proxy/:id/original` and
-`/media_proxy/:id/small`, which answers 404 for them, as for any remote
-attachment of a type it does not know; every other remote
-attachment is shown from its own server, since eunha keeps no copies.
+`/media_proxy/:id/small`, as it does for any remote attachment of a type it
+does not know; every other remote attachment is shown from its own server,
+since eunha keeps no copies.
+
+`/media_proxy/:id` gives an attachment only to a viewer who may see its post
+(`MediaAttachmentPolicy#download?`, `StatusPolicy#show?` for the bearer of the
+token, if any), or, once the post is discarded, to a moderator who handles
+reports; anyone else gets a 404, and in limited federation mode no one signed
+out gets anything. It answers with a 302 to the file, the thumbnail for
+`/small` when there is one. For an attachment with no file, where Mastodon
+would fetch it and send the viewer to its copy, eunha sends the viewer to the
+remote URL (its thumbnail's for `/small`); for one of a type Mastodon does not
+take, whose download fails, it answers 404; and for one from a `reject_media`
+domain, which Mastodon does not fetch, it sends the viewer to Paperclip's
+`/files/:style/missing.png`, as Mastodon does.
 
 A `Question` is a poll (`PollParser`). One with no option is not a valid
 poll, and since the status is saved with its poll, the status is refused

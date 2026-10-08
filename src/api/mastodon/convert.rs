@@ -33,6 +33,12 @@ impl InstanceUrls {
         }
     }
 
+    /// Paperclip's `default_url` for a media attachment with no file
+    /// (`/files/:style/missing.png`), as `full_asset_url` makes it.
+    pub fn missing_file_url(&self, style: &str) -> String {
+        format!("{}/files/{style}/missing.png", self.media_base)
+    }
+
     fn missing_avatar(&self) -> &str {
         &self.missing_avatar
     }

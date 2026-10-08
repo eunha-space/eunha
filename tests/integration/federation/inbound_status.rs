@@ -451,5 +451,125 @@ async fn test_media_from_a_reject_media_domain_is_recorded_without_its_file() {
         .api
         .get(&format!("/media_proxy/{media_id}/original"), None)
         .await;
-    assert_eq!(proxied.status(), reqwest::StatusCode::NOT_FOUND);
+    // Nothing is fetched for it (`!reject_media?`), so the proxy sends the
+    // viewer to Paperclip's `missing.png`.
+    assert_eq!(proxied.status(), reqwest::StatusCode::FOUND);
+    let location = proxied.headers()["location"].to_str().unwrap().to_owned();
+    assert!(
+        location.ends_with("/files/original/missing.png"),
+        "{location}"
+    );
+    let proxied = ctx
+        .api
+        .get(&format!("/media_proxy/{media_id}/small"), None)
+        .await;
+    let location = proxied.headers()["location"].to_str().unwrap().to_owned();
+    assert!(location.ends_with("/files/small/missing.png"), "{location}");
+}
+
+/// `MediaProxyController#show` authorizes with `MediaAttachmentPolicy
+/// #download?`, `StatusPolicy#show?` for the viewer, and sends the viewer to
+/// the file; for a remote attachment, which eunha keeps no copy of, to where
+/// the copy would come from, and for one of a type Mastodon does not take,
+/// whose download fails, nowhere.
+#[tokio::test]
+async fn test_the_media_proxy_shows_what_the_viewer_may_see() {
+    let ctx = TestContext::new("media-proxy-auth").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    // Alice follows remy, so his followers-only post reaches her.
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
+         SELECT $1, id, now(), now() FROM accounts WHERE uri = $2",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(&remy)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let note_uri = format!("{remy}/statuses/private");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(
+            &remy,
+            json!({
+                "id": note_uri, "type": "Note", "attributedTo": remy,
+                "content": "<p>for followers</p>",
+                "to": [format!("{remy}/followers")],
+                "published": "2026-01-01T00:00:00Z",
+                "attachment": [
+                    {"type": "Document", "mediaType": "image/png",
+                     "url": "https://remote.invalid/media/a.png",
+                     "icon": {"type": "Image", "url": "https://remote.invalid/media/a-small.png"}},
+                    {"type": "Document", "mediaType": "application/x-thing",
+                     "url": "https://remote.invalid/media/b.thing"},
+                ],
+            }),
+        ),
+    )
+    .await;
+    let id = status_id(&ctx, &note_uri).await.unwrap();
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT unnest(ordered_media_attachment_ids) FROM statuses WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    let get = |path: String, token: Option<String>| {
+        let api = &ctx.api;
+        async move { api.get(&path, token.as_deref()).await }
+    };
+
+    // No one signed in, and bob, who does not follow remy: not found.
+    for token in [None, Some(ctx.bob_token.clone())] {
+        let resp = get(format!("/media_proxy/{}/original", ids[0]), token).await;
+        assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
+    }
+    // Alice, who follows him, is sent to it, and to its preview.
+    let alice = Some(ctx.alice_token.clone());
+    let resp = get(format!("/media_proxy/{}/original", ids[0]), alice.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::FOUND);
+    assert_eq!(
+        resp.headers()["location"],
+        "https://remote.invalid/media/a.png"
+    );
+    let resp = get(format!("/media_proxy/{}/small", ids[0]), alice.clone()).await;
+    assert_eq!(
+        resp.headers()["location"],
+        "https://remote.invalid/media/a-small.png"
+    );
+    // One of a type Mastodon does not take: its download would fail.
+    let resp = get(format!("/media_proxy/{}/original", ids[1]), alice.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
+
+    // Its post discarded, only a moderator who handles reports may have it.
+    sqlx::query("UPDATE statuses SET deleted_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = get(format!("/media_proxy/{}/original", ids[0]), alice.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
+    let role: i64 = sqlx::query_scalar(
+        "INSERT INTO user_roles (name, permissions, position, created_at, updated_at)
+         VALUES ('Moderator', $1, 10, now(), now()) RETURNING id",
+    )
+    .bind(1_i64 << 4)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET role_id = $1 WHERE account_id = $2")
+        .bind(role)
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = get(
+        format!("/media_proxy/{}/original", ids[0]),
+        Some(ctx.bob_token.clone()),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::FOUND);
 }

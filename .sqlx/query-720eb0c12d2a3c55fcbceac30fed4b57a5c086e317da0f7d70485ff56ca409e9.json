@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.* FROM media_attachments m JOIN statuses s ON s.id = m.status_id\n           WHERE m.id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)",
+  "query": "SELECT * FROM media_attachments\n         WHERE id = $1 AND (status_id IS NOT NULL OR scheduled_status_id IS NOT NULL)",
   "describe": {
     "columns": [
       {
@@ -156,5 +156,5 @@
       true
     ]
   },
-  "hash": "f07256361834b2c634e333f08af32fa9fb87f0e26b9bb9ccdc75098d809b7cc4"
+  "hash": "720eb0c12d2a3c55fcbceac30fed4b57a5c086e317da0f7d70485ff56ca409e9"
 }

@@ -736,45 +736,144 @@ pub fn media_type_str(type_int: Option<i32>) -> &'static str {
 
 // ── GET /media_proxy/:id/(*any) ───────────────────────────────────────────
 
-/// `MediaProxyController#show`, for an attachment of a post anyone may see
-/// (`MediaAttachment.attached.find`, `authorize :download?`): a redirect to
-/// its file, its small version when one is asked for. Eunha downloads no
-/// remote media, so an attachment without a file has nothing to give: one
-/// from a domain blocked with `reject_media`, which upstream does not fetch
-/// either, or one of a type it does not take, which upstream fails to fetch.
+/// `MediaProxyController#show`: an attachment of a post the viewer may see
+/// (`MediaAttachment.attached.find`, `authorize :download?`), sent to where
+/// its file is, the small version when the path ends in `/small`.
 pub async fn media_proxy(
     state: AppState,
     Path(id): Path<i64>,
+    auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<axum::response::Response> {
-    proxy(&state, id, false).await
+    proxy(&state, id, false, auth.map(|Extension(a)| a.account_id)).await
 }
 
-/// [`media_proxy`] with a style after the id (`/media_proxy/:id/small`).
+/// [`media_proxy`] with a path after the id (`/media_proxy/:id/small`).
 pub async fn media_proxy_style(
     state: AppState,
     Path((id, style)): Path<(i64, String)>,
+    auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<axum::response::Response> {
-    proxy(&state, id, style.starts_with("small")).await
+    // `preview_requested?`: `request.path.end_with?('/small')`.
+    let small = style.ends_with("small");
+    proxy(&state, id, small, auth.map(|Extension(a)| a.account_id)).await
 }
 
-async fn proxy(state: &AppState, id: i64, small: bool) -> AppResult<axum::response::Response> {
+async fn proxy(
+    state: &AppState,
+    id: i64,
+    small: bool,
+    viewer: Option<i64>,
+) -> AppResult<axum::response::Response> {
     use axum::response::IntoResponse;
+    // `authenticate_user!, if: :limited_federation_mode?`.
+    if state.instance.limited_federation_mode && viewer.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    // `MediaAttachment.attached.find`.
     let media = sqlx::query_as!(
         crate::db::models::MediaAttachment,
-        r#"SELECT m.* FROM media_attachments m JOIN statuses s ON s.id = m.status_id
-           WHERE m.id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)"#,
+        "SELECT * FROM media_attachments
+         WHERE id = $1 AND (status_id IS NOT NULL OR scheduled_status_id IS NOT NULL)",
         id,
     )
     .fetch_optional(&state.db)
     .await?
-    .filter(|m| m.file_file_name.as_deref().is_some_and(|f| !f.is_empty()))
     .ok_or(AppError::NotFound)?;
-    let url = if small {
-        super::convert::media_preview_url(&state.urls, &media)
-    } else {
-        None
+    // `record.status`, under the default scope, which leaves a discarded
+    // status out.
+    let status = match media.status_id {
+        Some(status_id) => {
+            sqlx::query_as!(
+                crate::db::models::Status,
+                "SELECT * FROM statuses WHERE id = $1",
+                status_id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+        }
+        None => None,
+    };
+    // `discarded?`: its status discarded, or gone.
+    let discarded =
+        media.status_id.is_some() && status.as_ref().is_none_or(|s| s.deleted_at.is_some());
+    // `download?`: `(discarded? && role.can?(:manage_reports)) ||
+    // show_status?`. A refusal (`NotPermittedError`) is a 404.
+    let shown = match status.as_ref().filter(|s| s.deleted_at.is_none()) {
+        Some(status) => match viewer {
+            Some(viewer) => super::statuses::check_status_visible(state, status, viewer)
+                .await
+                .is_ok(),
+            None => super::statuses::check_status_public(state, status)
+                .await
+                .is_ok(),
+        },
+        None => false,
+    };
+    let moderates = match (discarded, viewer) {
+        (true, Some(viewer)) => crate::moderation::role::acting(&state.db, viewer)
+            .await?
+            .can(&[crate::moderation::role::flag::MANAGE_REPORTS]),
+        _ => false,
+    };
+    if !shown && !moderates {
+        return Err(AppError::NotFound);
     }
-    .or_else(|| super::convert::media_url(&state.urls, &media))
+
+    let has_file = media
+        .file_file_name
+        .as_deref()
+        .is_some_and(|f| !f.is_empty());
+    let url = if has_file {
+        // `media_attachment_file`: the thumbnail for `/small` when there is
+        // one, else the file in the style asked for.
+        if small {
+            super::convert::media_preview_url(&state.urls, &media)
+        } else {
+            super::convert::media_url(&state.urls, &media)
+        }
+    } else {
+        let remote_url = media.remote_url.as_deref().filter(|u| !u.is_empty());
+        // `reject_media?`: a remote account's, its domain blocked with
+        // `reject_media`.
+        let reject_media = match (media.account_id, remote_url) {
+            (Some(account_id), Some(_)) => {
+                crate::federation::moderation::account_media_rejected(state, account_id).await
+            }
+            _ => false,
+        };
+        if reject_media {
+            // `needs_redownload? && !reject_media?` is false, so nothing is
+            // fetched, and the redirect is to the file Paperclip has for no
+            // file: its `missing.png`.
+            Some(
+                state
+                    .urls
+                    .missing_file_url(if small { "small" } else { "original" }),
+            )
+        } else if remote_url.is_some() && media.r#type != Some(4) {
+            // `redownload!`, which fetches the file and sends the viewer to
+            // the copy. Eunha keeps no copies (a recorded divergence), so the
+            // viewer is sent to where the copy would have come from.
+            if small {
+                media
+                    .thumbnail_remote_url
+                    .clone()
+                    .filter(|u| !u.is_empty())
+                    .or_else(|| remote_url.map(str::to_owned))
+            } else {
+                remote_url.map(str::to_owned)
+            }
+        } else {
+            // A type Mastodon does not take fails the download's validation
+            // (`RecordInvalid`), which is a 404, as is nothing to fetch.
+            None
+        }
+    }
     .ok_or(AppError::NotFound)?;
-    Ok(axum::response::Redirect::to(&url).into_response())
+    // `redirect_to`: a 302.
+    Ok((
+        axum::http::StatusCode::FOUND,
+        [(axum::http::header::LOCATION, url)],
+    )
+        .into_response())
 }
