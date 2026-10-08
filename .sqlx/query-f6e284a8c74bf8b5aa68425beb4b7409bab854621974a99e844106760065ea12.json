@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING account_id, uri",
+  "query": "SELECT account_id, target_account_id FROM follow_requests WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,20 +10,19 @@
       },
       {
         "ordinal": 1,
-        "name": "uri",
-        "type_info": "Varchar"
+        "name": "target_account_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
         "Int8"
       ]
     },
     "nullable": [
       false,
-      true
+      false
     ]
   },
-  "hash": "a2a04b6bdef32a9008894bc6a1bc72b22d7bd9d78d701c9e84a73e50c4ba9d3d"
+  "hash": "f6e284a8c74bf8b5aa68425beb4b7409bab854621974a99e844106760065ea12"
 }

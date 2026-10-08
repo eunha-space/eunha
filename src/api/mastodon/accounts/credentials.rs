@@ -290,6 +290,10 @@ async fn do_update_credentials(
         .await?;
     }
     if let Some(l) = locked {
+        let was_locked =
+            sqlx::query_scalar!("SELECT locked FROM accounts WHERE id = $1", auth.account_id)
+                .fetch_one(&state.db)
+                .await?;
         sqlx::query!(
             "UPDATE accounts SET locked = $1 WHERE id = $2",
             l,
@@ -297,61 +301,27 @@ async fn do_update_credentials(
         )
         .execute(&state.db)
         .await?;
-        // Auto-approve pending follow requests when account becomes unlocked
-        if !l {
-            // Promote all pending follow requests to accepted follows
-            // `authorize_all_follow_requests`: all but those from limited
-            // accounts, which stay requests.
-            let pending = sqlx::query!(
-                r#"DELETE FROM follow_requests fr USING accounts a
-                   WHERE fr.target_account_id = $1 AND a.id = fr.account_id AND a.silenced_at IS NULL
-                   RETURNING fr.account_id"#,
+        // `authorize_all_follow_requests(account) if was_locked &&
+        // !account.locked`: an `AuthorizeFollowWorker` for each request, but
+        // those from limited accounts, which stay requests.
+        if was_locked && !l {
+            let requests = sqlx::query!(
+                r#"SELECT fr.account_id FROM follow_requests fr
+                   JOIN accounts a ON a.id = fr.account_id
+                   WHERE fr.target_account_id = $1 AND a.silenced_at IS NULL"#,
                 auth.account_id,
             )
             .fetch_all(&state.db)
             .await?;
-            if !pending.is_empty() {
-                // Mirror Mastodon's FollowRequest dependent: :destroy — auto-approving
-                // the pending requests removes their follow_request notifications too.
-                let approved: Vec<i64> = pending.iter().map(|r| r.account_id).collect();
-                sqlx::query!(
-                    r#"DELETE FROM notifications WHERE account_id = $1 AND type = 'follow_request'
-                         AND from_account_id = ANY($2)"#,
-                    auth.account_id,
-                    &approved,
-                )
-                .execute(&state.db)
-                .await?;
-            }
-            for row in &pending {
-                let _ = sqlx::query!(
-                    r#"INSERT INTO follows (account_id, target_account_id, created_at, updated_at)
-                       VALUES ($1, $2, now(), now()) ON CONFLICT DO NOTHING"#,
-                    row.account_id,
-                    auth.account_id
-                )
-                .execute(&state.db)
-                .await;
-                // `AccountStat`'s `update_index('accounts', :account)`.
-                crate::search::elasticsearch::indexing::accounts(
-                    state,
-                    &[row.account_id, auth.account_id],
-                )
-                .await;
-                let _ = crate::counters::on_follow_created(state, row.account_id, auth.account_id)
-                    .await;
-                crate::push::create_and_push(
-                    state,
-                    auth.account_id,
-                    row.account_id,
-                    "follow",
-                    None,
-                    "New follower".into(),
-                    "".into(),
-                    "".into(),
-                )
-                .await;
-            }
+            crate::jobs::perform_bulk(
+                state,
+                requests.into_iter().map(|r| super::AuthorizeFollowWorker {
+                    source_account_id: r.account_id,
+                    target_account_id: auth.account_id,
+                }),
+            )
+            .await
+            .map_err(AppError::Internal)?;
         }
     }
     if let Some(b) = bot {

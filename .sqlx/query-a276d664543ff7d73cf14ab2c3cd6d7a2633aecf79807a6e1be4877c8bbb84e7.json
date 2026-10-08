@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2\n         WHERE follow_request_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a276d664543ff7d73cf14ab2c3cd6d7a2633aecf79807a6e1be4877c8bbb84e7"
+}

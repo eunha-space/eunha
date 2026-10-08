@@ -377,3 +377,100 @@ async fn test_a_repeated_follow_only_renames_a_pending_request() {
     assert_eq!(notifications().await, 1);
     assert!(queued(&ctx, "Reject").await.is_empty());
 }
+
+/// Unlocking an account authorizes its requests as `AuthorizeFollowWorker`
+/// does (`AuthorizeFollowService`, `FollowRequest#authorize!`): each follow
+/// keeps its request's options and id, a remote requester is sent an
+/// `Accept` of it, a list membership that waited on a request now holds the
+/// follow, and no notification of a new follower is made.
+#[tokio::test]
+async fn test_unlocking_authorizes_requests_as_authorize_follow_service_does() {
+    let ctx = TestContext::new("follows-unlock").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    give_key(&ctx, alice).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    sqlx::query("UPDATE accounts SET locked = true WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let (rita, rita_uri) = seed_remote(&ctx, "rita").await;
+    let ritas_request = request(&ctx, rita, alice, "https://rita.invalid/follows/1").await;
+    sqlx::query(
+        "UPDATE follow_requests SET show_reblogs = false, notify = true, languages = '{en}'
+         WHERE id = $1",
+    )
+    .bind(ritas_request)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let bobs_request = request(&ctx, bob, alice, &format!("https://{}/bobs", ctx.domain)).await;
+    let list_id: i64 = sqlx::query_scalar(
+        "INSERT INTO lists (account_id, title, created_at, updated_at)
+         VALUES ($1, 'friends', now(), now()) RETURNING id",
+    )
+    .bind(bob)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO list_accounts (list_id, account_id, follow_request_id)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(list_id)
+    .bind(alice)
+    .bind(bobs_request)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    ctx.api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"locked": false}),
+        )
+        .await;
+    ctx.state.jobs.settle().await;
+
+    let (uri, show_reblogs, notify, languages): (Option<String>, bool, bool, Option<Vec<String>>) =
+        sqlx::query_as(
+            "SELECT uri, show_reblogs, notify, languages FROM follows
+             WHERE account_id = $1 AND target_account_id = $2",
+        )
+        .bind(rita)
+        .bind(alice)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(uri.as_deref(), Some("https://rita.invalid/follows/1"));
+    assert!(!show_reblogs);
+    assert!(notify);
+    assert_eq!(languages, Some(vec!["en".to_owned()]));
+    let accepts = queued(&ctx, "Accept").await;
+    assert_eq!(accepts.len(), 1, "{accepts:?}");
+    let (accept, inbox) = &accepts[0];
+    assert_eq!(inbox, &format!("{rita_uri}/inbox"));
+    assert_eq!(
+        accept["id"],
+        format!("{alice_uri}#accepts/follows/{ritas_request}")
+    );
+    assert_eq!(accept["object"]["id"], "https://rita.invalid/follows/1");
+
+    let follow_id: Option<i64> =
+        sqlx::query_scalar("SELECT follow_id FROM list_accounts WHERE list_id = $1")
+            .bind(list_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(follow_id.is_some(), "the membership holds the follow");
+    let follows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notifications WHERE account_id = $1 AND type = 'follow'",
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(follows, 0);
+}

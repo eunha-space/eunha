@@ -1409,6 +1409,8 @@ async fn test_unlock_skips_limited_requesters() {
             &json!({"locked": false}),
         )
         .await;
+    // `AuthorizeFollowWorker`s.
+    ctx.state.jobs.settle().await;
     let left: Vec<i64> =
         sqlx::query_scalar("SELECT account_id FROM follow_requests WHERE target_account_id = $1")
             .bind(id(&ctx.alice_id))

@@ -479,7 +479,14 @@ pub async fn unfollow(
         let target = fetch_account(state, target_id).await?;
         if target.domain.is_none() && follower.domain.is_some() {
             // `send_reject_follow`.
-            send_reject_follow(state, &target, &follower, follow.id, follow.uri.as_deref()).await;
+            send_reject_follow(
+                state,
+                &target,
+                &follower,
+                Some(follow.id),
+                follow.uri.as_deref(),
+            )
+            .await;
         } else if target.domain.is_some() {
             // `send_undo_follow`.
             send_undo_follow(state, &follower, &target, follow.id, follow.uri.as_deref()).await;
@@ -553,7 +560,14 @@ pub async fn reject_follow(state: &AppState, source_id: i64, target_id: i64) -> 
     let source = fetch_account(state, source_id).await?;
     if source.domain.is_some() {
         let target = fetch_account(state, target_id).await?;
-        send_reject_follow(state, &target, &source, request.id, request.uri.as_deref()).await;
+        send_reject_follow(
+            state,
+            &target,
+            &source,
+            Some(request.id),
+            request.uri.as_deref(),
+        )
+        .await;
     }
     Ok(true)
 }
@@ -601,10 +615,57 @@ pub(crate) async fn send_reject_follow(
     state: &AppState,
     followee: &Account,
     follower: &Account,
-    id: i64,
+    id: Option<i64>,
     uri: Option<&str>,
 ) {
-    let (Some(follower_uri), false) = (follower.stored_uri(), follower.inbox_url.is_empty()) else {
+    send_follow_answer(
+        state,
+        followee,
+        follower,
+        crate::federation::relationships::reject_follow(
+            &crate::federation::tag::account_uri_of(&state.instance.domain, followee),
+            follower.stored_uri().unwrap_or_default(),
+            id,
+            uri,
+        ),
+    )
+    .await;
+}
+
+/// `ActivityPub::DeliveryWorker` of an `AcceptFollowSerializer` of the remote
+/// `follower`'s request `id` of the local `followee`, to the follower's
+/// inbox.
+pub(crate) async fn send_accept_follow(
+    state: &AppState,
+    followee: &Account,
+    follower: &Account,
+    id: Option<i64>,
+    uri: Option<&str>,
+) {
+    send_follow_answer(
+        state,
+        followee,
+        follower,
+        crate::federation::relationships::accept_follow(
+            &crate::federation::tag::account_uri_of(&state.instance.domain, followee),
+            follower.stored_uri().unwrap_or_default(),
+            id,
+            uri,
+        ),
+    )
+    .await;
+}
+
+async fn send_follow_answer(
+    state: &AppState,
+    followee: &Account,
+    follower: &Account,
+    answer: anyhow::Result<serde_json::Value>,
+) {
+    if follower.stored_uri().is_none() || follower.inbox_url.is_empty() {
+        return;
+    }
+    let Ok(answer) = answer else {
         return;
     };
     if !crate::federation::keypair::has_signing_key(state, followee.id)
@@ -613,21 +674,16 @@ pub(crate) async fn send_reject_follow(
     {
         return;
     }
-    let actor_url = crate::federation::tag::account_uri_of(&state.instance.domain, followee);
-    let Ok(reject) =
-        crate::federation::relationships::reject_follow(&actor_url, follower_uri, Some(id), uri)
-    else {
-        return;
-    };
+    let key_id = crate::federation::tag::key_id_of(&state.instance.domain, followee);
     if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
         state,
-        reject,
+        answer,
         vec![follower.inbox_url.clone()],
-        format!("{actor_url}#main-key"),
+        key_id,
     )
     .await
     {
-        tracing::warn!(error = %e, "failed to enqueue Reject(Follow)");
+        tracing::warn!(error = %e, "failed to enqueue an answer to a Follow");
     }
 }
 

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT fr.account_id FROM follow_requests fr\n                   JOIN accounts a ON a.id = fr.account_id\n                   WHERE fr.target_account_id = $1 AND a.silenced_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9ae9d103fd3c57e2234828b6e05244efaed54c9ee73882131e8074e61dc0be99"
+}

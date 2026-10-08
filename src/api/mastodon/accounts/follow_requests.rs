@@ -64,114 +64,57 @@ pub async fn get_follow_requests(
 
 // ── POST /api/v1/follow_requests/:id/authorize ────────────────────────────
 
+/// `Api::V1::FollowRequestsController#authorize`: `AuthorizeFollowService`,
+/// which answers 404 when there is no request, and a `follow` notification
+/// of the new follower (`LocalNotificationWorker`).
 pub async fn authorize_follow_request(
     state: AppState,
     Path(requester_id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
-    let follow_uri = authorize(&state, requester_id, auth.account_id).await?;
+    if !authorize_follow(&state, requester_id, auth.account_id).await? {
+        return Err(AppError::NotFound);
+    }
 
-    // Mastodon's FollowRequest has_one :notification, dependent: :destroy —
-    // resolving the request removes its follow_request notification so it stops
-    // reappearing with Accept/Reject buttons. Run this unconditionally: the
-    // follow_requests row may already be gone (e.g. an earlier accept, or a
-    // pre-fix orphan) while its notification lingers, so it must be cleared even
-    // when nothing was deleted above.
-    sqlx::query!(
-        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
+    let requester = fetch_account(&state, requester_id).await?;
+    push::create_and_push(
+        &state,
         auth.account_id,
         requester_id,
+        "follow",
+        None,
+        format!("{} followed you", requester.display_name),
+        requester.acct().clone(),
+        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &requester),
     )
-    .execute(&state.db)
-    .await?;
-
-    if let Some(follow_uri) = follow_uri {
-        let accepter = fetch_account(&state, auth.account_id).await?;
-        let requester = fetch_account(&state, requester_id).await?;
-        // Mastodon's authorize action enqueues LocalNotificationWorker for
-        // current_account (the accepter), so accepting turns the follow_request
-        // notification into a `follow` notification in the accepter's own column
-        // — "the requester now follows you". (Mastodon sends no notification to
-        // the requester; remote requesters learn via the federated Accept below.)
-        push::create_and_push(
-            &state,
-            auth.account_id,
-            requester_id,
-            "follow",
-            None,
-            format!("{} followed you", requester.display_name),
-            requester.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &requester),
-        )
-        .await;
-
-        // A remote requester always has an actor id to address the Accept to.
-        let requester_uri = requester.stored_uri().unwrap_or_default().to_string();
-        if let Some(follow_uri) = follow_uri {
-            if requester.domain.is_some()
-                && !requester_uri.is_empty()
-                && crate::federation::keypair::has_signing_key(&state, accepter.id)
-                    .await
-                    .unwrap_or(false)
-            {
-                let accepter_actor_url =
-                    crate::federation::tag::account_uri_of(&state.instance.domain, &accepter);
-                let key_id = format!("{}#main-key", accepter_actor_url);
-                let accept_id = format!(
-                    "https://{}/activities/{}",
-                    state.instance.domain,
-                    crate::snowflake::next_id()
-                );
-                let activity = crate::federation::activity::accept_follow(
-                    &accept_id,
-                    &accepter_actor_url,
-                    &follow_uri,
-                    &requester_uri,
-                    &accepter_actor_url,
-                )?;
-                let inbox = requester.inbox_url.clone();
-                if inbox.is_empty() {
-                    tracing::warn!(
-                        requester_uri,
-                        "cannot deliver Accept: remote actor has no inbox URL"
-                    );
-                } else {
-                    tracing::debug!(inbox, requester_uri, "enqueueing Accept");
-                    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                        &state,
-                        activity,
-                        vec![inbox],
-                        key_id,
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "failed to enqueue Accept");
-                    }
-                }
-            }
-        }
-    }
+    .await;
 
     build_relationship(&state, auth.account_id, requester_id)
         .await
         .map(Json)
 }
 
+/// What [`authorize`] made a follow of: the request's id and `uri`.
+pub struct Authorized {
+    pub id: i64,
+    pub uri: Option<String>,
+}
+
 /// Mastodon's `FollowRequest#authorize!`: the request becomes a follow with
-/// the request's options, the requester's list memberships that hung on the
-/// request now hang on the follow, and the target's posts are merged into the
-/// requester's home feed. `None` when there was no request; otherwise the
-/// request's activity id, if it had one.
+/// the request's options and `uri` (`account.follow!`, which updates a
+/// follow already there), the requester's list memberships that hung on the
+/// request now hang on the follow, the target's posts are merged into a
+/// local requester's home feed, and the request goes with its notification.
+/// `None` when there was no request.
 pub async fn authorize(
     state: &AppState,
     requester_id: i64,
     target_id: i64,
-) -> AppResult<Option<Option<String>>> {
-    // Move from follow_requests to follows (atomic: delete pending, insert accepted)
+) -> AppResult<Option<Authorized>> {
     let Some(request) = sqlx::query!(
-        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2
-         RETURNING id, uri, show_reblogs, notify, languages",
+        "SELECT id, uri, show_reblogs, notify, languages FROM follow_requests
+         WHERE account_id = $1 AND target_account_id = $2",
         requester_id,
         target_id
     )
@@ -181,10 +124,14 @@ pub async fn authorize(
         return Ok(None);
     };
 
-    let follow_id = sqlx::query_scalar!(
+    let follow = sqlx::query!(
         r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, now(), now()) ON CONFLICT DO NOTHING
-           RETURNING id"#,
+           VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+           ON CONFLICT (account_id, target_account_id) DO UPDATE
+             SET show_reblogs = EXCLUDED.show_reblogs, notify = EXCLUDED.notify,
+                 languages = COALESCE(EXCLUDED.languages, follows.languages),
+                 updated_at = now()
+           RETURNING id, (xmax = 0) AS "inserted!""#,
         requester_id,
         target_id,
         request.show_reblogs,
@@ -192,21 +139,33 @@ pub async fn authorize(
         request.languages.as_deref(),
         request.uri,
     )
-    .fetch_optional(&state.db)
+    .fetch_one(&state.db)
     .await?;
-    if let Some(follow_id) = follow_id {
+    if follow.inserted {
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[requester_id, target_id]).await;
         crate::counters::on_follow_created(state, requester_id, target_id).await?;
-        sqlx::query!(
-            "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
-             WHERE follow_request_id = $1",
-            request.id,
-            follow_id,
-        )
+    }
+    // The memberships move before the request goes, which would take them
+    // with it.
+    sqlx::query!(
+        "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
+         WHERE follow_request_id = $1",
+        request.id,
+        follow.id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!("DELETE FROM follow_requests WHERE id = $1", request.id)
         .execute(&state.db)
         .await?;
-    }
+    // `has_one :notification, dependent: :destroy`.
+    sqlx::query!(
+        "DELETE FROM notifications WHERE activity_type = 'FollowRequest' AND activity_id = $1",
+        request.id,
+    )
+    .execute(&state.db)
+    .await?;
 
     // `MergeWorker` into the home feed, which only a local requester has.
     let requester_is_local = sqlx::query_scalar!(
@@ -220,81 +179,67 @@ pub async fn authorize(
         crate::home_feed::merge_into_home_and_lists(state, target_id, requester_id).await;
     }
 
-    Ok(Some(request.uri))
+    Ok(Some(Authorized {
+        id: request.id,
+        uri: request.uri,
+    }))
+}
+
+/// Mastodon's `AuthorizeFollowService`: the request authorized, and a
+/// remote requester told with an `Accept` of it. Says whether there was a
+/// request (`find_by!`).
+pub async fn authorize_follow(state: &AppState, source_id: i64, target_id: i64) -> AppResult<bool> {
+    let Some(request) = authorize(state, source_id, target_id).await? else {
+        return Ok(false);
+    };
+    let source = fetch_account(state, source_id).await?;
+    if source.domain.is_some() {
+        let target = fetch_account(state, target_id).await?;
+        super::relationships::send_accept_follow(
+            state,
+            &target,
+            &source,
+            Some(request.id),
+            request.uri.as_deref(),
+        )
+        .await;
+    }
+    Ok(true)
+}
+
+/// `AuthorizeFollowWorker`: `AuthorizeFollowService`, for a request that
+/// may have gone since (`rescue ActiveRecord::RecordNotFound`).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AuthorizeFollowWorker {
+    pub source_account_id: i64,
+    pub target_account_id: i64,
+}
+
+impl crate::jobs::Job for AuthorizeFollowWorker {
+    const KIND: &'static str = "AuthorizeFollowWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        authorize_follow(state, self.source_account_id, self.target_account_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        Ok(())
+    }
 }
 
 // ── POST /api/v1/follow_requests/:id/reject ───────────────────────────────
 
+/// `Api::V1::FollowRequestsController#reject`: `RejectFollowService`, which
+/// answers 404 when there is no request.
 pub async fn reject_follow_request(
     state: AppState,
     Path(requester_id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
-    let deleted = sqlx::query!(
-        "DELETE FROM follow_requests WHERE account_id = $1 AND target_account_id = $2 RETURNING account_id, uri",
-        requester_id, auth.account_id
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Mastodon's FollowRequest has_one :notification, dependent: :destroy —
-    // resolving the request removes its follow_request notification so it stops
-    // reappearing with Accept/Reject buttons. Run this unconditionally: the
-    // follow_requests row may already be gone (e.g. an earlier reject, or a
-    // pre-fix orphan) while its notification lingers, so it must be cleared even
-    // when nothing was deleted above.
-    sqlx::query!(
-        "DELETE FROM notifications WHERE account_id = $1 AND from_account_id = $2 AND type = 'follow_request'",
-        auth.account_id,
-        requester_id,
-    )
-    .execute(&state.db)
-    .await?;
-
-    if let Some(deleted_row) = deleted {
-        if let Some(follow_uri) = deleted_row.uri {
-            let requester = fetch_account(&state, requester_id).await?;
-            let requester_uri = requester.stored_uri().unwrap_or_default().to_string();
-            if requester.domain.is_some() && !requester_uri.is_empty() {
-                let rejecter = fetch_account(&state, auth.account_id).await?;
-                if crate::federation::keypair::has_signing_key(&state, rejecter.id)
-                    .await
-                    .unwrap_or(false)
-                {
-                    let rejecter_actor_url =
-                        crate::federation::tag::account_uri_of(&state.instance.domain, &rejecter);
-                    let key_id = format!("{}#main-key", rejecter_actor_url);
-                    let reject_id = format!(
-                        "https://{}/activities/{}",
-                        state.instance.domain,
-                        crate::snowflake::next_id()
-                    );
-                    let activity = crate::federation::activity::reject_follow(
-                        &reject_id,
-                        &rejecter_actor_url,
-                        &follow_uri,
-                        &requester_uri,
-                        &rejecter_actor_url,
-                    )?;
-                    let inbox = requester.inbox_url.clone();
-                    if !inbox.is_empty() {
-                        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-                            &state,
-                            activity,
-                            vec![inbox],
-                            key_id,
-                        )
-                        .await
-                        {
-                            tracing::warn!(error = %e, "failed to enqueue Reject");
-                        }
-                    }
-                }
-            }
-        }
+    if !super::relationships::reject_follow(&state, requester_id, auth.account_id).await? {
+        return Err(AppError::NotFound);
     }
-
     build_relationship(&state, auth.account_id, requester_id)
         .await
         .map(Json)

@@ -3729,6 +3729,8 @@ async fn test_unlock_account_approves_pending_follows() {
             &[("locked", "false")],
         )
         .await;
+    // `AuthorizeFollowWorker`s.
+    ctx.state.jobs.settle().await;
 
     // Bob's follow should now be accepted.
     let rel: Value = ctx

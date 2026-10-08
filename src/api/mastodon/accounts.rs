@@ -32,7 +32,8 @@ pub use mutes_blocks::{
 };
 mod follow_requests;
 pub use follow_requests::{
-    authorize, authorize_follow_request, get_follow_requests, reject_follow_request,
+    authorize, authorize_follow, authorize_follow_request, get_follow_requests,
+    reject_follow_request, AuthorizeFollowWorker, Authorized,
 };
 mod suggestions;
 pub use suggestions::{dismiss_suggestion, get_suggestions, get_suggestions_v2};
