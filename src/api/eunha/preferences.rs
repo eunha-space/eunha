@@ -249,15 +249,11 @@ pub async fn update(
         .await?;
     }
     if let Some(locale) = form.locale {
-        // `normalizes :locale`: one Mastodon cannot speak is no locale.
-        let locale = locale.trim();
-        let known = crate::languages::valid_locale(Some(locale))
-            || locale
-                .split_once('-')
-                .is_some_and(|(language, _)| crate::languages::valid_locale(Some(language)));
+        // `normalizes :locale`: one Mastodon's interface is not offered in
+        // is no locale.
         sqlx::query!(
             "UPDATE users SET locale = $1, updated_at = now() WHERE id = $2",
-            known.then_some(locale),
+            crate::languages::user_locale(Some(&locale)),
             user_id,
         )
         .execute(&state.db)

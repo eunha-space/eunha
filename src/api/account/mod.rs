@@ -124,6 +124,17 @@ fn clear_cookie() -> &'static str {
     "account_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
 }
 
+/// `Localized#requested_locale`, for no signed-in user, or
+/// `I18n.default_locale`: the `lang` parameter, then `Accept-Language`, when
+/// either names one of `I18n.available_locales`.
+fn requested_locale(state: &AppState, query: Option<&str>, headers: &HeaderMap) -> &'static str {
+    url::form_urlencoded::parse(query.unwrap_or_default().as_bytes())
+        .find(|(key, _)| key == "lang")
+        .and_then(|(_, lang)| crate::languages::available_locale(&lang))
+        .or_else(|| accept_language(headers).and_then(crate::languages::accept_language_locale))
+        .unwrap_or_else(|| state.instance.default_locale())
+}
+
 fn accept_language(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::ACCEPT_LANGUAGE)
@@ -977,11 +988,15 @@ pub async fn registration_post(
     >,
     client_ip: ClientIpExt,
     headers: HeaderMap,
-    crate::api::mastodon::extractors::FormOrJson(form): crate::api::mastodon::extractors::FormOrJson<
+    uri: axum::http::Uri,
+    crate::api::mastodon::extractors::FormOrJson(mut form): crate::api::mastodon::extractors::FormOrJson<
         crate::api::mastodon::signup::ApiCreateAccountForm,
     >,
 ) -> Response {
     let ip = client_addr(client_ip);
+    // `build_resource`: `resource.locale = I18n.locale`, whatever the form
+    // says.
+    form.locale = Some(requested_locale(&state, uri.query(), &headers).to_owned());
     let instance = crate::settings::Snapshot::load(&state)
         .await
         .amend(&instance);

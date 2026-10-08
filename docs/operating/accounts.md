@@ -396,6 +396,13 @@ does.
  -  `time_zone`, as `AppSignUpService` takes it, becomes `users.time_zone`
     when it names a zone Rails knows (see [Time zones](#time-zones)); any
     other value is dropped rather than refused.
+ -  `locale`, as `AppSignUpService` takes it, becomes `users.locale` when it
+    is one of Mastodon's interface locales (`I18n.available_locales`, spelled
+    as Mastodon spells them, such as `en` or `pt-BR`); any other value is
+    dropped rather than refused, as `User` normalizes it. The web sign-up
+    saves the locale the page was asked in instead (`lang`, then
+    `Accept-Language`, then the instance's default locale), whatever the
+    form says.
 
 Registrations closed with no invite good for use, or an IP block on signing
 up, refuse the sign-up with `403`, as `check_enabled_registrations` does.
@@ -496,8 +503,8 @@ privacy section uses both.
  -  `show_application` off hides the app a post was sent from from everyone
     but its author, as `show_application?` does.
  -  `chosen_languages` limits public timelines to those languages; an empty
-    list clears it. `locale` is the language eunha writes mail in; one Mastodon
-    has no translation for is cleared.
+    list clears it. `locale` is the language eunha writes mail in; one that is
+    not among Mastodon's interface locales is cleared.
  -  `time_zone` is the zone the times in mail are written in (see
     [Time zones](#time-zones)).
  -  `aggregate_reblogs` (on unless turned off) groups boosts in the home

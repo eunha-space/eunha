@@ -151,7 +151,8 @@ pub async fn insert_local(
         user.role_id,
         user.invite_id,
         user.approved,
-        user.locale,
+        // `normalizes :locale`.
+        crate::languages::user_locale(user.locale),
         user.app_id,
         user.sign_up_ip.map(|ip| ip.to_string()),
         age_verified,

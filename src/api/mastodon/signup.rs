@@ -482,7 +482,8 @@ pub async fn register(
     // `normalizes :username, with: squish`: the case is kept as entered.
     let username = form.username.trim().to_string();
     let email = form.email.trim().to_lowercase();
-    // `locale` as given, none when not, for `I18n.default_locale` to stand in.
+    // `locale` as given, none when not, for `I18n.default_locale` to stand
+    // in; one Mastodon is not offered in becomes none as the user is saved.
     let locale = form.locale.clone().filter(|l| !l.is_empty());
     // `User`'s validations, every one of them, in the order the model runs
     // them, so that a refusal names everything wrong at once.

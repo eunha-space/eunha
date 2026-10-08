@@ -686,3 +686,78 @@ async fn test_pending_sign_ups_are_converted() {
         .await;
     assert_eq!(signed_in.headers().get("location").unwrap(), "/account");
 }
+
+async fn stored_locale(ctx: &TestContext, username: &str) -> Option<String> {
+    sqlx::query_scalar(
+        "SELECT u.locale FROM users u JOIN accounts a ON a.id = u.account_id
+         WHERE a.username = $1",
+    )
+    .bind(username)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// `User`'s `normalizes :locale`: a sign-up in a locale Mastodon's interface
+/// is not offered in succeeds, with no locale, for `I18n.default_locale` to
+/// stand in; one it is offered in is kept.
+#[tokio::test]
+async fn test_a_sign_up_keeps_only_an_available_locale() {
+    let ctx = TestContext::new("signup-locale").await;
+    let (_, app_token) = ctx.app_token("read write").await;
+    for (username, locale, expected) in [
+        ("carol", "toto", None),
+        ("dave", "en-US", None),
+        ("erin", "pt-BR", Some("pt-BR")),
+    ] {
+        let mut body = carol();
+        body["username"] = json!(username);
+        body["email"] = json!(format!("{username}@example.com"));
+        body["locale"] = json!(locale);
+        let response = ctx
+            .api
+            .post_json("/api/v1/accounts", Some(&app_token), &body)
+            .await;
+        assert_eq!(response.status(), StatusCode::OK, "{locale}");
+        assert_eq!(
+            stored_locale(&ctx, username).await.as_deref(),
+            expected,
+            "{locale}"
+        );
+    }
+}
+
+/// `Auth::RegistrationsController#build_resource`: the web sign-up saves
+/// `I18n.locale`, the locale the page was asked in, not one the form gives.
+#[tokio::test]
+async fn test_the_web_sign_up_saves_the_requested_locale() {
+    let ctx = TestContext::new("signup-web-locale").await;
+    for (username, query, accept_language, expected) in [
+        ("carol", "", "pt-BR,en;q=0.8", "pt-BR"),
+        ("dave", "?lang=ja", "pt-BR", "ja"),
+        ("erin", "?lang=toto", "xx", "en"),
+    ] {
+        let response = ctx
+            .api
+            .http
+            .post(ctx.api.url(&format!("/auth{query}")))
+            .header("host", &ctx.api.host)
+            .header("accept-language", accept_language)
+            .form(&[
+                ("username", username),
+                ("email", &format!("{username}@example.com")),
+                ("password", "a-long-enough-password"),
+                ("agreement", "1"),
+                ("locale", "ko"),
+            ])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{username}");
+        assert_eq!(
+            stored_locale(&ctx, username).await.as_deref(),
+            Some(expected),
+            "{username}"
+        );
+    }
+}

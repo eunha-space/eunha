@@ -280,6 +280,12 @@ pub fn available_locale(name: &str) -> Option<&'static str> {
     AVAILABLE_LOCALES.iter().copied().find(|l| *l == name)
 }
 
+/// `User`'s `normalizes :locale`: a locale that is not one of
+/// `I18n.available_locales`, spelled exactly, is none. Nothing is refused.
+pub fn user_locale(locale: Option<&str>) -> Option<&'static str> {
+    locale.and_then(available_locale)
+}
+
 /// `HttpAcceptLanguage::Parser#language_region_compatible_from`: the first
 /// available locale, in the header's order of preference, matching a
 /// preferred language exactly or by its language alone.
@@ -344,5 +350,17 @@ mod locale_tests {
         assert_eq!(normalized_locale_name("ZH-tw"), "zh-TW");
         assert_eq!(normalized_locale_name("EN"), "en");
         assert_eq!(normalized_locale_name("tlh"), "tlh");
+    }
+
+    #[test]
+    fn a_users_locale_is_one_mastodon_is_offered_in() {
+        assert_eq!(user_locale(Some("en")), Some("en"));
+        assert_eq!(user_locale(Some("pt-BR")), Some("pt-BR"));
+        // `toto`, as Mastodon's spec has it, and what `LanguagesHelper`
+        // knows but the interface is not offered in.
+        for locale in ["toto", "", " en", "EN", "pt", "en-US", "ja-JP", "tlh"] {
+            assert_eq!(user_locale(Some(locale)), None, "{locale}");
+        }
+        assert_eq!(user_locale(None), None);
     }
 }

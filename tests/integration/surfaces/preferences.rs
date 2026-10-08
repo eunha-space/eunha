@@ -73,6 +73,21 @@ async fn test_preferences_default_and_change() {
         .unwrap();
     assert!(cleared["chosen_languages"].is_null());
     assert!(cleared["locale"].is_null());
+    // Only `I18n.available_locales`, spelled as Mastodon spells them: not a
+    // language it knows but is not offered in, nor a region of one it is.
+    for locale in ["pt-BR", "ab", "en-US", "EN"] {
+        let changed: Value = patch(&ctx, json!({ "locale": locale }))
+            .await
+            .json()
+            .await
+            .unwrap();
+        let expected = if locale == "pt-BR" {
+            json!("pt-BR")
+        } else {
+            Value::Null
+        };
+        assert_eq!(changed["locale"], expected, "{locale}");
+    }
 
     let refused = patch(
         &ctx,
