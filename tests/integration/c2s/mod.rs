@@ -46,6 +46,7 @@ mod scope;
 mod search;
 mod search_elasticsearch;
 mod server_admin;
+mod status_context;
 mod status_removal;
 mod status_validation;
 mod statuses;

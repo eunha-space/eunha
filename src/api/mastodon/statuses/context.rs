@@ -21,181 +21,85 @@ pub async fn get_status_context(
 
     let viewer_id = auth.map(|Extension(a)| a.account_id);
 
-    // Enforce the same visibility rules as GET /api/v1/statuses/:id
+    // `set_status`: `authorize @status, :show?`.
     match viewer_id {
         Some(vid) => check_status_visible(&state, &root, vid).await?,
-        None => {
-            if !matches!(
-                root.visibility,
-                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-            ) {
-                return Err(AppError::NotFound);
-            }
-        }
+        None => check_status_public(&state, &root).await?,
     }
 
-    // Mastodon limits: authenticated=4096 each; unauthenticated=40 ancestors, 60 descendants (depth 20).
-    let (ancestor_limit, descendant_limit, depth_limit): (i64, i64, i64) = if viewer_id.is_some() {
-        (4096, 4096, 4096)
-    } else {
-        (40, 60, 20)
-    };
-
-    let ancestor_rows = sqlx::query_as::<_, DbStatus>(
-        r#"WITH RECURSIVE ancestor_chain AS (
-             SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL
-             UNION ALL
-             SELECT s.* FROM statuses s
-               JOIN ancestor_chain a ON s.id = a.in_reply_to_id
-             WHERE s.deleted_at IS NULL
-           )
-           SELECT * FROM ancestor_chain WHERE id != $1 ORDER BY id ASC LIMIT $2"#,
-    )
-    .bind(id)
-    .bind(ancestor_limit)
-    .fetch_all(&state.db)
-    .await?;
-
-    // Descendants are ordered by tree path (depth-first pre-order) so each
-    // subtree stays contiguous, matching Mastodon's `descendant_ids` ORDER BY path.
-    let descendant_rows = sqlx::query_as::<_, DbStatus>(
-        r#"WITH RECURSIVE reply_tree(id, path, depth) AS (
-             SELECT id, ARRAY[id]::bigint[] AS path, 1::int AS depth FROM statuses
-             WHERE in_reply_to_id = $1 AND deleted_at IS NULL
-             UNION ALL
-             SELECT s.id, r.path || s.id, r.depth + 1 FROM statuses s
-               JOIN reply_tree r ON s.in_reply_to_id = r.id
-             WHERE s.deleted_at IS NULL AND r.depth < $3 AND NOT s.id = ANY(r.path)
-           ),
-           bounded AS (SELECT id, path FROM reply_tree ORDER BY path LIMIT $2)
-           SELECT s.* FROM statuses s JOIN bounded b ON s.id = b.id ORDER BY b.path"#,
-    )
-    .bind(id)
-    .bind(descendant_limit)
-    .bind(depth_limit)
-    .fetch_all(&state.db)
-    .await?;
-
-    // Collect blocked account IDs for the viewer (batch query, avoids n+1 per status).
-    let blocked_accounts: std::collections::HashSet<i64> = if let Some(vid) = viewer_id {
-        let all_account_ids: Vec<i64> = ancestor_rows
-            .iter()
-            .chain(descendant_rows.iter())
-            .map(|s| s.account_id)
-            .filter(|aid| *aid != vid)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        if all_account_ids.is_empty() {
-            Default::default()
+    // `CONTEXT_LIMIT` for a signed-in viewer, with no depth limit; else
+    // `ANCESTORS_LIMIT`, `DESCENDANTS_LIMIT` and `DESCENDANTS_DEPTH_LIMIT`.
+    let (ancestors_limit, descendants_limit, depth_limit): (i64, i64, Option<i32>) =
+        if viewer_id.is_some() {
+            (4096, 4096, None)
         } else {
+            (40, 60, Some(20))
+        };
+
+    // `ancestor_ids`: the chain from the post replied to up to the root,
+    // through posts since deleted too, ordered by path (the nearest
+    // first), the nearest `limit` kept, then reversed so the root is first.
+    let mut ancestor_ids: Vec<i64> = match root.in_reply_to_id {
+        None => vec![],
+        Some(parent) => {
             sqlx::query_scalar!(
-                r#"SELECT target_account_id FROM blocks
-                   WHERE account_id = $1 AND target_account_id = ANY($2::bigint[])
-                   UNION
-                   SELECT account_id FROM blocks
-                   WHERE target_account_id = $1 AND account_id = ANY($2::bigint[])"#,
-                vid,
-                &all_account_ids,
+                r#"WITH RECURSIVE search_tree(id, in_reply_to_id, path) AS (
+                 SELECT id, in_reply_to_id, ARRAY[id]
+                 FROM statuses
+                 WHERE id = $1
+               UNION ALL
+                 SELECT statuses.id, statuses.in_reply_to_id, path || statuses.id
+                 FROM search_tree
+                 JOIN statuses ON statuses.id = search_tree.in_reply_to_id
+                 WHERE NOT statuses.id = ANY(path)
+               )
+               SELECT id AS "id!" FROM search_tree ORDER BY path LIMIT $2"#,
+                parent,
+                ancestors_limit,
             )
             .fetch_all(&state.db)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .flatten()
-            .collect()
+            .await?
         }
-    } else {
-        Default::default()
     };
+    ancestor_ids.reverse();
 
-    // Filter by visibility first, then apply "thread" context custom filters.
-    let visible_ancestors: Vec<&DbStatus> = ancestor_rows
-        .iter()
-        .filter(|s| {
-            if viewer_id.is_some_and(|vid| vid != s.account_id)
-                && blocked_accounts.contains(&s.account_id)
-            {
-                return false;
-            }
-            if matches!(
-                s.visibility,
-                crate::db::models::vis::PRIVATE
-                    | crate::db::models::vis::DIRECT
-                    | crate::db::models::vis::LIMITED
-            ) {
-                viewer_id.is_some()
-            } else {
-                true
-            }
-        })
-        .collect();
-    let visible_descendants: Vec<&DbStatus> = {
-        let filtered = descendant_rows.iter().filter(|s| {
-            if viewer_id.is_some_and(|vid| vid != s.account_id)
-                && blocked_accounts.contains(&s.account_id)
-            {
-                return false;
-            }
-            if matches!(
-                s.visibility,
-                crate::db::models::vis::PRIVATE
-                    | crate::db::models::vis::DIRECT
-                    | crate::db::models::vis::LIMITED
-            ) {
-                viewer_id.is_some()
-            } else {
-                true
-            }
-        });
-        // Mastodon `promote: true` — self-replies (author continuing their own
-        // thread) are pulled to the front, preserving relative order (a stable
-        // partition), so the OP's thread reads first.
-        let (self_replies, others): (Vec<&DbStatus>, Vec<&DbStatus>) =
-            filtered.partition(|s| s.in_reply_to_account_id == Some(s.account_id));
+    // `descendant_ids`: the reply tree under the post, through posts since
+    // deleted too, depth first (ordered by path), at most `limit` and
+    // `depth` levels deep (each plus one, for the post itself).
+    let descendant_ids: Vec<i64> = sqlx::query_scalar!(
+        r#"WITH RECURSIVE search_tree(id, path) AS (
+             SELECT id, ARRAY[id]
+             FROM statuses
+             WHERE id = $1
+           UNION ALL
+             SELECT statuses.id, path || statuses.id
+             FROM search_tree
+             JOIN statuses ON statuses.in_reply_to_id = search_tree.id
+             WHERE COALESCE(array_length(path, 1) < $3, TRUE) AND NOT statuses.id = ANY(path)
+           )
+           SELECT id AS "id!" FROM search_tree ORDER BY path LIMIT $2"#,
+        id,
+        descendants_limit + 1,
+        depth_limit.map(|depth| depth + 1),
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .filter(|descendant| *descendant != id)
+    .collect();
+
+    // `find_statuses_from_tree_path`: what the viewer may see of them, in
+    // that order (`permitted_statuses_from_ids(…, stable: true)`), the
+    // author's own replies to themself brought to the top of the
+    // descendants (`promote: true`), keeping their order.
+    let anc_owned = permitted_statuses(&state, &ancestor_ids, viewer_id).await?;
+    let desc_owned: Vec<DbStatus> = {
+        let permitted = permitted_statuses(&state, &descendant_ids, viewer_id).await?;
+        let (self_replies, others): (Vec<DbStatus>, Vec<DbStatus>) = permitted
+            .into_iter()
+            .partition(|s| s.in_reply_to_account_id == Some(s.account_id));
         self_replies.into_iter().chain(others).collect()
     };
-
-    // For private/direct: do the per-status visibility check and compute thread filters.
-    let anc_owned: Vec<DbStatus> = {
-        let mut v = Vec::new();
-        for s in &visible_ancestors {
-            if matches!(
-                s.visibility,
-                crate::db::models::vis::PRIVATE
-                    | crate::db::models::vis::DIRECT
-                    | crate::db::models::vis::LIMITED
-            ) {
-                if let Some(vid) = viewer_id {
-                    if check_status_visible(&state, s, vid).await.is_err() {
-                        continue;
-                    }
-                }
-            }
-            v.push((*s).clone());
-        }
-        v
-    };
-    let desc_owned: Vec<DbStatus> = {
-        let mut v = Vec::new();
-        for s in &visible_descendants {
-            if matches!(
-                s.visibility,
-                crate::db::models::vis::PRIVATE
-                    | crate::db::models::vis::DIRECT
-                    | crate::db::models::vis::LIMITED
-            ) {
-                if let Some(vid) = viewer_id {
-                    if check_status_visible(&state, s, vid).await.is_err() {
-                        continue;
-                    }
-                }
-            }
-            v.push((*s).clone());
-        }
-        v
-    };
-
     let (anc_filters, desc_filters) = if let Some(vid) = viewer_id {
         let af =
             crate::api::mastodon::timelines::compute_filter_results(&state.db, vid, &anc_owned)
@@ -346,6 +250,57 @@ pub async fn get_status_context(
             .insert(crate::async_refresh::HEADER, value);
     }
     Ok(response)
+}
+
+/// `Status.permitted_statuses_from_ids(ids, account, stable: true)`: the
+/// posts of `ids` still there that `StatusFilter` lets the viewer (none for
+/// one signed out) see, in the order of `ids`. A post of the viewer's own is
+/// never filtered; any other is when `StatusPolicy#show?` refuses it (its
+/// author unavailable; a direct or limited post not mentioning the viewer; a
+/// private one of an author they do not follow and that does not mention
+/// them; any other whose author blocks them), when the viewer blocks or
+/// mutes its author or blocks its author's domain, or when its author is
+/// silenced and not followed by the viewer.
+pub(crate) async fn permitted_statuses(
+    state: &AppState,
+    ids: &[i64],
+    viewer: Option<i64>,
+) -> AppResult<Vec<DbStatus>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let rows = sqlx::query_as!(
+        DbStatus,
+        r#"SELECT s.* FROM statuses s JOIN accounts a ON a.id = s.account_id
+           WHERE s.id = ANY($1) AND s.deleted_at IS NULL
+             AND (s.account_id = $2 OR (
+               a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+               AND (CASE
+                 WHEN s.visibility IN (3, 4) THEN
+                   EXISTS (SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2)
+                 WHEN s.visibility = 2 THEN
+                   EXISTS (SELECT 1 FROM follows f
+                           WHERE f.account_id = $2 AND f.target_account_id = s.account_id)
+                   OR EXISTS (SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2)
+                 ELSE NOT EXISTS (SELECT 1 FROM blocks b
+                                  WHERE b.account_id = s.account_id AND b.target_account_id = $2)
+               END)
+               AND NOT EXISTS (SELECT 1 FROM blocks b
+                               WHERE b.account_id = $2 AND b.target_account_id = s.account_id)
+               AND NOT (a.domain IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM account_domain_blocks d WHERE d.account_id = $2 AND d.domain = a.domain))
+               AND NOT EXISTS (SELECT 1 FROM mutes mu
+                               WHERE mu.account_id = $2 AND mu.target_account_id = s.account_id)
+               AND NOT (a.silenced_at IS NOT NULL AND NOT EXISTS (
+                 SELECT 1 FROM follows f WHERE f.account_id = $2 AND f.target_account_id = s.account_id))
+             ))"#,
+        ids,
+        viewer,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut by_id: HashMap<i64, DbStatus> = rows.into_iter().map(|s| (s.id, s)).collect();
+    Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
 }
 
 /// The context controller's async refresh: report the reply fetch already

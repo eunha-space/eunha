@@ -97,6 +97,25 @@ active again. An account the author blocks, or one on a domain the author
 blocks, is never mentioned, and a mention of it made before is removed.
 
 
+Context
+-------
+
+`GET /api/v1/statuses/:id/context` answers with the post's ancestors and
+descendants, as `Status::ThreadingConcern` finds them. The ancestors are the
+chain from the post replied to up to the thread's root, the nearest kept when
+there are more than the limit, root first; the descendants are the reply tree
+under the post, depth first. Both walks go through posts since deleted, which
+are not shown. A signed-in viewer gets up to 4,096 of each; anyone else 40
+ancestors and 60 descendants at most twenty replies deep.
+
+Each post then goes through `StatusFilter`, as
+`permitted_statuses_from_ids` has it: a post of the viewer's own is always
+shown; any other is left out when the viewer may not see it, blocks or mutes
+its author or blocks its author's domain, or when its author is silenced and
+not followed by the viewer, which, signed out, no one is. The author's own
+replies to themself come first among the descendants, in their order.
+
+
 Votes
 -----
 
