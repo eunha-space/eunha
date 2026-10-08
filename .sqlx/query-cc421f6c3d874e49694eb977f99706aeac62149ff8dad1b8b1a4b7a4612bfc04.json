@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE statuses SET sensitive = false, updated_at = now()\n           WHERE id = ANY($1) AND deleted_at IS NULL\n             -- `status.with_media?`: its `ordered_media_attachments`.\n             AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id\n                         AND (statuses.ordered_media_attachment_ids IS NULL\n                              OR m.id = ANY(statuses.ordered_media_attachment_ids)))\n           RETURNING *",
+  "query": "UPDATE statuses SET sensitive = false, edited_at = now(), updated_at = now()\n               WHERE id = $1 RETURNING *",
   "describe": {
     "columns": [
       {
@@ -131,7 +131,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8Array"
+        "Int8"
       ]
     },
     "nullable": [
@@ -162,5 +162,5 @@
       false
     ]
   },
-  "hash": "757178f815d7c91a94a82c5f7794c5a6c20145c767d7c5fa9e5726a35ecac3ad"
+  "hash": "cc421f6c3d874e49694eb977f99706aeac62149ff8dad1b8b1a4b7a4612bfc04"
 }

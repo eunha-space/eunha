@@ -1,46 +1,40 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.status_id, a.id as account_id, a.username, a.domain, a.url\n           FROM accounts a\n           JOIN mentions m ON m.account_id = a.id\n           WHERE m.status_id = ANY($1::bigint[])\n           ORDER BY m.id ASC",
+  "query": "SELECT a.id as account_id, a.username, a.domain, a.url\n           FROM accounts a\n           JOIN mentions m ON m.account_id = a.id\n           WHERE m.status_id = $1 AND NOT m.silent\n           ORDER BY m.id ASC",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "status_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 1,
         "name": "account_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "username",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "domain",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "url",
         "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8Array"
+        "Int8"
       ]
     },
     "nullable": [
-      false,
       false,
       false,
       true,
       true
     ]
   },
-  "hash": "e6f860de9ffac7a49b6543748be4ad99ce7651ed4fd5b5c3a1ff39d375daf911"
+  "hash": "c432e3ea02d7b6d0c51943cb9f084bc2e568c806319f819ed1e2f18cb482b7b1"
 }

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id FROM accounts a, statuses s\n           WHERE s.id = $1 AND a.id = ANY($2)\n             AND (EXISTS (SELECT 1 FROM blocks b\n                          WHERE b.account_id = s.account_id AND b.target_account_id = a.id)\n                  OR EXISTS (SELECT 1 FROM account_domain_blocks d\n                             WHERE d.account_id = s.account_id AND d.domain = a.domain))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "af033876d46f2674170eddef156bd141568fe71ca7b383ddb5f112d3ecc0be7c"
+}

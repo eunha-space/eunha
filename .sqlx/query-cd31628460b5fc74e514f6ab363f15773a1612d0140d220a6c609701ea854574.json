@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, description FROM media_attachments WHERE id = ANY($1)",
+  "query": "SELECT id, description, file_meta FROM media_attachments WHERE id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,11 @@
         "ordinal": 1,
         "name": "description",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "file_meta",
+        "type_info": "Json"
       }
     ],
     "parameters": {
@@ -21,8 +26,9 @@
     },
     "nullable": [
       false,
+      true,
       true
     ]
   },
-  "hash": "d764e3be50062a15eb370c7da2612f5caee36f390139fcbf916bfc13fabf18ea"
+  "hash": "cd31628460b5fc74e514f6ab363f15773a1612d0140d220a6c609701ea854574"
 }

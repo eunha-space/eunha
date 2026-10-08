@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id AS account_id, a.id_scheme, a.username, a.domain,\n                  a.uri AS account_uri, a.url AS \"url?\", a.actor_type, a.followers_url,\n                  EXISTS(SELECT 1 FROM follows f\n                         WHERE f.account_id = a.id AND f.target_account_id = $2) AS \"is_follower!\",\n                  EXISTS(SELECT 1 FROM follow_requests fr\n                         WHERE fr.account_id = a.id AND fr.target_account_id = $2) AS \"has_request!\"\n           FROM mentions m JOIN accounts a ON a.id = m.account_id\n           WHERE m.status_id = $1",
+  "query": "SELECT a.id AS account_id, a.id_scheme, a.username, a.domain,\n                  a.uri AS account_uri, a.url AS \"url?\", a.actor_type, a.followers_url,\n                  EXISTS(SELECT 1 FROM follows f\n                         WHERE f.account_id = a.id AND f.target_account_id = $2) AS \"is_follower!\",\n                  EXISTS(SELECT 1 FROM follow_requests fr\n                         WHERE fr.account_id = a.id AND fr.target_account_id = $2) AS \"has_request!\"\n           FROM mentions m JOIN accounts a ON a.id = m.account_id\n           -- `active_mentions`: a silent one is neither addressed nor tagged.\n           WHERE m.status_id = $1 AND NOT m.silent",
   "describe": {
     "columns": [
       {
@@ -73,5 +73,5 @@
       null
     ]
   },
-  "hash": "3a9186f9297da63a9b01b8af4cdb3f1dc017f2b0495f2b9bd148e49956b037b8"
+  "hash": "5e17cf0a7402b1730c1db7068a455087e2be8501f398dea007fb0be6d6d07021"
 }

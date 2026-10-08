@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.account_id, s.text, s.spoiler_text, s.sensitive,\n                  COALESCE(s.ordered_media_attachment_ids,\n                           ARRAY(SELECT m.id FROM media_attachments m\n                                 WHERE m.status_id = s.id ORDER BY m.id)) AS \"media_ids!\",\n                  -- `ordered_media_attachments`: by id when no order is\n                  -- recorded, else the recorded order of those still\n                  -- attached; at most four.\n                  CASE WHEN s.ordered_media_attachment_ids IS NULL THEN\n                      ARRAY(SELECT m.description FROM media_attachments m\n                            WHERE m.status_id = s.id ORDER BY m.id LIMIT 4)\n                  ELSE\n                      ARRAY(SELECT m.description\n                            FROM unnest(s.ordered_media_attachment_ids) WITH ORDINALITY AS o(id, n)\n                            JOIN media_attachments m ON m.id = o.id AND m.status_id = s.id\n                            ORDER BY o.n LIMIT 4)\n                  END AS \"descriptions!: Vec<Option<String>>\",\n                  (SELECT p.options FROM polls p WHERE p.id = s.poll_id) AS \"poll_options: Vec<String>\",\n                  (SELECT q.id FROM quotes q WHERE q.status_id = s.id LIMIT 1) AS quote_id\n           FROM statuses s WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "spoiler_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "sensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "media_ids!",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 5,
+        "name": "descriptions!: Vec<Option<String>>",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "poll_options: Vec<String>",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "quote_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9a189d6da5db996843f2b0783c400a61f49b1ed325aa972f1c1ae728e50b3399"
+}

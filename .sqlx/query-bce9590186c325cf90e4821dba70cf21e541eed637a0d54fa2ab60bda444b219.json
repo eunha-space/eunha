@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.* FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = ANY($1) AND s.deleted_at IS NULL\n             AND (s.account_id = $2 OR (\n               a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n               AND (CASE\n                 WHEN s.visibility IN (3, 4) THEN\n                   EXISTS (SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2)\n                 WHEN s.visibility = 2 THEN\n                   EXISTS (SELECT 1 FROM follows f\n                           WHERE f.account_id = $2 AND f.target_account_id = s.account_id)\n                   OR EXISTS (SELECT 1 FROM mentions m WHERE m.status_id = s.id AND m.account_id = $2)\n                 ELSE NOT EXISTS (SELECT 1 FROM blocks b\n                                  WHERE b.account_id = s.account_id AND b.target_account_id = $2)\n               END)\n               AND NOT EXISTS (SELECT 1 FROM blocks b\n                               WHERE b.account_id = $2 AND b.target_account_id = s.account_id)\n               AND NOT (a.domain IS NOT NULL AND EXISTS (\n                 SELECT 1 FROM account_domain_blocks d WHERE d.account_id = $2 AND d.domain = a.domain))\n               AND NOT EXISTS (SELECT 1 FROM mutes mu\n                               WHERE mu.account_id = $2 AND mu.target_account_id = s.account_id)\n               AND NOT (a.silenced_at IS NOT NULL AND NOT EXISTS (\n                 SELECT 1 FROM follows f WHERE f.account_id = $2 AND f.target_account_id = s.account_id))\n             ))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "in_reply_to_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "sensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "visibility",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "reply",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 16,
+        "name": "application_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 17,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "poll_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 19,
+        "name": "deleted_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 20,
+        "name": "edited_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 21,
+        "name": "trendable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "ordered_media_attachment_ids",
+        "type_info": "Int8Array"
+      },
+      {
+        "ordinal": 23,
+        "name": "fetched_replies_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 24,
+        "name": "quote_approval_policy",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "bce9590186c325cf90e4821dba70cf21e541eed637a0d54fa2ab60bda444b219"
+}

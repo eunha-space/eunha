@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments\n               SET description = COALESCE($2, description),\n                   file_meta = CASE WHEN $3::jsonb IS NULL THEN file_meta\n                       ELSE jsonb_set(COALESCE(file_meta::jsonb, '{}'::jsonb), '{focus}', $3::jsonb)::json END,\n                   updated_at = now()\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fafee658cc945c55c9eab8966484c9f60e19aa6c4358c1e9ede6c340cf521591"
+}

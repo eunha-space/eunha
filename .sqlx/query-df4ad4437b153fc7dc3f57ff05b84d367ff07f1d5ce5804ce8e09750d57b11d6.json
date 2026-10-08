@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses\n                   SET text = $2, spoiler_text = $3, sensitive = $4, language = $5,\n                       updated_at = now(),\n                       quote_approval_policy = COALESCE($7, quote_approval_policy)\n                   WHERE uri = $1 AND deleted_at IS NULL\n                     -- Only the sender's own status: any server could\n                     -- otherwise rewrite any status it named.\n                     AND account_id = (\n                         SELECT id FROM accounts WHERE uri = $6 AND domain IS NOT NULL\n                     )\n                   RETURNING id, account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "df4ad4437b153fc7dc3f57ff05b84d367ff07f1d5ce5804ce8e09750d57b11d6"
+}

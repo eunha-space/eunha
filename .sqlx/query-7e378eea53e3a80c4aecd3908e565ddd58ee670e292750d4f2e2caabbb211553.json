@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM statuses\n           WHERE id = ANY($1) AND deleted_at IS NULL AND sensitive\n             -- `status.with_media?`: its `ordered_media_attachments`.\n             AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.status_id = statuses.id\n                         AND (statuses.ordered_media_attachment_ids IS NULL\n                              OR m.id = ANY(statuses.ordered_media_attachment_ids)))\n           ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7e378eea53e3a80c4aecd3908e565ddd58ee670e292750d4f2e2caabbb211553"
+}

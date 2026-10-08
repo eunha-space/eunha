@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE search_tree(id, path) AS (\n             SELECT id, ARRAY[id]\n             FROM statuses\n             WHERE id = $1\n           UNION ALL\n             SELECT statuses.id, path || statuses.id\n             FROM search_tree\n             JOIN statuses ON statuses.in_reply_to_id = search_tree.id\n             WHERE COALESCE(array_length(path, 1) < $3, TRUE) AND NOT statuses.id = ANY(path)\n           )\n           SELECT id AS \"id!\" FROM search_tree ORDER BY path LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d9ce7a177dffd6f9c720ca3aefe115d39681af0fb7a397cbe215f1124c75eac1"
+}

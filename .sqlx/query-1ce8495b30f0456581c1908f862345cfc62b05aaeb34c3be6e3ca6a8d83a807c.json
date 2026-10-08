@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mentions WHERE status_id = $1 AND account_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ce8495b30f0456581c1908f862345cfc62b05aaeb34c3be6e3ca6a8d83a807c"
+}

@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT NOT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
+  "query": "SELECT EXISTS (SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2) AS \"e!\"",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "?column?",
+        "name": "e!",
         "type_info": "Bool"
       }
     ],
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "ba3203094a63df53a7bc25b870f9fb2afb65f7df7fdd2ecf492c1d3c226508a8"
+  "hash": "71715f907c63adfac6f0b9207dcd896276c256e39676498f8603f3264c9d6e47"
 }
