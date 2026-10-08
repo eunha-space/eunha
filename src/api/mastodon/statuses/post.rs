@@ -644,11 +644,17 @@ pub async fn post_status(
             .map(|secs| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(secs));
         let poll_options: Vec<String> = poll_form.options.clone();
         let poll_id = sqlx::query_scalar!(
+            // `PostStatusService#poll_attributes` (`voters_count: 0`) and
+            // `Poll#prepare_cached_tallies`, a zero for each option.
             r#"INSERT INTO polls
-                 (status_id, account_id, options, multiple, hide_totals, expires_at, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+                 (status_id, account_id, options, multiple, hide_totals, expires_at,
+                  cached_tallies, votes_count, voters_count, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6,
+                       ARRAY(SELECT 0::bigint FROM unnest($3::varchar[])), 0, 0, now(), now())
                RETURNING id"#,
-            status.id, account.id, &poll_options as &[String],
+            status.id,
+            account.id,
+            &poll_options as &[String],
             poll_form.multiple.unwrap_or(false),
             poll_form.hide_totals.unwrap_or(false),
             expires_at,

@@ -367,18 +367,10 @@ pub async fn build_note(
             .expires_at
             .is_some_and(|t| t <= chrono::Utc::now().naive_utc());
         let show_totals = expired || !poll.hide_totals;
-        let counts = sqlx::query!(
-            "SELECT choice, COUNT(*)::bigint AS \"count!\" FROM poll_votes WHERE poll_id = $1 GROUP BY choice",
-            poll.id,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        let mut tallies = vec![0_i64; poll.options.len()];
-        for row in counts {
-            if let Some(slot) = tallies.get_mut(row.choice as usize) {
-                *slot = row.count;
-            }
-        }
+        // `loaded_options`: the tallies the poll keeps.
+        let tallies: Vec<i64> = (0..poll.options.len())
+            .map(|i| poll.cached_tallies.get(i).copied().unwrap_or(0))
+            .collect();
         let options: Vec<Value> = poll
             .options
             .iter()

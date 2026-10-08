@@ -272,17 +272,24 @@ pub async fn edit_status(
                             .execute(&state.db)
                             .await;
                     }
+                    // `UpdateStatusService#update_poll!`: `reset_votes!` when
+                    // the options changed, the tallies kept otherwise.
                     let _ = sqlx::query!(
                         r#"UPDATE polls
                              SET options = $2, multiple = $3, hide_totals = $4, expires_at = $5,
-                                 votes_count = (SELECT COUNT(*) FROM poll_votes WHERE poll_id = $1),
-                                 cached_tallies = '{}', updated_at = now()
+                                 cached_tallies = CASE WHEN $6
+                                     THEN ARRAY(SELECT 0::bigint FROM unnest($2::varchar[]))
+                                     ELSE cached_tallies END,
+                                 votes_count = CASE WHEN $6 THEN 0 ELSE votes_count END,
+                                 voters_count = CASE WHEN $6 THEN 0 ELSE voters_count END,
+                                 updated_at = now()
                            WHERE id = $1"#,
                         ep.id,
                         &opts as &[String],
                         pf.multiple.unwrap_or(false),
                         pf.hide_totals.unwrap_or(false),
                         expires_at,
+                        options_changed,
                     )
                     .execute(&state.db)
                     .await;
@@ -290,8 +297,12 @@ pub async fn edit_status(
                 }
                 None => {
                     if let Ok(poll_id) = sqlx::query_scalar!(
-                        r#"INSERT INTO polls (status_id, account_id, options, multiple, hide_totals, expires_at, created_at, updated_at)
-                           VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+                        // `polls.new(votes_count: 0)`, a zero tally for each
+                        // option, and no `voters_count`.
+                        r#"INSERT INTO polls (status_id, account_id, options, multiple, hide_totals, expires_at,
+                                              cached_tallies, votes_count, created_at, updated_at)
+                           VALUES ($1, $2, $3, $4, $5, $6,
+                                   ARRAY(SELECT 0::bigint FROM unnest($3::varchar[])), 0, now(), now())
                            RETURNING id"#,
                         id,
                         auth.account_id,

@@ -799,6 +799,17 @@ async fn test_a_stale_remote_poll_is_fetched_again() {
     let (cached, last_fetched_at) = tallies().await;
     assert_eq!(cached, vec![5, 0]);
     assert!(last_fetched_at.is_some());
+    // Served as its server counted it (`REST::PollSerializer`).
+    let poll: Value = ctx
+        .api
+        .get(&path, Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(poll["votes_count"], 5);
+    assert_eq!(poll["options"][0]["votes_count"], 5);
+    assert!(poll["voters_count"].is_null());
 
     // Fetched within the minute: not stale.
     assert_eq!(

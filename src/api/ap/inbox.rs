@@ -444,6 +444,8 @@ pub(super) async fn sync_remote_poll(
         .and_then(|v| v.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
+    // `PollParser#voters_count`.
+    let voters_count = object.get("votersCount").and_then(|v| v.as_i64());
 
     if let Some(poll_id) =
         sqlx::query_scalar!("SELECT id FROM polls WHERE status_id = $1", status_id,)
@@ -457,6 +459,7 @@ pub(super) async fn sync_remote_poll(
                    votes_count = $4,
                    multiple = $5,
                    expires_at = $6,
+                   voters_count = $7,
                    last_fetched_at = now(),
                    updated_at = now()
                WHERE id = $1"#,
@@ -466,6 +469,7 @@ pub(super) async fn sync_remote_poll(
             votes_count,
             multiple,
             expires_at,
+            voters_count,
         )
         .execute(&state.db)
         .await?;
@@ -475,8 +479,8 @@ pub(super) async fn sync_remote_poll(
         if let Some(inserted_poll_id) = sqlx::query_scalar!(
             r#"INSERT INTO polls
                  (id, status_id, account_id, options, cached_tallies, votes_count,
-                  multiple, expires_at, last_fetched_at, created_at, updated_at)
-               SELECT $1,$2,$3,$4,$5,$6,$7,$8,now(),now(),now()
+                  multiple, expires_at, voters_count, last_fetched_at, created_at, updated_at)
+               SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now(),now()
                WHERE NOT EXISTS (SELECT 1 FROM polls WHERE status_id = $2)
                RETURNING id"#,
             poll_id,
@@ -487,6 +491,7 @@ pub(super) async fn sync_remote_poll(
             votes_count,
             multiple,
             expires_at,
+            voters_count,
         )
         .fetch_optional(&state.db)
         .await?

@@ -264,3 +264,123 @@ async fn test_poll_voted_field() {
     let own = after["own_votes"].as_array().unwrap();
     assert!(own.iter().any(|v| v.as_i64() == Some(1)));
 }
+
+/// A poll on a post the viewer may not see is not there for them
+/// (`authorize @poll.status, :show?`), to read or to vote in.
+#[tokio::test]
+async fn test_poll_of_a_hidden_status_is_not_found() {
+    let ctx = TestContext::new("poll-hidden").await;
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({
+                "status": "Followers only",
+                "visibility": "private",
+                "poll": {"options": ["Yes", "No"], "expires_in": 86400}
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let poll_id = status["poll"]["id"].as_str().unwrap();
+    let path = format!("/api/v1/polls/{poll_id}");
+
+    assert_eq!(
+        ctx.api.get(&path, Some(&ctx.alice_token)).await.status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        ctx.api.get(&path, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        ctx.api.get(&path, Some(&ctx.bob_token)).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    let vote = ctx
+        .api
+        .post_json(
+            &format!("{path}/votes"),
+            Some(&ctx.bob_token),
+            &json!({ "choices": [0] }),
+        )
+        .await;
+    assert_eq!(vote.status(), StatusCode::NOT_FOUND);
+
+    // A follower sees it.
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    assert_eq!(
+        ctx.api.get(&path, Some(&ctx.bob_token)).await.status(),
+        StatusCode::OK
+    );
+}
+
+/// The tallies are those the poll keeps, raised by each vote, the voters
+/// counted once each; with `hide_totals` the options' counts are hidden
+/// until it closes.
+#[tokio::test]
+async fn test_poll_tallies_are_kept_as_mastodon_keeps_them() {
+    let ctx = TestContext::new("poll-tallies").await;
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({
+                "status": "Pick",
+                "visibility": "public",
+                "poll": {"options": ["A", "B", "C"], "expires_in": 86400, "multiple": true}
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["poll"]["voters_count"], 0);
+    let poll_id = status["poll"]["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/polls/{poll_id}/votes"),
+            Some(&ctx.bob_token),
+            &json!({ "choices": [0, 2] }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let poll: Value = resp.json().await.unwrap();
+    assert_eq!(poll["votes_count"], 2);
+    assert_eq!(poll["voters_count"], 1);
+    let counts: Vec<i64> = poll["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["votes_count"].as_i64().unwrap())
+        .collect();
+    assert_eq!(counts, vec![1, 0, 1]);
+    let (tallies,): (Vec<i64>,) = sqlx::query_as("SELECT cached_tallies FROM polls WHERE id = $1")
+        .bind(poll_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(tallies, vec![1, 0, 1]);
+
+    let hidden: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({
+                "status": "Secret ballot",
+                "visibility": "public",
+                "poll": {"options": ["X", "Y"], "expires_in": 86400, "hide_totals": true}
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(hidden["poll"]["options"][0]["votes_count"].is_null());
+}

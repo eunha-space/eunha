@@ -962,7 +962,6 @@ pub async fn unreblog_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:statuses")?;
     let (status_raw, _) = fetch_status_with_account(&state, id).await?;
-    check_status_visible(&state, &status_raw, auth.account_id).await?;
 
     // Accept both the original status ID and the reblog's own ID.
     // When iOS sends the reblog wrapper's ID, resolve it to the original.
@@ -976,6 +975,11 @@ pub async fn unreblog_status(
     )
     .fetch_optional(&state.db)
     .await?;
+    // `ReblogsController#destroy`: one's own boost goes whoever may see the
+    // post now; without one, the post is shown only if `show?` allows it.
+    if boost_id.is_none() {
+        check_status_visible(&state, &status_raw, auth.account_id).await?;
+    }
 
     let (original, _) = fetch_status_with_account(&state, original_id).await?;
     let mut rendered = serialize_status(&state, &original, Some(auth.account_id)).await?;
@@ -1154,6 +1158,8 @@ pub async fn unpin_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:accounts")?;
     let (status, account) = fetch_status_with_account(&state, id).await?;
+    // `Statuses::BaseController#set_status`: `authorize @status, :show?`.
+    check_status_visible(&state, &status, auth.account_id).await?;
     let deleted = sqlx::query!(
         "DELETE FROM status_pins WHERE account_id = $1 AND status_id = $2",
         auth.account_id,
@@ -1185,6 +1191,8 @@ pub async fn mute_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:mutes")?;
     let (status, _) = fetch_status_with_account(&state, id).await?;
+    // `Statuses::BaseController#set_status`: `authorize @status, :show?`.
+    check_status_visible(&state, &status, auth.account_id).await?;
     // Every status now has a conversation_id assigned at creation time.
     let cid = status.conversation_id.ok_or(AppError::NotFound)?;
     sqlx::query!(
@@ -1207,6 +1215,8 @@ pub async fn unmute_status(
 ) -> AppResult<Json<Status>> {
     auth.require_scope("write:mutes")?;
     let (status, _) = fetch_status_with_account(&state, id).await?;
+    // `Statuses::BaseController#set_status`: `authorize @status, :show?`.
+    check_status_visible(&state, &status, auth.account_id).await?;
     sqlx::query!(
         "DELETE FROM conversation_mutes WHERE account_id = $1 AND conversation_id = (SELECT conversation_id FROM statuses WHERE id = $2)",
         auth.account_id, id
@@ -1523,53 +1533,100 @@ pub async fn update_interaction_policy(
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/// Return NotFound if `viewer_id` cannot see `status` (private/direct visibility).
+/// `StatusPolicy#show?` for a local viewer, as a 404 when it fails: the
+/// author available; a direct or limited status only for its author and
+/// those it mentions; a private one for them and the author's followers; any
+/// other unless its author blocks the viewer. (A local viewer has no domain
+/// for `author_blocking_domain?` to block.)
 pub(crate) async fn check_status_visible(
     state: &AppState,
     status: &DbStatus,
     viewer_id: i64,
 ) -> AppResult<()> {
-    match status.visibility {
-        crate::db::models::vis::PRIVATE => {
-            if status.account_id == viewer_id {
-                return Ok(());
-            }
-            let is_follower = sqlx::query_scalar!(
-                "SELECT 1 as e FROM follows WHERE account_id = $1 AND target_account_id = $2",
-                viewer_id,
-                status.account_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .is_some();
-            let is_mentioned = sqlx::query_scalar!(
-                "SELECT 1 as e FROM mentions WHERE status_id = $1 AND account_id = $2",
-                status.id,
-                viewer_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .is_some();
-            if !is_follower && !is_mentioned {
-                return Err(AppError::NotFound);
-            }
-        }
-        crate::db::models::vis::DIRECT if status.account_id != viewer_id => {
-            let is_mentioned = sqlx::query_scalar!(
-                "SELECT 1 as e FROM mentions WHERE status_id = $1 AND account_id = $2",
-                status.id,
-                viewer_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .is_some();
-            if !is_mentioned {
-                return Err(AppError::NotFound);
-            }
-        }
-        _ => {}
+    use crate::db::models::vis;
+
+    // `return false if author.unavailable?`.
+    let author_available = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts
+             WHERE id = $1 AND suspended_at IS NULL AND requested_deletion_at IS NULL
+           ) AS "e!""#,
+        status.account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if !author_available {
+        return Err(AppError::NotFound);
     }
-    Ok(())
+    let owned = status.account_id == viewer_id;
+    let mention_exists = || async {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 FROM mentions WHERE status_id = $1 AND account_id = $2
+               ) AS "e!""#,
+            status.id,
+            viewer_id,
+        )
+        .fetch_one(&state.db)
+        .await
+    };
+    let shown = match status.visibility {
+        // `requires_mention?`.
+        vis::DIRECT | vis::LIMITED => owned || mention_exists().await?,
+        vis::PRIVATE => {
+            owned
+                || sqlx::query_scalar!(
+                    r#"SELECT EXISTS (
+                         SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2
+                       ) AS "e!""#,
+                    viewer_id,
+                    status.account_id,
+                )
+                .fetch_one(&state.db)
+                .await?
+                || mention_exists().await?
+        }
+        // `!author_blocking?`.
+        _ => {
+            !sqlx::query_scalar!(
+                r#"SELECT EXISTS (
+                 SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2
+               ) AS "e!""#,
+                status.account_id,
+                viewer_id,
+            )
+            .fetch_one(&state.db)
+            .await?
+        }
+    };
+    if shown {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+/// `StatusPolicy#show?` with no one signed in: the author available and the
+/// status public or unlisted.
+pub(crate) async fn check_status_public(state: &AppState, status: &DbStatus) -> AppResult<()> {
+    use crate::db::models::vis;
+    if !matches!(status.visibility, vis::PUBLIC | vis::UNLISTED) {
+        return Err(AppError::NotFound);
+    }
+    let author_available = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts
+             WHERE id = $1 AND suspended_at IS NULL AND requested_deletion_at IS NULL
+           ) AS "e!""#,
+        status.account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if author_available {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
 }
 
 async fn fetch_status_with_account(state: &AppState, id: i64) -> AppResult<(DbStatus, Account)> {

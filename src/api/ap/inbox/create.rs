@@ -757,12 +757,14 @@ pub(super) async fn create(
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
+        // `PollParser#voters_count`.
+        let voters_count = object.get("votersCount").and_then(|v| v.as_i64());
         let poll_id = crate::snowflake::next_id();
         if let Ok(Some(_)) = sqlx::query_scalar!(
             r#"INSERT INTO polls
                  (id, status_id, account_id, options, cached_tallies, votes_count,
-                  multiple, expires_at, created_at, updated_at)
-               SELECT $1,$2,$3,$4,$5,$6,$7,$8,now(),now()
+                  multiple, expires_at, voters_count, created_at, updated_at)
+               SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now()
                WHERE NOT EXISTS (SELECT 1 FROM polls WHERE status_id = $2)
                RETURNING id"#,
             poll_id,
@@ -773,6 +775,7 @@ pub(super) async fn create(
             votes_count,
             multiple,
             expires_at,
+            voters_count,
         )
         .fetch_optional(&state.db)
         .await
@@ -872,7 +875,7 @@ pub(super) async fn handle_poll_vote_note(
         return Ok(true);
     }
 
-    sqlx::query!(
+    let inserted = sqlx::query!(
         r#"INSERT INTO poll_votes (account_id, poll_id, choice, uri, created_at, updated_at)
            VALUES ($1, $2, $3, $4, now(), now())
            ON CONFLICT DO NOTHING"#,
@@ -882,22 +885,14 @@ pub(super) async fn handle_poll_vote_note(
         vote_uri,
     )
     .execute(&state.db)
-    .await?;
+    .await?
+    .rows_affected()
+        > 0;
 
-    sqlx::query!(
-        "UPDATE polls SET votes_count = (SELECT COUNT(*) FROM poll_votes WHERE poll_id = $1), updated_at = now() WHERE id = $1",
-        poll.id,
-    )
-    .execute(&state.db)
-    .await?;
-
-    if poll.multiple && !already_voted {
-        sqlx::query!(
-            "UPDATE polls SET voters_count = COALESCE(voters_count, 0) + 1, updated_at = now() WHERE id = $1",
-            poll.id,
-        )
-        .execute(&state.db)
-        .await?;
+    // `PollVote#increment_counter_cache`, and `increment_voters_count!`
+    // unless the voter had voted already.
+    if inserted {
+        crate::api::mastodon::polls::count_vote(&state.db, poll.id, choice, !already_voted).await?;
     }
 
     Ok(true)

@@ -409,92 +409,9 @@ pub async fn fetch_status_poll(
     status_id: i64,
     viewer_id: Option<i64>,
 ) -> AppResult<Option<super::types::Poll>> {
-    let row = sqlx::query!(
-        "SELECT id, options, multiple, expires_at, account_id FROM polls WHERE status_id = $1",
-        status_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    let Some(row) = row else {
-        return Ok(None);
-    };
-
-    let now = chrono::Utc::now().naive_utc();
-    let expired = row.expires_at.is_some_and(|t| t < now);
-
-    let option_titles: Vec<String> = row.options;
-
-    // Compute per-option vote counts live from poll_votes.
-    let per_option = sqlx::query!(
-        "SELECT choice, COUNT(*)::bigint AS \"cnt!\" FROM poll_votes WHERE poll_id = $1 GROUP BY choice",
-        row.id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut per_option_map: std::collections::HashMap<i32, i64> = std::collections::HashMap::new();
-    for r in per_option {
-        per_option_map.insert(r.choice, r.cnt);
-    }
-
-    let options: Vec<super::types::PollOption> = option_titles
-        .iter()
-        .enumerate()
-        .map(|(i, title)| super::types::PollOption {
-            title: title.clone(),
-            votes_count: Some(*per_option_map.get(&(i as i32)).unwrap_or(&0)),
-        })
-        .collect();
-
-    // Compute aggregate counts live.
-    let (votes_count, voters_count) = sqlx::query!(
-        r#"SELECT COUNT(*)::bigint AS "votes!", COUNT(DISTINCT account_id)::bigint AS "voters!" FROM poll_votes WHERE poll_id = $1"#,
-        row.id,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map(|r| (r.votes, r.voters))
-    .unwrap_or((0, 0));
-
-    // Mastodon initialises `voters_count` to 0 for every poll and serializes the
-    // column as it stands, so the field is a number whether or not the poll is
-    // multiple-choice. Its documentation says otherwise; the implementation is
-    // what clients are written against.
-    let voters_count = Some(voters_count);
-
-    // `voted` and `own_votes` are both `if: :current_user?` — present together
-    // for any authenticated request, absent together otherwise.
-    let (voted, own_votes) = if let Some(vid) = viewer_id {
-        let votes = sqlx::query!(
-            "SELECT choice FROM poll_votes WHERE poll_id = $1 AND account_id = $2 ORDER BY choice",
-            row.id,
-            vid,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        let choices: Vec<i32> = votes.iter().map(|v| v.choice).collect();
-        // Mastodon's `Poll#voted?` is `account.id == account_id ||
-        // votes.exists?`: an author has, in effect, already answered their own
-        // poll, and a client uses this to decide whether to offer the choices.
-        let voted = row.account_id == vid || !choices.is_empty();
-        (Some(voted), Some(choices))
-    } else {
-        (None, None)
-    };
-
-    Ok(Some(super::types::Poll {
-        id: row.id.to_string(),
-        expires_at: row.expires_at.map(super::convert::mastodon_date),
-        expired,
-        multiple: row.multiple,
-        votes_count,
-        voters_count,
-        options,
-        emojis: vec![],
-        voted,
-        own_votes,
-    }))
+    Ok(batch_status_polls(state, &[status_id], viewer_id)
+        .await?
+        .remove(&status_id))
 }
 
 pub async fn fetch_status_media(
@@ -733,130 +650,21 @@ pub async fn batch_status_polls(
     status_ids: &[i64],
     viewer_id: Option<i64>,
 ) -> AppResult<std::collections::HashMap<i64, super::types::Poll>> {
-    use std::collections::HashMap;
-
     if status_ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(std::collections::HashMap::new());
     }
-
-    let rows = sqlx::query!(
-        r#"SELECT id, status_id, options, multiple, expires_at, account_id
-           FROM polls WHERE status_id = ANY($1::bigint[])"#,
+    let polls = sqlx::query_as!(
+        crate::db::models::Poll,
+        "SELECT * FROM polls WHERE status_id = ANY($1::bigint[])",
         status_ids,
     )
     .fetch_all(&state.db)
     .await?;
-
-    if rows.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let poll_ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-
-    // Batch-fetch per-option vote counts live from poll_votes.
-    struct OptionCount {
-        poll_id: i64,
-        choice: i32,
-        cnt: i64,
-    }
-    let option_counts: Vec<OptionCount> = sqlx::query_as!(
-        OptionCount,
-        "SELECT poll_id, choice, COUNT(*)::bigint AS \"cnt!\" FROM poll_votes WHERE poll_id = ANY($1::bigint[]) GROUP BY poll_id, choice",
-        &poll_ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut counts_by_poll_option: HashMap<(i64, i32), i64> = HashMap::new();
-    for c in option_counts {
-        counts_by_poll_option.insert((c.poll_id, c.choice), c.cnt);
-    }
-
-    // Batch-fetch total votes and unique voters per poll.
-    struct PollTotals {
-        poll_id: i64,
-        votes: i64,
-        voters: i64,
-    }
-    let totals: Vec<PollTotals> = sqlx::query_as!(
-        PollTotals,
-        r#"SELECT poll_id, COUNT(*)::bigint AS "votes!", COUNT(DISTINCT account_id)::bigint AS "voters!" FROM poll_votes WHERE poll_id = ANY($1::bigint[]) GROUP BY poll_id"#,
-        &poll_ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let mut totals_map: HashMap<i64, (i64, i64)> = HashMap::new();
-    for t in totals {
-        totals_map.insert(t.poll_id, (t.votes, t.voters));
-    }
-
-    // Batch-fetch the viewer's own votes.
-    let vote_rows = if let Some(vid) = viewer_id {
-        sqlx::query!(
-            "SELECT poll_id, choice FROM poll_votes WHERE poll_id = ANY($1::bigint[]) AND account_id = $2 ORDER BY poll_id, choice",
-            &poll_ids, vid,
-        )
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        vec![]
-    };
-
-    let mut votes_by_poll: HashMap<i64, Vec<i32>> = HashMap::new();
-    for v in vote_rows {
-        votes_by_poll.entry(v.poll_id).or_default().push(v.choice);
-    }
-
-    let now = chrono::Utc::now().naive_utc();
-    let mut result = HashMap::new();
-    for row in rows {
-        let expired = row.expires_at.is_some_and(|t| t < now);
-        let option_titles: Vec<String> = row.options;
-        let options: Vec<super::types::PollOption> = option_titles
-            .iter()
-            .enumerate()
-            .map(|(i, title)| {
-                let cnt = *counts_by_poll_option.get(&(row.id, i as i32)).unwrap_or(&0);
-                super::types::PollOption {
-                    title: title.clone(),
-                    votes_count: Some(cnt),
-                }
-            })
-            .collect();
-
-        let (votes_count, voters_count) = totals_map
-            .get(&row.id)
-            .map(|&(v, u)| (v, u))
-            .unwrap_or((0, 0));
-        // As in the single-status path: always a number, and both viewer fields
-        // present together for an authenticated request.
-        let voters_count = Some(voters_count);
-
-        let (voted, own_votes) = if let Some(vid) = viewer_id {
-            let votes = votes_by_poll.get(&row.id).cloned().unwrap_or_default();
-            let voted = row.account_id == vid || !votes.is_empty();
-            (Some(voted), Some(votes))
-        } else {
-            (None, None)
-        };
-        result.insert(
-            row.status_id,
-            super::types::Poll {
-                id: row.id.to_string(),
-                expires_at: row.expires_at.map(super::convert::mastodon_date),
-                expired,
-                multiple: row.multiple,
-                votes_count,
-                voters_count,
-                options,
-                emojis: vec![],
-                voted,
-                own_votes,
-            },
-        );
-    }
-    Ok(result)
+    let mut serialized = super::polls::serialize_many(state, &polls, viewer_id).await?;
+    Ok(polls
+        .iter()
+        .filter_map(|poll| Some((poll.status_id, serialized.remove(&poll.id)?)))
+        .collect())
 }
 
 /// Batch-fetch preview cards for a list of status IDs. Returns map from status_id → PreviewCard.

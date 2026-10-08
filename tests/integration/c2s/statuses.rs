@@ -3250,11 +3250,9 @@ async fn test_poll_vote_counts() {
         Some(1),
         "votes_count should be 1"
     );
-    // single-choice poll: voters_count must be null per Mastodon spec
-    assert!(
-        poll["voters_count"].is_null(),
-        "single-choice poll voters_count must be null"
-    );
+    // `PostStatusService` starts every poll's `voters_count` at 0, and
+    // `VoteService` counts each new voter, single-choice or not.
+    assert_eq!(poll["voters_count"].as_i64(), Some(1));
 
     let options = poll["options"].as_array().unwrap();
     assert_eq!(
@@ -3336,12 +3334,13 @@ async fn test_poll_per_option_counts_in_status_response() {
     );
 }
 
-/// voters_count is null for single-choice polls, non-null for multiple-choice polls.
+/// voters_count is the column Mastodon keeps, for single- and multiple-choice
+/// polls alike: a number, one for each voter.
 #[tokio::test]
 async fn test_poll_voters_count_nullability() {
     let ctx = TestContext::new("poll-voters-null").await;
 
-    // Single-choice poll → voters_count must be null.
+    // Single-choice poll.
     let s1: Value = ctx
         .api
         .post_json(
@@ -3400,9 +3399,10 @@ async fn test_poll_voters_count_nullability() {
         .json()
         .await
         .unwrap();
-    assert!(
-        p1["voters_count"].is_null(),
-        "single-choice poll voters_count must be null, got: {}",
+    assert_eq!(
+        p1["voters_count"].as_i64(),
+        Some(1),
+        "single-choice poll voters_count, got: {}",
         p1["voters_count"]
     );
 
