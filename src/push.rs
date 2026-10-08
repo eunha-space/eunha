@@ -105,6 +105,8 @@ async fn try_deliver(
         "update" => ("update", "false"),
         "quote" => ("quote", "false"),
         "quoted_update" => ("quoted_update", "false"),
+        "added_to_collection" => ("added_to_collection", "false"),
+        "collection_update" => ("collection_update", "false"),
         _ => return Ok(()),
     };
 
@@ -381,6 +383,104 @@ pub async fn create_and_push(
     body: String,
     icon: String,
 ) {
+    Box::pin(notify(
+        state,
+        recipient_id,
+        from_account_id,
+        notification_type,
+        status_id,
+        None,
+        title,
+        body,
+        icon,
+    ))
+    .await;
+}
+
+/// `LocalNotificationWorker` for `added_to_collection` (about a
+/// `CollectionItem`) and `collection_update` (about a `Collection`), from the
+/// collection's owner (`Notification#set_from_account`). Neither is about a
+/// post; both go through `NotifyService`'s checks, and only
+/// `added_to_collection` is filterable. Neither is mailed.
+pub async fn notify_collection(
+    state: &AppState,
+    recipient_id: i64,
+    notification_type: &'static str,
+    activity: (&'static str, i64),
+    from_account_id: i64,
+) {
+    let sender = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        from_account_id,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    let Some(sender) = sender else { return };
+    // `Web::NotificationSerializer`: the title the type has, and, with no
+    // post, the sender's bio as the body.
+    let name = if sender.display_name.trim().is_empty() {
+        sender.username.clone()
+    } else {
+        sender.display_name.clone()
+    };
+    let title = collection_push_title(notification_type, &name);
+    let body = push_body(&sender.note);
+    let icon = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &sender);
+    Box::pin(notify(
+        state,
+        recipient_id,
+        from_account_id,
+        notification_type,
+        None,
+        Some(activity),
+        title,
+        body,
+        icon,
+    ))
+    .await;
+}
+
+/// A collection notification's push title. Mastodon's
+/// `I18n.t("notification_mailer.#{type}.subject")` has no such key for
+/// either type, so it pushes `Translation missing: …`; eunha says what its
+/// notification fallback says (divergences.toml,
+/// `collection-notification-push-titles`).
+fn collection_push_title(notification_type: &str, name: &str) -> String {
+    match notification_type {
+        "added_to_collection" => format!("{name} added you to a collection"),
+        _ => format!("{name} updated a collection you are in"),
+    }
+}
+
+/// `truncate(strip_tags(text), length: 140)`, entities decoded.
+fn push_body(html: &str) -> String {
+    let text = crate::search::elasticsearch::documents::plain_text(html, false);
+    let text = text.trim();
+    if text.chars().count() <= 140 {
+        return text.to_owned();
+    }
+    let mut truncated: String = text.chars().take(137).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+/// `NotifyService`, for a notification about `status_id`, or about
+/// `activity` when given.
+#[allow(clippy::too_many_arguments)]
+async fn notify(
+    state: &AppState,
+    recipient_id: i64,
+    from_account_id: i64,
+    notification_type: &'static str,
+    status_id: Option<i64>,
+    activity: Option<(&'static str, i64)>,
+    title: String,
+    body: String,
+    icon: String,
+) {
     let db = state.db.clone();
 
     // Don't notify yourself — except for the types exempt from it.
@@ -550,15 +650,20 @@ pub async fn create_and_push(
     // Resolve the polymorphic activity (activity_type/activity_id are NOT NULL).
     // Status-bearing notifications point at the Status; follow(_request)s point
     // at the Follow/FollowRequest row.
-    let Some((activity_type_val, activity_id_val)) = notification_activity(
-        &db,
-        notification_type,
-        recipient_id,
-        from_account_id,
-        status_id,
-    )
-    .await
-    else {
+    let activity = match activity {
+        Some(activity) => Some(activity),
+        None => {
+            notification_activity(
+                &db,
+                notification_type,
+                recipient_id,
+                from_account_id,
+                status_id,
+            )
+            .await
+        }
+    };
+    let Some((activity_type_val, activity_id_val)) = activity else {
         tracing::warn!(
             notification_type,
             "no activity found for notification; skipping"
@@ -568,7 +673,10 @@ pub async fn create_and_push(
 
     // `LocalNotificationWorker`: an `update` or `quoted_update` replaces the
     // earlier ones about the same status, so the newest edit is what is said.
-    if matches!(notification_type, "update" | "quoted_update") {
+    if matches!(
+        notification_type,
+        "update" | "quoted_update" | "collection_update"
+    ) {
         if let Err(e) = sqlx::query!(
             r#"DELETE FROM notifications
                WHERE account_id = $1 AND "type" = $2
@@ -839,4 +947,30 @@ pub(crate) async fn update_notification_request(
     )
     .execute(db)
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{collection_push_title, push_body};
+
+    #[test]
+    fn collection_pushes_say_what_happened() {
+        assert_eq!(
+            collection_push_title("added_to_collection", "Alice"),
+            "Alice added you to a collection"
+        );
+        assert_eq!(
+            collection_push_title("collection_update", "Alice"),
+            "Alice updated a collection you are in"
+        );
+    }
+
+    #[test]
+    fn push_bodies_are_truncated_as_rails_truncates() {
+        assert_eq!(push_body("<p>Hi &amp; bye</p>"), "Hi & bye");
+        let long = "a".repeat(200);
+        let body = push_body(&long);
+        assert_eq!(body.chars().count(), 140);
+        assert!(body.ends_with("..."));
+    }
 }

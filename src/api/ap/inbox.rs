@@ -544,14 +544,21 @@ pub(super) async fn upsert_remote_collection(
         .get("discoverable")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let id = sqlx::query_scalar!(
-        r#"INSERT INTO collections
+    // The collection as it was, if it was: `previously_new_record?` and
+    // `attribute_previously_changed?` for `NotifyOfCollectionUpdateService`.
+    let row = sqlx::query!(
+        r#"WITH previous AS (
+               SELECT name, sensitive FROM collections WHERE uri = $5
+           )
+           INSERT INTO collections
              (account_id, name, discoverable, local, sensitive, item_count, uri, created_at, updated_at)
            VALUES ($1, $2, $3, false, $4, 0, $5, now(), now())
            ON CONFLICT (uri) WHERE uri IS NOT NULL
              DO UPDATE SET name = EXCLUDED.name, discoverable = EXCLUDED.discoverable,
                            sensitive = EXCLUDED.sensitive, updated_at = now()
-           RETURNING id"#,
+           RETURNING id,
+                     (SELECT name FROM previous) AS "previous_name?",
+                     (SELECT sensitive FROM previous) AS "previous_sensitive?""#,
         owner_id,
         name,
         discoverable,
@@ -560,7 +567,16 @@ pub(super) async fn upsert_remote_collection(
     )
     .fetch_optional(&state.db)
     .await?;
-    Ok(id)
+    let Some(row) = row else { return Ok(None) };
+    if let (Some(previous_name), Some(previous_sensitive)) =
+        (row.previous_name, row.previous_sensitive)
+    {
+        if previous_name != name || previous_sensitive != sensitive {
+            Box::pin(crate::api::mastodon::collections::notify_of_collection_update(state, row.id))
+                .await;
+        }
+    }
+    Ok(Some(row.id))
 }
 
 /// Mirror one `FeaturedItem` into a (remote) collection.

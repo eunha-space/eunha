@@ -442,3 +442,102 @@ async fn test_collections_under_v1_alpha() {
         .await;
     assert_eq!(listed.status(), StatusCode::OK);
 }
+
+/// bob's notifications of `kind`, from the v1 list.
+async fn bobs_notifications(ctx: &TestContext, kind: &str) -> Vec<Value> {
+    ctx.api
+        .get(
+            &format!("/api/v1/notifications?types[]={kind}"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap()
+}
+
+async fn update_collection(ctx: &TestContext, cid: &str, body: Value) {
+    let resp = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/collections/{cid}"),
+            Some(&ctx.alice_token),
+            &body,
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// A local account added to a collection is told so (`added_to_collection`),
+/// and told again, replacing the last, when the collection's name,
+/// description, sensitivity or topic changes (`collection_update`); both
+/// carry the collection, and the update goes with the collection.
+#[tokio::test]
+async fn test_collection_notifications() {
+    let ctx = TestContext::new("coll-notifications").await;
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Friends", "account_ids": [ctx.bob_id]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    let cid = body["collection"]["id"].as_str().unwrap().to_owned();
+
+    let added = bobs_notifications(&ctx, "added_to_collection").await;
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["account"]["id"], ctx.alice_id.as_str());
+    assert_eq!(added[0]["collection"]["id"], cid.as_str());
+    assert!(added[0].get("status").is_none());
+    assert!(bobs_notifications(&ctx, "collection_update")
+        .await
+        .is_empty());
+
+    // Not significant.
+    update_collection(&ctx, &cid, json!({"discoverable": true})).await;
+    assert!(bobs_notifications(&ctx, "collection_update")
+        .await
+        .is_empty());
+
+    update_collection(&ctx, &cid, json!({"name": "Best friends"})).await;
+    let first = bobs_notifications(&ctx, "collection_update").await;
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0]["collection"]["name"], "Best friends");
+    update_collection(&ctx, &cid, json!({"sensitive": true})).await;
+    let second = bobs_notifications(&ctx, "collection_update").await;
+    assert_eq!(second.len(), 1, "the newer replaces the older");
+    assert_ne!(second[0]["id"], first[0]["id"]);
+
+    // Grouped, as `REST::NotificationGroupSerializer` has it.
+    let grouped: Value = ctx
+        .api
+        .get(
+            "/api/v2/notifications?types[]=collection_update",
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        grouped["notification_groups"][0]["collection"]["id"],
+        cid.as_str(),
+        "{grouped}"
+    );
+
+    let resp = ctx
+        .api
+        .delete(&format!("/api/v1/collections/{cid}"), &ctx.alice_token)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(bobs_notifications(&ctx, "collection_update")
+        .await
+        .is_empty());
+    // The item's notification stays, its collection gone.
+    let added = bobs_notifications(&ctx, "added_to_collection").await;
+    assert_eq!(added.len(), 1);
+    assert!(added[0]["collection"].is_null(), "{added:?}");
+}

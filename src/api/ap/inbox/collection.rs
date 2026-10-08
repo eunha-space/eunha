@@ -118,7 +118,8 @@ pub(super) async fn handle_remove(state: &AppState, activity: &Value) -> AppResu
     )
     .fetch_optional(&state.db)
     .await?;
-    if removed_collection.is_some() {
+    if let Some(removed) = removed_collection {
+        crate::api::mastodon::collections::destroy_notifications(&state.db, removed.id).await?;
         return Ok(());
     }
     let removed_item = sqlx::query!(

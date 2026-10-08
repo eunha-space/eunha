@@ -216,6 +216,21 @@ async fn collection_entity(
     }))
 }
 
+/// A collection as `REST::CollectionSerializer` renders it for `viewer`, or
+/// `None` when it is gone.
+pub(crate) async fn render(
+    state: &AppState,
+    collection_id: i64,
+    viewer_id: Option<i64>,
+) -> AppResult<Option<Value>> {
+    let Some(c) = load_collection(state, collection_id).await? else {
+        return Ok(None);
+    };
+    collection_entity(state, &state.instance.domain, &c, viewer_id)
+        .await
+        .map(Some)
+}
+
 // ── GET /api/v1/accounts/{id}/collections ─────────────────────────────────
 
 pub async fn account_collections(
@@ -513,12 +528,72 @@ pub async fn update_collection(
     .execute(&state.db)
     .await?;
 
+    let previous = c;
     let c = load_collection(&state, id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // `NotifyOfCollectionUpdateService#significantly_changed?`.
+    if previous.name != c.name
+        || previous.description != c.description
+        || previous.description_html != c.description_html
+        || previous.sensitive != c.sensitive
+        || previous.tag_name != c.tag_name
+    {
+        notify_of_collection_update(&state, id).await;
+    }
     let entity = collection_entity(&state, &instance.domain, &c, Some(auth.account_id)).await?;
     distribute_collection(&state, &instance.domain, id, auth.account_id, false).await;
     Ok(Json(json!({ "collection": entity })))
+}
+
+/// `NotifyOfCollectionUpdateService`, once the collection has changed in a
+/// way its members are told of: a `collection_update` for each local account
+/// whose item is accepted, from the collection's owner, replacing the one
+/// before.
+pub(crate) async fn notify_of_collection_update(state: &AppState, collection_id: i64) {
+    let members = sqlx::query!(
+        r#"SELECT ci.account_id AS "account_id!", c.account_id AS owner_id
+           FROM collection_items ci
+           JOIN collections c ON c.id = ci.collection_id
+           JOIN accounts a ON a.id = ci.account_id
+           WHERE ci.collection_id = $1 AND ci.state = 1 AND a.domain IS NULL
+           ORDER BY ci.id"#,
+        collection_id,
+    )
+    .fetch_all(&state.db)
+    .await;
+    let members = match members {
+        Ok(members) => members,
+        Err(error) => {
+            tracing::warn!(%error, collection_id, "could not find a collection's members");
+            return;
+        }
+    };
+    for member in members {
+        crate::push::notify_collection(
+            state,
+            member.account_id,
+            "collection_update",
+            ("Collection", collection_id),
+            member.owner_id,
+        )
+        .await;
+    }
+}
+
+/// `has_many :notifications, as: :activity, dependent: :destroy`: what a
+/// collection's members were told of it goes with it.
+pub(crate) async fn destroy_notifications<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    collection_id: i64,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "DELETE FROM notifications WHERE activity_type = 'Collection' AND activity_id = $1",
+        collection_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 // ── DELETE /api/v1/collections/{id} ───────────────────────────────────────
@@ -539,6 +614,7 @@ pub async fn delete_collection(
     sqlx::query!("DELETE FROM collections WHERE id = $1", id)
         .execute(&state.db)
         .await?;
+    destroy_notifications(&state.db, id).await?;
     distribute_collection_removal(&state, &instance.domain, id, auth.account_id).await;
     Ok(Json(json!({})))
 }
@@ -630,6 +706,21 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
     };
 
     refresh_item_count(state, collection_id).await?;
+
+    // `notify_local_user` (`AddAccountToCollectionService`, and
+    // `CreateCollectionService#notify_local_users` for the first members).
+    if !is_remote {
+        if let Some(owner) = &owner {
+            crate::push::notify_collection(
+                state,
+                account_id,
+                "added_to_collection",
+                ("CollectionItem", row.id),
+                owner.id,
+            )
+            .await;
+        }
+    }
 
     // Send the FeatureRequest asking the remote account for consent.
     if is_remote {

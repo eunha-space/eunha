@@ -44,7 +44,8 @@ The recorded decisions cover:
  -  how notification emails are unsubscribed from;
  -  the DeepL endpoint setting;
  -  the auxiliary service provider admin API;
- -  remote media linked rather than downloaded, which the operator chose.
+ -  remote media linked rather than downloaded, which the operator chose;
+ -  the web push title of a collection notification.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

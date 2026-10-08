@@ -124,6 +124,8 @@ pub async fn save(
             sqlx::query!("DELETE FROM collections WHERE id = $1", collection.id)
                 .execute(&mut *tx)
                 .await?;
+            crate::api::mastodon::collections::destroy_notifications(&mut *tx, collection.id)
+                .await?;
             action_log::log(
                 &mut *tx,
                 actor_id,

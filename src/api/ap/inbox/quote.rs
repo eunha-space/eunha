@@ -1120,6 +1120,16 @@ pub(super) async fn handle_feature_request(
     .execute(&state.db)
     .await?;
 
+    // `notify_local_user!`.
+    crate::push::notify_collection(
+        state,
+        local.id,
+        "added_to_collection",
+        ("CollectionItem", item_id),
+        owner_id,
+    )
+    .await;
+
     // Reply with Accept(result = our FeatureAuthorization) to the collection owner.
     let owner = sqlx::query!(
         "SELECT uri, inbox_url, shared_inbox_url FROM accounts WHERE id = $1",

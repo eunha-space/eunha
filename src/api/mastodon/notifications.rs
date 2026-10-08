@@ -143,6 +143,34 @@ async fn severance_event_of(state: &AppState, n: &DbNotification) -> Option<serd
     crate::moderation::severance::serialize(state, n.activity_id?).await
 }
 
+/// `belongs_to :target_collection, key: :collection, if: :collection_type?`:
+/// for `added_to_collection` the collection the item is in, for
+/// `collection_update` the collection, as the recipient sees it; `null` when
+/// it is gone, and absent for any other type.
+async fn collection_of(state: &AppState, n: &DbNotification) -> Option<serde_json::Value> {
+    let collection_id = match (n.r#type.as_deref(), n.activity_type.as_deref()) {
+        (Some("added_to_collection"), Some("CollectionItem")) => sqlx::query_scalar!(
+            "SELECT collection_id FROM collection_items WHERE id = $1",
+            n.activity_id?,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten(),
+        (Some("collection_update"), Some("Collection")) => n.activity_id,
+        (Some("added_to_collection" | "collection_update"), _) => None,
+        _ => return None,
+    };
+    let rendered = match collection_id {
+        Some(id) => super::collections::render(state, id, Some(n.account_id))
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    Some(rendered.unwrap_or(serde_json::Value::Null))
+}
+
 /// One notification as `GET /api/v1/notifications/:id` renders it, as the
 /// streaming API sends it.
 pub async fn render_notification(state: &AppState, notification_id: i64) -> Option<String> {
@@ -517,7 +545,7 @@ pub async fn get_notifications(
             event: severance_event_of(&state, n).await,
             moderation_warning: moderation_warning_of(&state, n).await,
             fallback: None,
-            collection: None,
+            collection: collection_of(&state, n).await,
         });
     }
 
@@ -1054,7 +1082,7 @@ pub async fn get_notifications_v2(
             event: severance_event_of(&state, n).await,
             moderation_warning: moderation_warning_of(&state, n).await,
             annual_report: None,
-            collection: None,
+            collection: collection_of(&state, n).await,
             fallback: None,
         });
     }
@@ -1133,7 +1161,7 @@ pub async fn get_notification_group(
         event: severance_event_of(&state, rep).await,
         moderation_warning: moderation_warning_of(&state, rep).await,
         annual_report: None,
-        collection: None,
+        collection: collection_of(&state, rep).await,
         fallback: None,
     }))
 }
@@ -2016,6 +2044,6 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         event: severance_event_of(state, n).await,
         moderation_warning: moderation_warning_of(state, n).await,
         fallback: None,
-        collection: None,
+        collection: collection_of(state, n).await,
     })
 }

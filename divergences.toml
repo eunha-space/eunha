@@ -848,3 +848,23 @@ why = "Keep the sidebar focused on the member's home feed and local community."
 evidence = "frontend/e2e/nav.spec.ts"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "collection-notification-push-titles"
+kind = "behaviour"
+summary = "Titles the web push of a collection notification with what happened"
+mastodon = """
+Pushes `added_to_collection` and `collection_update` notifications to a \
+subscription that turned their alerts on, titled \
+`I18n.t("notification_mailer.#{type}.subject")`, a key its locales do not \
+have, so the title reads `Translation missing: …`."""
+eunha = """
+Pushes them to the same subscriptions, titled as the notification fallback \
+says it: `<name> added you to a collection`, `<name> updated a collection you \
+are in`."""
+why = """
+A title that names a missing translation key tells the reader nothing, and is \
+plainly an omission upstream rather than a choice."""
+evidence = "src/push.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

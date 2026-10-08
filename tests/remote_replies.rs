@@ -643,6 +643,100 @@ async fn test_a_root_the_server_refuses_is_not_retried() {
     assert_eq!(retries, 0);
 }
 
+/// A `FeatureRequest` for a local account is accepted, and the account told
+/// it was added to the collection (`added_to_collection`, from its owner);
+/// the collection renamed by its owner's `Update` tells it again
+/// (`collection_update`).
+#[tokio::test]
+async fn test_feature_request_notifies_the_featured_account() {
+    let (ctx, remote, base, private_pem) = context_ctx("feature-request").await;
+    let actor = format!("{base}/users/eve");
+    let collection = |name: &str| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{base}/collections/1"),
+            "type": "FeaturedCollection",
+            "attributedTo": actor,
+            "name": name,
+            "sensitive": false,
+            "discoverable": true,
+        })
+    };
+    remote.put("/collections/1", collection("Neighbours"));
+    eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .unwrap();
+    let alice_uri: String = sqlx::query_scalar("SELECT uri FROM accounts WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .map(|uri: Option<String>| uri.unwrap_or_default())
+        .unwrap();
+    let alice_uri = if alice_uri.is_empty() {
+        format!("https://{}/users/alice", ctx.domain)
+    } else {
+        alice_uri
+    };
+    let request = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{base}/feature_requests/1"),
+        "type": "FeatureRequest",
+        "actor": actor,
+        "object": alice_uri,
+        "instrument": format!("{base}/collections/1"),
+    });
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &request,
+            &format!("{actor}#main-key"),
+            &private_pem,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+
+    let notifications = |kind: &'static str| {
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .get(
+                    &format!("/api/v1/notifications?types[]={kind}"),
+                    Some(&ctx.alice_token),
+                )
+                .await
+                .json::<Vec<Value>>()
+                .await
+                .unwrap()
+        }
+    };
+    let added = notifications("added_to_collection").await;
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["collection"]["name"], "Neighbours");
+    assert_eq!(added[0]["collection"]["local"], false);
+
+    let update = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{base}/collections/1#updates/1"),
+        "type": "Update",
+        "actor": actor,
+        "object": collection("Good neighbours"),
+    });
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &update,
+            &format!("{actor}#main-key"),
+            &private_pem,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    let updated = notifications("collection_update").await;
+    assert_eq!(updated.len(), 1, "{updated:?}");
+    assert_eq!(updated[0]["collection"]["name"], "Good neighbours");
+}
+
 /// A remote question as its server has it, with `yes` voted `votes` times.
 fn question(base: &str, votes: i64) -> Value {
     let mut question = note(base, "question", None, None);
