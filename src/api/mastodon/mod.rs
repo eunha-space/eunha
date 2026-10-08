@@ -1110,7 +1110,6 @@ pub fn router() -> Router {
             delete(accounts::delete_alias),
         )
         // Suggestions
-        .route("/api/v1/directory", get(accounts::get_directory))
         .route("/api/v1/suggestions", get(accounts::get_suggestions))
         .route(
             "/api/v1/suggestions/{id}",
@@ -1307,6 +1306,9 @@ pub fn router() -> Router {
             get(oauth::verify_app_credentials),
         )
         // Accounts (public)
+        // The profile directory: `Api::V1::DirectoriesController` asks for
+        // no token.
+        .route("/api/v1/directory", get(accounts::get_directory))
         .route("/api/v1/accounts", get(accounts::get_accounts_batch))
         .route("/api/v1/accounts/lookup", get(accounts::lookup_account))
         .route("/api/v1/accounts/{id}", get(accounts::get_account))

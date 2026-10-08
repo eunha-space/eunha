@@ -1116,55 +1116,74 @@ pub struct DirectoryQuery {
     pub local: Option<bool>,
 }
 
+/// `Api::V1::DirectoriesController#show`: `Account.discoverable` (local
+/// accounts approved and confirmed, none suspended, silenced, moved or
+/// undiscoverable), the most recently posting first or, with
+/// `order=new`, the newest. `local` is false unless given, as
+/// `truthy_param?` reads it. A signed-in viewer is not shown the accounts
+/// it blocks, is blocked by or mutes, nor, beyond the local directory,
+/// those of domains it blocks.
 pub async fn get_directory(
     state: AppState,
     Query(q): Query<DirectoryQuery>,
+    auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<Vec<ApiAccount>>> {
     // `Api::V1::DirectoriesController#require_enabled!`.
     if !crate::settings::boolean(&state, "profile_directory").await {
         return Err(AppError::NotFound);
     }
-    let limit = q.limit.unwrap_or(40).clamp(1, 80);
+    let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
+    // `limit_param(DEFAULT_ACCOUNTS_LIMIT)`.
+    let limit = q.limit.map_or(40, |l| l.abs().min(80));
     let offset = q.offset.unwrap_or(0).max(0);
-    let local_only = q.local.unwrap_or(true);
-    let order = q.order.as_deref().unwrap_or("active");
-
-    let accounts = if order == "new" {
-        sqlx::query_as!(
-            Account,
-            r#"SELECT * FROM accounts
-               WHERE discoverable = true
-                 AND suspended_at IS NULL AND requested_deletion_at IS NULL
-                 AND silenced_at IS NULL
-                 AND (NOT $1::bool OR domain IS NULL)
-               ORDER BY created_at DESC
-               LIMIT $2 OFFSET $3"#,
-            local_only,
-            limit,
-            offset,
-        )
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        sqlx::query_as!(
-            Account,
-            r#"SELECT a.* FROM accounts a
-               WHERE a.discoverable = true
-                 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                 AND a.silenced_at IS NULL
-                 AND (NOT $1::bool OR a.domain IS NULL)
-               ORDER BY (
-                   SELECT MAX(s.created_at) FROM statuses s
-                   WHERE s.account_id = a.id AND s.deleted_at IS NULL
-               ) DESC NULLS LAST
-               LIMIT $2 OFFSET $3"#,
-            local_only,
-            limit,
-            offset,
-        )
-        .fetch_all(&state.db)
-        .await?
+    let local_only = q.local.unwrap_or(false);
+    // `account_order_scope`: `new`, or `active` (and absent); any other
+    // order leaves the scope unordered.
+    let order = match q.order.as_deref() {
+        None | Some("active") => "active",
+        Some("new") => "new",
+        Some(_) => "",
     };
+
+    let accounts = sqlx::query_as!(
+        Account,
+        r#"SELECT a.* FROM accounts a
+           JOIN account_stats st ON st.account_id = a.id
+           LEFT JOIN users u ON u.account_id = a.id
+           WHERE a.discoverable = true
+             -- `without_unapproved`.
+             AND (a.domain IS NOT NULL
+                  OR (u.approved = true AND u.confirmed_at IS NOT NULL))
+             -- `without_suspended`, `without_silenced`, unmoved.
+             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+             AND a.silenced_at IS NULL
+             AND a.moved_to_account_id IS NULL
+             AND (NOT $1::bool OR a.domain IS NULL)
+             -- `not_excluded_by_account`.
+             AND ($4::bigint IS NULL OR NOT (
+               EXISTS (SELECT 1 FROM blocks b
+                       WHERE (b.account_id = $4 AND b.target_account_id = a.id)
+                          OR (b.account_id = a.id AND b.target_account_id = $4))
+               OR EXISTS (SELECT 1 FROM mutes m
+                          WHERE m.account_id = $4 AND m.target_account_id = a.id)
+             ))
+             -- `not_domain_blocked_by_account`, beyond the local directory.
+             AND ($4::bigint IS NULL OR $1::bool OR a.domain IS NULL OR NOT EXISTS (
+               SELECT 1 FROM account_domain_blocks adb
+               WHERE adb.account_id = $4 AND adb.domain = a.domain
+             ))
+           ORDER BY
+             CASE WHEN $5::text = 'active' THEN st.last_status_at END DESC NULLS LAST,
+             CASE WHEN $5::text = 'new' THEN a.id END DESC
+           LIMIT $2 OFFSET $3"#,
+        local_only,
+        limit,
+        offset,
+        viewer_id,
+        order,
+    )
+    .fetch_all(&state.db)
+    .await?;
 
     Ok(Json(batch_accounts_to_api(&state, &accounts).await))
 }

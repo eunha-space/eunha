@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-use crate::helpers::TestContext;
+use crate::helpers::{seed_user, TestContext};
 
 /// `recount_follows` reconciles a local account's drifted follow counters from
 /// the `follows` table (Mastodon's `refresh_counts`), fixing negative values
@@ -2313,10 +2313,14 @@ async fn test_suggestions_exclude_blocked() {
 
 // ── directory ─────────────────────────────────────────────────────────────────
 
-/// GET /api/v1/directory returns local accounts (includes alice).
+/// GET /api/v1/directory returns local accounts (includes alice), once
+/// they have the `account_stats` row `Account.discoverable` joins.
 #[tokio::test]
 async fn test_get_directory() {
     let ctx = TestContext::new("directory").await;
+    ctx.api
+        .post_status(&ctx.alice_token, "hello", "public")
+        .await;
 
     let resp = ctx
         .api
@@ -2336,6 +2340,7 @@ async fn test_get_directory() {
 async fn test_directory_excludes_silenced() {
     let ctx = TestContext::new("directory-silenced").await;
     let bob_id: i64 = ctx.bob_id.parse().unwrap();
+    ctx.api.post_status(&ctx.bob_token, "hello", "public").await;
 
     // Bob is discoverable and initially listed.
     let before: Vec<Value> = ctx
@@ -2369,6 +2374,126 @@ async fn test_directory_excludes_silenced() {
     assert!(
         !after.iter().any(|a| a["username"].as_str() == Some("bob")),
         "silenced bob must not appear in directory"
+    );
+}
+
+/// `Api::V1::DirectoriesController`: remote accounts unless `local` is
+/// truthy, `Account.discoverable`'s conditions (approved and confirmed,
+/// not moved, with stats), a viewer's exclusions, and the two orders.
+#[tokio::test]
+async fn test_directory_as_mastodon_lists_it() {
+    let ctx = TestContext::new("directory-scopes").await;
+    let names = |list: &[Value]| -> Vec<String> {
+        list.iter()
+            .map(|a| a["acct"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let directory = |query: &'static str, token: Option<String>| {
+        let ctx = &ctx;
+        async move {
+            let resp = ctx
+                .api
+                .get(&format!("/api/v1/directory{query}"), token.as_deref())
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            resp.json::<Vec<Value>>().await.unwrap()
+        }
+    };
+    let (carol_id, carol_token) =
+        seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    let (dave_id, dave_token) = seed_user(&ctx.db, &ctx.domain, "dave", "dave@example.com").await;
+    let (erin_id, erin_token) = seed_user(&ctx.db, &ctx.domain, "erin", "erin@example.com").await;
+    for token in [
+        &ctx.alice_token,
+        &ctx.bob_token,
+        &carol_token,
+        &dave_token,
+        &erin_token,
+    ] {
+        ctx.api.post_status(token, "hello", "public").await;
+    }
+    let remote: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (id, username, domain, uri, url, discoverable, created_at, updated_at)
+         VALUES (timestamp_id('accounts'), 'remy', 'remote.example', 'https://remote.example/users/remy',
+                 'https://remote.example/@remy', true, now(), now())
+         RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO account_stats (account_id, created_at, updated_at, last_status_at)
+         VALUES ($1, now(), now(), now() - interval '1 day')",
+    )
+    .bind(remote)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    // Carol has not confirmed her address; Dave has moved to Erin.
+    sqlx::query("UPDATE users SET confirmed_at = NULL WHERE account_id = $1")
+        .bind(carol_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET moved_to_account_id = $2 WHERE id = $1")
+        .bind(dave_id)
+        .bind(erin_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let anonymous = names(&directory("", None).await);
+    assert!(
+        anonymous.contains(&"remy@remote.example".to_owned()),
+        "{anonymous:?}"
+    );
+    assert!(!anonymous.contains(&"carol".to_owned()), "{anonymous:?}");
+    assert!(!anonymous.contains(&"dave".to_owned()), "{anonymous:?}");
+    assert!(anonymous.contains(&"erin".to_owned()), "{anonymous:?}");
+    // The most recent poster first; the remote account posted a day ago.
+    assert_eq!(
+        anonymous.last().map(String::as_str),
+        Some("remy@remote.example")
+    );
+    let local = names(&directory("?local=1", None).await);
+    assert!(
+        !local.contains(&"remy@remote.example".to_owned()),
+        "{local:?}"
+    );
+
+    // `order=new` is by id, newest first.
+    let new = names(&directory("?order=new", None).await);
+    assert_eq!(new.first().map(String::as_str), Some("remy@remote.example"));
+    assert!(directory("?limit=0", None).await.is_empty());
+
+    // Bob mutes Erin and blocks remote.example; Alice blocks Bob.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{erin_id}/mute"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    ctx.api
+        .post_json(
+            "/api/v1/domain_blocks",
+            Some(&ctx.bob_token),
+            &json!({"domain": "remote.example"}),
+        )
+        .await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/block", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let for_bob = names(&directory("", Some(ctx.bob_token.clone())).await);
+    assert!(!for_bob.contains(&"erin".to_owned()), "{for_bob:?}");
+    assert!(!for_bob.contains(&"alice".to_owned()), "{for_bob:?}");
+    assert!(
+        !for_bob.contains(&"remy@remote.example".to_owned()),
+        "{for_bob:?}"
     );
 }
 
