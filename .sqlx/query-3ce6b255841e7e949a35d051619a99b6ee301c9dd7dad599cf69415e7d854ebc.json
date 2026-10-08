@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE polls\n           SET cached_tallies = tallied.tallies,\n               votes_count = (SELECT COALESCE(SUM(t), 0)::bigint FROM unnest(tallied.tallies) t),\n               voters_count = CASE WHEN $3 THEN voters_count + 1 ELSE voters_count END,\n               lock_version = lock_version + 1,\n               updated_at = now()\n           FROM (\n               SELECT p.id, ARRAY(\n                   SELECT COALESCE(p.cached_tallies[i], 0)\n                          + CASE WHEN i = $2 + 1 THEN 1 ELSE 0 END\n                   FROM generate_series(\n                       1, GREATEST(COALESCE(array_length(p.cached_tallies, 1), 0), $2 + 1)\n                   ) AS i\n                   ORDER BY i\n               )::bigint[] AS tallies\n               FROM polls p WHERE p.id = $1\n           ) AS tallied\n           WHERE polls.id = tallied.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ce6b255841e7e949a35d051619a99b6ee301c9dd7dad599cf69415e7d854ebc"
+}

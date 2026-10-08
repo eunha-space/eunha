@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM accounts a JOIN users u ON u.account_id = a.id\n             WHERE a.id = $1 AND a.domain IS NULL\n               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "10875e96e47558ded3ddc441ec35167f401b5bb286dbb2f325c7107c4fcb3380"
+}

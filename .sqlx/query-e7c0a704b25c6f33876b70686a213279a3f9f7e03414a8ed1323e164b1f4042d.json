@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE polls\n                             SET options = $2, multiple = $3, hide_totals = $4, expires_at = $5,\n                                 cached_tallies = CASE WHEN $6\n                                     THEN ARRAY(SELECT 0::bigint FROM unnest($2::varchar[]))\n                                     ELSE cached_tallies END,\n                                 votes_count = CASE WHEN $6 THEN 0 ELSE votes_count END,\n                                 voters_count = CASE WHEN $6 THEN 0 ELSE voters_count END,\n                                 updated_at = now()\n                           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "VarcharArray",
+        "Bool",
+        "Bool",
+        "Timestamp",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7c0a704b25c6f33876b70686a213279a3f9f7e03414a8ed1323e164b1f4042d"
+}

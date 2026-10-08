@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM accounts\n             WHERE id = $1 AND suspended_at IS NULL AND requested_deletion_at IS NULL\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3d6957a90b7201ccdd31d57776d7b5097a6d241323849b792f0f980ee3abe55e"
+}

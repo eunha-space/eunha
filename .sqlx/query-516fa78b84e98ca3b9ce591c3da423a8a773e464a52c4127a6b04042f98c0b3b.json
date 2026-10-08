@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO polls\n                 (id, status_id, account_id, options, cached_tallies, votes_count,\n                  multiple, expires_at, voters_count, last_fetched_at, created_at, updated_at)\n               SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now(),now()\n               WHERE NOT EXISTS (SELECT 1 FROM polls WHERE status_id = $2)\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "VarcharArray",
+        "Int8Array",
+        "Int8",
+        "Bool",
+        "Timestamp",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "516fa78b84e98ca3b9ce591c3da423a8a773e464a52c4127a6b04042f98c0b3b"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 FROM statuses s\n                   WHERE s.id = $2\n                     AND EXISTS (\n                       SELECT 1 FROM (\n                         SELECT m.account_id FROM mentions m\n                         WHERE m.status_id = s.id AND NOT m.silent\n                         UNION\n                         SELECT s.in_reply_to_account_id WHERE s.in_reply_to_account_id IS NOT NULL\n                       ) AS involved(account_id)\n                       WHERE involved.account_id <> $1\n                         AND (EXISTS (\n                           SELECT 1 FROM blocks b\n                           WHERE b.account_id = $1 AND b.target_account_id = involved.account_id\n                         ) OR EXISTS (\n                           SELECT 1 FROM mutes mu\n                           WHERE mu.account_id = $1 AND mu.target_account_id = involved.account_id\n                             AND mu.hide_notifications\n                         ))\n                     )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0cfa8ea3148b949bfda6f0c0765c3271ca799df8b3959bc4b5572b759c170f33"
+}

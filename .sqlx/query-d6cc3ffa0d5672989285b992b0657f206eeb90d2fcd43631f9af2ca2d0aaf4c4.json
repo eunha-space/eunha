@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                         SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2\n                       ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d6cc3ffa0d5672989285b992b0657f206eeb90d2fcd43631f9af2ca2d0aaf4c4"
+}

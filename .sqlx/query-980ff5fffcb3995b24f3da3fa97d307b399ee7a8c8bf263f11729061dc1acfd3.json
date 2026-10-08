@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM blocks\n             WHERE (account_id = $1 AND target_account_id = $2)\n                OR (account_id = $2 AND target_account_id = $1)\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "980ff5fffcb3995b24f3da3fa97d307b399ee7a8c8bf263f11729061dc1acfd3"
+}
