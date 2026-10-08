@@ -219,7 +219,28 @@ pub async fn process_featured_collection(
         return Ok(None);
     }
 
-    let _lock = redis_lock(state, &format!("collection:{uri}")).await?;
+    let lock = redis_lock(state, &format!("collection:{uri}")).await?;
+    let result = Box::pin(process_collection_locked(
+        state,
+        account_id,
+        account_uri,
+        json,
+        uri,
+    ))
+    .await;
+    // Released as the block `with_redis_lock` runs ends.
+    lock.release().await;
+    result
+}
+
+/// What `ProcessFeaturedCollectionService#call` does under its lock.
+async fn process_collection_locked(
+    state: &AppState,
+    account_id: i64,
+    account_uri: &str,
+    json: &Value,
+    uri: &str,
+) -> anyhow::Result<Option<i64>> {
     let Some(attributes) = Attributes::read(state, json, uri).await? else {
         tracing::debug!(collection = uri, "remote collection is not valid");
         return Ok(None);

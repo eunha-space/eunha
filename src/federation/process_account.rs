@@ -266,7 +266,10 @@ async fn process_inner(
     if webfinger_verified {
         process_duplicate_accounts(state, &account).await?;
     }
-    drop(lock);
+    // Released as the block `with_redis_lock` runs ends.
+    if let Some(lock) = lock {
+        lock.release().await;
+    }
 
     if old_protocol.is_some_and(|protocol| protocol != PROTOCOL_ACTIVITYPUB) {
         after_protocol_change(state, &domain).await?;
@@ -1315,8 +1318,12 @@ pub async fn resolve_account(
     }
 
     // `fetch_account!`, which does not pass the request id on.
-    let _lock = acquire_lock(state, &format!("resolve:{username}@{domain}")).await;
-    fetch_remote_account_suppressed(state, resolved.actor.as_str(), None).await
+    let lock = acquire_lock(state, &format!("resolve:{username}@{domain}")).await;
+    let result = fetch_remote_account_suppressed(state, resolved.actor.as_str(), None).await;
+    if let Some(lock) = lock {
+        lock.release().await;
+    }
+    result
 }
 
 /// The status a fetch was answered with, if it failed on one.

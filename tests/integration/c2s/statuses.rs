@@ -5644,6 +5644,16 @@ async fn test_post_status_idempotency_key() {
 
     let id1 = resp1["id"].as_str().expect("first response must have id");
 
+    // `with_redis_lock` let go as its block ended, before the answer.
+    let free = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:idempotency:lock:status:{}:{key}", ctx.alice_id),
+        1_000,
+    )
+    .await;
+    assert!(free.is_some(), "the idempotency lock is still held");
+    free.unwrap().release().await;
+
     // Second request with the same key — must return the same status, not create a new one.
     let resp2: Value = client
         .post(format!("{}/api/v1/statuses", ctx.api.base_url))

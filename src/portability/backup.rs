@@ -124,7 +124,7 @@ pub async fn create(state: &AppState, account_id: i64) -> AppResult<Backup> {
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    drop(lock);
+    lock.release().await;
 
     if crate::feed::sync_fanout() {
         drain(state).await?;

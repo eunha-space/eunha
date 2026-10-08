@@ -44,7 +44,7 @@ pub(super) async fn handle_delete(
     // held two hours, and skipped by whoever finds it held): purged
     // outright, without announcing anything back over ActivityPub.
     if uri == actor_uri {
-        let Some(_lock) = crate::redis_lock::try_acquire_lockable(
+        let Some(lock) = crate::redis_lock::try_acquire_lockable(
             state,
             &format!("delete_in_progress:{account_id}"),
             2 * 60 * 60 * 1000,
@@ -53,7 +53,7 @@ pub(super) async fn handle_delete(
         else {
             return Ok(());
         };
-        crate::delete_account::call(
+        let deleted = crate::delete_account::call(
             state,
             account_id,
             crate::delete_account::Options {
@@ -62,8 +62,9 @@ pub(super) async fn handle_delete(
                 ..Default::default()
             },
         )
-        .await
-        .map_err(crate::error::AppError::Internal)?;
+        .await;
+        lock.release().await;
+        deleted.map_err(crate::error::AppError::Internal)?;
         tracing::debug!(actor_uri, "purged remote account on Delete(actor)");
         return Ok(());
     }
@@ -89,7 +90,7 @@ pub(super) async fn handle_delete(
 
     // `delete_object`, once at a time for a URI
     // (`delete_status_in_progress:#{object_uri}`, skipped when held).
-    let Some(_lock) = crate::redis_lock::try_acquire_lockable(
+    let Some(lock) = crate::redis_lock::try_acquire_lockable(
         state,
         &format!("delete_status_in_progress:{uri}"),
         crate::redis_lock::DEFAULT_TTL_MS,
@@ -98,14 +99,29 @@ pub(super) async fn handle_delete(
     else {
         return Ok(());
     };
+    let result = delete_object(state, activity, actor_uri, account_id, uri).await;
+    // Released as the block `with_redis_lock` runs ends.
+    lock.release().await;
+    result
+}
+
+/// `Delete#delete_object`, under its lock.
+async fn delete_object(
+    state: &AppState,
+    activity: &Value,
+    actor_uri: &str,
+    account_id: i64,
+    uri: &str,
+) -> AppResult<()> {
     // On the sender's own host, the URI is remembered as deleted, so that a
     // `Create` of it arriving late is skipped (`delete_later!`, under the
     // `create:` lock a concurrent `Create` holds while it stores the status),
     // and tombstoned.
     if same_host(actor_uri, uri) {
-        {
-            let _create_lock = acquire_create_lock(state, uri).await;
-            delete_later(state, actor_uri, uri).await;
+        let create_lock = acquire_create_lock(state, uri).await;
+        delete_later(state, actor_uri, uri).await;
+        if let Some(lock) = create_lock {
+            lock.release().await;
         }
         // `Tombstone.find_or_create_by(uri:, account: @account)`.
         sqlx::query!(

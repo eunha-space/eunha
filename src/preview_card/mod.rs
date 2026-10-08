@@ -150,41 +150,49 @@ pub async fn fetch_link_card(
         return None;
     }
 
-    let card = {
-        let _lock = crate::redis_lock::try_acquire_lockable(
-            state,
-            &format!("fetch:{original_url}"),
-            crate::redis_lock::DEFAULT_TTL_MS,
-        )
-        .await?;
-        let card = Card::find(state, &original_url).await;
-        let stale = card.as_ref().is_none_or(|c| {
-            c.updated_at
-                .is_some_and(|at| at <= chrono::Utc::now().naive_utc() - chrono::Duration::weeks(2))
-                || c.missing_image()
-        });
-        if stale {
-            let mut service = Service {
-                state,
-                url: original_url.clone(),
-                card: card.unwrap_or_else(|| Card::new(&original_url)),
-                html: None,
-            };
-            match service.process_url().await {
-                Ok(()) => service.card,
-                Err(Abort) => {
-                    tracing::debug!(url = %original_url, "could not fetch a link card");
-                    return None;
-                }
-            }
-        } else {
-            card?
-        }
-    };
+    let lock = crate::redis_lock::try_acquire_lockable(
+        state,
+        &format!("fetch:{original_url}"),
+        crate::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await?;
+    let card = find_or_fetch(state, &original_url).await;
+    // Released as the block `with_redis_lock` runs ends, so that the next
+    // status linking the same page finds the card rather than the lock.
+    lock.release().await;
+    let card = card?;
 
     let card_id = card.id?;
     attach_card(state, status_id, card_id, &original_url).await?;
     Some(card_id)
+}
+
+/// What `FetchLinkCardService#call` does under `with_redis_lock("fetch:…")`:
+/// the card known for the page, fetched again when it is two weeks old or
+/// has no image, or fetched for the first time.
+async fn find_or_fetch(state: &AppState, original_url: &str) -> Option<Card> {
+    let card = Card::find(state, original_url).await;
+    let stale = card.as_ref().is_none_or(|c| {
+        c.updated_at
+            .is_some_and(|at| at <= chrono::Utc::now().naive_utc() - chrono::Duration::weeks(2))
+            || c.missing_image()
+    });
+    if !stale {
+        return card;
+    }
+    let mut service = Service {
+        state,
+        url: original_url.to_owned(),
+        card: card.unwrap_or_else(|| Card::new(original_url)),
+        html: None,
+    };
+    match service.process_url().await {
+        Ok(()) => Some(service.card),
+        Err(Abort) => {
+            tracing::debug!(url = %original_url, "could not fetch a link card");
+            None
+        }
+    }
 }
 
 /// `attach_card`.

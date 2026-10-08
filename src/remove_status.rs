@@ -227,10 +227,23 @@ async fn call_unboxed(state: &AppState, status_id: i64, options: Options) -> Res
     let Some(account) = load_account(state, status.account_id).await? else {
         return Ok(());
     };
-    let _lock = lock(state, status.id).await?;
+    let lock = lock(state, status.id).await?;
+    let result = remove_locked(state, &status, &account, options).await;
+    // Released as the block `with_redis_lock` runs ends.
+    lock.release().await;
+    result
+}
+
+/// What `RemoveStatusService#call` does under its lock.
+async fn remove_locked(
+    state: &AppState,
+    status: &Status,
+    account: &Account,
+    options: Options,
+) -> Result<()> {
     let id = status.id;
 
-    let discarded_at = discard_with_reblogs(state, &status).await?;
+    let discarded_at = discard_with_reblogs(state, status).await?;
 
     // `StatusPin.find_by(status: @status)&.destroy`.
     sqlx::query!("DELETE FROM status_pins WHERE status_id = $1", id)
@@ -243,10 +256,10 @@ async fn call_unboxed(state: &AppState, status_id: i64, options: Options) -> Res
     remove_from_feeds(state, account.id, id, status.reblog_of_id).await;
 
     if account.is_local() && !options.original_removed {
-        remove_from_remote_reach(state, &status, &account, discarded_at).await;
+        remove_from_remote_reach(state, status, account, discarded_at).await;
     }
 
-    let reported = reported(state, &status).await?;
+    let reported = reported(state, status).await?;
     let permanently = options.immediate || !(options.preserve || reported);
 
     // A boost mentions nobody, is not boosted, and carries no media or
@@ -271,7 +284,7 @@ async fn call_unboxed(state: &AppState, status_id: i64, options: Options) -> Res
     crate::search::elasticsearch::indexing::account(state, account.id).await;
 
     if permanently {
-        destroy(state, &status, &account).await?;
+        destroy(state, status, account).await?;
     }
     Ok(())
 }

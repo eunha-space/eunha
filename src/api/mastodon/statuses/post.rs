@@ -39,10 +39,9 @@ pub async fn post_status(
 
     // `with_idempotency`: under `with_redis_lock`, a key already recorded
     // answers with what it recorded, so that a request sent twice at once does
-    // not post twice. The lock is held until this handler returns, after the
-    // key is recorded below.
+    // not post twice. The lock is released once the key is recorded below.
     let idempotency_key = idempotency_key.filter(|k| !k.trim().is_empty());
-    let _idempotency_lock = match idempotency_key.as_deref() {
+    let idempotency_lock = match idempotency_key.as_deref() {
         Some(ik) => {
             let lock = crate::redis_lock::try_acquire_lockable(
                 &state,
@@ -217,6 +216,9 @@ pub async fn post_status(
             .await?
             .ok_or(AppError::NotFound)?;
         record_idempotency(&state, account.id, idempotency_key.as_deref(), scheduled_id).await;
+        if let Some(lock) = idempotency_lock {
+            lock.release().await;
+        }
         // `render json: @status` with no status: 200, as for a status.
         return Ok((axum::http::StatusCode::OK, Json(resp)).into_response());
     }
@@ -278,6 +280,11 @@ pub async fn post_status(
 
     // Record the idempotency key so a retried request replays this status.
     record_idempotency(&state, account.id, idempotency_key.as_deref(), status.id).await;
+    // Released as the block `with_redis_lock` runs ends, so that a retry
+    // right behind finds the key recorded rather than the lock held.
+    if let Some(lock) = idempotency_lock {
+        lock.release().await;
+    }
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 

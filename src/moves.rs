@@ -211,7 +211,7 @@ pub async fn create_migration(
     )
     .await?;
 
-    let _lock = crate::redis_lock::try_acquire_lockable(
+    let lock = crate::redis_lock::try_acquire_lockable(
         state,
         &format!("account_migration:{account_id}"),
         crate::redis_lock::DEFAULT_TTL_MS,
@@ -290,7 +290,8 @@ pub async fn create_migration(
     )
     .fetch_one(&state.db)
     .await?;
-    drop(_lock);
+    // Released as the block `with_redis_lock` runs ends.
+    lock.release().await;
 
     move_service(state, row.id, &account, &target).await?;
 

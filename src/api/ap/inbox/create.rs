@@ -118,9 +118,33 @@ pub(super) async fn create(
 
     // Serialize against a concurrent Delete for this uri so its `delete_later`
     // can't slip in between the check below and our insert. Held for the whole
-    // creation (released when this guard drops on return).
-    let _create_lock = acquire_create_lock(state, note_uri).await;
+    // creation, and released as the block `with_redis_lock` runs ends, so
+    // that a `Delete` right behind it need not wait.
+    let create_lock = acquire_create_lock(state, note_uri).await;
+    let result = Box::pin(create_locked(
+        state,
+        activity,
+        create_options,
+        object,
+        actor_uri,
+        note_uri,
+    ))
+    .await;
+    if let Some(lock) = create_lock {
+        lock.release().await;
+    }
+    result
+}
 
+/// What `Create#create_status` does under `with_redis_lock("create:…")`.
+async fn create_locked(
+    state: &AppState,
+    activity: &Value,
+    create_options: &CreateOptions,
+    object: &Value,
+    actor_uri: &str,
+    note_uri: &str,
+) -> AppResult<()> {
     // Skip a Create whose Delete already arrived out of order (Redis tombstone),
     // in addition to the persistent tombstone check below.
     if delete_arrived_first(state, actor_uri, note_uri).await {
