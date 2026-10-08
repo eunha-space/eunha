@@ -100,6 +100,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::moderation::domain_block::AfterUnallowDomainWorker>(),
         entry::<crate::api::mastodon::admin::instances::DomainPurgeWorker>(),
         entry::<crate::terms_of_service::DistributeNotificationWorker>(),
+        entry::<crate::api::mastodon::notifications::UnfilterNotificationsWorker>(),
         entry::<crate::api::mastodon::admin::announcements::DistributeAnnouncementNotificationWorker>(
         ),
     ]

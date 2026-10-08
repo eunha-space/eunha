@@ -1669,8 +1669,17 @@ pub async fn get_notification_requests(
 
 // ── POST /api/v1/notifications/requests/:id/accept ───────────────────────
 
+/// `notification_unfilter_jobs:<account id>`: how many of the account's
+/// `UnfilterNotificationsWorker`s are yet to finish.
+fn unfilter_jobs_key(state: &AppState, account_id: i64) -> String {
+    state
+        .redis_keys
+        .key(format!("notification_unfilter_jobs:{account_id}"))
+}
+
 /// `AcceptNotificationRequestService`: let the sender through from now on,
-/// bring back what was filtered from it, and drop the request.
+/// count and queue the `UnfilterNotificationsWorker` that brings back what
+/// was filtered from it, and drop the request.
 pub(crate) async fn accept_request(
     state: &AppState,
     account_id: i64,
@@ -1685,14 +1694,31 @@ pub(crate) async fn accept_request(
     )
     .execute(&state.db)
     .await?;
-    // `UnfilterNotificationsWorker`.
-    sqlx::query!(
-        "UPDATE notifications SET filtered = false WHERE account_id = $1 AND from_account_id = $2 AND filtered",
-        account_id,
-        from_account_id,
+    // `increment_worker_count!`
+    let key = unfilter_jobs_key(state, account_id);
+    let mut redis = state.redis_coordination.clone();
+    let counted: redis::RedisResult<()> = redis::pipe()
+        .cmd("INCRBY")
+        .arg(&key)
+        .arg(1)
+        .ignore()
+        .cmd("EXPIRE")
+        .arg(&key)
+        .arg(30 * 60)
+        .ignore()
+        .query_async(&mut redis)
+        .await;
+    if let Err(error) = counted {
+        tracing::warn!(%error, "could not count a notification unfiltering job");
+    }
+    crate::jobs::push(
+        state,
+        UnfilterNotificationsWorker {
+            account_id,
+            from_account_id,
+        },
     )
-    .execute(&state.db)
-    .await?;
+    .await;
     sqlx::query!(
         "DELETE FROM notification_requests WHERE account_id = $1 AND from_account_id = $2",
         account_id,
@@ -1701,6 +1727,81 @@ pub(crate) async fn accept_request(
     .execute(&state.db)
     .await?;
     Ok(())
+}
+
+/// `UnfilterNotificationsWorker`: the filtered direct mentions from the
+/// sender into the recipient's conversations, every notification filtered
+/// from the sender let through, and, once the last of the recipient's such
+/// jobs is done, `notifications_merged` to the recipient's streams.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UnfilterNotificationsWorker {
+    pub account_id: i64,
+    pub from_account_id: i64,
+}
+
+impl crate::jobs::Job for UnfilterNotificationsWorker {
+    const KIND: &'static str = "UnfilterNotificationsWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `return if @from_account.nil? || @recipient.nil?`
+        let found = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM accounts WHERE id = ANY($1)"#,
+            &[self.account_id, self.from_account_id][..],
+        )
+        .fetch_one(&state.db)
+        .await?;
+        let wanted = if self.account_id == self.from_account_id {
+            1
+        } else {
+            2
+        };
+        if found < wanted {
+            return Ok(());
+        }
+
+        // `push_to_conversations!`, newest first as `find_each(order: :desc)`
+        // goes.
+        let direct = sqlx::query_scalar!(
+            r#"SELECT s.id FROM notifications n
+               JOIN mentions m ON n.activity_type = 'Mention' AND m.id = n.activity_id
+               JOIN statuses s ON s.id = m.status_id
+               WHERE n.account_id = $1 AND n.from_account_id = $2 AND n.filtered
+                 AND n."type" = 'mention' AND s.visibility = $3
+               ORDER BY n.id DESC"#,
+            self.account_id,
+            self.from_account_id,
+            crate::db::models::vis::DIRECT,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        for status_id in direct {
+            super::conversations::add_status(state, self.account_id, status_id).await;
+        }
+
+        // `unfilter_notifications!`
+        sqlx::query!(
+            "UPDATE notifications SET filtered = false
+             WHERE account_id = $1 AND from_account_id = $2 AND filtered",
+            self.account_id,
+            self.from_account_id,
+        )
+        .execute(&state.db)
+        .await?;
+
+        // `decrement_worker_count!`, and `push_streaming_event!` for the
+        // last one when the recipient is streaming.
+        let mut redis = state.redis_coordination.clone();
+        let left: i64 = redis::cmd("INCRBY")
+            .arg(unfilter_jobs_key(state, self.account_id))
+            .arg(-1)
+            .query_async(&mut redis)
+            .await?;
+        if left <= 0 {
+            state.streaming.notifications_merged(self.account_id).await;
+        }
+        Ok(())
+    }
 }
 
 /// `DismissNotificationRequestService`: drop the request and the
@@ -1746,8 +1847,6 @@ pub async fn accept_notification_request(
     auth.require_scope("write:notifications")?;
     let from = request_sender(&state, auth.account_id, id).await?;
     accept_request(&state, auth.account_id, from).await?;
-    // The `UnfilterNotificationsWorker` that was the last one queued.
-    state.streaming.notifications_merged(auth.account_id).await;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -1790,13 +1889,8 @@ pub async fn accept_all_notification_requests(
     super::extractors::Params(form): super::extractors::Params<BulkRequestsForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:notifications")?;
-    let senders = bulk_senders(&state, auth.account_id, &form.id.0).await?;
-    for &from in &senders {
+    for from in bulk_senders(&state, auth.account_id, &form.id.0).await? {
         accept_request(&state, auth.account_id, from).await?;
-    }
-    // Only the last of the `UnfilterNotificationsWorker`s streams.
-    if !senders.is_empty() {
-        state.streaming.notifications_merged(auth.account_id).await;
     }
     Ok(Json(serde_json::json!({})))
 }
@@ -1818,12 +1912,22 @@ pub async fn dismiss_all_notification_requests(
 
 // ── GET /api/v1/notifications/requests/merged ────────────────────────────
 
+/// `merged?`: whether every `UnfilterNotificationsWorker` queued for the
+/// account has finished.
 pub async fn get_notification_requests_merged(
-    _state: AppState,
+    state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("read:notifications")?;
-    Ok(Json(serde_json::json!({ "merged": true })))
+    let mut redis = state.redis_coordination.clone();
+    let pending: Option<i64> = redis::cmd("GET")
+        .arg(unfilter_jobs_key(&state, auth.account_id))
+        .query_async(&mut redis)
+        .await
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(
+        serde_json::json!({ "merged": pending.unwrap_or(0) <= 0 }),
+    ))
 }
 
 // ── GET /api/v1/notifications/requests/:id ───────────────────────────────

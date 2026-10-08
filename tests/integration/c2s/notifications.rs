@@ -2059,3 +2059,112 @@ async fn test_notification_requests_leave_out_suspended_senders() {
         .unwrap();
     assert!(listed().await.is_empty());
 }
+
+/// Accepting a request queues `UnfilterNotificationsWorker`, which adds the
+/// sender's filtered direct messages to the recipient's conversations
+/// (`push_to_conversations!`) before letting their notifications through.
+#[tokio::test]
+async fn test_accepting_a_request_brings_its_direct_messages_into_conversations() {
+    let ctx = TestContext::new("notif-req-accept-dm").await;
+    filter_strangers(&ctx).await;
+    let dm = ctx
+        .api
+        .post_status(&ctx.bob_token, "@alice a private word", "direct")
+        .await;
+    let dm_id = dm["id"].as_str().unwrap().to_string();
+
+    let conversations = || async {
+        ctx.api
+            .get("/api/v1/conversations", Some(&ctx.alice_token))
+            .await
+            .json::<Vec<Value>>()
+            .await
+            .unwrap()
+    };
+    assert!(
+        conversations().await.is_empty(),
+        "a filtered direct message is in no conversation yet"
+    );
+
+    let requests: Vec<Value> = ctx
+        .api
+        .get("/api/v1/notifications/requests", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let req_id = requests[0]["id"].as_str().unwrap();
+    let accepted = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/notifications/requests/{req_id}/accept"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    ctx.state.jobs.settle().await;
+
+    let found = conversations().await;
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0]["last_status"]["id"].as_str(), Some(dm_id.as_str()));
+    assert_eq!(found[0]["unread"].as_bool(), Some(true));
+
+    let still_filtered: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM notifications WHERE account_id = $1 AND filtered")
+            .bind(ctx.alice_id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(still_filtered, 0);
+
+    let merged: Value = ctx
+        .api
+        .get(
+            "/api/v1/notifications/requests/merged",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(merged["merged"], json!(true));
+}
+
+/// `merged?` is false while an `UnfilterNotificationsWorker` is counted in
+/// `notification_unfilter_jobs:<id>` and has not yet finished.
+#[tokio::test]
+async fn test_requests_are_not_merged_while_unfiltering_is_pending() {
+    let ctx = TestContext::new("notif-req-merged-pending").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut redis = ctx.state.redis_coordination.clone();
+    let key = ctx
+        .state
+        .redis_keys
+        .key(format!("notification_unfilter_jobs:{alice}"));
+    let _: () = redis::cmd("SET")
+        .arg(&key)
+        .arg(1)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    let merged = || async {
+        ctx.api
+            .get(
+                "/api/v1/notifications/requests/merged",
+                Some(&ctx.alice_token),
+            )
+            .await
+            .json::<Value>()
+            .await
+            .unwrap()["merged"]
+            .clone()
+    };
+    assert_eq!(merged().await, json!(false));
+    let _: () = redis::cmd("DEL")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(merged().await, json!(true));
+}

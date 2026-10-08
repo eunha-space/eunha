@@ -422,7 +422,11 @@ async fn test_a_filtered_notification_has_no_group_key() {
 
     let mut redis = ctx.state.redis_coordination.clone();
     let bucket: Option<i64> = redis::cmd("GET")
-        .arg(ctx.state.redis_keys.key(format!("notif-group/{alice}/follow")))
+        .arg(
+            ctx.state
+                .redis_keys
+                .key(format!("notif-group/{alice}/follow")),
+        )
         .query_async(&mut redis)
         .await
         .unwrap();

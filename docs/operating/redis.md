@@ -105,7 +105,8 @@ again, which processing an activity tolerates; Mastodon keeps no such record
 at all. Kept in Redis rather than in each process's memory, a redelivery is
 recognised whichever process it reaches. Set
 `redis_coordination_url` to route locks, ActivityPub deletion tombstones,
-posting idempotency, notification grouping, async refreshes and their job
+posting idempotency, notification grouping, the count of notification
+requests still being unfiltered, async refreshes and their job
 batches (see
 [Remote replies](./remote-replies.md)) and the batches of posts waiting for
 [email subscribers](./email-subscriptions.md) to a separate non-evicting Redis

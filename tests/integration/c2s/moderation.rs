@@ -1321,6 +1321,7 @@ async fn test_notification_policies() {
             &json!({}),
         )
         .await;
+    ctx.state.jobs.settle().await;
     assert_eq!(notifications(false).await.len(), 1);
     ctx.api
         .post_status(&ctx.bob_token, "@alice again", "public")

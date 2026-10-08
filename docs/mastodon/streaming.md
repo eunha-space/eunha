@@ -107,9 +107,12 @@ The hashtag in a subscription is normalized as the streaming server's
     feed that holds it), to the accounts
     it mentions, and for each boost removed with it.
  -  `notification`, rendered for its recipient, unless it was filtered;
-    `notifications_merged` once a notification request is accepted.
- -  `conversation` on `direct` when a direct message arrives, or the
-    conversation is marked read or unread.
+    `notifications_merged` once the last `UnfilterNotificationsWorker`
+    queued by accepting notification requests has let their notifications
+    through.
+ -  `conversation` on `direct` when a direct message arrives or an accepted
+    notification request brings one in, or the conversation is marked read
+    or unread.
  -  `announcement`, `announcement.reaction` and `announcement.delete` to the
     `user` stream of every user who signed in within a week.
  -  `filters_changed` is published on `timeline:<id>` with no payload, so it
@@ -155,8 +158,7 @@ loaded timeline read; its delayed refresh then updates the badge.
 Differences
 -----------
 
- -  `conversation` is not sent when a deleted post leaves a conversation, nor
-    for the direct messages a newly accepted notification request brings in.
+ -  `conversation` is not sent when a deleted post leaves a conversation.
  -  A stream that falls 256 messages behind on one channel loses the oldest,
     where the streaming server would let Redis's output buffer grow.
  -  When an instance is stopped or reloaded, its WebSockets get a close frame,
