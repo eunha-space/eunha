@@ -781,31 +781,16 @@ pub(super) async fn create(
     // resolved later (`TaggedCollectionResolveWorker`).
     crate::federation::tagged_collections::attach(state, inserted_id, object).await;
 
-    // Poll
-    let poll_items = object.get("oneOf").or_else(|| object.get("anyOf"));
-    if let Some(items) = poll_items.and_then(|v| v.as_array()) {
-        let multiple = object.get("anyOf").is_some();
-        let options: Vec<String> = items
-            .iter()
-            .filter_map(|item| item.get("name").and_then(|v| v.as_str()).map(str::to_owned))
-            .collect();
-        let cached_tallies: Vec<i64> = items
-            .iter()
-            .map(|item| {
-                item.get("replies")
-                    .and_then(|r| r.get("totalItems"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0)
-            })
-            .collect();
-        let votes_count: i64 = cached_tallies.iter().sum();
-        let expires_at = object
-            .get("endTime")
-            .and_then(|v| v.as_str())
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
-        // `PollParser#voters_count`.
-        let voters_count = object.get("votersCount").and_then(|v| v.as_i64());
+    // `process_poll`.
+    if let Some(poll) = super::poll_parser::PollParser::parse(object) {
+        let votes_count = poll.votes_count();
+        let super::poll_parser::PollParser {
+            multiple,
+            options,
+            cached_tallies,
+            expires_at,
+            voters_count,
+        } = poll;
         let poll_id = crate::snowflake::next_id();
         if let Ok(Some(_)) = sqlx::query_scalar!(
             r#"INSERT INTO polls

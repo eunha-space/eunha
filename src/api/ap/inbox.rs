@@ -8,6 +8,7 @@ pub(crate) mod create;
 mod fetch;
 pub(crate) mod follow;
 mod moderation;
+mod poll_parser;
 pub(crate) mod quote;
 mod status;
 pub(crate) mod status_parser;
@@ -479,40 +480,21 @@ pub(super) async fn sync_remote_poll(
     account_id: i64,
     object: &Value,
 ) -> AppResult<()> {
-    let Some(items) = object
-        .get("oneOf")
-        .or_else(|| object.get("anyOf"))
-        .and_then(|v| v.as_array())
-    else {
+    let Some(poll) = poll_parser::PollParser::parse(object) else {
         return Ok(());
     };
-
-    let multiple = object.get("anyOf").is_some();
-    let options: Vec<String> = items
-        .iter()
-        .filter_map(|item| item.get("name").and_then(|v| v.as_str()).map(str::to_owned))
-        .collect();
-    if options.is_empty() {
+    // A poll with no options is not valid (`validates :options, presence`).
+    if poll.options.is_empty() {
         return Ok(());
     }
-
-    let cached_tallies: Vec<i64> = items
-        .iter()
-        .map(|item| {
-            item.get("replies")
-                .and_then(|r| r.get("totalItems"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0)
-        })
-        .collect();
-    let votes_count: i64 = cached_tallies.iter().sum();
-    let expires_at = object
-        .get("endTime")
-        .and_then(|v| v.as_str())
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&chrono::Utc).naive_utc());
-    // `PollParser#voters_count`.
-    let voters_count = object.get("votersCount").and_then(|v| v.as_i64());
+    let votes_count = poll.votes_count();
+    let poll_parser::PollParser {
+        multiple,
+        options,
+        cached_tallies,
+        expires_at,
+        voters_count,
+    } = poll;
 
     if let Some(poll_id) =
         sqlx::query_scalar!("SELECT id FROM polls WHERE status_id = $1", status_id,)
