@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.status_id, t.object_id AS \"collection_id!\"\n           FROM tagged_objects t JOIN collections c ON c.id = t.object_id\n           WHERE t.status_id = ANY($1) AND t.ap_type = 'FeaturedCollection'\n             AND t.object_type = 'Collection'\n           ORDER BY t.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "9c4c1faee8cace598cce1d9bc78b44907eabf5b7890a3a66de37d1c6d8b9ef03"
+}

@@ -2,6 +2,7 @@
 
 mod account_delete;
 mod authorized_fetch;
+mod collections_served;
 mod delivery_failures;
 mod delivery_queue;
 mod forwarding;

@@ -3,6 +3,7 @@
 //! keeps what it learns in `preview_cards`, joined to the post through
 //! `preview_cards_statuses`.
 
+pub mod attribution;
 pub mod extract;
 pub mod image;
 pub mod oembed;
@@ -637,7 +638,7 @@ async fn resolve_account(state: &AppState, handle: &str) -> Option<LinkedAccount
 
 /// `Account#can_be_attributed_from?`: the domain, or one it is a subdomain
 /// of, is among the account's attribution domains.
-fn can_be_attributed_from(attribution_domains: &[String], domain: &str) -> bool {
+pub(crate) fn can_be_attributed_from(attribution_domains: &[String], domain: &str) -> bool {
     let segments: Vec<&str> = domain.split('.').collect();
     (0..segments.len()).any(|i| {
         let variant = segments[i..].join(".");

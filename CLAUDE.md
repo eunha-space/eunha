@@ -89,6 +89,9 @@ Tracking Mastodon:
     is filtered for each connection.
  -  *docs/mastodon/remote-actors.md*: how a remote actor's document becomes
     its account row (`ProcessAccountService`).
+ -  *docs/mastodon/serving.md*: what other servers fetch: the actor, a
+    post's replies, likes, shares and thread, an account's featured posts,
+    hashtags and collections, and featured hashtag federation.
  -  *docs/mastodon/quotes.md*: a quote's states, the consent handshake,
     verifying stamps, and revoking.
  -  *docs/mastodon/entity-parity.md*, *docs/mastodon/differential-testing.md*

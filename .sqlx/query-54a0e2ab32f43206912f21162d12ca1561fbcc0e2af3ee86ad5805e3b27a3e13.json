@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.visibility\n                   FROM status_pins p JOIN statuses s ON s.id = p.status_id\n                   WHERE p.account_id = $1 AND s.deleted_at IS NULL\n                   ORDER BY p.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "visibility",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "54a0e2ab32f43206912f21162d12ca1561fbcc0e2af3ee86ad5805e3b27a3e13"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM accounts_tags WHERE account_id = $1 AND NOT (tag_id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1dae38c4e3af20c4e5ece249999dfed3441086779a80ef35acfed63e631100b9"
+}

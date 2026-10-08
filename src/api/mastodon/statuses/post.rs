@@ -538,6 +538,19 @@ pub async fn post_status(
     )
     .execute(&state.db)
     .await?;
+    // `Status#update_conversation`: a post that answers nothing starts its
+    // conversation, which is then named by it (`/contexts/{account}-{status}`).
+    if in_reply_to_id.is_none() {
+        sqlx::query!(
+            r#"UPDATE conversations SET parent_status_id = $2, parent_account_id = $3
+               WHERE id = $1 AND parent_status_id IS NULL"#,
+            conv_id,
+            status.id,
+            status.account_id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
 
     sqlx::query!(
         "UPDATE conversations SET updated_at = now() WHERE id = $1",

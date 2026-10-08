@@ -297,7 +297,8 @@ async fn test_collection_activitypub_representation() {
         )
         .await;
 
-    // Actor advertises its collections endpoint.
+    // The actor names its collections where Mastodon serves them, under
+    // `/ap/users/{id}` whichever scheme it uses.
     let actor: Value = ctx
         .api
         .ap_get("/users/alice", None)
@@ -305,15 +306,53 @@ async fn test_collection_activitypub_representation() {
         .json()
         .await
         .unwrap();
-    let featured = actor["featuredCollections"]
-        .as_str()
-        .expect("featuredCollections link");
-    assert!(
-        featured.ends_with("/users/alice/collections"),
-        "got {featured}"
+    let base = format!("https://{}/ap/users/{}", ctx.domain, ctx.alice_id);
+    let collection_uri = format!("{base}/collections/{cid}");
+    assert_eq!(
+        actor["featuredCollections"].as_str(),
+        Some(format!("{base}/featured_collections").as_str())
     );
 
-    // The account collections OrderedCollection lists the collection URI.
+    // `ActivityPub::FeaturedCollectionsController`: the count and the first
+    // page, and the page embedding the collection.
+    let index: Value = ctx
+        .api
+        .ap_get(
+            &format!("/ap/users/{}/featured_collections", ctx.alice_id),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(index["type"].as_str(), Some("Collection"), "{index}");
+    assert_eq!(index["totalItems"].as_i64(), Some(1));
+    assert_eq!(
+        index["first"].as_str(),
+        Some(format!("{base}/featured_collections?page=1").as_str())
+    );
+    let page: Value = ctx
+        .api
+        .ap_get(
+            &format!("/ap/users/{}/featured_collections?page=1", ctx.alice_id),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(page["type"].as_str(), Some("CollectionPage"), "{page}");
+    assert_eq!(
+        page["partOf"].as_str(),
+        Some(format!("{base}/featured_collections").as_str())
+    );
+    assert_eq!(
+        page["items"][0]["id"].as_str(),
+        Some(collection_uri.as_str())
+    );
+    assert!(page.get("next").is_none(), "one page: {page}");
+
+    // Where eunha used to say they were still answers.
     let oc: Value = ctx
         .api
         .ap_get("/users/alice/collections", None)
@@ -321,35 +360,68 @@ async fn test_collection_activitypub_representation() {
         .json()
         .await
         .unwrap();
-    assert_eq!(oc["type"].as_str(), Some("OrderedCollection"));
-    let uris = oc["orderedItems"].as_array().unwrap();
-    assert!(
-        uris.iter().any(|u| u
-            .as_str()
-            .is_some_and(|s| s.ends_with(&format!("/collections/{cid}")))),
-        "collection URI missing from account collections: {oc:?}",
+    assert_eq!(
+        oc["orderedItems"][0].as_str(),
+        Some(collection_uri.as_str())
     );
 
-    // The FeaturedCollection object itself.
-    let obj: Value = ctx
+    // The FeaturedCollection object itself, at its page and at its URI.
+    for path in [
+        format!("/collections/{cid}"),
+        format!("/ap/users/{}/collections/{cid}", ctx.alice_id),
+    ] {
+        let obj: Value = ctx.api.ap_get(&path, None).await.json().await.unwrap();
+        assert_eq!(obj["id"].as_str(), Some(collection_uri.as_str()), "{obj}");
+        assert_eq!(obj["type"].as_str(), Some("FeaturedCollection"));
+        assert_eq!(
+            obj["url"].as_str(),
+            Some(format!("https://{}/collections/{cid}", ctx.domain).as_str())
+        );
+        assert_eq!(obj["name"].as_str(), Some("AP collection"));
+        assert_eq!(obj["totalItems"].as_i64(), Some(1));
+        assert!(
+            obj["@context"][1]["FeaturedCollection"].is_string(),
+            "{obj}"
+        );
+        let items = obj["orderedItems"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["type"].as_str(), Some("FeaturedItem"));
+        assert!(
+            items[0]["featuredObject"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("/users/bob")),
+            "featuredObject should point at bob's actor: {:?}",
+            items[0],
+        );
+        // `CollectionItemsController`: the item at its own URI.
+        let item_uri = items[0]["id"].as_str().unwrap().to_owned();
+        assert!(item_uri.starts_with(&format!("{base}/collection_items/")));
+        let path = item_uri.trim_start_matches(&format!("https://{}", ctx.domain));
+        let item: Value = ctx.api.ap_get(path, None).await.json().await.unwrap();
+        assert_eq!(item["id"].as_str(), Some(item_uri.as_str()), "{item}");
+        assert_eq!(item["type"].as_str(), Some("FeaturedItem"));
+        // A local account's consent is a stamp at its own URI.
+        let stamp = item["featureAuthorization"].as_str().unwrap().to_owned();
+        let path = stamp.trim_start_matches(&format!("https://{}", ctx.domain));
+        let authorization: Value = ctx.api.ap_get(path, None).await.json().await.unwrap();
+        assert_eq!(
+            authorization["id"].as_str(),
+            Some(stamp.as_str()),
+            "{authorization}"
+        );
+        assert_eq!(
+            authorization["interactingObject"].as_str(),
+            Some(collection_uri.as_str())
+        );
+    }
+    let elsewhere = ctx
         .api
-        .ap_get(&format!("/collections/{cid}"), None)
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(obj["type"].as_str(), Some("FeaturedCollection"));
-    assert_eq!(obj["name"].as_str(), Some("AP collection"));
-    assert_eq!(obj["totalItems"].as_i64(), Some(1));
-    let items = obj["orderedItems"].as_array().unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["type"].as_str(), Some("FeaturedItem"));
-    assert!(
-        items[0]["featuredObject"]
-            .as_str()
-            .is_some_and(|s| s.ends_with("/users/bob")),
-        "featuredObject should point at bob's actor: {:?}",
-        items[0],
+        .ap_get(&format!("/ap/users/{}/collections/{cid}", ctx.bob_id), None)
+        .await;
+    assert_eq!(
+        elsewhere.status(),
+        StatusCode::NOT_FOUND,
+        "a collection is only beneath its owner"
     );
 }
 

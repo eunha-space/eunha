@@ -16,6 +16,7 @@ pub const TYPES: &[&str] = &["delete", "mark_as_sensitive"];
 
 struct CollectionRow {
     id: i64,
+    account_id: i64,
     uri: Option<String>,
     local: bool,
 }
@@ -65,7 +66,7 @@ pub async fn save(
     .await?;
     let collections = sqlx::query_as!(
         CollectionRow,
-        r#"SELECT c.id, c.uri, c.local FROM collections c
+        r#"SELECT c.id, c.account_id, c.uri, c.local FROM collections c
            JOIN collection_reports cr ON cr.collection_id = c.id
            WHERE cr.report_id = $1 ORDER BY c.id"#,
         report_id
@@ -75,7 +76,11 @@ pub async fn save(
     let collection_uri = |c: &CollectionRow| {
         c.uri.clone().or_else(|| {
             c.local.then(|| {
-                crate::api::mastodon::collections::collection_uri(&state.instance.domain, c.id)
+                crate::api::mastodon::collections::collection_uri(
+                    &state.instance.domain,
+                    c.account_id,
+                    c.id,
+                )
             })
         })
     };

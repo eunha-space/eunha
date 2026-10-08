@@ -11,8 +11,60 @@ use crate::{
 
 pub const ACTIVITY_STREAMS: &str = "application/activity+json";
 
-/// The instance actor, served at `/actor`: an Application actor whose public key
-/// remote servers fetch to verify our signed authorized-fetch GET requests.
+/// The public collection, `ActivityPub::TagManager::COLLECTIONS[:public]`.
+pub const PUBLIC_COLLECTION: &str = "https://www.w3.org/ns/activitystreams#Public";
+
+/// The context extensions `ActivityPub::ActorSerializer` declares, in its
+/// order; the ones its nested serializers add follow them when they are used.
+const ACTOR_EXTENSIONS: [&str; 12] = [
+    "manually_approves_followers",
+    "featured",
+    "also_known_as",
+    "moved_to",
+    "property_value",
+    "discoverable",
+    "suspended",
+    "memorial",
+    "indexable",
+    "attribution_domains",
+    "profile_settings",
+    "interaction_policies",
+];
+
+/// The `@context` of an actor document, as `ActivityPub::Adapter` folds it
+/// from `ActivityPub::ActorSerializer` and the nested serializers it used:
+/// `Emoji` when it has custom emoji tags, `Hashtag` when it has profile
+/// hashtags, `focalPoint` when it has an avatar or header image. The
+/// Multikey context, Mastodon's only by way of eunha's integrity proofs, is
+/// there when the actor publishes an `assertionMethod`.
+fn actor_context(emoji: bool, hashtag: bool, image: bool, multikey: bool) -> Value {
+    let mut extensions: Vec<&str> = ACTOR_EXTENSIONS.to_vec();
+    if emoji {
+        extensions.push("emoji");
+    }
+    if hashtag {
+        extensions.push("hashtag");
+    }
+    if image {
+        extensions.push("focal_point");
+    }
+    let mut context = super::context_helper::serialized_context(
+        &["activitystreams", "security", "webfinger"],
+        &extensions,
+    );
+    if multikey {
+        if let Some(array) = context.as_array_mut() {
+            array.insert(3, json!("https://w3id.org/security/multikey/v1"));
+        }
+    }
+    context
+}
+
+/// The instance actor, served at `/actor`, as `InstanceActorsController`
+/// serves `Account.representative`: `ActivityPub::ActorSerializer` limited
+/// to its `id`, `type`, `preferredUsername`, `inbox`, `outbox`,
+/// `publicKey`, `endpoints`, `url` and `manuallyApprovesFollowers`. Remote
+/// servers fetch it for the key that verifies our signed fetches.
 pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
     let instance = &state.instance;
     let public_key = crate::federation::instance_actor::public_key(state)
@@ -20,22 +72,30 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
         .map_err(AppError::Internal)?;
     let actor_url = crate::federation::instance_actor::actor_url(&instance.domain);
     let uris = &state.uris;
+    let own = super::serving::AccountUris::new(
+        uris,
+        crate::federation::instance_actor::INSTANCE_ACTOR_ID,
+        None,
+        &instance.domain,
+    );
 
     let actor = json!({
-        "@context": [
-            "https://www.w3.org/ns/activitystreams",
-            "https://w3id.org/security/v1",
-        ],
+        "@context": actor_context(false, false, false, false),
         "id": actor_url,
         "type": "Application",
+        "inbox": own.uri(Own::Inbox)?,
+        "outbox": own.uri(Own::Outbox)?,
         "preferredUsername": instance.domain,
-        "inbox": uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
-        "url": actor_url,
+        // `about_more_url(instance_actor: true)`.
+        "url": format!("https://{}/about/more?instance_actor=true", instance.domain),
         "manuallyApprovesFollowers": true,
         "publicKey": {
             "id": uris.key_id("instance", "").map_err(anyhow::Error::from)?,
             "owner": actor_url,
             "publicKeyPem": public_key,
+        },
+        "endpoints": {
+            "sharedInbox": uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
         },
     });
 
@@ -78,15 +138,16 @@ pub async fn load_local_account(
     account.ok_or(AppError::NotFound)
 }
 
-/// Load a status bundle, enforcing that it belongs to the addressed account and
-/// is publicly dereferenceable (public or unlisted). Private/direct posts are
-/// not served over unauthenticated AP GET.
-pub(crate) async fn status_bundle(
+/// The author of the local post `id`, when the post may be served to
+/// anyone: `who`'s own, public or unlisted, and not deleted, by an account
+/// that is still there (`@account.statuses.find`, and `StatusPolicy#show?`
+/// for a reader who may be anyone). Private and direct posts are not served
+/// over ActivityPub GET.
+pub(crate) async fn servable_status(
     state: &AppState,
-    domain: &str,
     who: AccountRef<'_>,
     id: i64,
-) -> AppResult<super::note::NoteBundle> {
+) -> AppResult<crate::db::models::Account> {
     let account = load_local_account(state, who).await?;
     // An unavailable account's objects are not dereferenceable, matching
     // `StatusPolicy#show?` on the REST side.
@@ -108,11 +169,61 @@ pub(crate) async fn status_bundle(
     if !owner_ok {
         return Err(AppError::NotFound);
     }
+    Ok(account)
+}
+
+/// Load a status bundle, enforcing that it belongs to the addressed account and
+/// is publicly dereferenceable (public or unlisted), as [`servable_status`].
+pub(crate) async fn status_bundle(
+    state: &AppState,
+    domain: &str,
+    who: AccountRef<'_>,
+    id: i64,
+) -> AppResult<super::note::NoteBundle> {
+    servable_status(state, who, id).await?;
     super::note::build_note(state, domain, id)
         .await?
         .ok_or(AppError::NotFound)
 }
 
+/// A local account's profile hashtags (`Account#tags`, the `accounts_tags`
+/// that `UpdateAccountService#process_hashtags` keeps), as
+/// `ActivityPub::ActorSerializer::TagSerializer` writes them.
+async fn hashtag_tags(state: &AppState, domain: &str, account_id: i64) -> AppResult<Vec<Value>> {
+    let names = sqlx::query_scalar!(
+        r#"SELECT t.name FROM accounts_tags at JOIN tags t ON t.id = at.tag_id
+           WHERE at.account_id = $1 ORDER BY t.id"#,
+        account_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(names
+        .into_iter()
+        .map(|name| {
+            json!({
+                "type": "Hashtag",
+                "href": format!("https://{domain}/tags/{name}"),
+                "name": format!("#{name}"),
+            })
+        })
+        .collect())
+}
+
+/// `ActivityPub::ImageSerializer` on an avatar or header.
+fn image(url: String, content_type: Option<&str>, description: &str) -> Value {
+    let mut image = json!({
+        "type": "Image",
+        "mediaType": content_type,
+        "url": url,
+    });
+    if !description.is_empty() {
+        image["summary"] = json!(description);
+    }
+    image
+}
+
+/// A local account's actor document, as `ActivityPub::ActorSerializer`
+/// writes it.
 pub async fn actor_json(
     state: &AppState,
     domain: &str,
@@ -120,6 +231,7 @@ pub async fn actor_json(
 ) -> AppResult<Value> {
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let own = super::serving::AccountUris::of(&state.uris, account);
+    let available = !account.is_unavailable();
 
     // Account migration metadata: aliases (alsoKnownAs) + movedTo target URI.
     // `alsoKnownAs` is the account's `also_known_as`, which creating and
@@ -184,21 +296,22 @@ pub async fn actor_json(
         .unwrap_or_default()
         .unwrap_or_default();
 
-    let has_avatar = account
-        .avatar_file_name
-        .as_ref()
-        .is_some_and(|s| !s.is_empty())
-        || account
-            .avatar_remote_url
+    // `avatar_exists?` and `header_exists?`: never on an unavailable account.
+    let has_avatar = available
+        && (account
+            .avatar_file_name
             .as_ref()
-            .is_some_and(|s| !s.is_empty());
-    let has_header = account
-        .header_file_name
-        .as_ref()
-        .is_some_and(|s| !s.is_empty())
-        || !account.header_remote_url.is_empty();
-    let avatar_url = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, account);
-    let header_url = crate::api::mastodon::convert::account_header_url_for(&state.urls, account);
+            .is_some_and(|s| !s.is_empty())
+            || account
+                .avatar_remote_url
+                .as_ref()
+                .is_some_and(|s| !s.is_empty()));
+    let has_header = available
+        && (account
+            .header_file_name
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
+            || !account.header_remote_url.is_empty());
 
     // Profile metadata fields, serialized as `PropertyValue` attachments so
     // remote servers show the account's fields (Mastodon's `virtual_attachments`),
@@ -217,111 +330,167 @@ pub async fn actor_json(
     let mut texts: Vec<&str> = vec![&account.note];
     texts.extend(raw_fields.iter().map(|(_, value)| *value));
     let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
-    let attachment: Vec<Value> = raw_fields
-        .iter()
-        .map(|(name, value)| {
-            json!({
-                "type": "PropertyValue",
-                "name": name,
-                "value": crate::formatter::local_field_value(value, domain, &lookup),
+    let attachment: Vec<Value> = if available {
+        raw_fields
+            .iter()
+            .map(|(name, value)| {
+                json!({
+                    "type": "PropertyValue",
+                    "name": name,
+                    "value": crate::formatter::local_field_value(value, domain, &lookup),
+                })
             })
-        })
-        .collect();
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    // Custom emoji used in the display name / bio, serialized as `Emoji` tags so
-    // remote servers can render them (Mastodon's `virtual_tags`, emojis part).
-    let tag =
-        crate::api::ap::note::emoji_tags_for(state, &account.display_name, &account.note).await?;
-
-    let summary = crate::formatter::local_bio(&account.note, domain, &lookup);
+    // `virtual_tags`: the custom emoji of the profile (`Account#emojis`,
+    // read from its `emojifiable_text`), then its hashtags.
+    let (emoji_tags, hashtags) = if available {
+        let mut emojifiable = account.note.clone();
+        for (name, value) in &raw_fields {
+            emojifiable.push(' ');
+            emojifiable.push_str(name);
+            emojifiable.push(' ');
+            emojifiable.push_str(value);
+        }
+        (
+            crate::api::ap::note::emoji_tags_for(state, &account.display_name, &emojifiable)
+                .await?,
+            hashtag_tags(state, domain, account.id).await?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let context = actor_context(
+        !emoji_tags.is_empty(),
+        !hashtags.is_empty(),
+        has_avatar || has_header,
+        assertion_method.is_some(),
+    );
+    let mut tag = emoji_tags;
+    tag.extend(hashtags);
 
     // Local accounts store an empty `url` column; the human profile URL is
     // `/@username` (matching the Mastodon API serializer and Mastodon core).
     let profile_url = format!("https://{}/@{}", domain, account.username);
-    // Bots federate as `Service`; everyone else as `Person`.
-    let actor_type = account.actor_type.as_deref().unwrap_or("Person");
+    // `type`: `Service` for a bot (`AUTOMATED_ACTOR_TYPES`), `Group` for a
+    // group, and `Person` for everyone else.
+    let actor_type = match account.actor_type.as_deref() {
+        Some("Application" | "Service") => "Service",
+        Some("Group") => "Group",
+        _ => "Person",
+    };
+    let discoverable = account.discoverable.unwrap_or(false);
+    // `interaction_policy`: who may feature the account in a collection
+    // without asking.
+    let can_feature = if !discoverable {
+        actor_url.clone()
+    } else if account.locked {
+        own.uri(Own::Followers)?.into()
+    } else {
+        PUBLIC_COLLECTION.to_owned()
+    };
 
-    let actor = json!({
-        "@context": [
-            "https://www.w3.org/ns/activitystreams",
-            "https://w3id.org/security/v1",
-            // Defines `assertionMethod` and `Multikey` (FEP-521a).
-            "https://w3id.org/security/multikey/v1",
-            {
-                "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
-                "alsoKnownAs": { "@id": "as:alsoKnownAs", "@type": "@id" },
-                "movedTo": { "@id": "as:movedTo", "@type": "@id" },
-                "schema": "http://schema.org#",
-                "PropertyValue": "schema:PropertyValue",
-                "value": "schema:value",
-                "toot": "http://joinmastodon.org/ns#",
-                "Emoji": "toot:Emoji",
-                "featured": { "@id": "toot:featured", "@type": "@id" },
-                "featuredCollections": { "@id": "toot:featuredCollections", "@type": "@id" },
-                "discoverable": "toot:discoverable",
-                "indexable": "toot:indexable",
-                "fep": "https://w3id.org/fep/044f#",
-                "quote": { "@id": "fep:quote", "@type": "@id" },
-                "quoteUrl": { "@id": "fep:quote", "@type": "@id" },
-            }
-        ],
+    let mut actor = json!({
+        "@context": context,
         "id": actor_url,
+        // `local_username_and_domain`.
+        "webfinger": format!("{}@{}", account.username, domain),
         "type": actor_type,
         "following": own.uri(Own::Following)?,
         "followers": own.uri(Own::Followers)?,
         "inbox": own.uri(Own::Inbox)?,
         "outbox": own.uri(Own::Outbox)?,
         "featured": own.uri(Own::Featured)?,
-        "featuredCollections": own.uri(Own::Collections)?,
+        "featuredTags": own.uri(Own::Tags)?,
         "preferredUsername": account.username,
-        "name": account.display_name,
-        "summary": summary,
+        "name": if !available || account.display_name.is_empty() {
+            &account.username
+        } else {
+            &account.display_name
+        },
+        "summary": if available {
+            crate::formatter::local_bio(&account.note, domain, &lookup)
+        } else {
+            String::new()
+        },
         "url": profile_url,
-        "attachment": attachment,
-        "tag": tag,
-        "manuallyApprovesFollowers": account.locked,
-        "discoverable": account.discoverable,
-        "indexable": account.indexable,
-        "published": account.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        "icon": if has_avatar { Some(json!({ "type": "Image", "url": avatar_url })) } else { None },
-        "image": if has_header { Some(json!({ "type": "Image", "url": header_url })) } else { None },
-        "publicKey": {
+        "manuallyApprovesFollowers": available && account.locked,
+        "discoverable": available && discoverable,
+        "indexable": available && account.indexable,
+        // `created_at.midnight.iso8601`.
+        "published": account.created_at.format("%Y-%m-%dT00:00:00Z").to_string(),
+        "memorial": account.memorial,
+        "showFeatured": account.show_featured,
+        "showMedia": account.show_media,
+        "showRepliesInMedia": account.show_media_replies,
+        "interactionPolicy": {
+            "canFeature": { "automaticApproval": [can_feature] },
+        },
+        "featuredCollections": own.uri(Own::Collections)?,
+    });
+    let members = actor.as_object_mut().expect("an object");
+    if available {
+        if let Some(moved_to) = moved_to {
+            members.insert("movedTo".into(), json!(moved_to));
+        }
+        if !also_known_as.is_empty() {
+            members.insert("alsoKnownAs".into(), json!(also_known_as));
+        }
+    }
+    if account.suspended_at.is_some() {
+        members.insert("suspended".into(), json!(true));
+    }
+    if let Some(domains) = account
+        .attribution_domains
+        .as_ref()
+        .filter(|domains| !domains.is_empty())
+    {
+        members.insert("attributionDomains".into(), json!(domains));
+    }
+    members.insert(
+        "publicKey".into(),
+        json!({
             "id": own.key_id()?,
             "owner": actor_url,
             "publicKeyPem": public_key,
-        },
-        "endpoints": {
+        }),
+    );
+    members.insert("tag".into(), json!(tag));
+    members.insert("attachment".into(), json!(attachment));
+    members.insert(
+        "endpoints".into(),
+        json!({
             "sharedInbox": state.uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
-        },
-        // FEP-521a: the Ed25519 key this account signs integrity proofs with,
-        // published as a Multikey so a peer can resolve a proof's
-        // `verificationMethod`. Absent until the account first signs something.
-        "assertionMethod": assertion_method,
-        "alsoKnownAs": also_known_as,
-        "movedTo": moved_to,
-    });
-
-    let mut actor = actor;
-    // `ActivityPub::ActorSerializer` on an unavailable account: the profile is
-    // blanked, and a suspended one says so.
-    if account.is_unavailable() {
-        actor["name"] = json!(account.username);
-        actor["summary"] = json!("");
-        actor["attachment"] = json!([]);
-        actor["tag"] = json!([]);
-        actor["manuallyApprovesFollowers"] = json!(false);
-        actor["discoverable"] = json!(false);
-        actor["indexable"] = json!(false);
-        actor["icon"] = Value::Null;
-        actor["image"] = Value::Null;
-        actor["movedTo"] = Value::Null;
-        actor["alsoKnownAs"] = json!([]);
+        }),
+    );
+    if has_avatar {
+        members.insert(
+            "icon".into(),
+            image(
+                crate::api::mastodon::convert::account_avatar_url_for(&state.urls, account),
+                account.avatar_content_type.as_deref(),
+                &account.avatar_description,
+            ),
+        );
     }
-    if account.suspended_at.is_some() {
-        actor["suspended"] = json!(true);
-        if let Some(context) = actor["@context"].as_array_mut().and_then(|c| c.last_mut()) {
-            context["suspended"] = json!("toot:suspended");
-        }
+    if has_header {
+        members.insert(
+            "image".into(),
+            image(
+                crate::api::mastodon::convert::account_header_url_for(&state.urls, account),
+                account.header_content_type.as_deref(),
+                &account.header_description,
+            ),
+        );
+    }
+    // FEP-521a: the Ed25519 key this account signs integrity proofs with,
+    // published as a Multikey so a peer can resolve a proof's
+    // `verificationMethod`. Absent until the account first signs something.
+    if let Some(assertion_method) = assertion_method {
+        members.insert("assertionMethod".into(), assertion_method);
     }
     Ok(actor)
 }

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH visible AS (\n             SELECT s.id, s.created_at FROM statuses s\n             JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $2\n             WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)\n           )\n           INSERT INTO featured_tags\n             (account_id, tag_id, name, statuses_count, last_status_at, created_at, updated_at)\n           VALUES ($1, $2, $3,\n                   (SELECT COUNT(*) FROM visible),\n                   (SELECT created_at FROM visible ORDER BY id DESC LIMIT 1),\n                   now(), now())\n           ON CONFLICT (account_id, tag_id) DO NOTHING\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "abc311a4e96e10983bf035bdb0f571237dcdda5c8b7e9bb170fbab2c848e9bbe"
+}

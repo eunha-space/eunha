@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, (COALESCE(s.local, false) OR s.uri IS NULL) AS \"local!\", s.uri\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.in_reply_to_id = $1 AND s.deleted_at IS NULL\n             AND s.visibility IN (0, 1) /* distributable_visibility */\n             AND CASE WHEN $2 THEN s.account_id <> $3 AND a.suspended_at IS NULL\n                      ELSE s.account_id = $3 END\n             AND ($4::bigint IS NULL OR s.id > $4)\n           ORDER BY s.id\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "uri",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "3f46ffb48b3a23550efcd25e32dbf04093f5f78f11687f68f32c26b27669be16"
+}

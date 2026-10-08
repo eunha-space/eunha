@@ -51,6 +51,7 @@ export default defineConfig({
           { text: "HTTP signatures", link: "/mastodon/http-signatures" },
           { text: "Content formatting", link: "/mastodon/formatting" },
           { text: "Remote actors", link: "/mastodon/remote-actors" },
+          { text: "What other servers fetch", link: "/mastodon/serving" },
           { text: "Quotes", link: "/mastodon/quotes" },
           { text: "Streaming", link: "/mastodon/streaming" },
           { text: "API entity parity", link: "/mastodon/entity-parity" },

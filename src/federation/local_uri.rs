@@ -75,13 +75,33 @@ pub async fn status(state: &AppState, uri: &str) -> Option<i64> {
     }
 }
 
-/// The collection a URI names, if one is stored under it.
+/// The collection a URI names: a local one by its path
+/// (`/ap/users/{account_id}/collections/{id}`, as `TagManager#uri_for`
+/// names it), any other if one is stored under it.
 pub async fn collection(state: &AppState, uri: &str) -> Option<i64> {
-    sqlx::query_scalar!("SELECT id FROM collections WHERE uri = $1", uri)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
+    match local_path(state, uri) {
+        Some(path) => {
+            let path: Vec<&str> = path.iter().map(String::as_str).collect();
+            let ["ap", "users", account, "collections", id] = path.as_slice() else {
+                return None;
+            };
+            let (account, id): (i64, i64) = (account.parse().ok()?, id.parse().ok()?);
+            sqlx::query_scalar!(
+                "SELECT id FROM collections WHERE id = $1 AND account_id = $2 AND local",
+                id,
+                account,
+            )
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+        }
+        None => sqlx::query_scalar!("SELECT id FROM collections WHERE uri = $1", uri)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten(),
+    }
 }
 
 async fn by_username(state: &AppState, username: &str) -> Option<i64> {

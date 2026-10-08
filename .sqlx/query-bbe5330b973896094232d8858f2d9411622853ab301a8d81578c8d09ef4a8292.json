@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM featured_tags WHERE account_id = $1",
+  "query": "SELECT id FROM featured_tags WHERE account_id = $1 ORDER BY statuses_count DESC",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "count",
+        "name": "id",
         "type_info": "Int8"
       }
     ],
@@ -15,8 +15,8 @@
       ]
     },
     "nullable": [
-      null
+      false
     ]
   },
-  "hash": "2241c505b0054ab2705f7cd4792135a85b5fbffaa79f925434007eb6de1fcbac"
+  "hash": "bbe5330b973896094232d8858f2d9411622853ab301a8d81578c8d09ef4a8292"
 }

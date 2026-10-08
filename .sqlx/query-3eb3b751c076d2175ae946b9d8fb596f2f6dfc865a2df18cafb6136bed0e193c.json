@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.id, ci.created_at, ci.approval_uri,\n                  a.id AS \"account_id?\", a.uri AS account_uri, a.username AS \"username?\",\n                  a.id_scheme, (a.domain IS NULL) AS \"local?\"\n           FROM collection_items ci\n           LEFT JOIN accounts a ON a.id = ci.account_id\n           WHERE ci.collection_id = $1 AND ci.state = 1\n           ORDER BY ci.position ASC, ci.id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 2,
+        "name": "approval_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "username?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "local?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "3eb3b751c076d2175ae946b9d8fb596f2f6dfc865a2df18cafb6136bed0e193c"
+}

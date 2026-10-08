@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id\n           FROM statuses s\n           WHERE s.account_id = $1\n             AND s.deleted_at IS NULL\n             AND s.reblog_of_id IS NULL\n             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */\n             AND ($2::bigint IS NULL OR s.id < $2)\n             AND ($3::bigint IS NULL OR s.id > $3)\n           ORDER BY s.id DESC\n           LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "35e69722fe9c6e9ef987253a19e03d83bf24362bc15c907b94235e57781bc07c"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT GREATEST(favourites_count, 0) AS \"favourites!\",\n                  GREATEST(reblogs_count, 0) AS \"reblogs!\"\n           FROM status_stats WHERE status_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "favourites!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reblogs!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "418ed351665579ae4e7cde62fbf2d4c531b2fea26aa95248505d8c53b5b1f750"
+}

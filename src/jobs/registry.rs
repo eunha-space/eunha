@@ -68,6 +68,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::moderation::suspension::SuspensionWorker>(),
         entry::<crate::moderation::suspension::UnsuspensionWorker>(),
         entry::<crate::preview_card::LinkCrawlWorker>(),
+        entry::<crate::preview_card::attribution::UpdateLinkCardAttributionWorker>(),
         entry::<crate::announcements::PublishScheduledAnnouncementWorker>(),
         entry::<crate::announcements::PublishAnnouncementReactionWorker>(),
         entry::<crate::portability::import::BulkImportWorker>(),

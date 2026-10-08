@@ -41,8 +41,9 @@ fn state_str(state: i32) -> &'static str {
     }
 }
 
-pub(crate) fn collection_uri(domain: &str, id: i64) -> String {
-    format!("https://{domain}/collections/{id}")
+/// `TagManager#uri_for` a local collection.
+pub(crate) fn collection_uri(domain: &str, account_id: i64, id: i64) -> String {
+    ap_coll::collection_uri(domain, account_id, id)
 }
 
 fn tag_url(domain: &str, name: &str) -> String {
@@ -179,8 +180,13 @@ async fn collection_entity(
     let uri = c
         .uri
         .clone()
-        .unwrap_or_else(|| collection_uri(domain, c.id));
-    let url = c.url.clone().unwrap_or_else(|| uri.clone());
+        .unwrap_or_else(|| collection_uri(domain, c.account_id, c.id));
+    // `TagManager#url_for`: a local collection's page.
+    let url = if c.local {
+        ap_coll::collection_url(domain, c.id)
+    } else {
+        c.url.clone().unwrap_or_else(|| uri.clone())
+    };
 
     // `REST::CollectionSerializer#description`: a local collection's as
     // written, a remote one's HTML through `MASTODON_STRICT`.
@@ -229,6 +235,41 @@ pub(crate) async fn render(
     collection_entity(state, &state.instance.domain, &c, viewer_id)
         .await
         .map(Some)
+}
+
+/// `REST::StatusSerializer#tagged_collections` for each of `status_ids`:
+/// the collections its `tagged_objects` name (`FeaturedCollection`s), as
+/// `REST::CollectionSerializer` writes them, for a reader who is no one in
+/// particular.
+pub(crate) async fn tagged_collections(
+    state: &AppState,
+    status_ids: &[i64],
+) -> AppResult<std::collections::HashMap<i64, Vec<Value>>> {
+    let mut by_status: std::collections::HashMap<i64, Vec<Value>> =
+        std::collections::HashMap::new();
+    if status_ids.is_empty() {
+        return Ok(by_status);
+    }
+    let rows = sqlx::query!(
+        r#"SELECT t.status_id, t.object_id AS "collection_id!"
+           FROM tagged_objects t JOIN collections c ON c.id = t.object_id
+           WHERE t.status_id = ANY($1) AND t.ap_type = 'FeaturedCollection'
+             AND t.object_type = 'Collection'
+           ORDER BY t.id"#,
+        status_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let domain = &state.instance.domain;
+    for row in rows {
+        if let Some(c) = load_collection(state, row.collection_id).await? {
+            by_status
+                .entry(row.status_id)
+                .or_default()
+                .push(collection_entity(state, domain, &c, None).await?);
+        }
+    }
+    Ok(by_status)
 }
 
 // ── GET /api/v1/accounts/{id}/collections ─────────────────────────────────
@@ -660,7 +701,7 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
     let domain = &state.instance.domain;
 
     let owner = sqlx::query!(
-        "SELECT a.id, a.username
+        "SELECT a.id, a.username, a.id_scheme
          FROM collections c JOIN accounts a ON a.id = c.account_id
          WHERE c.id = $1 AND a.domain IS NULL",
         collection_id,
@@ -736,8 +777,13 @@ async fn add_item(state: &AppState, collection_id: i64, account_id: i64) -> AppR
                 };
                 let account_uri = target.uri.clone().unwrap_or_default();
                 if !inbox.is_empty() && !account_uri.is_empty() {
-                    let actor_url = format!("https://{domain}/users/{}", owner.username);
-                    let collection_uri = format!("https://{domain}/collections/{collection_id}");
+                    let actor_url = crate::federation::tag::account_uri(
+                        domain,
+                        owner.id,
+                        owner.id_scheme,
+                        &owner.username,
+                    );
+                    let collection_uri = collection_uri(domain, owner.id, collection_id);
                     if let Ok(req) = crate::federation::consent::feature_request(
                         &activity_uri,
                         &actor_url,
@@ -813,17 +859,11 @@ pub(crate) async fn distribute_collection(
     {
         return;
     }
-    let key_id = format!("https://{domain}/users/{}#main-key", ap.owner_username);
+    let key_id = format!("{}#main-key", ap.actor_uri(domain));
     let activity = if is_create {
-        ap_coll::add_collection_activity(domain, &ap.owner_username, body)
+        ap_coll::add_collection_activity(domain, &ap, body)
     } else {
-        ap_coll::update_collection_activity(
-            domain,
-            &ap.owner_username,
-            collection_id,
-            ap.updated_at.and_utc().timestamp(),
-            body,
-        )
+        ap_coll::update_collection_activity(domain, &ap, body)
     };
     if let Err(e) =
         crate::federation::delivery::fanout_to_followers(state, activity, owner_account_id, key_id)
@@ -840,11 +880,30 @@ pub(crate) async fn distribute_collection_removal(
     collection_id: i64,
     owner_account_id: i64,
 ) {
-    let Some(username) = owner_signing_username(state, owner_account_id).await else {
+    if owner_signing_username(state, owner_account_id)
+        .await
+        .is_none()
+    {
+        return;
+    }
+    let Ok(Some(owner)) = sqlx::query!(
+        "SELECT id_scheme, username FROM accounts WHERE id = $1",
+        owner_account_id,
+    )
+    .fetch_optional(&state.db)
+    .await
+    else {
         return;
     };
-    let key_id = format!("https://{domain}/users/{username}#main-key");
-    let activity = ap_coll::remove_collection_activity(domain, &username, collection_id);
+    let actor = crate::federation::tag::account_uri(
+        domain,
+        owner_account_id,
+        owner.id_scheme,
+        &owner.username,
+    );
+    let key_id = format!("{actor}#main-key");
+    let activity =
+        ap_coll::remove_collection_activity(domain, &actor, owner_account_id, collection_id);
     if let Err(e) =
         crate::federation::delivery::fanout_to_followers(state, activity, owner_account_id, key_id)
             .await

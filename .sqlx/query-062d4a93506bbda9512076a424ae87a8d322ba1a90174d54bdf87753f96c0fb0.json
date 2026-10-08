@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ft.name AS featured, t.name, t.display_name\n           FROM featured_tags ft JOIN tags t ON t.id = ft.tag_id\n           WHERE ft.account_id = $1 ORDER BY ft.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "featured",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "062d4a93506bbda9512076a424ae87a8d322ba1a90174d54bdf87753f96c0fb0"
+}

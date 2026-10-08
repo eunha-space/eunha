@@ -73,6 +73,11 @@ card's author when it lists the page's domain, or a domain above it, among
 its attribution domains, or when the publisher is approved for trends. A
 local account that does not list the domain is recorded as the unverified
 author, and sees `missing_attribution` on the card, as a prompt to add it.
+When the account then changes its attribution domains, the cards that name
+it as their unverified author from a domain it now lists become its own: the
+thousand newest straight away, and the rest in
+`UpdateLinkCardAttributionWorker`
+(`UpdateAccountService#process_attribution_domains`).
 
 
 Differences from Mastodon

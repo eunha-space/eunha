@@ -868,3 +868,26 @@ plainly an omission upstream rather than a choice."""
 evidence = "src/push.rs"
 since = "4.7.1"
 reviewed_for = "4.7.1"
+
+[[divergence]]
+id = "earlier-collection-addresses-still-served"
+kind = "addition"
+summary = "Still answers at the collection addresses eunha named before it named them as Mastodon does"
+mastodon = """
+Serves an account's collections at `/ap/users/{id}/featured_collections` and \
+a consent stamp at `/ap/users/{id}/feature_authorizations/{item}`, and has no \
+`/users/{username}/collections` or \
+`/users/{username}/feature_authorizations/{item}`."""
+eunha = """
+Names and serves them where Mastodon does, and still answers at \
+`/users/{username}/collections`, which its actors named until they named \
+`featured_collections`, and at `/users/{username}/feature_authorizations/{item}`, \
+where the stamps it has already sent in its `Accept`s are."""
+why = """
+Peers stored those addresses: an actor's `featuredCollections` until they next \
+refresh it, and a stamp's URI for as long as they keep the item, which they \
+re-verify by fetching it. Answering at both costs nothing and breaks nothing \
+they hold."""
+evidence = "tests/integration/c2s/collections.rs"
+since = "4.7.1"
+reviewed_for = "4.7.1"

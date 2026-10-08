@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.username\n         FROM collections c JOIN accounts a ON a.id = c.account_id\n         WHERE c.id = $1 AND a.domain IS NULL",
+  "query": "SELECT id, url FROM preview_cards WHERE unverified_author_account_id = $1\n           ORDER BY id DESC LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -10,12 +10,13 @@
       },
       {
         "ordinal": 1,
-        "name": "username",
+        "name": "url",
         "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -24,5 +25,5 @@
       false
     ]
   },
-  "hash": "7d59f3edbfa48c084d9321db31e198cdb1a4c872e53cbbd5282a6f7ffee17add"
+  "hash": "ddb3ec7d7aa164c9e7216eb60aad4d923436310525a5ef66f9d3904803c5eee5"
 }

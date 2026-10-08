@@ -206,11 +206,13 @@ async fn test_featured_collection_lists_pins() {
         .await
         .unwrap();
     assert_eq!(featured["type"].as_str(), Some("OrderedCollection"));
+    // A public post is embedded, as `ActivityPub::CollectionsController`
+    // embeds a distributable one.
     let note_uri = format!("https://{}/users/alice/statuses/{id}", ctx.domain);
     assert!(
-        featured["orderedItems"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(note_uri.as_str()))),
+        featured["orderedItems"].as_array().is_some_and(|a| a
+            .iter()
+            .any(|v| v["id"].as_str() == Some(note_uri.as_str()))),
         "pinned status should appear in featured collection: {featured}"
     );
 }
@@ -258,7 +260,7 @@ async fn test_numeric_scheme_serves_its_advertised_collections() {
     );
     assert_eq!(
         actor["featuredCollections"].as_str(),
-        Some(format!("{base}/collections").as_str())
+        Some(format!("{base}/featured_collections").as_str())
     );
 
     for path in [
@@ -298,9 +300,9 @@ async fn test_numeric_scheme_serves_its_advertised_collections() {
         .unwrap();
     let note_uri = format!("{base}/statuses/{id}");
     assert!(
-        featured["orderedItems"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(note_uri.as_str()))),
+        featured["orderedItems"].as_array().is_some_and(|a| a
+            .iter()
+            .any(|v| v["id"].as_str() == Some(note_uri.as_str()))),
         "pinned status should appear, under the numeric scheme: {featured}"
     );
 }

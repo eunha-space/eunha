@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id, c.name, c.description, c.language, c.sensitive,\n                  c.discoverable, c.url, c.created_at, c.updated_at, a.username\n           FROM collections c\n           JOIN accounts a ON a.id = c.account_id\n           WHERE c.id = $1 AND c.local = true AND a.domain IS NULL",
+  "query": "SELECT c.id, c.account_id, c.name, c.description, c.language, c.sensitive,\n                  c.discoverable, c.created_at, c.updated_at, a.username, a.id_scheme,\n                  t.name AS \"tag_name?\"\n           FROM collections c\n           JOIN accounts a ON a.id = c.account_id\n           LEFT JOIN tags t ON t.id = c.tag_id\n           WHERE c.id = $1 AND c.local = true AND a.domain IS NULL",
   "describe": {
     "columns": [
       {
@@ -10,33 +10,33 @@
       },
       {
         "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
         "name": "name",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "description",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "language",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "sensitive",
         "type_info": "Bool"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "discoverable",
         "type_info": "Bool"
-      },
-      {
-        "ordinal": 6,
-        "name": "url",
-        "type_info": "Varchar"
       },
       {
         "ordinal": 7,
@@ -52,6 +52,16 @@
         "ordinal": 9,
         "name": "username",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "tag_name?",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -62,15 +72,17 @@
     "nullable": [
       false,
       false,
-      true,
-      true,
       false,
-      false,
+      true,
       true,
       false,
       false,
+      false,
+      false,
+      false,
+      true,
       false
     ]
   },
-  "hash": "4b0ff5d8a172f711e01d08c2813ed9a10eff357f7291e74e44c3ad2fe426a741"
+  "hash": "443885183a1ad5ad1e416f724c4bacc36bbee32dbed9f1f4b1742d78ff4bdda1"
 }

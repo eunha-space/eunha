@@ -45,7 +45,8 @@ The recorded decisions cover:
  -  the DeepL endpoint setting;
  -  the auxiliary service provider admin API;
  -  remote media linked rather than downloaded, which the operator chose;
- -  the web push title of a collection notification.
+ -  the web push title of a collection notification;
+ -  the collection addresses eunha named before, still answered.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

@@ -885,6 +885,9 @@ pub async fn hydrate_status_stats<'a>(
     let account_stats = batch_account_stats(state, &account_ids).await;
     let status_stats = batch_status_stats(state, &status_ids).await;
     let noindex = super::accounts::batch_noindex(state, &account_ids).await;
+    let tagged_collections = super::collections::tagged_collections(state, &status_ids)
+        .await
+        .unwrap_or_default();
     // `AccountSerializer#email_subscriptions`, while the feature is enabled.
     let offering = if crate::email_subscriptions::enabled(state).await {
         Some(crate::email_subscriptions::offering(state, &account_ids).await)
@@ -917,6 +920,24 @@ pub async fn hydrate_status_stats<'a>(
         apply(s);
         if let Some(rb) = s.reblog.as_deref_mut() {
             apply(rb);
+        }
+    }
+    // `tagged_collections`.
+    if !tagged_collections.is_empty() {
+        for s in refs.iter_mut() {
+            let s = &mut **s;
+            if let Ok(sid) = s.id.parse::<i64>() {
+                if let Some(collections) = tagged_collections.get(&sid).cloned() {
+                    s.tagged_collections = collections;
+                }
+            }
+            if let Some(rb) = s.reblog.as_deref_mut() {
+                if let Ok(sid) = rb.id.parse::<i64>() {
+                    if let Some(collections) = tagged_collections.get(&sid).cloned() {
+                        rb.tagged_collections = collections;
+                    }
+                }
+            }
         }
     }
 

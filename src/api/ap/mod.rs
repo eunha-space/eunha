@@ -1,9 +1,11 @@
 pub mod collections;
 pub mod context_helper;
+pub mod featured_tags;
 pub mod inbox;
 pub mod note;
 pub mod objects;
 pub mod serving;
+pub mod status_collections;
 
 use axum::{
     extract::Path,

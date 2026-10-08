@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id, c.uri, c.local FROM collections c\n           JOIN collection_reports cr ON cr.collection_id = c.id\n           WHERE cr.report_id = $1 ORDER BY c.id",
+  "query": "SELECT a.id, a.id_scheme, a.username FROM statuses s\n           JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
   "describe": {
     "columns": [
       {
@@ -10,13 +10,13 @@
       },
       {
         "ordinal": 1,
-        "name": "uri",
-        "type_info": "Varchar"
+        "name": "id_scheme",
+        "type_info": "Int4"
       },
       {
         "ordinal": 2,
-        "name": "local",
-        "type_info": "Bool"
+        "name": "username",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -30,5 +30,5 @@
       false
     ]
   },
-  "hash": "6036875c992b8918ca42154504db270811b5aad4fe006a844421f03aa555af01"
+  "hash": "606d00161396b4d973f749927eec62be569b1723c81d0bf578af5cd5d7791b7a"
 }

@@ -18,6 +18,11 @@ pub fn note_context() -> Value {
     json!([
         "https://www.w3.org/ns/activitystreams",
         {
+            // Mastodon's `atom_uri` and `conversation` context extensions.
+            "ostatus": "http://ostatus.org#",
+            "atomUri": "ostatus:atomUri",
+            "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+            "conversation": "ostatus:conversation",
             "sensitive": "as:sensitive",
             "toot": "http://joinmastodon.org/ns#",
             "votersCount": "toot:votersCount",
@@ -442,6 +447,12 @@ pub async fn build_note(
         ),
     });
 
+    // `atomUri`, `inReplyToAtomUri`, `conversation`, `context`, and the
+    // post's `replies`, `likes` and `shares`, which eunha serves.
+    for (key, value) in serializer_extras(state, domain, status_id).await? {
+        note[key] = value;
+    }
+
     Ok(Some(NoteBundle {
         note,
         actor_url,
@@ -460,11 +471,10 @@ fn unique_tag(domain: &str, date: chrono::NaiveDateTime, id: i64, kind: &str) ->
     )
 }
 
-/// The members of `ActivityPub::NoteSerializer` that eunha does not put in
-/// the notes it federates, because it does not serve what they point at:
-/// `atomUri`, `inReplyToAtomUri`, `conversation`, `context`, and a local
-/// post's `replies`, `likes` and `shares` collections. The archive takeout
-/// writes notes as upstream's serializer does, so it adds these.
+/// The members of `ActivityPub::NoteSerializer` that name where the post
+/// is in its thread and the collections eunha serves of it: `atomUri`,
+/// `inReplyToAtomUri`, `conversation`, `context`, and a local post's
+/// `replies`, `likes` and `shares`.
 pub async fn serializer_extras(
     state: &AppState,
     domain: &str,

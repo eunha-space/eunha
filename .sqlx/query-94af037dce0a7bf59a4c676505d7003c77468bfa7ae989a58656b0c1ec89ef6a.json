@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at\n           FROM featured_tags ft\n           JOIN tags t ON t.id = ft.tag_id\n           WHERE ft.account_id = $1\n           ORDER BY ft.statuses_count DESC",
+  "query": "SELECT ft.id, ft.name AS featured, ft.statuses_count, ft.last_status_at,\n                  t.name, t.display_name\n           FROM featured_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.id = $1",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "name",
+        "name": "featured",
         "type_info": "Varchar"
       },
       {
@@ -22,6 +22,16 @@
         "ordinal": 3,
         "name": "last_status_at",
         "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "display_name",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -31,10 +41,12 @@
     },
     "nullable": [
       false,
+      true,
       false,
+      true,
       false,
       true
     ]
   },
-  "hash": "a7e899d92a19582a2bab6acba292ec8edbf113a8de40168660884e25d0c6263a"
+  "hash": "94af037dce0a7bf59a4c676505d7003c77468bfa7ae989a58656b0c1ec89ef6a"
 }

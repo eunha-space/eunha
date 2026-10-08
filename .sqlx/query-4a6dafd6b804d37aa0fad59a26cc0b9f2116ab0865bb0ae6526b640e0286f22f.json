@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts_tags (account_id, tag_id)\n           SELECT $1, t FROM unnest($2::bigint[]) AS t\n           WHERE NOT EXISTS (SELECT 1 FROM accounts_tags WHERE account_id = $1 AND tag_id = t)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a6dafd6b804d37aa0fad59a26cc0b9f2116ab0865bb0ae6526b640e0286f22f"
+}

@@ -1,13 +1,16 @@
 //! ActivityPub representation of collections (Mastodon's FeaturedCollection).
 //!
 //! Serves a local account's collections as AP objects so remote servers can
-//! discover and fetch them, and provides the activity builders used to
-//! distribute collection changes to followers.
-//!
-//! The bidirectional feature-request / feature-authorization handshake (for
-//! featuring *remote* accounts with their consent) is not yet implemented; only
-//! locally-owned collections and their accepted items are federated outbound.
+//! discover and fetch them, as `CollectionsController`,
+//! `ActivityPub::FeaturedCollectionsController`, `CollectionItemsController`
+//! and `ActivityPub::FeatureAuthorizationsController` serve them, named as
+//! `ActivityPub::TagManager` names them: a collection at
+//! `/ap/users/{account_id}/collections/{id}`, its items at
+//! `/ap/users/{account_id}/collection_items/{id}`, and an account's
+//! collections at `/ap/users/{account_id}/featured_collections`. It also
+//! builds the activities that distribute collection changes to followers.
 
+use ojak::federation::CollectionDocument;
 use serde_json::{json, Value};
 
 use super::objects::AccountRef;
@@ -16,36 +19,48 @@ use crate::{
     state::AppState,
 };
 
-/// JSON-LD context for FeaturedCollection objects.
+/// `ActivityPub::FeaturedCollectionsController::PER_PAGE`.
+const COLLECTIONS_PER_PAGE: i64 = 5;
+
+/// The context `ActivityPub::Adapter` gives a FeaturedCollection: what
+/// `ActivityPub::FeaturedCollectionSerializer` and the `FeaturedItem` and
+/// topic serializers nested in it declare.
 fn collection_context() -> Value {
-    json!([
-        "https://www.w3.org/ns/activitystreams",
-        {
-            "toot": "http://joinmastodon.org/ns#",
-            "sensitive": "as:sensitive",
-            "discoverable": "toot:discoverable",
-            "Hashtag": "as:Hashtag",
-            "featuredCollections": { "@id": "toot:featuredCollections", "@type": "@id" },
-            "FeaturedCollection": "toot:FeaturedCollection",
-            "FeaturedItem": "toot:FeaturedItem",
-            "featuredObject": { "@id": "toot:featuredObject", "@type": "@id" },
-        }
-    ])
+    super::context_helper::serialized_context(
+        &["activitystreams"],
+        &[
+            "discoverable",
+            "featured_collections",
+            "hashtag",
+            "sensitive",
+        ],
+    )
 }
 
-fn collection_uri(domain: &str, id: i64) -> String {
+/// `TagManager#uri_for` a local collection.
+pub(crate) fn collection_uri(domain: &str, account_id: i64, id: i64) -> String {
+    format!("https://{domain}/ap/users/{account_id}/collections/{id}")
+}
+
+/// `TagManager#url_for` a collection: its page.
+pub(crate) fn collection_url(domain: &str, id: i64) -> String {
     format!("https://{domain}/collections/{id}")
 }
 
-fn item_uri(domain: &str, collection_id: i64, item_id: i64) -> String {
-    format!("https://{domain}/collections/{collection_id}/items/{item_id}")
+/// `TagManager#uri_for` an item of a local collection.
+fn item_uri(domain: &str, account_id: i64, item_id: i64) -> String {
+    format!("https://{domain}/ap/users/{account_id}/collection_items/{item_id}")
 }
 
-/// Username-scheme local actor URI, for collection/featured contexts that only
-/// carry the username. (Numeric-scheme accounts have no local collections to
-/// serve, so the username form is sufficient here.)
-fn actor_uri(domain: &str, username: &str) -> String {
-    format!("https://{domain}/users/{username}")
+/// `ap_account_feature_authorization_url`: the stamp by which a local
+/// account consented to being featured.
+fn feature_authorization_uri(domain: &str, account_id: i64, item_id: i64) -> String {
+    format!("https://{domain}/ap/users/{account_id}/feature_authorizations/{item_id}")
+}
+
+/// `ap_account_featured_collections_url`: an account's collections.
+pub(crate) fn featured_collections_uri(domain: &str, account_id: i64) -> String {
+    format!("https://{domain}/ap/users/{account_id}/featured_collections")
 }
 
 /// Resolve a member account's actor URI. Local accounts use their id_scheme-aware
@@ -66,79 +81,130 @@ pub(super) fn resolve_actor_uri(
     }
 }
 
-/// A single accepted item, ready for FeaturedItem serialization.
-struct ItemRow {
+/// The account an item features: its id, whether it is local, its username,
+/// URI scheme and stored URI.
+type Featured = (i64, bool, String, Option<i32>, Option<String>);
+
+/// `ActivityPub::FeaturedItemSerializer` on an item of a local collection.
+fn featured_item(
+    domain: &str,
+    owner_id: i64,
     id: i64,
-    account_uri: String,
+    account: Option<Featured>,
+    approval_uri: Option<String>,
     created_at: chrono::NaiveDateTime,
+) -> Value {
+    let (featured_object, feature_authorization) = match account {
+        Some((account_id, local, username, id_scheme, uri)) => (
+            Some(resolve_actor_uri(
+                domain, uri, local, account_id, id_scheme, &username,
+            )),
+            if local {
+                Some(feature_authorization_uri(domain, account_id, id))
+            } else {
+                approval_uri
+            },
+        ),
+        None => (None, approval_uri),
+    };
+    json!({
+        "id": item_uri(domain, owner_id, id),
+        "type": "FeaturedItem",
+        "featuredObject": featured_object,
+        "featureAuthorization": feature_authorization,
+        "published": created_at.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    })
 }
 
-/// Fetch a collection's accepted items joined with each account's AP URI.
+/// A collection's accepted items (`accepted_collection_items`), as
+/// FeaturedItems.
 async fn accepted_items(
     state: &AppState,
     domain: &str,
+    owner_id: i64,
     collection_id: i64,
-) -> AppResult<Vec<ItemRow>> {
+) -> AppResult<Vec<Value>> {
     let rows = sqlx::query!(
-        r#"SELECT ci.id, ci.created_at,
-                  a.uri AS "account_uri?", a.username, a.domain
+        r#"SELECT ci.id, ci.created_at, ci.approval_uri,
+                  a.id AS "account_id?", a.uri AS account_uri, a.username AS "username?",
+                  a.id_scheme, (a.domain IS NULL) AS "local?"
            FROM collection_items ci
-           JOIN accounts a ON a.id = ci.account_id
+           LEFT JOIN accounts a ON a.id = ci.account_id
            WHERE ci.collection_id = $1 AND ci.state = 1
            ORDER BY ci.position ASC, ci.id ASC"#,
         collection_id,
     )
     .fetch_all(&state.db)
     .await?;
-
     Ok(rows
         .into_iter()
         .map(|r| {
-            // Local accounts (domain NULL) may not have a stored uri; derive it.
-            let account_uri = match (r.account_uri, r.domain) {
-                (Some(uri), _) if !uri.is_empty() => uri,
-                _ => actor_uri(domain, &r.username),
+            let account = match (r.account_id, r.username) {
+                (Some(id), Some(username)) => Some((
+                    id,
+                    r.local.unwrap_or(false),
+                    username,
+                    r.id_scheme,
+                    r.account_uri,
+                )),
+                _ => None,
             };
-            ItemRow {
-                id: r.id,
-                account_uri,
-                created_at: r.created_at,
-            }
+            featured_item(
+                domain,
+                owner_id,
+                r.id,
+                account,
+                r.approval_uri,
+                r.created_at,
+            )
         })
         .collect())
-}
-
-/// Build a FeaturedItem AP object (without `@context`, for embedding).
-fn featured_item_object(domain: &str, collection_id: i64, item: &ItemRow) -> Value {
-    json!({
-        "id": item_uri(domain, collection_id, item.id),
-        "type": "FeaturedItem",
-        "featuredObject": item.account_uri,
-        "published": item.created_at.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-    })
 }
 
 /// Loaded collection fields needed for AP serialization.
 pub struct ApCollection {
     pub id: i64,
+    pub owner_id: i64,
+    pub owner_id_scheme: Option<i32>,
     pub owner_username: String,
     pub name: String,
     pub description: Option<String>,
     pub language: Option<String>,
     pub sensitive: bool,
     pub discoverable: bool,
-    pub url: Option<String>,
+    pub tag_name: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
 
-/// Load a local collection (with its owner's username) for AP serialization.
+impl ApCollection {
+    /// Its owner's actor URI.
+    #[must_use]
+    pub fn actor_uri(&self, domain: &str) -> String {
+        crate::federation::tag::account_uri(
+            domain,
+            self.owner_id,
+            self.owner_id_scheme,
+            &self.owner_username,
+        )
+    }
+
+    /// Its own URI.
+    #[must_use]
+    pub fn uri(&self, domain: &str) -> String {
+        collection_uri(domain, self.owner_id, self.id)
+    }
+}
+
+/// Load a local collection (with its owner) for AP serialization.
 pub async fn load_ap_collection(state: &AppState, id: i64) -> AppResult<Option<ApCollection>> {
     let row = sqlx::query!(
-        r#"SELECT c.id, c.name, c.description, c.language, c.sensitive,
-                  c.discoverable, c.url, c.created_at, c.updated_at, a.username
+        r#"SELECT c.id, c.account_id, c.name, c.description, c.language, c.sensitive,
+                  c.discoverable, c.created_at, c.updated_at, a.username, a.id_scheme,
+                  t.name AS "tag_name?"
            FROM collections c
            JOIN accounts a ON a.id = c.account_id
+           LEFT JOIN tags t ON t.id = c.tag_id
            WHERE c.id = $1 AND c.local = true AND a.domain IS NULL"#,
         id,
     )
@@ -147,69 +213,262 @@ pub async fn load_ap_collection(state: &AppState, id: i64) -> AppResult<Option<A
 
     Ok(row.map(|r| ApCollection {
         id: r.id,
+        owner_id: r.account_id,
+        owner_id_scheme: r.id_scheme,
         owner_username: r.username,
         name: r.name,
         description: r.description,
         language: r.language,
         sensitive: r.sensitive,
         discoverable: r.discoverable,
-        url: r.url,
+        tag_name: r.tag_name,
         created_at: r.created_at,
         updated_at: r.updated_at,
     }))
 }
 
-/// Build the FeaturedCollection AP object body (without `@context`).
+/// Build the FeaturedCollection AP object body (without `@context`), as
+/// `ActivityPub::FeaturedCollectionSerializer` writes it.
 pub async fn featured_collection_body(
     state: &AppState,
     domain: &str,
     c: &ApCollection,
 ) -> AppResult<Value> {
-    let items = accepted_items(state, domain, c.id).await?;
-    let ordered: Vec<Value> = items
-        .iter()
-        .map(|it| featured_item_object(domain, c.id, it))
-        .collect();
-
+    let items = accepted_items(state, domain, c.owner_id, c.id).await?;
     let mut obj = json!({
-        "id": collection_uri(domain, c.id),
+        "id": c.uri(domain),
         "type": "FeaturedCollection",
+        "totalItems": items.len(),
         "name": c.name,
-        "attributedTo": actor_uri(domain, &c.owner_username),
-        "url": c.url.clone().unwrap_or_else(|| collection_uri(domain, c.id)),
+        "attributedTo": c.actor_uri(domain),
+        "url": collection_url(domain, c.id),
         "sensitive": c.sensitive,
         "discoverable": c.discoverable,
         "published": c.created_at.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "updated": c.updated_at.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        "totalItems": ordered.len(),
-        "orderedItems": ordered,
     });
-
-    if let Some(desc) = &c.description {
-        if let Some(lang) = &c.language {
-            obj["summaryMap"] = json!({ lang: desc });
-        } else {
-            obj["summary"] = json!(desc);
+    let members = obj.as_object_mut().expect("an object");
+    match c.language.as_deref().filter(|l| !l.is_empty()) {
+        Some(lang) => {
+            members.insert("summaryMap".into(), json!({ lang: c.description }));
+        }
+        None => {
+            members.insert("summary".into(), json!(c.description));
         }
     }
-
+    // `topic`, through `ActivityPub::NoteSerializer::TagSerializer`.
+    members.insert(
+        "topic".into(),
+        c.tag_name.as_ref().map_or(Value::Null, |name| {
+            json!({
+                "type": "Hashtag",
+                "href": format!("https://{domain}/tags/{name}"),
+                "name": format!("#{name}"),
+            })
+        }),
+    );
+    members.insert("orderedItems".into(), Value::Array(items));
     Ok(obj)
+}
+
+/// Whether the verified signer of a request, `signer`, is an account that
+/// `owner_id` blocks or whose domain it blocks
+/// (`blocking_or_domain_blocking?`): what `CollectionPolicy#show?` and
+/// `AccountPolicy#index_collections?` refuse.
+async fn blocks(state: &AppState, owner_id: i64, signer: Option<&str>) -> AppResult<bool> {
+    let Some(signer) = signer else {
+        return Ok(false);
+    };
+    Ok(sqlx::query_scalar!(
+        r#"SELECT (EXISTS (SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = a.id)
+                   OR EXISTS (SELECT 1 FROM account_domain_blocks
+                              WHERE account_id = $1 AND domain = a.domain)) AS "blocked!"
+           FROM accounts a WHERE a.uri = $2 AND a.domain IS NOT NULL"#,
+        owner_id,
+        signer,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false))
+}
+
+/// `body` with `context` as its `@context`, before its other members.
+fn with_context(body: &mut Value, context: Value) {
+    if let Value::Object(members) = body {
+        let mut ordered = serde_json::Map::new();
+        ordered.insert("@context".into(), context);
+        ordered.append(members);
+        *members = ordered;
+    }
 }
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
-/// `/collections/{id}` — the FeaturedCollection AP object.
-pub async fn collection_document(state: &AppState, domain: &str, id: i64) -> AppResult<Value> {
+/// `CollectionsController#show`: a local collection, at `/collections/{id}`
+/// or, when `owner` names its owner, at
+/// `/ap/users/{account_id}/collections/{id}`; not there for a signer its
+/// owner blocks.
+pub async fn collection_document(
+    state: &AppState,
+    domain: &str,
+    owner: Option<i64>,
+    id: i64,
+    signer: Option<&str>,
+) -> AppResult<Value> {
     let c = load_ap_collection(state, id)
         .await?
+        .filter(|c| owner.is_none_or(|owner| owner == c.owner_id))
         .ok_or(AppError::NotFound)?;
+    if blocks(state, c.owner_id, signer).await? {
+        return Err(AppError::NotFound);
+    }
     let mut body = featured_collection_body(state, domain, &c).await?;
-    body["@context"] = collection_context();
+    with_context(&mut body, collection_context());
     Ok(body)
 }
 
-/// `/users/{username}/collections` — an OrderedCollection of the account's
-/// FeaturedCollection object URIs.
+/// `CollectionItemsController#show`: an item of one of the local account
+/// `owner`'s collections, as a FeaturedItem; not there for a signer the
+/// owner blocks.
+pub async fn collection_item_document(
+    state: &AppState,
+    domain: &str,
+    owner: i64,
+    id: i64,
+    signer: Option<&str>,
+) -> AppResult<Value> {
+    let r = sqlx::query!(
+        r#"SELECT ci.id, ci.created_at, ci.approval_uri,
+                  a.id AS "account_id?", a.uri AS account_uri, a.username AS "username?",
+                  a.id_scheme, (a.domain IS NULL) AS "local?"
+           FROM collection_items ci
+           JOIN collections c ON c.id = ci.collection_id
+           JOIN accounts o ON o.id = c.account_id AND o.domain IS NULL
+           LEFT JOIN accounts a ON a.id = ci.account_id
+           WHERE ci.id = $1 AND c.account_id = $2"#,
+        id,
+        owner,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if blocks(state, owner, signer).await? {
+        return Err(AppError::NotFound);
+    }
+    let account = match (r.account_id, r.username) {
+        (Some(id), Some(username)) => Some((
+            id,
+            r.local.unwrap_or(false),
+            username,
+            r.id_scheme,
+            r.account_uri,
+        )),
+        _ => None,
+    };
+    let mut body = featured_item(domain, owner, r.id, account, r.approval_uri, r.created_at);
+    with_context(
+        &mut body,
+        super::context_helper::serialized_context(&["activitystreams"], &["featured_collections"]),
+    );
+    Ok(body)
+}
+
+/// `ActivityPub::FeaturedCollectionsController#index`: the local account
+/// `owner`'s collections, five to a page (`?page=`), each page embedding
+/// its FeaturedCollections; not there for a signer the account blocks.
+pub async fn featured_collections(
+    state: &AppState,
+    domain: &str,
+    owner: i64,
+    page: Option<&str>,
+    signer: Option<&str>,
+) -> AppResult<Value> {
+    let account = super::objects::load_local_account(state, AccountRef::Id(owner)).await?;
+    if blocks(state, account.id, signer).await? {
+        return Err(AppError::NotFound);
+    }
+    let total = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM collections WHERE account_id = $1",
+        account.id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .unwrap_or(0);
+    let uri = featured_collections_uri(domain, account.id);
+    let parse = |uri: &str| url::Url::parse(uri).map_err(|error| AppError::Internal(error.into()));
+    let total_items = Some(u64::try_from(total).unwrap_or(0));
+
+    // `params[:page].present?`.
+    let Some(page) = page.filter(|page| !page.trim().is_empty()) else {
+        let mut document = CollectionDocument {
+            id: Some(parse(&uri)?),
+            total_items,
+            first: Some(json!(format!("{uri}?page=1"))),
+            ..CollectionDocument::default()
+        }
+        .to_value();
+        with_context(
+            &mut document,
+            json!("https://www.w3.org/ns/activitystreams"),
+        );
+        return Ok(document);
+    };
+    // Kaminari's `page`: a number from one, anything else the first.
+    let number = page
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|n| *n >= 1)
+        .unwrap_or(1);
+    let ids = sqlx::query_scalar!(
+        "SELECT id FROM collections WHERE account_id = $1 ORDER BY id OFFSET $2 LIMIT $3",
+        account.id,
+        (number - 1).saturating_mul(COLLECTIONS_PER_PAGE),
+        COLLECTIONS_PER_PAGE,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut items = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(c) = load_ap_collection(state, id).await? {
+            items.push(featured_collection_body(state, domain, &c).await?);
+        }
+    }
+    let pages = (total + COLLECTIONS_PER_PAGE - 1) / COLLECTIONS_PER_PAGE;
+    let page_uri = |n: i64| parse(&format!("{uri}?page={n}"));
+    let mut id = parse(&uri)?;
+    id.query_pairs_mut().append_pair("page", page);
+    let context = if items.is_empty() {
+        json!("https://www.w3.org/ns/activitystreams")
+    } else {
+        collection_context()
+    };
+    let mut document = CollectionDocument {
+        id: Some(id),
+        total_items,
+        next: if number < pages {
+            Some(page_uri(number + 1)?)
+        } else {
+            None
+        },
+        prev: if number > 1 {
+            Some(page_uri(number - 1)?)
+        } else {
+            None
+        },
+        part_of: Some(parse(&uri)?),
+        items: Some(items),
+        ..CollectionDocument::default()
+    }
+    .to_value();
+    with_context(&mut document, context);
+    Ok(document)
+}
+
+/// `/users/{username}/collections`, where eunha used to say an account's
+/// collections were: its discoverable collections' URIs. Mastodon serves
+/// them at `featured_collections` ([`featured_collections`]), which actors
+/// now name.
 pub async fn account_collections(
     state: &AppState,
     domain: &str,
@@ -226,7 +485,7 @@ pub async fn account_collections(
 
     let items: Vec<String> = ids
         .into_iter()
-        .map(|id| collection_uri(domain, id))
+        .map(|id| collection_uri(domain, account.id, id))
         .collect();
 
     let body = json!({
@@ -242,52 +501,50 @@ pub async fn account_collections(
     Ok(body)
 }
 
-/// `/users/{username}/feature_authorizations/{id}` — the FeatureAuthorization
-/// stamp proving a local account consented to being featured in a collection.
+/// `ActivityPub::FeatureAuthorizationsController#show`: the stamp proving
+/// the local account `who` consented to being featured in a collection,
+/// served at the URI it was asked at, which is the one it was issued
+/// under: `/ap/users/{account_id}/feature_authorizations/{id}`, or
+/// `/users/{username}/feature_authorizations/{id}`, where eunha issues
+/// them. Not there for a signer the collection's owner blocks.
 pub async fn feature_authorization_document(
     state: &AppState,
     domain: &str,
-    username: &str,
+    who: AccountRef<'_>,
     id: i64,
+    signer: Option<&str>,
 ) -> AppResult<Value> {
+    let account = super::objects::load_local_account(state, who).await?;
     let row = sqlx::query!(
-        r#"SELECT c.local AS collection_local, c.id AS collection_id,
-                  c.uri AS "collection_uri?", a.uri AS "account_uri?"
+        r#"SELECT c.local AS collection_local, c.id AS collection_id, c.account_id AS owner_id,
+                  c.uri AS "collection_uri?"
            FROM collection_items ci
            JOIN collections c ON c.id = ci.collection_id
-           JOIN accounts a ON a.id = ci.account_id
-           WHERE ci.id = $1 AND ci.state = 1
-             AND lower(a.username) = lower($2) AND a.domain IS NULL"#,
+           WHERE ci.id = $1 AND ci.state = 1 AND ci.account_id = $2"#,
         id,
-        username,
+        account.id,
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
+    if blocks(state, row.owner_id, signer).await? {
+        return Err(AppError::NotFound);
+    }
 
-    let auth_id = format!("https://{domain}/users/{username}/feature_authorizations/{id}");
-    let collection_uri = match row.collection_uri {
-        Some(uri) if !uri.is_empty() => uri,
-        _ => collection_uri(domain, row.collection_id),
-    };
-    let account_uri = match row.account_uri {
-        Some(uri) if !uri.is_empty() => uri,
-        _ => actor_uri(domain, username),
-    };
-
-    let mut body =
-        crate::federation::consent::feature_authorization(&auth_id, &collection_uri, &account_uri)
-            .map_err(AppError::Internal)?;
-    body["@context"] = json!([
-        "https://www.w3.org/ns/activitystreams",
-        {
-            "toot": "http://joinmastodon.org/ns#",
-            "FeatureAuthorization": "toot:FeatureAuthorization",
-            "interactingObject": { "@id": "toot:interactingObject", "@type": "@id" },
-            "interactionTarget": { "@id": "toot:interactionTarget", "@type": "@id" },
+    let auth_id = match who {
+        AccountRef::Id(_) => feature_authorization_uri(domain, account.id, id),
+        AccountRef::Username(username) => {
+            format!("https://{domain}/users/{username}/feature_authorizations/{id}")
         }
-    ]);
-    Ok(body)
+    };
+    let collection_uri = match row.collection_uri {
+        Some(uri) if !uri.is_empty() && !row.collection_local => uri,
+        _ => collection_uri(domain, row.owner_id, row.collection_id),
+    };
+    let account_uri = crate::federation::tag::account_uri_of(domain, &account);
+
+    crate::federation::consent::feature_authorization(&auth_id, &collection_uri, &account_uri)
+        .map_err(AppError::Internal)
 }
 
 /// `ActivityPub::QuoteAuthorizationsController#show`: the stamp by which a
@@ -338,45 +595,47 @@ pub async fn quote_authorization_document(
 
 // ── Activity builders (for outbound distribution to followers) ─────────────────
 
-/// `Add(FeaturedCollection)` — a new collection was created.
-pub fn add_collection_activity(domain: &str, owner_username: &str, collection_obj: Value) -> Value {
-    let actor = actor_uri(domain, owner_username);
+/// `ActivityPub::AddFeaturedCollectionSerializer`: a new collection was
+/// created.
+#[must_use]
+pub fn add_collection_activity(domain: &str, c: &ApCollection, collection_obj: Value) -> Value {
     json!({
         "@context": collection_context(),
         "type": "Add",
-        "actor": actor,
-        "target": format!("{actor}/collections"),
+        "actor": c.actor_uri(domain),
+        "target": featured_collections_uri(domain, c.owner_id),
         "object": collection_obj,
     })
 }
 
-/// `Update(FeaturedCollection)` — a collection's metadata or items changed.
-pub fn update_collection_activity(
-    domain: &str,
-    owner_username: &str,
-    collection_id: i64,
-    updated_unix: i64,
-    collection_obj: Value,
-) -> Value {
-    let actor = actor_uri(domain, owner_username);
+/// `ActivityPub::UpdateFeaturedCollectionSerializer`: a collection's
+/// metadata or items changed.
+#[must_use]
+pub fn update_collection_activity(domain: &str, c: &ApCollection, collection_obj: Value) -> Value {
     json!({
         "@context": collection_context(),
-        "id": format!("{}#updates/{}", collection_uri(domain, collection_id), updated_unix),
+        "id": format!("{}#updates/{}", c.uri(domain), c.updated_at.and_utc().timestamp()),
         "type": "Update",
-        "actor": actor,
-        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "actor": c.actor_uri(domain),
+        "to": [super::objects::PUBLIC_COLLECTION],
         "object": collection_obj,
     })
 }
 
-/// `Remove` — a collection was deleted.
-pub fn remove_collection_activity(domain: &str, owner_username: &str, collection_id: i64) -> Value {
-    let actor = actor_uri(domain, owner_username);
+/// `ActivityPub::RemoveFeaturedCollectionSerializer`: a collection was
+/// deleted.
+#[must_use]
+pub fn remove_collection_activity(
+    domain: &str,
+    actor: &str,
+    owner_id: i64,
+    collection_id: i64,
+) -> Value {
     json!({
-        "@context": collection_context(),
+        "@context": "https://www.w3.org/ns/activitystreams",
         "type": "Remove",
         "actor": actor,
-        "target": format!("{actor}/collections"),
-        "object": collection_uri(domain, collection_id),
+        "target": featured_collections_uri(domain, owner_id),
+        "object": collection_uri(domain, owner_id, collection_id),
     })
 }

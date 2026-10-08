@@ -482,14 +482,30 @@ async fn do_update_credentials(
         .execute(&state.db)
         .await?;
     }
-    if let Some(ref domains) = attribution_domains {
-        sqlx::query!(
-            "UPDATE accounts SET attribution_domains = $1 WHERE id = $2",
-            domains,
+    let mut attribution_domains_changed = false;
+    if let Some(domains) = attribution_domains {
+        // `normalizes :attribution_domains`: stripped of a scheme and of
+        // `*.`, blanks dropped, each once.
+        let mut normalized: Vec<String> = Vec::new();
+        for domain in domains {
+            let domain = domain.trim();
+            let domain = domain.strip_prefix("http://").unwrap_or(domain);
+            let domain = domain.strip_prefix("https://").unwrap_or(domain);
+            let domain = domain.strip_prefix("*.").unwrap_or(domain);
+            if !domain.is_empty() && !normalized.iter().any(|d| d == domain) {
+                normalized.push(domain.to_owned());
+            }
+        }
+        attribution_domains_changed = sqlx::query!(
+            r#"UPDATE accounts SET attribution_domains = $1
+               WHERE id = $2 AND attribution_domains IS DISTINCT FROM $1::varchar[]"#,
+            &normalized,
             auth.account_id
         )
         .execute(&state.db)
-        .await?;
+        .await?
+        .rows_affected()
+            > 0;
     }
     // default_quote_policy is in users.settings (YAML) in Mastodon's schema; not persisted here.
     let _ = &source_quote_policy;
@@ -506,8 +522,46 @@ async fn do_update_credentials(
     let account = fetch_account(state, auth.account_id).await?;
     // `UpdateAccountService`'s `account.update`: its `after_update_commit`s.
     crate::moderation::webhooks::account_updated(state, auth.account_id).await;
+    // `UpdateAccountService#process_hashtags` and
+    // `#process_attribution_domains`.
+    process_hashtags(state, &account).await?;
+    if attribution_domains_changed {
+        crate::preview_card::attribution::attribution_domains_changed(state, auth.account_id)
+            .await?;
+    }
     crate::fasp::events::account_updated(state, auth.account_id, discoverable_changed).await;
     Ok(account)
+}
+
+/// `UpdateAccountService#process_hashtags`: the account's profile hashtags
+/// (`accounts_tags`) become those its bio has (`Account#tags_as_strings=`),
+/// which its actor names in `tag`.
+pub(crate) async fn process_hashtags(state: &AppState, account: &Account) -> AppResult<()> {
+    let mut tag_ids: Vec<i64> = Vec::new();
+    for name in crate::api::mastodon::statuses::extract_hashtags(&account.note) {
+        if let Some(id) = crate::tags::find_or_create(&state.db, &name).await? {
+            if !tag_ids.contains(&id) {
+                tag_ids.push(id);
+            }
+        }
+    }
+    sqlx::query!(
+        "DELETE FROM accounts_tags WHERE account_id = $1 AND NOT (tag_id = ANY($2))",
+        account.id,
+        &tag_ids,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        r#"INSERT INTO accounts_tags (account_id, tag_id)
+           SELECT $1, t FROM unnest($2::bigint[]) AS t
+           WHERE NOT EXISTS (SELECT 1 FROM accounts_tags WHERE account_id = $1 AND tag_id = t)"#,
+        account.id,
+        &tag_ids,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
 }
 
 async fn distribute_account_update(state: &AppState, domain: &str, account: &Account) {

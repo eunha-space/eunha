@@ -82,7 +82,17 @@ pub fn federation() -> Federation<AppState> {
                 let Some(id) = number(&values["id"]) else {
                     return Ok(Found::NotFound);
                 };
-                found(super::collections::collection_document(ctx.data(), domain(&ctx), id).await)
+                let signer = signer(&ctx).await;
+                found(
+                    super::collections::collection_document(
+                        ctx.data(),
+                        domain(&ctx),
+                        None,
+                        id,
+                        signer.as_deref(),
+                    )
+                    .await,
+                )
             },
         )
         .object(
@@ -92,17 +102,127 @@ pub fn federation() -> Federation<AppState> {
                 let Some(id) = number(&values["id"]) else {
                     return Ok(Found::NotFound);
                 };
+                let signer = signer(&ctx).await;
                 found(
                     super::collections::feature_authorization_document(
                         ctx.data(),
                         domain(&ctx),
-                        &values["username"],
+                        AccountRef::Username(&values["username"]),
                         id,
+                        signer.as_deref(),
                     )
                     .await,
                 )
             },
         )
+        // What Mastodon serves only under `/ap/users/{id}`: an account's
+        // collections, one of them, one of their items, and the stamp by
+        // which a local account consented to being in one.
+        .object(
+            "featured_collections",
+            "/ap/users/{id}/featured_collections",
+            |ctx: Ctx, values: Values| async move {
+                let Some(id) = number(&values["id"]) else {
+                    return Ok(Found::NotFound);
+                };
+                let signer = signer(&ctx).await;
+                let page = ctx.query_value("page");
+                found(
+                    super::collections::featured_collections(
+                        ctx.data(),
+                        domain(&ctx),
+                        id,
+                        page.as_deref(),
+                        signer.as_deref(),
+                    )
+                    .await,
+                )
+            },
+        )
+        .object(
+            "account_collection",
+            "/ap/users/{id}/collections/{collection_id}",
+            |ctx: Ctx, values: Values| async move {
+                let (Some(owner), Some(id)) =
+                    (number(&values["id"]), number(&values["collection_id"]))
+                else {
+                    return Ok(Found::NotFound);
+                };
+                let signer = signer(&ctx).await;
+                found(
+                    super::collections::collection_document(
+                        ctx.data(),
+                        domain(&ctx),
+                        Some(owner),
+                        id,
+                        signer.as_deref(),
+                    )
+                    .await,
+                )
+            },
+        )
+        .object(
+            "collection_item",
+            "/ap/users/{id}/collection_items/{item_id}",
+            |ctx: Ctx, values: Values| async move {
+                let (Some(owner), Some(id)) = (number(&values["id"]), number(&values["item_id"]))
+                else {
+                    return Ok(Found::NotFound);
+                };
+                let signer = signer(&ctx).await;
+                found(
+                    super::collections::collection_item_document(
+                        ctx.data(),
+                        domain(&ctx),
+                        owner,
+                        id,
+                        signer.as_deref(),
+                    )
+                    .await,
+                )
+            },
+        )
+        .object(
+            "feature_authorization_by_id",
+            "/ap/users/{id}/feature_authorizations/{item_id}",
+            |ctx: Ctx, values: Values| async move {
+                let (Some(account), Some(id)) =
+                    (number(&values["id"]), number(&values["item_id"]))
+                else {
+                    return Ok(Found::NotFound);
+                };
+                let signer = signer(&ctx).await;
+                found(
+                    super::collections::feature_authorization_document(
+                        ctx.data(),
+                        domain(&ctx),
+                        AccountRef::Id(account),
+                        id,
+                        signer.as_deref(),
+                    )
+                    .await,
+                )
+            },
+        )
+        // A thread started here, which its posts name as their `context`
+        // (`ActivityPub::ContextsController`).
+        .object("context", "/contexts/{id}", |ctx: Ctx, values: Values| async move {
+            let query = super::status_collections::Query::parse(ctx.query());
+            found(super::status_collections::context(ctx.data(), &values["id"], &query).await)
+        })
+        .object(
+            "context_items",
+            "/contexts/{id}/items",
+            |ctx: Ctx, values: Values| async move {
+                let query = super::status_collections::Query::parse(ctx.query());
+                found(
+                    super::status_collections::context_items(ctx.data(), &values["id"], &query)
+                        .await,
+                )
+            },
+        )
+        // The instance actor's outbox (`Account.representative`'s).
+        .collection("instance_outbox", "/actor/outbox", instance_outbox())
         .handle(|ctx: Ctx, username: String| async move { by_username(&ctx, &username).await })
         .map_alias(|ctx: Ctx, url: Url| async move {
             // A profile page, /@username, names whom the handle does.
@@ -136,6 +256,7 @@ pub fn federation() -> Federation<AppState> {
         .on_error(|error| tracing::error!(error = %error, "ActivityPub"))
         .inbox("actor", "/users/{username}/inbox")
         .inbox("actor_by_id", "/ap/users/{id}/inbox")
+        .inbox("instance", "/actor/inbox")
         .shared_inbox("/inbox")
         // Every tenant fetches with its own fetcher (`fetcher_for`) and
         // caches in its own Redis namespace (`kv_for`); the fetcher and store
@@ -339,7 +460,44 @@ pub fn federation() -> Federation<AppState> {
                     &scheme.kind("featured"),
                     &scheme.template("/collections/featured"),
                     featured(scheme),
+                )
+                .collection(
+                    &scheme.kind("featured_tags"),
+                    &scheme.template("/collections/tags"),
+                    featured_tags(scheme),
+                )
+                .object(
+                    &scheme.kind("replies"),
+                    &scheme.template("/statuses/{status_id}/replies"),
+                    move |ctx: Ctx, values: Values| async move {
+                        let Some((who, status_id)) = scheme.status(&values) else {
+                            return Ok(Found::NotFound);
+                        };
+                        let query = super::status_collections::Query::parse(ctx.query());
+                        found(
+                            super::status_collections::replies(ctx.data(), who, status_id, &query)
+                                .await,
+                        )
+                    },
                 );
+        for (kind, which) in [
+            ("likes", super::status_collections::Interactions::Likes),
+            ("shares", super::status_collections::Interactions::Shares),
+        ] {
+            builder = builder.object(
+                &scheme.kind(kind),
+                &scheme.template(&format!("/statuses/{{status_id}}/{kind}")),
+                move |ctx: Ctx, values: Values| async move {
+                    let Some((who, status_id)) = scheme.status(&values) else {
+                        return Ok(Found::NotFound);
+                    };
+                    found(
+                        super::status_collections::interactions(ctx.data(), who, status_id, which)
+                            .await,
+                    )
+                },
+            );
+        }
         // Every ActivityPub controller of Mastodon's runs
         // `require_account_signature!` in authorized fetch mode; a status is
         // also hidden from a signer its author blocks (`StatusPolicy#show?`).
@@ -350,12 +508,22 @@ pub fn federation() -> Federation<AppState> {
             "followers",
             "following",
             "featured",
+            "featured_tags",
         ] {
             builder = builder.guard(&scheme.kind(kind), |ctx: Ctx, _| async move {
                 require_signature(&ctx).await
             });
         }
-        for kind in ["status", "status_activity", "quote_authorization"] {
+        // `ActivityPub::RepliesController`, `LikesController` and
+        // `SharesController` authorize the post as `StatusesController` does.
+        for kind in [
+            "status",
+            "status_activity",
+            "quote_authorization",
+            "replies",
+            "likes",
+            "shares",
+        ] {
             builder =
                 builder.guard(
                     &scheme.kind(kind),
@@ -367,7 +535,17 @@ pub fn federation() -> Federation<AppState> {
     }
     // The instance actor is exempt, as `InstanceActorsController` is: a peer
     // in authorized fetch mode has to fetch its key before it can sign.
-    for kind in ["collection", "feature_authorization"] {
+    for kind in [
+        "collection",
+        "feature_authorization",
+        "featured_collections",
+        "account_collection",
+        "collection_item",
+        "feature_authorization_by_id",
+        "context",
+        "context_items",
+        "instance_outbox",
+    ] {
         builder = builder.guard(
             kind,
             |ctx: Ctx, _| async move { require_signature(&ctx).await },
@@ -456,6 +634,11 @@ async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<ojak::federation
             actor: Url::parse(owner).ok()?,
         })
     }))
+}
+
+/// The verified signer of the request, if it was signed.
+async fn signer(ctx: &Ctx) -> Option<String> {
+    ctx.signer().await.map(String::from)
 }
 
 fn domain(ctx: &Ctx) -> &str {
@@ -566,6 +749,15 @@ impl Scheme {
         }
     }
 
+    /// The account and the post a status route's values name.
+    fn status(self, values: &Values) -> Option<(AccountRef<'_>, i64)> {
+        let identifier = match self {
+            Self::Username => &values["username"],
+            Self::Id => &values["id"],
+        };
+        Some((self.who(identifier)?, number(&values["status_id"])?))
+    }
+
     /// The local account `identifier` names under this scheme.
     async fn account(self, ctx: &Ctx, identifier: &str) -> AppResult<Option<Account>> {
         let Some(who) = self.who(identifier) else {
@@ -615,7 +807,11 @@ pub enum Own {
     Followers,
     Following,
     Featured,
-    /// Its featured collections (FEP-7952), `/collections`.
+    /// Its featured hashtags, `/collections/tags`.
+    Tags,
+    /// Its featured collections, `/ap/users/{id}/featured_collections`
+    /// whichever scheme it uses, as `ap_account_featured_collections_url`
+    /// names them.
     Collections,
 }
 
@@ -628,7 +824,8 @@ impl Own {
             Self::Followers => "followers",
             Self::Following => "following",
             Self::Featured => "featured",
-            Self::Collections => "account_collections",
+            Self::Tags => "featured_tags",
+            Self::Collections => "featured_collections",
         }
     }
 
@@ -640,7 +837,8 @@ impl Own {
             Self::Followers => "/followers",
             Self::Following => "/following",
             Self::Featured => "/collections/featured",
-            Self::Collections => "/collections",
+            Self::Tags => "/collections/tags",
+            Self::Collections => "/featured_collections",
         }
     }
 }
@@ -653,7 +851,9 @@ pub struct AccountUris<'a> {
 }
 
 enum Served {
-    Account(Scheme, String),
+    /// An account, under the scheme it uses, by what it is identified by
+    /// there, and its id.
+    Account(Scheme, String, i64),
     /// The instance actor, which is served at `/actor` rather than under
     /// either scheme. Asked for under one, it names its inbox and
     /// collections beneath `/actor`, as Mastodon's serializer does, where no
@@ -670,7 +870,7 @@ impl<'a> AccountUris<'a> {
             Served::Instance
         } else {
             let (scheme, identifier) = Scheme::of(id, id_scheme, username);
-            Served::Account(scheme, identifier)
+            Served::Account(scheme, identifier, id)
         };
         Self { uris, served }
     }
@@ -688,7 +888,7 @@ impl<'a> AccountUris<'a> {
     /// When the account's identifier does not fill its template.
     pub fn actor(&self) -> anyhow::Result<Url> {
         Ok(match &self.served {
-            Served::Account(scheme, identifier) => {
+            Served::Account(scheme, identifier, _) => {
                 self.uris.actor_uri(&scheme.kind("actor"), identifier)?
             }
             Served::Instance => self.uris.actor_uri("instance", "")?,
@@ -702,7 +902,7 @@ impl<'a> AccountUris<'a> {
     /// As [`AccountUris::actor`].
     pub fn key_id(&self) -> anyhow::Result<Url> {
         Ok(match &self.served {
-            Served::Account(scheme, identifier) => {
+            Served::Account(scheme, identifier, _) => {
                 self.uris.key_id(&scheme.kind("actor"), identifier)?
             }
             Served::Instance => self.uris.key_id("instance", "")?,
@@ -715,7 +915,7 @@ impl<'a> AccountUris<'a> {
     ///
     /// As [`AccountUris::actor`].
     pub fn uri(&self, what: Own) -> anyhow::Result<Url> {
-        let Served::Account(scheme, identifier) = &self.served else {
+        let Served::Account(scheme, identifier, id) = &self.served else {
             return self.beneath_actor(what.suffix());
         };
         let kind = scheme.kind(what.kind());
@@ -723,7 +923,7 @@ impl<'a> AccountUris<'a> {
             Own::Inbox => self.uris.inbox_uri(&kind, identifier)?,
             Own::Collections => self
                 .uris
-                .object_uri(&kind, &[(scheme.expression(), identifier)])?,
+                .object_uri(what.kind(), &[("id", &id.to_string())])?,
             _ => self.uris.collection_uri(&kind, identifier)?,
         })
     }
@@ -734,7 +934,7 @@ impl<'a> AccountUris<'a> {
     ///
     /// As [`AccountUris::actor`].
     pub fn status(&self, id: i64) -> anyhow::Result<Url> {
-        let Served::Account(scheme, identifier) = &self.served else {
+        let Served::Account(scheme, identifier, _) = &self.served else {
             return self.beneath_actor(&format!("/statuses/{id}"));
         };
         Ok(self.uris.object_uri(
@@ -797,71 +997,82 @@ impl OutboxCursor {
     }
 }
 
-/// An account's own public and unlisted statuses, newest first, as the
-/// `Create` activities that posted them; boosts are not in it.
+/// A page of the outbox of the local account `account_id`: its own public
+/// and unlisted statuses, newest first, twenty to a page, as the `Create`
+/// activities that posted them; boosts are not in it.
+async fn outbox_page(ctx: &Ctx, account_id: i64, cursor: Option<&str>) -> AppResult<Option<Page>> {
+    let Some(cursor) = OutboxCursor::parse(cursor.unwrap_or_default()) else {
+        return Ok(None);
+    };
+    let (max_id, min_id) = match cursor {
+        OutboxCursor::Newest => (None, None),
+        OutboxCursor::Below(id) => (Some(id), None),
+        OutboxCursor::Above(id) => (None, Some(id)),
+    };
+    // `AccountStatusesFilter#blocked?`: a signer the account blocks sees
+    // none of it.
+    if signer_blocked(ctx, account_id).await? {
+        return Ok(Some(Page::default()));
+    }
+    let state = ctx.data();
+    let status_ids: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT s.id
+           FROM statuses s
+           WHERE s.account_id = $1
+             AND s.deleted_at IS NULL
+             AND s.reblog_of_id IS NULL
+             AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
+             AND ($2::bigint IS NULL OR s.id < $2)
+             AND ($3::bigint IS NULL OR s.id > $3)
+           ORDER BY s.id DESC
+           LIMIT 20"#,
+        account_id,
+        max_id,
+        min_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut items = Vec::with_capacity(status_ids.len());
+    for id in &status_ids {
+        if let Some(bundle) = super::note::build_note(state, domain(ctx), *id).await? {
+            items.push(bundle.into_create());
+        }
+    }
+    Ok(Some(Page {
+        items,
+        next: status_ids.last().map(|id| format!("max:{id}")),
+        prev: status_ids.first().map(|id| format!("min:{id}")),
+    }))
+}
+
+/// How many statuses the local account `account_id` has.
+async fn statuses_count(ctx: &Ctx, account_id: i64) -> AppResult<u64> {
+    let count = sqlx::query_scalar!(
+        "SELECT COALESCE(statuses_count, 0) FROM account_stats WHERE account_id = $1",
+        account_id,
+    )
+    .fetch_optional(&ctx.data().db)
+    .await?
+    .flatten()
+    .unwrap_or(0);
+    Ok(u64::try_from(count).unwrap_or(0))
+}
+
+/// An account's outbox ([`outbox_page`]).
 fn outbox(scheme: Scheme) -> Collection<AppState> {
     Collection::new(
         move |ctx: Ctx, identifier: String, cursor: Option<String>| async move {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
-            let Some(cursor) = OutboxCursor::parse(cursor.as_deref().unwrap_or_default()) else {
-                return Ok(None);
-            };
-            let (max_id, min_id) = match cursor {
-                OutboxCursor::Newest => (None, None),
-                OutboxCursor::Below(id) => (Some(id), None),
-                OutboxCursor::Above(id) => (None, Some(id)),
-            };
-            // `AccountStatusesFilter#blocked?`: a signer the account blocks
-            // sees none of it.
-            if signer_blocked(&ctx, account.id).await? {
-                return Ok(Some(Page::default()));
-            }
-            let state = ctx.data();
-            let status_ids: Vec<i64> = sqlx::query_scalar!(
-                r#"SELECT s.id
-                   FROM statuses s
-                   WHERE s.account_id = $1
-                     AND s.deleted_at IS NULL
-                     AND s.reblog_of_id IS NULL
-                     AND s.visibility IN (0, 1) /* vis::PUBLIC, vis::UNLISTED */
-                     AND ($2::bigint IS NULL OR s.id < $2)
-                     AND ($3::bigint IS NULL OR s.id > $3)
-                   ORDER BY s.id DESC
-                   LIMIT 20"#,
-                account.id,
-                max_id,
-                min_id,
-            )
-            .fetch_all(&state.db)
-            .await?;
-            let mut items = Vec::with_capacity(status_ids.len());
-            for id in &status_ids {
-                if let Some(bundle) = super::note::build_note(state, domain(&ctx), *id).await? {
-                    items.push(bundle.into_create());
-                }
-            }
-            Ok(Some(Page {
-                items,
-                next: status_ids.last().map(|id| format!("max:{id}")),
-                prev: status_ids.first().map(|id| format!("min:{id}")),
-            }))
+            outbox_page(&ctx, account.id, cursor.as_deref()).await
         },
     )
     .count(move |ctx: Ctx, identifier: String| async move {
         let Some(account) = scheme.account(&ctx, &identifier).await? else {
             return Ok::<_, AppError>(None);
         };
-        let count = sqlx::query_scalar!(
-            "SELECT COALESCE(statuses_count, 0) FROM account_stats WHERE account_id = $1",
-            account.id,
-        )
-        .fetch_optional(&ctx.data().db)
-        .await?
-        .flatten()
-        .unwrap_or(0);
-        Ok(Some(u64::try_from(count).unwrap_or(0)))
+        Ok(Some(statuses_count(&ctx, account.id).await?))
     })
     .first_cursor(move |ctx: Ctx, identifier: String| async move {
         Ok::<_, AppError>(
@@ -875,6 +1086,20 @@ fn outbox(scheme: Scheme) -> Collection<AppState> {
     .uri(move |ctx: Ctx, identifier: String| async move {
         scheme.own_uri(&ctx, &identifier, Own::Outbox).await
     })
+}
+
+/// The instance actor's outbox, `/actor/outbox`: `OutboxesController` on
+/// `Account.representative`, which posts nothing.
+fn instance_outbox() -> Collection<AppState> {
+    use crate::federation::instance_actor::INSTANCE_ACTOR_ID;
+    Collection::new(|ctx: Ctx, _: String, cursor: Option<String>| async move {
+        outbox_page(&ctx, INSTANCE_ACTOR_ID, cursor.as_deref()).await
+    })
+    .count(|ctx: Ctx, _: String| async move {
+        Ok::<_, AppError>(Some(statuses_count(&ctx, INSTANCE_ACTOR_ID).await?))
+    })
+    .first_cursor(|_, _| async { Ok::<_, AppError>(Some(First::At(String::new()))) })
+    .last_cursor(|_, _| async { Ok::<_, AppError>(Some("min:0".to_owned())) })
 }
 
 #[derive(Clone, Copy)]
@@ -990,8 +1215,9 @@ fn relation(scheme: Scheme, relation: Relation) -> Collection<AppState> {
     })
 }
 
-/// An account's pinned, publicly visible statuses, newest pin first, in one
-/// document (Mastodon's `featured`).
+/// An account's pinned statuses, newest pin first, in one document
+/// (`ActivityPub::CollectionsController` on `featured`): a public or
+/// unlisted one embedded as its Note, any other named by its URI.
 fn featured(scheme: Scheme) -> Collection<AppState> {
     Collection::new(
         move |ctx: Ctx, identifier: String, _: Option<String>| async move {
@@ -1007,9 +1233,9 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
                 return Ok(Some(Page::default()));
             }
             let rows = sqlx::query!(
-                r#"SELECT s.id, s.uri AS "uri?"
+                r#"SELECT s.id, s.visibility
                    FROM status_pins p JOIN statuses s ON s.id = p.status_id
-                   WHERE p.account_id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
+                   WHERE p.account_id = $1 AND s.deleted_at IS NULL
                    ORDER BY p.id DESC"#,
                 account.id,
             )
@@ -1017,21 +1243,72 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
             .await?;
             let uris = ctx.uris();
             let own = AccountUris::of(&uris, &account);
-            let items = rows
-                .into_iter()
-                .map(|r| match r.uri.filter(|u| !u.is_empty()) {
-                    Some(uri) => Ok(Value::String(uri)),
-                    None => Ok(Value::String(own.status(r.id)?.into())),
-                })
-                .collect::<AppResult<_>>()?;
+            let mut items = Vec::with_capacity(rows.len());
+            for row in rows {
+                // `distributable?`.
+                if matches!(
+                    row.visibility,
+                    crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+                ) {
+                    if let Some(bundle) =
+                        super::note::build_note(ctx.data(), domain(&ctx), row.id).await?
+                    {
+                        items.push(bundle.note);
+                        continue;
+                    }
+                }
+                items.push(Value::String(own.status(row.id)?.into()));
+            }
             Ok(Some(Page {
                 items,
                 ..Page::default()
             }))
         },
     )
+    .context(|items| {
+        // `ActivityPub::Adapter`: an embedded Note brings its context.
+        if items.iter().any(Value::is_object) {
+            super::note::note_context()
+        } else {
+            json!("https://www.w3.org/ns/activitystreams")
+        }
+    })
     .uri(move |ctx: Ctx, identifier: String| async move {
         scheme.own_uri(&ctx, &identifier, Own::Featured).await
+    })
+}
+
+/// The hashtags an account features, in one unordered document
+/// (`ActivityPub::CollectionsController` on `tags`).
+fn featured_tags(scheme: Scheme) -> Collection<AppState> {
+    Collection::new(
+        move |ctx: Ctx, identifier: String, _: Option<String>| async move {
+            let Some(account) = scheme.account(&ctx, &identifier).await? else {
+                return Ok::<_, AppError>(None);
+            };
+            // `check_authorization`, as for the featured posts.
+            if crate::settings::authorized_fetch_mode(ctx.data()).await
+                && signer_blocked(&ctx, account.id).await?
+            {
+                return Ok(Some(Page::default()));
+            }
+            let items = super::featured_tags::hashtags(
+                ctx.data(),
+                domain(&ctx),
+                account.id,
+                &account.username,
+            )
+            .await?;
+            Ok(Some(Page {
+                items,
+                ..Page::default()
+            }))
+        },
+    )
+    .unordered()
+    .context(|items| super::featured_tags::context(!items.is_empty()))
+    .uri(move |ctx: Ctx, identifier: String| async move {
+        scheme.own_uri(&ctx, &identifier, Own::Tags).await
     })
 }
 
@@ -1124,11 +1401,17 @@ mod tests {
                 Own::Followers,
                 Own::Following,
                 Own::Featured,
-                Own::Collections,
+                Own::Tags,
             ] {
                 assert_eq!(
                     own.uri(what).unwrap().as_str(),
                     format!("{actor}{}", what.suffix())
+                );
+            }
+            if id != INSTANCE_ACTOR_ID {
+                assert_eq!(
+                    own.uri(Own::Collections).unwrap().as_str(),
+                    format!("https://seoul.earth/ap/users/{id}/featured_collections")
                 );
             }
             assert_eq!(
