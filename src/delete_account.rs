@@ -1126,6 +1126,11 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
         "DELETE FROM mutes WHERE target_account_id = $1", // muted_by_relationships
         "DELETE FROM notifications WHERE account_id = $1",
         "DELETE FROM lists WHERE account_id = $1", // owned_lists
+        // passive_relationships, each destroyed: its follower's endorsement of
+        // the account goes with it (`Follow#remove_endorsements`).
+        "DELETE FROM account_pins p USING follows f
+         WHERE p.target_account_id = $1 AND f.target_account_id = $1
+           AND f.account_id = p.account_id",
         "DELETE FROM follows WHERE target_account_id = $1", // passive_relationships
         "DELETE FROM report_notes WHERE account_id = $1",
         "DELETE FROM scheduled_statuses WHERE account_id = $1",

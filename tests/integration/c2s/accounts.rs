@@ -1389,6 +1389,61 @@ async fn test_get_endorsements_list() {
         .any(|a| a["id"].as_str() == Some(ctx.bob_id.as_str())));
 }
 
+/// Unfollowing an endorsed account takes the endorsement with it
+/// (`Follow#remove_endorsements`), and so does being blocked by it.
+#[tokio::test]
+async fn test_unfollow_removes_endorsement() {
+    async fn endorsed(ctx: &TestContext) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM account_pins WHERE account_id = $1 AND target_account_id = $2",
+        )
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+    }
+    async fn endorse(ctx: &TestContext) {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/accounts/{}/endorse", ctx.bob_id),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    let ctx = TestContext::new("endorse-unfollow").await;
+
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    endorse(&ctx).await;
+    assert_eq!(endorsed(&ctx).await, 1);
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/unfollow", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(endorsed(&ctx).await, 0);
+
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    endorse(&ctx).await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/block", ctx.alice_id),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(endorsed(&ctx).await, 0);
+}
+
 /// Endorsing an account you don't follow is rejected (Mastodon AccountPin
 /// requires a follow relationship).
 #[tokio::test]
@@ -2607,6 +2662,79 @@ async fn test_mute_with_duration_sets_expires_at() {
         rel["muting_expires_at"].as_str().is_some(),
         "muting_expires_at should be set"
     );
+}
+
+/// A timed mute queues a `DeleteMuteWorker` for when it expires, which lifts
+/// it then; until it runs, the mute stands, as Mastodon reads it.
+#[tokio::test]
+async fn test_timed_mute_is_lifted_by_its_job() {
+    let ctx = TestContext::new("mute-expiry").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/mute", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({"duration": 3600}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let queued = eunha::jobs::queued(&ctx.state, "DeleteMuteWorker")
+        .await
+        .unwrap();
+    assert_eq!(queued.len(), 1);
+    // Not yet due: nothing runs.
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+
+    // Expired, but not yet lifted: still a mute.
+    sqlx::query("UPDATE mutes SET expires_at = now() - interval '1 minute'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let rel: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/relationships?id[]={}", ctx.bob_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rel[0]["muting"].as_bool(), Some(true));
+
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM mutes")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+/// A mute renewed for good is not lifted by the job its timed predecessor
+/// queued.
+#[tokio::test]
+async fn test_renewed_mute_outlives_the_old_job() {
+    let ctx = TestContext::new("mute-renewed").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    for duration in [3600, 0] {
+        ctx.api
+            .post_json(
+                &format!("/api/v1/accounts/{}/mute", ctx.bob_id),
+                Some(&ctx.alice_token),
+                &json!({"duration": duration}),
+            )
+            .await;
+    }
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM mutes")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 1);
 }
 
 /// Re-muting an account updates hide_notifications in place.

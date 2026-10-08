@@ -8,6 +8,8 @@
 //!     and uploads never attached to a post are deleted after a day;
 //!  -  `Vacuum::PreviewCardsVacuum`: link preview images older than
 //!     `media_cache_retention_period` days are forgotten;
+//!  -  `Vacuum::AccessTokensVacuum`: access tokens and authorization grants
+//!     that have expired or been revoked are deleted;
 //!  -  `Vacuum::FeedsVacuum`: the home and list feeds of users who have not
 //!     signed in for a week are removed from Redis (see [`crate::home_feed`]).
 //!
@@ -64,6 +66,9 @@ pub async fn perform(state: &AppState) {
     }
     if let Err(error) = vacuum_preview_cards(state, media).await {
         tracing::error!(%error, "preview cards vacuum failed");
+    }
+    if let Err(error) = vacuum_access_tokens(&state.db).await {
+        tracing::error!(%error, "access tokens vacuum failed");
     }
     let mut redis = state.redis.clone();
     if let Err(error) =
@@ -135,6 +140,49 @@ pub async fn vacuum_statuses(state: &AppState, days: Option<i64>) -> anyhow::Res
         )
         .await;
         deleted += result.rows_affected();
+    }
+    Ok(deleted)
+}
+
+/// `Vacuum::AccessTokensVacuum`: the expired and the revoked access tokens,
+/// then grants, deleted in batches, with no callbacks (`delete_all`): what
+/// hangs off a token goes by its foreign keys.
+pub async fn vacuum_access_tokens(db: &sqlx::PgPool) -> anyhow::Result<u64> {
+    // `expired`: `created_at + MAKE_INTERVAL(secs => expires_in) < NOW()`;
+    // `revoked`: `revoked_at` set and passed.
+    let statements = [
+        r#"DELETE FROM oauth_access_tokens WHERE id IN (
+             SELECT id FROM oauth_access_tokens
+             WHERE expires_in IS NOT NULL
+               AND created_at + make_interval(secs => expires_in) < now() AT TIME ZONE 'UTC'
+             ORDER BY id LIMIT $1)"#,
+        r#"DELETE FROM oauth_access_tokens WHERE id IN (
+             SELECT id FROM oauth_access_tokens
+             WHERE revoked_at IS NOT NULL AND revoked_at < now() AT TIME ZONE 'UTC'
+             ORDER BY id LIMIT $1)"#,
+        r#"DELETE FROM oauth_access_grants WHERE id IN (
+             SELECT id FROM oauth_access_grants
+             WHERE expires_in IS NOT NULL
+               AND created_at + make_interval(secs => expires_in) < now() AT TIME ZONE 'UTC'
+             ORDER BY id LIMIT $1)"#,
+        r#"DELETE FROM oauth_access_grants WHERE id IN (
+             SELECT id FROM oauth_access_grants
+             WHERE revoked_at IS NOT NULL AND revoked_at < now() AT TIME ZONE 'UTC'
+             ORDER BY id LIMIT $1)"#,
+    ];
+    let mut deleted = 0;
+    for sql in statements {
+        loop {
+            let n = sqlx::query(sql)
+                .bind(BATCH)
+                .execute(db)
+                .await?
+                .rows_affected();
+            deleted += n;
+            if n == 0 {
+                break;
+            }
+        }
     }
     Ok(deleted)
 }

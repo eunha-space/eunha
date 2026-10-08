@@ -63,6 +63,17 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             crate::portability::run_vacuum(state.clone()),
         ),
         until_stopped(&state, "vacuum", crate::vacuum::run(state.clone())),
+        until_stopped(&state, "IP cleanup", crate::ip_cleanup::run(state.clone())),
+        until_stopped(
+            &state,
+            "account statuses cleanup",
+            crate::statuses_cleanup::run(state.clone()),
+        ),
+        until_stopped(
+            &state,
+            "collection item cleanup",
+            crate::collection_item_cleanup::run(state.clone()),
+        ),
         until_stopped(
             &state,
             "announcement schedule",

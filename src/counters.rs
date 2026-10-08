@@ -52,10 +52,20 @@ pub async fn on_follow_created(db: &PgPool, follower: i64, target: i64) -> sqlx:
     Ok(())
 }
 
-/// Reverse a removed follow edge: decrement the target's `followers_count` and
-/// the follower's `following_count`, floored at 0. Call only when a `follows`
-/// row was actually deleted, so idempotent unfollows don't over-decrement.
+/// `Follow`'s `after_destroy` callbacks, which every path that deletes a
+/// `follows` row runs: `remove_endorsements`, the follower's endorsement of
+/// the target deleted, then `decrement_cache_counters`, the target's
+/// `followers_count` and the follower's `following_count` decremented,
+/// floored at 0. Call only when a `follows` row was actually deleted, so
+/// idempotent unfollows don't over-decrement.
 pub async fn on_follow_removed(db: &PgPool, follower: i64, target: i64) -> sqlx::Result<()> {
+    sqlx::query!(
+        "DELETE FROM account_pins WHERE account_id = $1 AND target_account_id = $2",
+        follower,
+        target,
+    )
+    .execute(db)
+    .await?;
     sqlx::query!(
         "UPDATE account_stats SET followers_count = GREATEST(followers_count - 1, 0), updated_at = now()
          WHERE account_id = $1",

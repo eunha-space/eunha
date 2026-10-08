@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM collection_items\n           WHERE state IN ($1, $2)\n             AND updated_at < now() AT TIME ZONE 'UTC' - make_interval(hours => $3)\n           RETURNING collection_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "collection_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f742b553fec6f435d5c4ec9d3082f4ba170ba0929d0b81c80fa9e4fbdb062a4c"
+}

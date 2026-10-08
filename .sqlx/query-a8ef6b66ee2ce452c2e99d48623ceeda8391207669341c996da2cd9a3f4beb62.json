@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, enabled, min_status_age, keep_direct, keep_pinned,\n                  keep_polls, keep_media, keep_self_fav, keep_self_bookmark, min_favs,\n                  min_reblogs\n           FROM account_statuses_cleanup_policies\n           WHERE enabled AND id > $1\n             AND CASE\n                   WHEN $2::bigint IS NOT NULL THEN id >= $2\n                   WHEN $3::bigint IS NOT NULL THEN id <= $3 OR id = ANY($4)\n                   ELSE id = ANY($4)\n                 END\n           ORDER BY id ASC LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "min_status_age",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "keep_direct",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "keep_pinned",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "keep_polls",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "keep_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "keep_self_fav",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "keep_self_bookmark",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "min_favs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "min_reblogs",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a8ef6b66ee2ce452c2e99d48623ceeda8391207669341c996da2cd9a3f4beb62"
+}

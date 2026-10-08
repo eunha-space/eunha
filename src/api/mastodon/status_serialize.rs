@@ -249,8 +249,7 @@ pub async fn batch_quote_data(
                       EXISTS (SELECT 1 FROM blocks WHERE account_id = $2 AND target_account_id = a.id) AS "blocked!",
                       EXISTS (SELECT 1 FROM account_domain_blocks
                               WHERE account_id = $2 AND domain = a.domain) AS "domain_blocked!",
-                      EXISTS (SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id
-                                AND (expires_at IS NULL OR expires_at > now())) AS "muted!",
+                      EXISTS (SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id) AS "muted!",
                       EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = a.id) AS "following!"
                FROM accounts a WHERE a.id = ANY($1::bigint[])"#,
             &author_ids,

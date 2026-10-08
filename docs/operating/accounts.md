@@ -436,6 +436,20 @@ and every list (`MuteWorker`); blocking it, or muting its notifications too,
 does that and also deletes its notifications, notification requests and the
 conversations it is in (`BlockWorker`).
 
+A mute for a while is lifted when it expires by the `DeleteMuteWorker` queued
+with it, which unmutes as above. Until that job has run the mute stands:
+nothing that reads mutes looks at `expires_at`, as nothing in Mastodon does.
+Re-muting queues a job for the new expiry, and the old one finds the mute
+unexpired and leaves it. Timed mutes that came without their job (a database
+from before eunha queued them, or one imported from Mastodon, whose jobs stayed
+in its Sidekiq) are given one by migration 030 and by `eunha import-mastodon`.
+
+Unfollowing a hashtag takes its posts out of the home feed (`TagUnmergeWorker`),
+except those that are the member's own, from accounts they follow, or tagged
+with another hashtag they still follow. Unfollowing an account, however it
+happens, also removes the member's endorsement of it, as Mastodon's `Follow`
+does when it is destroyed.
+
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:
 
@@ -471,6 +485,31 @@ Mastodon's signed GlobalID of the user, good for a month, and one Mastodon
 mailed works. Without it, the token names the user signed with a key derived
 from the instance's VAPID key; it does not expire, it is still read once the
 secret is configured, and a link Mastodon mailed is not recognised.
+
+
+Automated post deletion
+-----------------------
+
+A member can have their old posts deleted automatically, by a row in
+`account_statuses_cleanup_policies`: posts older than `min_status_age`
+seconds go, except those the policy keeps — by default direct posts, pinned
+posts and posts the member favourited or bookmarked themselves, and as chosen
+polls, posts with media, and posts with at least `min_favs` favourites or
+`min_reblogs` boosts. Mastodon edits the policy on its web settings page
+(`/statuses_cleanup`), not through its REST API, and eunha's web client has no
+page for it yet; a policy saved by Mastodon on the same database is carried
+out all the same.
+
+Every minute, Mastodon's `AccountsStatusesCleanupScheduler` deletes up to five
+posts per job thread (`[workers] job_workers × job_concurrency`), at most 300,
+and at most five of one member's at a time, going round the members from where
+it stopped last time and then back to those who still had posts to delete. It
+skips its turn while the `default` job queue is more than five seconds behind,
+deliveries ten seconds, or the `pull` queue five minutes. Each member's
+progress is remembered in Redis for two weeks (`account_cleanup:<id>`), so
+posts already looked at and kept are not looked at again; taking back a
+favourite, bookmark or pin that kept a post makes it a candidate again. Each
+post is deleted as its author deleting it would, and other servers are told.
 
 
 Time zones

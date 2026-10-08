@@ -461,8 +461,7 @@ pub async fn create_and_push(
     // recipient and a favourite of their post among them.
     let notifications_hidden = sqlx::query_scalar!(
         r#"SELECT 1 FROM mutes
-           WHERE account_id = $1 AND target_account_id = $2 AND hide_notifications = true
-             AND (expires_at IS NULL OR expires_at > now())"#,
+           WHERE account_id = $1 AND target_account_id = $2 AND hide_notifications = true"#,
         recipient_id,
         from_account_id,
     )
@@ -499,7 +498,6 @@ pub async fn create_and_push(
                            SELECT 1 FROM mutes mu
                            WHERE mu.account_id = $1 AND mu.target_account_id = involved.account_id
                              AND mu.hide_notifications
-                             AND (mu.expires_at IS NULL OR mu.expires_at > now())
                          ))
                      )"#,
                 recipient_id,

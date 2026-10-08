@@ -613,8 +613,7 @@ pub async fn statuses(
              AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.account_id = $2 AND b.target_account_id = s.account_id) \
              AND NOT (a.domain IS NOT NULL AND EXISTS ( \
                SELECT 1 FROM account_domain_blocks d WHERE d.account_id = $2 AND d.domain = a.domain)) \
-             AND NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.account_id = $2 AND mu.target_account_id = s.account_id \
-               AND (mu.expires_at IS NULL OR mu.expires_at > now())) \
+             AND NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.account_id = $2 AND mu.target_account_id = s.account_id) \
              AND NOT (a.silenced_at IS NOT NULL AND NOT EXISTS ( \
                SELECT 1 FROM follows f WHERE f.account_id = $2 AND f.target_account_id = s.account_id)) \
            ))",

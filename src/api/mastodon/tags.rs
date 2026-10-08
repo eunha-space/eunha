@@ -255,6 +255,16 @@ pub async fn unfollow_tag(
     )
     .execute(&state.db)
     .await?;
+    // `TagUnmergeWorker.perform_async(@tag.id, current_account.id)`.
+    let job = TagUnmergeWorker {
+        from_tag_id: tag.id,
+        into_account_id: auth.account_id,
+    };
+    if crate::feed::sync_fanout() {
+        job.unmerge(&state).await?;
+    } else {
+        crate::jobs::push(&state, job).await;
+    }
 
     let history = fetch_tag_history(&state, tag.id).await;
 
@@ -275,4 +285,48 @@ pub async fn unfollow_tag(
         following: Some(false),
         featuring: Some(featuring),
     }))
+}
+
+/// `TagUnmergeWorker`, in the `pull` queue: the posts of a hashtag just
+/// unfollowed out of the home feed (`FeedManager#unmerge_tag_from_home`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TagUnmergeWorker {
+    pub from_tag_id: i64,
+    pub into_account_id: i64,
+}
+
+impl TagUnmergeWorker {
+    async fn unmerge(&self, state: &AppState) -> anyhow::Result<()> {
+        // `rescue ActiveRecord::RecordNotFound`: a tag or account gone since.
+        let found = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM tags WHERE id = $1)
+                  AND EXISTS (SELECT 1 FROM accounts WHERE id = $2) AS "found!""#,
+            self.from_tag_id,
+            self.into_account_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if found {
+            let mut redis = state.redis.clone();
+            crate::feed::unmerge_tag_from_home(
+                &mut redis,
+                &state.redis_keys,
+                &state.db,
+                self.from_tag_id,
+                self.into_account_id,
+            )
+            .await;
+        }
+        Ok(())
+    }
+}
+
+impl crate::jobs::Job for TagUnmergeWorker {
+    const KIND: &'static str = "TagUnmergeWorker";
+    const OPTIONS: crate::jobs::Options =
+        crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Pull);
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        self.unmerge(state).await
+    }
 }

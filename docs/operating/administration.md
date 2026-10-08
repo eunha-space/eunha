@@ -181,6 +181,8 @@ everything.
  -  The home and list feeds of members who have not signed in for a week are
     removed from Redis, and rebuilt when they return (see
     [accounts](./accounts.md#the-home-feed-while-away)).
+ -  Access tokens and authorization grants that have expired or been revoked
+    are deleted (`Vacuum::AccessTokensVacuum`).
 
 Eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon.
@@ -207,6 +209,32 @@ Deleting a post through the API keeps its media for delete-and-redraft: the
 attachments are left unattached, for the new post to take, and the daily
 vacuum deletes them if nothing does. `delete_media=true` deletes them, and
 their files, with the post. A kept post keeps its media.
+
+### Addresses
+
+Once a day each instance runs Mastodon's `IpCleanupScheduler`, which keeps
+what is known of people's addresses for a year:
+
+ -  web sessions not used for a year are signed out, their access tokens and
+    web push subscriptions with them, and their streams closed;
+ -  a session's address, a user's sign-up address (once they have not signed
+    in for a year) and the address an access token was last used from are
+    cleared a year on;
+ -  sign-in attempts older than a year are deleted;
+ -  IP blocks whose expiry has passed are deleted.
+
+Mastodon reads the year from `IP_RETENTION_PERIOD` and
+`SESSION_RETENTION_PERIOD`; eunha keeps the default year and has no setting for
+either.
+
+### Other clean-ups
+
+ -  Every hour, collection items that were rejected or revoked more than a day
+    ago are deleted (`CollectionItemCleanupScheduler`), and their collections'
+    item counts recounted.
+ -  Every minute, the posts that members' automated deletion policies say
+    should go are deleted; see
+    [accounts](./accounts.md#automated-post-deletion).
 
 
 Server rules

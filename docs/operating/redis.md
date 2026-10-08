@@ -35,7 +35,9 @@ new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
 `discovery_per_request:*`) and how many posts one chain of fetches may
 (`status_discovery_per_request:*`), whether a domain's accounts have feature
-approval policies (`feature_approval_policy_availability:*`), the circuit
+approval policies (`feature_approval_policy_availability:*`), how far each
+account's automated post deletion has got (`account_cleanup:<id>`) and where
+its scheduler stopped (`account_statuses_cleanup_scheduler:*`), the circuit
 breakers on deliveries
 (`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the
 `subscribed:<channel>` keys that say a stream listens on one — uses that

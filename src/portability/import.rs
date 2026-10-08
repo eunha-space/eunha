@@ -1224,6 +1224,15 @@ async fn bulk_import_service(
                             )
                             .execute(&state.db)
                             .await?;
+                            if let Some(status_id) = bookmark.status_id {
+                                crate::statuses_cleanup::invalidate_cleanup_info(
+                                    state,
+                                    account.id,
+                                    status_id,
+                                    crate::statuses_cleanup::Undone::Unbookmark,
+                                )
+                                .await;
+                            }
                         }
                     }
                 }

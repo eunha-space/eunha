@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT extract(epoch FROM now() - min(run_at))::float8 FROM eunha.jobs\n               WHERE queue = $1 AND dead_at IS NULL AND locked_at IS NULL AND run_at <= now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extract",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3f3a9816731e47284a9aafddf9ce6a2dc63b32fb6cd65a34828f5228863d65d0"
+}

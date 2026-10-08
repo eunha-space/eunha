@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE collections c SET item_count =\n             (SELECT count(*) FROM collection_items i\n              WHERE i.collection_id = c.id AND i.state IN (0, 1))\n           WHERE c.id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "def2d6c6d3786a5e7ace586abff0aa806cb4e3a65ae9bc90367eb86072e9fb0a"
+}

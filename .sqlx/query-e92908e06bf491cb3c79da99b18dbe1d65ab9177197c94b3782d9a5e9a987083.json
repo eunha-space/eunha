@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, account_id, enabled, min_status_age, keep_direct, keep_pinned,\n                  keep_polls, keep_media, keep_self_fav, keep_self_bookmark, min_favs,\n                  min_reblogs\n           FROM account_statuses_cleanup_policies WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "min_status_age",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "keep_direct",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "keep_pinned",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "keep_polls",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "keep_media",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "keep_self_fav",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "keep_self_bookmark",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "min_favs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "min_reblogs",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "e92908e06bf491cb3c79da99b18dbe1d65ab9177197c94b3782d9a5e9a987083"
+}

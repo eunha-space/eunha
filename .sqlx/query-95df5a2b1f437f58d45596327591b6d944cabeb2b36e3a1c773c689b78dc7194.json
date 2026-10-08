@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM statuses s\n           JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $1\n           WHERE s.id = ANY($2::bigint[]) AND s.deleted_at IS NULL\n             AND s.account_id <> $3\n             AND s.account_id NOT IN (SELECT target_account_id FROM follows WHERE account_id = $3)\n             AND NOT EXISTS (\n               SELECT 1 FROM statuses_tags forbidden\n               WHERE forbidden.status_id = s.id\n                 AND forbidden.tag_id IN (SELECT tag_id FROM tag_follows WHERE account_id = $3)\n             )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "95df5a2b1f437f58d45596327591b6d944cabeb2b36e3a1c773c689b78dc7194"
+}

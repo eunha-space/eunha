@@ -11,6 +11,7 @@ mod health;
 mod invite_grants;
 mod invite_tree;
 mod jobs;
+mod maintenance;
 mod mute_reach;
 mod notification_rules;
 mod oembed;

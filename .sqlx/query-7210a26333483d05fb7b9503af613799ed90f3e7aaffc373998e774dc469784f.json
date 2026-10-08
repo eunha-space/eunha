@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.jobs (queue, kind, args, run_at, max_retries, keep_dead)\n           SELECT 'default', 'DeleteMuteWorker', jsonb_build_object('mute_id', m.id),\n                  m.expires_at AT TIME ZONE 'UTC', 25, true\n           FROM mutes m\n           WHERE m.expires_at IS NOT NULL\n             AND NOT EXISTS (\n               SELECT 1 FROM eunha.jobs j\n               WHERE j.kind = 'DeleteMuteWorker' AND j.dead_at IS NULL\n                 AND j.args = jsonb_build_object('mute_id', m.id)\n             )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7210a26333483d05fb7b9503af613799ed90f3e7aaffc373998e774dc469784f"
+}

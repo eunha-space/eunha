@@ -191,7 +191,6 @@ pub async fn public_timeline(
                  AND ($6::bigint IS NULL OR NOT EXISTS (
                      SELECT 1 FROM mutes mu
                      WHERE mu.account_id = $6 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
                  ))
                ORDER BY s.id ASC
                LIMIT $3"#,
@@ -241,7 +240,6 @@ pub async fn public_timeline(
                  AND ($7::bigint IS NULL OR NOT EXISTS (
                      SELECT 1 FROM mutes mu
                      WHERE mu.account_id = $7 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
                  ))
                ORDER BY s.id DESC
                LIMIT $3"#,
@@ -476,7 +474,6 @@ pub async fn tag_timeline(
                  AND ($9::bigint IS NULL OR NOT EXISTS (
                      SELECT 1 FROM mutes mu
                      WHERE mu.account_id = $9 AND mu.target_account_id = s.account_id
-                       AND (mu.expires_at IS NULL OR mu.expires_at > now())
                  ))"#;
 
     let viewer_id: Option<i64> = auth.as_ref().map(|Extension(a)| a.account_id);
@@ -947,7 +944,6 @@ pub async fn link_timeline(
              AND ($8::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM mutes mu
                  WHERE mu.account_id = $8 AND mu.target_account_id = s.account_id
-                   AND (mu.expires_at IS NULL OR mu.expires_at > now())
              ))
              AND ($8::bigint IS NULL OR $6 OR a.domain IS NULL OR NOT EXISTS (
                  SELECT 1 FROM account_domain_blocks udb

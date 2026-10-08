@@ -56,19 +56,23 @@ pub async fn mute(
     if account_id == target_id {
         return Ok(());
     }
+    // `mute.expires_in = duration.zero? ? nil : duration`: any duration but
+    // nought expires, a negative one at once.
     let expires_at: Option<chrono::NaiveDateTime> = Some(duration)
-        .filter(|&d| d > 0)
+        .filter(|&d| d != 0)
         .map(|d| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(d));
 
-    sqlx::query!(
+    let mute_id = sqlx::query_scalar!(
         r#"INSERT INTO mutes (account_id, target_account_id, hide_notifications, expires_at, created_at, updated_at)
            VALUES ($1, $2, $3, $4, now(), now())
            ON CONFLICT (account_id, target_account_id)
            DO UPDATE SET hide_notifications = EXCLUDED.hide_notifications,
-                         expires_at = EXCLUDED.expires_at"#,
+                         expires_at = EXCLUDED.expires_at,
+                         updated_at = now()
+           RETURNING id"#,
         account_id, target_id, hide_notifications, expires_at,
     )
-    .execute(&state.db)
+    .fetch_one(&state.db)
     .await?;
     // `BlockWorker` when the notifications are muted too, `MuteWorker`
     // otherwise.
@@ -77,7 +81,40 @@ pub async fn mute(
     } else {
         queue_mute_worker(state, account_id, target_id).await;
     }
+    // `DeleteMuteWorker.perform_at(duration.seconds, mute.id) if duration != 0`.
+    if duration != 0 {
+        let delay = std::time::Duration::from_secs(duration.max(0).unsigned_abs());
+        crate::jobs::push_in(state, delay, DeleteMuteWorker { mute_id }).await;
+    }
     Ok(())
+}
+
+/// `DeleteMuteWorker`, queued for when a timed mute expires: the mute is
+/// lifted by [`unmute`] if it has expired by then. A mute renewed in the
+/// meantime is left to the job its renewal queued.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeleteMuteWorker {
+    pub mute_id: i64,
+}
+
+impl crate::jobs::Job for DeleteMuteWorker {
+    const KIND: &'static str = "DeleteMuteWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `mute&.expired?`.
+        let expired = sqlx::query!(
+            r#"SELECT account_id, target_account_id FROM mutes
+               WHERE id = $1 AND expires_at IS NOT NULL AND expires_at < now()"#,
+            self.mute_id,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if let Some(mute) = expired {
+            unmute(state, mute.account_id, mute.target_account_id).await?;
+        }
+        Ok(())
+    }
 }
 
 // ── POST /api/v1/accounts/:id/unmute ──────────────────────────────────────
@@ -92,6 +129,28 @@ pub async fn unmute_account(
     build_relationship(&state, auth.account_id, target_id)
         .await
         .map(Json)
+}
+
+/// A [`DeleteMuteWorker`] for every timed mute that has none, due when it
+/// expires: for mutes that arrived without the jobs Mastodon's Sidekiq held
+/// for them, as an imported instance's do. Migration 030 did the same for the
+/// mutes already there. Returns how many were queued.
+pub async fn queue_expiries(db: &sqlx::PgPool) -> sqlx::Result<u64> {
+    let queued = sqlx::query!(
+        r#"INSERT INTO eunha.jobs (queue, kind, args, run_at, max_retries, keep_dead)
+           SELECT 'default', 'DeleteMuteWorker', jsonb_build_object('mute_id', m.id),
+                  m.expires_at AT TIME ZONE 'UTC', 25, true
+           FROM mutes m
+           WHERE m.expires_at IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM eunha.jobs j
+               WHERE j.kind = 'DeleteMuteWorker' AND j.dead_at IS NULL
+                 AND j.args = jsonb_build_object('mute_id', m.id)
+             )"#,
+    )
+    .execute(db)
+    .await?;
+    Ok(queued.rows_affected())
 }
 
 /// Mastodon's `UnmuteService`.
@@ -507,7 +566,6 @@ pub async fn get_mutes(
         r#"SELECT m.id AS mute_id, m.target_account_id, m.expires_at FROM mutes m
            JOIN accounts a ON a.id = m.target_account_id AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
            WHERE m.account_id = $1
-             AND (m.expires_at IS NULL OR m.expires_at > now())
              AND ($2::bigint IS NULL OR m.id < $2)
              AND ($3::bigint IS NULL OR m.id > $3)
              AND ($5::bigint IS NULL OR m.id > $5)

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ip_blocks\n           WHERE expires_at IS NOT NULL AND expires_at < now() AT TIME ZONE 'UTC'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "390d528e04fa90188c191c284fe8e8f4a678e0fe7543eb14e34e2c5dc8efbd60"
+}

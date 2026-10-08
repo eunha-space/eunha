@@ -219,7 +219,6 @@ pub(crate) async fn statuses_query(
              AND ($3::bigint IS NULL OR NOT EXISTS (
                  SELECT 1 FROM mutes mu
                  WHERE mu.account_id = $3 AND mu.target_account_id = s.account_id
-                   AND (mu.expires_at IS NULL OR mu.expires_at > now())
              ))
              -- `not_domain_blocked_by_account`
              AND ($3::bigint IS NULL OR a.domain IS NULL OR NOT EXISTS (

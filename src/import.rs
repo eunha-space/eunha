@@ -217,6 +217,10 @@ pub async fn run(db: &PgPool, database_url: &str, import: &Import) -> Result<Rep
     }
     verify_domain(db, &import.domain).await?;
 
+    // The `DeleteMuteWorker`s of its timed mutes stayed in the source's
+    // Sidekiq.
+    crate::api::mastodon::accounts::queue_mute_expiries(db).await?;
+
     Ok(Report {
         domain: import.domain.clone(),
         renamed_from: import.rename_from.clone(),

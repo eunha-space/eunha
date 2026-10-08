@@ -26,8 +26,9 @@ mod search;
 pub use search::search_accounts;
 mod mutes_blocks;
 pub use mutes_blocks::{
-    block, block_account, get_blocks, get_mutes, mute, mute_account, unblock, unblock_account,
-    unmute, unmute_account, BlockWorker, MuteWorker,
+    block, block_account, get_blocks, get_mutes, mute, mute_account,
+    queue_expiries as queue_mute_expiries, unblock, unblock_account, unmute, unmute_account,
+    BlockWorker, DeleteMuteWorker, MuteWorker,
 };
 mod follow_requests;
 pub use follow_requests::{
@@ -965,7 +966,7 @@ async fn batch_build_relationships(
     .collect();
 
     let mutes = sqlx::query!(
-        "SELECT target_account_id, hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = ANY($2::bigint[]) AND (expires_at IS NULL OR expires_at > now())",
+        "SELECT target_account_id, hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = ANY($2::bigint[])",
         source_id, target_ids,
     )
     .fetch_all(&state.db)
@@ -1117,7 +1118,7 @@ pub(super) async fn build_relationship(
     .is_some();
 
     let muting = sqlx::query!(
-        "SELECT hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = $2 AND (expires_at IS NULL OR expires_at > now())",
+        "SELECT hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = $2",
         source_id, target_id
     )
     .fetch_optional(&state.db)

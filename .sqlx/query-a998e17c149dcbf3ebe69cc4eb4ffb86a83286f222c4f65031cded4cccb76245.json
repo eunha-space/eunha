@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id AS mute_id, m.target_account_id, m.expires_at FROM mutes m\n           JOIN accounts a ON a.id = m.target_account_id AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n           WHERE m.account_id = $1\n             AND ($2::bigint IS NULL OR m.id < $2)\n             AND ($3::bigint IS NULL OR m.id > $3)\n             AND ($5::bigint IS NULL OR m.id > $5)\n           ORDER BY m.id DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mute_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "target_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a998e17c149dcbf3ebe69cc4eb4ffb86a83286f222c4f65031cded4cccb76245"
+}

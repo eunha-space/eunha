@@ -638,13 +638,22 @@ pub async fn unfavourite_status(
     let (s, account) = fetch_status_with_account(&state, id).await?;
     check_status_visible(&state, &s, auth.account_id).await?;
 
-    sqlx::query!(
+    let unfavourited = sqlx::query!(
         "DELETE FROM favourites WHERE account_id = $1 AND status_id = $2",
         auth.account_id,
         id
     )
     .execute(&state.db)
     .await?;
+    if unfavourited.rows_affected() > 0 {
+        crate::statuses_cleanup::invalidate_cleanup_info(
+            &state,
+            auth.account_id,
+            id,
+            crate::statuses_cleanup::Undone::Unfav,
+        )
+        .await;
+    }
     crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     sqlx::query!(
@@ -1016,13 +1025,22 @@ pub async fn unbookmark_status(
     let (s, _) = fetch_status_with_account(&state, id).await?;
     check_status_visible(&state, &s, auth.account_id).await?;
 
-    sqlx::query!(
+    let unbookmarked = sqlx::query!(
         "DELETE FROM bookmarks WHERE account_id = $1 AND status_id = $2",
         auth.account_id,
         id
     )
     .execute(&state.db)
     .await?;
+    if unbookmarked.rows_affected() > 0 {
+        crate::statuses_cleanup::invalidate_cleanup_info(
+            &state,
+            auth.account_id,
+            id,
+            crate::statuses_cleanup::Undone::Unbookmark,
+        )
+        .await;
+    }
     crate::search::elasticsearch::indexing::status_interaction(&state, id).await;
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
@@ -1139,6 +1157,13 @@ pub async fn unpin_status(
     .execute(&state.db)
     .await?;
     if deleted.rows_affected() > 0 {
+        crate::statuses_cleanup::invalidate_cleanup_info(
+            &state,
+            auth.account_id,
+            id,
+            crate::statuses_cleanup::Undone::Unpin,
+        )
+        .await;
         federate_pin_change(&state, &account, &status, false).await;
     }
     Ok(Json(

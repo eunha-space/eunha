@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT target_account_id, hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = ANY($2::bigint[]) AND (expires_at IS NULL OR expires_at > now())",
+  "query": "SELECT target_account_id, hide_notifications, expires_at FROM mutes WHERE account_id = $1 AND target_account_id = ANY($2::bigint[])",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       true
     ]
   },
-  "hash": "75a11b5ef9ba580ef153ccc2a7659e96975c2e2d358059e97941a57367a32efd"
+  "hash": "ab9cc0701008d03a5742e270f189c082de331a67cca1dc63621ba1ee40afc040"
 }

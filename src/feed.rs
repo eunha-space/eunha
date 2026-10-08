@@ -1964,6 +1964,46 @@ async fn unmerge_account(
     unmerge(redis, db, owner_id, timeline, &ids).await;
 }
 
+/// `FeedManager#unmerge_tag_from_home`: take out of `into_account_id`'s home
+/// feed the posts it holds tagged with `tag_id`, unless they are the
+/// account's own, from an account it follows, or tagged with another hashtag
+/// it still follows.
+pub async fn unmerge_tag_from_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    tag_id: i64,
+    into_account_id: i64,
+) {
+    let timeline = Timeline::home(keys, into_account_id);
+    let members: Vec<i64> = redis
+        .zrange::<_, Vec<i64>>(&timeline.key, 0, -1)
+        .await
+        .unwrap_or_default();
+    if members.is_empty() {
+        return;
+    }
+    let ids: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT s.id FROM statuses s
+           JOIN statuses_tags st ON st.status_id = s.id AND st.tag_id = $1
+           WHERE s.id = ANY($2::bigint[]) AND s.deleted_at IS NULL
+             AND s.account_id <> $3
+             AND s.account_id NOT IN (SELECT target_account_id FROM follows WHERE account_id = $3)
+             AND NOT EXISTS (
+               SELECT 1 FROM statuses_tags forbidden
+               WHERE forbidden.status_id = s.id
+                 AND forbidden.tag_id IN (SELECT tag_id FROM tag_follows WHERE account_id = $3)
+             )"#,
+        tag_id,
+        &members,
+        into_account_id,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    unmerge(redis, db, into_account_id, &timeline, &ids).await;
+}
+
 /// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it.
 async fn unmerge(
     redis: &mut ConnectionManager,
