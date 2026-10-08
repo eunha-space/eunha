@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.target AS \"target!\", f.domain IS NULL AS \"follower_local!\", f.uri AS follower_uri,\n                  t.domain IS NULL AS \"target_local!\"\n           FROM unnest($1::bigint[], $2::bigint[]) AS p(follower, target)\n           JOIN accounts f ON f.id = p.follower\n           JOIN accounts t ON t.id = p.target",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "follower_local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "follower_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "target_local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      true,
+      null
+    ]
+  },
+  "hash": "7aa0ab88a403164c5d152186bed1f4e5761fc05c227781cc91b6d3986977278d"
+}

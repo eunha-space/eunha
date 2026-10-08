@@ -455,6 +455,11 @@ pub struct InstanceConfig {
     /// (`Scheduler::AutoCloseRegistrationsScheduler`).
     #[serde(default)]
     pub disable_automatic_switching_to_approved_registrations: bool,
+    /// Mastodon's `DISABLE_FOLLOWERS_SYNCHRONIZATION=true`: send no
+    /// `Collection-Synchronization` header with a followers-only post, and
+    /// act on none that arrives (docs/mastodon/serving.md).
+    #[serde(default)]
+    pub disable_followers_synchronization: bool,
     /// Mastodon's `SECRET_KEY_BASE`. With it, async refresh ids, the signed
     /// GlobalIDs in unsubscribe links and password reset digests are made and
     /// read exactly as that Mastodon makes them, so what it handed out keeps

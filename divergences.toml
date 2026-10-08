@@ -891,3 +891,26 @@ they hold."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.1"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "followers-digest-cache-of-its-own"
+kind = "behaviour"
+summary = "Caches followers digests in Redis entries of its own, not Rails.cache's"
+mastodon = """
+Caches `Account#remote_followers_hash` and `#local_followers_hash` in \
+`Rails.cache`, Marshal-encoded under its `cache:` namespace, for ten minutes, \
+and deletes an entry there when a follow is made or undone."""
+eunha = """
+Caches them for ten minutes at the same names, `followers_hash:<id>:<prefix>/` \
+and `followers_hash:<id>:local`, without the `cache:` namespace and holding \
+the hex digest as it is, and deletes them when a follow is made or undone. A \
+Mastodon process sharing the Redis neither reads eunha's entries nor forgets \
+them, so a follow it changes leaves eunha's digest stale for up to ten \
+minutes."""
+why = """
+Writing Ruby's Marshal format from Rust for a 64-character string buys nothing \
+but the sharing, and a stale digest only costs a synchronization that finds \
+nothing to change or one put off until the next followers-only post."""
+evidence = "tests/followers_synchronization.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

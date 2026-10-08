@@ -46,7 +46,8 @@ The recorded decisions cover:
  -  the auxiliary service provider admin API;
  -  remote media linked rather than downloaded, which the operator chose;
  -  the web push title of a collection notification;
- -  the collection addresses eunha named before, still answered.
+ -  the collection addresses eunha named before, still answered;
+ -  the followers digests, cached in Redis entries of eunha's own.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

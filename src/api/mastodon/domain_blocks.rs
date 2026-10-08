@@ -183,7 +183,7 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[account_id, follow.target_id])
             .await;
-        crate::counters::on_follow_removed(&state.db, account_id, follow.target_id).await?;
+        crate::counters::on_follow_removed(state, account_id, follow.target_id).await?;
         crate::home_feed::unmerge_from_home_and_lists(
             state,
             follow.target_id,
@@ -234,7 +234,7 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     for f in followers {
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[f.follower_id, account_id]).await;
-        crate::counters::on_follow_removed(&state.db, f.follower_id, account_id).await?;
+        crate::counters::on_follow_removed(state, f.follower_id, account_id).await?;
         rejects.push((f.id, f.uri, f.follower_uri, f.inbox_url));
     }
     for r in requests {

@@ -167,6 +167,7 @@ async fn a_followers_only_post_asks_its_receivers_to_check_their_followers() {
     // The header the deliverer writes for that inbox.
     let header = eunha::federation::followers_synchronization::header_for(
         &ctx.db,
+        &eunha::federation::followers_synchronization::DigestCache::of(&ctx.state),
         &ctx.domain,
         alice,
         &format!("{base}/inbox"),
@@ -364,4 +365,107 @@ async fn a_feature_request_is_stamped_where_mastodon_stamps_it() {
         served["interactingObject"].as_str(),
         Some(collection.as_str())
     );
+}
+
+/// Both digests are kept as `Rails.cache` keeps them, at Mastodon's key
+/// names under the instance's prefix, until a follow of the account from
+/// that server comes or goes (`Follow#invalidate_hash_cache`).
+#[tokio::test]
+async fn the_followers_digests_are_cached_until_a_follow_changes() {
+    use eunha::federation::followers_synchronization as sync;
+
+    let ctx = TestContext::reaching_loopback("sync-cache").await;
+    let store = Remote::default();
+    let (base, rob_id, rob, _) = remote(&ctx, &store).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let cache = sync::DigestCache::of(&ctx.state);
+    let none = Digest::of(std::iter::empty::<&str>()).to_hex();
+    let inbox = format!("{base}/inbox");
+
+    let remote_hash = async || {
+        sync::remote_followers_hash(&ctx.db, &cache, alice, &inbox)
+            .await
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(remote_hash().await, none);
+    // A follow made behind the cache's back is not seen...
+    follow(&ctx, rob_id, alice).await;
+    assert_eq!(remote_hash().await, none);
+    // ...until the follow says it changed.
+    sync::follow_changed(&ctx.state, rob_id, alice).await;
+    let digest = Digest::of([rob.as_str()]).to_hex();
+    assert_eq!(remote_hash().await, digest);
+    let mut redis = ctx.state.redis.clone();
+    let kept: Option<String> = redis::cmd("GET")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key(format!("followers_hash:{alice}:{base}/")),
+        )
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(kept.as_deref(), Some(digest.as_str()));
+
+    assert_eq!(
+        sync::local_followers_hash(&ctx.state, rob_id)
+            .await
+            .unwrap(),
+        none
+    );
+    follow(&ctx, alice, rob_id).await;
+    assert_eq!(
+        sync::local_followers_hash(&ctx.state, rob_id)
+            .await
+            .unwrap(),
+        none
+    );
+    sync::follow_changed(&ctx.state, alice, rob_id).await;
+    let alice_uri = format!("https://{}/users/alice", ctx.domain);
+    assert_eq!(
+        sync::local_followers_hash(&ctx.state, rob_id)
+            .await
+            .unwrap(),
+        Digest::of([alice_uri.as_str()]).to_hex()
+    );
+}
+
+/// With `disable_followers_synchronization`, Mastodon's
+/// `DISABLE_FOLLOWERS_SYNCHRONIZATION=true`, a header that says a remote
+/// account's followers here are wrong is not acted on.
+#[tokio::test]
+async fn a_disabled_instance_ignores_the_header() {
+    let ctx = TestContext::with_config("sync-off", |config| {
+        config.allowed_private_networks = vec!["127.0.0.0/8".into()];
+        config.instance.disable_followers_synchronization = true;
+    })
+    .await;
+    let store = Remote::default();
+    let (base, rob_id, rob, _) = remote(&ctx, &store).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    follow(&ctx, alice, rob_id).await;
+    let header = CollectionSynchronization {
+        collection_id: format!("{rob}/followers"),
+        url: format!("{base}/users/rob/followers_synchronization"),
+        digest: Digest::of(std::iter::empty::<&str>()).to_hex(),
+    }
+    .to_header();
+    eunha::federation::followers_synchronization::prepare(&ctx.state, &rob, &header).await;
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::FollowersSynchronizationWorker'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(queued, 0);
+    let follows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM follows WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(alice)
+    .bind(rob_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(follows, 1);
 }

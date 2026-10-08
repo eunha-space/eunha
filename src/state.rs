@@ -169,6 +169,12 @@ impl AppState {
                 redis_keys.clone(),
             ),
             queues.clone(),
+            (!config.instance.disable_followers_synchronization).then(|| {
+                crate::federation::followers_synchronization::DigestCache::new(
+                    redis.clone(),
+                    redis_keys.clone(),
+                )
+            }),
         )?);
 
         let uris = crate::api::ap::serving::uris(&config.instance.domain)?;

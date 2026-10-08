@@ -184,5 +184,21 @@ local account it lists that does not follow it here has its follow request
 accepted, or sends the `Undo` of a follow eunha never knew of; and once the
 whole list is read and adds up to the digest, a local account it does not
 list stops following it. The header and the digest are ojak's
-(`ojak::synchronization`); Mastodon's `DISABLE_FOLLOWERS_SYNCHRONIZATION`
-has no counterpart.
+(`ojak::synchronization`).
+
+Both digests are cached for ten minutes, as Mastodon keeps them in
+`Rails.cache`, and each is forgotten as soon as a follow of the account from
+that server is made or undone (`Follow#invalidate_hash_cache`), and all of an
+account's when another account is merged into it. They are kept in the
+instance's Redis under its key prefix, at Mastodon's names,
+`followers_hash:<account id>:<scheme>://<host>/` and
+`followers_hash:<account id>:local`; Mastodon's own entries are Marshal
+dumps under its `cache:` namespace, which eunha does not write, so the two do
+not share them.
+
+Mastodon's `DISABLE_FOLLOWERS_SYNCHRONIZATION=true` is
+`disable_followers_synchronization = true` in an instance's `[instance]`
+table, since instances sharing a process share its environment: no delivery
+carries the header, and one that arrives is not acted on. Like the other
+deployment modes ([instances](../operating/instances)), the environment
+variable itself is not read.

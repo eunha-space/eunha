@@ -60,8 +60,7 @@ pub(super) async fn handle_block(state: &AppState, activity: &Value) -> AppResul
         )
         .await;
         let _ =
-            crate::counters::on_follow_removed(&state.db, row.account_id, row.target_account_id)
-                .await;
+            crate::counters::on_follow_removed(state, row.account_id, row.target_account_id).await;
     }
     sqlx::query!(
         "DELETE FROM follow_requests WHERE (account_id=$1 AND target_account_id=$2) OR (account_id=$2 AND target_account_id=$1)",

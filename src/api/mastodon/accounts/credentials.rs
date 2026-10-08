@@ -338,9 +338,8 @@ async fn do_update_credentials(
                     &[row.account_id, auth.account_id],
                 )
                 .await;
-                let _ =
-                    crate::counters::on_follow_created(&state.db, row.account_id, auth.account_id)
-                        .await;
+                let _ = crate::counters::on_follow_created(state, row.account_id, auth.account_id)
+                    .await;
                 crate::push::create_and_push(
                     state,
                     auth.account_id,

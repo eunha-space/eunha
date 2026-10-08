@@ -174,6 +174,9 @@ disallow_unauthenticated_api_access = false
 # Mastodon's DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS (see the
 # administration page).
 disable_automatic_switching_to_approved_registrations = false
+# Mastodon's DISABLE_FOLLOWERS_SYNCHRONIZATION (see followers
+# synchronization in serving ActivityPub).
+disable_followers_synchronization = false
 # Mastodon's EXPERIMENTAL_FEATURES. The one eunha knows is `fasp` (see
 # auxiliary service providers); unknown names are ignored.
 experimental_features = ["fasp"]

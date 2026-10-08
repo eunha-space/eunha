@@ -334,7 +334,7 @@ pub(super) async fn handle_follow(
                     )
                     .await;
                     if let Err(e) =
-                        crate::counters::on_follow_created(&state.db, follower_id, target.id).await
+                        crate::counters::on_follow_created(state, follower_id, target.id).await
                     {
                         tracing::error!(error = %e, "failed to count a federated follow");
                     }
@@ -624,7 +624,7 @@ async fn unfollow(state: &AppState, account_id: i64, target_id: i64) -> AppResul
         .await?;
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[account_id, target_id]).await;
-        if let Err(e) = crate::counters::on_follow_removed(&state.db, account_id, target_id).await {
+        if let Err(e) = crate::counters::on_follow_removed(state, account_id, target_id).await {
             tracing::error!(error = %e, "failed to uncount a federated unfollow");
         }
         return Ok(true);
@@ -738,9 +738,7 @@ async fn revoke_follow_request(state: &AppState, target_id: i64, uri: &str) -> A
     .await?;
     tx.commit().await?;
     crate::search::elasticsearch::indexing::accounts(state, &[follow.account_id, target_id]).await;
-    if let Err(e) =
-        crate::counters::on_follow_removed(&state.db, follow.account_id, target_id).await
-    {
+    if let Err(e) = crate::counters::on_follow_removed(state, follow.account_id, target_id).await {
         tracing::error!(error = %e, "failed to uncount a revoked follow");
     }
     Ok(())
@@ -896,8 +894,7 @@ pub(crate) async fn authorize_follow_request(state: &AppState, request_id: i64) 
 
         // Update follower/following counts
         let _ =
-            crate::counters::on_follow_created(&state.db, row.account_id, row.target_account_id)
-                .await;
+            crate::counters::on_follow_created(state, row.account_id, row.target_account_id).await;
         // `MergeWorker` into the home feed of the local account that
         // asked, which also finishes the regeneration its first
         // follow started, and into its lists that hold the account.

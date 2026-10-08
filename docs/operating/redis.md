@@ -40,7 +40,9 @@ new remote
 accounts one domain or one request may bring (`unique_subdomains_for:*`,
 `discovery_per_request:*`) and how many posts one chain of fetches may
 (`status_discovery_per_request:*`), whether a domain's accounts have feature
-approval policies (`feature_approval_policy_availability:*`), how far each
+approval policies (`feature_approval_policy_availability:*`), the cached
+digests of each account's followers on each server
+(`followers_hash:<id>:<prefix>/`, `followers_hash:<id>:local`), how far each
 account's automated post deletion has got (`account_cleanup:<id>`) and where
 its scheduler stopped (`account_statuses_cleanup_scheduler:*`), the circuit
 breakers on deliveries

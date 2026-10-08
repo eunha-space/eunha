@@ -405,7 +405,7 @@ pub async fn follow(
     // `AccountStat`'s `update_index('accounts', :account)`.
     crate::search::elasticsearch::indexing::accounts(state, &[source.id, target_id]).await;
 
-    crate::counters::on_follow_created(&state.db, source.id, target_id).await?;
+    crate::counters::on_follow_created(state, source.id, target_id).await?;
 
     push::create_and_push(
         state,
@@ -465,7 +465,7 @@ pub async fn unfollow(
     let follow_uri_opt: Option<String> = if let Some(ref d) = deleted {
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[follower_id, target_id]).await;
-        crate::counters::on_follow_removed(&state.db, follower_id, target_id).await?;
+        crate::counters::on_follow_removed(state, follower_id, target_id).await?;
         d.uri.clone()
     } else {
         // Canceling a pending request: keep its uri so the Undo(Follow)

@@ -28,9 +28,17 @@ use sqlx::PgPool;
 use crate::db::models::vis;
 
 /// Record a new follow edge: increment the target's `followers_count` and the
-/// follower's `following_count`, creating the `account_stats` row if absent.
-/// Call after the `follows` row is inserted.
-pub async fn on_follow_created(db: &PgPool, follower: i64, target: i64) -> sqlx::Result<()> {
+/// follower's `following_count`, creating the `account_stats` row if absent,
+/// and forget the target's cached followers digest
+/// (`Follow#invalidate_hash_cache`). Call after the `follows` row is
+/// inserted.
+pub async fn on_follow_created(
+    state: &crate::state::AppState,
+    follower: i64,
+    target: i64,
+) -> sqlx::Result<()> {
+    let db = &state.db;
+    crate::federation::followers_synchronization::follow_changed(state, follower, target).await;
     sqlx::query!(
         "INSERT INTO account_stats (account_id, followers_count, created_at, updated_at)
          VALUES ($1, 1, now(), now())
@@ -56,9 +64,16 @@ pub async fn on_follow_created(db: &PgPool, follower: i64, target: i64) -> sqlx:
 /// `follows` row runs: `remove_endorsements`, the follower's endorsement of
 /// the target deleted, then `decrement_cache_counters`, the target's
 /// `followers_count` and the follower's `following_count` decremented,
-/// floored at 0. Call only when a `follows` row was actually deleted, so
-/// idempotent unfollows don't over-decrement.
-pub async fn on_follow_removed(db: &PgPool, follower: i64, target: i64) -> sqlx::Result<()> {
+/// floored at 0; and the `after_commit` `invalidate_hash_cache`, the
+/// target's cached followers digest forgotten. Call only when a `follows`
+/// row was actually deleted, so idempotent unfollows don't over-decrement.
+pub async fn on_follow_removed(
+    state: &crate::state::AppState,
+    follower: i64,
+    target: i64,
+) -> sqlx::Result<()> {
+    let db = &state.db;
+    crate::federation::followers_synchronization::follow_changed(state, follower, target).await;
     sqlx::query!(
         "DELETE FROM account_pins WHERE account_id = $1 AND target_account_id = $2",
         follower,

@@ -1106,6 +1106,12 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
         }
     }
 
+    // Its follows, both ways, are destroyed one by one in Mastodon, each
+    // forgetting a cached followers digest (`Follow#invalidate_hash_cache`).
+    let follows =
+        crate::federation::followers_synchronization::follows_involving(state, account_id).await;
+    crate::federation::followers_synchronization::follows_changed(state, &follows).await;
+
     // `collections`, destroyed one by one (it is not among
     // ASSOCIATIONS_WITHOUT_SIDE_EFFECTS): each takes its notifications
     // (`dependent: :destroy`), and its items and reports go by their foreign

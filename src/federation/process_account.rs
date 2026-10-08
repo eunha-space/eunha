@@ -1535,7 +1535,7 @@ async fn refollow(state: &AppState, account_id: i64) -> Result<()> {
         sqlx::query!("DELETE FROM follows WHERE id = $1", row.id)
             .execute(&state.db)
             .await?;
-        crate::counters::on_follow_removed(&state.db, row.account_id, account_id).await?;
+        crate::counters::on_follow_removed(state, row.account_id, account_id).await?;
         let Some(follower) = find_by_id(state, row.account_id).await? else {
             continue;
         };
@@ -1690,6 +1690,8 @@ async fn merge_with(state: &AppState, account_id: i64, duplicate: i64) -> Result
     sqlx::query!("DELETE FROM accounts WHERE id = $1", duplicate)
         .execute(&state.db)
         .await?;
+    // Some follow relationships have moved, so the cache is stale.
+    crate::federation::followers_synchronization::forget_all(state, account_id).await;
     Ok(())
 }
 

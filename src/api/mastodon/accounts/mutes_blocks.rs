@@ -229,8 +229,7 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
         )
         .await;
         let _ =
-            crate::counters::on_follow_removed(&state.db, row.account_id, row.target_account_id)
-                .await;
+            crate::counters::on_follow_removed(state, row.account_id, row.target_account_id).await;
     }
     // Also delete any pending follow requests in both directions, keeping uris.
     let deleted_requests = sqlx::query!(

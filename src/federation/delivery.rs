@@ -166,6 +166,7 @@ pub type Deliverer = ojak::deliverer::Deliverer<
 /// # Errors
 ///
 /// When the HTTP client cannot be built.
+#[allow(clippy::too_many_arguments)]
 pub fn deliverer(
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
@@ -174,6 +175,7 @@ pub fn deliverer(
     tracker: DeliveryFailureTracker,
     breakers: RedisBreakers,
     queues: Arc<crate::background::QueueWakes>,
+    synchronization: Option<crate::federation::followers_synchronization::DigestCache>,
 ) -> anyhow::Result<Deliverer> {
     let queue = ojak_postgres::PostgresQueue::with_table(db.clone(), QUEUE_TABLE)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -235,10 +237,13 @@ pub fn deliverer(
     })
     // `ActivityPub::DeliveryWorker#synchronization_header`, written when the
     // delivery is made, for the account its key names on the instance whose
-    // domain the key is on.
+    // domain the key is on; none with `synchronization` off
+    // (`DISABLE_FOLLOWERS_SYNCHRONIZATION`).
     .collection_synchronization(move |key_id: String, inbox: url::Url| {
         let db = synchronization_db.clone();
+        let cache = synchronization.clone();
         async move {
+            let cache = cache?;
             let domain = url::Url::parse(&key_id)
                 .ok()?
                 .host_str()
@@ -246,6 +251,7 @@ pub fn deliverer(
             let account_id = signing_account_id_in(&db, &key_id).await.ok()?;
             crate::federation::followers_synchronization::header_for(
                 &db,
+                &cache,
                 &domain,
                 account_id,
                 inbox.as_str(),

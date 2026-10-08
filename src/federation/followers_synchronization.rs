@@ -12,12 +12,201 @@
 //! (`ActivityPub::FollowersSynchronizationWorker`,
 //! `ActivityPub::SynchronizeFollowersService`). The digest and the header
 //! are ojak's (`ojak::synchronization`).
+//!
+//! Both digests are cached as `Rails.cache` keeps them, for ten minutes and
+//! until a follow of the account from that server comes or goes
+//! (`Follow#invalidate_hash_cache`), in Redis under the instance's key
+//! prefix. Mastodon's entries are Marshal-encoded under its `cache:`
+//! namespace, so eunha keeps its own, the hex digest as it is, at the same
+//! name without the namespace: `followers_hash:<id>:<prefix>/` and
+//! `followers_hash:<id>:local`.
+//!
+//! An instance with `disable_followers_synchronization` set, Mastodon's
+//! `DISABLE_FOLLOWERS_SYNCHRONIZATION=true`, neither sends the header nor
+//! acts on one it receives.
 
 use ojak::synchronization::{CollectionSynchronization, Digest};
 use serde_json::{json, Value};
 
 use crate::error::AppResult;
+use crate::redis_keys::RedisKeyspace;
 use crate::state::AppState;
+
+/// How long a digest is kept: the `expires_in: 10.minutes` of Mastodon's
+/// cache store.
+const CACHE_EXPIRES_IN_SECS: u64 = 10 * 60;
+
+/// The `Rails.cache` the digests are kept in: the instance's Redis, under
+/// its key prefix.
+#[derive(Clone)]
+pub struct DigestCache {
+    redis: redis::aio::ConnectionManager,
+    keys: RedisKeyspace,
+}
+
+impl DigestCache {
+    #[must_use]
+    pub fn new(redis: redis::aio::ConnectionManager, keys: RedisKeyspace) -> Self {
+        Self { redis, keys }
+    }
+
+    /// The instance's cache.
+    #[must_use]
+    pub fn of(state: &AppState) -> Self {
+        Self::new(state.redis.clone(), state.redis_keys.clone())
+    }
+
+    /// `Rails.cache.fetch(key) { compute }`: what is kept under `key`, or
+    /// else `compute`'s answer, kept for ten minutes. Redis failing to
+    /// answer is a miss, and a digest it fails to keep is still returned.
+    async fn fetch<F>(&self, key: &str, compute: F) -> sqlx::Result<String>
+    where
+        F: std::future::Future<Output = sqlx::Result<String>>,
+    {
+        let key = self.keys.key(key);
+        let mut redis = self.redis.clone();
+        let hit: Option<String> = redis::cmd("GET")
+            .arg(&key)
+            .query_async(&mut redis)
+            .await
+            .ok()
+            .flatten();
+        if let Some(hit) = hit {
+            return Ok(hit);
+        }
+        let digest = compute.await?;
+        let kept: redis::RedisResult<()> = redis::cmd("SET")
+            .arg(&key)
+            .arg(&digest)
+            .arg("EX")
+            .arg(CACHE_EXPIRES_IN_SECS)
+            .query_async(&mut redis)
+            .await;
+        if let Err(error) = kept {
+            tracing::debug!(%error, "followers digest not cached");
+        }
+        Ok(digest)
+    }
+
+    /// `Rails.cache.delete` of each of `keys`.
+    async fn delete(&self, keys: &[String]) {
+        if keys.is_empty() {
+            return;
+        }
+        let mut redis = self.redis.clone();
+        let mut del = redis::cmd("DEL");
+        for key in keys {
+            del.arg(self.keys.key(key));
+        }
+        if let Err(error) = del.query_async::<()>(&mut redis).await {
+            tracing::warn!(%error, "followers digests not forgotten");
+        }
+    }
+}
+
+/// `Account#synchronization_uri_prefix`: `local` for a local account, else
+/// its URI's `http(s)://host[:port]` and a slash.
+fn synchronization_uri_prefix(local: bool, uri: Option<&str>) -> String {
+    if local {
+        return "local".to_owned();
+    }
+    format!("{}/", uri.and_then(url_prefix).unwrap_or_default())
+}
+
+/// `Follow#invalidate_hash_cache`, run once a follow of `target` by
+/// `follower` is made or undone: the target's digest of its followers on
+/// the follower's server is forgotten, unless both are local.
+pub async fn follow_changed(state: &AppState, follower: i64, target: i64) {
+    follows_changed(state, &[(follower, target)]).await;
+}
+
+/// [`follow_changed`] for each `(follower, target)` of `follows`, while
+/// both accounts are still there to be read.
+pub async fn follows_changed(state: &AppState, follows: &[(i64, i64)]) {
+    if follows.is_empty() {
+        return;
+    }
+    let (followers, targets): (Vec<i64>, Vec<i64>) = follows.iter().copied().unzip();
+    let rows = sqlx::query!(
+        r#"SELECT p.target AS "target!", f.domain IS NULL AS "follower_local!", f.uri AS follower_uri,
+                  t.domain IS NULL AS "target_local!"
+           FROM unnest($1::bigint[], $2::bigint[]) AS p(follower, target)
+           JOIN accounts f ON f.id = p.follower
+           JOIN accounts t ON t.id = p.target"#,
+        &followers,
+        &targets,
+    )
+    .fetch_all(&state.db)
+    .await;
+    let rows = match rows {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "followers digests not forgotten");
+            return;
+        }
+    };
+    let keys: Vec<String> = rows
+        .iter()
+        .filter(|row| !(row.follower_local && row.target_local))
+        .map(|row| {
+            format!(
+                "followers_hash:{}:{}",
+                row.target,
+                synchronization_uri_prefix(row.follower_local, row.follower_uri.as_deref())
+            )
+        })
+        .collect();
+    DigestCache::of(state).delete(&keys).await;
+}
+
+/// The follows of and by `account_id`, for [`follows_changed`] before they
+/// are deleted together.
+pub async fn follows_involving(state: &AppState, account_id: i64) -> Vec<(i64, i64)> {
+    sqlx::query!(
+        "SELECT account_id, target_account_id FROM follows
+         WHERE account_id = $1 OR target_account_id = $1",
+        account_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .map(|rows| {
+        rows.into_iter()
+            .map(|row| (row.account_id, row.target_account_id))
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// `Rails.cache.delete_matched("followers_hash:#{id}:*")`, for an account
+/// another was merged into (`Account::Merging#merge_with!`).
+pub async fn forget_all(state: &AppState, account_id: i64) {
+    let pattern = state
+        .redis_keys
+        .key(format!("followers_hash:{account_id}:*"));
+    let mut redis = state.redis.clone();
+    let mut cursor: u64 = 0;
+    loop {
+        let page: redis::RedisResult<(u64, Vec<String>)> = redis::cmd("SCAN")
+            .arg(cursor)
+            .arg("MATCH")
+            .arg(&pattern)
+            .arg("COUNT")
+            .arg(1000)
+            .query_async(&mut redis)
+            .await;
+        let Ok((next, keys)) = page else {
+            return;
+        };
+        if !keys.is_empty() {
+            let _: redis::RedisResult<()> =
+                redis::cmd("DEL").arg(&keys).query_async(&mut redis).await;
+        }
+        if next == 0 {
+            return;
+        }
+        cursor = next;
+    }
+}
 
 /// `ActivityPub::DistributionWorker::MAX_FOLLOWERS_FOR_SYNCHRONIZATION`.
 const MAX_FOLLOWERS_FOR_SYNCHRONIZATION: i64 = 25_000;
@@ -76,35 +265,49 @@ async fn followers_on(
 }
 
 /// `Account#remote_followers_hash(url)`: the digest of the account's
-/// followers on `url`'s server, or `None` when it names none.
+/// followers on `url`'s server, or `None` when it names none, cached at
+/// `followers_hash:<id>:<prefix>/`.
 pub async fn remote_followers_hash(
     db: &sqlx::PgPool,
+    cache: &DigestCache,
     account_id: i64,
     url: &str,
 ) -> sqlx::Result<Option<String>> {
     let Some(prefix) = url_prefix(url) else {
         return Ok(None);
     };
-    let uris = followers_on(db, account_id, prefix).await?;
-    Ok(Some(Digest::of(uris.iter().map(String::as_str)).to_hex()))
+    let digest = cache
+        .fetch(&format!("followers_hash:{account_id}:{prefix}/"), async {
+            let uris = followers_on(db, account_id, prefix).await?;
+            Ok(Digest::of(uris.iter().map(String::as_str)).to_hex())
+        })
+        .await?;
+    Ok(Some(digest))
 }
 
 /// `Account#local_followers_hash`: the digest of a remote account's local
-/// followers, each by the URI it has here.
+/// followers, each by the URI it has here, cached at
+/// `followers_hash:<id>:local`.
 pub async fn local_followers_hash(state: &AppState, account_id: i64) -> sqlx::Result<String> {
-    let domain = &state.instance.domain;
-    let followers = sqlx::query!(
-        r#"SELECT a.id, a.id_scheme, a.username FROM follows f JOIN accounts a ON a.id = f.account_id
-           WHERE f.target_account_id = $1 AND a.domain IS NULL"#,
-        account_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let uris: Vec<String> = followers
-        .iter()
-        .map(|a| crate::federation::tag::account_uri(domain, a.id, a.id_scheme, &a.username))
-        .collect();
-    Ok(Digest::of(uris.iter().map(String::as_str)).to_hex())
+    DigestCache::of(state)
+        .fetch(&format!("followers_hash:{account_id}:local"), async {
+            let domain = &state.instance.domain;
+            let followers = sqlx::query!(
+                r#"SELECT a.id, a.id_scheme, a.username FROM follows f JOIN accounts a ON a.id = f.account_id
+                   WHERE f.target_account_id = $1 AND a.domain IS NULL"#,
+                account_id,
+            )
+            .fetch_all(&state.db)
+            .await?;
+            let uris: Vec<String> = followers
+                .iter()
+                .map(|a| {
+                    crate::federation::tag::account_uri(domain, a.id, a.id_scheme, &a.username)
+                })
+                .collect();
+            Ok(Digest::of(uris.iter().map(String::as_str)).to_hex())
+        })
+        .await
 }
 
 /// `ActivityPub::DeliveryWorker#synchronization_header`, for the local
@@ -114,6 +317,7 @@ pub async fn local_followers_hash(state: &AppState, account_id: i64) -> sqlx::Re
 /// the username route whichever scheme the account uses).
 pub async fn header_for(
     db: &sqlx::PgPool,
+    cache: &DigestCache,
     domain: &str,
     account_id: i64,
     inbox: &str,
@@ -125,7 +329,9 @@ pub async fn header_for(
     .fetch_optional(db)
     .await
     .ok()??;
-    let digest = remote_followers_hash(db, account.id, inbox).await.ok()??;
+    let digest = remote_followers_hash(db, cache, account.id, inbox)
+        .await
+        .ok()??;
     let uris = crate::api::ap::serving::uris(domain).ok()?;
     let followers = crate::api::ap::serving::AccountUris::new(
         &uris,
@@ -171,8 +377,12 @@ pub async fn document(
 /// `InboxesController#process_collection_synchronization` and
 /// `ActivityPub::PrepareFollowersSynchronizationService`: a delivery from
 /// `signer` that says its followers here are not who eunha thinks has them
-/// checked, later. A header that does not parse is passed over.
+/// checked, later. A header that does not parse is passed over, and so is
+/// every header when `disable_followers_synchronization` is set.
 pub async fn prepare(state: &AppState, signer: &str, raw: &str) {
+    if raw.trim().is_empty() || state.instance.disable_followers_synchronization {
+        return;
+    }
     let Some(params) = CollectionSynchronization::parse(raw) else {
         tracing::warn!("Error parsing Collection-Synchronization header");
         return;

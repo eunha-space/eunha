@@ -197,7 +197,7 @@ pub async fn authorize(
     if let Some(follow_id) = follow_id {
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[requester_id, target_id]).await;
-        crate::counters::on_follow_created(&state.db, requester_id, target_id).await?;
+        crate::counters::on_follow_created(state, requester_id, target_id).await?;
         sqlx::query!(
             "UPDATE list_accounts SET follow_request_id = NULL, follow_id = $2
              WHERE follow_request_id = $1",

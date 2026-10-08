@@ -802,6 +802,7 @@ impl TestContext {
                 limited_federation_mode: false,
                 disallow_unauthenticated_api_access: false,
                 disable_automatic_switching_to_approved_registrations: false,
+                disable_followers_synchronization: false,
                 translation: Default::default(),
                 secret_key_base: None,
                 experimental_features: Vec::new(),

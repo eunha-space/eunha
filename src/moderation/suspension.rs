@@ -126,7 +126,7 @@ async fn reject_remote_follows(state: &AppState, account: &Account) -> Result<()
         .await?;
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[account.id, target]).await;
-        crate::counters::on_follow_removed(&state.db, account.id, target).await?;
+        crate::counters::on_follow_removed(state, account.id, target).await?;
     }
     Ok(())
 }
