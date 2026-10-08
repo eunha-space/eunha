@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (\n             COALESCE((SELECT SUM(COALESCE(file_file_size, 0) + COALESCE(thumbnail_file_size, 0)) FROM media_attachments), 0)\n           + COALESCE((SELECT SUM(image_file_size) FROM custom_emojis), 0)\n           + COALESCE((SELECT SUM(image_file_size) FROM preview_cards), 0)\n           + COALESCE((SELECT SUM(COALESCE(avatar_file_size, 0) + COALESCE(header_file_size, 0)) FROM accounts), 0)\n           + COALESCE((SELECT SUM(dump_file_size) FROM backups), 0)\n           + COALESCE((SELECT SUM(file_file_size) FROM site_uploads), 0)\n           )::bigint AS \"size!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8e0d78fcef793f796c17f899b397dec811c486da15a4dd9fd548394fd349ef0a"
+}

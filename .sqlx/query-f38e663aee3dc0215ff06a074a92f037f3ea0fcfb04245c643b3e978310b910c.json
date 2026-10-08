@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM statuses\n             WHERE account_id = $1 AND deleted_at IS NULL AND id BETWEEN $2 AND $3\n               AND visibility IN (0, 1)\n           ) AND EXISTS (\n             SELECT 1 FROM statuses\n             JOIN statuses_tags ON statuses_tags.status_id = statuses.id\n             WHERE statuses.account_id = $1 AND statuses.deleted_at IS NULL\n               AND statuses.id BETWEEN $2 AND $3\n           ) AS \"eligible!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "eligible!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f38e663aee3dc0215ff06a074a92f037f3ea0fcfb04245c643b3e978310b910c"
+}
