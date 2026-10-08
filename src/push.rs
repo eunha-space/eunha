@@ -491,14 +491,18 @@ async fn notify(
     // Local-only: Mastodon's LocalNotificationWorker only notifies local
     // accounts, so never create a notification row for a remote recipient
     // (e.g. favouriting or boosting a remote author's post).
+    // `return if recipient.user.nil?`, and `DropCondition`'s
+    // `@recipient.unavailable?`.
     let recipient_local = sqlx::query_scalar!(
-        r#"SELECT (domain IS NULL) AS "local!" FROM accounts WHERE id = $1"#,
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts a JOIN users u ON u.account_id = a.id
+             WHERE a.id = $1 AND a.domain IS NULL
+               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+           ) AS "e!""#,
         recipient_id,
     )
-    .fetch_optional(&db)
+    .fetch_one(&db)
     .await
-    .ok()
-    .flatten()
     .unwrap_or(false);
     if !recipient_local {
         return;
@@ -511,21 +515,19 @@ async fn notify(
         && crate::moderation::notification_policy::from_staff(&db, recipient_id, from_account_id)
             .await;
 
-    // Don't notify if there is a block in either direction; a staff mention
-    // passes the recipient's own block (`@recipient.blocking?(@sender)`).
-    let is_blocked = sqlx::query_scalar!(
-        r#"SELECT 1 FROM blocks
-           WHERE (NOT $3 AND account_id = $1 AND target_account_id = $2)
-              OR (account_id = $2 AND target_account_id = $1)"#,
-        recipient_id,
-        from_account_id,
-        staff_message,
-    )
-    .fetch_optional(&db)
-    .await
-    .ok()
-    .flatten()
-    .is_some();
+    // `@recipient.blocking?(@sender)`: the recipient's block, and only
+    // theirs; a staff mention passes it.
+    let is_blocked = !staff_message
+        && sqlx::query_scalar!(
+            "SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+            recipient_id,
+            from_account_id,
+        )
+        .fetch_optional(&db)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
     if is_blocked {
         return;
     }
@@ -586,7 +588,8 @@ async fn notify(
                    WHERE s.id = $2
                      AND EXISTS (
                        SELECT 1 FROM (
-                         SELECT m.account_id FROM mentions m WHERE m.status_id = s.id
+                         SELECT m.account_id FROM mentions m
+                         WHERE m.status_id = s.id AND NOT m.silent
                          UNION
                          SELECT s.in_reply_to_account_id WHERE s.in_reply_to_account_id IS NOT NULL
                        ) AS involved(account_id)
@@ -792,8 +795,8 @@ const SELF_NOTIFIABLE_TYPES: &[&str] = &[
 /// `LocalNotificationWorker` and `NotifyService` for the notification types
 /// that are about the recipient's own standing or staff work rather than
 /// someone's post — `admin.report`, `admin.sign_up`, `moderation_warning` —
-/// none of which is filterable, so none passes through the block, mute and
-/// policy checks [`create_and_push`] makes.
+/// none of which is filterable, so none passes through the notification
+/// policy; the recipient's blocks, domain blocks and mutes still drop them.
 ///
 /// `activity_type`/`activity_id` are the polymorphic activity; `from_account_id`
 /// is what `Notification#set_from_account` derives from it. A recipient
@@ -820,6 +823,40 @@ pub async fn notify_local(
         .fetch_one(&state.db)
         .await?;
         if !has_user {
+            return Ok(());
+        }
+        // The rest of `DropCondition#drop?` that applies to a type about no
+        // post: the recipient unavailable, the sender's domain blocked by a
+        // recipient not following them, the sender blocked, or muted with
+        // their notifications. None of these types is filterable.
+        let dropped = sqlx::query_scalar!(
+            r#"SELECT
+                 NOT EXISTS (
+                   SELECT 1 FROM accounts
+                   WHERE id = $1 AND suspended_at IS NULL AND requested_deletion_at IS NULL
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM account_domain_blocks adb
+                   JOIN accounts sender ON sender.id = $2
+                   WHERE adb.account_id = $1 AND adb.domain = sender.domain
+                     AND NOT EXISTS (
+                       SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2
+                     )
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM mutes
+                   WHERE account_id = $1 AND target_account_id = $2 AND hide_notifications
+                     AND (expires_at IS NULL OR expires_at > now())
+                 ) AS "dropped!""#,
+            recipient_id,
+            from_account_id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if dropped {
             return Ok(());
         }
         let exists = sqlx::query_scalar!(

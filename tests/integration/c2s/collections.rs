@@ -443,6 +443,72 @@ async fn test_collections_under_v1_alpha() {
     assert_eq!(listed.status(), StatusCode::OK);
 }
 
+/// `NotifyService` drops a notification when its recipient blocks the
+/// sender, and only then: a block the other way does not keep it from them.
+#[tokio::test]
+async fn test_only_the_recipients_block_drops_a_notification() {
+    let ctx = TestContext::new("coll-notify-blocks").await;
+    let body: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Friends", "account_ids": [ctx.bob_id]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let item_id: i64 = body["collection"]["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let renotify = || async {
+        sqlx::query("DELETE FROM notifications WHERE account_id = $1")
+            .bind(bob)
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+        eunha::push::notify_collection(
+            &ctx.state,
+            bob,
+            "added_to_collection",
+            ("CollectionItem", item_id),
+            alice,
+        )
+        .await;
+        let (count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM notifications WHERE account_id = $1 AND type = 'added_to_collection'",
+        )
+        .bind(bob)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        count
+    };
+    // The sender blocking the recipient is no reason to drop it.
+    block(&ctx.db, alice, bob).await;
+    assert_eq!(renotify().await, 1);
+    // The recipient blocking the sender is.
+    block(&ctx.db, bob, alice).await;
+    assert_eq!(renotify().await, 0);
+}
+
+async fn block(db: &sqlx::PgPool, from: i64, to: i64) {
+    sqlx::query(
+        "INSERT INTO blocks (account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(from)
+    .bind(to)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
 /// bob's notifications of `kind`, from the v1 list.
 async fn bobs_notifications(ctx: &TestContext, kind: &str) -> Vec<Value> {
     ctx.api
