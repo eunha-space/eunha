@@ -537,6 +537,34 @@ async fn publish_one(
 
     let domain = &state.instance.domain;
 
+    // `PostStatusService#validate_media!` over the scheduled status's own
+    // uploads, which `scheduled_status.destroy!` has handed back (`dependent:
+    // :nullify`) before it runs. A refusal is raised past the worker's rescue
+    // with the schedule already gone, so the post is never made.
+    let media_ids: Option<Vec<String>> = params["media_ids"].as_array().map(|ids| {
+        ids.iter()
+            .map(|id| match id {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+            .collect()
+    });
+    let media_ids = match crate::api::mastodon::statuses::validate_media(
+        state,
+        account.id,
+        media_ids.as_deref(),
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(crate::error::AppError::Database(e)) => {
+            return Err(PublishError::Transient(anyhow::anyhow!(
+                "validate scheduled status media: {e}"
+            )))
+        }
+        Err(e) => return Err(PublishError::Permanent(anyhow::anyhow!("{e}"))),
+    };
+
     let hashtags = extract_hashtags(&text);
     let mention_handles = extract_mention_handles(&text);
     let resolved = resolve_mention_accounts(state, &mention_handles, domain).await;
@@ -606,22 +634,21 @@ async fn publish_one(
     crate::search::elasticsearch::indexing::status(state, status.id).await;
     crate::search::elasticsearch::indexing::account(state, account.id).await;
 
-    // Attach media ids if any
-    if let Some(ids) = params["media_ids"].as_array() {
-        for id_val in ids {
-            if let Some(id_str) = id_val.as_str() {
-                if let Ok(media_id) = id_str.parse::<i64>() {
-                    let attached = sqlx::query!(
-                        "UPDATE media_attachments SET status_id = $1 WHERE id = $2 AND account_id = $3 AND status_id IS NULL",
-                        status.id, media_id, account.id,
-                    )
-                    .execute(&state.db)
-                    .await;
-                    if let Err(e) = attached {
-                        tracing::error!(scheduled_id, status_id = status.id, media_id, error = %e, "failed to attach media to scheduled status");
-                    }
-                }
-            }
+    // `status.media_attachments = @media`: the uploads move from the
+    // scheduled status to the status.
+    if !media_ids.is_empty() {
+        let attached = sqlx::query!(
+            "UPDATE media_attachments
+             SET status_id = $1, scheduled_status_id = NULL, updated_at = now()
+             WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL",
+            status.id,
+            &media_ids,
+            account.id,
+        )
+        .execute(&state.db)
+        .await;
+        if let Err(e) = attached {
+            tracing::error!(scheduled_id, status_id = status.id, error = %e, "failed to attach media to scheduled status");
         }
     }
 

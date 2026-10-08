@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, \"type\", processing FROM media_attachments\n           WHERE account_id = $1 AND status_id IS NULL AND id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "processing",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3af60df507b7b166651223979beb8581ba97b052480aecb469e0778b70e1fd5f"
+}

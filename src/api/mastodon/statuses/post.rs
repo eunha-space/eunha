@@ -70,6 +70,10 @@ pub async fn post_status(
         None => None,
     };
 
+    // `validate_media!`, the first thing `with_idempotency` runs, before the
+    // status is built or scheduled.
+    let parsed_media_ids = validate_media(&state, account.id, form.media_ids.as_deref()).await?;
+
     let mut text = form.status.clone().unwrap_or_default();
     let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
     // Mastodon PostStatusService#preprocess_attributes promotes a lone content
@@ -151,26 +155,35 @@ pub async fn post_status(
                 "hide_totals": p.hide_totals,
             })),
         });
-        let row = sqlx::query!(
+        // `scheduled_statuses.create!(media_attachments: @media, …)` in one
+        // transaction: the uploads are the scheduled status's until it is
+        // published, and `REST::ScheduledStatusSerializer` shows them.
+        let mut tx = state.db.begin().await?;
+        let scheduled_id = sqlx::query_scalar!(
             r#"INSERT INTO scheduled_statuses (account_id, scheduled_at, params)
                VALUES ($1, $2, $3)
-               RETURNING id, scheduled_at"#,
+               RETURNING id"#,
             account.id,
             scheduled_at,
             params,
         )
-        .fetch_one(&state.db)
+        .fetch_one(&mut *tx)
         .await?;
+        sqlx::query!(
+            "UPDATE media_attachments SET scheduled_status_id = $1, updated_at = now()
+             WHERE id = ANY($2) AND account_id = $3",
+            scheduled_id,
+            &parsed_media_ids,
+            account.id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         state.queues.scheduled_statuses.notify_one();
-        let resp = ScheduledStatusResponse {
-            id: row.id.to_string(),
-            scheduled_at: row
-                .scheduled_at
-                .map(crate::api::mastodon::convert::mastodon_date),
-            params,
-            media_attachments: vec![],
-        };
-        record_idempotency(&state, account.id, idempotency_key.as_deref(), row.id).await;
+        let resp = crate::api::mastodon::scheduled_statuses::load(&state, account.id, scheduled_id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        record_idempotency(&state, account.id, idempotency_key.as_deref(), scheduled_id).await;
         // `render json: @status` with no status: 200, as for a status.
         return Ok((axum::http::StatusCode::OK, Json(resp)).into_response());
     }
@@ -353,62 +366,6 @@ pub async fn post_status(
         "https://{}/@{}/{}",
         instance.domain, account.username, status_id
     );
-
-    // Validate media_ids before inserting the status (Mastodon
-    // PostStatusService#validate_media!) — fail early so no cleanup is needed.
-    let parsed_media_ids: Vec<i64> = if let Some(ref ids) = form.media_ids {
-        // Reject more than the 4-attachment limit outright.
-        if ids.len() > MEDIA_ATTACHMENTS_LIMIT {
-            return Err(AppError::Unprocessable(format!(
-                "Validation failed: Cannot attach more than {MEDIA_ATTACHMENTS_LIMIT} files"
-            )));
-        }
-        let mut parsed = Vec::with_capacity(ids.len());
-        let mut has_audio_or_video = false;
-        let mut any_not_ready = false;
-        for id_str in ids {
-            let media_id = id_str.parse::<i64>().map_err(|_| {
-                AppError::Unprocessable(format!("media_ids: invalid id '{}'", id_str))
-            })?;
-            let row = sqlx::query!(
-                r#"SELECT "type", processing FROM media_attachments
-                   WHERE id = $1 AND account_id = $2 AND status_id IS NULL"#,
-                media_id,
-                account.id,
-            )
-            .fetch_optional(&state.db)
-            .await?;
-            let Some(row) = row else {
-                return Err(AppError::Unprocessable(format!(
-                    "media_ids: '{}' not found, already attached, or not owned by you",
-                    id_str
-                )));
-            };
-            // audio(3)/video(2) can't be combined with other media (gifv is exempt,
-            // matching MediaAttachment#audio_or_video?).
-            if matches!(row.r#type, 2 | 3) {
-                has_audio_or_video = true;
-            }
-            // processing set and not complete(2) means still processing/failed.
-            if row.processing.is_some_and(|p| p != 2) {
-                any_not_ready = true;
-            }
-            parsed.push(media_id);
-        }
-        if parsed.len() > 1 && has_audio_or_video {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Cannot attach a video or audio file to a post that contains other media".into(),
-            ));
-        }
-        if any_not_ready {
-            return Err(AppError::Unprocessable(
-                "Validation failed: Cannot attach files that have not finished processing. Try again in a moment!".into(),
-            ));
-        }
-        parsed
-    } else {
-        vec![]
-    };
 
     let is_reply = in_reply_to_id.is_some();
     let visibility_int = crate::db::models::vis::from_str(&visibility);
@@ -806,6 +763,78 @@ pub async fn post_status(
     .await;
     crate::fasp::events::status_created(&state, status.id).await;
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
+}
+
+/// Mastodon's `Integer#to_i` on a string: its leading digits, or 0.
+fn ruby_to_i(s: &str) -> i64 {
+    let s = s.trim_start();
+    let (sign, digits) = match s.strip_prefix('-') {
+        Some(rest) => (-1, rest),
+        None => (1, s.strip_prefix('+').unwrap_or(s)),
+    };
+    let end = digits
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(digits.len());
+    digits[..end].parse::<i64>().map_or(0, |n| sign * n)
+}
+
+/// `PostStatusService#validate_media!`: the account's uploads not yet on a
+/// status that `media_ids` names, in the order it names them. An upload on a
+/// scheduled status counts as free, as upstream's `where(status_id: nil)`
+/// has it. A refusal is `Mastodon::ValidationError`'s 422, which carries the
+/// message without `Validation failed:`.
+pub(crate) async fn validate_media(
+    state: &AppState,
+    account_id: i64,
+    media_ids: Option<&[String]>,
+) -> AppResult<Vec<i64>> {
+    let Some(ids) = media_ids.filter(|ids| !ids.is_empty()) else {
+        return Ok(vec![]);
+    };
+    if ids.len() > MEDIA_ATTACHMENTS_LIMIT {
+        return Err(AppError::Unprocessable(format!(
+            "Cannot attach more than {MEDIA_ATTACHMENTS_LIMIT} files"
+        )));
+    }
+    let wanted: Vec<i64> = ids.iter().map(|id| ruby_to_i(id)).collect();
+    let rows = sqlx::query!(
+        r#"SELECT id, "type", processing FROM media_attachments
+           WHERE account_id = $1 AND status_id IS NULL AND id = ANY($2)"#,
+        account_id,
+        &wanted,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let not_found: Vec<String> = wanted
+        .iter()
+        .filter(|id| !rows.iter().any(|r| r.id == **id))
+        .map(i64::to_string)
+        .collect();
+    if !not_found.is_empty() {
+        return Err(AppError::Unprocessable(format!(
+            "Media {} not found or already attached to another post",
+            not_found.join(", ")
+        )));
+    }
+    // `audio_or_video?`: audio (3) or video (2), not gifv.
+    if rows.len() > 1 && rows.iter().any(|r| matches!(r.r#type, 2 | 3)) {
+        return Err(AppError::Unprocessable(
+            "Cannot attach a video to a post that already contains images".into(),
+        ));
+    }
+    // `not_processed?`: processing set and not `complete` (2).
+    if rows.iter().any(|r| r.processing.is_some_and(|p| p != 2)) {
+        return Err(AppError::Unprocessable(
+            "Cannot attach files that have not finished processing. Try again in a moment!".into(),
+        ));
+    }
+    let mut found = Vec::with_capacity(wanted.len());
+    for id in wanted {
+        if !found.contains(&id) {
+            found.push(id);
+        }
+    }
+    Ok(found)
 }
 
 /// `PostStatusService#idempotency_key`.

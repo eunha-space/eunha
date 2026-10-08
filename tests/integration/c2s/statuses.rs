@@ -4349,6 +4349,210 @@ async fn test_scheduled_status_publish_end_to_end() {
     );
 }
 
+/// Uploads a tiny PNG as alice and returns its id.
+async fn upload_png(ctx: &TestContext) -> String {
+    let media: Value = ctx
+        .api
+        .post_multipart_file(
+            "/api/v1/media",
+            &ctx.alice_token,
+            "tiny.png",
+            "image/png",
+            crate::helpers::tiny_png(),
+            &[],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    media["id"].as_str().unwrap().to_string()
+}
+
+/// Where an upload is attached: its `status_id` and `scheduled_status_id`.
+async fn media_attached_to(ctx: &TestContext, id: &str) -> (Option<i64>, Option<i64>) {
+    sqlx::query_as("SELECT status_id, scheduled_status_id FROM media_attachments WHERE id = $1")
+        .bind(id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+}
+
+/// Schedules a post with `media_ids` as alice.
+async fn schedule_with_media(ctx: &TestContext, media_ids: &[&str]) -> reqwest::Response {
+    let future = (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339();
+    ctx.api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "later, with pictures", "scheduled_at": future, "media_ids": media_ids}),
+        )
+        .await
+}
+
+/// `PostStatusService#schedule_status!` creates the scheduled status with its
+/// `media_attachments`, which `REST::ScheduledStatusSerializer` shows, and
+/// `PublishScheduledStatusWorker` hands them to the status it posts.
+#[tokio::test]
+async fn test_scheduled_status_carries_its_media_into_the_post() {
+    let ctx = TestContext::new("sched-media").await;
+    let first = upload_png(&ctx).await;
+    let second = upload_png(&ctx).await;
+
+    let resp = schedule_with_media(&ctx, &[&first, &second]).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let scheduled: Value = resp.json().await.unwrap();
+    let scheduled_id = scheduled["id"].as_str().unwrap().to_string();
+    let shown: Vec<&str> = scheduled["media_attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(shown, [first.as_str(), second.as_str()]);
+    assert_eq!(scheduled["params"]["media_ids"], json!([first, second]));
+    let scheduled_num: i64 = scheduled_id.parse().unwrap();
+    assert_eq!(
+        media_attached_to(&ctx, &first).await,
+        (None, Some(scheduled_num))
+    );
+
+    let fetched: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/scheduled_statuses/{scheduled_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(fetched["media_attachments"].as_array().unwrap().len(), 2);
+
+    sqlx::query("UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    eunha::background::publish_due_statuses(&ctx.state)
+        .await
+        .unwrap();
+
+    let status_id: i64 = sqlx::query_scalar("SELECT id FROM statuses WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    for id in [&first, &second] {
+        assert_eq!(media_attached_to(&ctx, id).await, (Some(status_id), None));
+    }
+    let status: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{status_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["media_attachments"].as_array().unwrap().len(), 2);
+}
+
+/// `has_many :media_attachments, dependent: :nullify`: cancelling a scheduled
+/// post gives its uploads back, free to attach to another.
+#[tokio::test]
+async fn test_deleting_a_scheduled_status_releases_its_media() {
+    let ctx = TestContext::new("sched-media-del").await;
+    let media = upload_png(&ctx).await;
+    let scheduled: Value = schedule_with_media(&ctx, &[&media])
+        .await
+        .json()
+        .await
+        .unwrap();
+    let scheduled_id = scheduled["id"].as_str().unwrap();
+
+    let resp = ctx
+        .api
+        .http
+        .delete(
+            ctx.api
+                .url(&format!("/api/v1/scheduled_statuses/{scheduled_id}")),
+        )
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(media_attached_to(&ctx, &media).await, (None, None));
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "now instead", "media_ids": [media]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// `validate_media!` runs before anything is scheduled, with
+/// `Mastodon::ValidationError`'s messages; and when the uploads are gone by
+/// the time a schedule falls due, it refuses there too and nothing is posted.
+#[tokio::test]
+async fn test_scheduled_status_media_is_validated() {
+    let ctx = TestContext::new("sched-media-invalid").await;
+    let resp = schedule_with_media(&ctx, &["12345"]).await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "Media 12345 not found or already attached to another post"
+    );
+    let resp = schedule_with_media(&ctx, &["1", "2", "3", "4", "5"]).await;
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"], "Cannot attach more than 4 files");
+    let scheduled: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduled_statuses")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(scheduled, 0);
+
+    // Still free as far as `where(status_id: nil)` is concerned, so another
+    // post can take the upload while it waits.
+    let media = upload_png(&ctx).await;
+    let resp = schedule_with_media(&ctx, &[&media]).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "took the picture", "media_ids": [media]}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    eunha::background::publish_due_statuses(&ctx.state)
+        .await
+        .unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduled_statuses")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "the schedule is consumed");
+    let posted: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(posted, 1, "only the immediate post exists");
+}
+
 /// A publish that writes nothing must not destroy the schedule: the post is
 /// kept and retried later, rather than vanishing on one bad minute.
 #[tokio::test]

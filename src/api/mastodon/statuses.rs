@@ -7,7 +7,6 @@ use axum::{
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::scheduled_statuses::ScheduledStatusResponse;
 use super::{
     accounts::{batch_account_emojis, batch_account_roles, batch_accounts_to_api},
     convert::{account_from_db, status_from_db},
@@ -28,6 +27,7 @@ use crate::{
 
 mod post;
 pub use post::post_status;
+pub(crate) use post::validate_media;
 mod context;
 pub use context::get_status_context;
 mod edit;
