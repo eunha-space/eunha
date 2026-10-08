@@ -1020,10 +1020,11 @@ pub async fn notify_local(
                  OR EXISTS (
                    SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2
                  )
+                 -- `muting_notifications?` asks only whether the mute is
+                 -- there: an expired one still mutes until it is removed.
                  OR EXISTS (
                    SELECT 1 FROM mutes
                    WHERE account_id = $1 AND target_account_id = $2 AND hide_notifications
-                     AND (expires_at IS NULL OR expires_at > now())
                  ) AS "dropped!""#,
             recipient_id,
             from_account_id,

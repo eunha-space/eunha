@@ -451,3 +451,27 @@ async fn test_a_sign_up_notification_is_grouped() {
         Some(format!("admin.sign_up-{}", made_at / 3600)),
     );
 }
+
+/// `muting_notifications?` asks only whether a mute hiding notifications is
+/// there. One that has expired, but has not yet been removed, still drops a
+/// staff notification from the muted account.
+#[tokio::test]
+async fn test_an_expired_mute_still_hides_a_staff_notification() {
+    let ctx = TestContext::new("notify-expired-mute").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    sqlx::query(
+        "INSERT INTO mutes (account_id, target_account_id, hide_notifications,
+                            expires_at, created_at, updated_at)
+         VALUES ($1, $2, true, now() - interval '1 hour', now(), now())",
+    )
+    .bind(alice)
+    .bind(bob)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    eunha::push::notify_local(&ctx.state, alice, "admin.sign_up", "Account", bob, bob).await;
+
+    assert_eq!(notification_count(&ctx, alice).await, 0);
+}
