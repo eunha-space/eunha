@@ -107,6 +107,51 @@ fn description(att: &Value) -> Option<String> {
     )
 }
 
+/// The characters of Base83, in order: a digit's value is its index.
+const BASE83: &str =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
+
+/// `MediaAttachmentParser#supported_blurhash?`: a blurhash written in the
+/// characters it is written in (`/^[\w#$%*+,-.:;=?@\[\]^{|}~]+$/`) whose
+/// components (`Blurhash.components`, read from its first character's size
+/// flag) are at most five across and five down. Any other is dropped.
+pub(super) fn supported_blurhash(blurhash: &str) -> bool {
+    let allowed = |c: char| {
+        c.is_ascii_alphanumeric()
+            || matches!(
+                c,
+                '_' | '#'
+                    | '$'
+                    | '%'
+                    | '*'
+                    | '+'
+                    | ','
+                    | '-'
+                    | '.'
+                    | ':'
+                    | ';'
+                    | '='
+                    | '?'
+                    | '@'
+                    | '['
+                    | ']'
+                    | '^'
+                    | '{'
+                    | '|'
+                    | '}'
+                    | '~'
+            )
+    };
+    if blurhash.is_empty() || !blurhash.chars().all(allowed) {
+        return false;
+    }
+    let Some(flag) = blurhash.chars().next().and_then(|c| BASE83.find(c)) else {
+        return false;
+    };
+    let (x, y) = (flag % 9 + 1, flag / 9 + 1);
+    x <= 5 && y <= 5
+}
+
 /// The media `att` names, or `None` when it has no `url`
 /// (`remote_url.blank?`).
 pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {
@@ -135,6 +180,7 @@ pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {
         blurhash: att
             .get("blurhash")
             .and_then(|v| v.as_str())
+            .filter(|blurhash| supported_blurhash(blurhash))
             .map(str::to_owned),
         thumbnail_remote_url: att
             .get("icon")
@@ -347,5 +393,19 @@ mod media_parser_tests {
                 .count(),
             10_000
         );
+    }
+
+    /// At most five components each way, in Base83's characters.
+    #[test]
+    fn a_blurhash_is_supported_as_mastodon_supports_it() {
+        assert!(supported_blurhash("LEHV6nWB2yk8pyo0adR*.7kCMdnj"));
+        // A size flag of 4×4 (`U`) is fine; one of 1×10 (`~`) is not.
+        assert!(supported_blurhash("UEHV6nWB2yk8pyo0adR*.7kCMdnjRjYUE;Dj"));
+        assert!(!supported_blurhash("~EHV6nWB2yk8pyo0adR*.7kCMdnj"));
+        // Six across (`5`).
+        assert!(!supported_blurhash("5EHV6nWB2yk8pyo0adR*.7kCMdnj"));
+        assert!(!supported_blurhash(""));
+        assert!(!supported_blurhash("LEHV 6nWB"));
+        assert!(!supported_blurhash("LEHV\"nWB"));
     }
 }
