@@ -298,3 +298,186 @@ async fn test_annual_report_data_structure() {
     assert!(data["time_series"].is_array());
     assert!(data["top_hashtags"].is_array());
 }
+
+/// alice's 2023 report and its share key, made by the worker.
+async fn shared_report(ctx: &TestContext) -> String {
+    post_in(ctx, 2023, "a shared #annualtag post").await;
+    generate(ctx, 2023).await;
+    sqlx::query_scalar("SELECT share_key FROM generated_annual_reports WHERE year = 2023")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+}
+
+/// `REST::AnnualReportSerializer#share_url` is `public_wrapstodon_url`, and
+/// null without a share key.
+#[tokio::test]
+async fn test_annual_report_share_url() {
+    let ctx = TestContext::new("annrep-share-url").await;
+    let share_key = shared_report(&ctx).await;
+    let resp = ctx
+        .api
+        .get("/api/v1/annual_reports/2023", Some(&ctx.alice_token))
+        .await;
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["annual_reports"][0]["share_url"],
+        format!("https://{}/@alice/wrapstodon/2023/{share_key}", ctx.domain)
+    );
+
+    sqlx::query("UPDATE generated_annual_reports SET share_key = NULL")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = ctx
+        .api
+        .get("/api/v1/annual_reports", Some(&ctx.alice_token))
+        .await;
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["annual_reports"][0]["share_url"].is_null());
+}
+
+/// `WrapstodonController#show`: the report for anyone with its share URL,
+/// as `REST::AnnualReportsSerializer` with no viewer, and `domain`.
+#[tokio::test]
+async fn test_shared_annual_report() {
+    use eunha::api::mastodon::annual_reports::{shared, Shared};
+
+    let ctx = TestContext::new("annrep-shared").await;
+    let share_key = shared_report(&ctx).await;
+
+    // The username is matched case-insensitively, as `find_local!` does.
+    let Shared::Found(report) = shared(&ctx.state, None, "ALICE", "2023", &share_key)
+        .await
+        .unwrap()
+    else {
+        panic!("the report should be shared");
+    };
+    let payload = &report.payload;
+    assert_eq!(payload["annual_reports"][0]["year"], 2023);
+    assert_eq!(payload["annual_reports"][0]["account_id"], ctx.alice_id);
+    assert_eq!(payload["accounts"][0]["id"], ctx.alice_id);
+    assert!(payload["statuses"].is_array());
+    assert_eq!(payload["domain"], ctx.domain);
+    // No viewer: no `me`, and the statuses say nothing of one.
+    assert!(payload.get("me").is_none());
+    for status in payload["statuses"].as_array().unwrap() {
+        assert!(status.get("favourited").is_none(), "{status}");
+    }
+
+    // The page itself: publicly cached for ten minutes when no one is signed
+    // in, and carrying the report once the web app is built.
+    let path = format!("/@alice/wrapstodon/2023/{share_key}");
+    let resp = ctx.api.get(&path, None).await;
+    assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(resp.headers()["cache-control"], "max-age=600, public");
+    assert_eq!(resp.headers()["vary"], "Accept, Accept-Language, Cookie");
+    if resp.status() == StatusCode::OK {
+        let html = resp.text().await.unwrap();
+        assert!(
+            html.contains("<title>Wrapstodon 2023 for alice - "),
+            "{html}"
+        );
+        assert!(html.contains(r#"<meta name="robots" content="noindex, noarchive" />"#));
+        assert!(html.contains(r#"<script type="application/json" id="wrapstodon-data">"#));
+    }
+
+    // A signed-in viewer is `me`, and the page is not cached for others.
+    let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;
+    assert_eq!(resp.headers()["cache-control"], "private, no-store");
+    if resp.status() == StatusCode::OK {
+        let html = resp.text().await.unwrap();
+        assert!(
+            html.contains(&format!(r#""me":"{}""#, ctx.bob_id)),
+            "{html}"
+        );
+    }
+}
+
+/// In limited federation mode the shared page carries the report only to a
+/// signed-in viewer; Mastodon sends anyone else to sign in.
+#[tokio::test]
+async fn test_shared_annual_report_in_limited_federation_mode() {
+    use eunha::api::mastodon::annual_reports::{shared, Shared};
+
+    let ctx = TestContext::with_instance("annrep-shared-lfm", |instance| {
+        instance.limited_federation_mode = true;
+    })
+    .await;
+    let share_key = shared_report(&ctx).await;
+    assert!(matches!(
+        shared(&ctx.state, None, "alice", "2023", &share_key)
+            .await
+            .unwrap(),
+        Shared::SignInRequired
+    ));
+    let resp = ctx
+        .api
+        .get(
+            &format!("/@alice/wrapstodon/2023/{share_key}"),
+            Some(&ctx.bob_token),
+        )
+        .await;
+    assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(resp.headers()["cache-control"], "private, no-store");
+}
+
+/// The shared page refuses what `find_by!` and `AccountOwnedConcern` refuse.
+#[tokio::test]
+async fn test_shared_annual_report_refusals() {
+    let ctx = TestContext::new("annrep-shared-no").await;
+    let share_key = shared_report(&ctx).await;
+    let alice_id: i64 = ctx.alice_id.parse().unwrap();
+    let status_of = |path: String| {
+        let ctx = &ctx;
+        async move { ctx.api.get(&path, None).await.status() }
+    };
+
+    // A wrong share key, year, or account is not found.
+    for path in [
+        "/@alice/wrapstodon/2023/sharks".to_owned(),
+        format!("/@alice/wrapstodon/2024/{share_key}"),
+        format!("/@bob/wrapstodon/2023/{share_key}"),
+        format!("/@nobody/wrapstodon/2023/{share_key}"),
+    ] {
+        assert_eq!(
+            status_of(path.clone()).await,
+            StatusCode::NOT_FOUND,
+            "{path}"
+        );
+    }
+
+    let path = format!("/@alice/wrapstodon/2023/{share_key}");
+    // `check_account_confirmation`.
+    sqlx::query("UPDATE users SET confirmed_at = NULL WHERE account_id = $1")
+        .bind(alice_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(status_of(path.clone()).await, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE users SET confirmed_at = now() WHERE account_id = $1")
+        .bind(alice_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    // `check_account_suspension`: gone once the suspension cannot be undone,
+    // forbidden while it can.
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(alice_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(status_of(path.clone()).await, StatusCode::GONE);
+    sqlx::query(
+        "INSERT INTO account_deletion_requests (account_id, created_at, updated_at)
+         VALUES ($1, now(), now())",
+    )
+    .bind(alice_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let resp = ctx.api.get(&path, None).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(resp.headers()["cache-control"], "max-age=180, public");
+}

@@ -76,6 +76,7 @@ import AdminFollowRecommendations from './pages/admin/FollowRecommendations.tsx'
 import AdminSoftwareUpdates from './pages/admin/SoftwareUpdates.tsx'
 import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
+import Wrapstodon from './pages/Wrapstodon.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -195,6 +196,8 @@ const routes = [
   { path: '/:acct/:id/favourites', element: <StatusReactions /> },
   { path: '/:acct/:id/reblogs', element: <StatusReactions /> },
   { path: '/:acct/:id/history', element: <StatusHistory /> },
+  // Mastodon's shared annual report, `public_wrapstodon`. Four segments.
+  { path: '/:acct/wrapstodon/:year/:shareKey', element: <Wrapstodon /> },
   { path: '*', element: <Home /> },
 ]
 

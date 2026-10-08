@@ -598,6 +598,28 @@ goes through the same guard as federation, so a private address needs
 answers `503`.
 
 
+Annual reports
+--------------
+
+While the `wrapstodon` setting is on, from 10 to 31 December, members can
+generate a report of their year (`POST /api/v1/annual_reports/:year/generate`,
+see [remote replies](./remote-replies) for how the client waits for it). Each
+report gets a random share key, and the API's `share_url` is the page that
+shows it to anyone with the link, at Mastodon's address:
+`https://<domain>/@<username>/wrapstodon/<year>/<share_key>`. A report imported
+without a share key has no `share_url`.
+
+The page is the web app, carrying the report as Mastodon's does: in a
+`<script id="wrapstodon-data">` holding the same JSON as the annual reports
+API, serialized for no viewer, with the instance's `domain`. It is marked
+`noindex` and cached publicly for ten minutes. A wrong share key, year or
+account, or an account that is unconfirmed or awaiting approval, is a `404`; a
+suspended account is a `403` while the suspension can be undone and a `410`
+once it cannot. Eunha's web app draws the report its own way; what that changes
+from Mastodon's page, and what limited federation mode does to it, is recorded
+as the `shared-wrapstodon-page` divergence.
+
+
 The dashboard
 -------------
 

@@ -325,7 +325,7 @@ async fn build_response(
     state: &AppState,
     reports: Vec<AnnualReport>,
     account: &DbAccount,
-    viewer_id: i64,
+    viewer_id: Option<i64>,
 ) -> AppResult<AnnualReportsResponse> {
     // Collect status IDs referenced in all reports
     let mut top_status_ids: Vec<i64> = Vec::new();
@@ -359,7 +359,7 @@ async fn build_response(
         let all_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
         let media_map = batch_status_media(state, &all_ids).await?;
         let reblog_map = batch_reblog_data(state, &statuses).await?;
-        let quote_map = batch_quote_data(state, &statuses, Some(viewer_id)).await?;
+        let quote_map = batch_quote_data(state, &statuses, viewer_id).await?;
         let reblog_ids: Vec<i64> = reblog_map.values().map(|(rs, _, _)| rs.id).collect();
         let mut enrich_ids = all_ids.clone();
         enrich_ids.extend_from_slice(&reblog_ids);
@@ -371,9 +371,15 @@ async fn build_response(
             .chain(reblog_map.values().map(|(rs, _, _)| rs.clone()))
             .collect();
         let emojis_map = batch_status_emojis(state, &all_for_emoji).await?;
-        let polls_map = batch_status_polls(state, &enrich_ids, Some(viewer_id)).await?;
-        let cards_map = batch_status_cards(state, &enrich_ids, Some(viewer_id)).await?;
-        let ctxs = super::statuses::batch_viewer_contexts(state, viewer_id, &all_ids).await?;
+        let polls_map = batch_status_polls(state, &enrich_ids, viewer_id).await?;
+        let cards_map = batch_status_cards(state, &enrich_ids, viewer_id).await?;
+        // Serialized for no one (`scope: nil`) on the shared page.
+        let ctxs = match viewer_id {
+            Some(viewer_id) => {
+                super::statuses::batch_viewer_contexts(state, viewer_id, &all_ids).await?
+            }
+            None => Default::default(),
+        };
 
         let all_accounts_for_emoji: Vec<DbAccount> = {
             let mut v = vec![account.clone()];
@@ -451,19 +457,33 @@ async fn build_response(
 }
 
 fn db_row_to_report(
-    _id: i64,
-    account_id: i64,
+    state: &AppState,
+    account: &DbAccount,
     year: i32,
     data: Option<serde_json::Value>,
     schema_version: i32,
+    share_key: Option<&str>,
 ) -> AnnualReport {
     AnnualReport {
         year,
         data,
         schema_version,
-        share_url: None, // no public share URL in eunha
-        account_id: account_id.to_string(),
+        share_url: share_url(&state.urls.local_domain, &account.username, year, share_key),
+        account_id: account.id.to_string(),
     }
+}
+
+/// `REST::AnnualReportSerializer#share_url`: `public_wrapstodon_url`, the
+/// shared page, once the report has a share key.
+fn share_url(
+    local_domain: &str,
+    username: &str,
+    year: i32,
+    share_key: Option<&str>,
+) -> Option<String> {
+    share_key
+        .filter(|key| !key.trim().is_empty())
+        .map(|key| format!("https://{local_domain}/@{username}/wrapstodon/{year}/{key}"))
 }
 
 // ── GET /api/v1/annual_reports ─────────────────────────────────────────────
@@ -483,7 +503,7 @@ pub async fn list_annual_reports(
     .await?;
 
     let rows = sqlx::query!(
-        "SELECT id, account_id, year, data, schema_version
+        "SELECT year, data, schema_version, share_key
          FROM generated_annual_reports
          WHERE account_id = $1 AND viewed_at IS NULL
          ORDER BY year DESC",
@@ -494,10 +514,19 @@ pub async fn list_annual_reports(
 
     let reports: Vec<AnnualReport> = rows
         .into_iter()
-        .map(|r| db_row_to_report(r.id, r.account_id, r.year, Some(r.data), r.schema_version))
+        .map(|r| {
+            db_row_to_report(
+                &state,
+                &account,
+                r.year,
+                Some(r.data),
+                r.schema_version,
+                r.share_key.as_deref(),
+            )
+        })
         .collect();
 
-    let resp = build_response(&state, reports, &account, auth.account_id).await?;
+    let resp = build_response(&state, reports, &account, Some(auth.account_id)).await?;
     Ok(Json(resp))
 }
 
@@ -520,7 +549,7 @@ pub async fn get_annual_report(
     .await?;
 
     let row = sqlx::query!(
-        "SELECT id, account_id, year, data, schema_version
+        "SELECT year, data, schema_version, share_key
          FROM generated_annual_reports
          WHERE account_id = $1 AND year = $2",
         auth.account_id,
@@ -531,13 +560,14 @@ pub async fn get_annual_report(
     .ok_or(AppError::NotFound)?;
 
     let report = db_row_to_report(
-        row.id,
-        row.account_id,
+        &state,
+        &account,
         row.year,
         Some(row.data),
         row.schema_version,
+        row.share_key.as_deref(),
     );
-    let resp = build_response(&state, vec![report], &account, auth.account_id).await?;
+    let resp = build_response(&state, vec![report], &account, Some(auth.account_id)).await?;
     Ok(Json(resp))
 }
 
@@ -739,4 +769,131 @@ pub async fn get_annual_report_state(
             .insert(crate::async_refresh::HEADER, value);
     }
     Ok(response)
+}
+
+// ── GET /@{account_username}/wrapstodon/{year}/{share_key} ────────────────
+
+/// What `WrapstodonController#show` finds for a shared report.
+pub enum Shared {
+    /// `AccountOwnedConcern#authenticate_user!`: in limited federation mode
+    /// the page is for signed-in users only.
+    SignInRequired,
+    /// No such local account or report, or an account still pending,
+    /// unconfirmed, or without a user.
+    NotFound,
+    /// `permanent_unavailability_response`: suspended or deleted with no
+    /// deletion request left to undo it.
+    Gone,
+    /// `temporary_suspension_response`.
+    Suspended,
+    Found(Box<SharedReport>),
+}
+
+pub struct SharedReport {
+    pub account: DbAccount,
+    pub year: i32,
+    /// `render_wrapstodon_share_data`: `REST::AnnualReportsSerializer` with
+    /// no viewer, plus `me` and the local `domain`.
+    pub payload: serde_json::Value,
+}
+
+/// `WrapstodonController`: the report of a local account's `year` whose
+/// share key is `share_key`, shown to anyone who has the link.
+pub async fn shared(
+    state: &AppState,
+    viewer: Option<&AuthenticatedUser>,
+    username: &str,
+    year: &str,
+    share_key: &str,
+) -> AppResult<Shared> {
+    let signed_in = viewer.filter(|v| v.user_id.is_some());
+    if state.instance.limited_federation_mode
+        && !signed_in.is_some_and(|v| v.standing == crate::middleware::Standing::Functional)
+    {
+        return Ok(Shared::SignInRequired);
+    }
+
+    // `AccountOwnedConcern`: `Account.find_local!`, then approval,
+    // suspension and confirmation, in that order.
+    let Some(account) = crate::search::accounts::find_remote(state, username, None).await? else {
+        return Ok(Shared::NotFound);
+    };
+    let user = sqlx::query!(
+        "SELECT approved, confirmed_at IS NOT NULL AS \"confirmed!\"
+         FROM users WHERE account_id = $1",
+        account.id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if user.as_ref().is_some_and(|u| !u.approved) {
+        return Ok(Shared::NotFound);
+    }
+    if account.is_unavailable() {
+        let reversible = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1) AS "e!""#,
+            account.id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if !reversible {
+            return Ok(Shared::Gone);
+        }
+        return Ok(Shared::Suspended);
+    }
+    if !user.is_some_and(|u| u.confirmed) {
+        return Ok(Shared::NotFound);
+    }
+
+    // `GeneratedAnnualReport.find_by!(account:, year:, share_key:)`.
+    let year = year_param(year);
+    let Some(row) = sqlx::query!(
+        "SELECT year, data, schema_version, share_key
+         FROM generated_annual_reports
+         WHERE account_id = $1 AND year = $2 AND share_key = $3",
+        account.id,
+        year,
+        share_key,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(Shared::NotFound);
+    };
+
+    let report = db_row_to_report(
+        state,
+        &account,
+        row.year,
+        Some(row.data),
+        row.schema_version,
+        row.share_key.as_deref(),
+    );
+    let response = build_response(state, vec![report], &account, None).await?;
+    let mut payload = serde_json::to_value(response)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing the report: {e}")))?;
+    if let Some(viewer) = signed_in {
+        payload["me"] = viewer.account_id.to_string().into();
+    }
+    payload["domain"] = idna::domain_to_unicode(&state.urls.local_domain).0.into();
+    Ok(Shared::Found(Box::new(SharedReport {
+        account,
+        year: row.year,
+        payload,
+    })))
+}
+
+#[cfg(test)]
+mod share_url_tests {
+    #[test]
+    fn is_the_shared_page_once_there_is_a_share_key() {
+        assert_eq!(
+            super::share_url("example.com", "alice", 2025, Some("0123456789abcdef")).as_deref(),
+            Some("https://example.com/@alice/wrapstodon/2025/0123456789abcdef"),
+        );
+        assert_eq!(super::share_url("example.com", "alice", 2025, None), None);
+        assert_eq!(
+            super::share_url("example.com", "alice", 2025, Some("")),
+            None
+        );
+    }
 }

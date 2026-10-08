@@ -60,7 +60,8 @@ The recorded decisions cover:
     collection's owner;
  -  the pictures the instance API names when none were uploaded;
  -  the range of a dashboard measure or dimension asked for without one;
- -  what the dashboard's software versions and space usage report.
+ -  what the dashboard's software versions and space usage report;
+ -  the shared Wrapstodon page, drawn by eunha's web app.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

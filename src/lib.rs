@@ -128,6 +128,10 @@ async fn fallback(state: state::AppState, req: Request) -> axum::response::Respo
         )
             .into_response()
     } else {
-        web::serve(state, uri).await
+        let viewer = req
+            .extensions()
+            .get::<middleware::AuthenticatedUser>()
+            .cloned();
+        web::serve(state, uri, viewer).await
     }
 }

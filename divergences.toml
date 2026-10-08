@@ -1198,3 +1198,28 @@ others' memory or indexes."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "shared-wrapstodon-page"
+kind = "behaviour"
+summary = "Draws the shared Wrapstodon page with eunha's web app, and knows its viewer by token"
+mastodon = """
+`WrapstodonController#show` renders `wrapstodon/show`: Mastodon's own \
+Wrapstodon pages in a forced dark scheme, with an `og:image` preview of the \
+archetype. A signed-in browser session is `me` and gets a private page; in \
+limited federation mode anyone else is sent to sign in."""
+eunha = """
+Serves the same route, refusals, cache headers, OpenGraph tags and \
+`#wrapstodon-data` payload, but the page is eunha's web app, which draws the \
+report in its own design, with no archetype preview image. The server knows \
+a viewer only by a bearer token, so a browser's own visit is anonymous and \
+the web app fetches the page again with its token when the page came without \
+the report; in limited federation mode, an anonymous visit gets the page \
+without the report rather than a redirect."""
+why = """
+Mastodon's Wrapstodon pages and preview images are its web client's own \
+artwork. Eunha's web app signs in with an OAuth token, not a cookie session, \
+so there is no session for the server to redirect to or to read."""
+evidence = "tests/integration/c2s/annual_reports.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

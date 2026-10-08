@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT year, data, schema_version, share_key\n         FROM generated_annual_reports\n         WHERE account_id = $1 AND viewed_at IS NULL\n         ORDER BY year DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "year",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "schema_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "share_key",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "4342c358e4a9ed0545c71e0221cff44caaee8c933264e9aaca240bf0ea07b389"
+}
