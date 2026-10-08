@@ -15,10 +15,6 @@ fn featured_tag_url(domain: &str, username: &str, name: &str) -> String {
     format!("https://{domain}/@{username}/tagged/{name}")
 }
 
-fn tag_url(domain: &str, name: &str) -> String {
-    format!("https://{domain}/tags/{name}")
-}
-
 // ── CreateFeaturedTagService / RemoveFeaturedTagService ──────────────────
 
 /// What a featured tag is featured by: the name as written
@@ -342,6 +338,8 @@ pub async fn unfeature_tag(
 
 // ── POST /api/v1/tags/:name/feature ──────────────────────────────────────
 
+/// `TagsController#feature`: `CreateFeaturedTagService` on the tag
+/// `set_or_create_tag` sets, which saves an unsaved one.
 pub async fn feature_tag_by_name(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -349,40 +347,26 @@ pub async fn feature_tag_by_name(
     Path(name): Path<String>,
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:accounts")?;
-    let domain = &instance.domain;
-    let written = name.clone();
-    let name = name.to_lowercase();
-    let name = name.trim_start_matches('#');
-
-    let tag_id = crate::tags::find_or_create(&state.db, &written)
-        .await?
-        .ok_or_else(|| AppError::Unprocessable("Validation failed: Tag is invalid".into()))?;
+    let mut tag = super::tags::set_or_create_tag(&state, &name).await?;
+    let tag_id = match tag.id {
+        Some(id) => id,
+        None => crate::tags::find_or_create(&state.db, &name)
+            .await?
+            .ok_or_else(|| AppError::Unprocessable("Validation failed: Tag is invalid".into()))?,
+    };
+    tag.id = Some(tag_id);
 
     create_featured_tag(&state, auth.account_id, Featuring::Tag(tag_id)).await?;
 
-    let following = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM tag_follows WHERE account_id = $1 AND tag_id = $2)",
-        auth.account_id,
-        tag_id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(false);
-
-    let history = super::tags::fetch_tag_history(&state, tag_id).await;
-
-    Ok(Json(Tag {
-        id: tag_id.to_string(),
-        url: tag_url(domain, name),
-        name: name.to_string(),
-        history,
-        following: Some(following),
-        featuring: Some(true),
-    }))
+    super::tags::render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+        .await
+        .map(Json)
 }
 
 // ── POST /api/v1/tags/:name/unfeature ────────────────────────────────────
 
+/// `TagsController#unfeature`: `RemoveFeaturedTagService` on the tag, if
+/// it is featured.
 pub async fn unfeature_tag_by_name(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -390,60 +374,34 @@ pub async fn unfeature_tag_by_name(
     Path(name): Path<String>,
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:accounts")?;
-    let domain = &instance.domain;
-    let name = name.to_lowercase();
+    let tag = super::tags::set_or_create_tag(&state, &name).await?;
 
-    let tag = sqlx::query!("SELECT id FROM tags WHERE name = $1", name,)
+    if let Some(tag_id) = tag.id {
+        // `RemoveFeaturedTagService` on the tag: the account's featured tag
+        // for it, if there is one.
+        let featured = sqlx::query_scalar!(
+            "SELECT id FROM featured_tags WHERE account_id = $1 AND tag_id = $2",
+            auth.account_id,
+            tag_id,
+        )
         .fetch_optional(&state.db)
         .await?;
-
-    let Some(tag) = tag else {
-        return Ok(Json(Tag {
-            id: String::new(),
-            url: tag_url(domain, &name),
-            name,
-            history: vec![],
-            following: Some(false),
-            featuring: Some(false),
-        }));
-    };
-
-    // `RemoveFeaturedTagService` on the tag: the account's featured tag for
-    // it, if there is one.
-    let featured = sqlx::query_scalar!(
-        "SELECT id FROM featured_tags WHERE account_id = $1 AND tag_id = $2",
-        auth.account_id,
-        tag.id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    if let Some(featured) = featured {
-        remove_featured_tag(&state, auth.account_id, featured).await?;
+        if let Some(featured) = featured {
+            remove_featured_tag(&state, auth.account_id, featured).await?;
+        }
     }
 
-    let following = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM tag_follows WHERE account_id = $1 AND tag_id = $2)",
-        auth.account_id,
-        tag.id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(false);
-
-    let history = super::tags::fetch_tag_history(&state, tag.id).await;
-
-    Ok(Json(Tag {
-        id: tag.id.to_string(),
-        url: tag_url(domain, &name),
-        name,
-        history,
-        following: Some(following),
-        featuring: Some(false),
-    }))
+    super::tags::render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+        .await
+        .map(Json)
 }
 
 // ── GET /api/v1/featured_tags/suggestions ────────────────────────────────
 
+/// `FeaturedTags::SuggestionsController#index`:
+/// `Tag.suggestions_for_account`, the tags of the account's last thousand
+/// posts of the past year used more than once and not yet featured, the
+/// most used first.
 pub async fn featured_tag_suggestions(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -453,28 +411,41 @@ pub async fn featured_tag_suggestions(
     let domain = &instance.domain;
 
     let rows = sqlx::query!(
-        r#"SELECT t.id, t.name
+        r#"SELECT t.id, t.name, COALESCE(t.display_name, t.name) AS "display_name!",
+                  EXISTS(SELECT 1 FROM tag_follows tf
+                         WHERE tf.account_id = $1 AND tf.tag_id = t.id) AS "following!"
            FROM tags t
            JOIN statuses_tags st ON st.tag_id = t.id
-           JOIN statuses s ON s.id = st.status_id
-           WHERE s.account_id = $1 AND s.deleted_at IS NULL
-           GROUP BY t.id, t.name
+           WHERE st.status_id IN (
+               SELECT s.id FROM statuses s
+               WHERE s.account_id = $1 AND s.deleted_at IS NULL
+                 -- `Mastodon::Snowflake.id_at(RECENT_STATUS_MAX_AGE.ago)..`
+                 AND s.id >= ((extract(epoch FROM now() - interval '1 year') * 1000)::bigint << 16)
+               ORDER BY s.id DESC
+               LIMIT 1000
+             )
+             AND t.id NOT IN (SELECT tag_id FROM featured_tags WHERE account_id = $1)
+           GROUP BY t.id
+           HAVING COUNT(st.status_id) > 1
            ORDER BY COUNT(*) DESC
            LIMIT 10"#,
         auth.account_id,
     )
     .fetch_all(&state.db)
     .await?;
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    let mut histories = super::tags::fetch_tags_histories(&state, &ids).await;
 
     let tags = rows
         .into_iter()
         .map(|r| super::types::Tag {
             id: r.id.to_string(),
-            url: format!("https://{}/tags/{}", domain, r.name),
-            name: r.name,
-            history: vec![],
-            following: None,
-            featuring: None,
+            url: super::tags::tag_url(domain, &r.name),
+            name: r.display_name,
+            history: histories.remove(&r.id).unwrap_or_default(),
+            following: Some(r.following),
+            // Not featured, by `not_featured_by`.
+            featuring: Some(false),
         })
         .collect();
 

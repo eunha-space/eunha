@@ -52,6 +52,16 @@ pub static HASHTAG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(r"(?<!\S)[#＃](({first})|({last}))")).expect("valid hashtag pattern")
 });
 
+/// `Tag::HASHTAG_NAME_RE`: a whole name as a hashtag may have it.
+pub static HASHTAG_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    let first = format!(
+        "[{WORD}_][{WORD}{HASHTAG_SEPARATORS}]*[\\p{{Alphabetic}}{HASHTAG_SEPARATORS}][{WORD}{HASHTAG_SEPARATORS}]*[{WORD}_]"
+    );
+    let last = format!("[{WORD}_]*[\\p{{Alphabetic}}][{WORD}_]*");
+    regex::Regex::new(&format!(r"(?i)\A(?:(?:{first})|(?:{last}))\z"))
+        .expect("valid hashtag name pattern")
+});
+
 /// twitter-text's `end_mention_match`.
 static END_MENTION_MATCH: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(

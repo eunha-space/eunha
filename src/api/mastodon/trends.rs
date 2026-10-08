@@ -113,7 +113,7 @@ pub(crate) async fn tags_query(
     let trendable_by_default = crate::settings::boolean(state, "trendable_by_default").await;
 
     let rows = sqlx::query!(
-        r#"SELECT t.id, t.name,
+        r#"SELECT t.id, t.name, COALESCE(t.display_name, t.name) AS "display_name!",
                   COALESCE(t.trendable, $3) AS "trendable!", COALESCE(t.usable, true) AS "usable!",
                   COALESCE(t.listable, true) AS "listable!", (t.reviewed_at IS NULL) AS "requires_review!"
            FROM tags t
@@ -175,12 +175,8 @@ pub(crate) async fn tags_query(
             let tag = Tag {
                 id: r.id.to_string(),
                 history: histories.get(&r.id).cloned().unwrap_or_default(),
-                name: r.name,
-                url: format!(
-                    "https://{}/tags/{}",
-                    domain,
-                    urlencoding::encode(&name_lower)
-                ),
+                name: r.display_name,
+                url: super::tags::tag_url(domain, &name_lower),
                 following,
                 featuring,
             };

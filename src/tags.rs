@@ -6,7 +6,7 @@ use sqlx::PgPool;
 
 /// `normalizes :display_name`: the spelling as written, without what
 /// `HASHTAG_INVALID_CHARS_RE` rejects.
-fn display_name(written: &str) -> String {
+pub fn display_name(written: &str) -> String {
     const SEPARATORS: [char; 4] = ['_', '\u{00B7}', '\u{30FB}', '\u{200C}'];
     written
         .chars()

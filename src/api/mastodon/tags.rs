@@ -39,68 +39,94 @@ pub(super) async fn fetch_tag_history(state: &AppState, tag_id: i64) -> Vec<TagH
         .collect()
 }
 
-fn tag_url(domain: &str, name: &str) -> String {
-    format!("https://{domain}/tags/{name}")
+/// `tag_url(tag)`: by the tag's `to_param`, its name.
+pub(super) fn tag_url(domain: &str, name: &str) -> String {
+    crate::formatter::text::tag_url(domain, name)
+}
+
+/// The tag `TagsController#set_or_create_tag` sets: the one
+/// `Tag.find_normalized` finds, or an unsaved `Tag.new(name:, display_name:)`
+/// of the name given, which has no id.
+pub(super) struct TagRef {
+    pub id: Option<i64>,
+    /// The normalized name: the URL's.
+    pub name: String,
+    /// `Tag#display_name`, which `REST::TagSerializer` gives as the name.
+    pub display_name: String,
+}
+
+/// `TagsController#set_or_create_tag`: a 404 for a name that is no
+/// hashtag (`HASHTAG_NAME_RE`), else the tag of that name, saved or not.
+pub(super) async fn set_or_create_tag(state: &AppState, param: &str) -> AppResult<TagRef> {
+    if !crate::formatter::extractor::HASHTAG_NAME_RE.is_match(param) {
+        return Err(AppError::NotFound);
+    }
+    Ok(
+        match crate::search::tags::find_normalized(state, param).await? {
+            Some(found) => TagRef {
+                id: Some(found.id),
+                name: found.name,
+                display_name: found.display_name,
+            },
+            None => TagRef {
+                id: None,
+                name: crate::search::tags::normalize(param),
+                display_name: crate::tags::display_name(param),
+            },
+        },
+    )
+}
+
+/// `REST::TagSerializer`: `following` and `featuring` only for a user. An
+/// unsaved tag has the empty id, no follows and a history of zeros.
+pub(super) async fn render_tag(
+    state: &AppState,
+    domain: &str,
+    tag: &TagRef,
+    viewer_id: Option<i64>,
+) -> AppResult<Tag> {
+    let history = fetch_tag_history(state, tag.id.unwrap_or(0)).await;
+    let (following, featuring) = match (viewer_id, tag.id) {
+        (Some(viewer), Some(id)) => {
+            let row = sqlx::query!(
+                r#"SELECT
+                     EXISTS(SELECT 1 FROM tag_follows WHERE account_id = $1 AND tag_id = $2) AS "following!",
+                     EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2) AS "featuring!""#,
+                viewer,
+                id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            (Some(row.following), Some(row.featuring))
+        }
+        (Some(_), None) => (Some(false), Some(false)),
+        (None, _) => (None, None),
+    };
+    Ok(Tag {
+        id: tag.id.map(|id| id.to_string()).unwrap_or_default(),
+        name: tag.display_name.clone(),
+        url: tag_url(domain, &tag.name),
+        history,
+        following,
+        featuring,
+    })
 }
 
 // ── GET /api/v1/tags/:name ────────────────────────────────────────────────
 
+/// `TagsController#show`: the tag, or for a hashtag nobody has used the
+/// unsaved one, with the empty id.
 pub async fn get_tag(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Path(name): Path<String>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<Tag>> {
-    let domain = &instance.domain;
-    let name = name.to_lowercase();
-
-    // Mastodon's TagsController#show uses Tag.find_normalized! which raises
-    // RecordNotFound (→ 404) for hashtags that do not exist.
-    let tag = sqlx::query!("SELECT id FROM tags WHERE name = $1", name,)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-
-    let (following, featuring, history, id_str) = {
-        let t = &tag;
-        let history = fetch_tag_history(&state, t.id).await;
-        let (following, featuring) = if let Some(Extension(ref auth)) = auth {
-            let following = sqlx::query_scalar!(
-                r#"SELECT EXISTS(
-                   SELECT 1 FROM tag_follows tf
-                   WHERE tf.account_id = $1 AND tf.tag_id = $2
-                )"#,
-                auth.account_id,
-                t.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(false);
-
-            let featuring = sqlx::query_scalar!(
-                "SELECT EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2)",
-                auth.account_id,
-                t.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(false);
-
-            (Some(following), Some(featuring))
-        } else {
-            (None, None)
-        };
-        (following, featuring, history, t.id.to_string())
-    };
-
-    Ok(Json(Tag {
-        id: id_str,
-        url: tag_url(domain, &name),
-        name,
-        history,
-        following,
-        featuring,
-    }))
+    let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
+    let tag = set_or_create_tag(&state, &name).await?;
+    render_tag(&state, &instance.domain, &tag, viewer_id)
+        .await
+        .map(Json)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -134,7 +160,8 @@ pub async fn list_followed_tags(
     let min_id = params.min_id.as_deref().and_then(|s| s.parse::<i64>().ok());
 
     let rows = sqlx::query!(
-        r#"SELECT tf.id AS follow_id, t.id, t.name
+        r#"SELECT tf.id AS follow_id, t.id, t.name,
+                  COALESCE(t.display_name, t.name) AS "display_name!"
            FROM tag_follows tf
            JOIN tags t ON t.id = tf.tag_id
            WHERE tf.account_id = $1
@@ -159,6 +186,18 @@ pub async fn list_followed_tags(
 
     let tag_ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
     let histories = fetch_tags_histories(&state, &tag_ids).await;
+    // `TagRelationshipsPresenter#featuring_map`.
+    let featuring: Option<std::collections::HashSet<i64>> = Some(
+        sqlx::query_scalar!(
+            "SELECT tag_id FROM featured_tags WHERE account_id = $1 AND tag_id = ANY($2)",
+            auth.account_id,
+            &tag_ids,
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .collect(),
+    );
 
     let result: Vec<Tag> = rows
         .into_iter()
@@ -166,9 +205,9 @@ pub async fn list_followed_tags(
             id: r.id.to_string(),
             url: tag_url(domain, &r.name),
             history: histories.get(&r.id).cloned().unwrap_or_default(),
-            name: r.name,
+            name: r.display_name,
             following: Some(true),
-            featuring: None,
+            featuring: featuring.as_ref().map(|f| f.contains(&r.id)),
         })
         .collect();
 
@@ -181,6 +220,7 @@ pub async fn list_followed_tags(
     Ok((resp_headers, Json(result)))
 }
 
+/// `TagsController#follow`: the follow, which saves an unsaved tag.
 pub async fn follow_tag(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -188,14 +228,14 @@ pub async fn follow_tag(
     Path(name): Path<String>,
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:follows")?;
-    let domain = &instance.domain;
-    let written = name.clone();
-    let name = name.to_lowercase();
-
-    // `Tag.find_or_create_by_names(params[:id])`.
-    let tag_id = crate::tags::find_or_create(&state.db, &written)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let mut tag = set_or_create_tag(&state, &name).await?;
+    let tag_id = match tag.id {
+        Some(id) => id,
+        None => crate::tags::find_or_create(&state.db, &name)
+            .await?
+            .ok_or(AppError::NotFound)?,
+    };
+    tag.id = Some(tag_id);
 
     crate::rate_limit::record_tag_follow(&state, auth.account_id, tag_id).await?;
     sqlx::query!(
@@ -206,27 +246,12 @@ pub async fn follow_tag(
     .execute(&state.db)
     .await?;
 
-    let history = fetch_tag_history(&state, tag_id).await;
-
-    let featuring = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2)",
-        auth.account_id,
-        tag_id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(false);
-
-    Ok(Json(Tag {
-        id: tag_id.to_string(),
-        url: tag_url(domain, &name),
-        name,
-        history,
-        following: Some(true),
-        featuring: Some(featuring),
-    }))
+    render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+        .await
+        .map(Json)
 }
 
+/// `TagsController#unfollow`.
 pub async fn unfollow_tag(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
@@ -234,62 +259,31 @@ pub async fn unfollow_tag(
     Path(name): Path<String>,
 ) -> AppResult<Json<Tag>> {
     auth.require_scope("write:follows")?;
-    let domain = &instance.domain;
-    let name = name.to_lowercase();
+    let tag = set_or_create_tag(&state, &name).await?;
 
-    let tag = sqlx::query!("SELECT id FROM tags WHERE name = $1", name,)
-        .fetch_optional(&state.db)
+    if let Some(tag_id) = tag.id {
+        sqlx::query!(
+            "DELETE FROM tag_follows WHERE account_id = $1 AND tag_id = $2",
+            auth.account_id,
+            tag_id,
+        )
+        .execute(&state.db)
         .await?;
-
-    // If tag doesn't exist there's nothing to unfollow; return empty-id tag (matches Mastodon).
-    let Some(tag) = tag else {
-        return Ok(Json(Tag {
-            id: String::new(),
-            url: tag_url(domain, &name),
-            name,
-            history: vec![],
-            following: Some(false),
-            featuring: Some(false),
-        }));
-    };
-
-    sqlx::query!(
-        "DELETE FROM tag_follows WHERE account_id = $1 AND tag_id = $2",
-        auth.account_id,
-        tag.id,
-    )
-    .execute(&state.db)
-    .await?;
-    // `TagUnmergeWorker.perform_async(@tag.id, current_account.id)`.
-    let job = TagUnmergeWorker {
-        from_tag_id: tag.id,
-        into_account_id: auth.account_id,
-    };
-    if crate::feed::sync_fanout() {
-        job.unmerge(&state).await?;
-    } else {
-        crate::jobs::push(&state, job).await;
+        // `TagUnmergeWorker.perform_async(@tag.id, current_account.id)`.
+        let job = TagUnmergeWorker {
+            from_tag_id: tag_id,
+            into_account_id: auth.account_id,
+        };
+        if crate::feed::sync_fanout() {
+            job.unmerge(&state).await?;
+        } else {
+            crate::jobs::push(&state, job).await;
+        }
     }
 
-    let history = fetch_tag_history(&state, tag.id).await;
-
-    let featuring = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM featured_tags WHERE account_id = $1 AND tag_id = $2)",
-        auth.account_id,
-        tag.id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(false);
-
-    Ok(Json(Tag {
-        id: tag.id.to_string(),
-        url: tag_url(domain, &name),
-        name,
-        history,
-        following: Some(false),
-        featuring: Some(featuring),
-    }))
+    render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+        .await
+        .map(Json)
 }
 
 /// `TagUnmergeWorker`, in the `pull` queue: the posts of a hashtag just

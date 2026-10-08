@@ -193,16 +193,97 @@ async fn test_followed_tags_includes_following_true() {
     );
 }
 
-/// GET /api/v1/tags/:name for a non-existent tag returns 404.
+/// GET /api/v1/tags/:name for a hashtag nobody has used is the unsaved
+/// tag `set_or_create_tag` makes, with the empty id; a name that is no
+/// hashtag is a 404.
 #[tokio::test]
-async fn test_get_tag_not_found() {
-    let ctx = TestContext::new("tag-404").await;
+async fn test_get_unused_tag_is_unsaved() {
+    let ctx = TestContext::new("tag-unsaved").await;
 
     let resp = ctx
         .api
-        .get("/api/v1/tags/definitelynonexistent99999", None)
+        .get("/api/v1/tags/NeverUsed99999", Some(&ctx.alice_token))
         .await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(resp.status(), StatusCode::OK);
+    let tag: Value = resp.json().await.unwrap();
+    assert_eq!(tag["id"], json!(""));
+    assert_eq!(tag["name"], json!("NeverUsed99999"));
+    assert!(tag["url"]
+        .as_str()
+        .unwrap()
+        .ends_with("/tags/neverused99999"));
+    assert_eq!(tag["history"].as_array().unwrap().len(), 7);
+    assert_eq!(tag["following"], json!(false));
+    assert_eq!(tag["featuring"], json!(false));
+    let saved: i64 = sqlx::query_scalar("SELECT count(*) FROM tags WHERE name = 'neverused99999'")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(saved, 0, "showing a tag does not save it");
+
+    for name in ["123", "no%20spaces", "a-b"] {
+        let resp = ctx.api.get(&format!("/api/v1/tags/{name}"), None).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{name}");
+    }
+}
+
+/// Tags are found as `HashtagNormalizer` normalizes them (NFKC, ASCII
+/// folding), and named by their display name.
+#[tokio::test]
+async fn test_tags_are_found_normalized_and_named_by_display_name() {
+    let ctx = TestContext::new("tag-normalized").await;
+    ctx.api
+        .post_status(&ctx.alice_token, "about #Blåhaj", "public")
+        .await;
+
+    for path in ["/api/v1/tags/BLAHAJ", "/api/v1/tags/%EF%BC%A2l%C3%A5haj"] {
+        let tag: Value = ctx
+            .api
+            .get(path, Some(&ctx.alice_token))
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_ne!(tag["id"], json!(""), "{path}: {tag}");
+        assert_eq!(tag["name"], json!("Blåhaj"), "{path}");
+        assert!(tag["url"].as_str().unwrap().ends_with("/tags/blahaj"));
+    }
+
+    let followed: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/tags/blahaj/follow",
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(followed["name"], json!("Blåhaj"));
+    assert_eq!(followed["following"], json!(true));
+    let list: Vec<Value> = ctx
+        .api
+        .get("/api/v1/followed_tags", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list[0]["name"], json!("Blåhaj"));
+    assert_eq!(list[0]["featuring"], json!(false));
+    let unfollowed: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/tags/BLÅHAJ/unfollow",
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(unfollowed["name"], json!("Blåhaj"));
+    assert_eq!(unfollowed["following"], json!(false));
 }
 
 /// Feature a tag, list it on account, unfeature it.

@@ -340,6 +340,9 @@ pub struct AdminTag {
     pub url: String,
     /// `REST::TagSerializer#history`, which the admin serializer extends.
     pub history: Vec<super::types::TagHistory>,
+    /// `REST::TagSerializer`'s, for the user asking.
+    pub following: bool,
+    pub featuring: bool,
     pub trendable: bool,
     pub usable: bool,
     pub requires_review: bool,
@@ -347,7 +350,7 @@ pub struct AdminTag {
 }
 
 fn admin_tag_url(domain: &str, name: &str) -> String {
-    format!("https://{domain}/tags/{name}")
+    super::tags::tag_url(domain, name)
 }
 
 #[derive(Debug, Deserialize)]
@@ -395,7 +398,10 @@ pub async fn list_admin_tags(
     let name_filter = params.name.as_deref().map(|s| s.to_lowercase());
 
     let rows = sqlx::query!(
-        r#"SELECT id, name, trendable, usable, listable, reviewed_at
+        r#"SELECT id, name, trendable, usable, listable, reviewed_at,
+                  COALESCE(display_name, name) AS "display_name!",
+                  EXISTS(SELECT 1 FROM tag_follows tf WHERE tf.account_id = $6 AND tf.tag_id = tags.id) AS "following!",
+                  EXISTS(SELECT 1 FROM featured_tags ft WHERE ft.account_id = $6 AND ft.tag_id = tags.id) AS "featuring!"
            FROM tags
            WHERE ($2::bigint IS NULL OR id < $2)
              AND ($3::bigint IS NULL OR id > $3)
@@ -408,6 +414,7 @@ pub async fn list_admin_tags(
         since_id,
         min_id,
         name_filter,
+        auth.account_id,
     )
     .fetch_all(&state.db)
     .await?;
@@ -419,8 +426,10 @@ pub async fn list_admin_tags(
             .map(|r| AdminTag {
                 id: r.id.to_string(),
                 history: histories.remove(&r.id).unwrap_or_default(),
-                name: r.name.clone(),
+                name: r.display_name,
                 url: admin_tag_url(domain, &r.name),
+                following: r.following,
+                featuring: r.featuring,
                 // `Tag#trendable`: the column, else `trendable_by_default`.
                 trendable: r.trendable.unwrap_or(trendable_by_default),
                 usable: r.usable.unwrap_or(true),
@@ -441,8 +450,13 @@ pub async fn get_admin_tag(
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
     let domain = &instance.domain;
     let r = sqlx::query!(
-        "SELECT id, name, trendable, usable, listable, reviewed_at FROM tags WHERE id = $1",
+        r#"SELECT id, name, trendable, usable, listable, reviewed_at,
+                  COALESCE(display_name, name) AS "display_name!",
+                  EXISTS(SELECT 1 FROM tag_follows tf WHERE tf.account_id = $2 AND tf.tag_id = tags.id) AS "following!",
+                  EXISTS(SELECT 1 FROM featured_tags ft WHERE ft.account_id = $2 AND ft.tag_id = tags.id) AS "featuring!"
+           FROM tags WHERE id = $1"#,
         id,
+        auth.account_id,
     )
     .fetch_optional(&state.db)
     .await?
@@ -453,8 +467,10 @@ pub async fn get_admin_tag(
             .await
             .remove(&r.id)
             .unwrap_or_default(),
-        name: r.name.clone(),
+        name: r.display_name,
         url: admin_tag_url(domain, &r.name),
+        following: r.following,
+        featuring: r.featuring,
         trendable: r.trendable.unwrap_or(trendable_by_default),
         usable: r.usable.unwrap_or(true),
         listable: r.listable.unwrap_or(true),
@@ -480,11 +496,15 @@ pub async fn update_admin_tag(
                reviewed_at = now(),
                updated_at  = now()
            WHERE id = $1
-           RETURNING id, name, trendable, usable, listable, reviewed_at"#,
+           RETURNING id, name, trendable, usable, listable, reviewed_at,
+                     COALESCE(display_name, name) AS "display_name!",
+                  EXISTS(SELECT 1 FROM tag_follows tf WHERE tf.account_id = $5 AND tf.tag_id = tags.id) AS "following!",
+                  EXISTS(SELECT 1 FROM featured_tags ft WHERE ft.account_id = $5 AND ft.tag_id = tags.id) AS "featuring!""#,
         id,
         form.trendable,
         form.usable,
         form.listable,
+        auth.account_id,
     )
     .fetch_optional(&state.db)
     .await?
@@ -497,8 +517,10 @@ pub async fn update_admin_tag(
             .await
             .remove(&r.id)
             .unwrap_or_default(),
-        name: r.name.clone(),
+        name: r.display_name,
         url: admin_tag_url(domain, &r.name),
+        following: r.following,
+        featuring: r.featuring,
         trendable: r.trendable.unwrap_or(trendable_by_default),
         usable: r.usable.unwrap_or(true),
         listable: r.listable.unwrap_or(true),
