@@ -7,6 +7,7 @@ use serde::Deserialize;
 use super::{
     accounts::{batch_account_emojis, batch_account_roles},
     convert::status_from_db,
+    extractors::RubyInt,
     status_serialize::{
         batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
         batch_status_mentions, batch_status_polls, batch_statuses_tags, hydrate_status_stats,
@@ -21,8 +22,29 @@ use crate::{
 
 #[derive(Debug, Deserialize)]
 pub struct TrendParams {
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
+    pub limit: Option<RubyInt>,
+    pub offset: Option<RubyInt>,
+}
+
+/// `DEFAULT_TAGS_LIMIT`.
+pub(super) const DEFAULT_TAGS_LIMIT: i64 = 10;
+/// `Api::BaseController::DEFAULT_STATUSES_LIMIT`.
+pub(super) const DEFAULT_STATUSES_LIMIT: i64 = 20;
+/// `DEFAULT_LINKS_LIMIT`.
+pub(super) const DEFAULT_LINKS_LIMIT: i64 = 10;
+
+impl TrendParams {
+    /// `limit_param(default)`: `default` without a `limit`, else its
+    /// `.to_i.abs`, at most twice `default`; zero finds nothing.
+    pub(super) fn limit(&self, default: i64) -> i64 {
+        self.limit
+            .map_or(default, |RubyInt(n)| n.saturating_abs().min(default * 2))
+    }
+
+    /// `params[:offset].to_i`, a negative one read as none.
+    pub(super) fn offset(&self) -> i64 {
+        self.offset.map_or(0, |RubyInt(n)| n.max(0))
+    }
 }
 
 // ── GET /api/v1/trends/tags  &  GET /api/v1/trends ────────────────────────
@@ -35,8 +57,8 @@ pub async fn trending_tags(
     req_headers: axum::http::HeaderMap,
     uri: axum::http::Uri,
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<Tag>>)> {
-    let limit = params.limit.unwrap_or(10).clamp(1, 20);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(DEFAULT_TAGS_LIMIT);
+    let offset = params.offset();
     let viewer_id = auth.map(|Extension(a)| a.account_id);
     // `enabled?`: the `trends` setting.
     if !crate::settings::boolean(&state, "trends").await {
@@ -169,8 +191,8 @@ pub async fn trending_statuses(
     req_headers: axum::http::HeaderMap,
     uri: axum::http::Uri,
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<Status>>)> {
-    let limit = params.limit.unwrap_or(20).clamp(1, 40);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(DEFAULT_STATUSES_LIMIT);
+    let offset = params.offset();
     let viewer_id = auth.map(|Extension(a)| a.account_id);
     if !crate::settings::boolean(&state, "trends").await {
         return Ok((axum::http::HeaderMap::new(), Json(vec![])));
@@ -374,8 +396,8 @@ pub async fn trending_links(
     req_headers: axum::http::HeaderMap,
     uri: axum::http::Uri,
 ) -> AppResult<(axum::http::HeaderMap, Json<Vec<super::types::PreviewCard>>)> {
-    let limit = params.limit.unwrap_or(10).clamp(1, 40);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(DEFAULT_LINKS_LIMIT);
+    let offset = params.offset();
     if !crate::settings::boolean(&state, "trends").await {
         return Ok((axum::http::HeaderMap::new(), Json(vec![])));
     }
@@ -447,4 +469,27 @@ pub(crate) async fn links_query(
         cards.push((card, r.id, r.requires_review));
     }
     Ok(cards)
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::{RubyInt, TrendParams};
+
+    fn limit(given: Option<i64>, default: i64) -> i64 {
+        TrendParams {
+            limit: given.map(RubyInt),
+            offset: None,
+        }
+        .limit(default)
+    }
+
+    #[test]
+    fn limit_param_semantics() {
+        assert_eq!(limit(None, 10), 10);
+        assert_eq!(limit(Some(0), 10), 0);
+        assert_eq!(limit(Some(-5), 10), 5);
+        assert_eq!(limit(Some(15), 10), 15);
+        assert_eq!(limit(Some(50), 10), 20);
+        assert_eq!(limit(Some(50), 20), 40);
+    }
 }

@@ -57,8 +57,8 @@ pub async fn admin_trending_tags(
     } else {
         crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
     };
-    let limit = params.limit.unwrap_or(10).clamp(1, 20);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(super::super::trends::DEFAULT_TAGS_LIMIT);
+    let offset = params.offset();
     let rows = super::super::trends::tags_query(
         &state,
         &instance.domain,
@@ -182,8 +182,8 @@ pub async fn admin_trending_statuses(
     } else {
         crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
     };
-    let limit = params.limit.unwrap_or(20).clamp(1, 40);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(super::super::trends::DEFAULT_STATUSES_LIMIT);
+    let offset = params.offset();
     let rows = super::super::trends::statuses_query(
         &state,
         limit,
@@ -285,8 +285,8 @@ pub async fn admin_trending_links(
     } else {
         crate::trends::preferred_languages(&state, Some(auth.account_id), &headers).await
     };
-    let limit = params.limit.unwrap_or(10).clamp(1, 40);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let limit = params.limit(super::super::trends::DEFAULT_LINKS_LIMIT);
+    let offset = params.offset();
     let rows = super::super::trends::links_query(
         &state,
         limit,

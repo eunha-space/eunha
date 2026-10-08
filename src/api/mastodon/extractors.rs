@@ -216,6 +216,25 @@ impl<'de> serde::Deserialize<'de> for FlexId {
     }
 }
 
+/// A parameter Rails reads with `.to_i`: a number, or a string's leading
+/// integer (zero when it has none, an empty string included).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RubyInt(pub i64);
+
+impl<'de> serde::Deserialize<'de> for RubyInt {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match serde_json::Value::deserialize(d)? {
+            serde_json::Value::Number(n) => Ok(RubyInt(
+                n.as_i64()
+                    .or_else(|| n.as_f64().map(|f| f.trunc() as i64))
+                    .unwrap_or_default(),
+            )),
+            serde_json::Value::String(s) => Ok(RubyInt(crate::search::ruby_to_i(&s))),
+            _ => Err(serde::de::Error::custom("invalid integer")),
+        }
+    }
+}
+
 /// Ids given as an array of numbers or strings; ones that do not parse are
 /// dropped, as Rails' `find` would not match them either.
 #[derive(Debug, Clone, Default)]

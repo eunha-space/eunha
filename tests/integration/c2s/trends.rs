@@ -327,3 +327,70 @@ async fn test_trending_tags_limit_param() {
         .unwrap();
     assert_eq!(tags.len(), 2, "limit=2 should cap results at 2: {tags:?}");
 }
+
+/// `limit_param`: `.to_i.abs`, zero finding nothing, a negative read as its
+/// absolute value, and anything that is not a number as zero.
+#[tokio::test]
+async fn test_trending_tags_limit_is_read_as_mastodon_reads_it() {
+    let ctx = TestContext::new("trends-tags-limit-to-i").await;
+    crate::helpers::open_trends(&ctx.db).await;
+    crate::helpers::posted_by_crowd(&ctx, "Trending #trendtoia #trendtoib #trendtoic").await;
+    crate::helpers::refresh_trends(&ctx).await;
+
+    for (query, expected) in [("0", 0), ("-2", 2), ("abc", 0), ("2abc", 2), ("", 0)] {
+        let resp = ctx
+            .api
+            .get(&format!("/api/v1/trends/tags?limit={query}"), None)
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK, "limit={query}");
+        let tags: Vec<Value> = resp.json().await.unwrap();
+        assert_eq!(tags.len(), expected, "limit={query}: {tags:?}");
+    }
+}
+
+/// `Api::V1::Trends::LinksController`: ten links by default, and at most
+/// twenty however many are asked for.
+#[tokio::test]
+async fn test_trending_links_default_and_max_limit() {
+    let ctx = TestContext::new("trends-links-limit").await;
+    crate::helpers::open_trends(&ctx.db).await;
+    for n in 0..25 {
+        let card_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO preview_cards (url, title, type, trendable, created_at, updated_at)
+               VALUES ($1, $2, 0, true, now(), now()) RETURNING id"#,
+        )
+        .bind(format!("https://links.example/{n}"))
+        .bind(format!("link {n}"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO preview_card_trends (id, preview_card_id, allowed, score, rank)
+             VALUES ($1, $1, true, $2, $3)",
+        )
+        .bind(card_id)
+        .bind(100.0 - n as f64)
+        .bind(n + 1)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+
+    let count = |query: &'static str| {
+        let ctx = &ctx;
+        async move {
+            let links: Vec<Value> = ctx
+                .api
+                .get(&format!("/api/v1/trends/links{query}"), None)
+                .await
+                .json()
+                .await
+                .unwrap();
+            links.len()
+        }
+    };
+    assert_eq!(count("").await, 10);
+    assert_eq!(count("?limit=40").await, 20);
+    assert_eq!(count("?limit=0").await, 0);
+    assert_eq!(count("?limit=-15").await, 15);
+}
