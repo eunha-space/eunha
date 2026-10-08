@@ -1048,15 +1048,39 @@ pub async fn notify_local(
         if exists {
             return Ok(());
         }
+        // `set_group_key!`: of these types only `admin.sign_up` groups, by
+        // the hour its account was made in.
+        let group_key = if activity_type == "Account" {
+            let created_at = sqlx::query_scalar!(
+                "SELECT created_at FROM accounts WHERE id = $1",
+                activity_id,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .map(|t| t.and_utc())
+            .unwrap_or_else(chrono::Utc::now);
+            notification_group_key(
+                &mut state.redis_coordination.clone(),
+                &state.redis_keys,
+                recipient_id,
+                notification_type,
+                None,
+                created_at,
+            )
+            .await
+        } else {
+            None
+        };
         let notification_id = sqlx::query_scalar!(
-            r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_type, activity_id, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, now(), now())
+            r#"INSERT INTO notifications (account_id, from_account_id, "type", activity_type, activity_id, group_key, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, now(), now())
                RETURNING id"#,
             recipient_id,
             from_account_id,
             notification_type,
             activity_type,
             activity_id,
+            group_key,
         )
         .fetch_one(&state.db)
         .await?;

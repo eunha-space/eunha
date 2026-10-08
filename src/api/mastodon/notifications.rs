@@ -629,11 +629,6 @@ pub async fn dismiss_notification(
 /// (Mastodon `NotificationGroup::SAMPLE_ACCOUNTS_SIZE`).
 const SAMPLE_ACCOUNTS_SIZE: usize = 8;
 
-/// Compute a notification's group key, mirroring Mastodon's
-/// `Notification::Groups`: `favourite`/`reblog` group by their target status,
-/// `follow`/`admin.sign_up` group by type, everything else stays ungrouped.
-/// (The 12h hour-bucket split Mastodon adds is omitted; same-target
-/// notifications simply share one group.)
 /// Mastodon's `MAXIMUM_GROUP_SPAN_HOURS`: how far a single group may reach.
 pub const MAXIMUM_GROUP_SPAN_HOURS: i64 = 12;
 
@@ -648,19 +643,6 @@ pub fn group_type_prefix(notif_type: &str, target_status_id: Option<i64>) -> Opt
         "favourite" | "reblog" => target_status_id.map(|sid| format!("{notif_type}-{sid}")),
         "follow" | "admin.sign_up" => Some(notif_type.to_string()),
         _ => None,
-    }
-}
-
-fn notification_group_key(
-    notif_type: &str,
-    target_status_id: Option<i64>,
-    notif_id: i64,
-) -> String {
-    // Only reached for rows written before group keys were stored; a stored key
-    // is preferred wherever one exists.
-    match group_type_prefix(notif_type, target_status_id) {
-        Some(prefix) => prefix,
-        None => format!("ungrouped-{notif_id}"),
     }
 }
 
@@ -682,9 +664,7 @@ async fn notifications_for_group_key(
                 .await?,
         );
     }
-    // A stored key identifies its members directly; matching by type and status
-    // instead would gather every group of that shape, ignoring the time bucket
-    // that separated them.
+    // `by_group_key`: a stored key identifies its members directly.
     let stored: Vec<DbNotification> = sqlx::query_as(
         "SELECT * FROM notifications
          WHERE account_id = $1 AND group_key = $2 ORDER BY id DESC",
@@ -693,26 +673,7 @@ async fn notifications_for_group_key(
     .bind(group_key)
     .fetch_all(&state.db)
     .await?;
-    if !stored.is_empty() {
-        return Ok(stored);
-    }
-
-    // Rows written before keys were stored have none, so fall back to the shape
-    // the key describes.
-    if let Some(prefix) = group_key.rsplit_once('-').map(|(head, _)| head) {
-        if prefix == "follow" || prefix == "admin.sign_up" {
-            return Ok(sqlx::query_as(
-                "SELECT * FROM notifications
-                 WHERE account_id = $1 AND type = $2 AND group_key IS NULL
-                 ORDER BY id DESC",
-            )
-            .bind(account_id)
-            .bind(prefix)
-            .fetch_all(&state.db)
-            .await?);
-        }
-    }
-    Ok(Vec::new())
+    Ok(stored)
 }
 
 pub async fn get_notifications_v2(
@@ -1019,13 +980,12 @@ pub async fn get_notifications_v2(
                 continue;
             }
         }
-        // The key written when the notification arrived. Computing one now
-        // would lose the time bucket, which depends on what had arrived before
-        // and cannot be recovered from the row alone; the fallback is only for
-        // rows written before keys were stored.
-        let gk = n.group_key.clone().unwrap_or_else(|| {
-            notification_group_key(n.r#type.as_deref().unwrap_or(""), target_sid, n.id)
-        });
+        // The key written when the notification arrived; one without a key
+        // is a group of its own.
+        let gk = n
+            .group_key
+            .clone()
+            .unwrap_or_else(|| format!("ungrouped-{}", n.id));
         if let Some(a) = acc_map.get_mut(&gk) {
             a.count += 1;
             if a.sample_account_ids.len() < SAMPLE_ACCOUNTS_SIZE {
@@ -2036,7 +1996,10 @@ async fn build_notification(state: &AppState, n: &DbNotification) -> AppResult<N
         id: n.id.to_string(),
         notification_type: n.r#type.clone().unwrap_or_default(),
         created_at: super::convert::mastodon_date(n.created_at),
-        group_key: format!("ungrouped-{}", n.id),
+        group_key: n
+            .group_key
+            .clone()
+            .unwrap_or_else(|| format!("ungrouped-{}", n.id)),
         account: notif_account,
         status,
         report,

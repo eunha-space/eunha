@@ -428,3 +428,26 @@ async fn test_a_filtered_notification_has_no_group_key() {
         .unwrap();
     assert_eq!(bucket, None, "the running bucket is left alone");
 }
+
+/// `admin.sign_up` is groupable, so it is given `admin.sign_up-<bucket>`,
+/// the bucket being the hour the new account was made in.
+#[tokio::test]
+async fn test_a_sign_up_notification_is_grouped() {
+    let ctx = TestContext::new("notify-group-sign-up").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    let made_at: i64 = sqlx::query_scalar(
+        "SELECT EXTRACT(EPOCH FROM created_at)::bigint FROM accounts WHERE id = $1",
+    )
+    .bind(bob)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+
+    eunha::push::notify_local(&ctx.state, alice, "admin.sign_up", "Account", bob, bob).await;
+
+    assert_eq!(
+        stored_group_key(&ctx, alice, "admin.sign_up").await,
+        Some(format!("admin.sign_up-{}", made_at / 3600)),
+    );
+}
