@@ -2010,3 +2010,68 @@ async fn test_admin_retention_is_mastodons() {
         .await;
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 }
+
+/// `SoftwareVersionsDimension` and `SpaceUsageDimension`, as far as eunha's
+/// stack has them: its version, PostgreSQL's and the store's, FFmpeg's when
+/// `ffprobe` is installed; the database, the store (not shared here, the
+/// test Redis being prefixed), and the media, archive takeouts and site
+/// uploads included.
+#[tokio::test]
+async fn test_admin_software_versions_and_space_usage() {
+    let ctx = TestContext::new("admin-software").await;
+    make_admin(&ctx).await;
+    sqlx::query(
+        "INSERT INTO site_uploads (var, file_file_size, created_at, updated_at)
+         VALUES ('mascot', 2048, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let media_before: i64 = sqlx::query_scalar(
+        "SELECT (COALESCE((SELECT SUM(COALESCE(file_file_size, 0) + COALESCE(thumbnail_file_size, 0)) FROM media_attachments), 0)
+               + COALESCE((SELECT SUM(image_file_size) FROM custom_emojis), 0)
+               + COALESCE((SELECT SUM(image_file_size) FROM preview_cards), 0)
+               + COALESCE((SELECT SUM(COALESCE(avatar_file_size, 0) + COALESCE(header_file_size, 0)) FROM accounts), 0)
+               + COALESCE((SELECT SUM(dump_file_size) FROM backups), 0))::bigint",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+
+    let dims: Vec<Value> = ctx
+        .api
+        .post_json(
+            "/api/v1/admin/dimensions",
+            Some(&ctx.alice_token),
+            &json!({"keys": ["software_versions", "space_usage"]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let versions = dims[0]["data"].as_array().unwrap();
+    let keys: Vec<&str> = versions
+        .iter()
+        .map(|v| v["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(&keys[..3], ["mastodon", "postgresql", "redis"]);
+    assert!(keys[3..].iter().all(|k| *k == "ffmpeg"), "{keys:?}");
+    assert_eq!(versions[0]["human_key"], "Mastodon");
+    assert_eq!(
+        versions[0]["value"],
+        json!(eunha::version::compatible_string())
+    );
+    let pg = versions[1]["value"].as_str().unwrap();
+    assert!(
+        pg.chars().next().unwrap().is_ascii_digit() && !pg.contains(' '),
+        "{pg}"
+    );
+    assert!(["Redis", "Valkey", "Dragonfly"].contains(&versions[2]["human_key"].as_str().unwrap()));
+
+    let usage = dims[1]["data"].as_array().unwrap();
+    let keys: Vec<&str> = usage.iter().map(|v| v["key"].as_str().unwrap()).collect();
+    assert_eq!(keys, ["postgresql", "redis", "media"]);
+    assert_eq!(usage[2]["human_key"], "Media storage");
+    assert_eq!(usage[2]["unit"], "bytes");
+    assert_eq!(usage[2]["value"], json!((media_before + 2048).to_string()));
+}

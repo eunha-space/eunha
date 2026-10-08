@@ -82,8 +82,8 @@ for lock release. Tenant users receive `FCALL`, but not `EVAL`, `EVALSHA`,
 `SCRIPT` or `FUNCTION`, so a compromised credential cannot submit arbitrary Lua
 to the shared event loop. Dedicated Redis remains zero-configuration: Eunha
 falls back to its existing inline script when the named function is absent.
-`INFO` is optional; without it the admin API reports the Redis version as
-unknown. Process-wide memory from `INFO memory` is never exposed when a key
+`INFO` is optional; without it the admin API gives the Redis version as
+null. Process-wide memory from `INFO memory` is never exposed when a key
 prefix is configured. Set `redis_process_metrics = false` to suppress it for an
 otherwise dedicated deployment as well.
 

@@ -549,7 +549,7 @@ pub async fn get_dimensions(
             "languages" => languages_dimension(&state, &window, limit, locale).await?,
             "sources" => sources_dimension(&state, &window, limit, locale).await?,
             "servers" => servers_dimension(&state, &window, limit, None).await?,
-            "space_usage" => super::space_usage(&state).await?,
+            "space_usage" => super::space_usage(&state, locale).await?,
             "software_versions" => super::software_versions(&state).await?,
             "tag_servers" => {
                 let tag_id = tag_id(required(&body.params, key)?);

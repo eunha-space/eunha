@@ -225,6 +225,14 @@ Mastodon:
     (or 12 months) before the end, and gives each cohort's periods as
     `YYYY-MM-DDT00:00:00+00:00` and its rate unrounded.
 
+`software_versions` lists eunha's version string (under `mastodon`),
+PostgreSQL's, the Redis-compatible store's (Redis, Valkey or Dragonfly), the
+search cluster's when search is on, and FFmpeg's when `ffprobe` runs; there is
+no Ruby or libvips to list. `space_usage` lists the database, the store's
+memory when the Redis is the instance's alone (see [Redis](./redis)), the
+media (attachments, custom emoji, preview cards, avatars and headers, archive
+takeouts and site uploads), and the instance's search indexes.
+
 Mastodon caches each answer for five minutes; eunha computes it every time.
 Asked without a range, eunha covers the last week, where Mastodon fails.
 
