@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT v.account_id FROM poll_votes v\n                   JOIN accounts a ON a.id = v.account_id\n                   WHERE v.poll_id = $1 AND a.domain IS NULL\n                   ORDER BY v.account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "be4f771123fcfd1e5c3e8847eb2e99bed14fa61ddf298377923cc680af253a0a"
+}

@@ -134,3 +134,12 @@ with the time to the minute or the second or left out (midnight), a zone of
 there is none. What else `DateTime.parse` accepts, such as month names in
 free text or a time with no date, is not read, and the poll then has no end (a
 [recorded divergence](./divergences)).
+
+The local accounts that voted in a remote poll hear that it ended from a
+`PollExpirationNotifyWorker` job, queued for five minutes after its end when
+one of them votes, and again when an update of a poll with votes moves its
+end, unless it had already ended. Its author, being remote, is not told,
+and a poll no one here voted in is noticed by no one. A local poll's job is
+queued for when it ends, or five minutes after the end an edit gives it, and
+tells its author and its local voters and sends its tallies out. A job run
+before its poll has ended puts itself back until five minutes after.

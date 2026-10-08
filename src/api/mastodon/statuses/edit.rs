@@ -133,7 +133,7 @@ pub async fn edit_status(
         validate_poll_form(pf)?;
     }
     let existing_poll = sqlx::query!(
-        "SELECT id, options, multiple, hide_totals FROM polls WHERE status_id = $1",
+        "SELECT id, options, multiple, hide_totals, expires_at FROM polls WHERE status_id = $1",
         id,
     )
     .fetch_optional(&state.db)
@@ -143,6 +143,11 @@ pub async fn edit_status(
             pf.options != ep.options
                 || pf.multiple.unwrap_or(false) != ep.multiple
                 || pf.hide_totals.unwrap_or(false) != ep.hide_totals
+                // `@poll_changed = true if @previous_expires_at !=
+                // preloadable_poll&.expires_at`: `expires_in=` counts from
+                // now, so a poll given again ends at another time.
+                || pf.expires_in.is_some()
+                || ep.expires_at.is_some()
         }
         (Some(Some(_)), None) => true, // adding a poll
         (Some(None), Some(_)) => true, // explicit poll:null removes it
@@ -314,7 +319,6 @@ pub async fn edit_status(
                     )
                     .execute(&state.db)
                     .await;
-                    state.queues.polls.notify_one();
                 }
                 None => {
                     if let Ok(poll_id) = sqlx::query_scalar!(
@@ -335,8 +339,7 @@ pub async fn edit_status(
                     .fetch_one(&state.db)
                     .await
                     {
-                        state.queues.polls.notify_one();
-                        let _ = sqlx::query!(
+                            let _ = sqlx::query!(
                             "UPDATE statuses SET poll_id = $1 WHERE id = $2",
                             poll_id, id,
                         )
@@ -360,6 +363,23 @@ pub async fn edit_status(
             }
         }
         None => {}
+    }
+
+    // `queue_poll_notifications!`, with the poll's end before the edit when
+    // the edit gave a poll (`@previous_expires_at`).
+    let previous_expires_at = match &form.poll {
+        Some(_) => existing_poll.as_ref().and_then(|p| p.expires_at),
+        None => None,
+    };
+    if let Err(error) = crate::api::mastodon::polls::queue_poll_notifications(
+        &state,
+        id,
+        previous_expires_at,
+        false,
+    )
+    .await
+    {
+        tracing::error!(status_id = id, %error, "could not queue a poll's expiration notice");
     }
 
     // `broadcast_updates!`: `DistributionWorker` with `update`, which tells

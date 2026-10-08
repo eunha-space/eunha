@@ -2768,7 +2768,8 @@ async fn test_poll_only_status_appears_on_profile() {
 
 /// When a poll ends, both the poll author and its voters get a `poll`
 /// notification — Mastodon exempts `poll` from the self-notification block, so
-/// the author is notified about their own poll.
+/// the author is notified about their own poll. `PollExpirationNotifyWorker`
+/// does it, once, when it comes due.
 #[tokio::test]
 async fn test_poll_ended_notifies_author_and_voters() {
     let ctx = TestContext::new("poll-ended-notif").await;
@@ -2787,7 +2788,7 @@ async fn test_poll_ended_notifies_author_and_voters() {
         )
         .await;
 
-    // Force the poll to have just expired, then run the expiry notifier.
+    // The poll ends; its notice, put back until then, comes due.
     let poll_id_num: i64 = poll_id.parse().unwrap();
     sqlx::query!(
         "UPDATE polls SET expires_at = now() - interval '10 seconds' WHERE id = $1",
@@ -2796,165 +2797,179 @@ async fn test_poll_ended_notifies_author_and_voters() {
     .execute(&ctx.db)
     .await
     .unwrap();
-    eunha::background::notify_expired_polls(&ctx.state)
-        .await
-        .unwrap();
+    ctx.state.jobs.settle().await;
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    // Nothing is left to notify again.
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
 
-    let alice_notifs: Vec<Value> = ctx
-        .api
-        .get("/api/v1/notifications", Some(&ctx.alice_token))
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        alice_notifs
-            .iter()
-            .any(|n| n["type"].as_str() == Some("poll")),
-        "poll author should be notified when their poll ends",
-    );
-    let bob_notifs: Vec<Value> = ctx
-        .api
-        .get("/api/v1/notifications", Some(&ctx.bob_token))
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        bob_notifs
-            .iter()
-            .any(|n| n["type"].as_str() == Some("poll")),
-        "a voter should be notified when the poll ends",
-    );
-}
-
-/// The notifier used to look only at polls that had ended in the last two
-/// minutes, so a pass that ran late missed them. It now carries forward how far
-/// it got, and a pass that slept for a quarter of an hour still reaches a poll
-/// that ended ten minutes ago.
-#[tokio::test]
-async fn test_poll_expiry_reaches_a_poll_that_ended_during_a_long_sleep() {
-    let ctx = TestContext::new("poll-ended-long-sleep").await;
-
-    let status: Value = ctx.api.post_json(
-        "/api/v1/statuses",
-        Some(&ctx.alice_token),
-        &json!({ "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
-    ).await.json().await.unwrap();
-    let poll_id: i64 = status["poll"]["id"].as_str().unwrap().parse().unwrap();
-    sqlx::query!(
-        "UPDATE polls SET expires_at = now() - interval '10 minutes' WHERE id = $1",
-        poll_id,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
-
-    let mark = eunha::background::PollExpiryMark {
-        expires_at: chrono::Utc::now() - chrono::Duration::minutes(15),
-        id: i64::MAX,
+    let poll_notifications = |token: &str| {
+        let token = token.to_owned();
+        let api = &ctx.api;
+        async move {
+            let notifs: Vec<Value> = api
+                .get("/api/v1/notifications", Some(&token))
+                .await
+                .json()
+                .await
+                .unwrap();
+            notifs
+                .iter()
+                .filter(|n| n["type"].as_str() == Some("poll"))
+                .count()
+        }
     };
-    eunha::background::notify_polls_expired_after(&ctx.state, Some(mark))
-        .await
-        .unwrap();
-
-    let notifs: Vec<Value> = ctx
-        .api
-        .get("/api/v1/notifications", Some(&ctx.alice_token))
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(
-        notifs.iter().any(|n| n["type"].as_str() == Some("poll")),
-        "a poll that ended after the notifier's mark should be notified, however long ago",
+    assert_eq!(
+        poll_notifications(&ctx.alice_token).await,
+        1,
+        "poll author should be notified when their poll ends, once",
+    );
+    assert_eq!(
+        poll_notifications(&ctx.bob_token).await,
+        1,
+        "a voter should be notified when the poll ends, once",
     );
 }
 
-/// Each pass starts where the last one stopped, so a poll is handled once
-/// however often the notifier runs. Counting notifications alone could not show
-/// this — `create_and_push` already drops a duplicate — but a second pass used
-/// to enqueue the poll's ActivityPub `Update` again, so what is checked is how
-/// many polls each pass handled.
-#[tokio::test]
-async fn test_poll_expiry_handles_each_poll_once() {
-    let ctx = TestContext::new("poll-ended-once").await;
+async fn notices(ctx: &TestContext, poll_id: i64) -> Vec<chrono::DateTime<chrono::Utc>> {
+    sqlx::query_scalar(
+        "SELECT run_at FROM eunha.jobs
+         WHERE kind = 'PollExpirationNotifyWorker' AND (args->>'poll_id')::bigint = $1",
+    )
+    .bind(poll_id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap()
+}
 
+fn about(at: chrono::DateTime<chrono::Utc>, expected: chrono::DateTime<chrono::Utc>) -> bool {
+    (at - expected).num_seconds().abs() < 30
+}
+
+/// `PostStatusService` queues the notice for when a local poll ends, and
+/// `UpdateStatusService` for five minutes after the end an edit gives it,
+/// taking back the one for a later end.
+#[tokio::test]
+async fn test_a_local_polls_notice_is_queued_for_its_end() {
+    let ctx = TestContext::new("poll-notice-local").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
     let status: Value = ctx.api.post_json(
         "/api/v1/statuses",
         Some(&ctx.alice_token),
-        &json!({ "poll": { "options": ["A", "B"], "expires_in": 86400 }, "visibility": "public" }),
+        &json!({ "status": "q", "poll": { "options": ["A", "B"], "expires_in": 7200 }, "visibility": "public" }),
     ).await.json().await.unwrap();
     let poll_id: i64 = status["poll"]["id"].as_str().unwrap().parse().unwrap();
-    sqlx::query!(
-        "UPDATE polls SET expires_at = now() - interval '10 seconds' WHERE id = $1",
-        poll_id,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    let ends = chrono::Utc::now() + chrono::Duration::hours(2);
+    let queued = notices(&ctx, poll_id).await;
+    assert_eq!(queued.len(), 1);
+    assert!(about(queued[0], ends), "{queued:?}");
 
-    let (mark, handled) = eunha::background::notify_polls_expired_after(&ctx.state, None)
-        .await
-        .unwrap();
-    assert_eq!(handled, 1, "the first pass handles the poll that ended");
-    let (next, handled) = eunha::background::notify_polls_expired_after(&ctx.state, Some(mark))
-        .await
-        .unwrap();
-    assert_eq!(
-        handled, 0,
-        "a second pass must not handle the same poll again"
-    );
-    assert!(
-        next.expires_at >= mark.expires_at,
-        "the mark never moves back"
-    );
-
-    let notifs: Vec<Value> = ctx
+    // An edit to end it sooner.
+    let id = status["id"].as_str().unwrap();
+    let resp = ctx
         .api
-        .get("/api/v1/notifications", Some(&ctx.alice_token))
-        .await
-        .json()
-        .await
-        .unwrap();
-    let poll_notifications = notifs
-        .iter()
-        .filter(|n| n["type"].as_str() == Some("poll"))
-        .count();
-    assert_eq!(
-        poll_notifications, 1,
-        "a second pass must not notify the same poll again"
-    );
-}
-
-/// The notifier sleeps until the next running poll ends.
-#[tokio::test]
-async fn test_next_poll_expiry_is_when_the_next_poll_ends() {
-    let ctx = TestContext::new("poll-next-expiry").await;
-
-    assert_eq!(
-        eunha::background::next_poll_expiry(&ctx.state)
-            .await
-            .unwrap(),
-        None,
-        "with no poll running there is nothing to wake for",
-    );
-
-    ctx.api
-        .post_json(
-            "/api/v1/statuses",
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
             Some(&ctx.alice_token),
-            &json!({ "poll": { "options": ["A", "B"], "expires_in": 3600 }, "visibility": "public" }),
+            &json!({ "status": "q", "poll": { "options": ["A", "B"], "expires_in": 3600 } }),
         )
         .await;
-    let seconds = eunha::background::next_poll_expiry(&ctx.state)
-        .await
-        .unwrap()
-        .expect("a running poll has an end");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let queued = notices(&ctx, poll_id).await;
+    assert_eq!(queued.len(), 1, "{queued:?}");
     assert!(
-        (3500.0..=3600.0).contains(&seconds),
-        "the poll ends in about an hour, not {seconds}s",
+        about(
+            queued[0],
+            chrono::Utc::now() + chrono::Duration::hours(1) + chrono::Duration::minutes(5)
+        ),
+        "{queued:?}"
     );
+}
+
+/// `VoteService#queue_final_poll_check!`: a local vote in a remote poll
+/// queues a notice for five minutes after it ends, which tells the local
+/// voters and neither the remote author nor anyone else; a remote poll no
+/// one here voted in is noticed by no one.
+#[tokio::test]
+async fn test_a_remote_poll_is_noticed_to_its_local_voters() {
+    let ctx = TestContext::new("poll-notice-remote").await;
+    let remy = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, uri, url, inbox_url,
+                                 created_at, updated_at)
+           VALUES ($1, 'remy', 'remote.invalid', 'remy', '', 'https://remote.invalid/users/remy',
+                   'https://remote.invalid/@remy', 'https://remote.invalid/users/remy/inbox', now(), now())"#,
+    )
+    .bind(remy)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let mut polls = Vec::new();
+    for n in 0..2 {
+        let status_id = eunha::snowflake::next_id();
+        sqlx::query(
+            r#"INSERT INTO statuses (id, account_id, text, uri, visibility, local, created_at, updated_at)
+               VALUES ($1, $2, 'which?', $3, 0, false, now(), now())"#,
+        )
+        .bind(status_id)
+        .bind(remy)
+        .bind(format!("https://remote.invalid/users/remy/statuses/{n}"))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        let poll_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO polls (status_id, account_id, options, cached_tallies, expires_at, created_at, updated_at)
+               VALUES ($1, $2, '{a,b}', '{0,0}', now() + interval '1 hour', now(), now())
+               RETURNING id"#,
+        )
+        .bind(status_id)
+        .bind(remy)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE statuses SET poll_id = $1 WHERE id = $2")
+            .bind(poll_id)
+            .bind(status_id)
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+        polls.push(poll_id);
+    }
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/polls/{}/votes", polls[0]),
+            Some(&ctx.bob_token),
+            &json!({ "choices": [0] }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let queued = notices(&ctx, polls[0]).await;
+    assert_eq!(queued.len(), 1);
+    assert!(
+        about(
+            queued[0],
+            chrono::Utc::now() + chrono::Duration::hours(1) + chrono::Duration::minutes(5)
+        ),
+        "{queued:?}"
+    );
+    assert!(notices(&ctx, polls[1]).await.is_empty());
+
+    sqlx::query("UPDATE polls SET expires_at = now() - interval '10 minutes'")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    let notified: Vec<i64> = sqlx::query_scalar(
+        "SELECT account_id FROM notifications WHERE type = 'poll' ORDER BY account_id",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(notified, [ctx.bob_id.parse::<i64>().unwrap()]);
 }
 
 /// GET /api/v1/polls/:id returns poll details.

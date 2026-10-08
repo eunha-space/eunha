@@ -302,6 +302,40 @@ pub async fn perform_at<J: Job>(
     enqueue(state, delay, job).await
 }
 
+/// `Worker.perform_at(at, *args)` from a job putting itself back until it is
+/// due. It is left to the job loops (or [`drain`]) even under
+/// [`Mode::Immediate`], which would otherwise run it again at once, and
+/// again, for as long as it is not yet due.
+pub async fn requeue_at<J: Job>(
+    state: &AppState,
+    at: chrono::DateTime<chrono::Utc>,
+    job: J,
+) -> anyhow::Result<Option<i64>> {
+    let delay = (at - chrono::Utc::now()).to_std().unwrap_or_default();
+    let args = serde_json::to_value(&job)?;
+    let id = insert(&state.db, J::KIND, &J::OPTIONS, &args, delay).await?;
+    if id.is_some() {
+        state.queues.jobs.notify_one();
+    }
+    Ok(id)
+}
+
+/// `Worker.remove_from_scheduled`-style removal: the queued jobs of `J` with
+/// these arguments that no worker has taken yet, and the unique lock they
+/// hold. Returns how many went.
+pub async fn remove_scheduled<J: Job>(state: &AppState, job: &J) -> anyhow::Result<u64> {
+    let args = serde_json::to_value(job)?;
+    let removed = sqlx::query!(
+        "DELETE FROM eunha.jobs
+         WHERE kind = $1 AND args = $2 AND locked_at IS NULL AND dead_at IS NULL",
+        J::KIND,
+        args,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(removed.rows_affected())
+}
+
 /// [`perform_async`], logging a job that could not be queued rather than
 /// returning the error: for the places where Mastodon queues a job and
 /// carries on whatever came of it.

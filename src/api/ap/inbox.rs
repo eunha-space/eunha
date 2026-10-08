@@ -485,6 +485,43 @@ pub(super) async fn sync_remote_poll(
     object: &Value,
     allow_significant_changes: bool,
 ) -> AppResult<bool> {
+    let previous_expires_at = sqlx::query_scalar!(
+        "SELECT expires_at FROM polls WHERE status_id = $1",
+        status_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    let saved = update_remote_poll(
+        state,
+        status_id,
+        account_id,
+        object,
+        allow_significant_changes,
+    )
+    .await?;
+    // `queue_poll_notifications!`, which follows `update_poll!` unless it
+    // raised.
+    if saved {
+        crate::api::mastodon::polls::queue_poll_notifications(
+            state,
+            status_id,
+            previous_expires_at,
+            true,
+        )
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+    }
+    Ok(saved)
+}
+
+async fn update_remote_poll(
+    state: &AppState,
+    status_id: i64,
+    account_id: i64,
+    object: &Value,
+    allow_significant_changes: bool,
+) -> AppResult<bool> {
     let Some(poll) = poll_parser::PollParser::parse(object) else {
         return Ok(true);
     };
@@ -553,7 +590,6 @@ pub(super) async fn sync_remote_poll(
         )
         .execute(&state.db)
         .await?;
-        state.queues.polls.notify_one();
     } else {
         let poll_id = crate::snowflake::next_id();
         if let Some(inserted_poll_id) = sqlx::query_scalar!(
@@ -576,7 +612,6 @@ pub(super) async fn sync_remote_poll(
         .fetch_optional(&state.db)
         .await?
         {
-            state.queues.polls.notify_one();
             sqlx::query!(
                 "UPDATE statuses SET poll_id = $1 WHERE id = $2",
                 inserted_poll_id,

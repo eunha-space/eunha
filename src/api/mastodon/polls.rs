@@ -216,9 +216,15 @@ pub async fn vote_poll(
             )
             .await;
         }
-    } else if let Err(e) = federate_poll_votes(&state, &poll, auth.account_id, &created_votes).await
-    {
-        tracing::warn!(poll_id = id, error = %e, "failed to enqueue ActivityPub poll vote");
+    } else {
+        if let Err(e) = federate_poll_votes(&state, &poll, auth.account_id, &created_votes).await {
+            tracing::warn!(poll_id = id, error = %e, "failed to enqueue ActivityPub poll vote");
+        }
+        // `queue_final_poll_check!`: `PollExpirationNotifyWorker
+        // .perform_at(@poll.expires_at + 5.minutes, @poll.id) if @poll.expires?`.
+        if let Some(expires_at) = poll.expires_at {
+            notify_expiration_at(&state, poll.id, expires_at + chrono::Duration::minutes(5)).await;
+        }
     }
 
     let poll = fetch_poll(&state, id).await?;
@@ -617,4 +623,155 @@ async fn poll_from_db(
         .await?
         .remove(&poll.id)
         .ok_or(AppError::NotFound)
+}
+
+// ── PollExpirationNotifyWorker ────────────────────────────────────────────
+
+/// `PollExpirationNotifyWorker`: once a poll has ended, its tallies are sent
+/// out and its author told when it is local, and the local accounts that
+/// voted in it are told. Queued for when a local poll ends
+/// (`PostStatusService`), five minutes after a local poll edited to end
+/// (`UpdateStatusService`), and five minutes after a remote one ends when a
+/// local account votes in it (`VoteService`) or an update of one with votes
+/// sets when it ends (`ProcessStatusUpdateService`). Run early, it puts
+/// itself back until five minutes after the poll ends.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PollExpirationNotifyWorker {
+    pub poll_id: i64,
+}
+
+impl crate::jobs::Job for PollExpirationNotifyWorker {
+    const KIND: &'static str = "PollExpirationNotifyWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT.lock(
+        crate::jobs::Lock::UntilExecuting(crate::jobs::DEFAULT_LOCK_TTL),
+    );
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `Poll.find`, `RecordNotFound` rescued.
+        let Some(poll) = sqlx::query!(
+            r#"SELECT p.id, p.status_id, p.account_id, p.expires_at,
+                      (a.domain IS NULL) AS "local!"
+               FROM polls p JOIN accounts a ON a.id = p.account_id
+               WHERE p.id = $1"#,
+            self.poll_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        else {
+            return Ok(());
+        };
+        // `missing_expiration?`.
+        let Some(expires_at) = poll.expires_at else {
+            return Ok(());
+        };
+        // `requeue! && return if not_due_yet?`.
+        let expires_at = expires_at.and_utc();
+        if expires_at > chrono::Utc::now() {
+            crate::jobs::requeue_at(
+                state,
+                expires_at + chrono::Duration::minutes(5),
+                PollExpirationNotifyWorker { poll_id: poll.id },
+            )
+            .await?;
+            return Ok(());
+        }
+        let status_id = poll.status_id;
+        let author = poll.account_id;
+        let mut recipients = Vec::new();
+        // `notify_remote_voters_and_owner! if @poll.local?`.
+        if poll.local {
+            crate::jobs::push(
+                state,
+                crate::api::ap::inbox::create::DistributePollUpdateWorker { status_id },
+            )
+            .await;
+            recipients.push(author);
+        }
+        // `notify_local_voters!`: `@poll.voters.merge(Account.local)`.
+        recipients.extend(
+            sqlx::query_scalar!(
+                r#"SELECT DISTINCT v.account_id FROM poll_votes v
+                   JOIN accounts a ON a.id = v.account_id
+                   WHERE v.poll_id = $1 AND a.domain IS NULL
+                   ORDER BY v.account_id"#,
+                poll.id,
+            )
+            .fetch_all(&state.db)
+            .await?,
+        );
+        for recipient in recipients {
+            crate::push::create_and_push(
+                state,
+                recipient,
+                author,
+                "poll",
+                Some(status_id),
+                "A poll you voted in has ended".into(),
+                "".into(),
+                "".into(),
+            )
+            .await;
+        }
+        Ok(())
+    }
+}
+
+/// `PollExpirationNotifyWorker.perform_at(at, poll.id)`.
+pub(crate) async fn notify_expiration_at(
+    state: &AppState,
+    poll_id: i64,
+    at: chrono::NaiveDateTime,
+) {
+    if let Err(error) =
+        crate::jobs::perform_at(state, at.and_utc(), PollExpirationNotifyWorker { poll_id }).await
+    {
+        tracing::error!(poll_id, %error, "could not queue a poll's expiration notice");
+    }
+}
+
+/// `queue_poll_notifications!`, as `UpdateStatusService` and
+/// `ProcessStatusUpdateService` have it: a notice five minutes after the
+/// poll now ends, the one queued for a later end taken back. A remote poll
+/// is noticed only when someone voted in it, and not again once it had
+/// already ended.
+pub(crate) async fn queue_poll_notifications(
+    state: &AppState,
+    status_id: i64,
+    previous_expires_at: Option<chrono::NaiveDateTime>,
+    remote: bool,
+) -> anyhow::Result<()> {
+    let Some(poll) = sqlx::query!(
+        r#"SELECT p.id, p.expires_at,
+                  EXISTS (SELECT 1 FROM poll_votes v WHERE v.poll_id = p.id) AS "voted!"
+           FROM polls p WHERE p.status_id = $1"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let Some(expires_at) = poll.expires_at else {
+        return Ok(());
+    };
+    if remote {
+        if !poll.voted {
+            return Ok(());
+        }
+        // `return if @previous_expires_at&.past?`.
+        if previous_expires_at.is_some_and(|previous| previous < chrono::Utc::now().naive_utc()) {
+            return Ok(());
+        }
+    }
+    let job = PollExpirationNotifyWorker { poll_id: poll.id };
+    if previous_expires_at.is_some_and(|previous| previous > expires_at) {
+        crate::jobs::remove_scheduled(state, &job).await?;
+    }
+    crate::jobs::perform_at(
+        state,
+        (expires_at + chrono::Duration::minutes(5)).and_utc(),
+        job,
+    )
+    .await?;
+    Ok(())
 }

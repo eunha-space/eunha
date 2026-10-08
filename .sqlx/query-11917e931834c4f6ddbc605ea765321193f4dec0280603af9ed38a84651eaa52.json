@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, options, multiple, hide_totals FROM polls WHERE status_id = $1",
+  "query": "SELECT id, options, multiple, hide_totals, expires_at FROM polls WHERE status_id = $1",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "hide_totals",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamp"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "84de60272261f87be08c648941a92f733540f6f3af778cb4423d342141544cf4"
+  "hash": "11917e931834c4f6ddbc605ea765321193f4dec0280603af9ed38a84651eaa52"
 }

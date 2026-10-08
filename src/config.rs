@@ -201,8 +201,8 @@ pub struct WorkersConfig {
     /// tenants raises it, with `database_pool.idle_timeout_seconds` below it, so
     /// that an idle tenant holds no database connection at all.
     ///
-    /// The timed tasks — scheduled statuses, poll expiry and suspended account
-    /// cleanup — sleep until their next item is due and, when nothing is, for
+    /// The timed tasks — scheduled statuses and suspended account cleanup —
+    /// sleep until their next item is due and, when nothing is, for
     /// this long or a minute, whichever is longer.
     #[serde(default = "default_queue_idle_poll_seconds")]
     pub queue_idle_poll_seconds: u64,

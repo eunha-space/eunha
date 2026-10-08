@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM eunha.jobs\n         WHERE kind = $1 AND args = $2 AND locked_at IS NULL AND dead_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "361bfb8cd705043fbf6d6c0e6d10bba20a2cee6442407bc22b1da9112bc38e2f"
+}

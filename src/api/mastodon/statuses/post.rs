@@ -616,7 +616,10 @@ pub(crate) async fn process_status(
         )
         .fetch_one(&state.db)
         .await?;
-        state.queues.polls.notify_one();
+        // `PollExpirationNotifyWorker.perform_at(@status.poll.expires_at, …)`.
+        if let Some(expires_at) = expires_at {
+            crate::api::mastodon::polls::notify_expiration_at(&state, poll_id, expires_at).await;
+        }
         // Link the poll back onto the status, mirroring the federation ingest
         // path so `statuses.poll_id` is consistently populated for local polls.
         sqlx::query!(

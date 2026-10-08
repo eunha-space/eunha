@@ -24,7 +24,6 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
             "scheduled statuses",
             run_scheduled_statuses(state.clone()),
         ),
-        until_stopped(&state, "poll expiry", run_poll_expiry(state.clone())),
         until_stopped(
             &state,
             "suspended account cleanup",
@@ -184,8 +183,6 @@ pub struct QueueWakes {
     pub backups: tokio::sync::Notify,
     /// A scheduled status was created or moved.
     pub scheduled_statuses: tokio::sync::Notify,
-    /// A poll was created, or when it ends changed.
-    pub polls: tokio::sync::Notify,
 }
 
 /// How long a queue loop sleeps after finding nothing: `floor` at first,
@@ -248,10 +245,10 @@ fn jittered(nap: Duration, unit: f64) -> Duration {
 /// How long a timed task sleeps before its next pass: until its next item is
 /// due, but no less than `floor` and no more than `ceiling`.
 ///
-/// Scheduled statuses, poll expiry and suspended account cleanup used to run
+/// Scheduled statuses and suspended account cleanup used to run
 /// every minute or two whether or not anything was due, and every pass opened a
 /// database connection, so an idle tenant was never without one for long. Most
-/// tenants have nothing scheduled and no poll running, and for them this is the
+/// tenants have nothing scheduled, and for them this is the
 /// ceiling. The floor keeps an item that stays due — one whose work keeps
 /// failing — from turning the loop into a busy one.
 ///
@@ -790,154 +787,6 @@ pub async fn process_deletion_requests(state: &AppState) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-// ── Poll expiry notifier ──────────────────────────────────────────────────
-
-/// How far the notifier has got: every poll that ended before `expires_at` has
-/// been handled, and of those ending exactly then, every one up to `id`.
-/// Ordering by both lets a pass stop at its batch limit without skipping or
-/// repeating a poll that ends at the same instant as the last one handled.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PollExpiryMark {
-    pub expires_at: chrono::DateTime<chrono::Utc>,
-    pub id: i64,
-}
-
-/// Polls handled per pass. A pass that fills it runs again straight away.
-const POLL_EXPIRY_BATCH: i64 = 100;
-
-async fn run_poll_expiry(state: AppState) {
-    let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
-    let mut mark = None;
-    while !state.stop.is_cancelled() {
-        let floor = match notify_polls_expired_after(&state, mark).await {
-            Ok((reached, handled)) => {
-                mark = Some(reached);
-                if handled as i64 == POLL_EXPIRY_BATCH {
-                    continue;
-                }
-                TIMED_TASK_FLOOR
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "poll expiry task failed");
-                TIMED_TASK_FAILURE_FLOOR
-            }
-        };
-        let due = next_poll_expiry(&state).await.unwrap_or_else(|e| {
-            tracing::error!(error = %e, "could not find when the next poll ends");
-            None
-        });
-        sleep_or_wake(
-            &state.queues.polls,
-            &state.stop,
-            timed_task_nap(due, floor, ceiling, rand::random()),
-        )
-        .await;
-    }
-}
-
-/// Seconds until the next running poll ends, or `None` when none is running.
-pub async fn next_poll_expiry(state: &AppState) -> anyhow::Result<Option<f64>> {
-    Ok(sqlx::query_scalar!(
-        r#"SELECT EXTRACT(EPOCH FROM min(expires_at::timestamptz) - now())::float8
-           FROM polls
-           WHERE expires_at::timestamptz > now()"#,
-    )
-    .fetch_one(&state.db)
-    .await?)
-}
-
-/// Notify the author and voters of every poll that ended in the last two
-/// minutes.
-pub async fn notify_expired_polls(state: &AppState) -> anyhow::Result<()> {
-    notify_polls_expired_after(state, None).await.map(|_| ())
-}
-
-/// Notify the author and voters of the polls that ended after `mark` and by
-/// now, oldest first, and return how far that got and how many polls it
-/// handled. A pass that handled `POLL_EXPIRY_BATCH` stopped at the limit.
-///
-/// Without a mark it starts two minutes back. That window used to be the whole
-/// of it: a pass a minute over the last two minutes, so every poll fell inside
-/// two passes — the notification was deduplicated, but a local poll's
-/// ActivityPub `Update` was enqueued twice — and a pass more than two minutes
-/// late would have missed polls outright. Now it is only where a freshly
-/// started process begins, so a poll that ended while the process restarted is
-/// still notified, and a notifier that sleeps for many minutes still reaches
-/// every poll that ended in the meantime, once.
-pub async fn notify_polls_expired_after(
-    state: &AppState,
-    mark: Option<PollExpiryMark>,
-) -> anyhow::Result<(PollExpiryMark, usize)> {
-    let now = sqlx::query_scalar!(r#"SELECT now() AS "now!""#)
-        .fetch_one(&state.db)
-        .await?;
-    let mark = mark.unwrap_or(PollExpiryMark {
-        expires_at: now - chrono::Duration::minutes(2),
-        id: i64::MAX,
-    });
-    let expired = sqlx::query!(
-        r#"SELECT p.id, p.status_id, p.account_id, p.expires_at::timestamptz AS "expires_at!"
-           FROM polls p
-           WHERE (p.expires_at::timestamptz, p.id) > ($1::timestamptz, $2::bigint)
-             AND p.expires_at::timestamptz <= $3::timestamptz
-           ORDER BY p.expires_at::timestamptz ASC, p.id ASC
-           LIMIT $4"#,
-        mark.expires_at,
-        mark.id,
-        now,
-        POLL_EXPIRY_BATCH,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let handled = expired.len();
-    let full = handled as i64 == POLL_EXPIRY_BATCH;
-    let reached = match expired.last() {
-        Some(last) if full => PollExpiryMark {
-            expires_at: last.expires_at,
-            id: last.id,
-        },
-        _ => PollExpiryMark {
-            expires_at: now,
-            id: i64::MAX,
-        },
-    };
-
-    for poll in expired {
-        if let Err(e) =
-            crate::api::mastodon::polls::federate_poll_update(state, poll.status_id).await
-        {
-            tracing::warn!(poll_id = poll.id, error = %e, "failed to enqueue expired poll ActivityPub update");
-        }
-
-        // Collect recipients: poll author + all voters
-        let mut recipients: Vec<i64> = vec![poll.account_id];
-        let voters = sqlx::query_scalar!(
-            "SELECT DISTINCT account_id FROM poll_votes WHERE poll_id = $1",
-            poll.id,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        recipients.extend(voters);
-        recipients.dedup();
-
-        for recipient_id in recipients {
-            crate::push::create_and_push(
-                state,
-                recipient_id,
-                poll.account_id,
-                "poll",
-                Some(poll.status_id),
-                "A poll you voted in has ended".into(),
-                "".into(),
-                "".into(),
-            )
-            .await;
-        }
-    }
-    Ok((reached, handled))
 }
 
 #[cfg(test)]

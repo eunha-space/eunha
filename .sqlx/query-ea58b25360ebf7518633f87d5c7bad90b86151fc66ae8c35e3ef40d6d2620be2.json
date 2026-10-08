@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.expires_at,\n                  EXISTS (SELECT 1 FROM poll_votes v WHERE v.poll_id = p.id) AS \"voted!\"\n           FROM polls p WHERE p.status_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 2,
+        "name": "voted!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "ea58b25360ebf7518633f87d5c7bad90b86151fc66ae8c35e3ef40d6d2620be2"
+}
