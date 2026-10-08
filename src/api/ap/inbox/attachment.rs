@@ -88,6 +88,25 @@ impl RemoteMedia {
     }
 }
 
+/// `MediaAttachment::MAX_DESCRIPTION_HARD_LENGTH_LIMIT`.
+const MAX_DESCRIPTION_HARD_LENGTH_LIMIT: usize = 10_000;
+
+/// `MediaAttachmentParser#description`: the attachment's `summary`, or else
+/// its `name`, the first that is not blank, stripped and cut to
+/// `MAX_DESCRIPTION_HARD_LENGTH_LIMIT` characters.
+fn description(att: &Value) -> Option<String> {
+    use ojak_vocab::json_ld_helper::first_lang_string;
+    let text = first_lang_string(att, "summary")
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| first_lang_string(att, "name").filter(|text| !text.trim().is_empty()))?;
+    Some(
+        text.trim()
+            .chars()
+            .take(MAX_DESCRIPTION_HARD_LENGTH_LIMIT)
+            .collect(),
+    )
+}
+
 /// The media `att` names, or `None` when it has no `url`
 /// (`remote_url.blank?`).
 pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {
@@ -112,7 +131,7 @@ pub(super) fn remote_media(att: &Value) -> Option<RemoteMedia> {
     let kind = classify_attachment_type(att_type_str, &media_type_str);
     Some(RemoteMedia {
         kind,
-        description: att.get("name").and_then(|v| v.as_str()).map(str::to_owned),
+        description: description(att),
         blurhash: att
             .get("blurhash")
             .and_then(|v| v.as_str())
@@ -296,5 +315,37 @@ mod tests {
         assert_eq!(classify_attachment_type("Video", ""), 2);
         assert_eq!(classify_attachment_type("Audio", ""), 3);
         assert_eq!(classify_attachment_type("Document", ""), 4);
+    }
+}
+
+#[cfg(test)]
+mod media_parser_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// `summary` before `name`, a blank one passed over, stripped.
+    #[test]
+    fn a_description_is_its_summary_then_its_name() {
+        assert_eq!(
+            description(&json!({"summary": " alt ", "name": "name"})).as_deref(),
+            Some("alt")
+        );
+        assert_eq!(
+            description(&json!({"summary": "  ", "name": "name"})).as_deref(),
+            Some("name")
+        );
+        assert_eq!(
+            description(&json!({"nameMap": {"en": "mapped"}})).as_deref(),
+            Some("mapped")
+        );
+        assert_eq!(description(&json!({"name": ""})), None);
+        assert_eq!(
+            description(&json!({"name": "x".repeat(10_005)}))
+                .unwrap()
+                .chars()
+                .count(),
+            10_000
+        );
     }
 }
