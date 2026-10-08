@@ -1251,3 +1251,24 @@ eunha; unset, the limits apply as Mastodon's do."""
 evidence = "tests/integration/c2s/rate_limits.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "link-verification-redirect-get"
+kind = "behaviour"
+summary = "Asks whether a profile link redirects back with an unfollowed GET, not a HEAD"
+mastodon = """
+`VerifyLinkService#link_redirects_back?` asks the first `rel="me"` link of \
+a page that names none of the account's own with a `HEAD` request, without \
+following redirects, and verifies the field when its `Location` is the \
+account's URL."""
+eunha = """
+Asks the same link the same question with a `GET`, still without \
+following redirects, and reads the `Location` the same way."""
+why = """
+Every request eunha sends to a page goes through ojak's guarded client, \
+which refuses private addresses at each hop, and that client follows no \
+redirect only for a `GET`. A link shortener answers both methods with the \
+same redirect."""
+evidence = "src/link_verification.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

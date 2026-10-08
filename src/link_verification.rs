@@ -48,9 +48,11 @@ pub fn is_verifiable(value: &str) -> bool {
     true
 }
 
-/// Extract the `href`s of every `<a>`/`<link>` element that carries `rel="me"`
-/// (rel is a space-separated token list, matched case-insensitively).
-fn rel_me_hrefs(html: &str) -> Vec<String> {
+/// The `href` of every `<a>`/`<link>` element that carries `rel="me"`
+/// (rel is a space-separated token list, matched case-insensitively), in
+/// document order, `None` for one without: Mastodon's
+/// `(//a|//link)[@rel][nokogiri:link_rel_include(@rel, "me")]`.
+fn rel_me_hrefs(html: &str) -> Vec<Option<String>> {
     let doc = Html::parse_document(html);
     // unwrap: static selector, always valid.
     let sel = Selector::parse("a[rel], link[rel]").unwrap();
@@ -58,52 +60,91 @@ fn rel_me_hrefs(html: &str) -> Vec<String> {
         .filter_map(|el| {
             let rel = el.value().attr("rel")?;
             let is_me = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("me"));
-            if is_me {
-                el.value().attr("href").map(str::to_string)
-            } else {
-                None
-            }
+            is_me.then(|| el.value().attr("href").map(str::to_string))
         })
         .collect()
 }
 
-/// Fetch `url` and return whether it links back to `link_back` via `rel="me"`.
-/// Mirrors `VerifyLinkService#link_back_present?` (minus the redirect-follow
-/// fallback used by a handful of services).
-async fn links_back(http: &ojak::client::Client, url: &str, link_back: &str) -> bool {
+/// `Request#truncated_body`'s limit: the first megabyte of a page.
+const BODY_LIMIT: usize = 1024 * 1024;
+
+/// `VerifyLinkService#perform_request!`: the page at `url`, as far as
+/// `truncated_body` reads it, when it answers exactly `200`, whatever its
+/// content type. Redirects are followed, as `Request` follows them.
+async fn fetch_page(http: &ojak::client::Client, url: &str) -> Option<String> {
     // Through the SSRF-guarded client, as preview cards are fetched.
-    let Ok(url) = url::Url::parse(url) else {
-        return false;
-    };
-    let Ok(request) = http.request(reqwest::Method::GET, &url) else {
-        return false;
-    };
-    let Ok(resp) = request
+    let url = url::Url::parse(url).ok()?;
+    let mut resp = http
+        .request(reqwest::Method::GET, &url)
+        .ok()?
         .header("Accept", "text/html")
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(30))
         .send()
+        .await
+        .ok()?;
+    if resp.status().as_u16() != 200 {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Ok(Some(chunk)) = resp.chunk().await {
+        body.extend_from_slice(&chunk);
+        if body.len() >= BODY_LIMIT {
+            body.truncate(BODY_LIMIT);
+            break;
+        }
+    }
+    Some(String::from_utf8_lossy(&body).into_owned())
+}
+
+/// `VerifyLinkService#link_redirects_back?`: whether `test_url` redirects
+/// to `link_back`, by the `Location` it answers with, unfollowed.
+///
+/// Mastodon asks with `HEAD`; ojak's client follows no redirect only for a
+/// `GET`, so this asks with that (see the `link-verification-redirect-get`
+/// divergence).
+async fn redirects_back(http: &ojak::client::Client, test_url: &str, link_back: &str) -> bool {
+    if test_url.trim().is_empty() {
+        return false;
+    }
+    let Ok(url) = url::Url::parse(test_url) else {
+        return false;
+    };
+    let Ok(resp) = http
+        .get_direct(&url, reqwest::header::HeaderMap::new())
         .await
     else {
         return false;
     };
-    if !resp.status().is_success() {
-        return false;
-    }
-    let is_html = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
+    resp.headers
+        .get(reqwest::header::LOCATION)
         .and_then(|v| v.to_str().ok())
-        .is_none_or(|ct| ct.contains("text/html"));
-    if !is_html {
-        return false;
-    }
-    let Ok(body) = resp.text().await else {
+        == Some(link_back)
+}
+
+/// Fetch `url` and return whether it links back to `link_back` via
+/// `rel="me"`: `VerifyLinkService#link_back_present?`. A `rel="me"` link
+/// that matches, case aside, is enough; when there are such links and none
+/// matches, the first may still redirect back.
+async fn links_back(http: &ojak::client::Client, url: &str, link_back: &str) -> bool {
+    let Some(body) = fetch_page(http, url).await else {
         return false;
     };
+    if body.trim().is_empty() {
+        return false;
+    }
+    let links = rel_me_hrefs(&body);
     let link_back_lc = link_back.to_lowercase();
-    rel_me_hrefs(&body)
+    if links
         .iter()
+        .flatten()
         .any(|href| href.to_lowercase() == link_back_lc)
+    {
+        true
+    } else if let Some(first) = links.first() {
+        redirects_back(http, first.as_deref().unwrap_or(""), link_back).await
+    } else {
+        false
+    }
 }
 
 /// `VerifyAccountLinksWorker.perform_async(account_id)`: verify the
@@ -252,6 +293,86 @@ async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Resu
 mod tests {
     use super::*;
 
+    /// A page server on the loopback, and a client allowed to reach it.
+    async fn page_server() -> (String, ojak::client::Client) {
+        use axum::{http::header, routing::get, Router};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let back = "https://social.example/@alice";
+        let short = format!("{base}/short");
+        let app = Router::new()
+            // A page answering 200 with no HTML content type.
+            .route(
+                "/octet",
+                get(move || async move {
+                    (
+                        [(header::CONTENT_TYPE, "application/octet-stream")],
+                        format!(r#"<a rel="me" href="{back}">me</a>"#),
+                    )
+                }),
+            )
+            // A page answering anything but exactly 200.
+            .route(
+                "/created",
+                get(move || async move {
+                    (
+                        axum::http::StatusCode::CREATED,
+                        format!(r#"<a rel="me" href="{back}">me</a>"#),
+                    )
+                }),
+            )
+            // A page whose first `rel="me"` link redirects back.
+            .route(
+                "/shortened",
+                get(move || {
+                    let short = short.clone();
+                    async move {
+                        format!(
+                            r#"<a rel="me" href="{short}">me</a><a rel="me" href="https://else.example">x</a>"#
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/short",
+                get(move || async move {
+                    (
+                        axum::http::StatusCode::MOVED_PERMANENTLY,
+                        [(header::LOCATION, back)],
+                    )
+                }),
+            )
+            // A page whose first `rel="me"` link redirects elsewhere.
+            .route(
+                "/elsewhere",
+                get(|| async {
+                    r#"<a rel="me" href="https://else.example/@alice">me</a>"#
+                }),
+            );
+        crate::tenants::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = ojak::client::Client::new(ojak::client::ClientConfig {
+            allow_private: vec!["127.0.0.0/8".parse().unwrap()],
+            ..Default::default()
+        })
+        .unwrap();
+        (base, client)
+    }
+
+    /// `VerifyLinkService`: exactly a 200, whatever its content type, and
+    /// `link_redirects_back?` for the first `rel="me"` link when none
+    /// matches.
+    #[tokio::test]
+    async fn links_back_as_verify_link_service() {
+        let (base, client) = page_server().await;
+        let back = "https://social.example/@alice";
+        assert!(links_back(&client, &format!("{base}/octet"), back).await);
+        assert!(!links_back(&client, &format!("{base}/created"), back).await);
+        assert!(links_back(&client, &format!("{base}/shortened"), back).await);
+        assert!(!links_back(&client, &format!("{base}/elsewhere"), back).await);
+    }
+
     #[test]
     fn verifiable_accepts_plain_https_urls() {
         assert!(is_verifiable("https://example.com"));
@@ -286,8 +407,8 @@ mod tests {
         assert_eq!(
             hrefs,
             vec![
-                "https://social.example/@alice".to_string(),
-                "https://other.example/@alice".to_string(),
+                Some("https://social.example/@alice".to_string()),
+                Some("https://other.example/@alice".to_string()),
             ],
         );
     }
@@ -300,8 +421,8 @@ mod tests {
         assert_eq!(
             hrefs,
             vec![
-                "https://a.example".to_string(),
-                "https://b.example".to_string()
+                Some("https://a.example".to_string()),
+                Some("https://b.example".to_string())
             ],
         );
     }
