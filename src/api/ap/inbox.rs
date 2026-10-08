@@ -523,6 +523,19 @@ async fn update_remote_poll(
     allow_significant_changes: bool,
 ) -> AppResult<bool> {
     let Some(poll) = poll_parser::PollParser::parse(object) else {
+        // `elsif previous_poll.present?`: an edit that is no longer a poll
+        // destroys the one it was (`return unless allow_significant_changes`).
+        if allow_significant_changes {
+            if let Some(previous) =
+                sqlx::query_scalar!("SELECT id FROM polls WHERE status_id = $1", status_id)
+                    .fetch_optional(&state.db)
+                    .await?
+            {
+                crate::remove_status::destroy_poll(&state.db, previous)
+                    .await
+                    .map_err(crate::error::AppError::Internal)?;
+            }
+        }
         return Ok(true);
     };
     // `poll_parser.significantly_changes?(previous_poll || polls.new)`: a

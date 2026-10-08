@@ -278,3 +278,67 @@ async fn test_a_poll_with_no_options_is_refused_with_its_status() {
         Some(vec!["c".into(), "d".into()])
     );
 }
+
+/// `ProcessStatusUpdateService#update_poll!`: an edit that is no longer a
+/// `Question` destroys the poll the status had, its votes with it; an update
+/// that is not an edit leaves it.
+#[tokio::test]
+async fn test_an_edit_that_is_no_longer_a_poll_destroys_it() {
+    let ctx = TestContext::new("inbound-poll-gone").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    let poll = format!("{remy}/statuses/poll");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(&remy, question(&ctx, &poll, &remy, &["a", "b"], json!({}))),
+    )
+    .await;
+    let id = status_id(&ctx, &poll).await.unwrap();
+    let poll_id: i64 = sqlx::query_scalar("SELECT id FROM polls WHERE status_id = $1")
+        .bind(id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO poll_votes (account_id, poll_id, choice, created_at, updated_at)
+         VALUES ($1, $2, 0, now(), now())",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(poll_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let note = |updated: Option<&str>| {
+        json!({
+            "id": poll, "type": "Note", "attributedTo": remy,
+            "content": "<p>no longer a poll</p>", "to": [PUBLIC],
+            "cc": [format!("https://{}/users/alice", ctx.domain)],
+            "published": "2026-01-01T00:00:00Z",
+            "updated": updated,
+        })
+    };
+
+    // Not an edit: the poll stays.
+    send(&ctx, &remy, &key, &update(&remy, note(None), 1)).await;
+    assert!(poll_options(&ctx, id).await.is_some());
+
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &update(&remy, note(Some("2026-01-02T00:00:00Z")), 2),
+    )
+    .await;
+    assert_eq!(poll_options(&ctx, id).await, None);
+    let (status_poll, votes): (Option<i64>, i64) = sqlx::query_as(
+        "SELECT poll_id, (SELECT count(*) FROM poll_votes WHERE poll_id = $2) FROM statuses WHERE id = $1",
+    )
+    .bind(id)
+    .bind(poll_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(status_poll, None);
+    assert_eq!(votes, 0);
+}

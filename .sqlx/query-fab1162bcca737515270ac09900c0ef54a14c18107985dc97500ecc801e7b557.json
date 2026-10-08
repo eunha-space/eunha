@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET poll_id = NULL WHERE poll_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fab1162bcca737515270ac09900c0ef54a14c18107985dc97500ecc801e7b557"
+}

@@ -124,7 +124,8 @@ A `Question` is a poll (`PollParser`). One with no option is not a valid
 poll, and since the status is saved with its poll, the status is refused
 whole; an edit to one is not kept, any of it. An update that does not say
 the status was edited leaves a poll's options and multiplicity as they were,
-and an edit that changes them resets its votes.
+and an edit that changes them resets its votes. An edit that is no longer a
+`Question` destroys the poll, its votes and its notifications with it.
 
 A poll ends at its `closed` time, now when `closed` is any other value but
 `false`, or else at its `endTime`, each read as Ruby's `String#to_datetime`

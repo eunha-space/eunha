@@ -705,6 +705,34 @@ async fn destroy(state: &AppState, status: &Status, account: &Account) -> Result
 /// `has_many :notifications, ...` for the given activities. `has_one` loads
 /// one notification per activity and destroys that one. Returns the
 /// recipient and sender of each destroyed notification.
+/// `poll.destroy!`, and the status no longer naming it (`poll_id = nil`):
+/// its votes by `delete_all`, its notifications by `dependent: :destroy`,
+/// each of which reconsiders the notification request it may have counted
+/// towards.
+pub(crate) async fn destroy_poll(db: &sqlx::PgPool, poll_id: i64) -> Result<()> {
+    let mut tx = db.begin().await?;
+    let mut touched = destroy_notifications(&mut tx, "Poll", &[poll_id], false).await?;
+    sqlx::query!("DELETE FROM poll_votes WHERE poll_id = $1", poll_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query!(
+        "UPDATE statuses SET poll_id = NULL WHERE poll_id = $1",
+        poll_id
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!("DELETE FROM polls WHERE id = $1", poll_id)
+        .execute(&mut *tx)
+        .await?;
+    touched.sort_unstable();
+    touched.dedup();
+    for (account_id, from_account_id) in touched {
+        reconsider_notification_request(&mut tx, account_id, from_account_id).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 async fn destroy_notifications(
     conn: &mut PgConnection,
     activity_type: &str,
