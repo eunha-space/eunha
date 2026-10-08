@@ -207,13 +207,12 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
     }
     let target_id = inviter.target_id;
 
-    let Ok(follower) =
-        crate::api::mastodon::accounts::fetch_account(state, follower_account_id).await
-    else {
+    if crate::api::mastodon::accounts::fetch_account(state, follower_account_id)
+        .await
+        .is_err()
+    {
         return;
-    };
-    let acct = follower.acct();
-    let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &follower);
+    }
 
     if inviter.locked {
         let inserted = sqlx::query!(
@@ -237,9 +236,6 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
             follower_account_id,
             "follow_request",
             None,
-            format!("{} wants to follow you", follower.display_name),
-            acct,
-            avatar,
         )
         .await;
         return;
@@ -265,17 +261,7 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
         .await;
 
     let _ = crate::counters::on_follow_created(state, follower_account_id, target_id).await;
-    crate::push::create_and_push(
-        state,
-        target_id,
-        follower_account_id,
-        "follow",
-        None,
-        format!("{} followed you", follower.display_name),
-        acct,
-        avatar,
-    )
-    .await;
+    crate::push::create_and_push(state, target_id, follower_account_id, "follow", None).await;
     // `FollowService#direct_follow!`'s `MergeWorker`s.
     crate::home_feed::merge_into_home_and_lists(state, target_id, follower_account_id).await;
 }

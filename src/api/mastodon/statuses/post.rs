@@ -663,17 +663,7 @@ pub(crate) async fn process_status(
         if mentioned.id == account.id || notified.contains(&mentioned.id) {
             continue;
         }
-        push::create_and_push(
-            &state,
-            mentioned.id,
-            account.id,
-            "mention",
-            Some(status.id),
-            format!("{} mentioned you", account.display_name),
-            account.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, account),
-        )
-        .await;
+        push::create_and_push(&state, mentioned.id, account.id, "mention", Some(status.id)).await;
         notified.insert(mentioned.id);
     }
 

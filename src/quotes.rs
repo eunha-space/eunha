@@ -472,9 +472,6 @@ pub async fn notify(state: &AppState, quote: &Quote) {
         quoter.id,
         "quote",
         Some(quote.status_id),
-        format!("{} quoted your post", quoter.display_name),
-        quoter.acct(),
-        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &quoter),
     )
     .await;
 }
@@ -559,19 +556,9 @@ async fn try_distribute_update(
         )
         .fetch_all(&state.db)
         .await?;
-        let icon = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &author);
         for account_id in mentioned {
-            crate::push::create_and_push(
-                state,
-                account_id,
-                author.id,
-                "mention",
-                Some(status.id),
-                format!("{} mentioned you", author.display_name),
-                author.acct(),
-                icon.clone(),
-            )
-            .await;
+            crate::push::create_and_push(state, account_id, author.id, "mention", Some(status.id))
+                .await;
         }
 
         // `notify_about_update!`
@@ -583,17 +570,8 @@ async fn try_distribute_update(
         .fetch_all(&state.db)
         .await?;
         for account_id in boosters {
-            crate::push::create_and_push(
-                state,
-                account_id,
-                author.id,
-                "update",
-                Some(status.id),
-                format!("{} edited a status", author.display_name),
-                String::new(),
-                icon.clone(),
-            )
-            .await;
+            crate::push::create_and_push(state, account_id, author.id, "update", Some(status.id))
+                .await;
         }
         let quoters = sqlx::query!(
             "SELECT account_id, status_id FROM quotes WHERE quoted_status_id = $1 AND state = 1",
@@ -608,9 +586,6 @@ async fn try_distribute_update(
                 author.id,
                 "quoted_update",
                 Some(quote.status_id),
-                format!("{} edited a quoted post", author.display_name),
-                String::new(),
-                icon.clone(),
             )
             .await;
         }

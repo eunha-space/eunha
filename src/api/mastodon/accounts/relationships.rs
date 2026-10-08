@@ -379,17 +379,7 @@ pub async fn follow(
         )
         .execute(&state.db)
         .await?;
-        push::create_and_push(
-            state,
-            target_id,
-            source.id,
-            "follow_request",
-            None,
-            format!("{} wants to follow you", requester.display_name),
-            requester.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, requester),
-        )
-        .await;
+        push::create_and_push(state, target_id, source.id, "follow_request", None).await;
         return Ok(FollowOutcome::Requested);
     }
 
@@ -406,17 +396,7 @@ pub async fn follow(
 
     crate::counters::on_follow_created(state, source.id, target_id).await?;
 
-    push::create_and_push(
-        state,
-        target_id,
-        source.id,
-        "follow",
-        None,
-        format!("{} followed you", requester.display_name),
-        requester.acct().clone(),
-        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, requester),
-    )
-    .await;
+    push::create_and_push(state, target_id, source.id, "follow", None).await;
 
     crate::home_feed::merge_into_home_and_lists(state, target_id, source.id).await;
 

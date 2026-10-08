@@ -210,36 +210,14 @@ pub(super) async fn handle_follow(
         return Ok(());
     }
 
-    let acct = follower.acct().to_string();
-    let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &follower);
     // A locked target, or a silenced follower, holds the follow as a request
     // (`target_account.locked? || @account.silenced?`); otherwise
     // `AuthorizeFollowService` makes it a follow and sends the `Accept`.
     if target.locked || follower.silenced_at.is_some() {
-        crate::push::create_and_push(
-            state,
-            target.id,
-            follower_id,
-            "follow_request",
-            None,
-            format!("{} wants to follow you", follower.display_name),
-            acct,
-            avatar,
-        )
-        .await;
+        crate::push::create_and_push(state, target.id, follower_id, "follow_request", None).await;
     } else {
         crate::api::mastodon::accounts::authorize_follow(state, follower_id, target.id).await?;
-        crate::push::create_and_push(
-            state,
-            target.id,
-            follower_id,
-            "follow",
-            None,
-            format!("{} followed you", follower.display_name),
-            acct,
-            avatar,
-        )
-        .await;
+        crate::push::create_and_push(state, target.id, follower_id, "follow", None).await;
     }
 
     Ok(())

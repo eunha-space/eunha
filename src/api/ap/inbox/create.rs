@@ -705,19 +705,15 @@ async fn create_locked(
     // it was written is stored, not announced.
     let within_realtime_window =
         chrono::Utc::now().naive_utc() - created_at <= chrono::Duration::hours(6);
-    let actor_info = sqlx::query!(
-        "SELECT display_name, username, domain, avatar_remote_url FROM accounts WHERE id = $1",
+    let actor_exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1) AS "e!""#,
         account_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_one(&state.db)
     .await?;
     // `notify_mentioned_accounts!`: the local accounts of `active_mentions`,
     // those outside the audience as if the sender were limited.
-    if let (true, Some(info)) = (within_realtime_window, &actor_info) {
-        let acct = match &info.domain {
-            Some(d) => format!("{}@{}", info.username, d),
-            None => info.username.clone(),
-        };
+    if within_realtime_window && actor_exists {
         for mention in mentions.iter().filter(|m| !m.silent) {
             if !local_mentioned.contains(&mention.account_id) {
                 continue;
@@ -728,9 +724,6 @@ async fn create_locked(
                 account_id,
                 "mention",
                 Some(inserted_id),
-                format!("New mention from {}", info.display_name),
-                acct.clone(),
-                info.avatar_remote_url.clone().unwrap_or_default(),
                 silenced_account_ids.contains(&mention.account_id),
             )
             .await;

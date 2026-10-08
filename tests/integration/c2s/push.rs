@@ -315,7 +315,7 @@ async fn subscribe(ctx: &TestContext, endpoint: &str, standard: bool) -> i64 {
                     "standard": standard,
                     "keys": { "p256dh": p256dh, "auth": "tBHItJI5svbpez7KI4CCXg" },
                 },
-                "data": { "alerts": { "mention": true }, "policy": "all" },
+                "data": { "alerts": { "admin.sign_up": true }, "policy": "all" },
             }),
         )
         .await
@@ -325,11 +325,27 @@ async fn subscribe(ctx: &TestContext, endpoint: &str, standard: bool) -> i64 {
     resp["id"].as_str().unwrap().parse().unwrap()
 }
 
+/// An `admin.sign_up` notification of bob's sign-up, for alice.
+async fn sign_up_notification(ctx: &TestContext) -> i64 {
+    sqlx::query_scalar(
+        r#"INSERT INTO notifications
+             (account_id, from_account_id, "type", activity_type, activity_id, created_at, updated_at)
+           VALUES ($1, $2, 'admin.sign_up', 'Account', $2, now(), now())
+           RETURNING id"#,
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
 async fn push(ctx: &TestContext, id: i64) -> anyhow::Result<()> {
     use eunha::jobs::Job as _;
+    let notification_id = sign_up_notification(ctx).await;
     eunha::push::PushNotificationWorker {
         web_push_subscription_id: id,
-        payload: r#"{"title":"hi"}"#.into(),
+        notification_id: Some(notification_id),
     }
     .perform(&ctx.state)
     .await
@@ -484,4 +500,113 @@ async fn pushes_follow_the_alerts_and_the_policy() {
     let none = json!({"alerts": {"admin.sign_up": true}, "policy": "none"});
     subscribe_with(&ctx, &endpoint, none).await;
     assert_eq!(notify_sign_up(&ctx, &seen).await, 0);
+}
+
+/// `Web::NotificationSerializer`: the subscription's token, the subscriber's
+/// locale, the notification, the sender's avatar, the type's subject naming
+/// the sender in that locale, and the post's text or else the sender's bio,
+/// without tags and cut to 140 characters.
+#[tokio::test]
+async fn pushes_carry_mastodons_payload() {
+    let ctx = TestContext::new("push-payload").await;
+    let id = subscribe_with(&ctx, "https://push.example.com/p", json!({})).await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    sqlx::query("UPDATE accounts SET display_name = '', note = $2 WHERE id = $1")
+        .bind(bob)
+        .bind(format!("<p>Hi &amp; {}</p>", "b".repeat(200)))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let notification = sign_up_notification(&ctx).await;
+    let payload = eunha::push::payload(&ctx.state, id, notification)
+        .await
+        .unwrap()
+        .unwrap();
+    let token: String = sqlx::query_scalar(
+        "SELECT t.token FROM oauth_access_tokens t JOIN web_push_subscriptions w ON w.access_token_id = t.id WHERE w.id = $1",
+    )
+    .bind(id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(payload.access_token, token);
+    assert_eq!(payload.notification_id, notification);
+    assert_eq!(payload.notification_type, "admin.sign_up");
+    assert_eq!(payload.preferred_locale, "en");
+    assert_eq!(payload.title, "bob signed up");
+    assert!(payload.body.starts_with("Hi & bbb"), "{}", payload.body);
+    assert_eq!(payload.body.chars().count(), 140);
+    assert!(payload.body.ends_with("..."));
+    assert!(!payload.icon.is_empty());
+
+    // In the subscriber's locale.
+    sqlx::query("UPDATE users SET locale = 'ko' WHERE account_id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET display_name = 'Bob' WHERE id = $1")
+        .bind(bob)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let payload = eunha::push::payload(&ctx.state, id, notification)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload.preferred_locale, "ko");
+    assert_eq!(payload.title, "Bob 님이 가입했습니다");
+
+    // A post's content warning, else its text.
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "@alice <b>hello</b> there"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let mention: i64 = sqlx::query_scalar(
+        r#"SELECT id FROM notifications WHERE account_id = $1 AND "type" = 'mention'"#,
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let payload = eunha::push::payload(&ctx.state, id, mention)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload.title, "Bob 님의 멘션");
+    assert_eq!(payload.body, "@alice hello there");
+    sqlx::query("UPDATE statuses SET spoiler_text = 'cw' WHERE id = $1")
+        .bind(status["id"].as_str().unwrap().parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let payload = eunha::push::payload(&ctx.state, id, mention)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload.body, "cw");
+
+    // A type without a subject reads as a missing translation.
+    sqlx::query(r#"UPDATE notifications SET "type" = 'annual_report' WHERE id = $1"#)
+        .bind(notification)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let payload = eunha::push::payload(&ctx.state, id, notification)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        payload.title,
+        "Translation missing: ko.notification_mailer.annual_report.subject"
+    );
 }

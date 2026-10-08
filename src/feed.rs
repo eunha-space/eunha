@@ -1005,19 +1005,8 @@ async fn notify_followers(state: &crate::state::AppState, status_id: i64, follow
     let Ok(account) = crate::api::mastodon::accounts::fetch_account(state, author).await else {
         return;
     };
-    let avatar = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account);
     for &follower in followers {
-        crate::push::create_and_push(
-            state,
-            follower,
-            account.id,
-            "status",
-            Some(status_id),
-            format!("{} posted a new status", account.display_name),
-            account.acct().clone(),
-            avatar.clone(),
-        )
-        .await;
+        crate::push::create_and_push(state, follower, account.id, "status", Some(status_id)).await;
     }
 }
 

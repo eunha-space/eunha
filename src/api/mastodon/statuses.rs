@@ -595,9 +595,6 @@ pub async fn favourite_status(
         auth.account_id,
         "favourite",
         Some(id),
-        format!("{} favourited your post", from_account.display_name),
-        from_account.acct().clone(),
-        super::convert::account_avatar_url_for(&state.urls, &from_account),
     )
     .await;
 
@@ -874,9 +871,6 @@ pub async fn reblog_status(
         auth.account_id,
         "reblog",
         Some(original_id),
-        format!("{} boosted your post", boost_account.display_name),
-        boost_account.acct().clone(),
-        super::convert::account_avatar_url_for(&state.urls, &boost_account),
     )
     .await;
 

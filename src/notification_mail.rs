@@ -271,7 +271,7 @@ async fn load_account(state: &AppState, id: i64) -> anyhow::Result<Option<Accoun
 /// whichever activity it points at — the status itself as eunha records it,
 /// or Mastodon's `Mention`, `Favourite` and `Quote` — and for a boost, the
 /// post boosted.
-async fn target_status(
+pub(crate) async fn target_status(
     state: &AppState,
     activity_type: &str,
     activity_id: i64,
@@ -294,6 +294,11 @@ async fn target_status(
         }
         "Quote" => {
             sqlx::query_scalar!("SELECT status_id FROM quotes WHERE id = $1", activity_id)
+                .fetch_optional(&state.db)
+                .await?
+        }
+        "Poll" => {
+            sqlx::query_scalar!("SELECT status_id FROM polls WHERE id = $1", activity_id)
                 .fetch_optional(&state.db)
                 .await?
         }

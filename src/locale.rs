@@ -418,6 +418,53 @@ impl Locale {
             (Self::Ko, "agree_terms") => "%{terms} 및 %{privacy}을 읽었으며 이에 동의합니다",
             (Self::En, "agree_privacy") => "I have read and agree to the %{privacy}",
             (Self::Ko, "agree_privacy") => "%{privacy}을 읽었으며 이에 동의합니다",
+            // ── notification_mailer.<type>.subject, a push's title ──────────
+            (Self::En, "notification_mailer.admin.report.subject") => "%{name} submitted a report",
+            (Self::Ko, "notification_mailer.admin.report.subject") => "%{name} 님이 신고를 제출했습니다",
+            (Self::En, "notification_mailer.admin.sign_up.subject") => "%{name} signed up",
+            (Self::Ko, "notification_mailer.admin.sign_up.subject") => "%{name} 님이 가입했습니다",
+            (Self::En, "notification_mailer.favourite.subject") => "%{name} favorited your post",
+            (Self::Ko, "notification_mailer.favourite.subject") => {
+                "%{name} 님이 내 게시물을 마음에 들어했습니다"
+            }
+            (Self::En, "notification_mailer.follow.subject") => "%{name} is now following you",
+            (Self::Ko, "notification_mailer.follow.subject") => "%{name} 님이 나를 팔로우했습니다",
+            (Self::En, "notification_mailer.follow_request.subject") => "Pending follower: %{name}",
+            (Self::Ko, "notification_mailer.follow_request.subject") => {
+                "%{name} 님이 보낸 팔로우 요청"
+            }
+            (Self::En, "notification_mailer.mention.subject") => "You were mentioned by %{name}",
+            (Self::Ko, "notification_mailer.mention.subject") => "%{name} 님의 멘션",
+            (Self::En, "notification_mailer.moderation_warning.subject") => {
+                "You have received a moderation warning"
+            }
+            (Self::Ko, "notification_mailer.moderation_warning.subject") => "중재 경고를 받았습니다",
+            (Self::En, "notification_mailer.poll.subject") => "A poll by %{name} has ended",
+            (Self::Ko, "notification_mailer.poll.subject") => "%{name}의 설문이 종료됨",
+            (Self::En, "notification_mailer.quote.subject") => "%{name} quoted your post",
+            (Self::Ko, "notification_mailer.quote.subject") => "%{name} 님이 내 게시물을 인용했습니다",
+            (Self::En, "notification_mailer.quoted_update.subject") => {
+                "%{name} edited a post you have quoted"
+            }
+            (Self::Ko, "notification_mailer.quoted_update.subject") => {
+                "%{name} 님이 내가 인용한 게시물을 수정했습니다"
+            }
+            (Self::En, "notification_mailer.reblog.subject") => "%{name} boosted your post",
+            (Self::Ko, "notification_mailer.reblog.subject") => {
+                "%{name} 님이 내 게시물을 부스트 했습니다"
+            }
+            (Self::En, "notification_mailer.severed_relationships.subject") => {
+                "You have lost connections due to a moderation decision"
+            }
+            (Self::Ko, "notification_mailer.severed_relationships.subject") => {
+                "중재 결정으로 인해 연결이 끊어졌습니다"
+            }
+            (Self::En, "notification_mailer.status.subject") => "%{name} just posted",
+            (Self::Ko, "notification_mailer.status.subject") => {
+                "%{name} 님이 방금 게시물을 올렸습니다"
+            }
+            (Self::En, "notification_mailer.update.subject") => "%{name} edited a post",
+            (Self::Ko, "notification_mailer.update.subject") => "%{name} 님이 게시물을 수정했습니다",
             // fallback
             _ => "",
         }

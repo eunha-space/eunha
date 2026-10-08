@@ -729,17 +729,7 @@ impl crate::jobs::Job for PollExpirationNotifyWorker {
             .await?,
         );
         for recipient in recipients {
-            crate::push::create_and_push(
-                state,
-                recipient,
-                author,
-                "poll",
-                Some(status_id),
-                "A poll you voted in has ended".into(),
-                "".into(),
-                "".into(),
-            )
-            .await;
+            crate::push::create_and_push(state, recipient, author, "poll", Some(status_id)).await;
         }
         Ok(())
     }

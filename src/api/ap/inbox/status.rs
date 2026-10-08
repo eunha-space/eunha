@@ -495,14 +495,7 @@ async fn announce(
 
     // Notify the local author that a remote account boosted their post
     // (Mastodon notifies via LocalNotificationWorker on an incoming Announce).
-    notify_status_author(
-        state,
-        original_id,
-        booster_id,
-        "reblog",
-        "boosted your post",
-    )
-    .await;
+    notify_status_author(state, original_id, booster_id, "reblog").await;
 
     // Fan the boost into followers' home and list feeds so it appears
     // immediately, not only after a feed repopulate. Mirrors the local reblog
@@ -595,14 +588,7 @@ pub(super) async fn handle_like(
     // Notify the local author that a remote account favourited their post
     // (Mastodon notifies the author via LocalNotificationWorker on an incoming
     // Like). create_and_push no-ops for a remote recipient and dedups.
-    notify_status_author(
-        state,
-        status_id,
-        account_id,
-        "favourite",
-        "favourited your post",
-    )
-    .await;
+    notify_status_author(state, status_id, account_id, "favourite").await;
 
     Ok(())
 }
@@ -614,21 +600,10 @@ async fn notify_status_author(
     status_id: i64,
     actor_id: i64,
     notification_type: &'static str,
-    verb: &str,
 ) {
     let Ok(Some(author_id)) = sqlx::query_scalar!(
         "SELECT account_id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
         status_id,
-    )
-    .fetch_optional(&state.db)
-    .await
-    else {
-        return;
-    };
-    let Ok(Some(actor)) = sqlx::query_as!(
-        crate::db::models::Account,
-        "SELECT * FROM accounts WHERE id = $1",
-        actor_id,
     )
     .fetch_optional(&state.db)
     .await
@@ -641,9 +616,6 @@ async fn notify_status_author(
         actor_id,
         notification_type,
         Some(status_id),
-        format!("{} {}", actor.display_name, verb),
-        actor.acct(),
-        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &actor),
     )
     .await;
 }

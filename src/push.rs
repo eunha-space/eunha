@@ -137,122 +137,222 @@ fn unsubscribe_url(state: &AppState, id: i64) -> String {
     )
 }
 
-/// Payload sent to the push endpoint, matching Mastodon's format.
-#[derive(serde::Serialize)]
-struct PushPayload<'a> {
-    notification_id: i64,
-    notification_type: &'a str,
-    icon: &'a str,
-    title: &'a str,
-    body: &'a str,
-    preferred_locale: &'a str,
-}
-
-/// Deliver a push notification to all subscriptions registered for `recipient_id`
-/// where the corresponding alert type is enabled.
-/// Failures are logged and swallowed — push is best-effort.
-// A push carries what the payload needs — recipient, sender, type, subject, and
-// the three display fields. Threading them through a struct would name the same
-// eight things one level further away.
-#[allow(clippy::too_many_arguments)]
-pub async fn deliver(
-    state: AppState,
-    recipient_id: i64,
-    from_account_id: i64,
-    notification_id: i64,
-    notification_type: &str,
-    icon: &str,
-    title: &str,
-    body: &str,
-) {
-    if let Err(e) = try_deliver(
-        &state,
-        recipient_id,
-        from_account_id,
-        notification_id,
-        notification_type,
-        icon,
-        title,
-        body,
-    )
-    .await
-    {
+/// `NotifyService#push_to_web_push_subscriptions!`: a
+/// [`PushNotificationWorker`] for each of the recipient's subscriptions that
+/// is `pushable?` for the notification. Failures are logged and swallowed;
+/// push is best-effort.
+pub async fn deliver(state: &AppState, notification_id: i64) {
+    if let Err(e) = try_deliver(state, notification_id).await {
         tracing::warn!(error = %e, "push delivery error");
     }
 }
 
-// A push carries what the payload needs — recipient, sender, type, subject, and
-// the three display fields. Threading them through a struct would name the same
-// eight things one level further away.
-#[allow(clippy::too_many_arguments)]
-async fn try_deliver(
-    state: &AppState,
-    recipient_id: i64,
-    from_account_id: i64,
-    notification_id: i64,
-    notification_type: &str,
-    icon: &str,
-    title: &str,
-    body: &str,
-) -> anyhow::Result<()> {
-    // `NotifyService#push_to_web_push_subscriptions!`: the recipient's
-    // user's subscriptions, those `pushable?` for this notification.
+async fn try_deliver(state: &AppState, notification_id: i64) -> anyhow::Result<()> {
+    let Some(notification) = load_notification(state, notification_id).await? else {
+        return Ok(());
+    };
+    // The recipient's user's subscriptions.
     let subscriptions = sqlx::query!(
         r#"SELECT wps.id, wps.data as "data: serde_json::Value"
            FROM web_push_subscriptions wps
            JOIN users u ON u.id = wps.user_id
            WHERE u.account_id = $1
            ORDER BY wps.id"#,
-        recipient_id,
+        notification.account_id,
     )
     .fetch_all(&state.db)
     .await?;
-    let notification = Pushed {
-        account_id: recipient_id,
-        from_account_id,
-        notification_type,
-    };
-    let mut rows = vec![];
+    let mut jobs = vec![];
     for subscription in subscriptions {
         if pushable(state, subscription.data.as_ref(), &notification).await? {
-            rows.push(subscription.id);
+            jobs.push(PushNotificationWorker {
+                web_push_subscription_id: subscription.id,
+                notification_id: Some(notification_id),
+            });
         }
     }
-
-    if rows.is_empty() {
-        return Ok(());
-    }
-
-    let payload = serde_json::to_string(&PushPayload {
-        notification_id,
-        notification_type,
-        icon,
-        title,
-        body,
-        preferred_locale: "en",
-    })?;
-
-    // `Web::PushNotificationWorker.perform_async(subscription.id,
-    // notification.id)` for each, with the payload as it was rendered.
-    for id in rows {
-        crate::jobs::perform_async(
-            state,
-            PushNotificationWorker {
-                web_push_subscription_id: id,
-                payload: payload.clone(),
-            },
-        )
-        .await?;
-    }
-
+    // `Web::PushNotificationWorker.push_bulk(...) { [subscription.id,
+    // notification.id] }`: the payload is rendered when each is sent.
+    crate::jobs::perform_bulk(state, jobs).await?;
     Ok(())
 }
 
-/// What `Web::PushSubscription#pushable?` asks of a notification.
-struct Pushed<'a> {
+/// A notification as a push reads it.
+struct Pushed {
+    id: i64,
+    notification_type: String,
     account_id: i64,
     from_account_id: i64,
-    notification_type: &'a str,
+    activity_type: String,
+    activity_id: i64,
+}
+
+/// `Notification.find`, its type read as `Notification#type` reads it: the
+/// column, or for a notification from before types were recorded, the one
+/// `LEGACY_TYPE_CLASS_MAP` gives its activity.
+async fn load_notification(state: &AppState, id: i64) -> anyhow::Result<Option<Pushed>> {
+    let Some(row) = sqlx::query!(
+        r#"SELECT id, "type", account_id, from_account_id, activity_type, activity_id, updated_at
+           FROM notifications WHERE id = $1"#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let notification_type = match row.r#type {
+        Some(t) => t,
+        None => match row.activity_type.as_str() {
+            "Mention" => "mention",
+            "Status" => "reblog",
+            "Follow" => "follow",
+            "FollowRequest" => "follow_request",
+            "Favourite" => "favourite",
+            "Poll" => "poll",
+            "Quote" => "quote",
+            _ => "",
+        }
+        .to_owned(),
+    };
+    Ok(Some(Pushed {
+        id: row.id,
+        notification_type,
+        account_id: row.account_id,
+        from_account_id: row.from_account_id,
+        activity_type: row.activity_type,
+        activity_id: row.activity_id,
+    }))
+}
+
+/// `Web::NotificationSerializer`, rendered for a subscription: what a push
+/// carries, in the subscriber's locale.
+#[derive(Debug, serde::Serialize)]
+pub struct PushPayload {
+    /// The subscription's access token, `associated_access_token`.
+    pub access_token: String,
+    /// The subscriber's locale, or the default.
+    pub preferred_locale: String,
+    pub notification_id: i64,
+    pub notification_type: String,
+    /// The sender's `avatar_static_url`.
+    pub icon: String,
+    /// `notification_mailer.<type>.subject`, naming the sender.
+    pub title: String,
+    /// The post's content warning or text, or else the sender's bio,
+    /// without its tags and cut to 140 characters.
+    pub body: String,
+}
+
+/// Render [`PushPayload`] for `subscription_id` and `notification_id`, as
+/// `Web::PushNotificationWorker#push_notification_json` does when it sends.
+/// `None` when the subscription, its token, the notification or its sender
+/// is gone.
+pub async fn payload(
+    state: &AppState,
+    subscription_id: i64,
+    notification_id: i64,
+) -> anyhow::Result<Option<PushPayload>> {
+    let Some(notification) = load_notification(state, notification_id).await? else {
+        return Ok(None);
+    };
+    render(state, subscription_id, &notification).await
+}
+
+async fn render(
+    state: &AppState,
+    subscription_id: i64,
+    notification: &Pushed,
+) -> anyhow::Result<Option<PushPayload>> {
+    let Some(subscriber) = sqlx::query!(
+        r#"SELECT t.token AS "token?", u.locale
+           FROM web_push_subscriptions wps
+           JOIN users u ON u.id = wps.user_id
+           LEFT JOIN oauth_access_tokens t ON t.id = wps.access_token_id
+           WHERE wps.id = $1"#,
+        subscription_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let Some(access_token) = subscriber.token else {
+        return Ok(None);
+    };
+    let Some(from) = sqlx::query_as!(
+        crate::db::models::Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        notification.from_account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(None);
+    };
+    // `I18n.with_locale(@subscription.locale.presence || I18n.default_locale)`.
+    let locale = subscriber
+        .locale
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| crate::api::mastodon::DEFAULT_LOCALE.to_owned());
+    // `display_name.presence || username`.
+    let name = if from.display_name.trim().is_empty() {
+        from.username.clone()
+    } else {
+        from.display_name.clone()
+    };
+    // `target_status&.spoiler_text.presence || target_status&.text ||
+    // from_account.note`.
+    let target = match notification.notification_type.as_str() {
+        "status" | "update" | "quoted_update" | "reblog" | "favourite" | "mention" | "quote"
+        | "poll" => {
+            crate::notification_mail::target_status(
+                state,
+                &notification.activity_type,
+                notification.activity_id,
+                &notification.notification_type,
+            )
+            .await?
+        }
+        _ => None,
+    };
+    let source = match target {
+        Some(status) if !status.spoiler_text.trim().is_empty() => status.spoiler_text,
+        Some(status) => status.text,
+        None => from.note.clone(),
+    };
+    Ok(Some(PushPayload {
+        access_token,
+        preferred_locale: locale.clone(),
+        notification_id: notification.id,
+        notification_type: notification.notification_type.clone(),
+        icon: crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &from),
+        title: push_title(&locale, &notification.notification_type, &name),
+        body: push_body(&source),
+    }))
+}
+
+/// `I18n.t("notification_mailer.#{type}.subject", name:)` in `locale`. A
+/// type with no subject reads as Rails reads a missing translation, but for
+/// the collection types (divergences.toml,
+/// `collection-notification-push-titles`).
+fn push_title(locale: &str, notification_type: &str, name: &str) -> String {
+    if matches!(
+        notification_type,
+        "added_to_collection" | "collection_update"
+    ) {
+        return collection_push_title(notification_type, name);
+    }
+    let key = format!("notification_mailer.{notification_type}.subject");
+    let lang = if locale == "ko" {
+        crate::locale::Locale::Ko
+    } else {
+        crate::locale::Locale::En
+    };
+    match lang.t(&key) {
+        "" => format!("Translation missing: {locale}.{key}"),
+        subject => subject.replace("%{name}", name),
+    }
 }
 
 /// `Web::PushSubscription#pushable?`: the subscription's policy allows the
@@ -262,7 +362,7 @@ struct Pushed<'a> {
 async fn pushable(
     state: &AppState,
     data: Option<&serde_json::Value>,
-    notification: &Pushed<'_>,
+    notification: &Pushed,
 ) -> anyhow::Result<bool> {
     use serde_json::Value;
     let policy_allows = match data.and_then(|d| d.get("policy")) {
@@ -282,7 +382,7 @@ async fn pushable(
     Ok(policy_allows
         && data
             .and_then(|d| d.get("alerts"))
-            .and_then(|a| a.get(notification.notification_type))
+            .and_then(|a| a.get(&notification.notification_type))
             .and_then(cast_boolean)
             .unwrap_or(false))
 }
@@ -308,7 +408,10 @@ async fn following(
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PushNotificationWorker {
     pub web_push_subscription_id: i64,
-    pub payload: String,
+    /// `None` for a job an earlier eunha queued with its payload already
+    /// rendered, which is dropped.
+    #[serde(default)]
+    pub notification_id: Option<i64>,
 }
 
 impl crate::jobs::Job for PushNotificationWorker {
@@ -318,13 +421,25 @@ impl crate::jobs::Job for PushNotificationWorker {
         .retry(5);
 
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
-        // `Web::PushSubscription.find`, else nothing to do.
+        let Some(notification_id) = self.notification_id else {
+            return Ok(());
+        };
+        // `Web::PushSubscription.find` and `Notification.find`, else
+        // nothing to do.
         let Some(sub) = sqlx::query!(
             "SELECT endpoint, key_p256dh, key_auth, standard FROM web_push_subscriptions WHERE id = $1",
             self.web_push_subscription_id
         )
         .fetch_optional(&state.db)
         .await?
+        else {
+            return Ok(());
+        };
+        let Some(notification) = load_notification(state, notification_id).await? else {
+            return Ok(());
+        };
+        // `push_notification_json`, rendered now.
+        let Some(payload) = render(state, self.web_push_subscription_id, &notification).await?
         else {
             return Ok(());
         };
@@ -335,7 +450,7 @@ impl crate::jobs::Job for PushNotificationWorker {
             &sub.key_auth,
             sub.standard,
             &unsubscribe_url(state, self.web_push_subscription_id),
-            &self.payload,
+            &serde_json::to_string(&payload)?,
         )
         .await?;
         // `#send`: a 4xx other than a timeout or rate limit means the
@@ -560,16 +675,12 @@ async fn notification_activity(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn create_and_push(
     state: &AppState,
     recipient_id: i64,
     from_account_id: i64,
     notification_type: &'static str,
     status_id: Option<i64>,
-    title: String,
-    body: String,
-    icon: String,
 ) {
     create_and_push_with(
         state,
@@ -577,9 +688,6 @@ pub async fn create_and_push(
         from_account_id,
         notification_type,
         status_id,
-        title,
-        body,
-        icon,
         false,
     )
     .await;
@@ -588,16 +696,12 @@ pub async fn create_and_push(
 /// [`create_and_push`] with `NotifyService`'s `silenced:` option: the
 /// recipient's policy treats the sender as a limited account, as for a
 /// mention of someone outside the status's audience.
-#[allow(clippy::too_many_arguments)]
 pub async fn create_and_push_with(
     state: &AppState,
     recipient_id: i64,
     from_account_id: i64,
     notification_type: &'static str,
     status_id: Option<i64>,
-    title: String,
-    body: String,
-    icon: String,
     silenced: bool,
 ) {
     Box::pin(notify(
@@ -607,9 +711,6 @@ pub async fn create_and_push_with(
         notification_type,
         status_id,
         None,
-        title,
-        body,
-        icon,
         silenced,
     ))
     .await;
@@ -627,26 +728,6 @@ pub async fn notify_collection(
     activity: (&'static str, i64),
     from_account_id: i64,
 ) {
-    let sender = sqlx::query_as!(
-        crate::db::models::Account,
-        "SELECT * FROM accounts WHERE id = $1",
-        from_account_id,
-    )
-    .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten();
-    let Some(sender) = sender else { return };
-    // `Web::NotificationSerializer`: the title the type has, and, with no
-    // post, the sender's bio as the body.
-    let name = if sender.display_name.trim().is_empty() {
-        sender.username.clone()
-    } else {
-        sender.display_name.clone()
-    };
-    let title = collection_push_title(notification_type, &name);
-    let body = push_body(&sender.note);
-    let icon = crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &sender);
     Box::pin(notify(
         state,
         recipient_id,
@@ -654,9 +735,6 @@ pub async fn notify_collection(
         notification_type,
         None,
         Some(activity),
-        title,
-        body,
-        icon,
         false,
     ))
     .await;
@@ -674,12 +752,16 @@ fn collection_push_title(notification_type: &str, name: &str) -> String {
     }
 }
 
-/// `truncate(strip_tags(text), length: 140)`, entities decoded.
+/// `truncate(HTMLEntities.new.decode(strip_tags(text)), length: 140)`:
+/// the text without its tags, entities decoded, and if longer than 140
+/// characters, its first 137 and `...`.
 fn push_body(html: &str) -> String {
-    let text = crate::search::elasticsearch::documents::plain_text(html, false);
-    let text = text.trim();
+    let text: String = scraper::Html::parse_fragment(html)
+        .root_element()
+        .text()
+        .collect();
     if text.chars().count() <= 140 {
-        return text.to_owned();
+        return text;
     }
     let mut truncated: String = text.chars().take(137).collect();
     truncated.push_str("...");
@@ -696,9 +778,6 @@ async fn notify(
     notification_type: &'static str,
     status_id: Option<i64>,
     activity: Option<(&'static str, i64)>,
-    title: String,
-    body: String,
-    icon: String,
     silenced: bool,
 ) {
     let db = state.db.clone();
@@ -1009,17 +1088,7 @@ async fn notify(
         }
     }
 
-    deliver(
-        state.clone(),
-        recipient_id,
-        from_account_id,
-        notification_id,
-        notification_type,
-        &icon,
-        &title,
-        &body,
-    )
-    .await;
+    deliver(state, notification_id).await;
 
     // `send_email! if email_needed?`
     crate::notification_mail::notification_delivered(
@@ -1163,31 +1232,7 @@ pub async fn notify_local(
 
         crate::streaming::fan_out::notification(state, recipient_id, notification_id).await;
 
-        let (title, body) = match notification_type {
-            "admin.report" => ("New report".to_string(), String::new()),
-            "admin.sign_up" => ("New sign-up".to_string(), String::new()),
-            _ => ("Moderation warning".to_string(), String::new()),
-        };
-        let icon = sqlx::query_as!(
-            crate::db::models::Account,
-            "SELECT * FROM accounts WHERE id = $1",
-            from_account_id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|a| crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &a))
-        .unwrap_or_default();
-        deliver(
-            state.clone(),
-            recipient_id,
-            from_account_id,
-            notification_id,
-            notification_type,
-            &icon,
-            &title,
-            &body,
-        )
-        .await;
+        deliver(state, notification_id).await;
         Ok(())
     }
     .await;
@@ -1262,23 +1307,72 @@ pub(crate) async fn update_notification_request(
 
 #[cfg(test)]
 mod tests {
-    use super::{collection_push_title, push_body};
+    use super::{cast_boolean, push_body, push_title, NOTIFICATION_TYPES};
+    use serde_json::json;
 
     #[test]
     fn collection_pushes_say_what_happened() {
         assert_eq!(
-            collection_push_title("added_to_collection", "Alice"),
+            push_title("en", "added_to_collection", "Alice"),
             "Alice added you to a collection"
         );
         assert_eq!(
-            collection_push_title("collection_update", "Alice"),
+            push_title("ko", "collection_update", "Alice"),
             "Alice updated a collection you are in"
         );
     }
 
     #[test]
+    fn push_titles_are_the_mailers_subjects() {
+        assert_eq!(
+            push_title("en", "favourite", "Alice"),
+            "Alice favorited your post"
+        );
+        assert_eq!(
+            push_title("ko", "admin.report", "Alice"),
+            "Alice 님이 신고를 제출했습니다"
+        );
+        assert_eq!(
+            push_title("en", "moderation_warning", "Alice"),
+            "You have received a moderation warning"
+        );
+        // Every type but these three has a subject in both locales.
+        for t in NOTIFICATION_TYPES {
+            if matches!(
+                *t,
+                "annual_report" | "added_to_collection" | "collection_update"
+            ) {
+                continue;
+            }
+            for locale in ["en", "ko"] {
+                assert!(
+                    !push_title(locale, t, "A").starts_with("Translation missing"),
+                    "{locale} {t}"
+                );
+            }
+        }
+        assert_eq!(
+            push_title("ja", "annual_report", "A"),
+            "Translation missing: ja.notification_mailer.annual_report.subject"
+        );
+    }
+
+    #[test]
+    fn alerts_are_cast_as_active_model_casts_booleans() {
+        assert_eq!(cast_boolean(&json!(true)), Some(true));
+        assert_eq!(cast_boolean(&json!("1")), Some(true));
+        assert_eq!(cast_boolean(&json!("yes")), Some(true));
+        assert_eq!(cast_boolean(&json!("false")), Some(false));
+        assert_eq!(cast_boolean(&json!("OFF")), Some(false));
+        assert_eq!(cast_boolean(&json!(0)), Some(false));
+        assert_eq!(cast_boolean(&json!("")), None);
+        assert_eq!(cast_boolean(&json!(null)), None);
+    }
+
+    #[test]
     fn push_bodies_are_truncated_as_rails_truncates() {
         assert_eq!(push_body("<p>Hi &amp; bye</p>"), "Hi & bye");
+        assert_eq!(push_body("<p>a</p><p>b</p>"), "ab");
         let long = "a".repeat(200);
         let body = push_body(&long);
         assert_eq!(body.chars().count(), 140);

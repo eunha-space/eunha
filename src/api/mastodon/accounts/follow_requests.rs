@@ -77,18 +77,8 @@ pub async fn authorize_follow_request(
         return Err(AppError::NotFound);
     }
 
-    let requester = fetch_account(&state, requester_id).await?;
-    push::create_and_push(
-        &state,
-        auth.account_id,
-        requester_id,
-        "follow",
-        None,
-        format!("{} followed you", requester.display_name),
-        requester.acct().clone(),
-        crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &requester),
-    )
-    .await;
+    fetch_account(&state, requester_id).await?;
+    push::create_and_push(&state, auth.account_id, requester_id, "follow", None).await;
 
     build_relationship(&state, auth.account_id, requester_id)
         .await
