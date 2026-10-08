@@ -1204,6 +1204,50 @@ impl crate::jobs::Job for AccountRefreshWorker {
     }
 }
 
+/// `RemoteAccountRefreshWorker`: fetch a remote account's actor again
+/// (`ActivityPub::FetchRemoteAccountService`), as an `Accept` of the first
+/// follow of it from here asks, so that what it shows only to followers is
+/// read. `FetchRemoteActorService` suppresses an answer it does not like;
+/// only a request that was not answered at all is tried again.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RemoteAccountRefreshWorker {
+    pub account_id: i64,
+}
+
+impl crate::jobs::Job for RemoteAccountRefreshWorker {
+    const KIND: &'static str = "RemoteAccountRefreshWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Pull)
+        .retry(3);
+
+    fn retry_in(count: u32) -> Option<Duration> {
+        crate::jobs::exponential_backoff(count)
+    }
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        // `Account.remote.find_by(id:)`.
+        let Some(account) = find_by_id(state, self.account_id).await? else {
+            return Ok(());
+        };
+        if account.is_local() {
+            return Ok(());
+        }
+        let Some(uri) = account.stored_uri() else {
+            return Ok(());
+        };
+        match crate::api::ap::inbox::fetch_remote_account(state, uri).await {
+            Err(crate::error::AppError::Internal(error))
+                if error
+                    .downcast_ref::<ojak::fetch::FetchError>()
+                    .is_some_and(|e| matches!(e, ojak::fetch::FetchError::Request(_))) =>
+            {
+                Err(error.context(format!("could not refresh account {}", self.account_id)))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
 /// `ResolveAccountService#call(account, request_id:)`, with its default
 /// `suppress_errors: true`: refresh a remote account by asking WebFinger
 /// about its handle, following one redirect, then fetching the actor the

@@ -744,25 +744,26 @@ async fn revoke_follow_request(state: &AppState, target_id: i64, uri: &str) -> A
     Ok(())
 }
 
+/// `ActivityPub::Activity::Accept#perform` and `ActivityPub::Activity::Reject
+/// #perform`: the sender answers something of ours, found by the object's id
+/// among what was asked of the sender alone, so that no one can answer for
+/// someone else. The first thing found is answered, and nothing after it.
 pub(super) async fn handle_accept_reject(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
 ) -> AppResult<()> {
-    let activity_type = activity.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let accept = activity.get("type").and_then(|t| t.as_str()) == Some("Accept");
     let object = activity.get("object");
-    let follow_uri = object.and_then(|o| {
-        if o.is_string() {
-            o.as_str()
-        } else {
-            o.get("id").and_then(|i| i.as_str())
-        }
-    });
+    // `object_uri`.
+    let object_uri = object
+        .and_then(crate::federation::json_ld::value_or_id)
+        .filter(|uri| !uri.is_empty());
 
     // `return accept_follow_for_relay if relay_follow?`, and the same for a
     // Reject: the answer to a relay's Follow, found by the Follow's id.
-    if let Some(uri) = follow_uri {
-        if crate::relays::answered(state, uri, activity_type == "Accept")
+    if let Some(uri) = object_uri {
+        if crate::relays::answered(state, uri, accept)
             .await
             .map_err(crate::error::AppError::Internal)?
         {
@@ -770,79 +771,206 @@ pub(super) async fn handle_accept_reject(
         }
     }
 
-    if let Some(uri) = follow_uri {
-        if activity_type == "Accept" {
-            // `FollowRequest#authorize!`: promote follow_request → follows
-            // when remote accepts our Follow, moving the list memberships
-            // that waited on the request over to the follow before the
-            // request (and with it, by cascade, those memberships) goes.
-            let promoted =
-                sqlx::query_scalar!("SELECT id FROM follow_requests WHERE uri = $1", uri)
-                    .fetch_optional(&state.db)
-                    .await?;
-            if let Some(id) = promoted {
-                authorize_follow_request(state, id).await?;
-            }
-        } else {
-            sqlx::query!("DELETE FROM follow_requests WHERE uri = $1", uri)
-                .execute(&state.db)
-                .await?;
-        }
+    // `@account`, the sender, whom the inbox knows.
+    let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
+    let Some(account_id) = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL ORDER BY id LIMIT 1",
+        actor_uri,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
 
-        // Feature-request consent: the object may be one of our outstanding
-        // FeatureRequests (matched by collection_items.activity_uri).
-        let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-        let item = sqlx::query!(
-            r#"SELECT ci.id, ci.collection_id, a.uri AS "account_uri?"
-               FROM collection_items ci
-               JOIN accounts a ON a.id = ci.account_id
-               WHERE ci.activity_uri = $1 AND ci.state = 0"#,
+    if let Some(uri) = object_uri {
+        // `follow_request_from_object`: `FollowRequest.find_by(target_account:
+        // @account, uri: object_uri)`.
+        if let Some(request_id) = sqlx::query_scalar!(
+            "SELECT id FROM follow_requests WHERE target_account_id = $1 AND uri = $2",
+            account_id,
             uri,
         )
         .fetch_optional(&state.db)
-        .await?;
-        if let Some(item) = item {
-            // Only the featured account itself may answer the request.
-            if item.account_uri.as_deref() == Some(actor_uri) {
-                if activity_type == "Accept" {
-                    let approval_uri = activity
-                        .get("result")
-                        .and_then(|r| {
-                            if r.is_string() {
-                                r.as_str()
-                            } else {
-                                r.get("id").and_then(|i| i.as_str())
-                            }
-                        })
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string());
-                    sqlx::query!(
-                        r#"UPDATE collection_items
-                           SET state = 1, approval_uri = $2,
-                               approval_last_verified_at = now(), updated_at = now()
-                           WHERE id = $1"#,
-                        item.id,
-                        approval_uri.as_deref(),
-                    )
-                    .execute(&state.db)
+        .await?
+        {
+            if accept {
+                accept_follow(state, request_id, account_id).await?;
+            } else {
+                reject_follow_request(state, request_id).await?;
+            }
+            return Ok(());
+        }
+        // `follow_from_object`, for a Reject: the sender removes a follower
+        // it had accepted (`UnfollowService`).
+        if !accept {
+            if let Some(follower_id) = sqlx::query_scalar!(
+                "SELECT account_id FROM follows WHERE target_account_id = $1 AND uri = $2",
+                account_id,
+                uri,
+            )
+            .fetch_optional(&state.db)
+            .await?
+            {
+                crate::api::mastodon::accounts::unfollow(state, follower_id, account_id, false)
                     .await?;
-                } else {
-                    sqlx::query!(
-                        "UPDATE collection_items SET state = 2, updated_at = now() WHERE id = $1",
-                        item.id,
-                    )
-                    .execute(&state.db)
-                    .await?;
-                }
+                return Ok(());
             }
         }
+        // `quote_request_from_object`.
+        if super::quote::handle_quote_answer(state, activity, accept).await? {
+            return Ok(());
+        }
+        // `feature_request_from_object`.
+        if answer_feature_request(state, activity, account_id, uri, accept).await? {
+            return Ok(());
+        }
+    }
 
-        // Quote-request consent: the object may be one of our outstanding
-        // QuoteRequests (`quote_request_from_object`).
-        super::quote::handle_quote_answer(state, activity, activity_type == "Accept").await?;
+    // `accept_embedded_follow` / `reject_embedded_follow`: a Follow whose id
+    // is not known here, found by who asked whom.
+    let embedded_follow = object
+        .filter(|o| o.is_object())
+        .filter(|o| o.get("type").and_then(|t| t.as_str()) == Some("Follow"));
+    if let Some(follow) = embedded_follow {
+        let target_uri = follow
+            .get("actor")
+            .and_then(crate::federation::json_ld::value_or_id);
+        let Some(target_id) = local_target(state, target_uri).await else {
+            return Ok(());
+        };
+        let request_id = sqlx::query_scalar!(
+            "SELECT id FROM follow_requests WHERE account_id = $1 AND target_account_id = $2",
+            target_id,
+            account_id,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if accept {
+            if let Some(request_id) = request_id {
+                accept_follow(state, request_id, account_id).await?;
+            }
+        } else {
+            if let Some(request_id) = request_id {
+                reject_follow_request(state, request_id).await?;
+            }
+            let following = sqlx::query_scalar!(
+                r#"SELECT EXISTS (SELECT 1 FROM follows
+                                  WHERE account_id = $1 AND target_account_id = $2) AS "e!""#,
+                target_id,
+                account_id,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if following {
+                crate::api::mastodon::accounts::unfollow(state, target_id, account_id, false)
+                    .await?;
+            }
+        }
     }
 
     Ok(())
+}
+
+/// `Accept#accept_follow!`: the request becomes a follow, and the account
+/// that accepted it, `target_id`, is fetched again when this is its first
+/// follower here (`RemoteAccountRefreshWorker`), for what it shows only to
+/// followers.
+async fn accept_follow(state: &AppState, request_id: i64, target_id: i64) -> AppResult<()> {
+    // `!request.target_account.followers.local.exists?`.
+    let is_first_follow = !sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM follows f JOIN accounts a ON a.id = f.account_id
+                          WHERE f.target_account_id = $1 AND a.domain IS NULL) AS "e!""#,
+        target_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    authorize_follow_request(state, request_id).await?;
+    if is_first_follow {
+        crate::jobs::perform_async(
+            state,
+            crate::federation::process_account::RemoteAccountRefreshWorker {
+                account_id: target_id,
+            },
+        )
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+    }
+    Ok(())
+}
+
+/// `FollowRequest#reject!`, which is `destroy!`: the request goes, and its
+/// notification with it (`has_one :notification, dependent: :destroy`).
+async fn reject_follow_request(state: &AppState, request_id: i64) -> AppResult<()> {
+    sqlx::query!("DELETE FROM follow_requests WHERE id = $1", request_id)
+        .execute(&state.db)
+        .await?;
+    sqlx::query!(
+        "DELETE FROM notifications WHERE activity_type = 'FollowRequest' AND activity_id = $1",
+        request_id,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// `feature_request_from_object` (`CollectionItem.local.find_by(activity_uri:,
+/// account_id: @account.id)`), and its answer, `accept_feature_request!` or
+/// `reject_feature_request!`. Says whether the object was one.
+async fn answer_feature_request(
+    state: &AppState,
+    activity: &Value,
+    account_id: i64,
+    object_uri: &str,
+    accept: bool,
+) -> AppResult<bool> {
+    let Some(item) = sqlx::query!(
+        r#"SELECT ci.id, ci.state FROM collection_items ci
+           JOIN collections c ON c.id = ci.collection_id
+           WHERE c.local AND ci.activity_uri = $1 AND ci.account_id = $2
+           LIMIT 1"#,
+        object_uri,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(false);
+    };
+    if item.state != 0 {
+        return Ok(true);
+    }
+    if accept {
+        let approval_uri = activity
+            .get("result")
+            .and_then(|r| {
+                if r.is_string() {
+                    r.as_str()
+                } else {
+                    r.get("id").and_then(|i| i.as_str())
+                }
+            })
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        sqlx::query!(
+            r#"UPDATE collection_items
+               SET state = 1, approval_uri = $2,
+                   approval_last_verified_at = now(), updated_at = now()
+               WHERE id = $1"#,
+            item.id,
+            approval_uri.as_deref(),
+        )
+        .execute(&state.db)
+        .await?;
+    } else {
+        sqlx::query!(
+            "UPDATE collection_items SET state = 2, updated_at = now() WHERE id = $1",
+            item.id,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    Ok(true)
 }
 
 /// `FollowRequest#authorize!`: the follow request `request_id` becomes a

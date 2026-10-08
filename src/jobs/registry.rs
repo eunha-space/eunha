@@ -53,6 +53,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::fasp::workers::AccountSearchWorker>(),
         entry::<crate::fasp::workers::FollowRecommendationWorker>(),
         entry::<crate::federation::process_account::AccountRefreshWorker>(),
+        entry::<crate::federation::process_account::RemoteAccountRefreshWorker>(),
         entry::<crate::federation::process_account::RefollowWorker>(),
         entry::<crate::federation::process_account::AccountMergingWorker>(),
         entry::<crate::federation::featured::SynchronizeFeaturedCollectionWorker>(),

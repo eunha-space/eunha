@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM follows f JOIN accounts a ON a.id = f.account_id\n                          WHERE f.target_account_id = $1 AND a.domain IS NULL) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "546bf40c657ac3c2a2f4719a0f69367e31e4c9e214fbdebc60c0c42dbece80a4"
+}

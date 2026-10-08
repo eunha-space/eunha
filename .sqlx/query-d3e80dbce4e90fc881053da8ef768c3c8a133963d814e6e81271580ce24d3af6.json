@@ -1,16 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM follow_requests WHERE uri = $1",
+  "query": "SELECT account_id FROM follows WHERE target_account_id = $1 AND uri = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "account_id",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Text"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "076d88ab7a104106bdd8b00bdd2509c47ab43a1be5462080d1d2fc81cef81d1c"
+  "hash": "d3e80dbce4e90fc881053da8ef768c3c8a133963d814e6e81271580ce24d3af6"
 }

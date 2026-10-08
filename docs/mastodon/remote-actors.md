@@ -14,7 +14,10 @@ a remote actor ends in *src/federation/process\_account.rs*:
  -  an `Update` of the actor, from the actor itself;
  -  a search, a mention, a boost or anything else that names an unknown actor
     (`FetchRemoteActorService`);
- -  a `Move`, which fetches the target again (`FetchRemoteAccountService`).
+ -  a `Move`, which fetches the target again (`FetchRemoteAccountService`);
+ -  an `Accept` of the first follow of the account from here, which fetches
+    it again on the `pull` queue (`RemoteAccountRefreshWorker`), retried only
+    when its server cannot be reached.
 
 
 Identity
