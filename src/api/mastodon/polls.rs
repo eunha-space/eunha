@@ -16,9 +16,52 @@ pub async fn get_poll(
     Path(id): Path<i64>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<Json<Poll>> {
-    let poll = fetch_poll(&state, id).await?;
+    let mut poll = fetch_poll(&state, id).await?;
+    // `refresh_poll`: `FetchRemotePollService` for a signed-in user when the
+    // poll is `possibly_stale?`.
+    let signed_in = auth
+        .as_ref()
+        .is_some_and(|Extension(a)| a.user_id.is_some());
+    if signed_in && possibly_stale(&state, &poll).await? {
+        let viewer = auth.as_ref().map(|Extension(a)| a.account_id);
+        if let Err(error) =
+            crate::api::ap::inbox::fetch_remote_poll(&state, poll.status_id, viewer).await
+        {
+            // `rescue_from(*Mastodon::HTTP_CONNECTION_ERRORS)`.
+            if crate::api::ap::inbox::unanswered(&error) {
+                return Err(AppError::ServiceUnavailable(
+                    "Remote data could not be fetched".into(),
+                ));
+            }
+            return Err(error);
+        }
+        poll = fetch_poll(&state, id).await?;
+    }
     let viewer_id = auth.map(|Extension(a)| a.account_id);
     poll_from_db(&state, &poll, viewer_id).await.map(Json)
+}
+
+/// `Poll::MAKE_FETCH_HAPPEN`.
+const MAKE_FETCH_HAPPEN: chrono::Duration = chrono::Duration::minutes(1);
+
+/// `Poll#possibly_stale?`: a remote poll not fetched since it closed, nor in
+/// the last minute.
+async fn possibly_stale(state: &AppState, poll: &models::Poll) -> AppResult<bool> {
+    let remote = sqlx::query_scalar!(
+        r#"SELECT (domain IS NOT NULL) AS "remote!" FROM accounts WHERE id = $1"#,
+        poll.account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    let last_fetched_before_expiration = match (poll.last_fetched_at, poll.expires_at) {
+        (Some(fetched), Some(expires)) => fetched < expires,
+        _ => true,
+    };
+    let time_passed_since_last_fetch = poll
+        .last_fetched_at
+        .is_none_or(|fetched| fetched < chrono::Utc::now().naive_utc() - MAKE_FETCH_HAPPEN);
+    Ok(remote && last_fetched_before_expiration && time_passed_since_last_fetch)
 }
 
 // ── POST /api/v1/polls/:id/votes ──────────────────────────────────────────

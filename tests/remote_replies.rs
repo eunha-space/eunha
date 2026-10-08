@@ -642,3 +642,74 @@ async fn test_a_root_the_server_refuses_is_not_retried() {
     .unwrap();
     assert_eq!(retries, 0);
 }
+
+/// A remote question as its server has it, with `yes` voted `votes` times.
+fn question(base: &str, votes: i64) -> Value {
+    let mut question = note(base, "question", None, None);
+    question["type"] = json!("Question");
+    question["endTime"] = json!((chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339());
+    question["oneOf"] = json!([
+        {"type": "Note", "name": "yes", "replies": {"type": "Collection", "totalItems": votes}},
+        {"type": "Note", "name": "no", "replies": {"type": "Collection", "totalItems": 0}},
+    ]);
+    question
+}
+
+/// `GET /api/v1/polls/:id` fetches a remote poll again for a signed-in
+/// user while it is `possibly_stale?` (`FetchRemotePollService`), and not
+/// again within the minute after, nor for a request with no user.
+#[tokio::test]
+async fn test_a_stale_remote_poll_is_fetched_again() {
+    let (ctx, remote, base, _) = context_ctx("poll-refresh").await;
+    // The fetch is signed on alice's behalf, with her key.
+    let (private_pem, public_pem) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    eunha::federation::keypair::store_local(
+        &ctx.state,
+        ctx.alice_id.parse().unwrap(),
+        &private_pem,
+        &public_pem,
+    )
+    .await
+    .unwrap();
+    remote.put("/notes/question", question(&base, 1));
+    let status_id = store(&ctx, &base, "question").await;
+    let poll_id: i64 = sqlx::query_scalar("SELECT id FROM polls WHERE status_id = $1")
+        .bind(status_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let fetched_before = remote.fetches("/notes/question");
+    remote.put("/notes/question", question(&base, 5));
+    let path = format!("/api/v1/polls/{poll_id}");
+    let tallies = || async {
+        sqlx::query_as::<_, (Vec<i64>, Option<chrono::NaiveDateTime>)>(
+            "SELECT cached_tallies, last_fetched_at FROM polls WHERE id = $1",
+        )
+        .bind(poll_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
+    };
+
+    // Nobody signed in: served as it is.
+    assert_eq!(ctx.api.get(&path, None).await.status(), StatusCode::OK);
+    assert_eq!(remote.fetches("/notes/question"), fetched_before);
+    assert_eq!(tallies().await.0, vec![1, 0]);
+
+    assert_eq!(
+        ctx.api.get(&path, Some(&ctx.alice_token)).await.status(),
+        StatusCode::OK
+    );
+    assert_eq!(remote.fetches("/notes/question"), fetched_before + 1);
+    let (cached, last_fetched_at) = tallies().await;
+    assert_eq!(cached, vec![5, 0]);
+    assert!(last_fetched_at.is_some());
+
+    // Fetched within the minute: not stale.
+    assert_eq!(
+        ctx.api.get(&path, Some(&ctx.alice_token)).await.status(),
+        StatusCode::OK
+    );
+    assert_eq!(remote.fetches("/notes/question"), fetched_before + 1);
+}

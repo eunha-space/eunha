@@ -14,9 +14,9 @@ pub(crate) mod status_parser;
 use collection::{handle_add, handle_remove};
 use create::handle_create;
 pub use fetch::{
-    fetch_remote_account, fetch_remote_status, fetch_remote_status_by_url,
+    fetch_remote_account, fetch_remote_poll, fetch_remote_status, fetch_remote_status_by_url,
     fetch_remote_status_prefetched, fetch_remote_status_with, resolve_or_fetch_remote_account,
-    resolve_or_fetch_remote_account_prefetched, store_key_fetched_actor, FetchOptions,
+    resolve_or_fetch_remote_account_prefetched, store_key_fetched_actor, unanswered, FetchOptions,
 };
 use follow::{handle_accept_reject, handle_follow, handle_undo};
 use moderation::{handle_block, handle_flag, handle_move};
@@ -404,6 +404,8 @@ pub(super) async fn refresh_collection_item_count(
     Ok(())
 }
 
+/// `ProcessStatusUpdateService#update_poll!`: the poll as its status now
+/// has it, fetched just now (`last_fetched_at`).
 pub(super) async fn sync_remote_poll(
     state: &AppState,
     status_id: i64,
@@ -455,6 +457,7 @@ pub(super) async fn sync_remote_poll(
                    votes_count = $4,
                    multiple = $5,
                    expires_at = $6,
+                   last_fetched_at = now(),
                    updated_at = now()
                WHERE id = $1"#,
             poll_id,
@@ -472,8 +475,8 @@ pub(super) async fn sync_remote_poll(
         if let Some(inserted_poll_id) = sqlx::query_scalar!(
             r#"INSERT INTO polls
                  (id, status_id, account_id, options, cached_tallies, votes_count,
-                  multiple, expires_at, created_at, updated_at)
-               SELECT $1,$2,$3,$4,$5,$6,$7,$8,now(),now()
+                  multiple, expires_at, last_fetched_at, created_at, updated_at)
+               SELECT $1,$2,$3,$4,$5,$6,$7,$8,now(),now(),now()
                WHERE NOT EXISTS (SELECT 1 FROM polls WHERE status_id = $2)
                RETURNING id"#,
             poll_id,

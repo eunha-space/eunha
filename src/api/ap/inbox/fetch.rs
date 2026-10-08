@@ -110,6 +110,55 @@ pub async fn fetch_remote_status_by_url(
     .await
 }
 
+/// `ActivityPub::FetchRemotePollService`: the status a remote poll is part
+/// of, fetched again on behalf of `on_behalf_of` and processed as an update
+/// of it by its author (`ProcessStatusUpdateService`), which refreshes the
+/// poll's tallies and `last_fetched_at`. A request that is not answered is an
+/// `Err`, as Mastodon raises it ([`unanswered`]); a document that cannot be
+/// had otherwise changes nothing.
+pub async fn fetch_remote_poll(
+    state: &AppState,
+    status_id: i64,
+    on_behalf_of: Option<i64>,
+) -> AppResult<()> {
+    use crate::federation::json_ld;
+
+    let Some(status) = sqlx::query!(
+        r#"SELECT s.uri AS "uri?", a.uri AS "account_uri?"
+           FROM statuses s JOIN accounts a ON a.id = s.account_id
+           WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NOT NULL"#,
+        status_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let (Some(uri), Some(account_uri)) = (status.uri, status.account_uri) else {
+        return Ok(());
+    };
+    let json = json_ld::fetch_resource(state, &uri, on_behalf_of, json_ld::RaiseOn::None)
+        .await
+        .map_err(AppError::Internal)?;
+    let Some(json) = json.filter(json_ld::supported_context) else {
+        return Ok(());
+    };
+    if !super::status_parser::is_status_type(&json) {
+        return Ok(());
+    }
+    let activity = serde_json::json!({
+        "type": "Update",
+        "actor": account_uri,
+        "object": json,
+    });
+    Box::pin(super::status::handle_update(
+        state,
+        &state.instance,
+        &activity,
+    ))
+    .await
+}
+
 /// `ActivityPub::FetchRemoteStatusService#call`'s options.
 #[derive(Debug, Default, Clone)]
 pub struct FetchOptions {

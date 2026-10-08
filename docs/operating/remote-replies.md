@@ -70,6 +70,12 @@ since (`updated`), and otherwise only its quote policy, its poll's tallies,
 its quote's approval and its counts are refreshed. A fetched `Announce` is
 processed as the boost it is.
 
+A remote poll is fetched again the same way when a signed-in user asks for
+it (`GET /api/v1/polls/:id`, Mastodon's `FetchRemotePollService`), signed on
+their behalf, if it may be stale: it has never been fetched since it was
+stored, or not since it closed, and not in the last minute. A server that
+does not answer makes the request fail with `503`, as in Mastodon.
+
 A `Note` or `Question` is a post as it is. An `Article`, `Page`, `Image`,
 `Video`, `Audio` or `Event` is converted, as Mastodon converts it: its text
 is its title as a heading, its summary, and a link to it, and it has no
