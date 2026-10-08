@@ -22,6 +22,38 @@ pub struct ScheduledStatus {
     pub media_attachments: Vec<super::types::MediaAttachment>,
 }
 
+/// `REST::ScheduledStatusSerializer#params`: the stored params, the quoted
+/// post's id as a string, and the quote policy by the name of the first of
+/// `InteractionPolicy::POLICY_FLAGS` its automatic bits have, `nobody`
+/// when none.
+fn serialize_params(params: Option<serde_json::Value>) -> serde_json::Value {
+    let Some(serde_json::Value::Object(mut params)) = params else {
+        return params.unwrap_or(serde_json::Value::Null);
+    };
+    let quoted_status_id = match params.get("quoted_status_id") {
+        Some(serde_json::Value::Number(id)) => serde_json::Value::String(id.to_string()),
+        Some(serde_json::Value::String(id)) => serde_json::Value::String(id.clone()),
+        _ => serde_json::Value::Null,
+    };
+    const POLICY_FLAGS: [(&str, i64); 5] = [
+        ("unsupported_policy", 1 << 0),
+        ("public", 1 << 1),
+        ("followers", 1 << 2),
+        ("following", 1 << 3),
+        ("disabled", 1 << 4),
+    ];
+    let bits = params
+        .get("quote_approval_policy")
+        .and_then(serde_json::Value::as_i64);
+    let policy = POLICY_FLAGS
+        .iter()
+        .find(|(_, flag)| bits.is_some_and(|bits| bits & (flag << 16) != 0))
+        .map_or("nobody", |(name, _)| name);
+    params.insert("quoted_status_id".into(), quoted_status_id);
+    params.insert("quote_approval_policy".into(), policy.into());
+    serde_json::Value::Object(params)
+}
+
 async fn fetch_scheduled_media(
     state: &AppState,
     scheduled_status_id: i64,
@@ -89,7 +121,7 @@ pub async fn list_scheduled_statuses(
         statuses.push(ScheduledStatus {
             id: r.id.to_string(),
             scheduled_at: r.scheduled_at.map(super::convert::mastodon_date),
-            params: r.params.unwrap_or(serde_json::Value::Null),
+            params: serialize_params(r.params),
             media_attachments,
         });
     }
@@ -140,7 +172,7 @@ pub(crate) async fn load(
     Ok(Some(ScheduledStatus {
         id: row.id.to_string(),
         scheduled_at: row.scheduled_at.map(super::convert::mastodon_date),
-        params: row.params.unwrap_or(serde_json::Value::Null),
+        params: serialize_params(row.params),
         media_attachments,
     }))
 }
@@ -196,7 +228,7 @@ pub async fn update_scheduled_status(
     Ok(Json(ScheduledStatus {
         id: row.id.to_string(),
         scheduled_at: row.scheduled_at.map(super::convert::mastodon_date),
-        params: row.params.unwrap_or(serde_json::Value::Null),
+        params: serialize_params(row.params),
         media_attachments,
     }))
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(s.reblog_of_id, s.id) AS \"id!\" FROM statuses s\n               WHERE s.id = $1 AND s.deleted_at IS NULL",
+  "query": "SELECT COALESCE(s.reblog_of_id, s.id) AS \"id!\" FROM statuses s\n           WHERE s.id = $1 AND s.deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "7c5cbba85992cc3f1b09dc144fb18c4988151f1e7efd440d426b754eaccfa499"
+  "hash": "e77de8721e012e686ee802f49a12f571589f7a0450a85abb41e42ad184a42fc0"
 }

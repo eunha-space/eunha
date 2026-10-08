@@ -4560,9 +4560,24 @@ async fn test_failed_scheduled_publish_keeps_the_schedule() {
     let ctx = TestContext::new("sched-retry").await;
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
 
-    // `in_reply_to_id` pointing at a status that does not exist makes the
-    // INSERT fail on its foreign key — the publish gets as far as writing and
-    // then writes nothing at all.
+    // The database refusing the status's row: the publish gets as far as
+    // writing and then writes nothing at all. (A post replied to that is
+    // gone is `RecordNotFound`, which drops the schedule, as upstream's
+    // worker does.)
+    sqlx::query(
+        r#"CREATE FUNCTION refuse_statuses() RETURNS trigger LANGUAGE plpgsql AS $$
+           BEGIN RAISE EXCEPTION 'refused'; END $$"#,
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER refuse_statuses BEFORE INSERT ON statuses
+         FOR EACH ROW EXECUTE FUNCTION refuse_statuses()",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
     let sched_id: i64 = sqlx::query_scalar!(
         r#"INSERT INTO scheduled_statuses (account_id, scheduled_at, params)
            VALUES ($1, now() - interval '1 minute', $2)
@@ -4571,7 +4586,6 @@ async fn test_failed_scheduled_publish_keeps_the_schedule() {
         serde_json::json!({
             "text": "this must survive a failed publish",
             "visibility": "public",
-            "in_reply_to_id": "999999999999999999",
         }),
     )
     .fetch_one(&ctx.db)
@@ -7887,4 +7901,146 @@ async fn test_reblog_preserves_unknown_remote_count() {
             }
         );
     }
+}
+
+/// A scheduled post keeps what it quotes and its quote policy, as
+/// `PostStatusService#scheduled_options` does: the quoted post by its id and
+/// the policy as the controller made it, which `REST::ScheduledStatusSerializer`
+/// shows as a string id and a policy name. Publishing quotes the post, with
+/// that policy, and a quoted post that has gone since takes the scheduled
+/// post with it, as `Status.find` raising in the worker does.
+#[tokio::test]
+async fn test_a_scheduled_quote_keeps_its_quote_and_policy() {
+    let ctx = TestContext::new("sched-quote").await;
+    let quoted = ctx
+        .api
+        .post_status(&ctx.bob_token, "quote me", "public")
+        .await;
+    let quoted_id = quoted["id"].as_str().unwrap().to_owned();
+    let future = (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339();
+    let schedule = |text: &'static str| {
+        json!({
+            "status": text,
+            "visibility": "public",
+            "scheduled_at": future,
+            "quoted_status_id": quoted_id,
+            "quote_approval_policy": "followers",
+        })
+    };
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &schedule("quoting later"),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let scheduled: Value = resp.json().await.unwrap();
+    assert_eq!(scheduled["params"]["quoted_status_id"], json!(quoted_id));
+    assert_eq!(scheduled["params"]["quote_approval_policy"], "followers");
+    let sched_id: i64 = scheduled["id"].as_str().unwrap().parse().unwrap();
+    let stored: Value = sqlx::query_scalar("SELECT params FROM scheduled_statuses WHERE id = $1")
+        .bind(sched_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored["quoted_status_id"],
+        json!(quoted_id.parse::<i64>().unwrap())
+    );
+    assert_eq!(stored["quote_approval_policy"], json!(4 << 16));
+
+    // Nothing quoted: no id, and the policy by its name.
+    let plain: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "later", "scheduled_at": future, "quote_approval_policy": "nobody"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(plain["params"]["quoted_status_id"], Value::Null);
+    assert_eq!(plain["params"]["quote_approval_policy"], "nobody");
+
+    // A post that cannot be quoted is refused when it is scheduled.
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "x", "scheduled_at": future, "quoted_status_id": "1"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    sqlx::query(
+        "UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute' WHERE id = $1",
+    )
+    .bind(sched_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    eunha::background::publish_due_statuses(&ctx.state)
+        .await
+        .unwrap();
+    let (status_id, policy): (i64, i32) = sqlx::query_as(
+        "SELECT id, quote_approval_policy FROM statuses WHERE text = 'quoting later'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(policy, 4 << 16);
+    let (quote_of, state): (i64, i32) =
+        sqlx::query_as("SELECT quoted_status_id, state FROM quotes WHERE status_id = $1")
+            .bind(status_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(quote_of.to_string(), quoted_id);
+    assert_eq!(state, 1, "a local post it may quote is accepted at once");
+
+    // The quoted post gone, the next schedule is consumed and posts nothing.
+    let again: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &schedule("quoting something gone"),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let again_id: i64 = again["id"].as_str().unwrap().parse().unwrap();
+    sqlx::query("UPDATE statuses SET deleted_at = now() WHERE id = $1")
+        .bind(quoted_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute' WHERE id = $1",
+    )
+    .bind(again_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    eunha::background::publish_due_statuses(&ctx.state)
+        .await
+        .unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduled_statuses WHERE id = $1")
+        .bind(again_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+    let posted: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM statuses WHERE text = 'quoting something gone'")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(posted, 0);
 }

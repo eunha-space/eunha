@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS \"unavailable!\",\n             EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS \"follows_author!\",\n             EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS \"followed_by_author!\",\n             EXISTS (SELECT 1 FROM blocks\n                     WHERE (account_id = $1 AND target_account_id = $2)\n                        OR (account_id = $2 AND target_account_id = $1)) AS \"blocked!\",\n             EXISTS (SELECT 1 FROM mentions WHERE status_id = $3 AND account_id = $1) AS \"mentioned!\"\n           FROM accounts a WHERE a.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unavailable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "follows_author!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "followed_by_author!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "blocked!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "mentioned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b4539cd1257f5c1ac7e6beb9e01d52afb59003cfbd593068d60aaa198acf5046"
+}

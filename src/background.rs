@@ -469,20 +469,22 @@ async fn record_publish_failure(
     Ok(())
 }
 
-/// Publish one scheduled status.
+/// Publish one scheduled status: `PublishScheduledStatusWorker`, which hands
+/// the params to `PostStatusService` as the API does
+/// ([`process_status`](crate::api::mastodon::statuses::process_status)), so a
+/// scheduled post is written, distributed and federated as any other.
 ///
-/// The split at the `statuses` INSERT is what makes retrying safe: everything
-/// before it either succeeds or leaves the database untouched, so a failure
-/// there can be tried again. Once the row is inserted the post exists and the
-/// schedule is spent — every later step is therefore best-effort and logged,
-/// never propagated, because returning an error would re-run this function and
-/// post the status a second time.
+/// Retrying is safe because the status's id is chosen here: a failure before
+/// the status was written leaves nothing behind and may be tried again, and
+/// one after it was written still consumes the schedule, since running it
+/// again would post a second time.
 async fn publish_one(
     state: &AppState,
     scheduled_id: i64,
     account_id: i64,
     params: &Option<serde_json::Value>,
 ) -> Result<(), PublishError> {
+    use crate::api::mastodon::statuses::{PollForm, PostStatusForm};
     let params = params
         .as_ref()
         .ok_or_else(|| PublishError::Permanent(anyhow::anyhow!("no params")))?;
@@ -495,255 +497,166 @@ async fn publish_one(
     .fetch_one(&state.db)
     .await
     .map_err(|e| classify_db(e, "load scheduled status author"))?;
+    // `return true if scheduled_status.account.user_disabled?`.
+    let disabled = sqlx::query_scalar!(
+        "SELECT disabled FROM users WHERE account_id = $1",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| classify_db(e, "load scheduled status author's user"))?
+    .unwrap_or(false);
+    if disabled {
+        return Err(PublishError::Permanent(anyhow::anyhow!(
+            "the account's user is disabled"
+        )));
+    }
 
-    let text = params["text"].as_str().unwrap_or("").to_string();
-    let visibility = params["visibility"]
-        .as_str()
-        .unwrap_or("public")
-        .to_string();
-    let spoiler_text = params["spoiler_text"].as_str().unwrap_or("").to_string();
-    let sensitive = params["sensitive"].as_bool().unwrap_or(false);
-    // `PostStatusService`: `valid_locale_cascade(options[:language], user's
-    // preferred posting language, I18n.default_locale)`.
-    let preferred = crate::api::mastodon::accounts::user_defaults(state, account_id)
-        .await
-        .language;
-    let language = crate::languages::valid_locale_cascade(&[
-        params["language"].as_str(),
-        preferred.as_deref(),
-        Some(crate::api::mastodon::DEFAULT_LOCALE),
-    ]);
-    let in_reply_to_id: Option<i64> = params["in_reply_to_id"]
-        .as_str()
-        .and_then(|s| s.parse::<i64>().ok());
-
-    // The thread (`Status#thread`, a boost's original in its place), and
-    // `carried_over_reply_to_account_id`.
-    let thread = match in_reply_to_id {
-        Some(parent_id) => crate::conversation::thread(&state.db, parent_id)
-            .await
-            .ok()
-            .flatten(),
-        None => None,
+    // The params as stored, by Mastodon (ids as numbers) or by eunha before
+    // it stored them so (ids as strings).
+    let string = |key: &str| params[key].as_str().map(str::to_owned);
+    let id = |key: &str| match &params[key] {
+        serde_json::Value::Number(n) => n.as_i64(),
+        serde_json::Value::String(s) => s.parse::<i64>().ok(),
+        _ => None,
     };
-    let in_reply_to_id = thread.map(|t| t.id).or(in_reply_to_id);
-    let in_reply_to_account_id = thread.and_then(|t| t.reply_to_account_id(account_id));
-    let is_reply = in_reply_to_id.is_some();
-
-    use crate::api::mastodon::statuses::{
-        extract_hashtags, extract_mention_handles, resolve_mention_accounts, store_status_mentions,
-        store_statuses_tags,
+    let ids = |key: &str| {
+        params[key].as_array().map(|ids| {
+            ids.iter()
+                .map(|id| match id {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .collect::<Vec<_>>()
+        })
     };
-
-    let domain = &state.instance.domain;
+    let poll = params["poll"].as_object().map(|poll| PollForm {
+        options: poll
+            .get("options")
+            .and_then(|o| o.as_array())
+            .map(|o| {
+                o.iter()
+                    .filter_map(|o| o.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        expires_in: poll.get("expires_in").and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        }),
+        multiple: poll.get("multiple").and_then(|v| v.as_bool()),
+        hide_totals: poll.get("hide_totals").and_then(|v| v.as_bool()),
+    });
+    let form = PostStatusForm {
+        status: string("text"),
+        in_reply_to_id: id("in_reply_to_id").map(|id| id.to_string()),
+        quoted_status_id: id("quoted_status_id").map(|id| id.to_string()),
+        quote_approval_policy: None,
+        spoiler_text: string("spoiler_text"),
+        sensitive: params["sensitive"].as_bool(),
+        language: string("language"),
+        visibility: string("visibility"),
+        media_ids: ids("media_ids"),
+        poll,
+        scheduled_at: None,
+        allowed_mentions: ids("allowed_mentions"),
+    };
 
     // `PostStatusService#validate_media!` over the scheduled status's own
     // uploads, which `scheduled_status.destroy!` has handed back (`dependent:
     // :nullify`) before it runs. A refusal is raised past the worker's rescue
     // with the schedule already gone, so the post is never made.
-    let media_ids: Option<Vec<String>> = params["media_ids"].as_array().map(|ids| {
-        ids.iter()
-            .map(|id| match id {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            })
-            .collect()
-    });
     let media_ids = match crate::api::mastodon::statuses::validate_media(
         state,
         account.id,
-        media_ids.as_deref(),
+        form.media_ids.as_deref(),
         None,
     )
     .await
     {
         Ok(ids) => ids,
-        Err(crate::error::AppError::Database(e)) => {
-            return Err(PublishError::Transient(anyhow::anyhow!(
-                "validate scheduled status media: {e}"
-            )))
-        }
-        Err(e) => return Err(PublishError::Permanent(anyhow::anyhow!("{e}"))),
+        Err(e) => return Err(classify_app(e, "validate scheduled status media")),
     };
-
-    let hashtags = extract_hashtags(&text);
-    let mention_handles = extract_mention_handles(&text);
-    let resolved = resolve_mention_accounts(state, &mention_handles, domain).await;
+    // `options_hash[:quoted_status] = Status.find(quoted_status_id)`: a
+    // quoted post that is gone is `RecordNotFound`, which the worker rescues
+    // with the schedule already destroyed.
+    let quoted = match form
+        .quoted_status_id
+        .as_deref()
+        .and_then(|id| id.parse::<i64>().ok())
+    {
+        Some(quoted_id) => Some(
+            sqlx::query_as!(
+                crate::db::models::Status,
+                "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+                quoted_id,
+            )
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| classify_db(e, "load the quoted status"))?
+            .ok_or_else(|| PublishError::Permanent(anyhow::anyhow!("the quoted status is gone")))?,
+        ),
+        None => None,
+    };
+    // `options[:quote_approval_policy]`, the bits the controller stored; none
+    // in params written before it was kept, which the column's default is.
+    let quote_policy = params["quote_approval_policy"]
+        .as_i64()
+        .and_then(|bits| i32::try_from(bits).ok())
+        .unwrap_or(0);
+    let application_id = id("application_id");
 
     let status_id = crate::snowflake::next_id();
-    let uri = format!(
-        "https://{}/users/{}/statuses/{}",
-        domain, account.username, status_id
-    );
-
-    let visibility_int = crate::db::models::vis::from_str(&visibility);
-    let status = sqlx::query_as!(
-        crate::db::models::Status,
-        r#"INSERT INTO statuses
-             (id, account_id, text, spoiler_text, visibility,
-              language, sensitive, in_reply_to_id, in_reply_to_account_id, reply, uri, url,
-              ordered_media_attachment_ids, local, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12, true, now(), now())
-           RETURNING *"#,
-        status_id,
-        account.id,
-        text,
-        spoiler_text,
-        visibility_int,
-        language,
-        sensitive,
-        in_reply_to_id,
-        in_reply_to_account_id,
-        is_reply,
-        uri,
-        &media_ids,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| classify_db(e, "insert scheduled status"))?;
-
-    // ── Past this point the status exists; failures are logged, not returned ──
-
-    // `set_conversation` and `update_conversation`.
-    if let Err(e) = crate::conversation::assign(&state.db, status.id).await {
-        tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its conversation");
-    }
-
-    if let Err(e) = store_statuses_tags(state, status.id, account.id, &hashtags).await {
-        tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its hashtags");
-    }
-    if let Err(e) = store_status_mentions(state, status.id, &resolved).await {
-        tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its mentions");
-    }
-    // `PostStatusService#postprocess_status!`: `Trends.tags.register`.
-    crate::trends::register_tags(state, status.id).await;
-    // `Status`'s `after_create_commit :trigger_create_webhooks`.
-    crate::moderation::webhooks::trigger(
+    let posted = crate::api::mastodon::statuses::process_status(
         state,
-        "status.created",
-        crate::moderation::webhooks::Object::Status(status.id),
-    )
-    .await;
-    crate::fasp::events::status_created(state, status.id).await;
-
-    if let Err(e) = crate::counters::on_status_created(
-        &state.db,
-        account.id,
-        visibility_int,
-        in_reply_to_id,
-        status.created_at,
-    )
-    .await
-    {
-        tracing::error!(scheduled_id, error = %e, "failed to count a published status");
-    }
-    // `Status#update_statistics` and `PostStatusService#bump_potential_friendship!`.
-    crate::activity_tracker::local_status_created(state, visibility_int).await;
-    if in_reply_to_id.is_some() && in_reply_to_account_id != Some(account.id) {
-        crate::activity_tracker::increment(state, crate::activity_tracker::INTERACTIONS).await;
-    }
-    // `update_index('statuses', :proper)` and the account's stats.
-    crate::search::elasticsearch::indexing::status(state, status.id).await;
-    crate::search::elasticsearch::indexing::account(state, account.id).await;
-
-    // `status.media_attachments = @media`: the uploads move from the
-    // scheduled status to the status.
-    if !media_ids.is_empty() {
-        let attached = sqlx::query!(
-            "UPDATE media_attachments
-             SET status_id = $1, scheduled_status_id = NULL, updated_at = now()
-             WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL",
-            status.id,
-            &media_ids,
-            account.id,
-        )
-        .execute(&state.db)
-        .await;
-        if let Err(e) = attached {
-            tracing::error!(scheduled_id, status_id = status.id, error = %e, "failed to attach media to scheduled status");
-        }
-    }
-
-    // Create poll if present
-    if let Some(poll) = params["poll"].as_object() {
-        if let Some(options) = poll.get("options").and_then(|o| o.as_array()) {
-            if options.len() >= 2 {
-                let expires_in = poll.get("expires_in").and_then(|v| v.as_i64());
-                let multiple = poll
-                    .get("multiple")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let hide_totals = poll
-                    .get("hide_totals")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let expires_at = expires_in
-                    .map(|s| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(s));
-                let opts: Vec<String> = options
-                    .iter()
-                    .filter_map(|o| o.as_str())
-                    .map(|o| o.to_string())
-                    .collect();
-                let poll_created = sqlx::query!(
-                    r#"INSERT INTO polls
-                         (status_id, account_id, options, multiple, hide_totals, expires_at, created_at, updated_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,now(),now())"#,
-                    status.id, account.id, &opts as &[String], multiple, hide_totals, expires_at,
-                )
-                .execute(&state.db)
-                .await;
-                match poll_created {
-                    Ok(_) => state.queues.polls.notify_one(),
-                    Err(e) => {
-                        tracing::error!(scheduled_id, status_id = status.id, error = %e, "scheduled status published without its poll")
-                    }
-                }
-            }
-        }
-    }
-
-    // Publish to streaming and fan-out to feeds
-    let mut status_with_uri = status.clone();
-    status_with_uri.uri = Some(uri);
-    // `LinkCrawlWorker.perform_async(@status.id)`.
-    crate::preview_card::crawl(state, status_with_uri.id).await;
-    // `PostStatusService#process_email_subscriptions!`, which a scheduled
-    // post goes through when it is published.
-    crate::email_subscriptions::status_posted(
-        state,
-        &crate::email_subscriptions::PostedStatus {
-            id: status_with_uri.id,
-            account_id: account.id,
-            visibility: visibility.clone(),
-            in_reply_to_id,
-            in_reply_to_account_id,
+        crate::api::mastodon::statuses::Posting {
+            account: &account,
+            application_id,
+            form: &form,
+            media_ids,
+            quoted,
+            quote_policy,
+            status_id,
         },
     )
     .await;
-    // `DistributionWorker`.
-    crate::feed::distribute(state, status.id, false).await;
-
-    // `notify_mentioned_accounts!`: the accounts it mentions, and only those.
-    let mut notified = std::collections::HashSet::new();
-    for (_, mentioned) in &resolved {
-        if mentioned.id == account.id || notified.contains(&mentioned.id) {
-            continue;
+    let error = match posted {
+        Ok(_) => return Ok(()),
+        Err(crate::api::mastodon::statuses::PostError::App(e)) => {
+            classify_app(e, "publish scheduled status")
         }
-        crate::push::create_and_push(
-            state,
-            mentioned.id,
-            account.id,
-            "mention",
-            Some(status.id),
-            format!("{} mentioned you", account.display_name),
-            account.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
-        )
-        .await;
-        notified.insert(mentioned.id);
+        Err(crate::api::mastodon::statuses::PostError::UnexpectedMentions(_)) => {
+            PublishError::Permanent(anyhow::anyhow!(
+                "the post would mention accounts it was not allowed to"
+            ))
+        }
+    };
+    // Whatever failed after the status was written, it has been posted.
+    let written = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM statuses WHERE id = $1) AS "e!""#,
+        status_id,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| classify_db(e, "look for the published status"))?;
+    if written {
+        tracing::error!(scheduled_id, status_id, error = %error.error(), "scheduled status published, but not all of what follows posting ran");
+        return Ok(());
     }
+    Err(error)
+}
 
-    Ok(())
+/// A database failure may pass; anything else the API would have refused
+/// (`RecordInvalid`, `RecordNotFound`, `Mastodon::ValidationError`) will be
+/// refused again.
+fn classify_app(e: crate::error::AppError, context: &str) -> PublishError {
+    match e {
+        crate::error::AppError::Database(e) => classify_db(e, context),
+        crate::error::AppError::Internal(e) => {
+            PublishError::Transient(anyhow::anyhow!("{context}: {e}"))
+        }
+        e => PublishError::Permanent(anyhow::anyhow!("{context}: {e}")),
+    }
 }
 
 // ── Suspended account cleanup ─────────────────────────────────────────────

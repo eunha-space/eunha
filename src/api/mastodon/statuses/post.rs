@@ -7,7 +7,7 @@ use super::*;
 
 pub async fn post_status(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    Extension(ResolvedInstance(_instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     request: axum::extract::Request,
 ) -> AppResult<axum::response::Response> {
@@ -105,6 +105,14 @@ pub async fn post_status(
         validate_poll_form(poll_form)?;
     }
 
+    // `set_quoted_status` and `quote_approval_policy`: the controller's,
+    // which run before the service, for a scheduled post as for any other.
+    let quoted = match form.quoted_status_id.as_deref() {
+        Some(qid) => Some(find_quotable(&state, &account, qid).await?),
+        None => None,
+    };
+    let quote_policy = requested_quote_policy(&state, account.id, &form).await?;
+
     // Handle scheduled statuses. Mastodon's PostStatusService ignores a
     // scheduled_at in the past (posts immediately); otherwise ScheduledStatus
     // must be at least MINIMUM_OFFSET (5 min) in the future and is bounded by
@@ -141,14 +149,38 @@ pub async fn post_status(
                 "Validation failed: Daily number of scheduled statuses exceeded".into(),
             ));
         }
+        // `set_thread`: the post replied to must be there, and is kept by
+        // its id (`thread&.id`).
+        let in_reply_to = match form.in_reply_to_id.as_deref() {
+            Some(id) => {
+                let parent = id.parse::<i64>().ok();
+                let found = match parent {
+                    Some(parent) => crate::conversation::thread(&state.db, parent).await?,
+                    None => None,
+                };
+                if found.is_none() {
+                    return Err(AppError::Unprocessable(
+                        "in_reply_to_id does not exist".into(),
+                    ));
+                }
+                parent
+            }
+            None => None,
+        };
         let params = serde_json::json!({
             "text": text,
             "visibility": form.visibility,
             "spoiler_text": spoiler_text,
             "sensitive": form.sensitive,
             "language": form.language,
-            "in_reply_to_id": form.in_reply_to_id,
+            "in_reply_to_id": in_reply_to,
             "media_ids": form.media_ids,
+            // `scheduled_options`: the quoted post by its id, the policy as
+            // the controller made it, the application by its id.
+            "quoted_status_id": quoted.as_ref().map(|q| q.id),
+            "quote_approval_policy": quote_policy,
+            "application_id": auth.application_id,
+            "allowed_mentions": form.allowed_mentions,
             "poll": form.poll.as_ref().map(|p| serde_json::json!({
                 "options": p.options,
                 "expires_in": p.expires_in,
@@ -189,6 +221,132 @@ pub async fn post_status(
         return Ok((axum::http::StatusCode::OK, Json(resp)).into_response());
     }
 
+    let status_id = crate::snowflake::next_id();
+    let status = match process_status(
+        &state,
+        Posting {
+            account: &account,
+            application_id: auth.application_id,
+            form: &form,
+            media_ids: parsed_media_ids,
+            quoted,
+            quote_policy,
+            status_id,
+        },
+    )
+    .await
+    {
+        Ok(status) => status,
+        Err(PostError::App(e)) => return Err(e),
+        Err(PostError::UnexpectedMentions(body)) => {
+            return Ok((axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response());
+        }
+    };
+
+    // Load the application that created this status (for the author's view)
+    let application = if let Some(app_id) = auth.application_id {
+        sqlx::query!(
+            "SELECT name, website FROM oauth_applications WHERE id = $1",
+            app_id,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| crate::api::mastodon::types::Application {
+            name: r.name,
+            website: r.website,
+        })
+    } else {
+        None
+    };
+
+    let media = fetch_status_media(&state, status.id).await?;
+    let viewer_ctx = build_viewer_context(&state, auth.account_id, status.id)
+        .await
+        .ok();
+    let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
+        &state,
+        &status,
+        &account,
+        media,
+        None,
+        viewer_ctx,
+        application,
+    )
+    .await?;
+
+    // Record the idempotency key so a retried request replays this status.
+    record_idempotency(&state, account.id, idempotency_key.as_deref(), status.id).await;
+    Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
+}
+
+/// Why [`process_status`] posted nothing.
+pub(crate) enum PostError {
+    App(AppError),
+    /// `UnexpectedMentionsError`: the body of the 422 it is answered with.
+    UnexpectedMentions(serde_json::Value),
+}
+
+impl<E: Into<AppError>> From<E> for PostError {
+    fn from(e: E) -> Self {
+        Self::App(e.into())
+    }
+}
+
+/// A post as `PostStatusService#call` is given it, once the controller has
+/// looked up what it names.
+pub(crate) struct Posting<'a> {
+    pub account: &'a Account,
+    pub application_id: Option<i64>,
+    pub form: &'a PostStatusForm,
+    /// `validate_media!`'s, in the order asked for.
+    pub media_ids: Vec<i64>,
+    /// The post quoted (`options[:quoted_status]`).
+    pub quoted: Option<DbStatus>,
+    /// `options[:quote_approval_policy]`, as the controller made it.
+    pub quote_policy: i32,
+    /// The id the status is given, so that a caller can tell whether a
+    /// failure came before it was written or after.
+    pub status_id: i64,
+}
+
+/// `PostStatusService#process_status!` and `postprocess_status!`: the
+/// status written, tagged, distributed and federated. Nothing is written
+/// before every check has passed.
+pub(crate) async fn process_status(
+    state: &AppState,
+    posting: Posting<'_>,
+) -> Result<DbStatus, PostError> {
+    let Posting {
+        account,
+        application_id,
+        form,
+        media_ids: parsed_media_ids,
+        quoted,
+        quote_policy,
+        status_id,
+    } = posting;
+    let state = state.clone();
+    let mut text = form.status.clone().unwrap_or_default();
+    let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
+    let spoiler_was_present = !spoiler_text.is_empty();
+    if text.is_empty() && spoiler_was_present && quoted.is_none() {
+        text = std::mem::take(&mut spoiler_text);
+    }
+    if text.is_empty() && parsed_media_ids.is_empty() && form.poll.is_none() {
+        return Err(AppError::Unprocessable("Status must have text or media".into()).into());
+    }
+    if crate::api::mastodon::formatting::countable_length(&text, &spoiler_text) > 500 {
+        return Err(AppError::Unprocessable(
+            "Validation failed: Text character limit of 500 exceeded".into(),
+        )
+        .into());
+    }
+    if let Some(ref poll_form) = form.poll {
+        validate_poll_form(poll_form)?;
+    }
+
     // Reject an unrecognized visibility rather than silently coercing it (the
     // fallback maps unknown strings to `direct`, which would turn a typo into a
     // DM). Mastodon only accepts these client-settable visibilities.
@@ -196,12 +354,13 @@ pub async fn post_status(
         if !matches!(v, "public" | "unlisted" | "private" | "direct") {
             return Err(AppError::Unprocessable(format!(
                 "Validation failed: Visibility is not included in the list: {v}"
-            )));
+            ))
+            .into());
         }
     }
 
     // Fall back to the user's stored posting defaults when the form omits them.
-    let defaults = crate::api::mastodon::accounts::user_defaults(&state, auth.account_id).await;
+    let defaults = crate::api::mastodon::accounts::user_defaults(&state, account.id).await;
     let mut visibility = form
         .visibility
         .as_deref()
@@ -233,95 +392,29 @@ pub async fn post_status(
     // `carried_over_reply_to_account_id`.
     let (in_reply_to_id, in_reply_to_account_id) = if let Some(parent_id) = in_reply_to_id {
         let Some(thread) = crate::conversation::thread(&state.db, parent_id).await? else {
-            return Err(AppError::Unprocessable(
-                "in_reply_to_id does not exist".into(),
-            ));
+            return Err(AppError::Unprocessable("in_reply_to_id does not exist".into()).into());
         };
-        (Some(thread.id), thread.reply_to_account_id(auth.account_id))
+        (Some(thread.id), thread.reply_to_account_id(account.id))
     } else {
         (None, None)
     };
 
-    // `set_quoted_status`: `Status.find(quoted_status_id)&.proper`, then
-    // `authorize(@quoted_status, :quote?)`; any failure is the same 404.
-    let mut quoted_author_id: Option<i64> = None;
-    let quote_of_id: Option<i64> = if let Some(ref qid_str) = form.quoted_status_id {
-        let quoted_not_found = || {
-            AppError::NotFoundMsg(
-                "The post you are trying to quote does not appear to exist.".into(),
-            )
-        };
-        let qid = qid_str.parse::<i64>().map_err(|_| quoted_not_found())?;
-        let found = sqlx::query!(
-            r#"SELECT COALESCE(s.reblog_of_id, s.id) AS "id!" FROM statuses s
-               WHERE s.id = $1 AND s.deleted_at IS NULL"#,
-            qid,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(quoted_not_found)?;
-        let quoted = sqlx::query_as!(
-            DbStatus,
-            "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-            found.id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(quoted_not_found)?;
-        // `StatusPolicy#quote?`: `show? && !blocking_author? &&
-        // quote_policy_for_account(current_account) != :denied`.
-        let relation = sqlx::query!(
-            r#"SELECT
-                 (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!",
-                 EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "follows_author!",
-                 EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS "followed_by_author!",
-                 EXISTS (SELECT 1 FROM blocks
-                         WHERE (account_id = $1 AND target_account_id = $2)
-                            OR (account_id = $2 AND target_account_id = $1)) AS "blocked!",
-                 EXISTS (SELECT 1 FROM mentions WHERE status_id = $3 AND account_id = $1) AS "mentioned!"
-               FROM accounts a WHERE a.id = $2"#,
-            account.id,
-            quoted.account_id,
-            quoted.id,
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(quoted_not_found)?;
-        let own = account.id == quoted.account_id;
-        use crate::db::models::vis;
-        let shown = !relation.unavailable
-            && match quoted.visibility {
-                vis::DIRECT | vis::LIMITED => own || relation.mentioned,
-                vis::PRIVATE => own || relation.follows_author || relation.mentioned,
-                _ => own || !relation.blocked,
-            };
-        let policy_denies = quoted.visibility == vis::DIRECT
-            || quoted.visibility == vis::LIMITED
-            || crate::db::models::quote_policy::for_account(
-                quoted.quote_approval_policy,
-                own,
-                relation.follows_author,
-                relation.followed_by_author,
-            ) == crate::db::models::quote_policy::ForAccount::Denied;
-        if !shown || (relation.blocked && !own) || policy_denies {
-            return Err(quoted_not_found());
-        }
-        // Quoting a followers-only post forces the quote down to followers-only,
-        // so the quoted content is never exposed to a wider audience than the
-        // original (Mastodon PostStatusService#preprocess_attributes).
-        if quoted.visibility == vis::PRIVATE && matches!(visibility.as_str(), "public" | "unlisted")
-        {
-            visibility = "private".to_string();
-        }
-        quoted_author_id = Some(quoted.account_id);
-        Some(quoted.id)
-    } else {
-        None
-    };
+    // Quoting a followers-only post forces the quote down to followers-only,
+    // so the quoted content is never exposed to a wider audience than the
+    // original (Mastodon PostStatusService#preprocess_attributes).
+    let quoted_author_id = quoted.as_ref().map(|q| q.account_id);
+    let quote_of_id = quoted.as_ref().map(|q| q.id);
+    if quoted
+        .as_ref()
+        .is_some_and(|q| q.visibility == crate::db::models::vis::PRIVATE)
+        && matches!(visibility.as_str(), "public" | "unlisted")
+    {
+        visibility = "private".to_string();
+    }
 
     let hashtags = extract_hashtags(&text);
     let mention_handles = extract_mention_handles(&text);
-    let resolved = resolve_mention_accounts(&state, &mention_handles, &instance.domain).await;
+    let resolved = resolve_mention_accounts(&state, &mention_handles, &state.instance.domain).await;
 
     // Mastodon safeguard_private_mention_quote!: a direct post that quotes
     // someone else's status must mention that author, otherwise they would be
@@ -332,7 +425,7 @@ pub async fn post_status(
                 return Err(AppError::Unprocessable(
                     "Validation failed: Cannot quote a non-mentioned user in a Private Mention post."
                         .into(),
-                ));
+                ).into());
             }
         }
     }
@@ -350,13 +443,12 @@ pub async fn post_status(
                 "error": "These accounts will be mentioned, but you did not explicitly select them",
                 "unexpected_accounts": unexpected,
             });
-            return Ok((axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response());
+            return Err(PostError::UnexpectedMentions(body));
         }
     }
 
-    let status_id = crate::snowflake::next_id();
     let uri = crate::federation::tag::status_uri(
-        &instance.domain,
+        &state.instance.domain,
         account.id,
         account.id_scheme,
         &account.username,
@@ -365,32 +457,19 @@ pub async fn post_status(
     // Human permalink — always the /@username form, independent of id_scheme.
     let human_url = format!(
         "https://{}/@{}/{}",
-        instance.domain, account.username, status_id
+        state.instance.domain, account.username, status_id
     );
 
     let is_reply = in_reply_to_id.is_some();
     let visibility_int = crate::db::models::vis::from_str(&visibility);
-    // `Api::InteractionPoliciesConcern#quote_approval_policy`, then
     // `downgrade_quote_policy` for a post only some may see.
-    let requested_policy = form
-        .quote_approval_policy
-        .as_deref()
-        .filter(|p| !p.is_empty())
-        .unwrap_or(&defaults.quote_policy);
-    let quote_policy_int = match crate::db::models::quote_policy::from_api(requested_policy) {
-        Some(_)
-            if !matches!(
-                visibility_int,
-                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
-            ) =>
-        {
-            0
-        }
-        Some(policy) => policy,
-        None => {
-            // `raise ActiveRecord::RecordInvalid`, with no record to name.
-            return Err(AppError::Unprocessable("Record invalid".into()));
-        }
+    let quote_policy_int = if matches!(
+        visibility_int,
+        crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+    ) {
+        quote_policy
+    } else {
+        0
     };
     let status = sqlx::query_as!(
         DbStatus,
@@ -409,7 +488,7 @@ pub async fn post_status(
         sensitive,
         in_reply_to_id,
         in_reply_to_account_id,
-        auth.application_id,
+        application_id,
         uri,
         is_reply,
         quote_policy_int,
@@ -424,7 +503,8 @@ pub async fn post_status(
     // remote author is asked (`QuoteRequestWorker`, below), and the request
     // is named under the quoter (`Quote#set_activity_uri`).
     let mut quote_row: Option<crate::quotes::Quote> = None;
-    if let Some(qid) = quote_of_id {
+    if let Some(quoted_status) = quoted.as_ref() {
+        let qid = quoted_status.id;
         let quoted = sqlx::query!(
             "SELECT s.account_id, a.domain FROM statuses s JOIN accounts a ON a.id = s.account_id WHERE s.id = $1",
             qid,
@@ -435,15 +515,17 @@ pub async fn post_status(
         let activity_uri = quoted_is_remote.then(|| {
             format!(
                 "{}/quote_requests/{}",
-                crate::federation::tag::account_uri_of(&instance.domain, &account),
+                crate::federation::tag::account_uri_of(&state.instance.domain, account),
                 uuid::Uuid::new_v4()
             )
         });
-        let quote_state = if quoted_is_remote {
-            crate::db::models::quote_state::PENDING
-        } else {
-            crate::db::models::quote_state::ACCEPTED
-        };
+        // `accept! if @quoted_status.local? && StatusPolicy#quote?`.
+        let quote_state =
+            if !quoted_is_remote && quote_allowed(&state, account, quoted_status).await? {
+                crate::db::models::quote_state::ACCEPTED
+            } else {
+                crate::db::models::quote_state::PENDING
+            };
         let quote_id = sqlx::query_scalar!(
             r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, activity_uri, state, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
@@ -549,39 +631,6 @@ pub async fn post_status(
     let mut status = status;
     status.uri = Some(uri.clone());
 
-    // Load the application that created this status (for the author's view)
-    let application = if let Some(app_id) = auth.application_id {
-        sqlx::query!(
-            "SELECT name, website FROM oauth_applications WHERE id = $1",
-            app_id,
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| crate::api::mastodon::types::Application {
-            name: r.name,
-            website: r.website,
-        })
-    } else {
-        None
-    };
-
-    let media = fetch_status_media(&state, status.id).await?;
-    let viewer_ctx = build_viewer_context(&state, auth.account_id, status.id)
-        .await
-        .ok();
-    let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
-        &state,
-        &status,
-        &account,
-        media,
-        None,
-        viewer_ctx,
-        application,
-    )
-    .await?;
-
     // `LinkCrawlWorker.perform_async(@status.id)`.
     crate::preview_card::crawl(&state, status.id).await;
     // `process_email_subscriptions!`
@@ -612,7 +661,7 @@ pub async fn post_status(
             Some(status.id),
             format!("{} mentioned you", account.display_name),
             account.acct().clone(),
-            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, &account),
+            crate::api::mastodon::convert::account_avatar_url_for(&state.urls, account),
         )
         .await;
         notified.insert(mentioned.id);
@@ -638,8 +687,8 @@ pub async fn post_status(
         .await
         .unwrap_or(false)
     {
-        let domain = &instance.domain;
-        let actor_url = crate::federation::tag::account_uri_of(domain, &account);
+        let domain = &state.instance.domain;
+        let actor_url = crate::federation::tag::account_uri_of(domain, account);
         let key_id = format!("{}#main-key", actor_url);
 
         // Build the Create(Note) from the persisted status so the wire shape
@@ -650,7 +699,8 @@ pub async fn post_status(
             return Err(AppError::Internal(anyhow::anyhow!(
                 "failed to build Note for status {}",
                 status.id
-            )));
+            ))
+            .into());
         };
         // Keep a copy of the (context-less) Note to inline as the QuoteRequest
         // `instrument` below, before the bundle is consumed by `into_create`.
@@ -750,9 +800,6 @@ pub async fn post_status(
         }
     }
 
-    // Record the idempotency key so a retried request replays this status.
-    record_idempotency(&state, account.id, idempotency_key.as_deref(), status.id).await;
-
     // `PostStatusService#postprocess_status!`: `Trends.tags.register`.
     crate::trends::register_tags(&state, status.id).await;
 
@@ -764,7 +811,105 @@ pub async fn post_status(
     )
     .await;
     crate::fasp::events::status_created(&state, status.id).await;
-    Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
+    Ok(status)
+}
+
+/// `set_quoted_status`: `Status.find(quoted_status_id)&.proper`, then
+/// `authorize(@quoted_status, :quote?)`; any failure is the same 404.
+async fn find_quotable(state: &AppState, account: &Account, id: &str) -> AppResult<DbStatus> {
+    let quoted_not_found = || {
+        AppError::NotFoundMsg("The post you are trying to quote does not appear to exist.".into())
+    };
+    let qid = id.parse::<i64>().map_err(|_| quoted_not_found())?;
+    let found = sqlx::query!(
+        r#"SELECT COALESCE(s.reblog_of_id, s.id) AS "id!" FROM statuses s
+           WHERE s.id = $1 AND s.deleted_at IS NULL"#,
+        qid,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(quoted_not_found)?;
+    let quoted = sqlx::query_as!(
+        DbStatus,
+        "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        found.id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(quoted_not_found)?;
+    if !quote_allowed(state, account, &quoted).await? {
+        return Err(quoted_not_found());
+    }
+    Ok(quoted)
+}
+
+/// `StatusPolicy#quote?`: `show? && !blocking_author? &&
+/// quote_policy_for_account(current_account) != :denied`.
+pub(crate) async fn quote_allowed(
+    state: &AppState,
+    account: &Account,
+    quoted: &DbStatus,
+) -> AppResult<bool> {
+    let Some(relation) = sqlx::query!(
+        r#"SELECT
+             (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!",
+             EXISTS (SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2) AS "follows_author!",
+             EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = $1) AS "followed_by_author!",
+             EXISTS (SELECT 1 FROM blocks
+                     WHERE (account_id = $1 AND target_account_id = $2)
+                        OR (account_id = $2 AND target_account_id = $1)) AS "blocked!",
+             EXISTS (SELECT 1 FROM mentions WHERE status_id = $3 AND account_id = $1) AS "mentioned!"
+           FROM accounts a WHERE a.id = $2"#,
+        account.id,
+        quoted.account_id,
+        quoted.id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let own = account.id == quoted.account_id;
+    use crate::db::models::vis;
+    let shown = !relation.unavailable
+        && match quoted.visibility {
+            vis::DIRECT | vis::LIMITED => own || relation.mentioned,
+            vis::PRIVATE => own || relation.follows_author || relation.mentioned,
+            _ => own || !relation.blocked,
+        };
+    let policy_denies = quoted.visibility == vis::DIRECT
+        || quoted.visibility == vis::LIMITED
+        || crate::db::models::quote_policy::for_account(
+            quoted.quote_approval_policy,
+            own,
+            relation.follows_author,
+            relation.followed_by_author,
+        ) == crate::db::models::quote_policy::ForAccount::Denied;
+    Ok(shown && !(relation.blocked && !own) && !policy_denies)
+}
+
+/// `Api::InteractionPoliciesConcern#quote_approval_policy`: the policy asked
+/// for, or the user's default, as its bits; anything else is refused.
+async fn requested_quote_policy(
+    state: &AppState,
+    account_id: i64,
+    form: &PostStatusForm,
+) -> AppResult<i32> {
+    let requested = match form
+        .quote_approval_policy
+        .as_deref()
+        .filter(|p| !p.is_empty())
+    {
+        Some(policy) => policy.to_owned(),
+        None => {
+            crate::api::mastodon::accounts::user_defaults(state, account_id)
+                .await
+                .quote_policy
+        }
+    };
+    // `raise ActiveRecord::RecordInvalid`, with no record to name.
+    crate::db::models::quote_policy::from_api(&requested)
+        .ok_or_else(|| AppError::Unprocessable("Record invalid".into()))
 }
 
 /// Mastodon's `Integer#to_i` on a string: its leading digits, or 0.

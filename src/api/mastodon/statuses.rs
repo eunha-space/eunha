@@ -27,7 +27,7 @@ use crate::{
 
 mod post;
 pub use post::post_status;
-pub(crate) use post::validate_media;
+pub(crate) use post::{process_status, validate_media, PostError, Posting};
 mod context;
 pub use context::get_status_context;
 mod edit;
