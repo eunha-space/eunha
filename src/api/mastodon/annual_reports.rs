@@ -277,27 +277,46 @@ async fn generate_report_data(
     }))
 }
 
+/// `AnnualReport#eligible?`: every source is, which comes to
+/// `TopStatuses` (a public or unlisted post of the year) and `TopHashtags`
+/// (a post of the year with a hashtag). The year is `year_as_snowflake_range`,
+/// which Mastodon draws with up to a second of randomness at each end; eunha
+/// takes the whole seconds.
 async fn is_eligible(state: &AppState, account_id: i64, year: i32) -> AppResult<bool> {
-    let start = Utc
-        .with_ymd_and_hms(year, 1, 1, 0, 0, 0)
-        .unwrap()
-        .naive_utc();
-    let end = Utc
-        .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
-        .unwrap()
-        .naive_utc();
-    let count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM statuses
-         WHERE account_id = $1 AND deleted_at IS NULL
-           AND created_at >= $2 AND created_at < $3",
+    let (first, last) = year_as_snowflake_range(year);
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM statuses
+             WHERE account_id = $1 AND deleted_at IS NULL AND id BETWEEN $2 AND $3
+               AND visibility IN (0, 1)
+           ) AND EXISTS (
+             SELECT 1 FROM statuses
+             JOIN statuses_tags ON statuses_tags.status_id = statuses.id
+             WHERE statuses.account_id = $1 AND statuses.deleted_at IS NULL
+               AND statuses.id BETWEEN $2 AND $3
+           ) AS "eligible!""#,
         account_id,
-        start,
-        end,
+        first,
+        last,
     )
     .fetch_one(&state.db)
-    .await?
-    .unwrap_or(0);
-    Ok(count > 0)
+    .await?)
+}
+
+/// `AnnualReport::Source#year_as_snowflake_range`: from the start of the
+/// year to the end of its last second.
+fn year_as_snowflake_range(year: i32) -> (i64, i64) {
+    let at = |y, m, d, h, min, sec| {
+        Utc.with_ymd_and_hms(y, m, d, h, min, sec)
+            .single()
+            .map_or(0, crate::snowflake::id_at)
+    };
+    (at(year, 1, 1, 0, 0, 0), at(year, 12, 31, 23, 59, 59))
+}
+
+/// `params[:id]&.to_i`, as a year.
+fn year_param(raw: &str) -> i32 {
+    crate::search::ruby_to_i(raw).clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
 // ── Build the response: fetch referenced accounts + statuses ───────────────
@@ -487,9 +506,10 @@ pub async fn list_annual_reports(
 pub async fn get_annual_report(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Path(year): Path<i32>,
+    Path(year): Path<String>,
 ) -> AppResult<Json<AnnualReportsResponse>> {
     auth.require_scope("read:accounts")?;
+    let year = year_param(&year);
 
     let account = sqlx::query_as!(
         DbAccount,
@@ -526,9 +546,10 @@ pub async fn get_annual_report(
 pub async fn read_annual_report(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Path(year): Path<i32>,
+    Path(year): Path<String>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("write:accounts")?;
+    let year = year_param(&year);
 
     let updated = sqlx::query_scalar!(
         "UPDATE generated_annual_reports SET viewed_at = NOW(), updated_at = NOW()
@@ -552,40 +573,27 @@ pub async fn read_annual_report(
 pub async fn generate_annual_report(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Path(year): Path<i32>,
+    Path(year): Path<String>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("write:accounts")?;
+    let year = year_param(&year);
 
-    let current_year = Utc::now().year();
-    // Only allow generating for completed years (not the current year)
-    if year >= current_year {
-        return Ok((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "error": "Report can only be generated for completed years"
-            })),
-        )
-            .into_response());
+    // `render_empty` unless it is this year's campaign, and once the report
+    // exists.
+    let render_empty = || Ok((StatusCode::OK, Json(serde_json::json!({}))).into_response());
+    if current_campaign(&state).await != Some(year) {
+        return render_empty();
     }
-
-    // If already generated, return immediately
     let existing = sqlx::query_scalar!(
-        "SELECT id FROM generated_annual_reports WHERE account_id = $1 AND year = $2 AND data IS NOT NULL",
-        auth.account_id, year,
-    ).fetch_optional(&state.db).await?;
-
-    if existing.is_some() {
-        return Ok((StatusCode::ACCEPTED, Json(serde_json::json!({}))).into_response());
-    }
-
-    if !is_eligible(&state, auth.account_id, year).await? {
-        return Ok((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "error": "Not eligible for this year"
-            })),
-        )
-            .into_response());
+        r#"SELECT EXISTS (SELECT 1 FROM generated_annual_reports
+                          WHERE account_id = $1 AND year = $2) AS "e!""#,
+        auth.account_id,
+        year,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if existing {
+        return render_empty();
     }
 
     // Generated in the background, as `GenerateAnnualReportWorker` does, with
@@ -636,7 +644,7 @@ fn refresh_key(account_id: i64, year: i32) -> String {
 
 /// `head 202`, with the refresh's header (`retry_seconds: 2`).
 fn accepted_with_refresh(state: &AppState, refresh: &AsyncRefresh) -> axum::response::Response {
-    let mut response = (StatusCode::ACCEPTED, Json(serde_json::json!({}))).into_response();
+    let mut response = StatusCode::ACCEPTED.into_response();
     if let Some(value) = refresh
         .header_value(state, 2)
         .and_then(|v| axum::http::HeaderValue::from_str(&v).ok())
@@ -648,15 +656,43 @@ fn accepted_with_refresh(state: &AppState, refresh: &AsyncRefresh) -> axum::resp
     response
 }
 
+/// `AnnualReport#generate`: nothing once the report exists, else the report
+/// with a share key; a deleted account has none made.
 async fn generate_and_store(state: &AppState, account_id: i64, year: i32) -> AppResult<()> {
+    let exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM generated_annual_reports
+                          WHERE account_id = $1 AND year = $2) AS "e!""#,
+        account_id,
+        year,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let account_exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1) AS "e!""#,
+        account_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if exists || !account_exists {
+        return Ok(());
+    }
     let data = generate_report_data(state, account_id, year).await?;
+    // `SecureRandom.hex(8)`.
+    let share_key = hex::encode(rand::random::<[u8; 8]>());
+    // `rescue ActiveRecord::RecordNotUnique`: another worker made it first.
     sqlx::query!(
-        "INSERT INTO generated_annual_reports (account_id, year, data, schema_version, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), now())
-         ON CONFLICT (account_id, year) DO UPDATE
-         SET data = $3, schema_version = $4, updated_at = NOW()",
-        account_id, year, data, SCHEMA_VERSION,
-    ).execute(&state.db).await?;
+        "INSERT INTO generated_annual_reports
+           (account_id, year, data, schema_version, share_key, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now(), now())
+         ON CONFLICT (account_id, year) DO NOTHING",
+        account_id,
+        year,
+        data,
+        SCHEMA_VERSION,
+        share_key,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(())
 }
 
@@ -665,32 +701,31 @@ async fn generate_and_store(state: &AppState, account_id: i64, year: i32) -> App
 pub async fn get_annual_report_state(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    Path(year): Path<i32>,
+    Path(year): Path<String>,
 ) -> AppResult<axum::response::Response> {
     auth.require_scope("read:accounts")?;
+    let year = year_param(&year);
 
-    let row = sqlx::query!(
-        "SELECT data FROM generated_annual_reports WHERE account_id = $1 AND year = $2",
+    // `AnnualReport#state`.
+    let exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM generated_annual_reports
+                          WHERE account_id = $1 AND year = $2) AS "e!""#,
         auth.account_id,
         year,
     )
-    .fetch_optional(&state.db)
+    .fetch_one(&state.db)
     .await?;
-
     let mut refresh_header = None;
-    let state_str = if let Some(r) = row {
-        if r.data.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
-            "available"
-        } else {
-            "generating"
-        }
+    let state_str = if exists {
+        "available"
     } else {
         let refresh = AsyncRefresh::new(&state, &refresh_key(auth.account_id, year)).await;
-        let current_year = Utc::now().year();
         if refresh.is_running() {
             refresh_header = refresh.header_value(&state, 2);
             "generating"
-        } else if year < current_year && is_eligible(&state, auth.account_id, year).await? {
+        } else if current_campaign(&state).await == Some(year)
+            && is_eligible(&state, auth.account_id, year).await?
+        {
             "eligible"
         } else {
             "ineligible"

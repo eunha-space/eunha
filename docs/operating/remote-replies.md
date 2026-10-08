@@ -114,7 +114,11 @@ token with the `read` scope) until its `status` is `finished`;
 `result_count` counts the replies that were new. Generating an annual report
 (`POST /api/v1/annual_reports/:year/generate`) works the same way, with
 `retry=2` and no count, and `GET /api/v1/annual_reports/:year/state` answers
-`generating` with the header while it runs.
+`generating` with the header while it runs. As in Mastodon, a report is
+generated only for the current campaign (`AnnualReport.current_campaign`: the
+year, from 10 to 31 December while the `wrapstodon` setting is on); asked for
+any other year, or once the report exists, `generate` answers `{}`, and a year
+is `eligible` only during its campaign.
 
 A refresh is a Redis hash, `context:{status_id}:refresh` or
 `wrapstodon:{account_id}:{year}`, kept in the coordination pool under the

@@ -189,6 +189,8 @@ async fn test_annual_report_generating_carries_the_refresh() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["state"], "generating");
 
+    // `generate` is only for this year's campaign: outside it, asking
+    // renders empty; in it, a running refresh is handed back.
     let resp = ctx
         .api
         .post_json(
@@ -197,11 +199,28 @@ async fn test_annual_report_generating_carries_the_refresh() {
             &serde_json::json!({}),
         )
         .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    assert_eq!(
-        resp.headers()["mastodon-async-refresh"].to_str().unwrap(),
-        expected
-    );
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().get("mastodon-async-refresh").is_none());
+    let now = chrono::Utc::now();
+    use chrono::Datelike;
+    if now.month() == 12 && now.day() >= 10 {
+        let year = now.year();
+        let refresh =
+            AsyncRefresh::create(&ctx.state, &format!("wrapstodon:{alice}:{year}"), false).await;
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/annual_reports/{year}/generate"),
+                Some(&ctx.alice_token),
+                &serde_json::json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            resp.headers()["mastodon-async-refresh"].to_str().unwrap(),
+            format!("id=\"{}\", retry=2", refresh.id(&ctx.state))
+        );
+    }
     // Nothing was generated behind the running refresh.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let generated: i64 =
