@@ -251,15 +251,11 @@ pub fn invite_url(domain: &str, code: &str) -> String {
     format!("https://{domain}/signup?invite={code}")
 }
 
+/// `Invite#valid_for_use?`'s `user&.functional?`.
 async fn inviter_functional(state: &AppState, account_id: i64) -> AppResult<bool> {
-    Ok(sqlx::query_scalar::<_, bool>(
-        "SELECT u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled
-                AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                AND NOT a.memorial AND a.moved_to_account_id IS NULL
-         FROM users u JOIN accounts a ON a.id = u.account_id WHERE a.id = $1",
+    Ok(
+        crate::user_standing::UserStanding::of_account(&state.db, account_id)
+            .await?
+            .is_some_and(|standing| standing.functional()),
     )
-    .bind(account_id)
-    .fetch_optional(&state.db)
-    .await?
-    .unwrap_or(false))
 }

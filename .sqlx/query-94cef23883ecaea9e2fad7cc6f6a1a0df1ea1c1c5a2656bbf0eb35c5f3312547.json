@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id, i.uses, i.max_uses, i.expires_at, i.user_id\n           FROM invites i\n           WHERE i.code = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "94cef23883ecaea9e2fad7cc6f6a1a0df1ea1c1c5a2656bbf0eb35c5f3312547"
+}

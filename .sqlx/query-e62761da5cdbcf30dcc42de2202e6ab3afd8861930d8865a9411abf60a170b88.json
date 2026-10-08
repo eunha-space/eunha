@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.confirmed_at IS NOT NULL AS \"confirmed!\", u.approved, u.disabled,\n                      (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)\n                        AS \"unavailable!\",\n                      a.memorial, a.moved_to_account_id IS NOT NULL AS \"moved!\",\n                      (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login\n                       AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w\n                                       WHERE w.user_id = u.id)) AS \"missing_2fa!\"\n               FROM users u\n               JOIN accounts a ON a.id = u.account_id\n               LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)\n               WHERE ($1::bigint IS NULL OR u.id = $1) AND ($2::bigint IS NULL OR u.account_id = $2)\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "confirmed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "approved",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "unavailable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "memorial",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "moved!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "missing_2fa!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      null,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "e62761da5cdbcf30dcc42de2202e6ab3afd8861930d8865a9411abf60a170b88"
+}

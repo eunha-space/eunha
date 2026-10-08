@@ -157,6 +157,13 @@ request says `force_login=true`. The code, and a denial, come back with a
 sending `access_denied`, with its `state`, to a redirect URI it registered (an
 unregistered one is refused, where Doorkeeper would follow it).
 
+Before any of that, the page, the authorize button and deny each run
+Mastodon's `require_functional!` for a signed-in user who is not functional:
+one whose role requires two-factor authentication they lack is taken through
+setting it up, then back to the page; one pending approval, a memorial or
+moved goes to the account page; and one with an unconfirmed address to
+`/auth/setup`. Each keeps the page to come back to.
+
 `POST /oauth/revoke` is RFC 7009 revocation as Doorkeeper answers it. The
 request names its client, by HTTP Basic or in the request, with the client's
 secret unless the application is a public one (`confidential` false); without

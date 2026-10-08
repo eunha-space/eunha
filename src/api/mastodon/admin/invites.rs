@@ -62,10 +62,14 @@ pub async fn list_admin_invites(
                   (i.expires_at IS NOT NULL AND i.expires_at < now()) AS "expired!",
                   (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled
                    AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
-                   AND NOT a.memorial AND a.moved_to_account_id IS NULL) AS "functional!"
+                   AND NOT a.memorial AND a.moved_to_account_id IS NULL
+                   AND NOT (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login
+                            AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w
+                                            WHERE w.user_id = u.id))) AS "functional!"
            FROM invites i
            JOIN users u ON u.id = i.user_id
            JOIN accounts a ON a.id = u.account_id
+           LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)
            WHERE (NOT $1 OR i.expires_at IS NULL OR i.expires_at >= now())
              AND (NOT $2 OR (i.expires_at IS NOT NULL AND i.expires_at < now()))
            ORDER BY i.created_at DESC

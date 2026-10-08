@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, i.code, i.uses, i.max_uses, i.expires_at, i.autofollow, i.comment,\n                  i.created_at, u.account_id,\n                  (i.expires_at IS NOT NULL AND i.expires_at < now()) AS \"expired!\",\n                  (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled\n                   AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                   AND NOT a.memorial AND a.moved_to_account_id IS NULL) AS \"functional!\"\n           FROM invites i\n           JOIN users u ON u.id = i.user_id\n           JOIN accounts a ON a.id = u.account_id\n           WHERE (NOT $1 OR i.expires_at IS NULL OR i.expires_at >= now())\n             AND (NOT $2 OR (i.expires_at IS NOT NULL AND i.expires_at < now()))\n           ORDER BY i.created_at DESC\n           LIMIT $3 OFFSET $4",
+  "query": "SELECT i.id, i.code, i.uses, i.max_uses, i.expires_at, i.autofollow, i.comment,\n                  i.created_at, u.account_id,\n                  (i.expires_at IS NOT NULL AND i.expires_at < now()) AS \"expired!\",\n                  (u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled\n                   AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n                   AND NOT a.memorial AND a.moved_to_account_id IS NULL\n                   AND NOT (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login\n                            AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w\n                                            WHERE w.user_id = u.id))) AS \"functional!\"\n           FROM invites i\n           JOIN users u ON u.id = i.user_id\n           JOIN accounts a ON a.id = u.account_id\n           LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)\n           WHERE (NOT $1 OR i.expires_at IS NULL OR i.expires_at >= now())\n             AND (NOT $2 OR (i.expires_at IS NOT NULL AND i.expires_at < now()))\n           ORDER BY i.created_at DESC\n           LIMIT $3 OFFSET $4",
   "describe": {
     "columns": [
       {
@@ -81,5 +81,5 @@
       null
     ]
   },
-  "hash": "9a9bee8d9e052e4a6911b1ff77097129929ab6a2a1e2f0c9b4922f988ecbe911"
+  "hash": "c7d31a27a4f16f025d81ac3d94d9ee21f2abc7a5867b0dfe60607bd472b506fa"
 }

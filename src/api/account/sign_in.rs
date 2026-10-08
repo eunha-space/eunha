@@ -184,6 +184,20 @@ pub async fn after_password(
     Step::SignedIn(user_id, continuation)
 }
 
+/// `require_functional!` for a user already signed in whose role requires
+/// two-factor authentication they do not have: the setup, then on to
+/// `continuation`.
+pub async fn begin_required_setup(
+    state: &AppState,
+    user_id: i64,
+    continuation: Continuation,
+) -> Step {
+    let Ok(Some(user)) = two_factor::load(&state.db, user_id).await else {
+        return Step::Failed(continuation);
+    };
+    begin_setup(state, &user, continuation).await
+}
+
 /// `require_functional!` sending a user whose role requires two-factor
 /// authentication to set it up, before anything else.
 async fn begin_setup(state: &AppState, user: &UserTwoFactor, continuation: Continuation) -> Step {

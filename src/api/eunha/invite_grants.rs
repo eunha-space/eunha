@@ -170,9 +170,12 @@ async fn eligible_members(
 ) -> AppResult<Vec<(i64, i64, String)>> {
     Ok(sqlx::query_as(
         "SELECT u.id, a.id, a.username FROM public.users u JOIN public.accounts a ON a.id = u.account_id
+         LEFT JOIN public.user_roles r ON r.id = COALESCE(u.role_id, -99)
          WHERE a.domain IS NULL AND u.approved AND u.confirmed_at IS NOT NULL AND NOT u.disabled
            AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
            AND NOT a.memorial AND a.moved_to_account_id IS NULL
+           AND NOT (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login
+                    AND NOT EXISTS (SELECT 1 FROM public.webauthn_credentials w WHERE w.user_id = u.id))
            AND ($1::bigint IS NULL OR a.id = $1) ORDER BY a.username",
     ).bind(account_id).fetch_all(&state.db).await?)
 }

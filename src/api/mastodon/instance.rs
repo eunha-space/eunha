@@ -24,24 +24,18 @@ pub async fn get_instance_languages() -> Json<Vec<serde_json::Value>> {
 
 // ── GET /api/v1/instance/domain_blocks ───────────────────────────────────
 
-/// `User#functional_or_moved?`: confirmed, approved, not disabled, and its
-/// account neither unavailable nor a memorial.
+/// `User#functional_or_moved?`: confirmed, approved, not disabled, its
+/// account neither unavailable nor a memorial, and no second factor missing
+/// that its role requires.
 async fn functional_or_moved(state: &AppState, auth: Option<&AuthenticatedUser>) -> bool {
     let Some(auth) = auth else {
         return false;
     };
-    sqlx::query_scalar!(
-        r#"SELECT EXISTS (
-             SELECT 1 FROM users u JOIN accounts a ON a.id = u.account_id
-             WHERE u.account_id = $1 AND u.confirmed_at IS NOT NULL AND u.approved
-               AND NOT u.disabled AND a.suspended_at IS NULL
-               AND a.requested_deletion_at IS NULL AND NOT a.memorial
-           ) AS "e!""#,
-        auth.account_id,
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or(false)
+    crate::user_standing::UserStanding::of_account(&state.db, auth.account_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|standing| standing.functional_or_moved())
 }
 
 /// `Api::V1::Instances::DomainBlocksController`: the domains limited or

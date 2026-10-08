@@ -109,16 +109,10 @@ struct FormRequirements {
 async fn validate_invite(state: &AppState, code: &str) -> Result<i64, &'static str> {
     // Mirror Mastodon Invite#valid_for_use?:
     //   (max_uses.nil? || uses < max_uses) && !expired? && user&.functional?
-    // where functional? requires the inviter's user to be confirmed, approved and
-    // not disabled, and their account to be available (not suspended), not a
-    // memorial, and not moved.
+    // (`UserStanding`).
     let row = sqlx::query!(
-        r#"SELECT i.id, i.uses, i.max_uses, i.expires_at,
-                  u.confirmed_at, u.approved, u.disabled,
-                  a.suspended_at, a.requested_deletion_at, a.memorial, a.moved_to_account_id
+        r#"SELECT i.id, i.uses, i.max_uses, i.expires_at, i.user_id
            FROM invites i
-           JOIN users u ON u.id = i.user_id
-           JOIN accounts a ON a.id = u.account_id
            WHERE i.code = $1"#,
         code,
     )
@@ -139,13 +133,11 @@ async fn validate_invite(state: &AppState, code: &str) -> Result<i64, &'static s
     {
         return Err("err_invite_expired");
     }
-    let inviter_functional = inv.confirmed_at.is_some()
-        && inv.approved
-        && !inv.disabled
-        && inv.suspended_at.is_none()
-        && inv.requested_deletion_at.is_none()
-        && !inv.memorial
-        && inv.moved_to_account_id.is_none();
+    let inviter_functional = crate::user_standing::UserStanding::of_user(&state.db, inv.user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|standing| standing.functional());
     if !inviter_functional {
         return Err("err_invalid_invite");
     }

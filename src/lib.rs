@@ -72,6 +72,7 @@ pub mod translation;
 pub mod trends;
 pub mod two_factor;
 pub mod upstream;
+pub mod user_standing;
 pub mod vacuum;
 pub mod version;
 pub mod web;

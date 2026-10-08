@@ -48,8 +48,9 @@ person, accepts 1–25 people per member, defaults to seven days, and asks staff
 to review the recipients, total links and expiry before granting. It has no
 member note or approval selector. Bulk grants include confirmed, approved,
 functional local users, staff included, at submission time; remote, disabled,
-suspended, deleted, memorial and moved accounts are excluded. Future users need
-another grant.
+suspended, deleted, memorial and moved accounts are excluded, as are users
+whose role requires two-factor authentication they have not set up. Future
+users need another grant.
 
 Repeated grants add links without replacing earlier ones. Each handout has its
 own identity, grant date, staff sender and expiry. A transaction writes all

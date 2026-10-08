@@ -470,6 +470,76 @@ async fn the_page_asks_until_a_matching_token_exists() {
     assert!(param(&location(&superapp), "code").is_some());
 }
 
+/// `require_functional!` on the authorization page, for a browser already
+/// signed in: a user pending approval goes to the account page, and one
+/// whose role now requires two-factor authentication is set up first; the
+/// authorize button and deny do the same, and nobody gets a code.
+#[tokio::test]
+async fn the_page_requires_a_functional_user() {
+    let ctx = TestContext::new("oauth-functional").await;
+    let (client_id, _) = register_app(&ctx, CALLBACK).await;
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", PASSWORD).await;
+    let alice_user =
+        crate::helpers::user_id_for(&ctx.db, ctx.alice_id.parse::<i64>().unwrap()).await;
+    let path = format!(
+        "/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={}&scope=read",
+        urlencoding::encode(CALLBACK)
+    );
+    let get = |cookie: String, path: String| {
+        let api = &ctx.api;
+        async move {
+            api.http
+                .get(api.url(&path))
+                .header("host", &api.host)
+                .header("cookie", cookie)
+                .send()
+                .await
+                .unwrap()
+        }
+    };
+    let form = [
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", CALLBACK),
+        ("scope", "read"),
+    ];
+
+    sqlx::query("UPDATE users SET approved = false WHERE id = $1")
+        .bind(alice_user)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let pending = get(cookie.clone(), path.clone()).await;
+    assert_eq!(pending.status(), StatusCode::FOUND);
+    assert_eq!(location(&pending).path(), "/account");
+    let approve = crate::helpers::approve_authorization(&ctx.api, &cookie, &form).await;
+    assert_eq!(location(&approve).path(), "/account");
+    let mut deny_form = form.to_vec();
+    deny_form.push(("_method", "delete"));
+    let deny = crate::helpers::approve_authorization(&ctx.api, &cookie, &deny_form).await;
+    assert_eq!(location(&deny).path(), "/account");
+
+    sqlx::query("UPDATE users SET approved = true WHERE id = $1")
+        .bind(alice_user)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE user_roles SET require_2fa = true WHERE id = -99")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let setup = get(cookie.clone(), path.clone()).await;
+    assert_eq!(setup.status(), StatusCode::OK);
+    let page = setup.text().await.unwrap();
+    assert!(page.contains(r#"name="setup_otp_attempt""#), "{page}");
+
+    let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM oauth_access_grants")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(grants, 0);
+}
+
 /// Signing in on the authorization page starts a session and comes back to
 /// the page with a `302`; signing out from the page with `continue` comes
 /// back to it signed out.

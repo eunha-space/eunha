@@ -52,6 +52,37 @@ async fn test_invite_lifecycle() {
     assert!(expired["expires_at"].as_str().is_some());
 }
 
+/// `Invite#valid_for_use?` wants its inviter `functional?`, which a role
+/// requiring two-factor authentication the inviter lacks is not.
+#[tokio::test]
+async fn test_an_invite_wants_a_functional_inviter() {
+    let ctx = TestContext::new("invite-functional").await;
+    let invite: Value = ctx
+        .api
+        .post_json("/api/v1/invites", Some(&ctx.alice_token), &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let lookup = |code: String| {
+        let api = &ctx.api;
+        async move {
+            api.get(&format!("/api/eunha/v1/invite?invite={code}"), None)
+                .await
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    let code = invite["code"].as_str().unwrap().to_owned();
+    assert_eq!(lookup(code.clone()).await["valid"], true);
+    sqlx::query("UPDATE user_roles SET require_2fa = true WHERE id = -99")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(lookup(code).await["valid"], false);
+}
+
 /// Invite with max_uses and expires_in round-trips those fields.
 #[tokio::test]
 async fn test_invite_with_options() {

@@ -1259,10 +1259,17 @@ pub async fn authorize_form(
             .extras
             .query(&params.client_id, &params.redirect_uri, scope)
     );
-    // `require_functional!`: an address still unconfirmed sends the user to
-    // `auth/setup`, the page kept to come back to (`store_current_location`).
-    if !user_confirmed(&state, user_id).await {
-        return crate::api::account::redirect_storing_location("/auth/setup", &here);
+    // `require_functional!`, the page kept to come back to
+    // (`store_current_location`).
+    let continuation = crate::api::account::sign_in::Continuation::Oauth {
+        client_id: params.client_id.clone(),
+        redirect_uri: params.redirect_uri.clone(),
+        scope: scope.to_owned(),
+        lang: locale.as_str().to_owned(),
+        extras: params.extras.clone(),
+    };
+    if let Some(response) = require_functional(&state, user_id, &here, continuation, locale).await {
+        return response;
     }
     let answer_at_once = app.superapp
         || (!params.extras.force_login()
@@ -1551,8 +1558,16 @@ pub async fn authorize_submit(
     let Some(user_id) = crate::api::account::signed_in_user(&headers, &state).await else {
         return found(&page);
     };
-    if !user_confirmed(&state, user_id).await {
-        return crate::api::account::redirect_storing_location("/auth/setup", &page);
+    let locale = crate::locale::Locale::detect(form.lang.as_deref(), None);
+    let continuation = crate::api::account::sign_in::Continuation::Oauth {
+        client_id: form.client_id.clone(),
+        redirect_uri: form.redirect_uri.clone(),
+        scope: scope.clone(),
+        lang: locale.as_str().to_owned(),
+        extras: form.extras.clone(),
+    };
+    if let Some(response) = require_functional(&state, user_id, &page, continuation, locale).await {
+        return response;
     }
     match issue_grant(
         &state,
@@ -1735,6 +1750,43 @@ async fn check_password(
     Some(user.id)
 }
 
+/// `ApplicationController#require_functional!`, which the authorization
+/// page's every action runs for a signed-in user: nothing for a functional
+/// one; the two-factor setup the role requires (`mfa_setup_path(oauth:
+/// true)`, eunha's sign-in setup step, which comes back to the page); the
+/// account page (`edit_user_registration_path`) for one confirmed but
+/// otherwise not functional — pending approval, a memorial or moved; and
+/// `auth/setup` for an unconfirmed address, the page kept to come back to.
+async fn require_functional(
+    state: &AppState,
+    user_id: i64,
+    page: &str,
+    continuation: crate::api::account::sign_in::Continuation,
+    locale: crate::locale::Locale,
+) -> Option<Response> {
+    use crate::api::account::sign_in::{self, Step};
+    let standing = crate::user_standing::UserStanding::of_user(&state.db, user_id)
+        .await
+        .ok()
+        .flatten()?;
+    if standing.functional() {
+        return None;
+    }
+    if standing.missing_2fa {
+        return Some(
+            match sign_in::begin_required_setup(state, user_id, continuation).await {
+                Step::Render(next) => sign_in::render(state, locale, &next),
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, locale.t("err_server")).into_response(),
+            },
+        );
+    }
+    Some(if standing.confirmed {
+        crate::api::account::redirect_storing_location("/account", page)
+    } else {
+        crate::api::account::redirect_storing_location("/auth/setup", page)
+    })
+}
+
 /// Whether the user has confirmed their address.
 async fn user_confirmed(state: &AppState, user_id: i64) -> bool {
     sqlx::query_scalar!(
@@ -1877,15 +1929,12 @@ pub async fn authorize_deny(
     uri: axum::http::Uri,
     body: axum::body::Bytes,
 ) -> Response {
-    if crate::api::account::signed_in_user(&headers, &state)
-        .await
-        .is_none()
-    {
+    let Some(user_id) = crate::api::account::signed_in_user(&headers, &state).await else {
         return crate::api::account::sign_in_redirect(
             uri.path_and_query()
                 .map_or("/oauth/authorize", |p| p.as_str()),
         );
-    }
+    };
     let mut params: DenyParams =
         serde_urlencoded::from_str(uri.query().unwrap_or("")).unwrap_or_default();
     if let Ok(form) = serde_urlencoded::from_bytes::<DenyParams>(&body) {
@@ -1894,6 +1943,24 @@ pub async fn authorize_deny(
         let extras = form.extras;
         params.extras.state = extras.state.or(params.extras.state);
         params.extras.response_mode = extras.response_mode.or(params.extras.response_mode);
+    }
+    // `require_functional!`, before `destroy`.
+    let client_id = params.client_id.clone().unwrap_or_default();
+    let redirect_uri = params.redirect_uri.clone().unwrap_or_default();
+    let page = format!(
+        "/oauth/authorize?{}",
+        params.extras.query(&client_id, &redirect_uri, "read")
+    );
+    let locale = crate::locale::Locale::detect(None, None);
+    let continuation = crate::api::account::sign_in::Continuation::Oauth {
+        client_id,
+        redirect_uri,
+        scope: "read".to_owned(),
+        lang: locale.as_str().to_owned(),
+        extras: params.extras.clone(),
+    };
+    if let Some(response) = require_functional(&state, user_id, &page, continuation, locale).await {
+        return response;
     }
     let registered = match params.client_id.as_deref() {
         Some(client_id) => sqlx::query_scalar!(
