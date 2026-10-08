@@ -453,14 +453,18 @@ pub async fn unfollow(
     skip_unmerge: bool,
 ) -> AppResult<()> {
     let name = relationship_lock_name(follower_id, target_id);
-    let Some(_lock) =
+    let Some(lock) =
         crate::redis_lock::try_acquire(state, &name, crate::redis_lock::DEFAULT_TTL_MS).await
     else {
         return Err(AppError::ServiceUnavailable(
             "There was a temporary problem serving your request, please try again".into(),
         ));
     };
-    unfollow_locked(state, follower_id, target_id, skip_unmerge).await
+    let result = unfollow_locked(state, follower_id, target_id, skip_unmerge).await;
+    // Released before returning, as the block `with_redis_lock` runs ends:
+    // a block unfollows both ways, one after the other, under this one key.
+    lock.release().await;
+    result
 }
 
 /// The key `UnfollowService` locks: `Lockable`'s `lock:` and
