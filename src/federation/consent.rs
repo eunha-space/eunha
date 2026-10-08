@@ -177,6 +177,30 @@ pub fn delete_quote_authorization(id: &str, actor: &str, authorization: Value) -
     })
 }
 
+/// `ActivityPub::DeleteFeatureAuthorizationSerializer`: `actor` takes back
+/// its consent to being featured in a collection, the stamp `id`'s
+/// `FeatureAuthorization`, addressed to the public, under the stamp's
+/// context.
+pub fn delete_feature_authorization(
+    stamp: &str,
+    actor: &str,
+    collection: &str,
+) -> anyhow::Result<Value> {
+    let mut object = feature_authorization(stamp, collection, actor)?;
+    let context = object
+        .as_object_mut()
+        .and_then(|o| o.remove("@context"))
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "@context": context,
+        "id": format!("{stamp}#delete"),
+        "type": "Delete",
+        "actor": actor,
+        "to": [vocab::ACTIVITYSTREAMS_PUBLIC],
+        "object": object,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

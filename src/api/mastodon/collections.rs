@@ -913,6 +913,204 @@ pub(crate) async fn distribute_collection_removal(
     }
 }
 
+/// `RevokeCollectionItemService`: the featured account takes its item back.
+/// From a remote collection, its `Delete` of the `FeatureAuthorization` it
+/// gave goes to the collection's owner (`DeliveryWorker`). Upstream also
+/// hands it to `CollectionRawDistributionWorker`, which signs as the
+/// collection's owner and so cannot send for a remote one; that leg is left
+/// out.
+pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()> {
+    let Some(item) = sqlx::query!(
+        r#"UPDATE collection_items ci SET state = 3, updated_at = now()
+           FROM collections c
+           WHERE ci.id = $1 AND c.id = ci.collection_id
+           RETURNING ci.account_id, c.local, c.uri AS "collection_uri?",
+                     c.id AS collection_id, c.account_id AS owner_id"#,
+        item_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    // `distribute_stamp_deletion! if @collection_item.remote?`.
+    if item.local {
+        return Ok(());
+    }
+    let Some(account_id) = item.account_id else {
+        return Ok(());
+    };
+    let Some(signer) = sqlx::query_as!(
+        Account,
+        "SELECT * FROM accounts WHERE id = $1 AND domain IS NULL",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let owner_inbox = sqlx::query_scalar!(
+        "SELECT inbox_url FROM accounts WHERE id = $1",
+        item.owner_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .filter(|inbox| !inbox.is_empty());
+    let (Some(owner_inbox), Some(collection_uri)) = (owner_inbox, item.collection_uri) else {
+        return Ok(());
+    };
+    if !crate::federation::keypair::has_signing_key(state, signer.id)
+        .await
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    let domain = &state.instance.domain;
+    let actor = crate::federation::tag::account_uri_of(domain, &signer);
+    let stamp = ap_coll::feature_authorization_uri(domain, signer.id, item_id);
+    let activity =
+        crate::federation::consent::delete_feature_authorization(&stamp, &actor, &collection_uri)
+            .map_err(AppError::Internal)?;
+    // `signer: @account, always_sign: true`.
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes_signed(
+        state,
+        activity,
+        vec![owner_inbox],
+        format!("{actor}#main-key"),
+        crate::federation::delivery::LinkedData::Always,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to enqueue a feature authorization's deletion");
+    }
+    Ok(())
+}
+
+/// `DeleteCollectionItemService`: an item taken out of its collection, or
+/// with `revoke`, marked revoked. Out of a local collection, a `Remove` of
+/// the item goes to the collection's reach (`CollectionRawDistributionWorker`:
+/// its owner's reach and the accounts it features).
+pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) -> AppResult<()> {
+    let Some(item) = sqlx::query!(
+        r#"SELECT ci.collection_id, c.local, c.account_id AS owner_id
+           FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+           WHERE ci.id = $1"#,
+        item_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    if item.local && revoke {
+        sqlx::query!(
+            "UPDATE collection_items SET state = 3, updated_at = now() WHERE id = $1",
+            item_id
+        )
+        .execute(&state.db)
+        .await?;
+    } else {
+        // `destroy!`, and the counter cache with it.
+        let mut tx = state.db.begin().await?;
+        sqlx::query!("DELETE FROM collection_items WHERE id = $1", item_id)
+            .execute(&mut *tx)
+            .await?;
+        update_item_count(&mut *tx, item.collection_id, -1).await?;
+        tx.commit().await?;
+    }
+    if !item.local || owner_signing_username(state, item.owner_id).await.is_none() {
+        return Ok(());
+    }
+    let Some(owner) = sqlx::query_as!(
+        Account,
+        "SELECT * FROM accounts WHERE id = $1",
+        item.owner_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let domain = &state.instance.domain;
+    let actor = crate::federation::tag::account_uri_of(domain, &owner);
+    // `ActivityPub::RemoveFeaturedItemSerializer`.
+    let activity = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "type": "Remove",
+        "actor": actor,
+        "target": ap_coll::collection_uri(domain, owner.id, item.collection_id),
+        "object": ap_coll::item_uri(domain, owner.id, item_id),
+    });
+    // `CollectionReachFinder#inboxes`: the owner's reach, and the inboxes of
+    // the accounts the collection features.
+    let mut inboxes = crate::federation::delivery::account_reach_inboxes(state, owner.id)
+        .await
+        .map_err(AppError::Internal)?;
+    inboxes.extend(
+        sqlx::query_scalar!(
+            r#"SELECT DISTINCT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url
+                                    ELSE a.inbox_url END AS "inbox!"
+               FROM collection_items ci JOIN accounts a ON a.id = ci.account_id
+               WHERE ci.collection_id = $1 AND a.domain IS NOT NULL AND a.inbox_url <> ''"#,
+            item.collection_id,
+        )
+        .fetch_all(&state.db)
+        .await?,
+    );
+    inboxes.sort();
+    inboxes.dedup();
+    if inboxes.is_empty() {
+        return Ok(());
+    }
+    // Rendered as it is, with no Linked Data Signature.
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+        state,
+        activity,
+        inboxes,
+        format!("{actor}#main-key"),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to enqueue a featured item's removal");
+    }
+    Ok(())
+}
+
+/// `BlockService#handle_collections`: `account_id`, blocking `target_id`,
+/// takes itself out of the target's collections
+/// (`RevokeCollectionItemService`) and the target out of its own
+/// (`DeleteCollectionItemService`).
+pub(crate) async fn handle_block(
+    state: &AppState,
+    account_id: i64,
+    target_id: i64,
+) -> AppResult<()> {
+    let revoked = sqlx::query_scalar!(
+        r#"SELECT ci.id FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+           WHERE c.account_id = $1 AND ci.account_id = $2 ORDER BY ci.id"#,
+        target_id,
+        account_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for item_id in revoked {
+        revoke_item(state, item_id).await?;
+    }
+    let deleted = sqlx::query_scalar!(
+        r#"SELECT ci.id FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+           WHERE c.account_id = $1 AND ci.account_id = $2 ORDER BY ci.id"#,
+        account_id,
+        target_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for item_id in deleted {
+        delete_item(state, item_id, false).await?;
+    }
+    Ok(())
+}
+
 /// `CollectionItem`'s `belongs_to :collection, counter_cache: :item_count`:
 /// creating an item adds one to its collection's `item_count` and destroying
 /// one takes one away (`update_counters`), whatever the item's state. A state
@@ -975,7 +1173,7 @@ pub async fn add_collection_item(
 /// DELETE /api/v1/collections/{id}/items/{item_id}
 pub async fn delete_collection_item(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    Extension(ResolvedInstance(_instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path((collection_id, item_id)): Path<(i64, i64)>,
 ) -> AppResult<impl IntoResponse> {
@@ -986,26 +1184,18 @@ pub async fn delete_collection_item(
     if c.account_id != auth.account_id {
         return Err(AppError::Forbidden);
     }
-    let deleted = sqlx::query!(
-        "DELETE FROM collection_items WHERE id = $1 AND collection_id = $2",
+    // `@collection.collection_items.find(params[:id])`.
+    let found = sqlx::query_scalar!(
+        "SELECT id FROM collection_items WHERE id = $1 AND collection_id = $2",
         item_id,
         collection_id,
     )
-    .execute(&state.db)
+    .fetch_optional(&state.db)
     .await?;
-    if deleted.rows_affected() == 0 {
+    if found.is_none() {
         return Err(AppError::NotFound);
     }
-    // `@collection_item.destroy!`.
-    update_item_count(&state.db, collection_id, -1).await?;
-    distribute_collection(
-        &state,
-        &instance.domain,
-        collection_id,
-        auth.account_id,
-        false,
-    )
-    .await;
+    delete_item(&state, item_id, false).await?;
     Ok(Json(json!({})))
 }
 

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.collection_id, c.local, c.account_id AS owner_id\n           FROM collection_items ci JOIN collections c ON c.id = ci.collection_id\n           WHERE ci.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "collection_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "local",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7cdb7aad492b9be9532fe9b19f715b4e3fb59c69c93119ca019f8b093dce40d7"
+}

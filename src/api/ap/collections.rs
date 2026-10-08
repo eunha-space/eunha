@@ -48,13 +48,13 @@ pub(crate) fn collection_url(domain: &str, id: i64) -> String {
 }
 
 /// `TagManager#uri_for` an item of a local collection.
-fn item_uri(domain: &str, account_id: i64, item_id: i64) -> String {
+pub(crate) fn item_uri(domain: &str, account_id: i64, item_id: i64) -> String {
     format!("https://{domain}/ap/users/{account_id}/collection_items/{item_id}")
 }
 
 /// `ap_account_feature_authorization_url`: the stamp by which a local
 /// account consented to being featured.
-fn feature_authorization_uri(domain: &str, account_id: i64, item_id: i64) -> String {
+pub(crate) fn feature_authorization_uri(domain: &str, account_id: i64, item_id: i64) -> String {
     format!("https://{domain}/ap/users/{account_id}/feature_authorizations/{item_id}")
 }
 

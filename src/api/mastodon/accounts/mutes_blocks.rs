@@ -263,6 +263,19 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
         .await;
     }
 
+    // `handle_collections`: out of each other's collections.
+    crate::api::mastodon::collections::handle_block(state, account_id, target_id).await?;
+    // `NotificationPermission.where(account:, from_account: target_account)
+    // .destroy_all`: the blocked account's private mentions are filtered
+    // again.
+    sqlx::query!(
+        "DELETE FROM notification_permissions WHERE account_id = $1 AND from_account_id = $2",
+        account_id,
+        target_id,
+    )
+    .execute(&state.db)
+    .await?;
+
     // `BlockWorker.perform_async(account.id, target_account.id)`.
     queue_block_worker(state, account_id, target_id).await;
 
