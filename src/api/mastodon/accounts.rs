@@ -301,305 +301,152 @@ pub async fn get_account_statuses(
     }
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
 
-    // If the target has blocked the viewer, deny access (Mastodon returns 403).
-    if let Some(vid) = viewer_id {
-        if vid != account.id {
-            let blocked = sqlx::query_scalar!(
-                "SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2",
-                account.id,
-                vid,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .is_some();
-            if blocked {
-                return Err(AppError::Forbidden);
-            }
+    // `AccountStatusesFilter#initial_scope`: no statuses for a viewer the
+    // account blocks (`blocked?`), rather than an error.
+    if let Some(vid) = viewer_id.filter(|&vid| vid != account.id) {
+        let blocked = sqlx::query_scalar!(
+            "SELECT 1 FROM blocks WHERE account_id = $1 AND target_account_id = $2",
+            account.id,
+            vid,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .is_some();
+        if blocked {
+            return Ok((HeaderMap::new(), Json(Vec::<super::types::Status>::new())));
         }
     }
 
     let is_self = viewer_id == Some(account.id);
-    let is_follower = if !is_self {
-        if let Some(vid) = viewer_id {
-            sqlx::query_scalar!(
-                "SELECT EXISTS(SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2)",
-                vid, account.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(false)
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    if q.pinned == Some(true) {
-        let pinned_statuses = sqlx::query_as!(
-            crate::db::models::Status,
-            r#"SELECT s.* FROM statuses s
-               JOIN status_pins sp ON sp.status_id = s.id
-               WHERE sp.account_id = $1 AND s.deleted_at IS NULL
-                 AND (
-                   s.visibility IN (0, 1)
-                   OR ($2::boolean = true)
-                   OR ($3::boolean = true AND s.visibility = 2)
-                 )
-               ORDER BY sp.id DESC"#,
+    let is_follower = match viewer_id {
+        Some(vid) if !is_self => sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM follows WHERE account_id = $1 AND target_account_id = $2)",
+            vid,
             account.id,
-            is_self,
-            is_follower,
         )
-        .fetch_all(&state.db)
-        .await?;
-        let pin_ids: Vec<i64> = pinned_statuses
-            .iter()
-            .map(|s| s.reblog_of_id.unwrap_or(s.id))
-            .collect();
-        let pin_ctxs = if let Some(vid) = viewer_id {
-            super::statuses::batch_viewer_contexts(&state, vid, &pin_ids).await?
-        } else {
-            std::collections::HashMap::new()
-        };
-        let pin_status_ids: Vec<i64> = pinned_statuses.iter().map(|s| s.id).collect();
-        let pin_media_map = batch_status_media(&state, &pin_status_ids).await?;
-        let pin_reblog_map = batch_reblog_data(&state, &pinned_statuses).await?;
-        let pin_quote_map = batch_quote_data(&state, &pinned_statuses, viewer_id).await?;
-        let pin_reblog_ids: Vec<i64> = pin_reblog_map.values().map(|(rs, _, _)| rs.id).collect();
-        let mut pin_enrich_ids = pin_status_ids.clone();
-        pin_enrich_ids.extend_from_slice(&pin_reblog_ids);
-        let pin_tags_map = batch_statuses_tags(&state, &pin_enrich_ids).await?;
-        let pin_mentions_map = batch_status_mentions(&state, &pin_enrich_ids).await?;
-        let all_pin_statuses: Vec<crate::db::models::Status> = pinned_statuses
-            .iter()
-            .cloned()
-            .chain(pin_reblog_map.values().map(|(rs, _, _)| rs.clone()))
-            .collect();
-        let pin_emojis_map = batch_status_emojis(&state, &all_pin_statuses).await?;
-        let pin_polls_map = batch_status_polls(&state, &pin_enrich_ids, viewer_id).await?;
-        let pin_cards_map = batch_status_cards(&state, &pin_enrich_ids, viewer_id).await?;
-        let pin_all_accounts_for_emoji: Vec<crate::db::models::Account> = {
-            let mut seen = std::collections::HashSet::new();
-            std::iter::once(&account)
-                .chain(pin_reblog_map.values().map(|(_, ra, _)| ra))
-                .filter(|a| seen.insert(a.id))
-                .cloned()
-                .collect()
-        };
-        let pin_account_emojis_map =
-            batch_account_emojis(&state, &pin_all_accounts_for_emoji).await;
-        let pin_account_roles_map = batch_account_roles(&state, &pin_all_accounts_for_emoji).await;
-        let mut result = Vec::with_capacity(pinned_statuses.len());
-        for s in &pinned_statuses {
-            let media = pin_media_map.get(&s.id).cloned().unwrap_or_default();
-            let reblog = pin_reblog_map.get(&s.id).cloned();
-            let effective_id = s.reblog_of_id.unwrap_or(s.id);
-            let ctx = pin_ctxs.get(&effective_id).cloned();
-            let mentions = pin_mentions_map.get(&s.id).cloned().unwrap_or_default();
-            let rb_mentions = reblog
-                .as_ref()
-                .and_then(|(rs, _, _)| pin_mentions_map.get(&rs.id))
-                .cloned()
-                .unwrap_or_default();
-            let mut api_status = status_from_db(
-                &state.urls,
-                s,
-                &account,
-                media,
-                reblog,
-                ctx,
-                &mentions,
-                &rb_mentions,
-            );
-            api_status.account.emojis = pin_account_emojis_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
-            api_status.account.roles = pin_account_roles_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
-            api_status.tags = pin_tags_map.get(&s.id).cloned().unwrap_or_default();
-            api_status.mentions = mentions;
-            api_status.emojis = pin_emojis_map.get(&s.id).cloned().unwrap_or_default();
-            api_status.poll = pin_polls_map.get(&s.id).cloned();
-            api_status.card = pin_cards_map.get(&s.id).cloned();
-            api_status.quote = pin_quote_map.get(&s.id).cloned();
-            if let Some(ref mut rb) = api_status.reblog {
-                let rid: i64 = rb.id.parse().unwrap_or(0);
-                let rb_id: i64 = rb.account.id.parse().unwrap_or(0);
-                rb.account.emojis = pin_account_emojis_map
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
-                rb.account.roles = pin_account_roles_map
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
-                rb.tags = pin_tags_map.get(&rid).cloned().unwrap_or_default();
-                rb.mentions = rb_mentions;
-                rb.emojis = pin_emojis_map.get(&rid).cloned().unwrap_or_default();
-                rb.poll = pin_polls_map.get(&rid).cloned();
-                rb.card = pin_cards_map.get(&rid).cloned();
-            }
-            api_status.pinned = Some(true);
-            result.push(api_status);
-        }
-        hydrate_status_stats(&state, result.iter_mut(), viewer_id).await;
-        return Ok((HeaderMap::new(), Json(result)));
-    }
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(false),
+        _ => false,
+    };
 
     let limit = q.pagination.limit_clamped(20, 40);
-    let max_id = q
-        .pagination
-        .max_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok());
-    let since_id = q
-        .pagination
-        .since_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok());
-    let min_id = q
-        .pagination
-        .min_id
-        .as_deref()
-        .and_then(|s| s.parse::<i64>().ok());
+    let parse_id = |s: &Option<String>| s.as_deref().and_then(|s| s.parse::<i64>().ok());
+    let max_id = parse_id(&q.pagination.max_id);
+    let since_id = parse_id(&q.pagination.since_id);
+    let min_id = parse_id(&q.pagination.min_id);
 
-    let tagged_lower = q.tagged.as_deref().map(|t| t.to_lowercase());
+    let pinned = q.pinned.unwrap_or(false);
+    let only_media = q.only_media.unwrap_or(false);
+    let exclude_replies = q.exclude_replies.unwrap_or(false);
+    let exclude_reblogs = q.exclude_reblogs.unwrap_or(false);
     let exclude_direct = q.exclude_direct.unwrap_or(false);
-    let statuses = if min_id.is_some() {
-        sqlx::query_as!(
-            crate::db::models::Status,
-            r#"SELECT statuses.* FROM statuses
-               WHERE account_id = $1
-                 AND deleted_at IS NULL
-                 AND ($2::bigint IS NULL OR id > $2)
-                 AND ($3::boolean IS NOT TRUE OR reblog_of_id IS NULL)
-                 AND ($4::boolean IS NOT TRUE OR in_reply_to_id IS NULL OR in_reply_to_account_id = $1)
-                 AND (
-                   visibility IN (0, 1)
-                   OR ($5::boolean = true)
-                   OR ($6::boolean = true AND visibility = 2)
+    // `tagged?` is `params[:tagged].present?`; `Tag.find_normalized` of
+    // a name that is no tag finds none.
+    let tagged = q
+        .tagged
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+        .map(crate::search::tags::normalize);
+    // `reblogs_may_occur?`, which only `filtered_scope` asks.
+    let filter_reblogs =
+        viewer_id.is_some() && !is_self && !exclude_reblogs && !only_media && tagged.is_none();
+
+    // `AccountStatusesFilter#results`, paginated as
+    // `to_a_paginated_by_id`: `min_id` reorders by id, ascending; otherwise
+    // newest first, after the pin's time when `pinned` reorders by it.
+    let statuses = sqlx::query_as!(
+        crate::db::models::Status,
+        r#"SELECT statuses.* FROM statuses
+           WHERE account_id = $1
+             AND deleted_at IS NULL
+             AND ($2::bigint IS NULL OR id < $2)
+             AND ($3::bigint IS NULL OR $4::bigint IS NOT NULL OR id > $3)
+             AND ($4::bigint IS NULL OR id > $4)
+             -- `initial_scope`: the visibilities the viewer may see.
+             AND (
+               CASE
+                 WHEN $5::bigint IS NULL THEN visibility IN (0, 1)
+                 WHEN $6::boolean THEN NOT $8::boolean OR visibility IN (0, 1, 2)
+                 ELSE visibility IN (0, 1)
+                   OR ($7::boolean AND visibility = 2)
                    OR (
-                     NOT $10::boolean
-                     AND $11::bigint IS NOT NULL
-                     AND EXISTS (SELECT 1 FROM mentions WHERE status_id = statuses.id AND account_id = $11)
+                     NOT $8::boolean
+                     AND EXISTS (SELECT 1 FROM mentions
+                                 WHERE status_id = statuses.id AND account_id = $5)
                    )
-                 )
-                 AND (
-                   text != ''
-                   OR reblog_of_id IS NOT NULL
-                   OR poll_id IS NOT NULL
-                   OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
-                 )
-                 -- `only_media_scope`: `without_empty_attachments`, and an
-                 -- attachment of the account's.
-                 AND ($8::boolean IS NOT TRUE OR (
-                   (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')
-                   AND EXISTS (SELECT 1 FROM media_attachments m
-                               WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)
-                 ))
-                 AND ($9::text IS NULL OR EXISTS (
-                   SELECT 1 FROM statuses_tags st
-                   JOIN tags t ON t.id = st.tag_id
-                   WHERE st.status_id = statuses.id AND t.name = $9
-                 ))
-                 AND ($11::bigint IS NULL OR reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM blocks b
-                   JOIN statuses orig ON orig.id = statuses.reblog_of_id
-                   WHERE b.account_id = $11 AND b.target_account_id = orig.account_id
-                 ))
-                 AND ($11::bigint IS NULL OR reblog_of_id IS NULL OR NOT EXISTS (
+               END
+             )
+             -- `pinned_scope`.
+             AND (NOT $9::boolean OR EXISTS (
+               SELECT 1 FROM status_pins sp
+               WHERE sp.status_id = statuses.id AND sp.account_id = $1
+             ))
+             -- `only_media_scope`: `without_empty_attachments`, and an
+             -- attachment of the account's.
+             AND (NOT $10::boolean OR (
+               (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')
+               AND EXISTS (SELECT 1 FROM media_attachments m
+                           WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)
+             ))
+             -- `no_replies_scope`: `without_replies`.
+             AND (NOT $11::boolean OR reply = false OR in_reply_to_account_id = account_id)
+             -- `no_reblogs_scope`.
+             AND (NOT $12::boolean OR reblog_of_id IS NULL)
+             -- `hashtag_scope`.
+             AND ($13::text IS NULL OR EXISTS (
+               SELECT 1 FROM statuses_tags st
+               JOIN tags t ON t.id = st.tag_id
+               WHERE st.status_id = statuses.id AND lower(t.name) = lower($13)
+             ))
+             -- `filtered_reblogs_scope`: a boost of an account the viewer
+             -- excludes from timelines (blocks either way, mutes) or of a
+             -- domain it blocks.
+             AND (NOT $14::boolean OR reblog_of_id IS NULL OR EXISTS (
+               SELECT 1 FROM statuses orig
+               JOIN accounts oa ON oa.id = orig.account_id
+               WHERE orig.id = statuses.reblog_of_id
+                 AND orig.deleted_at IS NULL
+                 AND (oa.domain IS NULL OR NOT EXISTS (
                    SELECT 1 FROM account_domain_blocks adb
-                   JOIN statuses orig ON orig.id = statuses.reblog_of_id
-                   JOIN accounts orig_a ON orig_a.id = orig.account_id
-                   WHERE adb.account_id = $11 AND adb.domain = orig_a.domain
+                   WHERE adb.account_id = $5 AND adb.domain = oa.domain
                  ))
-               ORDER BY id ASC
-               LIMIT $7"#,
-            account.id,
-            min_id,
-            q.exclude_reblogs.unwrap_or(false),
-            q.exclude_replies.unwrap_or(false),
-            is_self,
-            is_follower,
-            limit,
-            q.only_media.unwrap_or(false),
-            tagged_lower,
-            exclude_direct,
-            viewer_id,
-        )
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        sqlx::query_as!(
-            crate::db::models::Status,
-            r#"SELECT statuses.* FROM statuses
-               WHERE account_id = $1
-                 AND deleted_at IS NULL
-                 AND ($2::bigint IS NULL OR id < $2)
-                 AND ($3::bigint IS NULL OR id > $3)
-                 AND ($4::boolean IS NOT TRUE OR reblog_of_id IS NULL)
-                 AND ($5::boolean IS NOT TRUE OR in_reply_to_id IS NULL OR in_reply_to_account_id = $1)
-                 AND (
-                   visibility IN (0, 1)
-                   OR ($6::boolean = true)
-                   OR ($7::boolean = true AND visibility = 2)
-                   OR (
-                     NOT $11::boolean
-                     AND $12::bigint IS NOT NULL
-                     AND EXISTS (SELECT 1 FROM mentions WHERE status_id = statuses.id AND account_id = $12)
-                   )
-                 )
-                 AND (
-                   text != ''
-                   OR reblog_of_id IS NOT NULL
-                   OR poll_id IS NOT NULL
-                   OR EXISTS (SELECT 1 FROM media_attachments WHERE status_id = statuses.id)
-                 )
-                 -- `only_media_scope`: `without_empty_attachments`, and an
-                 -- attachment of the account's.
-                 AND ($9::boolean IS NOT TRUE OR (
-                   (ordered_media_attachment_ids IS NULL OR ordered_media_attachment_ids <> '{}')
-                   AND EXISTS (SELECT 1 FROM media_attachments m
-                               WHERE m.status_id = statuses.id AND m.account_id = statuses.account_id)
-                 ))
-                 AND ($10::text IS NULL OR EXISTS (
-                   SELECT 1 FROM statuses_tags st
-                   JOIN tags t ON t.id = st.tag_id
-                   WHERE st.status_id = statuses.id AND t.name = $10
-                 ))
-                 AND ($12::bigint IS NULL OR reblog_of_id IS NULL OR NOT EXISTS (
+                 AND NOT EXISTS (
                    SELECT 1 FROM blocks b
-                   JOIN statuses orig ON orig.id = statuses.reblog_of_id
-                   WHERE b.account_id = $12 AND b.target_account_id = orig.account_id
-                 ))
-                 AND ($12::bigint IS NULL OR reblog_of_id IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM account_domain_blocks adb
-                   JOIN statuses orig ON orig.id = statuses.reblog_of_id
-                   JOIN accounts orig_a ON orig_a.id = orig.account_id
-                   WHERE adb.account_id = $12 AND adb.domain = orig_a.domain
-                 ))
-               ORDER BY id DESC
-               LIMIT $8"#,
-            account.id,
-            max_id,
-            since_id,
-            q.exclude_reblogs.unwrap_or(false),
-            q.exclude_replies.unwrap_or(false),
-            is_self,
-            is_follower,
-            limit,
-            q.only_media.unwrap_or(false),
-            tagged_lower,
-            exclude_direct,
-            viewer_id,
-        )
-        .fetch_all(&state.db)
-        .await?
-    };
+                   WHERE (b.account_id = $5 AND b.target_account_id = oa.id)
+                      OR (b.account_id = oa.id AND b.target_account_id = $5)
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM mutes mu
+                   WHERE mu.account_id = $5 AND mu.target_account_id = oa.id
+                 )
+             ))
+           ORDER BY
+             CASE WHEN $4::bigint IS NOT NULL THEN id END ASC,
+             CASE WHEN $4::bigint IS NULL AND $9::boolean THEN (
+               SELECT sp.created_at FROM status_pins sp
+               WHERE sp.status_id = statuses.id AND sp.account_id = $1
+             ) END DESC,
+             id DESC
+           LIMIT $15"#,
+        account.id,
+        max_id,
+        since_id,
+        min_id,
+        viewer_id,
+        is_self,
+        is_follower,
+        exclude_direct,
+        pinned,
+        only_media,
+        exclude_replies,
+        exclude_reblogs,
+        tagged,
+        filter_reblogs,
+        limit,
+    )
+    .fetch_all(&state.db)
+    .await?;
     // A `min_id` page reads newest first too.
     let statuses = crate::api::mastodon::timelines::newest_first(min_id, statuses);
 
@@ -710,7 +557,8 @@ pub async fn get_account_statuses(
         .first()
         .zip(result.last())
         .map(|(n, o)| (n.id.as_str(), o.id.as_str()));
-    let resp_headers = super::link_headers(&req_headers, &uri, bounds);
+    let records_continue = result.len() as i64 == limit;
+    let resp_headers = super::link_headers_continuing(&req_headers, &uri, bounds, records_continue);
     Ok((resp_headers, Json(result)))
 }
 

@@ -3756,9 +3756,11 @@ async fn test_unlock_account_approves_pending_follows() {
     );
 }
 
-/// GET /api/v1/accounts/:id/statuses returns 403 when target has blocked the viewer.
+/// GET /api/v1/accounts/:id/statuses is empty, not an error, for a viewer
+/// the account blocks: `AccountStatusesFilter#initial_scope` is
+/// `Status.none` when `blocked?`.
 #[tokio::test]
-async fn test_account_statuses_returns_403_when_blocked_by_target() {
+async fn test_account_statuses_are_empty_when_blocked_by_target() {
     let ctx = TestContext::new("acct-statuses-blocked").await;
 
     ctx.api
@@ -3782,10 +3784,192 @@ async fn test_account_statuses_returns_403_when_blocked_by_target() {
             Some(&ctx.bob_token),
         )
         .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().get("link").is_none());
+    let statuses: Vec<Value> = resp.json().await.unwrap();
+    assert!(statuses.is_empty(), "{statuses:?}");
+}
+
+/// A quote with no text of its own is listed: Mastodon has no condition on
+/// the text.
+#[tokio::test]
+async fn test_account_statuses_list_a_quote_without_text() {
+    let ctx = TestContext::new("acct-statuses-quote").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "quote me", "public")
+        .await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let quoted: i64 = status["id"].as_str().unwrap().parse().unwrap();
+    // A remote server's quote-only post, as it is stored: no text.
+    let quote_id: i64 = sqlx::query_scalar(
+        "INSERT INTO statuses (id, account_id, text, visibility, local, created_at, updated_at)
+         VALUES (timestamp_id('statuses'), $1, '', 0, true, now(), now()) RETURNING id",
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO quotes (status_id, quoted_status_id, account_id, quoted_account_id, state, created_at, updated_at)
+         VALUES ($1, $2, $3, $3, 1, now(), now())",
+    )
+    .bind(quote_id)
+    .bind(quoted)
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let statuses: Vec<Value> = ctx
+        .api
+        .get(&format!("/api/v1/accounts/{}/statuses", ctx.alice_id), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        statuses
+            .iter()
+            .any(|s| s["id"].as_str() == Some(quote_id.to_string().as_str())),
+        "{statuses:?}"
+    );
+}
+
+/// `filtered_reblogs_scope`: a boost of an account the viewer mutes, or
+/// that blocks the viewer, is left out; the author still sees it.
+#[tokio::test]
+async fn test_account_statuses_leave_out_boosts_of_excluded_accounts() {
+    let ctx = TestContext::new("acct-statuses-reblogs").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    let (dave_id, dave_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "dave", "dave@example.com").await;
+    let by_carol = ctx.api.post_status(&carol_token, "carol's", "public").await;
+    let by_dave = ctx.api.post_status(&dave_token, "dave's", "public").await;
+    for status in [&by_carol, &by_dave] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{}/reblog", status["id"].as_str().unwrap()),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    // Bob mutes Carol; Dave blocks Bob.
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/mute"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    ctx.api
+        .post_json(
+            &format!("/api/v1/accounts/{}/block", ctx.bob_id),
+            Some(&dave_token),
+            &json!({}),
+        )
+        .await;
+    let _ = dave_id;
+
+    let reblogged = |statuses: &[Value]| -> Vec<String> {
+        statuses
+            .iter()
+            .filter_map(|s| s["reblog"]["id"].as_str().map(str::to_owned))
+            .collect()
+    };
+    let for_bob: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/statuses", ctx.alice_id),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(reblogged(&for_bob).is_empty(), "{for_bob:?}");
+    let for_alice: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/statuses", ctx.alice_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(reblogged(&for_alice).len(), 2, "{for_alice:?}");
+}
+
+/// `pinned=true` is one filter among the others: it pages by `limit` and
+/// `max_id`, newest pin first, and `exclude_replies` still applies.
+#[tokio::test]
+async fn test_account_statuses_pinned_pages_with_the_other_filters() {
+    let ctx = TestContext::new("acct-pinned-paged").await;
+    let mut ids = vec![];
+    for text in ["one", "two", "three"] {
+        let status = ctx.api.post_status(&ctx.alice_token, text, "public").await;
+        ids.push(status["id"].as_str().unwrap().to_owned());
+    }
+    let bob_status = ctx.api.post_status(&ctx.bob_token, "hi", "public").await;
+    let reply = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "@bob reply", "in_reply_to_id": bob_status["id"]}),
+        )
+        .await
+        .json::<Value>()
+        .await
+        .unwrap();
+    // Pinned in the order three, one, reply: the reply pinned last.
+    for id in [&ids[2], &ids[0], &reply["id"].as_str().unwrap().to_owned()] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{id}/pin"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let page = |query: String| {
+        let ctx = &ctx;
+        async move {
+            let statuses: Vec<Value> = ctx
+                .api
+                .get(
+                    &format!("/api/v1/accounts/{}/statuses?{query}", ctx.alice_id),
+                    None,
+                )
+                .await
+                .json()
+                .await
+                .unwrap();
+            statuses
+                .iter()
+                .map(|s| s["id"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        }
+    };
     assert_eq!(
-        resp.status(),
-        StatusCode::FORBIDDEN,
-        "blocked user should not be able to view the blocker's statuses"
+        page("pinned=true&exclude_replies=true".into()).await,
+        vec![ids[0].clone(), ids[2].clone()]
+    );
+    assert_eq!(
+        page("pinned=1&limit=1".into()).await,
+        vec![reply["id"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(
+        page(format!("pinned=true&max_id={}", ids[2])).await,
+        vec![ids[0].clone()]
     );
 }
 

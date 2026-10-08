@@ -2163,7 +2163,8 @@ async fn test_account_pins_endpoint() {
     let pins: Vec<Value> = resp.json().await.unwrap();
     assert_eq!(pins.len(), 1);
     assert_eq!(pins[0]["id"].as_str(), Some(id));
-    assert_eq!(pins[0]["pinned"].as_bool(), Some(true));
+    // `pinned` is the author's alone (`StatusSerializer#pinnable?`).
+    assert!(pins[0].get("pinned").is_none(), "{pins:?}");
 }
 
 /// Unpinning removes the status from GET /api/v1/accounts/{id}/statuses?pinned=true.
