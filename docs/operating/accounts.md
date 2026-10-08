@@ -196,15 +196,46 @@ Push notifications
 
 `POST /api/v1/push/subscription` destroys the token's subscription and makes
 a new one, with a new id, under the member's `lock:push_subscription:<user>`
-lock; a request that finds it held is a 503. A push to a subscription made
-with `/api/v1/push/subscription` is sent as
-Mastodon's `Web::PushNotificationWorker` sends it: `aes128gcm` with RFC 8292
-VAPID for a subscription made with `standard`, `aesgcm` otherwise, with a
-48-hour `TTL`, `Urgency: normal`, and an `Unsubscribe-URL`. That URL,
-`DELETE /api/web/push_subscriptions/:token`, removes the subscription for
-whoever calls it while the token is good, 48 hours. An endpoint answering a
-4xx other than 408 or 429 has the subscription removed; any other failure is
-tried again, up to five times.
+lock; a request that finds it held is a 503. The endpoint must be an `http` or
+`https` URL and the keys must be able to encrypt a message, or the request is a
+422 (the old subscription stays destroyed, as in Mastodon). The endpoints take
+JSON or a form (`subscription[keys][auth]`, `data[alerts][mention]`).
+
+A subscription's `data` is stored as given: the `policy` and the
+`alerts` named in Mastodon's notification types, nothing else, and no
+defaults. An alert that is not given is off. `PUT` replaces the data
+wholesale, and blank data is stored as `{}`, whose policy reads `all`. The
+response reads each alert back cast as Rails casts a boolean, so a form's
+`"1"` reads `true`.
+
+A notification is pushed to each of the recipient's subscriptions whose alert
+for its type is on and whose policy allows the sender: `all`, `followed`
+(the recipient follows the sender), `follower` (the sender follows the
+recipient) or `none`. Every type can be pushed, the staff types
+(`admin.sign_up`, `admin.report`), `moderation_warning` and
+`severed_relationships` among them.
+
+A push is sent as Mastodon's `Web::PushNotificationWorker` sends it:
+`aes128gcm` with RFC 8292 VAPID for a subscription made with `standard`,
+`aesgcm` otherwise, with a 48-hour `TTL`, `Urgency: normal`, and an
+`Unsubscribe-URL`. That URL, `DELETE /api/web/push_subscriptions/:token`,
+removes the subscription for whoever calls it while the token is good, 48
+hours. An endpoint answering a 4xx other than 408 or 429 has the subscription
+removed; any other failure is tried again, up to five times.
+
+When the push is sent, not when it is queued, the worker checks again: a
+notification last updated more than 48 hours ago, one whose post or other
+activity is gone, or one the subscription no longer wants is dropped, and a
+subscription that is no longer valid is removed. The payload is rendered
+then too, as `Web::NotificationSerializer` renders it: the subscription's
+access token, the subscriber's locale, the notification's id and type, the
+sender's avatar, a title from `notification_mailer.<type>.subject` naming the
+sender in the subscriber's locale (English or Korean; any other locale gets
+the English subject), and a body that is the post's content warning or text,
+or else the sender's bio, without tags and cut to 140 characters. A type
+Mastodon has no subject for, `annual_report`, is titled as Rails titles a
+missing translation; the collection types are titled with what happened
+instead (see *divergences.toml*).
 
 
 Multiple accounts in the web client

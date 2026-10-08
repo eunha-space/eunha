@@ -871,6 +871,27 @@ since = "4.7.1"
 reviewed_for = "4.7.2"
 
 [[divergence]]
+id = "push-titles-in-english-and-korean"
+kind = "omission"
+summary = "Titles a web push in English or Korean only"
+mastodon = """
+Renders `Web::NotificationSerializer` in the subscriber's locale, so the \
+title, `notification_mailer.<type>.subject`, is in whichever of its locales \
+the member chose, falling back to the default locale's."""
+eunha = """
+Carries the subjects in English and Korean, the two locales its server-side \
+text has; a member with any other locale is pushed the English subject, \
+though `preferred_locale` still names their locale."""
+why = """
+Eunha's server-rendered text, mail and pages alike, is written in those two \
+locales; copying every other locale's subjects for pushes alone would leave \
+them the only translated strings, and the clients localise from \
+`notification_type` anyway."""
+evidence = "src/push.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
 id = "earlier-collection-addresses-still-served"
 kind = "addition"
 summary = "Still answers at the collection addresses eunha named before it named them as Mastodon does"

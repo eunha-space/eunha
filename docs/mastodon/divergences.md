@@ -45,7 +45,8 @@ The recorded decisions cover:
  -  the DeepL endpoint setting;
  -  the auxiliary service provider admin API;
  -  remote media linked rather than downloaded, which the operator chose;
- -  the web push title of a collection notification;
+ -  the web push title of a collection notification, and the locales push
+    titles are written in;
  -  the collection addresses eunha named before, still answered;
  -  the followers digests, cached in Redis entries of eunha's own;
  -  deliveries to a suspended domain, dropped as they are queued;

@@ -1463,6 +1463,9 @@ mod tests {
                 );
             }
         }
+        // Any other locale gets the English subject (divergences.toml,
+        // `push-titles-in-english-and-korean`).
+        assert_eq!(push_title("ja", "follow", "A"), "A is now following you");
         assert_eq!(
             push_title("ja", "annual_report", "A"),
             "Translation missing: ja.notification_mailer.annual_report.subject"
