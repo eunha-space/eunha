@@ -861,3 +861,54 @@ async fn test_a_federated_boost_takes_the_announce_lock() {
         .unwrap();
     assert_eq!(statuses_count(&ctx, &booster_id.to_string()).await, 1);
 }
+
+/// `Announce#perform` makes its checks that only read before it takes the
+/// lock: an Announce nobody here has reason to store is dropped at once,
+/// even while another holds the lock on its object, rather than waiting
+/// for it and failing.
+#[tokio::test]
+async fn test_an_unrelated_boost_does_not_wait_for_the_announce_lock() {
+    let ctx = TestContext::new("counters-announce-unrelated").await;
+    let domain = "announce-unrelated.invalid";
+    let actor_uri = format!("https://{domain}/users/booster");
+    let booster_id = eunha::snowflake::next_id();
+    sqlx::query!(
+        r#"INSERT INTO accounts
+             (id, username, domain, display_name, note, url, uri, public_key,
+              inbox_url, outbox_url, created_at, updated_at)
+           VALUES ($1, 'booster', $2, 'booster', '', $3::text, $3::text, 'remote-key',
+                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+        booster_id,
+        domain,
+        actor_uri,
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    // A post nobody here has, by an account nobody here follows.
+    let object_uri = format!("https://{domain}/statuses/1");
+    let announce = serde_json::json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("https://{domain}/activities/announce-1"),
+        "type": "Announce",
+        "actor": actor_uri,
+        "object": object_uri,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    });
+
+    let held =
+        eunha::redis_lock::try_acquire(&ctx.state, &format!("lock:announce:{object_uri}"), 60_000)
+            .await
+            .unwrap();
+    let started = std::time::Instant::now();
+    eunha::api::ap::inbox::received(&ctx.state, announce)
+        .await
+        .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(1500),
+        "waited {:?} for a lock it had no need of",
+        started.elapsed()
+    );
+    held.release().await;
+    assert_eq!(statuses_count(&ctx, &booster_id.to_string()).await, 0);
+}

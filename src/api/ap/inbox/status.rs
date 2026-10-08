@@ -216,29 +216,9 @@ pub(super) async fn remove_remote_status(state: &AppState, status_id: i64) -> Ap
     Ok(())
 }
 
+/// `ActivityPub::Activity::Announce#perform`: the checks that only read,
+/// then the rest under its lock.
 pub(super) async fn handle_announce(
-    state: &AppState,
-    instance: &crate::config::InstanceConfig,
-    activity: &Value,
-) -> AppResult<()> {
-    // `with_redis_lock("announce:#{value_or_id(@object)}")`, so that two
-    // copies of one boost are not both stored. Eunha takes it before the
-    // checks Mastodon makes first, which only read.
-    let Some(object_id) = activity
-        .get("object")
-        .and_then(crate::federation::json_ld::value_or_id)
-        .map(str::to_owned)
-    else {
-        return announce(state, instance, activity).await;
-    };
-    let lock = super::acquire_lockable_or_retry(state, &format!("announce:{object_id}")).await?;
-    let result = Box::pin(announce(state, instance, activity)).await;
-    lock.release().await;
-    result
-}
-
-/// `ActivityPub::Activity::Announce#perform`, under its lock.
-async fn announce(
     state: &AppState,
     _instance: &crate::config::InstanceConfig,
     activity: &Value,
@@ -286,7 +266,7 @@ async fn announce(
             .await;
 
     // Find the boosted status in our database.
-    let mut original_id = sqlx::query_scalar!(
+    let original_id = sqlx::query_scalar!(
         "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
         boosted_uri,
     )
@@ -312,6 +292,57 @@ async fn announce(
         tracing::debug!(announce_uri, "Announce: not related to local activity");
         return Ok(());
     }
+
+    // `with_redis_lock("announce:#{value_or_id(@object)}")`, taken once the
+    // checks above have passed, as Mastodon takes it, so that two copies of
+    // one boost are not both stored.
+    let Some(object_id) = object.and_then(crate::federation::json_ld::value_or_id) else {
+        return Ok(());
+    };
+    let lock = super::acquire_lockable_or_retry(state, &format!("announce:{object_id}")).await?;
+    let result = Box::pin(store_boost(
+        state,
+        activity,
+        Announce {
+            actor_uri,
+            announce_uri,
+            boosted_uri,
+            booster_id,
+            requested_through_relay,
+        },
+    ))
+    .await;
+    lock.release().await;
+    result
+}
+
+/// What [`handle_announce`] found out before taking its lock.
+struct Announce<'a> {
+    actor_uri: &'a str,
+    announce_uri: &'a str,
+    boosted_uri: &'a str,
+    booster_id: i64,
+    requested_through_relay: bool,
+}
+
+/// The block `Announce#perform` runs under its lock: `status_from_object`,
+/// and the boost of it stored.
+async fn store_boost(state: &AppState, activity: &Value, announce: Announce<'_>) -> AppResult<()> {
+    let Announce {
+        actor_uri,
+        announce_uri,
+        boosted_uri,
+        booster_id,
+        requested_through_relay,
+    } = announce;
+    let object = activity.get("object");
+    // `status_from_uri(object_uri)`, read again now that the lock is held.
+    let mut original_id = sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
+        boosted_uri,
+    )
+    .fetch_optional(&state.db)
+    .await?;
 
     // `status_from_object`: an embedded self-boost is taken as the `Create`
     // it is; anything else is fetched, on behalf of a local follower of the
