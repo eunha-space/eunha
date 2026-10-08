@@ -358,6 +358,13 @@ refuses it there: a domain allow with
 filter and a report with a 500, which nothing in Mastodon rescues; the peers
 search with no domains.
 
+A domain block covers its domain and every subdomain of it, port included, as
+Mastodon's `DomainBlock.rule_for` matches them: a block on `example.com`
+covers `a.example.com` but not `example.com:8080`, an account on a server at
+that port, and a block on `example.com:8080` covers only that port. Where a
+URL is checked rather than an account's domain, as when an incoming request is
+signed, only its host counts, without the port.
+
 The `instances` materialized view itself is refreshed every hour, as
 Mastodon's `Scheduler::InstanceRefreshScheduler` does, so a Mastodon sharing
 the database, or anything else reading the view, sees current servers. The

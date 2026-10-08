@@ -1434,3 +1434,32 @@ async fn test_webhook_receives_report_created() {
         format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
     );
 }
+
+/// `DomainBlock.rule_for` keeps a domain's port: a block on `example.com`
+/// covers its subdomains but not `example.com:8080`, and a block on
+/// `example.com:8080` covers that and its subdomains at that port. A URI is
+/// read for its host alone (`domain_not_allowed?`).
+#[tokio::test]
+async fn test_domain_block_rules_keep_the_port() {
+    let ctx = TestContext::new("mod-dblock-port").await;
+    sqlx::query(
+        "INSERT INTO domain_blocks (domain, severity, created_at, updated_at)
+         VALUES ('plain.test', 1, now(), now()), ('ported.test:8080', 1, now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let blocked = |domain: &'static str| {
+        let state = ctx.state.clone();
+        async move { eunha::federation::moderation::domain_not_allowed(&state, domain).await }
+    };
+    assert!(blocked("plain.test").await);
+    assert!(blocked("a.Plain.test").await);
+    assert!(!blocked("plain.test:8080").await);
+    assert!(blocked("https://plain.test:8080/users/a").await);
+    assert!(blocked("ported.test:8080").await);
+    assert!(blocked("a.ported.test:8080/").await);
+    assert!(!blocked("ported.test").await);
+    assert!(!blocked("ported.test:443").await);
+    assert!(!blocked("https://ported.test:8080/users/a").await);
+}

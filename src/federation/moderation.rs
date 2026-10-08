@@ -4,7 +4,9 @@
 //! Display-time filtering (timelines, search, profiles) lives in the Mastodon
 //! API layer; this module is what actually stops federation traffic. A block on
 //! `example.com` also covers its subdomains (`a.example.com`), matching
-//! Mastodon.
+//! Mastodon. A domain keeps its port, as Mastodon's do: a block on
+//! `example.com` does not cover `example.com:8080`, an account's domain on a
+//! server at a port, and one on `example.com:8080` covers only that.
 
 use crate::db::models::domain_severity;
 use crate::state::AppState;
@@ -24,17 +26,33 @@ impl DomainBlock {
     }
 }
 
-/// `DomainBlock.rule_for`: the most specific admin domain block covering
-/// `domain` (the domain itself or any parent domain), or `None`.
+/// The domain `DomainBlock.rule_for` and `DomainAllow.rule_for` look up:
+/// stripped, every `/` deleted, then Addressable's `normalized_host` — lower
+/// case, in its ASCII form — with any port kept, since `host=` takes the
+/// port in with the host. `None` for a blank domain or one Addressable
+/// refuses, which rule nothing.
+fn rule_domain(domain: &str) -> Option<String> {
+    let domain = domain.trim().replace('/', "");
+    if domain.is_empty() {
+        return None;
+    }
+    ojak::origin::normalize_host(&domain, ojak::origin::Port::Keep)
+}
+
+/// `DomainBlock.rule_for`: the most specific admin domain block on `domain`
+/// or one of its `domain_variants` (each suffix after a dot), or `None`.
+/// The port stays on the last label, so `example.com:8080` is covered by a
+/// block on itself or on `com:8080`, not by one on `example.com`.
 pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
-    let domain = domain.to_lowercase();
+    let domain = rule_domain(domain)?;
+    let variants = crate::moderation::signup::domain_variants(&domain);
     let row = sqlx::query!(
         r#"SELECT severity, reject_media, reject_reports
            FROM domain_blocks
-           WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)
+           WHERE domain = ANY($1)
            ORDER BY char_length(domain) DESC
            LIMIT 1"#,
-        domain,
+        &variants,
     )
     .fetch_optional(&state.db)
     .await
@@ -52,20 +70,21 @@ pub async fn lookup(state: &AppState, domain: &str) -> Option<DomainBlock> {
 /// federation mode only a domain on the allow list federates, matched exactly
 /// as `DomainAllow.allowed?` matches it; otherwise only a domain blocked at
 /// suspend severity, itself or a parent, is refused. Blank is allowed.
+///
+/// A URI is read for its host alone (`Addressable::URI.parse(uri).host`),
+/// without its port; a bare domain is passed on as it is, port and all, to
+/// be normalised by `rule_for`.
 pub async fn domain_not_allowed(state: &AppState, uri_or_domain: &str) -> bool {
     if uri_or_domain.trim().is_empty() {
         return false;
     }
-    // A bare domain is normalised as `DomainAllow.rule_for` and
-    // `DomainBlock.rule_for` normalise it: stripped, slashes gone, lowercased
-    // and in its ASCII form.
-    let uri = if uri_or_domain.contains("://") {
-        uri_or_domain.to_owned()
+    let domain = if uri_or_domain.contains("://") {
+        ojak::origin::host_of(uri_or_domain)
     } else {
-        format!("https://{}/", uri_or_domain.trim().replace('/', ""))
+        Some(uri_or_domain.to_owned())
     };
     // No host is on no allow list, and under no block.
-    let Some(domain) = ojak::origin::host_of(&uri) else {
+    let Some(domain) = domain else {
         return state.instance.limited_federation_mode;
     };
     if state.instance.limited_federation_mode {
@@ -75,8 +94,12 @@ pub async fn domain_not_allowed(state: &AppState, uri_or_domain: &str) -> bool {
 }
 
 /// `DomainAllow.allowed?`: whether `domain` itself, not a parent, is on the
-/// allow list. A failed lookup allows nothing.
+/// allow list, normalised as `DomainAllow.rule_for` normalises it. A failed
+/// lookup allows nothing.
 async fn domain_allowed(state: &AppState, domain: &str) -> bool {
+    let Some(domain) = rule_domain(domain) else {
+        return false;
+    };
     sqlx::query_scalar!(
         r#"SELECT EXISTS (SELECT 1 FROM domain_allows WHERE domain = $1) AS "e!""#,
         domain,
@@ -154,6 +177,26 @@ mod tests {
         assert!(!host_matches("example.com.attacker.test", &b));
         assert!(!host_matches("example.org", &b));
         assert!(!host_matches("fakeexample.com", &b));
+    }
+
+    /// `rule_for` normalises as Addressable's `host=` and `normalized_host`
+    /// do, the port kept and every slash gone.
+    #[test]
+    fn rule_domain_keeps_the_port() {
+        assert_eq!(
+            rule_domain(" Example.COM:8080/").as_deref(),
+            Some("example.com:8080")
+        );
+        assert_eq!(rule_domain("exa/mple.com").as_deref(), Some("example.com"));
+        assert_eq!(
+            rule_domain("bücher.example").as_deref(),
+            Some("xn--bcher-kva.example")
+        );
+        assert_eq!(rule_domain(" / "), None);
+        assert_eq!(
+            crate::moderation::signup::domain_variants("a.example.com:8080"),
+            ["a.example.com:8080", "example.com:8080", "com:8080"]
+        );
     }
 
     #[test]

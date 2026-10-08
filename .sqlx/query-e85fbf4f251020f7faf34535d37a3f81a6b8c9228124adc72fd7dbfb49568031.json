@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT severity, reject_media, reject_reports\n           FROM domain_blocks\n           WHERE domain <> '' AND ($1 = domain OR $1 LIKE '%.' || domain)\n           ORDER BY char_length(domain) DESC\n           LIMIT 1",
+  "query": "SELECT severity, reject_media, reject_reports\n           FROM domain_blocks\n           WHERE domain = ANY($1)\n           ORDER BY char_length(domain) DESC\n           LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -21,7 +21,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "TextArray"
       ]
     },
     "nullable": [
@@ -30,5 +30,5 @@
       false
     ]
   },
-  "hash": "f0570ab6dbd720c63fc81f1833270d85682a9020633cbbee38d2351ba3ac64a6"
+  "hash": "e85fbf4f251020f7faf34535d37a3f81a6b8c9228124adc72fd7dbfb49568031"
 }
