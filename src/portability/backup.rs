@@ -94,9 +94,9 @@ pub async fn can_create(state: &AppState, account_id: i64) -> AppResult<bool> {
 /// ask for an archive, which `BackupWorker` then builds.
 pub async fn create(state: &AppState, account_id: i64) -> AppResult<Backup> {
     let user_id = user_id_for(state, account_id).await?;
-    let lock = crate::redis_lock::try_acquire(
+    let lock = crate::redis_lock::try_acquire_lockable(
         state,
-        &format!("lock:backup:{user_id}"),
+        &format!("backup:{user_id}"),
         crate::redis_lock::DEFAULT_TTL_MS,
     )
     .await

@@ -211,9 +211,9 @@ pub async fn create_migration(
     )
     .await?;
 
-    let _lock = crate::redis_lock::try_acquire(
+    let _lock = crate::redis_lock::try_acquire_lockable(
         state,
-        &format!("lock:account_migration:{account_id}"),
+        &format!("account_migration:{account_id}"),
         crate::redis_lock::DEFAULT_TTL_MS,
     )
     .await

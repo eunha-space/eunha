@@ -16,8 +16,10 @@ adds the separating colon, so the ACL key pattern for the example is
 `feed:list:<id>`) and the boosts each feed tracks (`feed:home:<id>:reblogs` and
 `feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
 preview card locks and the lock an unfollow takes on the two accounts
-(`lock:relationship:<id>:<id>`), tombstones, the oEmbed endpoints
-remembered for each domain, posting idempotency, notification
+(`lock:relationship:<id>:<id>`; every lock Mastodon takes with
+`with_redis_lock` is `lock:` and its name, as `Lockable` keys it, such as
+`lock:distribute:<status>` while a post is removed), tombstones, the oEmbed
+endpoints remembered for each domain, posting idempotency, notification
 group state, async refreshes and the job batches that finish them
 (`worker_batch:<id>`), the days each server failed deliveries on, the
 activity counts behind trends and email domain blocks' `history`, the sets of

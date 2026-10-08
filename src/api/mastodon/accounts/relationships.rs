@@ -470,7 +470,7 @@ pub async fn unfollow(
 /// The key `UnfollowService` locks: `Lockable`'s `lock:` and
 /// `relationship:` with the two ids, smaller first.
 pub(crate) fn relationship_lock_name(a: i64, b: i64) -> String {
-    format!("lock:relationship:{}:{}", a.min(b), a.max(b))
+    crate::redis_lock::lockable_key(&format!("relationship:{}:{}", a.min(b), a.max(b)))
 }
 
 /// `unfollow! || undo_follow_request!`, under the lock.

@@ -328,7 +328,8 @@ async fn process_inner(
 async fn acquire_lock(state: &AppState, name: &str) -> Option<crate::redis_lock::RedisLock> {
     for attempt in 0..40 {
         if let Some(lock) =
-            crate::redis_lock::try_acquire(state, name, crate::redis_lock::DEFAULT_TTL_MS).await
+            crate::redis_lock::try_acquire_lockable(state, name, crate::redis_lock::DEFAULT_TTL_MS)
+                .await
         {
             return Some(lock);
         }

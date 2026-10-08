@@ -44,9 +44,9 @@ pub async fn post_status(
     let idempotency_key = idempotency_key.filter(|k| !k.trim().is_empty());
     let _idempotency_lock = match idempotency_key.as_deref() {
         Some(ik) => {
-            let lock = crate::redis_lock::try_acquire(
+            let lock = crate::redis_lock::try_acquire_lockable(
                 &state,
-                &format!("lock:idempotency:lock:status:{}:{ik}", account.id),
+                &format!("idempotency:lock:status:{}:{ik}", account.id),
                 crate::redis_lock::DEFAULT_TTL_MS,
             )
             .await

@@ -151,9 +151,9 @@ pub async fn fetch_link_card(
     }
 
     let card = {
-        let _lock = crate::redis_lock::try_acquire(
+        let _lock = crate::redis_lock::try_acquire_lockable(
             state,
-            &format!("lock:fetch:{original_url}"),
+            &format!("fetch:{original_url}"),
             crate::redis_lock::DEFAULT_TTL_MS,
         )
         .await?;
@@ -194,9 +194,9 @@ async fn attach_card(
     card_id: i64,
     original_url: &str,
 ) -> Option<()> {
-    let _lock = crate::redis_lock::try_acquire(
+    let _lock = crate::redis_lock::try_acquire_lockable(
         state,
-        &format!("lock:attach_card:{status_id}"),
+        &format!("attach_card:{status_id}"),
         crate::redis_lock::DEFAULT_TTL_MS,
     )
     .await?;

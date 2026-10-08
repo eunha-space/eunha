@@ -135,7 +135,8 @@ async fn lock(state: &AppState, status_id: i64) -> Result<crate::redis_lock::Red
     let name = format!("distribute:{status_id}");
     for attempt in 0..40 {
         if let Some(lock) =
-            crate::redis_lock::try_acquire(state, &name, crate::redis_lock::DEFAULT_TTL_MS).await
+            crate::redis_lock::try_acquire_lockable(state, &name, crate::redis_lock::DEFAULT_TTL_MS)
+                .await
         {
             return Ok(lock);
         }

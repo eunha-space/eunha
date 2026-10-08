@@ -87,7 +87,7 @@ pub async fn may_feature(db: &sqlx::PgPool, owner_id: i64, target_id: i64) -> sq
 /// an error for the work to be tried again later
 /// (`Mastodon::RaceConditionError`).
 async fn redis_lock(state: &AppState, name: &str) -> anyhow::Result<crate::redis_lock::RedisLock> {
-    let key = format!("lock:{name}");
+    let key = crate::redis_lock::lockable_key(name);
     for attempt in 0..40 {
         if let Some(lock) =
             crate::redis_lock::try_acquire(state, &key, crate::redis_lock::DEFAULT_TTL_MS).await

@@ -407,3 +407,50 @@ async fn test_status_updated_webhook_on_quote_policy_change() {
     assert_eq!(event["event"], "status.updated");
     assert_eq!(event["object"]["id"], json!(sid));
 }
+
+/// `RemoveStatusService` runs under `with_redis_lock("distribute:<id>")`,
+/// which `Lockable` keys `lock:distribute:<id>`: held by another, the
+/// removal fails to be tried again, and the status stays.
+#[tokio::test]
+async fn test_removal_takes_lockables_distribute_key() {
+    let ctx = TestContext::new("remove-status-lock").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "locked", "public")
+        .await;
+    let id: i64 = status["id"].as_str().unwrap().parse().unwrap();
+
+    let held = eunha::redis_lock::try_acquire(&ctx.state, &format!("lock:distribute:{id}"), 60_000)
+        .await
+        .expect("the lock is free");
+    let removed =
+        eunha::remove_status::call(&ctx.state, id, eunha::remove_status::Options::default()).await;
+    assert!(removed.is_err(), "removed while another held the lock");
+    assert_eq!(
+        rows(
+            &ctx,
+            "SELECT count(*) FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+            id
+        )
+        .await,
+        1
+    );
+    drop(held);
+
+    let mut removed = false;
+    for _ in 0..40 {
+        if eunha::remove_status::call(&ctx.state, id, eunha::remove_status::Options::default())
+            .await
+            .is_ok()
+        {
+            removed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(removed);
+    assert_eq!(
+        rows(&ctx, "SELECT count(*) FROM statuses WHERE id = $1", id).await,
+        0
+    );
+}

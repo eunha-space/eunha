@@ -72,7 +72,8 @@ async fn release(
 
 /// Try once to take the lock named `name`, which goes into Redis under the
 /// instance's key prefix exactly as given. `None` when someone else holds it
-/// or Redis cannot be reached.
+/// or Redis cannot be reached. A lock Mastodon takes with `with_redis_lock`
+/// goes through [`try_acquire_lockable`], which names it as `Lockable` does.
 pub async fn try_acquire(state: &AppState, name: &str, ttl_ms: usize) -> Option<RedisLock> {
     let redis = &state.redis_coordination;
     let keys = &state.redis_keys;
@@ -93,4 +94,28 @@ pub async fn try_acquire(state: &AppState, name: &str, ttl_ms: usize) -> Option<
         token,
         use_pooled_function: keys.is_shared(),
     })
+}
+
+/// `with_redis_lock(lock_name)`, tried once as [`try_acquire`] does: the key
+/// is `Lockable`'s `lock:<lock_name>`, under the instance's key prefix.
+pub async fn try_acquire_lockable(
+    state: &AppState,
+    lock_name: &str,
+    ttl_ms: usize,
+) -> Option<RedisLock> {
+    try_acquire(state, &lockable_key(lock_name), ttl_ms).await
+}
+
+/// The key `Lockable#with_redis_lock` takes for `lock_name`, before the key
+/// prefix.
+pub fn lockable_key(lock_name: &str) -> String {
+    format!("lock:{lock_name}")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn lockable_keys_are_mastodons() {
+        assert_eq!(super::lockable_key("distribute:1"), "lock:distribute:1");
+    }
 }

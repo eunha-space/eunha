@@ -44,7 +44,7 @@ pub(super) async fn handle_delete(
     // held two hours, and skipped by whoever finds it held): purged
     // outright, without announcing anything back over ActivityPub.
     if uri == actor_uri {
-        let Some(_lock) = crate::redis_lock::try_acquire(
+        let Some(_lock) = crate::redis_lock::try_acquire_lockable(
             state,
             &format!("delete_in_progress:{account_id}"),
             2 * 60 * 60 * 1000,
@@ -89,7 +89,7 @@ pub(super) async fn handle_delete(
 
     // `delete_object`, once at a time for a URI
     // (`delete_status_in_progress:#{object_uri}`, skipped when held).
-    let Some(_lock) = crate::redis_lock::try_acquire(
+    let Some(_lock) = crate::redis_lock::try_acquire_lockable(
         state,
         &format!("delete_status_in_progress:{uri}"),
         crate::redis_lock::DEFAULT_TTL_MS,
