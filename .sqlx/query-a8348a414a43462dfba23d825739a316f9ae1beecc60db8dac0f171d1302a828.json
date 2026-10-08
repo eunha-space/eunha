@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.id FROM collection_items ci\n                           JOIN accounts a ON a.id = ci.account_id AND a.domain IS NULL\n                           WHERE ci.collection_id = $1 AND ci.account_id = $2\n                             AND ci.state = $3 AND ci.uri IS NULL\n                           ORDER BY ci.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a8348a414a43462dfba23d825739a316f9ae1beecc60db8dac0f171d1302a828"
+}

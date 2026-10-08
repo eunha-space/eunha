@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM collections WHERE uri = $1 AND local = false",
+  "query": "SELECT id FROM collection_items WHERE collection_id = $1 AND uri = $2",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Text"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "de20ed757590eef0b3340b4a4a7c027f2ae0cf7c98a1de733dd19ba546022d51"
+  "hash": "9fc9d5e4469d45c95074bc31d5e4a369abb0b4757003c6ddcc671782c0e0a37f"
 }

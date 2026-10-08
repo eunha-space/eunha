@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_pins (id, account_id, status_id, created_at, updated_at)\n           VALUES ($1, $2, $3, now(), now()) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d05d325905be56e716d5f0a6612a5a76f69554c91526779a282736a96ceb56a6"
+}

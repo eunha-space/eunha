@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.object_uri, c.uri AS \"collection_uri?\"\n           FROM collection_items ci JOIN collections c ON c.id = ci.collection_id\n           WHERE ci.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_uri?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "60f3f1242deffddef7b5f74c9059ef20a91021018d002fcfb60ca7297a0e7605"
+}

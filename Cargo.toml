@@ -38,6 +38,10 @@ name = "linked_data_contexts"
 path = "tests/linked_data_contexts.rs"
 
 [[test]]
+name = "remote_collections"
+path = "tests/remote_collections.rs"
+
+[[test]]
 name = "donation_campaigns"
 path = "tests/donation_campaigns.rs"
 

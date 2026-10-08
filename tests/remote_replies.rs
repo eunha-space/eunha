@@ -724,12 +724,30 @@ async fn test_feature_request_notifies_the_featured_account() {
         .unwrap();
     assert_eq!(item_count, 1);
 
+    // The collection as its server serves it lists alice's item: one that
+    // listed nothing would take every item out of it
+    // (`where.not(uri: []).delete_all`).
+    let item_id: i64 = sqlx::query_scalar("SELECT id FROM collection_items WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let mut renamed = collection("Good neighbours");
+    renamed["orderedItems"] = json!([{
+        "id": format!("{base}/items/1"),
+        "type": "FeaturedItem",
+        "featuredObject": alice_uri,
+        "featureAuthorization": format!(
+            "https://{}/ap/users/{}/feature_authorizations/{item_id}",
+            ctx.domain, ctx.alice_id
+        ),
+    }]);
     let update = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{base}/collections/1#updates/1"),
         "type": "Update",
         "actor": actor,
-        "object": collection("Good neighbours"),
+        "object": renamed,
     });
     let resp = ctx
         .api

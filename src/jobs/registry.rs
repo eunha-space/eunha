@@ -59,6 +59,8 @@ fn workers() -> Vec<Entry> {
         entry::<crate::federation::featured::SynchronizeFeaturedCollectionWorker>(),
         entry::<crate::federation::featured::SynchronizeFeaturedTagsCollectionWorker>(),
         entry::<crate::federation::featured::SynchronizeFeaturedCollectionsCollectionWorker>(),
+        entry::<crate::federation::featured_collections::ProcessFeaturedItemWorker>(),
+        entry::<crate::federation::featured_collections::VerifyFeaturedItemWorker>(),
         entry::<crate::link_verification::VerifyAccountLinksWorker>(),
         entry::<crate::api::ap::inbox::ProcessingWorker>(),
         entry::<crate::api::ap::inbox::quote::RefetchAndVerifyQuoteWorker>(),

@@ -111,6 +111,44 @@ order. What is not found yet is remembered, so that it is skipped when it
 arrives.
 
 
+Pins, featured hashtags and collections
+---------------------------------------
+
+An `Add` or `Remove` acts only on the sender's own collections, by its
+target:
+
+ -  Its `featured` collection: a `Hashtag` becomes, or stops being, one of
+    its featured hashtags; anything else is a post it pins or unpins. Only
+    its own post is pinned, fetched first when it is not known (an embedded
+    post of its own is taken as the `Create` it is), and never a boost or a
+    direct message.
+ -  Its `featuredCollections`: a `FeaturedCollection` stored, or one of its
+    collections removed.
+ -  One of its collections: an item processed into it, or taken out of it.
+
+A `FeaturedCollection`, whether added, updated, listed in an actor's
+`featuredCollections` or fetched for a post or a `FeatureRequest`, is stored
+as `ActivityPub::ProcessFeaturedCollectionService` stores it: only when it is
+on the sender's host and attributed to the sender, and only as one of the
+sender's own, so a collection another account has is never written over. Its
+`summaryMap` (or `summary`) becomes its description and the map's language
+its language, `totalItems` its original number of items, its `topic` its
+hashtag, and its `url` its page. A name that is blank, or `sensitive` or
+`discoverable` that is not a boolean, keeps it from being stored. Items it
+no longer lists are dropped, and each of the first 150 it lists is processed
+later at its place (`ProcessFeaturedItemWorker`, retried three times).
+
+An item has to be on its collection's host, and, unless it features a local
+account, its `featureAuthorization` on the featured account's host. A new
+one is pending and names only the account it would feature; it features
+that account once the authorization is fetched, is a `FeatureAuthorization`,
+and names the collection and the account. An authorization that is not
+there rejects it; one that cannot be fetched for now is tried again half a
+minute to ten minutes later (`VerifyFeaturedItemWorker`, retried five
+times). A local account's item it already accepted, from its
+`FeatureRequest`, is taken as the item.
+
+
 Attachments and polls
 ---------------------
 

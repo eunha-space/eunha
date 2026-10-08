@@ -433,55 +433,27 @@ pub async fn fetch_featured_collections_collection(
         return Ok(());
     };
     for item in items.into_iter().take(COLLECTIONS_MAX_ITEMS) {
-        let collection = match item {
-            // `FetchRemoteFeaturedCollectionService`: only a collection not
-            // yet known is processed.
+        let stored = match &item {
+            // `FetchRemoteFeaturedCollectionService`, by its URI.
             Value::String(collection_uri) => {
-                let known = sqlx::query_scalar!(
-                    r#"SELECT EXISTS (SELECT 1 FROM collections WHERE uri = $1 AND account_id = $2) AS "known!""#,
+                crate::federation::featured_collections::fetch_remote_featured_collection(
+                    state,
                     collection_uri,
-                    account.id,
+                    None,
                 )
-                .fetch_one(&state.db)
-                .await?;
-                if known {
-                    continue;
-                }
-                let Ok(json) =
-                    crate::federation::fetch::signed_get_json(state, &collection_uri).await
-                else {
-                    continue;
-                };
-                if json.get("id").and_then(Value::as_str) != Some(collection_uri.as_str())
-                    || !supported_context(&json)
-                    || json.get("type").and_then(Value::as_str) != Some("FeaturedCollection")
-                {
-                    continue;
-                }
-                json
+                .await
             }
-            json @ Value::Object(_) => json,
+            // `ProcessFeaturedCollectionService`, embedded.
+            json @ Value::Object(_) => {
+                crate::federation::featured_collections::process_featured_collection(
+                    state, account.id, uri, json,
+                )
+                .await
+            }
             _ => continue,
         };
-        // `ProcessFeaturedCollectionService`: the account's own collections,
-        // on its own host.
-        let id = collection
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if non_matching_uri_hosts(uri, id)
-            || collection.get("attributedTo").and_then(Value::as_str) != Some(uri)
-        {
-            continue;
-        }
-        if let Err(error) =
-            crate::api::ap::inbox::mirror_remote_collection(state, account.id, &collection).await
-        {
-            tracing::debug!(
-                collection = id,
-                ?error,
-                "could not store a featured collection"
-            );
+        if let Err(error) = stored {
+            tracing::debug!(?error, "could not store a featured collection");
         }
     }
     Ok(())

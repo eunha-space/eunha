@@ -8,8 +8,8 @@ use crate::{error::AppResult, state::AppState};
 
 use super::attachment::preview_card_link;
 use super::{
-    acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status, mirror_item_into,
-    resolve_or_fetch_remote_account, same_host, sync_remote_poll, upsert_remote_collection,
+    acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status,
+    resolve_or_fetch_remote_account, same_host, sync_remote_poll,
 };
 use ojak_vocab::json_ld_helper::{ids, type_is};
 
@@ -671,19 +671,23 @@ pub(super) async fn handle_update(
     };
     match obj_type {
         "FeaturedCollection" => {
-            // Mirror an updated remote collection.
+            // `update_collection`: one of the sender's own, from its own
+            // host (`ProcessFeaturedCollectionService`).
             let actor_uri = activity.get("actor").and_then(|a| a.as_str()).unwrap_or("");
-            if actor_uri.is_empty() {
+            let object_uri = object.get("id").and_then(Value::as_str).unwrap_or("");
+            if actor_uri.is_empty() || !same_host(actor_uri, object_uri) {
+                tracing::debug!(
+                    object_uri,
+                    "refused an Update of a collection off its sender's host"
+                );
                 return Ok(());
             }
             if let Ok(owner_id) = resolve_or_fetch_remote_account(state, actor_uri).await {
-                if let Some(cid) = upsert_remote_collection(state, owner_id, object).await? {
-                    if let Some(items) = object.get("orderedItems").and_then(|v| v.as_array()) {
-                        for it in items {
-                            let _ = mirror_item_into(state, cid, it).await;
-                        }
-                    }
-                }
+                crate::federation::featured_collections::process_featured_collection(
+                    state, owner_id, actor_uri, object,
+                )
+                .await
+                .map_err(crate::error::AppError::Internal)?;
             }
         }
         "Person" | "Service" | "Application" | "Group" | "Organization" => {

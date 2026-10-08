@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO collections\n                     (account_id, name, description_html, language, discoverable, local,\n                      sensitive, item_count, original_number_of_items, tag_id, uri, url,\n                      created_at, updated_at)\n                   VALUES ($1, $2, $3, $4, $5, false, $6, 0, $7, $8, $9, $10, now(), now())\n                   ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING\n                   RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int8",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7063290a57cabe5d9625ebc23b111e8901cd5bf2f126c323a1534bbdcef68425"
+}

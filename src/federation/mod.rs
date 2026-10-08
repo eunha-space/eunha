@@ -4,6 +4,7 @@ pub mod consent;
 pub mod delivery;
 pub mod delivery_failures;
 pub mod featured;
+pub mod featured_collections;
 pub mod fetch;
 pub mod fetch_resource;
 pub mod followers_synchronization;

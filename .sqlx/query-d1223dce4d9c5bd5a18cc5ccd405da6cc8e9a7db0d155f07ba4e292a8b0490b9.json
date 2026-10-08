@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM collection_items WHERE collection_id = $1 AND uri <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1223dce4d9c5bd5a18cc5ccd405da6cc8e9a7db0d155f07ba4e292a8b0490b9"
+}

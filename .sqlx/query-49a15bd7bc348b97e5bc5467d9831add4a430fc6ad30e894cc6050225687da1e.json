@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (account_id = $2 AND reblog_of_id IS NULL AND visibility <> 3) AS \"ok!\"\n           FROM statuses WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "49a15bd7bc348b97e5bc5467d9831add4a430fc6ad30e894cc6050225687da1e"
+}

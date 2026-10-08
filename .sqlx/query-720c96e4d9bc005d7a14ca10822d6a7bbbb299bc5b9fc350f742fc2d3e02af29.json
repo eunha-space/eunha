@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO collection_items\n                     (collection_id, state, uri, object_uri, position, created_at, updated_at)\n                   VALUES ($1, $2, $3, $4,\n                           COALESCE($5, (SELECT COALESCE(MAX(position), 0) + 1\n                                         FROM collection_items WHERE collection_id = $1)),\n                           COALESCE($6, now() AT TIME ZONE 'UTC'), now())\n                   ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING\n                   RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "720c96e4d9bc005d7a14ca10822d6a7bbbb299bc5b9fc350f742fc2d3e02af29"
+}

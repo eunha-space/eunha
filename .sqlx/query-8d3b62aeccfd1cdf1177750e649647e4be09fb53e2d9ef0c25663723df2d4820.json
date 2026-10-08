@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM collections WHERE uri = $1 AND account_id = $2) AS \"known!\"",
+  "query": "SELECT EXISTS (SELECT 1 FROM accounts WHERE uri = $1) AS \"known!\"",
   "describe": {
     "columns": [
       {
@@ -11,13 +11,12 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "017ddb75aead323b645f09db1e82a974d146edc1a3ab0e747a41fefba3a7886f"
+  "hash": "8d3b62aeccfd1cdf1177750e649647e4be09fb53e2d9ef0c25663723df2d4820"
 }

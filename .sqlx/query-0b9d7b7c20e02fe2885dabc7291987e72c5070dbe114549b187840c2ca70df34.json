@@ -1,22 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT featured_collection_url FROM accounts WHERE uri = $1",
+  "query": "SELECT uri AS \"uri?\" FROM collections WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "featured_collection_url",
+        "name": "uri?",
         "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       true
     ]
   },
-  "hash": "110105834328b910d1b18b2194e087613c22311f91d3acea5ca876006d88a051"
+  "hash": "0b9d7b7c20e02fe2885dabc7291987e72c5070dbe114549b187840c2ca70df34"
 }

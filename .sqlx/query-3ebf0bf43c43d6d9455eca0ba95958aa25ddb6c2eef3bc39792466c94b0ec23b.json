@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE collections\n                       SET local = false, name = $2, description_html = $3, language = $4,\n                           sensitive = $5, discoverable = $6, original_number_of_items = $7,\n                           tag_id = $8, url = $9, updated_at = now()\n                       WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ebf0bf43c43d6d9455eca0ba95958aa25ddb6c2eef3bc39792466c94b0ec23b"
+}

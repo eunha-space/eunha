@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM collection_items ci USING collections c\n           WHERE c.id = ci.collection_id AND c.account_id = $1 AND c.uri = $2\n             AND ci.uri = $3\n           RETURNING ci.collection_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "collection_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f03803fff926e2954a973f4466e1b527567337c16fa2abdf40927a521b12bc8a"
+}

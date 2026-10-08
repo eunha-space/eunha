@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE collection_items\n           SET account_id = $2, approval_uri = $3, state = $4, updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9a96da898217413c49d55d18341fb319d1b472a2d54eeb542312a59f99f120a"
+}

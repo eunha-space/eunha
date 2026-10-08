@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, uri AS \"uri!\", featured_collection_url, collections_url\n           FROM accounts WHERE id = $1 AND domain IS NOT NULL AND uri IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "featured_collection_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "collections_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "bf5fe7de15016cd9cdb81e1c757606c4f084afd7b648cd767a4100b50fd12a74"
+}

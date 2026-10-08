@@ -67,65 +67,16 @@ async fn resolve(state: &AppState, uri: &str) -> anyhow::Result<Option<Known>> {
     if crate::federation::local_uri::is_local(state, uri) {
         return Ok(None);
     }
-    // `fetch_resource(uri, true)`: an answer that is not the collection is
-    // nothing to try again; only a request that did not get through is an
-    // error, and tried again later.
-    let Some(json) = crate::federation::json_ld::fetch_resource(
-        state,
-        uri,
-        None,
-        crate::federation::json_ld::RaiseOn::None,
-    )
-    .await?
+    // `FetchRemoteFeaturedCollectionService`: an answer that is not a known
+    // account's collection is nothing to try again; only a request that did
+    // not get through is an error, and tried again later.
+    let Some(id) =
+        crate::federation::featured_collections::fetch_remote_featured_collection(state, uri, None)
+            .await?
     else {
         return Ok(None);
     };
-    if !crate::federation::fetch_resource::supported_context(&json)
-        || json.get("type").and_then(Value::as_str) != Some("FeaturedCollection")
-    {
-        return Ok(None);
-    }
-    // Only a known account's (`Account.find_by(uri: json['attributedTo'])`).
-    let Some(attributed_to) = json.get("attributedTo").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    let Some(owner) = sqlx::query_scalar!(
-        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
-        attributed_to,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    else {
-        return Ok(None);
-    };
-    let existing = sqlx::query_scalar!(
-        "SELECT id FROM collections WHERE uri = $1 AND account_id = $2",
-        uri,
-        owner,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    if existing.is_none() {
-        // `ProcessFeaturedCollectionService`: the account's own, on its own
-        // host.
-        if crate::federation::json_ld::non_matching_uri_hosts(attributed_to, uri) {
-            return Ok(None);
-        }
-        crate::api::ap::inbox::mirror_remote_collection(state, owner, &json)
-            .await
-            .map_err(|error| anyhow::anyhow!("{error:?}"))?;
-    }
-    let id = sqlx::query_scalar!(
-        "SELECT id FROM collections WHERE uri = $1 AND account_id = $2",
-        uri,
-        owner,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    Ok(match id {
-        Some(id) => known(state, id).await?,
-        None => None,
-    })
+    Ok(known(state, id).await?)
 }
 
 async fn tag(state: &AppState, status_id: i64, collection: &Known) -> sqlx::Result<()> {
