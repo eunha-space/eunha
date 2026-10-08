@@ -9,6 +9,7 @@ pub mod conversations;
 pub mod convert;
 pub mod disputes;
 pub mod domain_blocks;
+pub mod donation_campaigns;
 pub mod email_subscriptions;
 pub mod emojis;
 pub mod extractors;
@@ -1358,10 +1359,7 @@ pub fn router() -> Router {
         .route("/api/v1/trends/tags", get(trends::trending_tags))
         .route("/api/v1/trends/links", get(trends::trending_links))
         // Custom emojis (public)
-        .route(
-            "/api/v1/donation_campaigns",
-            get(accounts::list_donation_campaigns),
-        )
+        .route("/api/v1/donation_campaigns", get(donation_campaigns::index))
         .route(
             "/api/v1/accounts/{id}/identity_proofs",
             get(accounts::get_account_identity_proofs),

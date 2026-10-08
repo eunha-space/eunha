@@ -479,6 +479,22 @@ pub struct InstanceConfig {
     /// OpenSearch (docs/operating/search.md). Off unless `enabled` is set.
     #[serde(default)]
     pub elasticsearch: ElasticsearchConfig,
+    /// Mastodon's `DONATION_CAMPAIGNS_URL` and `DONATION_CAMPAIGNS_ENVIRONMENT`
+    /// (`[instance.donation_campaigns]`): where `GET /api/v1/donation_campaigns`
+    /// asks for the campaign to show. Unset, there is none.
+    #[serde(default)]
+    pub donation_campaigns: DonationCampaignsConfig,
+}
+
+/// `Rails.configuration.x.donation_campaigns`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DonationCampaignsConfig {
+    /// `DONATION_CAMPAIGNS_URL`: the campaign API.
+    #[serde(default)]
+    pub api_url: Option<String>,
+    /// `DONATION_CAMPAIGNS_ENVIRONMENT`: sent along as `environment`.
+    #[serde(default)]
+    pub environment: Option<String>,
 }
 
 /// Mastodon's `config/translation.yml`. DeepL wins when both are set, as
@@ -707,8 +723,8 @@ fn adopt_mastodon_elasticsearch_env() {
     }
 }
 
-/// Accept Mastodon's own spelling of its secrets and the translation
-/// service.
+/// Accept Mastodon's own spelling of its secrets, the translation service
+/// and the donation campaigns.
 ///
 /// Eunha's environment keys nest with `__`, so its name for the primary key is
 /// `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY` — but the values themselves come
@@ -736,6 +752,14 @@ fn adopt_mastodon_env() {
             "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
         ("SECRET_KEY_BASE", "INSTANCE__SECRET_KEY_BASE"),
+        (
+            "DONATION_CAMPAIGNS_URL",
+            "INSTANCE__DONATION_CAMPAIGNS__API_URL",
+        ),
+        (
+            "DONATION_CAMPAIGNS_ENVIRONMENT",
+            "INSTANCE__DONATION_CAMPAIGNS__ENVIRONMENT",
+        ),
     ] {
         if std::env::var_os(eunha).is_none() {
             if let Some(value) = std::env::var_os(mastodon) {

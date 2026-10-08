@@ -1861,12 +1861,6 @@ pub async fn delete_account(
     Ok(axum::http::StatusCode::OK)
 }
 
-// ── GET /api/v1/donation_campaigns ───────────────────────────────────────
-
-pub async fn list_donation_campaigns() -> Json<Vec<serde_json::Value>> {
-    Json(vec![])
-}
-
 // ── GET /api/v1/accounts/:id/identity_proofs ─────────────────────────────
 
 pub async fn get_account_identity_proofs(Path(_id): Path<i64>) -> Json<Vec<serde_json::Value>> {

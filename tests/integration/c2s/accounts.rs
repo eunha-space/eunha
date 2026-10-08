@@ -4260,15 +4260,71 @@ async fn test_directory_local_param() {
     }
 }
 
-/// GET /api/v1/donation_campaigns returns empty array (stub).
+/// GET /api/v1/donation_campaigns needs a user, and answers `204` while no
+/// campaign API is configured.
 #[tokio::test]
-async fn test_donation_campaigns_returns_array() {
+async fn test_donation_campaigns_unconfigured() {
     let ctx = TestContext::new("donation-campaigns").await;
 
     let resp = ctx.api.get("/api/v1/donation_campaigns", None).await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let resp = ctx
+        .api
+        .get("/api/v1/donation_campaigns", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+}
+
+/// A campaign Mastodon cached for this seed and locale is served from the
+/// cache, without asking the campaign API (here nowhere to be reached).
+#[tokio::test]
+async fn test_donation_campaigns_served_from_mastodons_cache() {
+    let ctx = TestContext::with_instance_config("donation-cached", |instance| {
+        instance.donation_campaigns.api_url =
+            Some("https://donations.invalid/api/v1/campaigns".into());
+    })
+    .await;
+    let seed = eunha::api::mastodon::donation_campaigns::seed(ctx.alice_id.parse().unwrap());
+    let mut redis = ctx.state.redis.clone();
+    let _: () = redis::pipe()
+        .cmd("SET")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key(format!("cache:donation_campaign_request:{seed}:en")),
+        )
+        .arg("spring:en")
+        .ignore()
+        .cmd("SET")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key("cache:donation_campaign:spring:en"),
+        )
+        .arg(r#"{"id":"spring","locale":"en","banner_message":"Give"}"#)
+        .ignore()
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+
+    let resp = ctx
+        .api
+        .get("/api/v1/donation_campaigns", Some(&ctx.alice_token))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: Vec<serde_json::Value> = resp.json().await.unwrap();
-    let _ = body;
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({"id": "spring", "locale": "en", "banner_message": "Give"})
+    );
+
+    // Another locale has nothing cached, and the API cannot be reached.
+    let resp = ctx
+        .api
+        .get("/api/v1/donation_campaigns?lang=de", Some(&ctx.alice_token))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
 /// GET /api/v1/accounts/:id/identity_proofs returns empty array (stub).

@@ -25,7 +25,9 @@ emailed to an account's subscribers, the daily activity counts
 (`activity:logins:<day>`, `activity:accounts:local:<day>`,
 `activity:statuses:local:<day>`, `activity:interactions:<day>`) and what is
 rendered from them (`cache:api/v1/instances/activity/show`,
-`active_user_count/<weeks>`), sign-ins waiting on a second factor
+`active_user_count/<weeks>`), the donation campaign last fetched for each seed
+and locale (`cache:donation_campaign_request:*`, `cache:donation_campaign:*`),
+sign-ins waiting on a second factor
 with their attempt counts, translated statuses with the language list of
 the translation service, the JSON-LD contexts fetched to check Linked Data
 signatures (`jsonld:context:<url>`), what ojak remembers for the inbox (the
@@ -42,9 +44,10 @@ approval policies (`feature_approval_policy_availability:*`), how far each
 account's automated post deletion has got (`account_cleanup:<id>`) and where
 its scheduler stopped (`account_statuses_cleanup_scheduler:*`), the circuit
 breakers on deliveries
-(`stoplight:<inbox>:*`), and the streaming channels (`timeline:*`) with the
-`subscribed:<channel>` keys that say a stream listens on one — uses that
-namespace.
+(`stoplight:<inbox>:*`) and on the donation campaign API
+(`stoplight:donation_campaigns:*`), and the streaming channels (`timeline:*`)
+with the `subscribed:<channel>` keys that say a stream listens on one — uses
+that namespace.
 
 Streaming is Redis pub/sub, as in Mastodon: whatever publishes a status,
 notification or deletion `PUBLISH`es it on the instance's channels, and every

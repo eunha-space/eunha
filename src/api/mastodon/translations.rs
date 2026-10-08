@@ -63,7 +63,7 @@ pub struct TranslateParams {
 
 /// `Localized#requested_locale`: the `lang` parameter, the user's locale, the
 /// `Accept-Language` header, then `I18n.default_locale`.
-async fn requested_locale(
+pub(crate) async fn requested_locale(
     state: &AppState,
     auth: &AuthenticatedUser,
     headers: &HeaderMap,

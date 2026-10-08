@@ -33,6 +33,10 @@ path = "tests/remote_actors.rs"
 name = "linked_data_contexts"
 path = "tests/linked_data_contexts.rs"
 
+[[test]]
+name = "donation_campaigns"
+path = "tests/donation_campaigns.rs"
+
 [[bin]]
 name = "eunha-upload-media"
 path = "src/bin/upload_media.rs"

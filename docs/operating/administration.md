@@ -510,6 +510,34 @@ Software updates
 recorded; see [update notices](./update-notices).
 
 
+Donation campaigns
+------------------
+
+Mastodon's web interface can show a donation banner, which it asks for at
+`GET /api/v1/donation_campaigns`. Without a campaign API configured the answer
+is `204 No Content`, and no banner is shown. To ask one, as Mastodon's
+`DONATION_CAMPAIGNS_URL` and `DONATION_CAMPAIGNS_ENVIRONMENT` do (which eunha
+also reads from the environment):
+
+~~~~ toml
+[instance.donation_campaigns]
+api_url = "https://api.joinmastodon.org/v1/donations/campaigns/active"
+environment = "production"  # optional
+~~~~
+
+For a signed-in user, eunha asks the API with `platform=web`, the
+`environment`, the user's interface locale, and a seed from 0 to 99 that the
+user's account id always gives (Ruby's `Random.new(id).rand(100)`, so a user
+gets the same seed from Mastodon); any query the URL had is replaced. A `200`
+with JSON is the campaign, kept an hour in Redis under Mastodon's own cache
+keys (`cache:donation_campaign_request:<seed>:<locale>` and
+`cache:donation_campaign:<id>:<locale>`); anything else is `204`. The request
+goes through the same guard as federation, so a private address needs
+`allowed_private_networks`. Ten failures in a row turn the circuit breaker
+(`stoplight:donation_campaigns:*`) red for a minute, during which the endpoint
+answers `503`.
+
+
 The dashboard
 -------------
 
