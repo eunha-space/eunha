@@ -112,17 +112,32 @@ pub async fn get_scheduled_status(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<ScheduledStatus>> {
     auth.require_scope("read:statuses")?;
-    let row = sqlx::query!(
+    load(&state, auth.account_id, id)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound)
+}
+
+/// `account.scheduled_statuses.find(id)`, as `REST::ScheduledStatusSerializer`
+/// shows it.
+pub(crate) async fn load(
+    state: &AppState,
+    account_id: i64,
+    id: i64,
+) -> AppResult<Option<ScheduledStatus>> {
+    let Some(row) = sqlx::query!(
         "SELECT id, scheduled_at, params FROM scheduled_statuses WHERE id = $1 AND account_id = $2",
         id,
-        auth.account_id,
+        account_id,
     )
     .fetch_optional(&state.db)
     .await?
-    .ok_or(AppError::NotFound)?;
+    else {
+        return Ok(None);
+    };
 
-    let media_attachments = fetch_scheduled_media(&state, row.id).await;
-    Ok(Json(ScheduledStatus {
+    let media_attachments = fetch_scheduled_media(state, row.id).await;
+    Ok(Some(ScheduledStatus {
         id: row.id.to_string(),
         scheduled_at: row.scheduled_at.map(super::convert::mastodon_date),
         params: row.params.unwrap_or(serde_json::Value::Null),

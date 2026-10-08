@@ -24,34 +24,52 @@ pub async fn post_status(
     let form = extract_post_status_form(request).await?;
     let account = fetch_account(&state, auth.account_id).await?;
 
-    // If we've already processed a request with this key, replay the stored status.
-    if let Some(ref ik) = idempotency_key {
-        use redis::AsyncCommands;
-        let redis_key = state
-            .redis_keys
-            .key(format!("idempotency:{}:{}", auth.account_id, ik));
-        let mut redis = state.redis_coordination.clone();
-        if let Ok(Some(existing_id)) = redis.get::<_, Option<i64>>(&redis_key).await {
-            if let Some(status) = sqlx::query_as!(
-                DbStatus,
-                "SELECT * FROM statuses WHERE id = $1 AND deleted_at IS NULL",
-                existing_id,
-            )
-            .fetch_optional(&state.db)
-            .await?
-            {
-                let media = fetch_status_media(&state, status.id).await?;
-                let viewer_ctx = build_viewer_context(&state, auth.account_id, status.id)
-                    .await
-                    .ok();
-                let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
-                    &state, &status, &account, media, None, viewer_ctx, None,
-                )
-                .await?;
-                return Ok((axum::http::StatusCode::OK, Json(api_status)).into_response());
-            }
+    // `preprocess_attributes!`'s `@scheduled_at`: a time in the past is
+    // ignored, and the status posts now. Whether the request schedules is
+    // decided before `with_idempotency`, which looks its duplicate up by it.
+    let scheduled_at = match form.scheduled_at.as_deref() {
+        Some(s) => {
+            let t = chrono::DateTime::parse_from_rfc3339(s)
+                .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
+                .map_err(|_| AppError::Unprocessable("Invalid scheduled_at format".into()))?;
+            (t > chrono::Utc::now().naive_utc()).then_some(t)
         }
-    }
+        None => None,
+    };
+
+    // `with_idempotency`: under `with_redis_lock`, a key already recorded
+    // answers with what it recorded, so that a request sent twice at once does
+    // not post twice. The lock is held until this handler returns, after the
+    // key is recorded below.
+    let idempotency_key = idempotency_key.filter(|k| !k.trim().is_empty());
+    let _idempotency_lock = match idempotency_key.as_deref() {
+        Some(ik) => {
+            let lock = crate::redis_lock::try_acquire(
+                &state,
+                &format!("lock:idempotency:lock:status:{}:{ik}", account.id),
+                crate::redis_lock::DEFAULT_TTL_MS,
+            )
+            .await
+            .ok_or_else(|| {
+                AppError::ServiceUnavailable(
+                    "There was a temporary problem serving your request, please try again".into(),
+                )
+            })?;
+            if let Some(existing_id) = idempotency_duplicate(&state, account.id, ik).await {
+                return replay_idempotent(
+                    &state,
+                    &auth,
+                    &account,
+                    existing_id,
+                    scheduled_at.is_some(),
+                )
+                .await;
+            }
+            Some(lock)
+        }
+        None => None,
+    };
+
     let mut text = form.status.clone().unwrap_or_default();
     let mut spoiler_text = form.spoiler_text.clone().unwrap_or_default();
     // Mastodon PostStatusService#preprocess_attributes promotes a lone content
@@ -86,79 +104,75 @@ pub async fn post_status(
     // scheduled_at in the past (posts immediately); otherwise ScheduledStatus
     // must be at least MINIMUM_OFFSET (5 min) in the future and is bounded by
     // total (300) and daily (25) per-account limits.
-    if let Some(ref scheduled_at_str) = form.scheduled_at {
-        let scheduled_at = chrono::DateTime::parse_from_rfc3339(scheduled_at_str)
-            .map(|t| t.with_timezone(&chrono::Utc).naive_utc())
-            .map_err(|_| AppError::Unprocessable("Invalid scheduled_at format".into()))?;
+    if let Some(scheduled_at) = scheduled_at {
         let now = chrono::Utc::now().naive_utc();
-        // Past dates fall through and post immediately.
-        if scheduled_at > now {
-            if scheduled_at <= now + chrono::Duration::minutes(5) {
-                return Err(AppError::Unprocessable(
-                    "Validation failed: Scheduled date must be in the future".into(),
-                ));
-            }
-            let total = sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM scheduled_statuses WHERE account_id = $1",
-                account.id,
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(0);
-            if total >= 300 {
-                return Err(AppError::Unprocessable(
-                    "Validation failed: Total number of scheduled statuses exceeded".into(),
-                ));
-            }
-            let daily = sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM scheduled_statuses WHERE account_id = $1 AND scheduled_at::date = $2",
-                account.id,
-                scheduled_at.date(),
-            )
-            .fetch_one(&state.db)
-            .await?
-            .unwrap_or(0);
-            if daily >= 25 {
-                return Err(AppError::Unprocessable(
-                    "Validation failed: Daily number of scheduled statuses exceeded".into(),
-                ));
-            }
-            let params = serde_json::json!({
-                "text": text,
-                "visibility": form.visibility,
-                "spoiler_text": spoiler_text,
-                "sensitive": form.sensitive,
-                "language": form.language,
-                "in_reply_to_id": form.in_reply_to_id,
-                "media_ids": form.media_ids,
-                "poll": form.poll.as_ref().map(|p| serde_json::json!({
-                    "options": p.options,
-                    "expires_in": p.expires_in,
-                    "multiple": p.multiple,
-                    "hide_totals": p.hide_totals,
-                })),
-            });
-            let row = sqlx::query!(
-                r#"INSERT INTO scheduled_statuses (account_id, scheduled_at, params)
-                   VALUES ($1, $2, $3)
-                   RETURNING id, scheduled_at"#,
-                account.id,
-                scheduled_at,
-                params,
-            )
-            .fetch_one(&state.db)
-            .await?;
-            state.queues.scheduled_statuses.notify_one();
-            let resp = ScheduledStatusResponse {
-                id: row.id.to_string(),
-                scheduled_at: row
-                    .scheduled_at
-                    .map(crate::api::mastodon::convert::mastodon_date),
-                params,
-                media_attachments: vec![],
-            };
-            return Ok((axum::http::StatusCode::CREATED, Json(resp)).into_response());
+        if scheduled_at <= now + chrono::Duration::minutes(5) {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Scheduled date must be in the future".into(),
+            ));
         }
+        let total = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM scheduled_statuses WHERE account_id = $1",
+            account.id,
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(0);
+        if total >= 300 {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Total number of scheduled statuses exceeded".into(),
+            ));
+        }
+        let daily = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM scheduled_statuses WHERE account_id = $1 AND scheduled_at::date = $2",
+            account.id,
+            scheduled_at.date(),
+        )
+        .fetch_one(&state.db)
+        .await?
+        .unwrap_or(0);
+        if daily >= 25 {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Daily number of scheduled statuses exceeded".into(),
+            ));
+        }
+        let params = serde_json::json!({
+            "text": text,
+            "visibility": form.visibility,
+            "spoiler_text": spoiler_text,
+            "sensitive": form.sensitive,
+            "language": form.language,
+            "in_reply_to_id": form.in_reply_to_id,
+            "media_ids": form.media_ids,
+            "poll": form.poll.as_ref().map(|p| serde_json::json!({
+                "options": p.options,
+                "expires_in": p.expires_in,
+                "multiple": p.multiple,
+                "hide_totals": p.hide_totals,
+            })),
+        });
+        let row = sqlx::query!(
+            r#"INSERT INTO scheduled_statuses (account_id, scheduled_at, params)
+               VALUES ($1, $2, $3)
+               RETURNING id, scheduled_at"#,
+            account.id,
+            scheduled_at,
+            params,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        state.queues.scheduled_statuses.notify_one();
+        let resp = ScheduledStatusResponse {
+            id: row.id.to_string(),
+            scheduled_at: row
+                .scheduled_at
+                .map(crate::api::mastodon::convert::mastodon_date),
+            params,
+            media_attachments: vec![],
+        };
+        record_idempotency(&state, account.id, idempotency_key.as_deref(), row.id).await;
+        // `render json: @status` with no status: 200, as for a status.
+        return Ok((axum::http::StatusCode::OK, Json(resp)).into_response());
     }
 
     // Reject an unrecognized visibility rather than silently coercing it (the
@@ -800,15 +814,8 @@ pub async fn post_status(
         }
     }
 
-    // Record the idempotency mapping so a retried request replays this status.
-    if let Some(ref ik) = idempotency_key {
-        use redis::AsyncCommands;
-        let redis_key = state
-            .redis_keys
-            .key(format!("idempotency:{}:{}", auth.account_id, ik));
-        let mut redis = state.redis_coordination.clone();
-        let _: redis::RedisResult<()> = redis.set_ex(redis_key, status.id, 21600).await;
-    }
+    // Record the idempotency key so a retried request replays this status.
+    record_idempotency(&state, account.id, idempotency_key.as_deref(), status.id).await;
 
     // `PostStatusService#postprocess_status!`: `Trends.tags.register`.
     crate::trends::register_tags(&state, status.id).await;
@@ -821,6 +828,77 @@ pub async fn post_status(
     )
     .await;
     crate::fasp::events::status_created(&state, status.id).await;
+    Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
+}
+
+/// `PostStatusService#idempotency_key`.
+fn idempotency_redis_key(state: &AppState, account_id: i64, key: &str) -> String {
+    state
+        .redis_keys
+        .key(format!("idempotency:status:{account_id}:{key}"))
+}
+
+/// `idempotency_duplicate?`: the id a request with this key already created.
+async fn idempotency_duplicate(state: &AppState, account_id: i64, key: &str) -> Option<i64> {
+    use redis::AsyncCommands;
+    let mut redis = state.redis_coordination.clone();
+    let id: Option<String> = redis
+        .get(idempotency_redis_key(state, account_id, key))
+        .await
+        .ok()
+        .flatten();
+    id.and_then(|id| id.parse().ok())
+}
+
+/// `redis.setex(idempotency_key, 3_600, @status.id)`, for a status or a
+/// scheduled status alike.
+async fn record_idempotency(state: &AppState, account_id: i64, key: Option<&str>, id: i64) {
+    use redis::AsyncCommands;
+    let Some(key) = key else {
+        return;
+    };
+    let mut redis = state.redis_coordination.clone();
+    let _: redis::RedisResult<()> = redis
+        .set_ex(idempotency_redis_key(state, account_id, key), id, 3_600)
+        .await;
+}
+
+/// `raise IdempotencyError, idempotency_duplicate`: what the first request
+/// created, looked up as this request would have created it — among the
+/// account's scheduled statuses when it schedules, among its statuses
+/// otherwise. `find` raises when it is not there, which is a 404.
+async fn replay_idempotent(
+    state: &AppState,
+    auth: &AuthenticatedUser,
+    account: &Account,
+    id: i64,
+    scheduled: bool,
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    if scheduled {
+        let scheduled_status =
+            crate::api::mastodon::scheduled_statuses::load(state, account.id, id)
+                .await?
+                .ok_or(AppError::NotFound)?;
+        return Ok((axum::http::StatusCode::OK, Json(scheduled_status)).into_response());
+    }
+    let status = sqlx::query_as!(
+        DbStatus,
+        "SELECT * FROM statuses WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL",
+        id,
+        account.id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let media = fetch_status_media(state, status.id).await?;
+    let viewer_ctx = build_viewer_context(state, auth.account_id, status.id)
+        .await
+        .ok();
+    let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
+        state, &status, account, media, None, viewer_ctx, None,
+    )
+    .await?;
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 

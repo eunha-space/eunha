@@ -3857,7 +3857,8 @@ async fn test_batch_get_statuses_over_limit_returns_422() {
 
 // ── scheduled statuses ────────────────────────────────────────────────────────
 
-/// POST /api/v1/statuses with scheduled_at returns a scheduled status (201).
+/// POST /api/v1/statuses with scheduled_at returns a scheduled status, with the
+/// 200 `render json:` gives it.
 #[tokio::test]
 async fn test_create_scheduled_status() {
     let ctx = TestContext::new("sched-create").await;
@@ -3876,8 +3877,8 @@ async fn test_create_scheduled_status() {
         .await;
     assert_eq!(
         resp.status().as_u16(),
-        201,
-        "expected 201 for scheduled status"
+        200,
+        "expected 200 for scheduled status"
     );
     let body: Value = resp.json().await.unwrap();
     assert!(
@@ -5418,6 +5419,108 @@ async fn test_post_status_idempotency_key() {
     let id2 = resp2["id"].as_str().expect("second response must have id");
 
     assert_eq!(id1, id2, "idempotent post should return the same status id");
+}
+
+/// POST /api/v1/statuses with an Idempotency-Key and the given body.
+async fn post_with_idempotency_key(
+    ctx: &TestContext,
+    key: &str,
+    body: &Value,
+) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("{}/api/v1/statuses", ctx.api.base_url))
+        .header("Host", &ctx.domain)
+        .bearer_auth(&ctx.alice_token)
+        .header("Idempotency-Key", key)
+        .json(body)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Mastodon records the key as `idempotency:status:{account_id}:{key}` for an
+/// hour (`PostStatusService#idempotency_key`).
+#[tokio::test]
+async fn test_idempotency_key_is_recorded_as_mastodon_records_it() {
+    use redis::AsyncCommands;
+    let ctx = TestContext::new("idempotency-redis").await;
+    let resp =
+        post_with_idempotency_key(&ctx, "recorded-key", &json!({"status": "recorded"})).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let id: String = resp.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let key = ctx
+        .state
+        .redis_keys
+        .key(format!("idempotency:status:{}:recorded-key", ctx.alice_id));
+    let mut redis = ctx.state.redis_coordination.clone();
+    let recorded: Option<String> = redis.get(&key).await.unwrap();
+    assert_eq!(recorded.as_deref(), Some(id.as_str()));
+    let ttl: i64 = redis.ttl(&key).await.unwrap();
+    assert!((3_500..=3_600).contains(&ttl), "ttl {ttl}");
+}
+
+/// Since Mastodon 4.7.2 (#40439), a scheduled status records its key too, and
+/// the same request again answers with the same scheduled status rather than
+/// scheduling a second one.
+#[tokio::test]
+async fn test_scheduled_status_idempotency_key() {
+    let ctx = TestContext::new("idempotency-scheduled").await;
+    let body = json!({"status": "later", "scheduled_at": "2099-01-01T00:00:00Z"});
+
+    let first = post_with_idempotency_key(&ctx, "scheduled-key", &body).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let first: Value = first.json().await.unwrap();
+    let second = post_with_idempotency_key(&ctx, "scheduled-key", &body).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    let second: Value = second.json().await.unwrap();
+
+    assert_eq!(first["id"], second["id"]);
+    assert!(second["scheduled_at"].as_str().is_some(), "{second}");
+    let scheduled: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM scheduled_statuses WHERE account_id = $1")
+            .bind(ctx.alice_id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(scheduled, 1, "the second request should not schedule again");
+
+    // The duplicate is looked up as this request would have created it: a
+    // key that named a scheduled status finds no status, and `find` raises.
+    let now = post_with_idempotency_key(&ctx, "scheduled-key", &json!({"status": "now"})).await;
+    assert_eq!(now.status(), StatusCode::NOT_FOUND);
+}
+
+/// The duplicate check runs under `with_redis_lock`, so a request whose twin
+/// is still being posted is refused with the 503 a `RaceConditionError` gets
+/// rather than posted twice.
+#[tokio::test]
+async fn test_idempotency_key_in_use_is_refused() {
+    let ctx = TestContext::new("idempotency-locked").await;
+    let _held = eunha::redis_lock::try_acquire(
+        &ctx.state,
+        &format!("lock:idempotency:lock:status:{}:busy-key", ctx.alice_id),
+        eunha::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await
+    .expect("the lock");
+
+    let resp = post_with_idempotency_key(&ctx, "busy-key", &json!({"status": "twice"})).await;
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"],
+        "There was a temporary problem serving your request, please try again"
+    );
+    let statuses: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(statuses, 0);
 }
 
 /// A "warn" filter in thread context keeps the status but sets the filtered field.

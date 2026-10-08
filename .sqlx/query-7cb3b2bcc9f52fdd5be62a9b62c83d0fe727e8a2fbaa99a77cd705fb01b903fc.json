@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO scheduled_statuses (account_id, scheduled_at, params)\n                   VALUES ($1, $2, $3)\n                   RETURNING id, scheduled_at",
+  "query": "INSERT INTO scheduled_statuses (account_id, scheduled_at, params)\n               VALUES ($1, $2, $3)\n               RETURNING id, scheduled_at",
   "describe": {
     "columns": [
       {
@@ -26,5 +26,5 @@
       true
     ]
   },
-  "hash": "9788ba88e47b3e1c4fe5d9f227d00008a374c1489c4d740d1f8aa9ba5b54576a"
+  "hash": "7cb3b2bcc9f52fdd5be62a9b62c83d0fe727e8a2fbaa99a77cd705fb01b903fc"
 }
