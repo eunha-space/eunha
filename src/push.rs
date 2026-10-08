@@ -339,6 +339,24 @@ async fn notification_activity(
             .flatten()
             .map(|id| ("Quote", id));
     }
+    // A `mention` is about the recipient's `Mention`, as
+    // `notify_mentioned_accounts!` hands it to `LocalNotificationWorker`. A
+    // reply eunha tells its parent's author of without mentioning them has
+    // none, and is about the status.
+    if let (Some(sid), "mention") = (status_id, notification_type) {
+        if let Some(id) = sqlx::query_scalar!(
+            "SELECT id FROM mentions WHERE status_id = $1 AND account_id = $2",
+            sid,
+            recipient_id,
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        {
+            return Some(("Mention", id));
+        }
+    }
     if let Some(sid) = status_id {
         return Some(("Status", sid));
     }
@@ -791,6 +809,25 @@ async fn notify(
 
     // `push_to_streaming_api! if subscribed_to_streaming_api?`.
     crate::streaming::fan_out::notification(state, recipient_id, notification_id).await;
+
+    // `push_to_conversation! if direct_message?`: a mention in a direct
+    // message, delivered and not filtered, adds it to the recipient's
+    // conversations.
+    if let (Some(sid), "mention") = (status_id, notification_type) {
+        let direct = sqlx::query_scalar!(
+            r#"SELECT (visibility = $2) AS "direct!" FROM statuses WHERE id = $1"#,
+            sid,
+            crate::db::models::vis::DIRECT,
+        )
+        .fetch_optional(&db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+        if direct {
+            crate::api::mastodon::conversations::add_status(state, recipient_id, sid).await;
+        }
+    }
 
     deliver(
         state.clone(),

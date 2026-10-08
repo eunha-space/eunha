@@ -411,3 +411,172 @@ async fn test_an_edit_silences_the_mentions_it_drops() {
     expected.sort();
     assert_eq!(mentions(&ctx, id).await, expected);
 }
+
+async fn conversation_rows(ctx: &TestContext, account_id: i64) -> Vec<(Vec<i64>, bool)> {
+    sqlx::query_as(
+        "SELECT participant_account_ids, unread FROM account_conversations WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// A direct message's mention notification is about the `Mention`; the
+/// message goes into the conversations of the mentioned and of its remote
+/// author alike.
+#[tokio::test]
+async fn test_a_direct_message_notifies_about_its_mention_and_reaches_conversations() {
+    let ctx = TestContext::new("audience-dm-rows").await;
+    let (remy_id, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    ctx.api
+        .patch_json(
+            "/api/v2/notifications/policy",
+            Some(&ctx.alice_token),
+            &json!({"for_private_mentions": "accept"}),
+        )
+        .await;
+    let note = format!("{remy}/statuses/50");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(
+            &remy,
+            json!({
+                "id": note, "type": "Note", "attributedTo": remy,
+                "content": "<p>@alice psst</p>",
+                "to": [local(&ctx, "alice")],
+                "tag": [{"type": "Mention", "href": local(&ctx, "alice")}],
+            }),
+        ),
+    )
+    .await;
+    let (status_id, visibility, _) = status_row(&ctx, &note).await;
+    assert_eq!(visibility, 3);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let (activity_type, mention_status): (String, i64) = sqlx::query_as(
+        r#"SELECT n.activity_type, m.status_id FROM notifications n
+           JOIN mentions m ON m.id = n.activity_id
+           WHERE n.account_id = $1 AND n.type = 'mention'"#,
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(activity_type, "Mention");
+    assert_eq!(mention_status, status_id);
+    let listed: Value = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed[0]["status"]["id"], status_id.to_string());
+
+    assert_eq!(
+        conversation_rows(&ctx, alice).await,
+        vec![(vec![remy_id], true)]
+    );
+    assert_eq!(
+        conversation_rows(&ctx, remy_id).await,
+        vec![(vec![alice], false)]
+    );
+}
+
+/// A direct message whose mention the recipient's policy files away is not
+/// added to their conversations.
+#[tokio::test]
+async fn test_a_filtered_direct_message_is_not_a_conversation() {
+    let ctx = TestContext::new("audience-dm-filtered").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    ctx.api
+        .patch_json(
+            "/api/v2/notifications/policy",
+            Some(&ctx.alice_token),
+            &json!({"for_private_mentions": "filter"}),
+        )
+        .await;
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(
+            &remy,
+            json!({
+                "id": format!("{remy}/statuses/60"), "type": "Note", "attributedTo": remy,
+                "content": "<p>@alice psst</p>",
+                "to": [local(&ctx, "alice")],
+                "tag": [{"type": "Mention", "href": local(&ctx, "alice")}],
+            }),
+        ),
+    )
+    .await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let filtered: bool = sqlx::query_scalar(
+        "SELECT filtered FROM notifications WHERE account_id = $1 AND type = 'mention'",
+    )
+    .bind(alice)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(filtered);
+    assert!(conversation_rows(&ctx, alice).await.is_empty());
+}
+
+/// A reply named after an option is a vote only on a local post's poll; on
+/// a remote poll it is a status like any other.
+#[tokio::test]
+async fn test_a_vote_counts_only_on_a_local_poll() {
+    let ctx = TestContext::new("audience-poll-vote").await;
+    let (_, remy, key) = seed_remote(&ctx, "remy", "remote.invalid").await;
+    let (victim_id, victim, _) = seed_remote(&ctx, "vic", "remote.invalid").await;
+    let poll_status = format!("{victim}/statuses/70");
+    let status_id = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO statuses (id, account_id, text, spoiler_text, visibility, uri, url, local, created_at, updated_at)
+           VALUES ($1, $2, 'which?', '', 0, $3, $3, false, now(), now())"#,
+    )
+    .bind(status_id)
+    .bind(victim_id)
+    .bind(&poll_status)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO polls (status_id, account_id, options, cached_tallies, votes_count, multiple, created_at, updated_at)
+           VALUES ($1, $2, ARRAY['yes','no'], ARRAY[0,0]::bigint[], 0, false, now(), now())"#,
+    )
+    .bind(status_id)
+    .bind(victim_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let vote = format!("{remy}/votes/1");
+    send(
+        &ctx,
+        &remy,
+        &key,
+        &create(
+            &remy,
+            json!({
+                "id": vote, "type": "Note", "attributedTo": remy, "name": "yes",
+                "inReplyTo": poll_status,
+                "to": [PUBLIC], "cc": [local(&ctx, "alice")],
+            }),
+        ),
+    )
+    .await;
+    let votes: i64 = sqlx::query_scalar("SELECT count(*) FROM poll_votes")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(votes, 0);
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE uri = $1")
+        .bind(&vote)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 1);
+}

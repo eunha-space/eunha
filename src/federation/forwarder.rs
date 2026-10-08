@@ -116,6 +116,7 @@ async fn try_forward(
     if let Some(members) = activity.as_object_mut() {
         members.remove(crate::api::ap::inbox::THROUGH_RELAY);
         members.remove(crate::api::ap::inbox::DELIVERED_TO);
+        members.remove(crate::api::ap::inbox::RELAYED_THROUGH);
     }
     crate::federation::delivery::forward_to_inboxes(state, activity, inboxes, key_id).await?;
     Ok(())

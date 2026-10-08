@@ -154,6 +154,36 @@ pub async fn received_from(
 /// `delivered_to_account_id`, which `ActivityPub::ProcessingWorker` carries.
 pub(crate) const DELIVERED_TO: &str = "eunha:deliveredToAccountId";
 
+/// Set on an activity by eunha, and never taken from its sender, when an
+/// actor other than its own passed it on: that actor's URI, Mastodon's
+/// `relayed_through_actor`.
+pub(crate) const RELAYED_THROUGH: &str = "eunha:relayedThroughActor";
+
+/// `followed_by_local_accounts?`: someone here follows `account_id`, or the
+/// actor that passed the activity on (`relayed_through_actor.
+/// passive_relationships.exists?`).
+pub(super) async fn followed_by_local_accounts(
+    state: &AppState,
+    activity: &Value,
+    account_id: i64,
+) -> AppResult<bool> {
+    let relayed_through = activity
+        .get(RELAYED_THROUGH)
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM follows f
+             WHERE f.target_account_id = $1
+                OR f.target_account_id IN (SELECT id FROM accounts WHERE uri = $2 AND $2 <> '')
+           ) AS "e!""#,
+        account_id,
+        relayed_through,
+    )
+    .fetch_one(&state.db)
+    .await?)
+}
+
 /// [`received_from`], delivered to the inbox of the local account
 /// `delivered_to`, or to the shared inbox when `None`.
 pub async fn received_at(
@@ -166,7 +196,12 @@ pub async fn received_at(
     if let Some(members) = activity.as_object_mut() {
         members.remove(THROUGH_RELAY);
         members.remove(DELIVERED_TO);
+        members.remove(RELAYED_THROUGH);
         if let Some(forwarder) = forwarder {
+            members.insert(
+                RELAYED_THROUGH.to_owned(),
+                Value::String(forwarder.to_owned()),
+            );
             if through_enabled_relay(state, forwarder).await {
                 members.insert(THROUGH_RELAY.to_owned(), Value::Bool(true));
             }

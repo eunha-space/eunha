@@ -423,18 +423,65 @@ pub async fn mark_conversation_read(
 
 // ── Shared helper ─────────────────────────────────────────────────────────
 
-/// [`push_to_streaming`] for every conversation a new status is the last of.
-pub(crate) async fn push_for_status(state: &AppState, status_id: i64) {
-    let rows = sqlx::query_scalar!(
-        "SELECT id FROM account_conversations WHERE last_status_id = $1",
+/// `AccountConversation.add_status(recipient, status)`: the status into the
+/// recipient's conversation with everyone else it involves (its author and
+/// those it mentions, not silently), unread unless the recipient wrote it,
+/// and streamed. A status already in it changes nothing.
+pub(crate) async fn add_status(state: &AppState, recipient_id: i64, status_id: i64) {
+    if let Err(error) = try_add_status(state, recipient_id, status_id).await {
+        tracing::warn!(%error, status_id, "could not add a status to a conversation");
+    }
+}
+
+async fn try_add_status(state: &AppState, recipient_id: i64, status_id: i64) -> sqlx::Result<()> {
+    let Some(status) = sqlx::query!(
+        "SELECT account_id, conversation_id FROM statuses WHERE id = $1",
+        status_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    let Some(conversation_id) = status.conversation_id else {
+        return Ok(());
+    };
+    // `participants_from_status`.
+    let mut participants: Vec<i64> = sqlx::query_scalar!(
+        "SELECT account_id FROM mentions WHERE status_id = $1 AND NOT silent",
         status_id
     )
     .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-    for row in rows {
+    .await?;
+    participants.push(status.account_id);
+    participants.sort_unstable();
+    participants.dedup();
+    participants.retain(|&id| id != recipient_id);
+    let row = sqlx::query_scalar!(
+        r#"INSERT INTO account_conversations
+             (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)
+           VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, $5)
+           ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE
+             SET status_ids = (SELECT array_agg(id ORDER BY id)
+                               FROM unnest(array_append(account_conversations.status_ids, $4)) AS id),
+                 last_status_id = GREATEST(account_conversations.last_status_id, $4),
+                 unread = EXCLUDED.unread,
+                 lock_version = account_conversations.lock_version + 1
+             WHERE NOT ($4 = ANY(account_conversations.status_ids))
+           RETURNING id"#,
+        recipient_id,
+        conversation_id,
+        &participants,
+        status_id,
+        status.account_id != recipient_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    // `after_commit :push_to_streaming_api`.
+    if let Some(row) = row {
         push_to_streaming(state, row).await;
     }
+    Ok(())
 }
 
 /// `AccountConversation#push_to_streaming_api` (`after_commit`) and

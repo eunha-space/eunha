@@ -272,12 +272,8 @@ pub(super) async fn handle_announce(
 
     // `Announce#related_to_local_activity?`: the booster has followers here,
     // came through a relay, or boosted a local post.
-    let followed_by_local_accounts = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM follows WHERE target_account_id = $1) AS "e!""#,
-        booster_id,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let followed_by_local_accounts =
+        super::followed_by_local_accounts(state, activity, booster_id).await?;
     let reblog_of_local_status = match original_id {
         Some(id) => sqlx::query_scalar!(
             r#"SELECT (a.domain IS NULL) AS "local!" FROM statuses s

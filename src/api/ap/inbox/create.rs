@@ -260,17 +260,8 @@ pub(super) async fn create(
     // (`fetch?`).
     if !create_options.fetched {
         // `followed_by_local_accounts?`.
-        let followed_by_local_accounts = sqlx::query_scalar!(
-            r#"SELECT EXISTS(
-                SELECT 1 FROM follows f
-                JOIN accounts a ON a.id = f.account_id
-                WHERE f.target_account_id = $1 AND a.domain IS NULL
-            )"#,
-            account_id,
-        )
-        .fetch_one(&state.db)
-        .await?
-        .unwrap_or(false);
+        let followed_by_local_accounts =
+            super::followed_by_local_accounts(state, activity, account_id).await?;
         // `addresses_local_accounts?`: delivered to a local inbox, or
         // addressed to a local account.
         let mut addresses_local_accounts = delivered_to.is_some();
@@ -488,7 +479,7 @@ pub(super) async fn create(
         return Ok(()); // duplicate
     };
     // `set_conversation` and `update_conversation`.
-    let conversation_id = crate::conversation::assign(&state.db, inserted_id).await?;
+    crate::conversation::assign(&state.db, inserted_id).await?;
 
     // The same call the API path makes: a status is a status however it
     // arrived, and the conditions belong to `counters`, not here. `inserted_id`
@@ -750,47 +741,6 @@ pub(super) async fn create(
         }
     }
 
-    // A direct message's conversations (`AccountConversation.add_status`,
-    // from the mention's notification): for each local account it mentions,
-    // the others in it are its author and everyone else it mentions.
-    if let (true, true, Some(conversation_id)) = (
-        visibility == crate::db::models::vis::DIRECT,
-        within_realtime_window,
-        conversation_id,
-    ) {
-        let active: Vec<i64> = mentions
-            .iter()
-            .filter(|m| !m.silent)
-            .map(|m| m.account_id)
-            .collect();
-        let mut everyone: Vec<i64> = active.clone();
-        everyone.push(account_id);
-        everyone.sort_unstable();
-        everyone.dedup();
-        for &local_id in active.iter().filter(|id| local_mentioned.contains(id)) {
-            let others: Vec<i64> = everyone
-                .iter()
-                .copied()
-                .filter(|&id| id != local_id)
-                .collect();
-            sqlx::query!(
-                r#"INSERT INTO account_conversations
-                     (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)
-                   VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, true)
-                   ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE
-                     SET status_ids = array_append(account_conversations.status_ids, $4),
-                         last_status_id = $4,
-                         unread = true"#,
-                local_id,
-                conversation_id,
-                &others,
-                inserted_id,
-            )
-            .execute(&state.db)
-            .await?;
-        }
-    }
-
     // Custom emojis
     let actor_domain = url::Url::parse(actor_uri)
         .ok()
@@ -912,12 +862,6 @@ pub(super) async fn create(
             },
         )
         .await;
-    }
-
-    // `AccountConversation#push_to_streaming_api`, once the status is whole,
-    // for the conversations it was added to.
-    if within_realtime_window {
-        crate::api::mastodon::conversations::push_for_status(state, inserted_id).await;
     }
 
     // Fanout to home and list feeds, then stream it (`DistributionWorker`).
@@ -1070,6 +1014,11 @@ impl crate::jobs::Job for MentionResolveWorker {
     }
 }
 
+/// `poll_vote?` and `poll_vote!`: a reply named after an option of a local
+/// post's poll is a vote, stored unless the poll has ended, and not a
+/// status. Says whether it was one. A vote `PollVote`'s validations refuse
+/// (`VoteValidator`: the voter's own poll, or a vote already cast) is taken
+/// and dropped.
 pub(super) async fn handle_poll_vote_note(
     state: &AppState,
     voter_id: i64,
@@ -1077,8 +1026,14 @@ pub(super) async fn handle_poll_vote_note(
     choice_name: &str,
     vote_uri: &str,
 ) -> AppResult<bool> {
+    // `replied_to_status.preloadable_poll`, of a `local?` status, with the
+    // option named.
     let Some(poll) = sqlx::query!(
-        "SELECT id, options, multiple, expires_at FROM polls WHERE status_id = $1",
+        r#"SELECT p.id, p.account_id, p.options, p.multiple, p.expires_at,
+                  COALESCE(p.hide_totals, false) AS "hide_totals!"
+           FROM polls p
+           JOIN statuses s ON s.id = p.status_id
+           WHERE p.status_id = $1 AND (s.local OR s.uri IS NULL)"#,
         status_id,
     )
     .fetch_optional(&state.db)
@@ -1086,54 +1041,86 @@ pub(super) async fn handle_poll_vote_note(
     else {
         return Ok(false);
     };
-
-    if poll
-        .expires_at
-        .map(|e| e < chrono::Utc::now().naive_utc())
-        .unwrap_or(false)
-    {
-        return Ok(true);
-    }
-
     let Some(choice) = poll.options.iter().position(|option| option == choice_name) else {
-        return Ok(true);
+        return Ok(false);
     };
     let choice = choice as i32;
 
-    let already_voted = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)",
-        poll.id,
-        voter_id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .unwrap_or(false);
-
-    if !poll.multiple && already_voted {
+    // `poll_vote! unless replied_to_status.preloadable_poll.expired?`.
+    if poll
+        .expires_at
+        .is_some_and(|e| e <= chrono::Utc::now().naive_utc())
+    {
+        return Ok(true);
+    }
+    // `VoteValidator#self_vote?`.
+    if poll.account_id == voter_id {
         return Ok(true);
     }
 
-    let inserted = sqlx::query!(
+    let previous: Vec<i32> = sqlx::query_scalar!(
+        "SELECT choice FROM poll_votes WHERE poll_id = $1 AND account_id = $2",
+        poll.id,
+        voter_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let already_voted = !previous.is_empty();
+    // `additional_voting_not_allowed?`: any vote on a single-choice poll, the
+    // same choice again on a multiple-choice one.
+    if (!poll.multiple && already_voted) || previous.contains(&choice) {
+        return Ok(true);
+    }
+
+    sqlx::query!(
         r#"INSERT INTO poll_votes (account_id, poll_id, choice, uri, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, now(), now())
-           ON CONFLICT DO NOTHING"#,
+           VALUES ($1, $2, $3, $4, now(), now())"#,
         voter_id,
         poll.id,
         choice,
         vote_uri,
     )
     .execute(&state.db)
-    .await?
-    .rows_affected()
-        > 0;
+    .await?;
 
     // `PollVote#increment_counter_cache`, and `increment_voters_count!`
     // unless the voter had voted already.
-    if inserted {
-        crate::api::mastodon::polls::count_vote(&state.db, poll.id, choice, !already_voted).await?;
+    crate::api::mastodon::polls::count_vote(&state.db, poll.id, choice, !already_voted).await?;
+
+    // `ActivityPub::DistributePollUpdateWorker.perform_in(3.minutes, …)
+    // unless replied_to_status.preloadable_poll.hide_totals?`.
+    if !poll.hide_totals {
+        crate::jobs::push_in(
+            state,
+            std::time::Duration::from_secs(3 * 60),
+            DistributePollUpdateWorker { status_id },
+        )
+        .await;
     }
 
     Ok(true)
+}
+
+/// `ActivityPub::DistributePollUpdateWorker`: a local poll's tallies, sent
+/// to those who have seen it a while after a vote, one at a time per status
+/// (`lock: :until_executed`), on the `push` queue and never retried.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DistributePollUpdateWorker {
+    pub status_id: i64,
+}
+
+impl crate::jobs::Job for DistributePollUpdateWorker {
+    const KIND: &'static str = "ActivityPub::DistributePollUpdateWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT
+        .queue(crate::jobs::Queue::Push)
+        .retry(0)
+        .lock(crate::jobs::Lock::UntilExecuted(
+            crate::jobs::DEFAULT_LOCK_TTL,
+        ));
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        crate::api::mastodon::polls::federate_poll_update(state, self.status_id).await
+    }
 }
 
 /// `ThreadResolveWorker`: fetch a reply's unknown parent, link it onto the

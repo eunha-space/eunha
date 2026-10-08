@@ -506,6 +506,16 @@ async fn test_user_notification_stream() {
 #[tokio::test]
 async fn test_direct_stream() {
     let ctx = TestContext::new("stream-direct").await;
+    // Alice follows bob, so that her policy does not file his direct
+    // message away, which would keep it out of her conversations.
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
     let mut ws = ws_connect(&ctx, "direct", &ctx.alice_token).await;
     let alice = sqlx::query_scalar::<_, String>("SELECT username FROM accounts WHERE id = $1")
         .bind(ctx.alice_id.parse::<i64>().unwrap())

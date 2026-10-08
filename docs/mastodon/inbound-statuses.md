@@ -16,9 +16,11 @@ public with the public collection in `to`, unlisted with it in `cc`, private
 with its author's own followers collection in `to`, and direct otherwise.
 Whether it is taken at all depends on that visibility
 (`related_to_local_activity?`): a public or unlisted one from an account
-someone here follows, through an enabled relay, in reply to a local post or
+someone here follows, or passed on by one (`relayed_through_actor`), through
+an enabled relay, in reply to a local post or
 to an account someone follows, or addressed to a local account; a private
-one from a followed account or addressed to a local account; a direct one
+one from a followed account, or passed on by one, or addressed to a local
+account; a direct one
 only addressed to a local account. Anything fetched on purpose is taken, and
 so is anything delivered to a local account's own inbox, whose owner eunha
 remembers on the job (Mastodon's `delivered_to_account_id`).
@@ -31,7 +33,22 @@ as `private`. A limited status is shown only to its author and the accounts
 it mentions, and is never boosted. A local account the status tags but does
 not address is mentioned, but its notification is decided as if the sender
 were limited (`silenced_account_ids`), so a policy that filters or drops
-limited accounts applies. Only tagged mentions notify.
+limited accounts applies. Only tagged mentions notify, and a mention
+notification is about the `Mention` (`activity_type` `Mention`), as
+Mastodon's are.
+
+A direct message goes into its author's conversations, whether the author
+is local or remote (`deliver_to_conversation!`), and into those of each
+local account it mentions whose mention notification was delivered rather
+than dropped or filtered (`push_to_conversation!`): the others in each are
+its author and everyone it mentions, not silently.
+
+A reply named after an option of a local post's poll is a vote
+(`poll_vote?`), counted unless the poll has ended, the voter wrote it, or
+the voter already voted (once on a single-choice poll, once per option on
+a multiple-choice one); the poll's tallies are sent out three minutes later
+unless it hides them (`ActivityPub::DistributePollUpdateWorker`). Such a
+reply to a remote poll, or naming no option, is a status.
 
 A status already held, delivered again to a local inbox whose owner it does
 not mention, gives that owner a silent mention, makes a direct message

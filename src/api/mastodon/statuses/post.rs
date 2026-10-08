@@ -501,64 +501,7 @@ pub async fn post_status(
     }
 
     // `set_conversation` and `update_conversation`.
-    let conv_id = crate::conversation::assign(&state.db, status.id).await?;
-
-    // For direct messages, also manage the account_conversations inbox.
-    if let (true, Some(conv_id)) = (visibility == "direct", conv_id) {
-        // Build sorted participant ID lists for each party's account_conversations row.
-        // Mastodon convention: participant_account_ids = everyone else in the conversation.
-        let mut mentioned_ids: Vec<i64> = resolved
-            .iter()
-            .map(|(_, m)| m.id)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        mentioned_ids.sort_unstable();
-
-        // Sender sees the mentioned accounts as participants.
-        sqlx::query!(
-            r#"INSERT INTO account_conversations
-                   (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)
-               VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, false)
-               ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE
-                   SET unread         = false,
-                       last_status_id = EXCLUDED.last_status_id,
-                       status_ids     = array_append(account_conversations.status_ids, EXCLUDED.last_status_id),
-                       lock_version   = account_conversations.lock_version + 1"#,
-            account.id, conv_id, &mentioned_ids, status.id
-        )
-        .execute(&state.db)
-        .await?;
-
-        // Each recipient sees the sender (plus other recipients) as participants.
-        for (_, mentioned) in &resolved {
-            let mut recipient_participants: Vec<i64> = std::iter::once(account.id)
-                .chain(
-                    resolved
-                        .iter()
-                        .filter(|(_, m)| m.id != mentioned.id)
-                        .map(|(_, m)| m.id),
-                )
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-            recipient_participants.sort_unstable();
-
-            sqlx::query!(
-                r#"INSERT INTO account_conversations
-                       (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)
-                   VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, true)
-                   ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE
-                       SET unread         = true,
-                           last_status_id = EXCLUDED.last_status_id,
-                           status_ids     = array_append(account_conversations.status_ids, EXCLUDED.last_status_id),
-                           lock_version   = account_conversations.lock_version + 1"#,
-                mentioned.id, conv_id, &recipient_participants, status.id
-            )
-            .execute(&state.db)
-            .await?;
-        }
-    }
+    crate::conversation::assign(&state.db, status.id).await?;
 
     // What happened, not what to count: the rules live in `counters`.
     if let Err(e) = crate::counters::on_status_created(
@@ -733,9 +676,6 @@ pub async fn post_status(
 
     // The "bell" — `FeedInsertWorker#notify?` — is the fan-out's
     // (`crate::feed::distribute`).
-
-    // `AccountConversation#push_to_streaming_api`, once the status is whole.
-    crate::api::mastodon::conversations::push_for_status(&state, status.id).await;
 
     // Fan-out to follower feeds and list feeds in background (non-blocking)
     crate::feed::distribute_later(&state, status.id).await;

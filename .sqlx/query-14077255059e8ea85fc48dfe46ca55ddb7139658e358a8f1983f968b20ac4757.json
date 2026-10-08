@@ -1,22 +1,23 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS(SELECT 1 FROM follows WHERE target_account_id = $1) AS \"e!\"",
+  "query": "SELECT (visibility = $2) AS \"direct!\" FROM statuses WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "e!",
+        "name": "direct!",
         "type_info": "Bool"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Int4"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "f379117cbf99f57e0ba16155b2726c2f240c2d40c0b235ad26f34c6f6e916417"
+  "hash": "14077255059e8ea85fc48dfe46ca55ddb7139658e358a8f1983f968b20ac4757"
 }

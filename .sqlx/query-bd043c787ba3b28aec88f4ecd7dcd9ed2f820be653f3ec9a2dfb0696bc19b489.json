@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_conversations\n             (account_id, conversation_id, participant_account_ids, status_ids, last_status_id, unread)\n           VALUES ($1, $2, $3, ARRAY[$4::bigint], $4, $5)\n           ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE\n             SET status_ids = (SELECT array_agg(id ORDER BY id)\n                               FROM unnest(array_append(account_conversations.status_ids, $4)) AS id),\n                 last_status_id = GREATEST(account_conversations.last_status_id, $4),\n                 unread = EXCLUDED.unread,\n                 lock_version = account_conversations.lock_version + 1\n             WHERE NOT ($4 = ANY(account_conversations.status_ids))\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8Array",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bd043c787ba3b28aec88f4ecd7dcd9ed2f820be653f3ec9a2dfb0696bc19b489"
+}

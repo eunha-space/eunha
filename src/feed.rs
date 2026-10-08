@@ -919,6 +919,24 @@ pub async fn distribute(state: &crate::state::AppState, status_id: i64, update: 
         notify_followers(state, status_id, &pushed.notify).await;
     }
     crate::streaming::fan_out::distribute(state, status_id, update, &pushed).await;
+    // `deliver_to_conversation!`: a direct message, not an edit, into its
+    // author's conversations, whoever the author is.
+    if !update {
+        let author = sqlx::query_scalar!(
+            r#"SELECT s.account_id FROM statuses s JOIN accounts a ON a.id = s.account_id
+               WHERE s.id = $1 AND s.visibility = $2 AND s.deleted_at IS NULL
+                 AND a.suspended_at IS NULL"#,
+            status_id,
+            crate::db::models::vis::DIRECT,
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+        if let Some(author) = author {
+            crate::api::mastodon::conversations::add_status(state, author, status_id).await;
+        }
+    }
 }
 
 /// `DistributionWorker.perform_async(status_id)`: [`distribute`] in a task

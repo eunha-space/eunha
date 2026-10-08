@@ -3,10 +3,26 @@ use serde_json::{json, Value};
 
 use crate::helpers::TestContext;
 
+/// Bob follows alice, so that her direct messages to him are not filed away
+/// by his notification policy (`for_private_mentions`, which filters a
+/// private mention from someone he does not follow), and reach his
+/// conversations as Mastodon adds them, with the notification.
+async fn accept_private_mentions(ctx: &TestContext) {
+    sqlx::query(
+        "INSERT INTO follows (account_id, target_account_id, created_at, updated_at) VALUES ($1, $2, now(), now())",
+    )
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
 /// Direct message creates a conversation visible to both sender and recipient.
 #[tokio::test]
 async fn test_conversations_lifecycle() {
     let ctx = TestContext::new("conv").await;
+    accept_private_mentions(&ctx).await;
 
     let dm_resp = ctx
         .api
@@ -66,6 +82,7 @@ async fn test_conversations_lifecycle() {
 #[tokio::test]
 async fn test_conversations_limit_param() {
     let ctx = TestContext::new("conv-limit").await;
+    accept_private_mentions(&ctx).await;
 
     for i in 0..3 {
         ctx.api
@@ -98,6 +115,7 @@ async fn test_conversations_limit_param() {
 #[tokio::test]
 async fn test_conversations_since_id() {
     let ctx = TestContext::new("conv-since").await;
+    accept_private_mentions(&ctx).await;
 
     // First DM — older.
     ctx.api
@@ -159,6 +177,7 @@ async fn test_conversations_since_id() {
 #[tokio::test]
 async fn test_conversations_max_id() {
     let ctx = TestContext::new("conv-maxid").await;
+    accept_private_mentions(&ctx).await;
 
     // First DM — older conversation.
     ctx.api
@@ -227,6 +246,7 @@ async fn test_conversations_max_id() {
 #[tokio::test]
 async fn test_conversations_min_id() {
     let ctx = TestContext::new("conv-minid").await;
+    accept_private_mentions(&ctx).await;
 
     // First DM — creates conversation c1.
     ctx.api
@@ -301,6 +321,7 @@ async fn test_conversations_min_id() {
 #[tokio::test]
 async fn test_conversations_visible_to_sender() {
     let ctx = TestContext::new("conv-sender").await;
+    accept_private_mentions(&ctx).await;
 
     ctx.api
         .post_json(
@@ -327,6 +348,7 @@ async fn test_conversations_visible_to_sender() {
 #[tokio::test]
 async fn test_conversations_ordered_by_id_desc() {
     let ctx = TestContext::new("conv-order").await;
+    accept_private_mentions(&ctx).await;
 
     // Create two separate conversations by creating and deleting between each.
     ctx.api
@@ -397,6 +419,7 @@ async fn test_conversations_ordered_by_id_desc() {
 #[tokio::test]
 async fn test_conversation_includes_accounts_and_last_status() {
     let ctx = TestContext::new("conv-fields").await;
+    accept_private_mentions(&ctx).await;
 
     let dm = ctx
         .api
@@ -457,6 +480,7 @@ async fn test_conversation_includes_accounts_and_last_status() {
 #[tokio::test]
 async fn test_mark_conversation_unread() {
     let ctx = TestContext::new("conv-unread").await;
+    accept_private_mentions(&ctx).await;
 
     ctx.api
         .post_json(
@@ -510,6 +534,7 @@ async fn test_mark_conversation_unread() {
 #[tokio::test]
 async fn test_delete_one_of_several_conversations() {
     let ctx = TestContext::new("conv-del-many").await;
+    accept_private_mentions(&ctx).await;
 
     // Three separate top-level DMs — each one starts its own conversation.
     for i in 0..3 {
@@ -571,6 +596,7 @@ async fn test_delete_one_of_several_conversations() {
 #[tokio::test]
 async fn test_conversation_ids_are_per_row_not_per_conversation() {
     let ctx = TestContext::new("conv-dup-id").await;
+    accept_private_mentions(&ctx).await;
     let (_carol_id, _carol_token) = crate::helpers::seed_account_and_token(
         &ctx.db,
         &ctx.domain,
