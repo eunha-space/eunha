@@ -113,14 +113,18 @@ pub async fn list_invites(
 /// Mastodon Invite::COMMENT_SIZE_LIMIT.
 const COMMENT_SIZE_LIMIT: usize = 420;
 
+/// A form, a JSON body or the query string, as Mastodon's params would be.
 #[derive(Debug, Deserialize, Default)]
 pub struct CreateInviteRequest {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_i32")]
     pub max_uses: Option<i32>,
     /// Seconds from now until expiry; None = never expires.
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_int")]
     pub expires_in: Option<i64>,
     /// Auto-follow the inviter when the new account is created.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::extractors::rails::bool")]
     pub autofollow: bool,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub comment: Option<String>,
 }
 
@@ -128,11 +132,10 @@ pub async fn create_invite(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<CreateInviteRequest>>,
+    super::extractors::Params(req): super::extractors::Params<CreateInviteRequest>,
 ) -> AppResult<Json<InviteResponse>> {
     auth.require_scope("write:accounts")?;
     require_invite_users(&state, auth.account_id).await?;
-    let req = body.map(|Json(b)| b).unwrap_or_default();
 
     let comment = req.comment.filter(|c| !c.is_empty());
     if comment

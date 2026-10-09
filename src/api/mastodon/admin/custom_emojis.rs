@@ -262,10 +262,23 @@ pub async fn delete_admin_custom_emoji(
 
 // ── PATCH /api/v1/admin/custom_emojis/:id ────────────────────────────────
 
+/// Read from Rails-style params: a form, a JSON body or the query string.
 #[derive(Debug, Deserialize)]
 pub struct PatchEmojiForm {
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_string"
+    )]
     pub shortcode: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub visible_in_picker: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::api::mastodon::extractors::rails::opt_bool"
+    )]
     pub disabled: Option<bool>,
 }
 
@@ -277,7 +290,9 @@ pub async fn update_admin_custom_emoji(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(id): Path<i64>,
-    Json(form): Json<PatchEmojiForm>,
+    crate::api::mastodon::extractors::Params(form): crate::api::mastodon::extractors::Params<
+        PatchEmojiForm,
+    >,
 ) -> AppResult<Json<AdminCustomEmoji>> {
     require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
     let current = sqlx::query!(

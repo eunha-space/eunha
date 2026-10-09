@@ -1586,12 +1586,11 @@ pub async fn apply_account_stats(
 pub async fn delete_account(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
-    body: Option<Json<serde_json::Value>>,
+    super::extractors::NestedParams(body): super::extractors::NestedParams,
 ) -> AppResult<axum::http::StatusCode> {
     auth.require_scope("write:accounts")?;
     let field = |name: &str| -> String {
-        body.as_ref()
-            .and_then(|b| b.get(name))
+        body.get(name)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string()

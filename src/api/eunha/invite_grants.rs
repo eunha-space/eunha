@@ -18,7 +18,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    api::mastodon::{admin, invites::generate_code},
+    api::mastodon::{
+        admin,
+        extractors::{rails, Params},
+        invites::generate_code,
+    },
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,
     state::AppState,
@@ -30,15 +34,20 @@ const MAX_COUNT: i32 = 25;
 /// The largest of Mastodon's `Invite::MAX_USES_COUNTS`.
 const MAX_USES: i32 = 100;
 
+/// A form or a JSON body, read as Rails params are.
 #[derive(Debug, Deserialize)]
 pub struct GrantRequest {
     /// Whose account to mint them into. Absent means every local member.
+    #[serde(default, deserialize_with = "rails::opt_string")]
     pub account_id: Option<String>,
     /// How many codes each of those accounts gets.
-    pub count: i32,
+    #[serde(default, deserialize_with = "rails::opt_i32")]
+    pub count: Option<i32>,
     /// Uses per code. One by default: "three invites" should mean three people.
+    #[serde(default, deserialize_with = "rails::opt_i32")]
     pub max_uses: Option<i32>,
     /// Seconds until the codes expire; absent for never.
+    #[serde(default, deserialize_with = "rails::opt_int")]
     pub expires_in: Option<i64>,
 }
 
@@ -54,7 +63,7 @@ pub struct GrantResponse {
 pub async fn grant_invites(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
-    Json(req): Json<GrantRequest>,
+    Params(req): Params<GrantRequest>,
 ) -> AppResult<Json<GrantResponse>> {
     let Some(Extension(auth)) = auth else {
         return Err(AppError::Unauthorized);
@@ -65,7 +74,8 @@ pub async fn grant_invites(
     // it creates them.
     admin::require_permission(&state, auth.account_id, admin::perm::MANAGE_INVITES).await?;
 
-    if !(1..=MAX_COUNT).contains(&req.count) {
+    let count = req.count.unwrap_or(0);
+    if !(1..=MAX_COUNT).contains(&count) {
         return Err(AppError::Unprocessable(format!(
             "Count must be between 1 and {MAX_COUNT}"
         )));
@@ -105,10 +115,10 @@ pub async fn grant_invites(
 
     // One row per code, built here rather than in a loop of statements: 25
     // codes across a whole userbase is a single insert either way.
-    let mut user_ids = Vec::with_capacity(targets.len() * req.count as usize);
-    let mut codes = Vec::with_capacity(targets.len() * req.count as usize);
+    let mut user_ids = Vec::with_capacity(targets.len() * count as usize);
+    let mut codes = Vec::with_capacity(targets.len() * count as usize);
     for user_id in &targets {
-        for _ in 0..req.count {
+        for _ in 0..count {
             user_ids.push(user_id.0);
             codes.push(generate_code());
         }

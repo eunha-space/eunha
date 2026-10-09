@@ -100,6 +100,49 @@ async fn test_grant_to_everyone() {
     }
 }
 
+/// A grant and an invite are made from a form as from JSON, their numbers
+/// and booleans read from the form's strings.
+#[tokio::test]
+async fn test_grant_and_invite_from_a_form() {
+    let ctx = TestContext::new("invite-grant-form").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+
+    let result: Value = ctx
+        .api
+        .post_form(
+            "/api/eunha/v1/invite_grants",
+            Some(&ctx.alice_token),
+            &[
+                ("account_id", &ctx.bob_id),
+                ("count", "2"),
+                ("max_uses", "3"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(result["granted"].as_i64(), Some(2));
+    let bobs = invites_of(&ctx, &ctx.bob_token).await;
+    assert_eq!(bobs.len(), 2);
+    assert_eq!(bobs[0]["max_uses"].as_i64(), Some(3));
+
+    let invite: Value = ctx
+        .api
+        .post_form(
+            "/api/v1/invites",
+            Some(&ctx.alice_token),
+            &[("max_uses", "4"), ("autofollow", "1"), ("comment", "hi")],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(invite["max_uses"].as_i64(), Some(4));
+    assert_eq!(invite["autofollow"], true);
+    assert_eq!(invite["comment"], "hi");
+}
+
 /// Someone signing up through a granted code joins the tree under the member it
 /// was minted for, not under the admin who minted it. This is the whole point
 /// of putting the codes in their name.

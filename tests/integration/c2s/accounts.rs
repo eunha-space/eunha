@@ -3508,15 +3508,18 @@ async fn test_delete_account_keeps_reported_statuses() {
 async fn test_deleted_account_is_not_found() {
     let ctx = TestContext::new("del-acct-404").await;
 
-    ctx.api
+    // The challenge is read from a form as from JSON.
+    let resp = ctx
+        .api
         .http
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .form(&[("password", "testpassword123")])
         .send()
         .await
         .unwrap();
+    assert!(resp.status().is_success(), "{}", resp.status());
 
     let id = &ctx.alice_id;
     for path in [

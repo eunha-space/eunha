@@ -399,3 +399,35 @@ async fn emoji_eunha_uploaded_before_are_moved() {
         .unwrap();
     assert_eq!(again.moved, 0);
 }
+
+/// An emoji is updated from a form as from JSON, its booleans cast as Rails
+/// casts them, and from the query string, which Rails merges in.
+#[tokio::test]
+async fn an_emoji_is_updated_from_a_form() {
+    let ctx = TestContext::new("emoji-patch-form").await;
+    make_admin(&ctx).await;
+    let created: Value = upload(&ctx, "blobcat", "image/gif", gif())
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    let resp = ctx
+        .api
+        .http
+        .patch(ctx.api.url(&format!(
+            "/api/v1/admin/custom_emojis/{id}?shortcode=blobfox"
+        )))
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .form(&[("visible_in_picker", "0"), ("disabled", "1")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let emoji: Value = resp.json().await.unwrap();
+    assert_eq!(emoji["shortcode"], json!("blobfox"));
+    assert_eq!(emoji["visible_in_picker"], json!(false));
+    assert_eq!(emoji["disabled"], json!(true));
+}

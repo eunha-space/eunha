@@ -82,6 +82,14 @@ pub mod rails {
         Ok(cast_int(&Value::deserialize(d)?))
     }
 
+    /// [`opt_int`] for a 32-bit column: one out of its range is an error.
+    pub fn opt_i32<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i32>, D::Error> {
+        opt_int(d)?
+            .map(i32::try_from)
+            .transpose()
+            .map_err(serde::de::Error::custom)
+    }
+
     /// An optional string: a number or a boolean as its text, as Rails
     /// hands a JSON scalar to a string attribute.
     pub fn opt_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {

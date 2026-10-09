@@ -745,10 +745,14 @@ fn generate_token(len: usize) -> String {
 
 // ── POST /api/:server/login  (Elk single-instance sign-in hook) ────────────
 
+/// Elk sends JSON; a form is read the same way.
 #[derive(Debug, Deserialize)]
 pub struct ElkLoginBody {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
     pub force_login: Option<bool>,
+    #[serde(deserialize_with = "super::extractors::rails::string")]
     pub origin: String,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_string")]
     pub lang: Option<String>,
 }
 
@@ -767,7 +771,7 @@ fn elk_redirect_uri(origin: &str, server: &str) -> String {
 pub async fn elk_login(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    Json(body): Json<ElkLoginBody>,
+    super::extractors::Params(body): super::extractors::Params<ElkLoginBody>,
 ) -> AppResult<Json<String>> {
     let redirect_uri = elk_redirect_uri(&body.origin, &instance.domain);
     let scopes = "read write follow push";
