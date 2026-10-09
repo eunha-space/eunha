@@ -146,6 +146,7 @@ or named by its name rather than its display name, and a top post chosen
 among originals only. A schema 1
 report Mastodon made has `most_reblogged_accounts` and is left as it is.
 
+
 Edit histories written before migration 034
 -------------------------------------------
 
