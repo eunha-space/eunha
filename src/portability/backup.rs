@@ -606,14 +606,41 @@ pub(crate) async fn announce_item(
     visibility: i32,
     created_at: chrono::NaiveDateTime,
 ) -> AppResult<Option<Value>> {
+    announce_note(
+        state,
+        account,
+        status_id,
+        reblog_of_id,
+        visibility,
+        created_at,
+        true,
+    )
+    .await
+}
+
+/// [`announce_item`], with `allow_inlining` as the serializer's instance
+/// option: `UndoAnnounceSerializer` sets it false, so the `Announce` an
+/// `Undo` carries names the boosted post by its URI, which it does even
+/// once the boosted post is gone. Inlining, a boost of a post that is gone
+/// is not served (`None`).
+pub(crate) async fn announce_note(
+    state: &AppState,
+    account: &Account,
+    status_id: i64,
+    reblog_of_id: i64,
+    visibility: i32,
+    created_at: chrono::NaiveDateTime,
+    allow_inlining: bool,
+) -> AppResult<Option<Value>> {
     use crate::db::models::vis;
     const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
     let original = sqlx::query!(
         r#"SELECT s.id, s.uri, s.visibility, a.id AS account_id, a.id_scheme, a.username,
                   a.domain, a.uri AS account_uri
            FROM statuses s JOIN accounts a ON a.id = s.account_id
-           WHERE s.id = $1 AND s.deleted_at IS NULL"#,
+           WHERE s.id = $1 AND (s.deleted_at IS NULL OR NOT $2)"#,
         reblog_of_id,
+        allow_inlining,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -644,7 +671,9 @@ pub(crate) async fn announce_item(
         vis::UNLISTED => cc.push(json!(PUBLIC)),
         _ => {}
     }
-    let inline = original.account_id == account.id && original.visibility == vis::PRIVATE;
+    // `virtual_object`: the booster's own followers-only post goes inline.
+    let inline =
+        allow_inlining && original.account_id == account.id && original.visibility == vis::PRIVATE;
     let object = if inline {
         match archived_note(state, domain, original.id).await? {
             Some(bundle) => bundle.note,
@@ -664,15 +693,12 @@ pub(crate) async fn announce_item(
             },
         ))
     };
-    let id = format!(
-        "{}/activity",
-        crate::federation::tag::status_uri(
-            domain,
-            account.id,
-            account.id_scheme,
-            &account.username,
-            status_id
-        )
+    let id = crate::federation::tag::activity_uri(
+        domain,
+        account.id,
+        account.id_scheme,
+        &account.username,
+        status_id,
     );
     Ok(Some(json!({
         "id": id,
@@ -683,6 +709,24 @@ pub(crate) async fn announce_item(
         "cc": cc,
         "object": object,
     })))
+}
+
+/// An `Announce` from [`announce_note`] as a document of its own, under the
+/// `@context` the adapter writes: the note's when the boosted post is
+/// inline, the plain ActivityStreams one otherwise.
+pub(crate) fn announce_document(mut announce: Value) -> Value {
+    let context = if announce["object"].is_object() {
+        crate::api::ap::note::note_context()
+    } else {
+        json!("https://www.w3.org/ns/activitystreams")
+    };
+    if let Some(members) = announce.as_object_mut() {
+        let mut with_context = serde_json::Map::new();
+        with_context.insert("@context".into(), context);
+        with_context.append(members);
+        *members = with_context;
+    }
+    announce
 }
 
 /// The URIs a likes or bookmarks query names.

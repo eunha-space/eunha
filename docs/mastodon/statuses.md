@@ -128,3 +128,23 @@ One vote that fails keeps none of them, and the answer is a 422 listing what
 failed (*Validation failed: You have already voted on this poll*, *The chosen
 vote option does not exist*, *You cannot vote in your own polls*, *The poll has
 already ended*). Votes are counted once they are all made.
+
+
+Boosts and favourites
+---------------------
+
+A boost is a post of the booster's whose `uri` is the id of its `Announce`,
+as `Status#store_uri` stores it: `/statuses/{id}/activity` under the
+booster's actor, `/ap/users/{id}` or `/users/{username}` as the account's id
+scheme has it (`TagManager#activity_uri_for`). The `Announce` is the one the
+outbox serves (`AnnounceNoteSerializer`): addressed to the public and cc'ing
+the booster's followers when public, to the followers and cc'ing the public
+when unlisted, to the followers alone when followers-only, and cc'ing the
+boosted post's author first in every case. It names the boosted post by its
+URI, except that an account boosting its own followers-only post sends the
+post along, which its followers could not fetch otherwise. Undoing the boost
+sends an `Undo` with the id `{actor}#announces/{id}/undo`, addressed to the
+public, carrying that `Announce` with the boosted post named by its URI
+(`UndoAnnounceSerializer`). Eunha left local boosts' `uri` empty until
+migration 036; see
+[migrations](../operating/migrations#local-boosts-before-migration-036).

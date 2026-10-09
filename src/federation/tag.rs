@@ -59,6 +59,29 @@ pub fn status_uri(
     )
 }
 
+/// The id of a local status's activity, Mastodon's
+/// `TagManager#activity_uri_for`: the status URI with `/activity`. It is also
+/// a boost's own URI (`uri_for` a reblog), so a boost's `Announce`, the `Undo`
+/// of it and its `statuses.uri` all name the same thing.
+pub fn activity_uri(
+    domain: &str,
+    account_id: i64,
+    account_id_scheme: Option<i32>,
+    account_username: &str,
+    status_id: i64,
+) -> String {
+    format!(
+        "{}/activity",
+        status_uri(
+            domain,
+            account_id,
+            account_id_scheme,
+            account_username,
+            status_id
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +112,14 @@ mod tests {
         assert_eq!(
             status_uri("seoul.earth", 42, Some(1), "alice", 99),
             "https://seoul.earth/ap/users/42/statuses/99"
+        );
+        assert_eq!(
+            activity_uri("seoul.earth", 42, Some(1), "alice", 99),
+            "https://seoul.earth/ap/users/42/statuses/99/activity"
+        );
+        assert_eq!(
+            activity_uri("seoul.earth", 42, Some(0), "alice", 99),
+            "https://seoul.earth/users/alice/statuses/99/activity"
         );
     }
 

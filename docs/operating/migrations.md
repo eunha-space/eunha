@@ -198,6 +198,27 @@ WHERE "type" IN (3, 4) AND file_content_type IS NULL AND remote_url <> '';
 ~~~~
 
 
+Local boosts before migration 036
+---------------------------------
+
+Mastodon stores a local boost's `uri` when it is made: the id of its
+`Announce`, `/statuses/{id}/activity` under the booster's actor URI, which is
+`/ap/users/{id}` for an account of the numeric scheme and `/users/{username}`
+otherwise ([posting](../mastodon/statuses#boosts-and-favourites)). Until
+migration 036, eunha left it empty, and sent the `Announce` under the
+`/users/{username}` form whatever the scheme, so a server that received it
+from an account of the numeric scheme could not match the `Undo` sent later.
+
+Migration 036 gives each local boost without a `uri` the one Mastodon would
+have stored. The database does not record the instance's domain, so the
+migration takes it from the local post nearest the boost by id, which is the
+domain the instance had when the boost was made if it has ever moved. On a
+database with no local post that has a `uri` the boosts are left as they are;
+eunha names them from their accounts all the same. Remote servers that took
+a boost from an account of the numeric scheme under the other form still
+know it by that form, and an `Undo` of it now does not reach it.
+
+
 Notifications written before migration 032
 ------------------------------------------
 

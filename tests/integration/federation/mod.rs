@@ -17,6 +17,7 @@ mod keypairs;
 mod linked_data_signatures;
 mod moves;
 mod objects;
+mod outbound_activities;
 mod ownership;
 mod private_addresses;
 mod quote;

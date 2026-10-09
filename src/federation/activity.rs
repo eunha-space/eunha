@@ -22,10 +22,6 @@ fn object_iri(s: &str) -> anyhow::Result<AnyObject> {
     iri(s).map(AnyObject::Iri)
 }
 
-fn objects(values: &[&str]) -> anyhow::Result<Vec<AnyObject>> {
-    values.iter().map(|s| object_iri(s)).collect()
-}
-
 fn actor(s: &str) -> anyhow::Result<Vec<AnyActor>> {
     Ok(vec![AnyActor::Iri(iri(s)?)])
 }
@@ -127,22 +123,6 @@ pub fn undo_like(
     undo(id, actor_uri, AnyObject::Like(Box::new(like)))
 }
 
-/// Build an `Undo(Announce)` activity (unboost).
-pub fn undo_announce(
-    id: &str,
-    actor_uri: &str,
-    announce_id: &str,
-    announce_object: &str,
-) -> anyhow::Result<Value> {
-    let announce = vocab::Announce {
-        id: Some(iri(announce_id)?),
-        actors: actor(actor_uri)?,
-        objects: vec![object_iri(announce_object)?],
-        ..Default::default()
-    };
-    undo(id, actor_uri, AnyObject::Announce(Box::new(announce)))
-}
-
 /// Build an `Undo(Block)` activity.
 pub fn undo_block(
     id: &str,
@@ -226,28 +206,6 @@ pub fn like(id: &str, actor_uri: &str, object: &str) -> anyhow::Result<Value> {
         id: Some(iri(id)?),
         actors: actor(actor_uri)?,
         objects: vec![object_iri(object)?],
-        ..Default::default()
-    }))
-}
-
-// ── Announce ──────────────────────────────────────────────────────────────────
-
-/// Build an `Announce` activity (boost/reblog).
-pub fn announce(
-    id: &str,
-    actor_uri: &str,
-    object: &str,
-    to: &[&str],
-    cc: &[&str],
-    published: &str,
-) -> anyhow::Result<Value> {
-    Ok(document(&vocab::Announce {
-        id: Some(iri(id)?),
-        actors: actor(actor_uri)?,
-        objects: vec![object_iri(object)?],
-        published: Some(published.to_string()),
-        tos: objects(to)?,
-        ccs: objects(cc)?,
         ..Default::default()
     }))
 }
@@ -419,24 +377,5 @@ mod tests {
         assert_eq!(v["actor"], "https://a.test/u/alice");
         assert_eq!(v["object"]["type"], "Person");
         assert_eq!(v["object"]["id"], "https://a.test/u/alice");
-    }
-
-    #[test]
-    fn announce_has_audience() {
-        let v = announce(
-            "https://a.test/b/1",
-            "https://a.test/u/alice",
-            "https://b.test/notes/9",
-            &[AS_PUBLIC],
-            &["https://a.test/u/alice/followers"],
-            "2026-06-21T00:00:00+00:00",
-        )
-        .unwrap();
-        assert_eq!(v["type"], "Announce");
-        // One value is written as itself, which JSON-LD reads as a list of one.
-        assert_eq!(v["to"], AS_PUBLIC);
-        assert_eq!(v["cc"], "https://a.test/u/alice/followers");
-        assert_eq!(v["published"], "2026-06-21T00:00:00+00:00");
-        assert_eq!(v["object"], "https://b.test/notes/9");
     }
 }

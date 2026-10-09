@@ -449,25 +449,34 @@ async fn try_remove_from_remote_reach(
     );
 
     let (activity, reblog_of_account_id) = if let Some(original_id) = status.reblog_of_id {
-        let original = sqlx::query!(
-            "SELECT account_id, uri FROM statuses WHERE id = $1",
+        let original_account_id =
+            sqlx::query_scalar!("SELECT account_id FROM statuses WHERE id = $1", original_id,)
+                .fetch_optional(&state.db)
+                .await?;
+        // `ActivityPub::UndoAnnounceSerializer`: to the public, carrying the
+        // `Announce` as `AnnounceNoteSerializer` writes it, but never inline.
+        let Some(announce) = crate::portability::backup::announce_note(
+            state,
+            account,
+            id,
             original_id,
+            status.visibility,
+            status.created_at,
+            false,
         )
-        .fetch_optional(&state.db)
-        .await?;
-        let original_uri = original
-            .as_ref()
-            .and_then(|r| r.uri.clone())
-            .unwrap_or_default();
-        let announce_id = format!("{actor_url}/statuses/{id}/activity");
-        let undo_id = format!("{announce_id}#undo");
-        let undo = crate::federation::activity::undo_announce(
-            &undo_id,
-            &actor_url,
-            &announce_id,
-            &original_uri,
-        )?;
-        (undo, original.map(|r| r.account_id))
+        .await?
+        else {
+            return Ok(());
+        };
+        let undo = serde_json::json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{actor_url}#announces/{id}/undo"),
+            "type": "Undo",
+            "actor": actor_url,
+            "to": [crate::federation::activity::AS_PUBLIC],
+            "object": announce,
+        });
+        (undo, original_account_id)
     } else if let Some(ref status_uri) = status.uri {
         let mut activity = crate::federation::activity::delete(
             &format!("{status_uri}#delete"),

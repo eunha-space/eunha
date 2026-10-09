@@ -921,15 +921,25 @@ pub async fn reblog_status(
     }
 
     let boost_id = crate::snowflake::next_id();
+    // `Status#store_uri`: a local boost's `uri` is `uri_for` it, the id of
+    // its `Announce`.
+    let boost_uri = crate::federation::tag::activity_uri(
+        &state.instance.domain,
+        boost_account.id,
+        boost_account.id_scheme,
+        &boost_account.username,
+        boost_id,
+    );
     let boost = sqlx::query_as!(
         DbStatus,
-        r#"INSERT INTO statuses (id, account_id, text, visibility, reblog_of_id, local, created_at, updated_at)
-           VALUES ($1,$2,'',$3,$4, true, now(), now())
+        r#"INSERT INTO statuses (id, account_id, text, visibility, reblog_of_id, local, uri, created_at, updated_at)
+           VALUES ($1,$2,'',$3,$4, true, $5, now(), now())
            RETURNING *"#,
         boost_id,
         auth.account_id,
         boost_visibility,
         original_id,
+        boost_uri,
     )
     .fetch_one(&state.db)
     .await?;
@@ -1003,48 +1013,22 @@ pub async fn reblog_status(
         .await
         .unwrap_or(false)
     {
-        let domain = state.instance.domain.clone();
-        let actor_url = crate::federation::tag::account_uri_of(&domain, &boost_account);
-        let followers_url = format!("{}/followers", actor_url);
-        let announce_id = format!(
-            "https://{}/users/{}/statuses/{}/activity",
-            domain, boost_account.username, boost_id
-        );
-        let original_uri = original.uri.clone().unwrap_or_default();
-        let original_account = sqlx::query!(
-            "SELECT id, id_scheme, username, uri, inbox_url, shared_inbox_url, domain FROM accounts WHERE id = $1",
-            original.account_id,
+        let actor_url =
+            crate::federation::tag::account_uri_of(&state.instance.domain, &boost_account);
+        // `ActivityPub::AnnounceNoteSerializer`, as the outbox serves it: the
+        // id `TagManager#activity_uri_for` names, addressed by `#to` and
+        // `#cc`, and the booster's own followers-only post inline.
+        let announce = crate::portability::backup::announce_note(
+            &state,
+            &boost_account,
+            boost.id,
+            original_id,
+            boost_visibility,
+            boost.created_at,
+            true,
         )
-        .fetch_optional(&state.db)
-        .await?;
-        let original_author_url = original_account
-            .as_ref()
-            .map(|a| {
-                if a.domain.is_none() {
-                    crate::federation::tag::account_uri(&domain, a.id, a.id_scheme, &a.username)
-                } else {
-                    a.uri.clone().unwrap_or_default()
-                }
-            })
-            .unwrap_or_default();
-        // Address the Announce by the boost's visibility (Mastodon TagManager),
-        // always cc'ing the original author.
-        let (to_strs, mut cc_strs) =
-            crate::db::models::vis::audience(boost_visibility, &followers_url, &[]);
-        if !original_author_url.is_empty() {
-            cc_strs.push(original_author_url.clone());
-        }
-        let to_refs: Vec<&str> = to_strs.iter().map(String::as_str).collect();
-        let cc_refs: Vec<&str> = cc_strs.iter().map(String::as_str).collect();
-        let published = boost.created_at.and_utc().to_rfc3339();
-        let announce = crate::federation::activity::announce(
-            &announce_id,
-            &actor_url,
-            &original_uri,
-            &to_refs,
-            &cc_refs,
-            &published,
-        )?;
+        .await?
+        .map(crate::portability::backup::announce_document);
         let key_id = format!("{}#main-key", actor_url);
 
         // Reach the reblog audience (StatusReachFinder reblog branch): the
@@ -1064,7 +1048,7 @@ pub async fn reblog_status(
         )
         .await
         .unwrap_or_default();
-        if !inboxes.is_empty() {
+        if let Some(announce) = announce.filter(|_| !inboxes.is_empty()) {
             let signed = crate::federation::delivery::LinkedData::for_status(
                 matches!(boost_visibility, vis::PUBLIC | vis::UNLISTED),
                 crate::federation::delivery::LinkedData::UnlessAuthorizedFetch,

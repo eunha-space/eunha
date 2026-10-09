@@ -1211,7 +1211,7 @@ async fn status(
             )
             .fetch_one(&ctx.data().db)
             .await?;
-            let Some(mut announce) = crate::portability::backup::announce_item(
+            let Some(announce) = crate::portability::backup::announce_item(
                 ctx.data(),
                 &servable.account,
                 status_id,
@@ -1223,18 +1223,7 @@ async fn status(
             else {
                 return Ok(Found::NotFound);
             };
-            let context = if announce["object"].is_object() {
-                super::note::note_context()
-            } else {
-                json!("https://www.w3.org/ns/activitystreams")
-            };
-            if let Some(members) = announce.as_object_mut() {
-                let mut with_context = serde_json::Map::new();
-                with_context.insert("@context".into(), context);
-                with_context.append(members);
-                *members = with_context;
-            }
-            announce
+            crate::portability::backup::announce_document(announce)
         }
         None => {
             let Some(bundle) = super::note::build_note(ctx.data(), domain(ctx), status_id).await?
