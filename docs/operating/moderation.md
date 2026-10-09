@@ -368,8 +368,8 @@ for a role with `manage_reports`. Its `moderation_action` is one of:
     and keeps a remote server from sending them again; a local account's
     posts are kept, discarded, for thirty days (see
     [deleted posts](./administration#deleted-posts)), a remote one's
-    destroyed at once; a local collection's `Remove` is sent as its owner's
-    deletion would send it, which Mastodon does not do;
+    destroyed at once; a collection is destroyed without telling anyone,
+    so no `Remove` of it is sent, as Mastodon does;
  -  `mark_as_sensitive`, which marks those carrying media or a link preview
     sensitive, as an edit when the account is local, and the reported
     collections too, whose members are told and, for a local one not

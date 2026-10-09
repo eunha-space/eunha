@@ -227,9 +227,8 @@ async fn test_collection_removal_goes_to_the_owners_reach() {
 }
 
 /// `Admin::ModerationAction`: a reported collection marked sensitive is
-/// updated as its owner's update would be, once; one deleted is removed
-/// from its owner's reach, which upstream does not send
-/// (`moderated-collection-removal`).
+/// updated as its owner's update would be, once; one deleted is destroyed
+/// without `DeleteCollectionService`, so no `Remove` of it is sent.
 #[tokio::test]
 async fn test_moderated_collections_reach() {
     let ctx = TestContext::new("coll-reach-moderated").await;
@@ -280,8 +279,12 @@ async fn test_moderated_collections_reach() {
             .as_str()
             .is_some_and(|uri| uri.ends_with(&format!("/collections/{cid}")))
     };
-    assert_eq!(
-        queued(&ctx, "Remove", is_this).await,
-        sorted(&[&a.follower, &a.reporter])
-    );
+    let gone: bool =
+        sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM collections WHERE id = $1)")
+            .bind(cid.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(gone);
+    assert!(queued(&ctx, "Remove", is_this).await.is_empty());
 }

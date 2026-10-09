@@ -353,36 +353,24 @@ pub async fn save(
             tracing::warn!(status_id = updated.id, %error, "could not federate a sensitive post");
         }
     }
-    // `DeleteCollectionService` is not called for a collection a moderator
-    // deletes, so upstream tells no one; eunha sends its `Remove` to the
-    // owner's reach as the owner's own deletion does (see
-    // `moderated-collection-removal` in divergences.toml).
+    // A collection a moderator deletes is destroyed without
+    // `DeleteCollectionService`, so no one is told of it.
     // `UpdateCollectionService` for one made sensitive: its local members
     // are told (`NotifyOfCollectionUpdateService`), and a local one's
     // `Update` goes to its reach.
-    for collection in &collections {
-        if kind == "delete" {
-            if collection.local {
-                crate::api::mastodon::collections::distribute_collection_removal(
-                    state,
-                    &state.instance.domain,
-                    collection.id,
-                    target.id,
-                )
-                .await;
-            }
-        } else if made_sensitive.contains(&collection.id) {
-            crate::api::mastodon::collections::notify_of_collection_update(state, collection.id)
-                .await;
-            if collection.local {
-                crate::api::mastodon::collections::distribute_collection(
-                    state,
-                    &state.instance.domain,
-                    collection.id,
-                    false,
-                )
-                .await;
-            }
+    for collection in collections
+        .iter()
+        .filter(|c| made_sensitive.contains(&c.id))
+    {
+        crate::api::mastodon::collections::notify_of_collection_update(state, collection.id).await;
+        if collection.local {
+            crate::api::mastodon::collections::distribute_collection(
+                state,
+                &state.instance.domain,
+                collection.id,
+                false,
+            )
+            .await;
         }
     }
     Ok(())

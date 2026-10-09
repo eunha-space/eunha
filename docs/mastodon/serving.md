@@ -181,9 +181,8 @@ Deleting a collection sends its `Remove` to everyone the owner reaches
 gone, to the accounts it featured. Mastodon also queues a delivery per
 featured account, signed as that account and addressed to the owner's inbox
 URL, which a local owner does not have, so none of them is delivered; eunha
-does not queue them. A collection a moderator deletes is removed the same
-way, which Mastodon does not send at all (`moderated-collection-removal` in
-*divergences.toml*).
+does not queue them. A collection a moderator deletes sends nothing: like
+Mastodon, it is destroyed without `DeleteCollectionService`.
 
 A remote collection asking to feature a local account is answered the same
 way: when the request comes from the sender's own host, for one of the
