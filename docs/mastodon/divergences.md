@@ -74,7 +74,8 @@ The recorded decisions cover:
  -  what `eunha accounts refresh` fetches, and how two rows for one remote
     actor are told apart;
  -  the schema and the running processes `eunha maintenance fix-duplicates`
-    works with.
+    works with;
+ -  the audit log entry for a hashtag reviewed through the admin API.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

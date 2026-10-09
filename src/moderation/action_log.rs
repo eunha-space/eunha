@@ -171,19 +171,22 @@ pub async fn log<'e>(
 }
 
 /// `log_action` for a target whose `LOG_ATTRIBUTES` changes are recorded too
-/// (`recorded_changes`, used for tags' usable/trendable/listable).
+/// (`recorded_changes`, used for tags' usable/trendable/listable), in the
+/// format named with them (`recorded_changes_format`).
 pub async fn log_with_changes<'e>(
     db: impl PgExecutor<'e>,
     account_id: i64,
     action: &str,
     target: &Target,
-    recorded_changes: Option<serde_json::Value>,
+    recorded_changes: Option<(serde_json::Value, &str)>,
 ) -> AppResult<()> {
+    let (recorded_changes, recorded_changes_format) = recorded_changes.unzip();
     sqlx::query!(
         r#"INSERT INTO admin_action_logs
              (account_id, action, target_type, target_id, human_identifier,
-              route_param, permalink, recorded_changes, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())"#,
+              route_param, permalink, recorded_changes, recorded_changes_format,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())"#,
         account_id,
         action,
         target.kind,
@@ -192,6 +195,7 @@ pub async fn log_with_changes<'e>(
         target.route_param,
         target.permalink,
         recorded_changes,
+        recorded_changes_format,
     )
     .execute(db)
     .await?;
