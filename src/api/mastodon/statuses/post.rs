@@ -156,10 +156,13 @@ pub async fn post_status(
             .in_reply_to_id
             .as_deref()
             .and_then(|id| id.trim().parse::<i64>().ok());
+        // `scheduled_options`: the options as the controller passed them —
+        // so a spoiler never given stays `null` — and the publishing worker
+        // promotes a lone spoiler to the text as posting now would.
         let params = serde_json::json!({
-            "text": text,
+            "text": form.status,
             "visibility": form.visibility,
-            "spoiler_text": spoiler_text,
+            "spoiler_text": form.spoiler_text,
             "sensitive": form.sensitive,
             "language": form.language,
             "in_reply_to_id": in_reply_to,
@@ -176,6 +179,11 @@ pub async fn post_status(
                 "multiple": p.multiple,
                 "hide_totals": p.hide_totals,
             })),
+            // Cleared for the post the schedule will become, which is
+            // neither scheduled again nor rate limited.
+            "scheduled_at": null,
+            "idempotency": null,
+            "with_rate_limit": false,
         });
         // `scheduled_statuses.create!(media_attachments: @media, …)` in one
         // transaction: the uploads are the scheduled status's until it is

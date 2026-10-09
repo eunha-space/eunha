@@ -4123,6 +4123,18 @@ async fn test_create_scheduled_status() {
     );
     assert!(body["id"].as_str().is_some(), "id field missing");
     assert!(body["params"].is_object(), "params field missing");
+
+    // `scheduled_options`: the options as given, so a spoiler never sent is
+    // `null`, and what the published post will not be — scheduled again,
+    // deduplicated, rate limited — cleared.
+    let params = &body["params"];
+    assert_eq!(params["spoiler_text"], Value::Null, "{params}");
+    assert_eq!(params["scheduled_at"], Value::Null, "{params}");
+    assert_eq!(params["idempotency"], Value::Null, "{params}");
+    assert_eq!(params["with_rate_limit"], json!(false), "{params}");
+    for key in ["scheduled_at", "idempotency", "with_rate_limit"] {
+        assert!(params.get(key).is_some(), "{key} missing from {params}");
+    }
 }
 
 /// A scheduled_at less than 5 minutes in the future is rejected (Mastodon
