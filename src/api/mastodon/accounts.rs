@@ -1023,7 +1023,7 @@ pub async fn get_account_featured_tags(
     let rows = sqlx::query!(
         r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
                   -- `FeaturedTag#display_name`
-                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!", a.username, a.domain
+                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!", a.username
            FROM featured_tags ft
            JOIN tags t ON t.id = ft.tag_id
            JOIN accounts a ON a.id = ft.account_id
@@ -1036,14 +1036,10 @@ pub async fn get_account_featured_tags(
     let tags = rows
         .into_iter()
         .map(|r| {
-            let url = if let Some(ref acct_domain) = r.domain {
-                format!(
-                    "https://{}/@{}@{}/tagged/{}",
-                    domain, r.username, acct_domain, r.name
-                )
-            } else {
-                format!("https://{}/@{}/tagged/{}", domain, r.username, r.name)
-            };
+            // `account_with_domain_url(object.account, "tagged/…")`, whose
+            // `username_with_domain` is the account's `to_param`: its
+            // username alone, a remote account's too.
+            let url = crate::formatter::text::short_account_tag_url(domain, &r.username, &r.name);
             super::types::FeaturedTag {
                 id: r.id.to_string(),
                 name: r.display_name,

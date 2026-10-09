@@ -411,6 +411,19 @@ pub async fn tag_timeline(
     Query(q): Query<TagTimelineQuery>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<impl IntoResponse> {
+    // `api_v1_timelines_tag_url params[:id], …`: the links' path written
+    // from the tag again, escaped as Rails escapes a path segment, rather
+    // than as the request spelled it.
+    let path = format!(
+        "/api/v1/timelines/tag/{}",
+        crate::formatter::text::escape_segment(&hashtag)
+    );
+    let uri = match uri.query() {
+        Some(query) => format!("{path}?{query}"),
+        None => path,
+    }
+    .parse::<Uri>()
+    .unwrap_or(uri);
     let limit = q.pagination.limit_clamped(20, 40);
     let max_id = q
         .pagination

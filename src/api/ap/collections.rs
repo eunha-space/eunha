@@ -262,7 +262,7 @@ pub async fn featured_collection_body(
         c.tag_name.as_ref().map_or(Value::Null, |name| {
             json!({
                 "type": "Hashtag",
-                "href": format!("https://{domain}/tags/{name}"),
+                "href": crate::formatter::text::tag_url(domain, name),
                 "name": format!("#{name}"),
             })
         }),

@@ -163,7 +163,6 @@ pub(crate) async fn tags_query(
     Ok(rows
         .into_iter()
         .map(|r| {
-            let name_lower = r.name.to_lowercase();
             let following = following_set.as_ref().map(|s| s.contains(&r.id));
             let featuring = featuring_set.as_ref().map(|s| s.contains(&r.id));
             let review = TagReview {
@@ -176,7 +175,7 @@ pub(crate) async fn tags_query(
                 id: r.id.to_string(),
                 history: histories.get(&r.id).cloned().unwrap_or_default(),
                 name: r.display_name,
-                url: super::tags::tag_url(domain, &name_lower),
+                url: super::tags::tag_url(domain, &r.name),
                 following,
                 featuring,
             };

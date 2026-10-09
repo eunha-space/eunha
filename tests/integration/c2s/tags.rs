@@ -544,3 +544,100 @@ async fn test_tags_store_the_normalized_name_and_the_spelling() {
         "{rows:?}"
     );
 }
+
+/// A tag's URL is `tag_url(tag)`, its name percent-encoded as Rails'
+/// `escape_segment` encodes a path segment: in the REST tag, the Note's
+/// `Hashtag` and the tag timeline's `Link`, whose path is written again
+/// from the tag whatever the request's spelling of it.
+#[tokio::test]
+async fn test_tag_urls_are_percent_encoded() {
+    let ctx = TestContext::new("tag-url-encoded").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "안녕 #한국어", "public")
+        .await;
+    let encoded = "%ED%95%9C%EA%B5%AD%EC%96%B4";
+    let url = format!("https://{}/tags/{encoded}", ctx.domain);
+    assert_eq!(status["tags"][0]["url"], json!(url));
+
+    let note: Value = ctx
+        .api
+        .ap_get(
+            &format!("/users/alice/statuses/{}", status["id"].as_str().unwrap()),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let hashtag = note["tag"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["type"] == "Hashtag")
+        .unwrap();
+    assert_eq!(hashtag["href"], json!(url));
+
+    let resp = ctx
+        .api
+        .get(
+            "/api/v1/timelines/tag/%ed%95%9c%ea%b5%ad%ec%96%b4?limit=1",
+            Some(&ctx.alice_token),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let link = resp.headers()["link"].to_str().unwrap().to_owned();
+    assert!(
+        link.contains(&format!("/api/v1/timelines/tag/{encoded}?limit=1&max_id=")),
+        "{link}"
+    );
+}
+
+/// `REST::FeaturedTagSerializer#url` is `account_with_domain_url(account,
+/// "tagged/…")`, whose account part is the account's `to_param`, its
+/// username: a remote account's featured tag links to `/@username/tagged/…`
+/// on this server, its domain left out, the tag percent-encoded.
+#[tokio::test]
+async fn test_featured_tag_url_is_written_by_username() {
+    let ctx = TestContext::new("featured-tag-url").await;
+    let remy: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (id, username, domain, uri, url, created_at, updated_at)
+         VALUES (timestamp_id('accounts'), 'remy', 'remote.example', 'https://remote.example/users/remy',
+                 'https://remote.example/@remy', now(), now())
+         RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let tag: i64 = sqlx::query_scalar(
+        "INSERT INTO tags (name, display_name, created_at, updated_at)
+         VALUES ('한국어', '한국어', now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO featured_tags (account_id, tag_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(remy)
+    .bind(tag)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let tags: Value = ctx
+        .api
+        .get(&format!("/api/v1/accounts/{remy}/featured_tags"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        tags[0]["url"],
+        json!(format!(
+            "https://{}/@remy/tagged/%ED%95%9C%EA%B5%AD%EC%96%B4",
+            ctx.domain
+        ))
+    );
+}

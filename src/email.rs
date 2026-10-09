@@ -681,7 +681,7 @@ impl EmailSender {
                 };
                 format!(
                     "<li><a href=\"{}\">#{}</a> · {count}</li>",
-                    web(&format!("tags/{name}")),
+                    crate::formatter::text::tag_url(domain, name),
                     html_escape(name)
                 )
             })

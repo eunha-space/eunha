@@ -133,7 +133,7 @@ pub fn shortened_link(url: &str, rel_me: bool) -> String {
 }
 
 /// Rails' `escape_segment`, as `tag_url` writes a hashtag into its path.
-fn escape_segment(segment: &str) -> String {
+pub fn escape_segment(segment: &str) -> String {
     let mut out = String::with_capacity(segment.len());
     for byte in segment.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~!$&'()*+,;=:@".contains(&byte) {
@@ -148,6 +148,18 @@ fn escape_segment(segment: &str) -> String {
 /// `tag_url(hashtag)`.
 pub fn tag_url(local_domain: &str, hashtag: &str) -> String {
     format!("https://{local_domain}/tags/{}", escape_segment(hashtag))
+}
+
+/// `short_account_tag_url(account, tag)`, `/@:username/tagged/:tag`, by the
+/// account's `to_param`, its username, and the tag's, its name. The REST
+/// featured tag's `account_with_domain_url(account, "tagged/…")` writes the
+/// same, the domain of a remote account left out with it.
+pub fn short_account_tag_url(local_domain: &str, username: &str, hashtag: &str) -> String {
+    format!(
+        "https://{local_domain}/@{}/tagged/{}",
+        escape_segment(username),
+        escape_segment(hashtag)
+    )
 }
 
 /// `TextFormatter#link_to_hashtag`.

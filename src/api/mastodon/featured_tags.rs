@@ -12,7 +12,7 @@ use crate::{
 };
 
 fn featured_tag_url(domain: &str, username: &str, name: &str) -> String {
-    format!("https://{domain}/@{username}/tagged/{name}")
+    crate::formatter::text::short_account_tag_url(domain, username, name)
 }
 
 // ── CreateFeaturedTagService / RemoveFeaturedTagService ──────────────────

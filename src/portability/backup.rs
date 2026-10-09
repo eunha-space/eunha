@@ -827,7 +827,7 @@ async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value>
         .map(|name| {
             json!({
                 "type": "Hashtag",
-                "href": format!("https://{domain}/tags/{name}"),
+                "href": crate::formatter::text::tag_url(domain, &name),
                 "name": format!("#{name}"),
             })
         })

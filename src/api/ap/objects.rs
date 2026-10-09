@@ -294,7 +294,7 @@ async fn hashtag_tags(state: &AppState, domain: &str, account_id: i64) -> AppRes
         .map(|name| {
             json!({
                 "type": "Hashtag",
-                "href": format!("https://{domain}/tags/{name}"),
+                "href": crate::formatter::text::tag_url(domain, &name),
                 "name": format!("#{name}"),
             })
         })

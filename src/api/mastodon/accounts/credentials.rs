@@ -730,7 +730,7 @@ pub async fn patch_profile(
         .map(|r| crate::api::mastodon::types::FeaturedTag {
             id: r.id.to_string(),
             name: r.display_name,
-            url: format!("https://{}/@{}/tagged/{}", domain, account.username, r.name),
+            url: crate::formatter::text::short_account_tag_url(domain, &account.username, &r.name),
             statuses_count: r.statuses_count.to_string(),
             last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),
         })
@@ -955,7 +955,7 @@ async fn build_profile(
         .map(|r| crate::api::mastodon::types::FeaturedTag {
             id: r.id.to_string(),
             name: r.display_name,
-            url: format!("https://{}/@{}/tagged/{}", domain, account.username, r.name),
+            url: crate::formatter::text::short_account_tag_url(domain, &account.username, &r.name),
             statuses_count: r.statuses_count.to_string(),
             last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),
         })

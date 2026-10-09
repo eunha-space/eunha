@@ -310,7 +310,7 @@ pub async fn build_note(
         .map(|t| {
             json!({
                 "type": "Hashtag",
-                "href": format!("https://{domain}/tags/{}", t.name),
+                "href": crate::formatter::text::tag_url(domain, &t.name),
                 "name": format!("#{}", t.name),
             })
         })

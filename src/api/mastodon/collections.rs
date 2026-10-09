@@ -50,7 +50,7 @@ pub(crate) fn collection_uri(domain: &str, account_id: i64, id: i64) -> String {
 }
 
 fn tag_url(domain: &str, name: &str) -> String {
-    format!("https://{domain}/tags/{name}")
+    crate::formatter::text::tag_url(domain, name)
 }
 
 #[derive(Debug, Deserialize, Default)]

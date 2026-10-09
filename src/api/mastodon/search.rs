@@ -298,7 +298,7 @@ async fn render_tags(
         .map(|t| Tag {
             id: t.id.to_string(),
             name: t.display_name.clone(),
-            url: format!("https://{domain}/tags/{}", t.name),
+            url: crate::formatter::text::tag_url(domain, &t.name),
             history: histories.get(&t.id).cloned().unwrap_or_default(),
             following: viewer_id.map(|_| followed.contains(&t.id)),
             featuring: viewer_id.map(|_| featured.contains(&t.id)),

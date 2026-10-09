@@ -110,7 +110,7 @@ async fn admin_tag(state: &AppState, domain: &str, id: i64) -> AppResult<Value> 
     Ok(json!({
         "id": r.id.to_string(),
         "name": r.name,
-        "url": format!("https://{domain}/tags/{}", urlencoding::encode(&r.name.to_lowercase())),
+        "url": crate::formatter::text::tag_url(domain, &r.name),
         "history": history,
         "trendable": r.trendable,
         "usable": r.usable,

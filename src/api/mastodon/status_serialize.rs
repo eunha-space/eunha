@@ -505,13 +505,10 @@ pub async fn fetch_statuses_tags(
     Ok(rows
         .into_iter()
         .map(|r| {
-            let tag_lower = r.name.to_lowercase();
+            // `REST::ShallowTagSerializer#url`: `tag_url(object)`, by the
+            // tag's name as it is stored.
             super::types::StatusTag {
-                url: format!(
-                    "https://{}/tags/{}",
-                    domain,
-                    urlencoding::encode(&tag_lower)
-                ),
+                url: crate::formatter::text::tag_url(domain, &r.name),
                 name: r.name,
             }
         })
@@ -572,15 +569,10 @@ pub async fn batch_statuses_tags(
     let mut map: std::collections::HashMap<i64, Vec<super::types::StatusTag>> =
         std::collections::HashMap::new();
     for r in rows {
-        let tag_lower = r.name.to_lowercase();
         map.entry(r.status_id)
             .or_default()
             .push(super::types::StatusTag {
-                url: format!(
-                    "https://{}/tags/{}",
-                    domain,
-                    urlencoding::encode(&tag_lower)
-                ),
+                url: crate::formatter::text::tag_url(domain, &r.name),
                 name: r.name,
             });
     }

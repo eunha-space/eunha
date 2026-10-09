@@ -28,7 +28,7 @@ pub fn hashtag(domain: &str, username: &str, tag_name: &str, display_name: &str)
     json!({
         "type": "Hashtag",
         // `short_account_tag_url(account, tag)`.
-        "href": format!("https://{domain}/@{username}/tagged/{tag_name}"),
+        "href": crate::formatter::text::short_account_tag_url(domain, username, tag_name),
         "name": format!("#{display_name}"),
     })
 }
