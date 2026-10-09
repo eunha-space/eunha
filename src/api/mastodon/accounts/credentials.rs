@@ -114,19 +114,24 @@ async fn do_update_credentials(
 ) -> AppResult<Account> {
     let mut display_name: Option<String> = None;
     let mut note: Option<String> = None;
-    let mut locked: Option<bool> = None;
+    // A boolean given blank is nil, as `ActiveModel::Type::Boolean` casts
+    // it: `Some(None)` here. `locked` and `indexable` are `null: false`, so
+    // nil is the `NotNullViolation` `update!` raises; `discoverable` and
+    // `hide_collections` are nullable and take it; `bot=` casts it to false.
+    let mut locked: Option<Option<bool>> = None;
     let mut bot: Option<bool> = None;
-    let mut discoverable: Option<bool> = None;
+    let mut discoverable: Option<Option<bool>> = None;
     let mut avatar_upload: Option<(String, Vec<u8>)> = None;
     let mut header_upload: Option<(String, Vec<u8>)> = None;
     let mut avatar_description: Option<String> = None;
     let mut header_description: Option<String> = None;
     let mut source_privacy: Option<String> = None;
-    let mut source_sensitive: Option<bool> = None;
+    // Blank is nil, which `UserSettings#[]=` deletes, leaving the default.
+    let mut source_sensitive: Option<Option<bool>> = None;
     let mut source_language: Option<Option<String>> = None;
-    let mut source_hide_collections: Option<bool> = None;
+    let mut source_hide_collections: Option<Option<bool>> = None;
     let mut source_quote_policy: Option<String> = None;
-    let mut indexable: Option<bool> = None;
+    let mut indexable: Option<Option<bool>> = None;
     // A `source[privacy]` or `source[quote_policy]` that `UserSettings#[]=`
     // refuses, with its message.
     let mut invalid_setting: Option<String> = None;
@@ -167,13 +172,13 @@ async fn do_update_credentials(
                 note = Some(part.text());
             }
             "locked" => {
-                locked = cast_bool(&part.text()).or(locked);
+                locked = Some(cast_bool(&part.text()));
             }
             "bot" => {
-                bot = cast_bool(&part.text()).or(bot);
+                bot = Some(cast_bool(&part.text()).unwrap_or(false));
             }
             "discoverable" => {
-                discoverable = cast_bool(&part.text()).or(discoverable);
+                discoverable = Some(cast_bool(&part.text()));
             }
             "source[privacy]" => {
                 // `setting :default_privacy, in: %w(public unlisted private)`.
@@ -186,14 +191,14 @@ async fn do_update_credentials(
                 }
             }
             "source[sensitive]" => {
-                source_sensitive = cast_bool(&part.text()).or(source_sensitive);
+                source_sensitive = Some(cast_bool(&part.text()));
             }
             "source[language]" => {
                 let v = part.text();
                 source_language = Some(if v.is_empty() { None } else { Some(v) });
             }
             "hide_collections" | "source[hide_collections]" => {
-                source_hide_collections = cast_bool(&part.text()).or(source_hide_collections);
+                source_hide_collections = Some(cast_bool(&part.text()));
             }
             "source[quote_policy]" => {
                 let v = part.text();
@@ -206,7 +211,7 @@ async fn do_update_credentials(
                 }
             }
             "indexable" | "source[indexable]" => {
-                indexable = cast_bool(&part.text()).or(indexable);
+                indexable = Some(cast_bool(&part.text()));
             }
             "avatar" => {
                 let (ct, data) = part.file();
@@ -333,6 +338,17 @@ async fn do_update_credentials(
     if !errors.is_empty() {
         return Err(errors.into());
     }
+    // A blank `locked` or `indexable` passes the validations and is written
+    // as NULL, which the column refuses: `ActiveRecord::NotNullViolation`,
+    // which nothing rescues. The transaction leaves the account as it was,
+    // and the settings, saved after it, are not reached.
+    for (column, value) in [("locked", locked), ("indexable", indexable)] {
+        if value == Some(None) {
+            return Err(AppError::Unrescued(format!(
+                "PG::NotNullViolation: null value in column \"{column}\" of relation \"accounts\""
+            )));
+        }
+    }
 
     // Persist posting preferences into users.settings (JSON), unless one is
     // refused, which `current_user.update(user_params)` raises on.
@@ -347,8 +363,14 @@ async fn do_update_credentials(
         if let Some(p) = &source_privacy {
             obj.insert("default_privacy".into(), serde_json::json!(p));
         }
-        if let Some(s) = source_sensitive {
-            obj.insert("default_sensitive".into(), serde_json::json!(s));
+        match source_sensitive {
+            Some(Some(s)) => {
+                obj.insert("default_sensitive".into(), serde_json::json!(s));
+            }
+            Some(None) => {
+                obj.remove("default_sensitive");
+            }
+            None => {}
         }
         if let Some(l) = &source_language {
             obj.insert(
@@ -390,7 +412,7 @@ async fn do_update_credentials(
         .execute(&state.db)
         .await?;
     }
-    if let Some(l) = locked {
+    if let Some(Some(l)) = locked {
         let was_locked =
             sqlx::query_scalar!("SELECT locked FROM accounts WHERE id = $1", auth.account_id)
                 .fetch_one(&state.db)
@@ -449,7 +471,7 @@ async fn do_update_credentials(
         .rows_affected()
             > 0;
     }
-    if let Some(ix) = indexable {
+    if let Some(Some(ix)) = indexable {
         let changed = sqlx::query(
             "UPDATE accounts SET indexable = $1 WHERE id = $2 AND indexable IS DISTINCT FROM $1",
         )

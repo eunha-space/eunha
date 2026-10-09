@@ -3664,6 +3664,58 @@ async fn test_update_credentials_reads_the_query_string() {
     assert_eq!(me["source"]["sensitive"], json!(false));
 }
 
+/// A blank boolean is nil (`ActiveModel::Type::Boolean`). Nil in `locked`
+/// or `indexable`, `null: false` columns, is the `NotNullViolation` nothing
+/// rescues, and nothing is saved; `discoverable` takes it, `bot=` reads it
+/// as false, and `source[sensitive]` goes back to its default.
+#[tokio::test]
+async fn test_update_credentials_blank_booleans() {
+    let ctx = TestContext::new("update-blank-bool").await;
+    for field in ["locked", "indexable"] {
+        let resp = ctx
+            .api
+            .http
+            .patch(ctx.api.url("/api/v1/accounts/update_credentials"))
+            .header("host", &ctx.api.host)
+            .bearer_auth(&ctx.alice_token)
+            .form(&[(field, ""), ("display_name", "Unsaved")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR, "{field}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            body,
+            json!({"status": 500, "error": "Internal Server Error"}),
+            "{field}"
+        );
+    }
+
+    ctx.api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"discoverable": true, "bot": true, "source": {"sensitive": true}}),
+        )
+        .await;
+    let resp = ctx
+        .api
+        .http
+        .patch(ctx.api.url("/api/v1/accounts/update_credentials"))
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .form(&[("discoverable", ""), ("bot", ""), ("source[sensitive]", "")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let me: Value = resp.json().await.unwrap();
+    assert_ne!(me["display_name"], json!("Unsaved"));
+    assert_eq!(me["discoverable"], Value::Null);
+    assert_eq!(me["bot"], json!(false));
+    assert_eq!(me["source"]["sensitive"], json!(false));
+}
+
 /// `source.follow_requests_count` counts requests from accounts that are
 /// not suspended (`Account.without_suspended`).
 #[tokio::test]
