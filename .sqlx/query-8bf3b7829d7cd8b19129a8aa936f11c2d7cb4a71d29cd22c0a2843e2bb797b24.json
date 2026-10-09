@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO admin_action_logs\n             (account_id, action, target_type, target_id, human_identifier,\n              route_param, permalink, recorded_changes, recorded_changes_format,\n              created_at, updated_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bf3b7829d7cd8b19129a8aa936f11c2d7cb4a71d29cd22c0a2843e2bb797b24"
+}

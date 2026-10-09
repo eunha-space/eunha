@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, (a.domain IS NULL) AS \"is_local!\",\n                      EXISTS (SELECT 1 FROM follows f WHERE f.target_account_id = s.account_id) AS \"followed!\"\n               FROM statuses s JOIN accounts a ON a.id = s.account_id\n               WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "followed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "7cae56dd99b3772d16b9347a45f63f7c502e4b10f3fb59885a17769f44f1fcdc"
+}
