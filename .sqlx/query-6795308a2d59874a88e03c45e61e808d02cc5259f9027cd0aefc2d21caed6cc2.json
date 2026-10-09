@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH recent_statuses AS (\n            SELECT id FROM statuses\n            WHERE account_id = $1 AND deleted_at IS NULL AND id >= $3\n            ORDER BY id DESC LIMIT 200\n        )\n        SELECT DISTINCT inbox AS \"inbox!\" FROM (\n            -- followers\n            (SELECT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS inbox\n             FROM follows f JOIN accounts a ON a.id = f.account_id\n             WHERE f.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1)\n            UNION\n            -- reporters (accounts that reported this account)\n            (SELECT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)\n             FROM reports r JOIN accounts a ON a.id = r.account_id\n             WHERE r.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1)\n            UNION\n            -- accounts mentioned in this account's recent statuses\n            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)\n             FROM mentions m JOIN accounts a ON a.id = m.account_id\n             WHERE m.status_id IN (SELECT id FROM recent_statuses)\n               AND a.domain IS NOT NULL AND a.protocol = 1\n             LIMIT 2000)\n            UNION\n            -- accounts this account recently followed\n            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)\n             FROM follows f JOIN accounts a ON a.id = f.target_account_id\n             WHERE f.account_id = $1 AND f.created_at >= $2\n               AND a.domain IS NOT NULL AND a.protocol = 1\n             LIMIT 2000)\n            UNION\n            -- targets of this account's recent follow requests\n            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)\n             FROM follow_requests fr JOIN accounts a ON a.id = fr.target_account_id\n             WHERE fr.account_id = $1 AND fr.created_at >= $2\n               AND a.domain IS NOT NULL AND a.protocol = 1\n             LIMIT 2000)\n            UNION\n            -- enabled relays\n            (SELECT inbox_url FROM relays WHERE state = 2)\n        ) reach\n        WHERE inbox <> ''\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamp",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6795308a2d59874a88e03c45e61e808d02cc5259f9027cd0aefc2d21caed6cc2"
+}

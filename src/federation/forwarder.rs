@@ -26,7 +26,8 @@ pub async fn forwardable(state: &AppState, activity: &Value, status_id: i64) -> 
 /// `forward!`: pass `activity`, sent by `sender_id`, on to the followers of
 /// the local accounts that boosted or quoted the status `status_id`, and of
 /// the local author it replies to; signed by that author, or else by the
-/// first of those accounts. The sender's own inbox is left out.
+/// first of those accounts. The sender's own inbox is left out. Suspended
+/// followers are not: `Account.inboxes` does not ask.
 pub async fn forward(state: &AppState, sender_id: i64, activity: &Value, status_id: i64) {
     if let Err(error) = try_forward(state, sender_id, activity, status_id).await {
         tracing::warn!(status_id, %error, "could not forward an activity");
@@ -84,16 +85,16 @@ async fn try_forward(
     .fetch_optional(&state.db)
     .await?;
     let inboxes: Vec<String> = sqlx::query_scalar!(
-        r#"SELECT DISTINCT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS "inbox!"
+        r#"SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS "inbox!"
            FROM accounts a
-           WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
+           WHERE a.domain IS NOT NULL AND a.protocol = 1
              AND a.id IN (SELECT account_id FROM follows WHERE target_account_id = ANY($1::bigint[]))"#,
         &targets,
     )
     .fetch_all(&state.db)
     .await?
     .into_iter()
-    .filter(|inbox| Some(inbox) != sender_inbox.as_ref())
+    .filter(|inbox| !inbox.is_empty() && Some(inbox) != sender_inbox.as_ref())
     .collect();
     if inboxes.is_empty() {
         return Ok(());

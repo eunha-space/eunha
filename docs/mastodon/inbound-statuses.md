@@ -99,9 +99,13 @@ author's remote followers, signed by the author, whoever it is addressed to
 sends it). It goes only when it carries its author's Linked Data signature,
 so that the followers can tell who wrote it, and as it arrived, so that the
 signature still verifies; the inbox of the server that sent it is left out.
-It is passed on once, as the status is created: delivered again, the status
-is known and nothing is sent. A reply that is followers-only or direct,
-unsigned, fetched, or to a post that is not local, is not passed on.
+The followers are all of the author's remote ActivityPub followers
+(`followers.inboxes`), those suspended by their own server and those whose
+deletion was requested among them, as for `ActivityPub::Forwarder`; only a
+status's own distribution (`StatusReachFinder`) leaves those out, and not
+for its `Delete`. It is passed on once, as the status is created: delivered
+again, the status is known and nothing is sent. A reply that is followers-only
+or direct, unsigned, fetched, or to a post that is not local, is not passed on.
 
 Whether an activity keeps its signature is decided as it arrives, as
 `ActivityPub::ProcessActivityService` decides it. Delivered by its own

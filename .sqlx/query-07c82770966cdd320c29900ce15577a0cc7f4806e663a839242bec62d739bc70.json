@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT suspended_at, suspension_origin FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "suspended_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 1,
+        "name": "suspension_origin",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "07c82770966cdd320c29900ce15577a0cc7f4806e663a839242bec62d739bc70"
+}

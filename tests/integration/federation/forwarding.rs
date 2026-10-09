@@ -279,6 +279,139 @@ async fn test_a_signed_reply_to_a_local_post_reaches_its_authors_followers() {
     assert_eq!(queued_for(&ctx, &nina_inbox).await.len(), before + 2);
 }
 
+/// Who each of Mastodon's distributions reaches of a local account's
+/// suspended followers, and of those whose deletion was requested:
+/// `followers.inboxes` (`RawDistributionWorker`, which forwards a reply,
+/// and `ActivityPub::Forwarder`) and `AccountReachFinder` reach them;
+/// `StatusReachFinder` leaves them out unless it is `unsafe`, as a
+/// status's `Delete` is.
+#[tokio::test]
+async fn test_suspended_followers_are_reached_as_each_distribution_reaches_them() {
+    use eunha::federation::delivery;
+
+    let ctx = TestContext::new("reach-suspended").await;
+    let alice_id: i64 = ctx.alice_id.parse().unwrap();
+    let (nina_id, nina, _) = seed_remote(&ctx, "nina", "nina.invalid").await;
+    let (sue_id, sue, _) = seed_remote(&ctx, "sue", "sue.invalid").await;
+    let (dee_id, dee, _) = seed_remote(&ctx, "dee", "dee.invalid").await;
+    for follower in [nina_id, sue_id, dee_id] {
+        follow(&ctx, follower, alice_id).await;
+    }
+    // Suspended by its own server: a suspension here would have rejected its
+    // follows (`reject_remote_follows!`).
+    sqlx::query("UPDATE accounts SET suspended_at = now(), suspension_origin = 1 WHERE id = $1")
+        .bind(sue_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET requested_deletion_at = now() WHERE id = $1")
+        .bind(dee_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let inbox = |uri: &str| format!("{uri}/inbox");
+    let sorted = |mut inboxes: Vec<String>| {
+        inboxes.sort();
+        inboxes
+    };
+    let everyone = sorted(vec![inbox(&dee), inbox(&nina), inbox(&sue)]);
+
+    assert_eq!(
+        sorted(
+            delivery::follower_inboxes(&ctx.state, alice_id)
+                .await
+                .unwrap()
+        ),
+        everyone,
+        "followers.inboxes"
+    );
+    assert_eq!(
+        sorted(
+            delivery::account_reach_inboxes(&ctx.state, alice_id)
+                .await
+                .unwrap()
+        ),
+        everyone,
+        "AccountReachFinder"
+    );
+
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "to everyone", "public")
+        .await;
+    let post_id: i64 = post["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        delivery::status_reach_of(&ctx.state, post_id, false)
+            .await
+            .unwrap(),
+        vec![inbox(&nina)],
+        "StatusReachFinder"
+    );
+    assert_eq!(
+        sorted(
+            delivery::status_reach_of(&ctx.state, post_id, true)
+                .await
+                .unwrap()
+        ),
+        everyone,
+        "StatusReachFinder, unsafe"
+    );
+}
+
+/// `AccountReachFinder`'s recent follows are those of the two days before
+/// a local suspension, for an account suspended here, rather than of the
+/// last two days.
+#[tokio::test]
+async fn test_a_suspended_accounts_reach_is_as_recent_as_its_suspension() {
+    use eunha::federation::delivery;
+
+    let ctx = TestContext::new("reach-suspension-cutoff").await;
+    let alice_id: i64 = ctx.alice_id.parse().unwrap();
+    let (rob_id, rob, _) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    follow(&ctx, alice_id, rob_id).await;
+    sqlx::query(
+        "UPDATE follows SET created_at = now() - interval '3 days'
+         WHERE account_id = $1 AND target_account_id = $2",
+    )
+    .bind(alice_id)
+    .bind(rob_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let reach = || async {
+        delivery::account_reach_inboxes(&ctx.state, alice_id)
+            .await
+            .unwrap()
+    };
+    assert_eq!(
+        reach().await,
+        Vec::<String>::new(),
+        "followed three days ago"
+    );
+
+    sqlx::query(
+        "UPDATE accounts SET suspended_at = now() - interval '2 days', suspension_origin = 0
+         WHERE id = $1",
+    )
+    .bind(alice_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        reach().await,
+        vec![format!("{rob}/inbox")],
+        "a day before the suspension"
+    );
+
+    // Suspended by its own server: the last two days.
+    sqlx::query("UPDATE accounts SET suspension_origin = 1 WHERE id = $1")
+        .bind(alice_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(reach().await, Vec::<String>::new());
+}
+
 /// Every local profile can be sent again to the servers that know it, with
 /// the avatar where it is now: other servers keep the URL they last saw, and
 /// after an instance's media has moved, that URL is gone.

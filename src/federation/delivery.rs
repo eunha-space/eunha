@@ -461,23 +461,21 @@ pub async fn fanout_to_followers_unproven(
 }
 
 /// The inboxes of `actor_account_id`'s remote followers, a shared inbox once
-/// for all the followers behind it, without unavailable domains.
+/// for all the followers behind it, without unavailable domains:
+/// `account.followers.inboxes`, which `ActivityPub::RawDistributionWorker`
+/// sends to. A suspended follower, or one whose deletion was requested, is
+/// among them, as it is in Mastodon: only `StatusReachFinder` leaves those
+/// out.
 pub async fn follower_inboxes(
     state: &AppState,
     actor_account_id: i64,
 ) -> anyhow::Result<Vec<String>> {
-    let inboxes = sqlx::query!(
-        r#"SELECT DISTINCT
-             CASE WHEN a.shared_inbox_url IS NOT NULL AND a.shared_inbox_url <> ''
-                  THEN a.shared_inbox_url
-                  ELSE a.inbox_url
-             END AS inbox
+    let inboxes = sqlx::query_scalar!(
+        r#"SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS "inbox!"
            FROM follows f
            JOIN accounts a ON a.id = f.account_id
            WHERE f.target_account_id = $1
-             AND a.domain IS NOT NULL AND a.protocol = 1
-             AND a.inbox_url <> ''
-             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL"#,
+             AND a.domain IS NOT NULL AND a.protocol = 1"#,
         actor_account_id,
     )
     .fetch_all(&state.db)
@@ -486,7 +484,6 @@ pub async fn follower_inboxes(
     let unavailable = unavailable_domains(state).await;
     let inboxes = inboxes
         .into_iter()
-        .filter_map(|row| row.inbox)
         .filter(|inbox| !inbox.is_empty())
         .filter(|inbox| {
             if inbox_unavailable(inbox, &unavailable) {
@@ -504,50 +501,80 @@ pub async fn follower_inboxes(
 /// activity (a profile `Update`), matching Mastodon's `AccountReachFinder`:
 /// followers + reporters + accounts mentioned in the account's recent statuses +
 /// accounts it recently followed + targets of its recent follow requests +
-/// enabled relays, de-duplicated and minus suspended/unavailable domains.
+/// enabled relays, de-duplicated and minus unavailable domains. Suspended
+/// accounts are not left out: `AccountReachFinder` reaches them, and a
+/// suspension's own `Update` is how their servers hear of it.
 ///
-/// "Recent" is the last two days, mirroring Mastodon's `STATUS_SINCE`.
+/// "Recent" is the two days before now, or before a local suspension
+/// (`recent_date_cutoff`); the recent statuses are the last 200 since
+/// (`STATUS_LIMIT`), and each recent set is at most 2,000 inboxes
+/// (`RECENT_LIMIT`).
 pub async fn account_reach_inboxes(
     state: &AppState,
     account_id: i64,
 ) -> anyhow::Result<Vec<String>> {
+    use crate::delete_account::suspension_origin;
+    let account = sqlx::query!(
+        "SELECT suspended_at, suspension_origin FROM accounts WHERE id = $1",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let since = chrono::Duration::days(2);
+    let cutoff = match account {
+        Some(account) if account.suspension_origin == Some(suspension_origin::LOCAL) => account
+            .suspended_at
+            .map(|at| at.and_utc() - since)
+            .unwrap_or_else(|| chrono::Utc::now() - since),
+        _ => chrono::Utc::now() - since,
+    };
     let rows: Vec<String> = sqlx::query_scalar!(
         r#"
+        WITH recent_statuses AS (
+            SELECT id FROM statuses
+            WHERE account_id = $1 AND deleted_at IS NULL AND id >= $3
+            ORDER BY id DESC LIMIT 200
+        )
         SELECT DISTINCT inbox AS "inbox!" FROM (
             -- followers
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
-            FROM follows f JOIN accounts a ON a.id = f.account_id
-            WHERE f.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            (SELECT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS inbox
+             FROM follows f JOIN accounts a ON a.id = f.account_id
+             WHERE f.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1)
             UNION
             -- reporters (accounts that reported this account)
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
-            FROM reports r JOIN accounts a ON a.id = r.account_id
-            WHERE r.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            (SELECT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)
+             FROM reports r JOIN accounts a ON a.id = r.account_id
+             WHERE r.target_account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1)
             UNION
             -- accounts mentioned in this account's recent statuses
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
-            FROM mentions m JOIN accounts a ON a.id = m.account_id JOIN statuses s ON s.id = m.status_id
-            WHERE s.account_id = $1 AND s.deleted_at IS NULL AND s.created_at >= now() - interval '2 days'
-              AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)
+             FROM mentions m JOIN accounts a ON a.id = m.account_id
+             WHERE m.status_id IN (SELECT id FROM recent_statuses)
+               AND a.domain IS NOT NULL AND a.protocol = 1
+             LIMIT 2000)
             UNION
             -- accounts this account recently followed
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
-            FROM follows f JOIN accounts a ON a.id = f.target_account_id
-            WHERE f.account_id = $1 AND f.created_at >= now() - interval '2 days'
-              AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)
+             FROM follows f JOIN accounts a ON a.id = f.target_account_id
+             WHERE f.account_id = $1 AND f.created_at >= $2
+               AND a.domain IS NOT NULL AND a.protocol = 1
+             LIMIT 2000)
             UNION
             -- targets of this account's recent follow requests
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
-            FROM follow_requests fr JOIN accounts a ON a.id = fr.target_account_id
-            WHERE fr.account_id = $1 AND fr.created_at >= now() - interval '2 days'
-              AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            (SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url)
+             FROM follow_requests fr JOIN accounts a ON a.id = fr.target_account_id
+             WHERE fr.account_id = $1 AND fr.created_at >= $2
+               AND a.domain IS NOT NULL AND a.protocol = 1
+             LIMIT 2000)
             UNION
             -- enabled relays
-            SELECT inbox_url FROM relays WHERE state = 2 AND inbox_url <> ''
+            (SELECT inbox_url FROM relays WHERE state = 2)
         ) reach
         WHERE inbox <> ''
         "#,
         account_id,
+        cutoff.naive_utc(),
+        crate::snowflake::id_at(cutoff),
     )
     .fetch_all(&state.db)
     .await?;
@@ -555,7 +582,6 @@ pub async fn account_reach_inboxes(
     let unavailable = unavailable_domains(state).await;
     Ok(rows
         .into_iter()
-        .filter(|i| !i.is_empty())
         .filter(|i| !inbox_unavailable(i, &unavailable))
         .collect())
 }
@@ -564,11 +590,14 @@ pub async fn account_reach_inboxes(
 /// activity (Update/Delete), matching Mastodon's `StatusReachFinder#inboxes`:
 /// followers + mentioned accounts + the replied-to author + the quoted author +
 /// interactors (rebloggers/repliers/favouriters/quoters) + relays (public),
-/// de-duplicated and minus suspended accounts and unavailable domains.
+/// de-duplicated and minus unavailable domains. Accounts that are suspended, or
+/// whose deletion was requested, are left out unless `unsafe_reach`
+/// (`inboxes_without_suspended_for`); relays are not accounts.
 ///
 /// - `distributable`: status is public or unlisted (gates the replied-to author,
 ///   the thread-followers union, and — together with `unsafe_reach` — interactors).
-/// - `unsafe_reach`: include interactors regardless of visibility (Delete uses this).
+/// - `unsafe_reach`: include interactors regardless of visibility, and
+///   suspended accounts (Delete uses this).
 /// - `is_public`: also reach enabled relays.
 /// - `followers_allowed`: include the author's followers (false for direct/limited).
 /// - `reblog_of_account_id`: when set, the status is a reblog — Mastodon's
@@ -598,22 +627,22 @@ pub async fn status_reach_inboxes(
             -- mentioned accounts (non-reblog statuses only)
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
             FROM mentions m JOIN accounts a ON a.id = m.account_id
-            WHERE $8::bigint IS NULL AND m.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE $8::bigint IS NULL AND m.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
             -- replied-to author (distributable only)
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM accounts a
-            WHERE $8::bigint IS NULL AND $4::bool AND a.id = $3 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE $8::bigint IS NULL AND $4::bool AND a.id = $3 AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
             -- quoted author
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM quotes q JOIN accounts a ON a.id = q.quoted_account_id
-            WHERE $8::bigint IS NULL AND q.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE $8::bigint IS NULL AND q.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
             -- interactors (distributable or unsafe)
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM accounts a
-            WHERE $8::bigint IS NULL AND ($4::bool OR $5::bool) AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE $8::bigint IS NULL AND ($4::bool OR $5::bool) AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
               AND a.id IN (
                 SELECT account_id FROM statuses WHERE reblog_of_id = $1 AND deleted_at IS NULL
                 UNION SELECT account_id FROM statuses WHERE in_reply_to_id = $1 AND deleted_at IS NULL
@@ -624,12 +653,12 @@ pub async fn status_reach_inboxes(
             -- reblog: the original author
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM accounts a
-            WHERE a.id = $8 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE a.id = $8 AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
             -- followers (author's; plus a local thread author's followers for distributable replies)
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM accounts a
-            WHERE $7::bool AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE $7::bool AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
               AND (
                 EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id AND f.target_account_id = $2)
                 OR (
@@ -645,7 +674,7 @@ pub async fn status_reach_inboxes(
             -- above no longer sees them)
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
             FROM accounts a
-            WHERE a.id = ANY($9::bigint[]) AND a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE a.id = ANY($9::bigint[]) AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
             -- relays (public only)
             SELECT inbox_url FROM relays WHERE $6::bool AND state = 2 AND inbox_url <> ''
