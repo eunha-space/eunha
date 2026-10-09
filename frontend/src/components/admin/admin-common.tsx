@@ -12,6 +12,7 @@ import { errorMessage } from '@/lib/utils.ts'
 import { ImageViewer } from '@/components/image-viewer.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import {
@@ -40,6 +41,27 @@ export function formatDate(value: string | null | undefined): string {
 }
 
 /**
+ * An account's avatar in the moderation pages: the still one unless GIFs
+ * auto-play or it is hovered, as everywhere else.
+ */
+export function AdminAvatar({
+  account,
+  className,
+}: {
+  account: Pick<Account, 'avatar' | 'avatar_static' | 'display_name' | 'username'> | null | undefined
+  className?: string
+}) {
+  const avatar = useAnimatedImage(account?.avatar, account?.avatar_static)
+  const name = account ? account.display_name || account.username : ''
+  return (
+    <Avatar className={className} {...avatar.hover}>
+      <AvatarImage src={avatar.src} alt="" />
+      <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
+    </Avatar>
+  )
+}
+
+/**
  * An account in a moderation list: who it is, linking to its moderation page
  * rather than its profile, since that is where a moderator goes next.
  */
@@ -57,10 +79,7 @@ export function AdminAccountLink({
       to={`/admin/accounts/${pub.id}`}
       className="flex min-w-0 items-center gap-2 no-underline hover:underline"
     >
-      <Avatar className={size === 'sm' ? 'size-6' : 'size-9'}>
-        <AvatarImage src={pub.avatar} alt="" />
-        <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
-      </Avatar>
+      <AdminAvatar account={pub} className={size === 'sm' ? 'size-6' : 'size-9'} />
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{name}</span>
         {size === 'default' && (

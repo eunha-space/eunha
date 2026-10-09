@@ -15,8 +15,7 @@ import {
 import { getToken } from '../../auth.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
-import { ConfirmButton, formatDate } from '@/components/admin/admin-common.tsx'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { AdminAvatar, ConfirmButton, formatDate } from '@/components/admin/admin-common.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
@@ -221,12 +220,7 @@ export default function EmailSubscriptions() {
                     to={`/admin/email_subscriptions/accounts/${account.id}`}
                     className="flex items-center gap-2 p-2.5 no-underline hover:bg-muted/50"
                   >
-                    <Avatar className="size-6">
-                      <AvatarImage src={account.avatar} alt="" />
-                      <AvatarFallback>
-                        {(account.display_name || account.username).slice(0, 1).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <AdminAvatar account={account} className="size-6" />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
                       {account.display_name || account.username}
                     </span>

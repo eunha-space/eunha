@@ -142,7 +142,8 @@ export async function completeLogin(code: string): Promise<void> {
   const me = await restClient(token.accessToken).v1.accounts.verifyCredentials()
   const account: MeAccount = {
     id: me.id, acct: me.acct, displayName: me.displayName || me.username,
-    avatar: me.avatar, defaultVisibility: me.source.privacy ?? 'public',
+    avatar: me.avatar, avatarStatic: me.avatarStatic, emojis: me.emojis,
+    defaultVisibility: me.source.privacy ?? 'public',
   }
   rememberAccount(token.accessToken, account)
   clearMe()

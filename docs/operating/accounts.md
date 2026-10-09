@@ -557,10 +557,12 @@ follows them, as Mastodon's web client does:
     `expand_content_warnings`. The same goes for a quoted post.
  -  With `auto_play`, GIFs (`gifv` attachments), avatars, profile headers
     and custom emoji animate. Without it, a GIF plays while the pointer is
-    over it, an avatar shows its `avatar_static` until hovered, a header
-    shows its `header_static`, and a custom emoji shows its `static_url`
-    until the pointer is over what it is part of: a post's text, its content
-    warning, a name, a poll option, a profile's header, or an announcement.
+    over it, an avatar shows its `avatar_static` until hovered (your own in
+    the rail, the composer's suggestions, the invite tree and the moderation
+    pages too), a header shows its `header_static`, and a custom emoji shows
+    its `static_url` until the pointer is over what it is part of: a post's
+    text, its content warning, a name, a poll option, a profile's header, or
+    an announcement.
  -  A post's link preview card is shown when the post has no media and quotes
     nothing, as Mastodon's `StatusAttachments` does. Its image starts hidden
     when the post is sensitive or with `hide_all`; `show_all` does not

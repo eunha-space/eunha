@@ -15,6 +15,12 @@ export interface MeAccount {
   // renders on first paint instead of appearing a request later.
   displayName: string
   avatar: string
+  // The still avatar, shown unless GIFs auto-play or it is hovered. Absent
+  // from an account cached before it was stored; until the next `loadMe`
+  // fills it in, the card draws no image rather than an animating one.
+  avatarStatic?: string
+  // The display name's custom emoji.
+  emojis?: mastodon.v1.CustomEmoji[]
   // The role's computed permissions, Mastodon's `UserRole::FLAGS` bitmask, for
   // deciding which moderation pages to offer. The server decides what each
   // admin request may do; this only keeps the rail from offering what it would
@@ -43,6 +49,8 @@ function readCachedAccount(): MeAccount | null {
           // next `loadMe` fills them in.
           displayName: parsed.displayName ?? parsed.acct,
           avatar: parsed.avatar ?? '',
+          avatarStatic: parsed.avatarStatic,
+          emojis: Array.isArray(parsed.emojis) ? parsed.emojis : [],
           permissions: parsed.permissions,
         }
       : null
@@ -85,6 +93,8 @@ export async function loadMe(token: string): Promise<MeAccount | null> {
       defaultVisibility: me.source.privacy ?? 'public',
       displayName: me.displayName || me.username,
       avatar: me.avatar,
+      avatarStatic: me.avatarStatic,
+      emojis: me.emojis,
       // masto.js does not model `role` on the credential account.
       permissions: Number(
         (me as unknown as { role?: { permissions?: string } }).role?.permissions ?? 0,

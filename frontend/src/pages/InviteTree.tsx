@@ -7,6 +7,7 @@ import { getInvitePermissions } from '../api.ts'
 import { beginLogin, getSavedAccounts, getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
@@ -48,6 +49,7 @@ function TreeNode({ node, expanded, toggle, counts, searching, canGrant, me, foc
   const name = node.display_name || node.username
   const open = searching || expanded.has(node.id)
   const count = counts.get(node.id) ?? 0
+  const avatar = useAnimatedImage(node.avatar, node.avatar_static)
   return (
     <li>
       <div id={`invite-member-${node.id}`} tabIndex={-1}
@@ -60,8 +62,8 @@ function TreeNode({ node, expanded, toggle, counts, searching, canGrant, me, foc
             {open ? <ChevronDown /> : <ChevronRight />}
           </Button> : <span className="size-7 shrink-0" />}
           <Link to={`/@${node.acct}`} className="flex min-w-0 flex-1 items-center gap-2 no-underline">
-            <Avatar className="size-8 shrink-0">
-              <AvatarImage src={node.avatar} alt="" />
+            <Avatar className="size-8 shrink-0" {...avatar.hover}>
+              <AvatarImage src={avatar.src} alt="" />
               <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">

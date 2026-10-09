@@ -105,6 +105,26 @@ pub fn account_avatar_static_url(urls: &InstanceUrls, a: &models::Account) -> St
     .unwrap_or_else(|| account_avatar_url(urls, a))
 }
 
+/// [`account_avatar_static_url`] from the minimal columns, as
+/// [`account_avatar_url_parts`].
+pub fn account_avatar_static_url_parts(
+    urls: &InstanceUrls,
+    id: i64,
+    avatar_file_name: Option<&str>,
+    avatar_remote_url: Option<&str>,
+    avatar_content_type: Option<&str>,
+) -> String {
+    static_style_url(
+        urls,
+        "avatars",
+        id,
+        avatar_remote_url.unwrap_or_default(),
+        avatar_file_name,
+        avatar_content_type,
+    )
+    .unwrap_or_else(|| account_avatar_url_parts(urls, id, avatar_file_name, avatar_remote_url))
+}
+
 /// `header_static_url`, as [`account_avatar_static_url`].
 pub fn account_header_static_url(urls: &InstanceUrls, a: &models::Account) -> String {
     static_style_url(

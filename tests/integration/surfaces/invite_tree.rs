@@ -63,6 +63,9 @@ async fn test_invite_tree_nests_invitees() {
         "bob should not be a root",
     );
     assert_eq!(alice["root_reason"], "no_recorded_inviter");
+    // The still avatar too, which the web client shows until hovered; without
+    // an uploaded GIF it is the avatar itself.
+    assert_eq!(alice["avatar_static"], alice["avatar"]);
     let children = alice["children"].as_array().unwrap();
     assert!(
         children

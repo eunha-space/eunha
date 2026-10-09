@@ -40,6 +40,7 @@ export interface InviteTreeAccount {
   acct: string
   display_name: string
   avatar: string
+  avatar_static?: string
   invited_at: string
   root_reason?: 'no_recorded_inviter' | 'inviter_unavailable' | 'lineage_unavailable'
 }

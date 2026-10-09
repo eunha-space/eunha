@@ -19,13 +19,13 @@ import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import {
   AccountStateBadges,
+  AdminAvatar,
   ConfirmButton,
   formatDate,
 } from '@/components/admin/admin-common.tsx'
 import { AccountActionDialog } from '@/components/admin/account-action-dialog.tsx'
 import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
 import { UserManagement } from '@/components/admin/user-management.tsx'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -111,12 +111,7 @@ export default function AccountDetail() {
       {a && pub && token && (
         <div className="space-y-5">
           <section className="flex items-start gap-3">
-            <Avatar className="size-14">
-              <AvatarImage src={pub.avatar} alt="" />
-              <AvatarFallback>
-                {(pub.display_name || pub.username).slice(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <AdminAvatar account={pub} className="size-14" />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="truncate font-semibold">{pub.display_name || pub.username}</div>
               <div className="text-muted-foreground truncate text-sm">@{pub.acct}</div>

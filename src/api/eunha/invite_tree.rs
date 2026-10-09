@@ -16,6 +16,8 @@ pub struct TreeAccount {
     pub acct: String,
     pub display_name: String,
     pub avatar: String,
+    /// The still avatar, which the web client shows unless GIFs auto-play.
+    pub avatar_static: String,
     /// When the account joined (its user row's created_at), ISO 8601.
     pub invited_at: String,
     /// Why this member is shown without a parent; never exposes a hidden inviter.
@@ -64,7 +66,8 @@ pub async fn invite_tree(
     // the tree.
     let rows = sqlx::query!(
         r#"SELECT a.id, a.username, a.display_name,
-                  a.avatar_file_name, a.avatar_remote_url, u.created_at,
+                  a.avatar_file_name, a.avatar_remote_url, a.avatar_content_type,
+                  u.created_at,
                   COALESCE(inv_a.id, il.inviter_account_id) AS "invited_by_id?"
            FROM users u
            JOIN accounts a ON a.id = u.account_id
@@ -101,6 +104,13 @@ pub async fn invite_tree(
                     id,
                     r.avatar_file_name.as_deref(),
                     r.avatar_remote_url.as_deref(),
+                ),
+                avatar_static: convert::account_avatar_static_url_parts(
+                    &state.urls,
+                    id,
+                    r.avatar_file_name.as_deref(),
+                    r.avatar_remote_url.as_deref(),
+                    r.avatar_content_type.as_deref(),
                 ),
                 invited_at: convert::mastodon_date(r.created_at),
                 root_reason: None,

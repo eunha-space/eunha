@@ -14,6 +14,7 @@ import { getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
 import { useMentionAutocomplete } from '../hooks/use-mention-autocomplete.ts'
 import { useEmojiAutocomplete } from '../hooks/use-emoji-autocomplete.ts'
 import { insertShortcode, useCustomEmojis } from '../hooks/use-custom-emojis.ts'
+import { useAnimatedImage } from '../hooks/use-animated-image.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
 import { EmojiPicker } from '@/components/emoji-picker.tsx'
 import { DisplayName } from '@/components/emoji.tsx'
@@ -28,6 +29,12 @@ import { ComposeHints } from '@/components/compose-hints.tsx'
 import { cn } from '@/lib/utils.ts'
 
 const MAX_ATTACHMENTS = 4
+
+// A suggested account's avatar: still until hovered, unless GIFs auto-play.
+function SuggestionAvatar({ account }: { account: mastodon.v1.Account }) {
+  const avatar = useAnimatedImage(account.avatar, account.avatarStatic)
+  return <img src={avatar.src} alt="" className="size-6 shrink-0 rounded" {...avatar.hover} />
+}
 
 // A suggested emoji, drawn as Mastodon's `AutosuggestEmoji`: the image, then
 // its shortcode.
@@ -416,11 +423,7 @@ export function Compose({
                       i === mentions.active && 'bg-accent',
                     )}
                   >
-                    <img
-                      src={a.avatar}
-                      alt=""
-                      className="size-6 shrink-0 rounded"
-                    />
+                    <SuggestionAvatar account={a} />
                     <DisplayName account={a} className="truncate font-medium" />
                     <span className="text-muted-foreground truncate text-xs">
                       @{a.acct}

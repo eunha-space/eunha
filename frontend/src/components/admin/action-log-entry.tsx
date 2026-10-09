@@ -2,8 +2,7 @@ import { Fragment, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import { type ActionLog } from '../../admin-api.ts'
-import { formatDate } from '@/components/admin/admin-common.tsx'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { AdminAvatar, formatDate } from '@/components/admin/admin-common.tsx'
 
 /** Where an entry's target links: a page here, or a post's own address. */
 function TargetLink({ target }: { target: NonNullable<ActionLog['target']> }) {
@@ -44,10 +43,7 @@ export function ActionLogEntry({ log }: { log: ActionLog }) {
   })
   return (
     <div className="flex items-start gap-3 p-2.5">
-      <Avatar className="size-8">
-        <AvatarImage src={log.account?.avatar} alt="" />
-        <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
-      </Avatar>
+      <AdminAvatar account={log.account} className="size-8" />
       <div className="min-w-0 flex-1">
         <p className="text-sm break-words">
           {parts}

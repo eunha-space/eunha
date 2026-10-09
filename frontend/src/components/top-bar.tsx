@@ -59,6 +59,8 @@ import {
 import { cn } from '@/lib/utils.ts'
 import { firstAdminSection } from '@/lib/admin-sections.ts'
 import { can } from '../admin-api.ts'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
+import { DisplayName } from '@/components/emoji.tsx'
 
 // Roomier rows and a full-width pill for the current one, matching the weight
 // 5.0 gives the rail now that it carries fewer things.
@@ -222,6 +224,12 @@ function AccountCard({
   onNavigate?: () => void
 }) {
   const { setTheme } = useTheme()
+  // An account cached before the still avatar was stored has none to show
+  // until `loadMe` fills it in, and the animated one is not shown in its place.
+  const avatar = useAnimatedImage(
+    account.avatarStatic === undefined ? null : account.avatar,
+    account.avatarStatic,
+  )
   return (
     <div className="flex items-center gap-2 rounded-lg border p-2">
       <Link
@@ -229,16 +237,17 @@ function AccountCard({
         onClick={onNavigate}
         className="flex min-w-0 flex-1 items-center gap-2 no-underline"
       >
-        <Avatar className="size-8">
-          <AvatarImage src={account.avatar} alt="" />
+        <Avatar className="size-8" {...avatar.hover}>
+          <AvatarImage src={avatar.src} alt="" />
           <AvatarFallback>
             {account.displayName.slice(0, 1).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">
-            {account.displayName}
-          </span>
+          <DisplayName
+            account={{ displayName: account.displayName, username: account.acct, emojis: account.emojis }}
+            className="block truncate text-sm font-medium"
+          />
           <span className="text-muted-foreground block truncate text-xs">
             @{account.acct}
           </span>
