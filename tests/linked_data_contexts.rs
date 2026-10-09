@@ -1,6 +1,7 @@
 //! A relayed activity's Linked Data Signature checked over a context eunha
 //! does not ship, fetched from a fake remote server and cached as Mastodon's
-//! document loader fetches and caches it (`JsonLdHelper#load_jsonld_context`).
+//! document loader fetches and caches it (`JsonLdHelper#load_jsonld_context`),
+//! and checked before an FEP-8b32 proof whose key the fake server publishes.
 //!
 //! A test binary of its own because it has to let eunha fetch from
 //! 127.0.0.1, which is process-wide; the main suite checks that a context on
@@ -221,4 +222,176 @@ async fn test_a_relayed_post_is_checked_over_a_fetched_context() {
             .unwrap();
         assert!(!cached, "a refused context is not kept");
     }
+}
+
+/// Relayed with both its author's Linked Data signature and an FEP-8b32
+/// proof, a reply to a local post is taken on the signature, as
+/// `ActivityPub::ProcessActivityService` checks it before the proof, and so
+/// is passed on to the local author's followers (`forward_for_reply`). The
+/// same reply with only its proof is taken on it, and not passed on: what
+/// Mastodon forwards is what it took on a Linked Data signature.
+#[tokio::test]
+async fn test_a_relayed_reply_is_taken_on_its_signature_before_its_proof() {
+    use ojak::sig::integrity;
+
+    let ctx = TestContext::reaching_loopback("ldctx-before-proof").await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let bob = format!("{base}/users/bob");
+    let pem = integrity::generate_ed25519_key(&mut rsa::rand_core::OsRng).unwrap();
+    let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
+    let (bob_rsa, bob_public_rsa) =
+        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let actor = json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+            "https://w3id.org/security/multikey/v1",
+        ],
+        "id": bob,
+        "type": "Person",
+        "preferredUsername": "bob",
+        "inbox": format!("{bob}/inbox"),
+        "publicKey": {
+            "id": format!("{bob}#main-key"),
+            "owner": bob,
+            "publicKeyPem": bob_public_rsa,
+        },
+        "assertionMethod": [{
+            "id": format!("{bob}#ed25519-key"),
+            "type": "Multikey",
+            "controller": bob,
+            "publicKeyMultibase": integrity::encode_ed25519_multikey(&public),
+        }],
+    });
+    let app = Router::new().route(
+        "/users/bob",
+        axum::routing::get(move || {
+            let actor = actor.clone();
+            async move {
+                (
+                    [("content-type", "application/activity+json")],
+                    actor.to_string(),
+                )
+            }
+        }),
+    );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'bob', $2, 'bob', '', $3, $3, $4, $3 || '/inbox', $3 || '/outbox', 1, now(), now())"#,
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(base.trim_start_matches("http://"))
+    .bind(&bob)
+    .bind(&bob_public_rsa)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let (relay, relay_key) = seed_remote(&ctx, "relay", "relay.invalid").await;
+    let (nina, _) = seed_remote(&ctx, "nina", "nina.invalid").await;
+    let alice_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'alice' AND domain IS NULL")
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         SELECT $1, id, $2, now(), now() FROM accounts WHERE uri = $3",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(alice_id)
+    .bind(&nina)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "a post to reply to", "public")
+        .await;
+    let post_uri = post["uri"].as_str().unwrap().to_owned();
+    let forwarded = || {
+        let db = ctx.db.clone();
+        let inbox = format!("{nina}/inbox");
+        async move {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT payload->'activity' FROM eunha.ojak_queue
+                 WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1
+                   AND payload->'activity'->>'type' = 'Create'
+                 ORDER BY id",
+            )
+            .bind(inbox)
+            .fetch_all(&db)
+            .await
+            .unwrap()
+        }
+    };
+    let before = forwarded().await.len();
+
+    let public = "https://www.w3.org/ns/activitystreams#Public";
+    let reply = |n: u32| {
+        json!({
+            // The security context the signature would add, so that adding
+            // it does not change what the proof covers.
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/security/v1",
+            ],
+            "id": format!("{bob}/statuses/{n}/activity"),
+            "type": "Create",
+            "actor": bob,
+            "to": [public],
+            "object": {
+                "id": format!("{bob}/statuses/{n}"),
+                "type": "Note",
+                "attributedTo": bob,
+                "inReplyTo": post_uri,
+                "to": [public],
+                "content": "a reply",
+                "published": "2026-10-01T12:00:00Z",
+            },
+        })
+    };
+    let prove = |activity: &Value| {
+        integrity::sign_object_integrity_proof(
+            activity,
+            &format!("{bob}#ed25519-key"),
+            &seed,
+            chrono::Utc::now().timestamp(),
+        )
+        .unwrap()
+    };
+    let relay_key_id = format!("{relay}#main-key");
+
+    // Proved, then signed over the proof: taken on the signature, and passed
+    // on as bob signed it.
+    let now = chrono::Utc::now().timestamp();
+    let both = ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        &prove(&reply(1)),
+        &format!("{bob}#main-key"),
+        &ojak::sig::PrivateKey::from_pem(&bob_rsa).unwrap(),
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    )
+    .unwrap();
+    let resp = ctx
+        .api
+        .post_signed("/inbox", &both, &relay_key_id, &relay_key)
+        .await;
+    assert_eq!(resp.status(), 202);
+    assert!(stored(&ctx, &bob, 1).await, "taken on bob's signature");
+    let queued = forwarded().await;
+    assert_eq!(queued.len(), before + 1, "forwarded to alice's follower");
+    assert_eq!(queued.last().unwrap(), &both, "as bob signed it");
+
+    // Proved only: taken on the proof, and passed on to nobody.
+    let resp = ctx
+        .api
+        .post_signed("/inbox", &prove(&reply(2)), &relay_key_id, &relay_key)
+        .await;
+    assert_eq!(resp.status(), 202);
+    assert!(stored(&ctx, &bob, 2).await, "taken on bob's proof");
+    assert_eq!(forwarded().await.len(), before + 1, "not forwarded");
 }

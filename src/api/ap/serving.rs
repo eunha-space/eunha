@@ -289,6 +289,11 @@ pub fn federation() -> Federation<AppState> {
         .remote_contexts(ojak::contexts::Limits::default(), |ctx: Ctx, iri: String| async move {
             crate::federation::json_ld_contexts::load(ctx.data(), &iri).await
         })
+        // A relayed activity is taken on its Linked Data Signature before its
+        // FEP-8b32 proof, as `ActivityPub::ProcessActivityService` checks
+        // them, so that one carrying both can be passed on (`forwardable`):
+        // Mastodon forwards only what it took on the signature.
+        .linked_data_before_proof()
         // A domain this instance does not federate with (`domain_not_allowed?`:
         // suspended, or off the allow list in limited federation mode): a
         // request signed with a key there is refused 403 before any key is

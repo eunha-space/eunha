@@ -111,9 +111,11 @@ vouch for, since the signature does not cover what is left
 (`safe_for_forwarding?`). Passed on by another server, it keeps its
 signature only when that is what it was taken on, and then what is passed on
 is the activity as it arrived, not the JSON-LD reading of it the handlers
-read. Taken on its proof, or as its origin serves it, it keeps none. The
-same rule decides the `Delete` and `Update` that `ActivityPub::Forwarder`
-passes on (*docs/mastodon/quotes.md*).
+read. Its Linked Data signature is checked before an FEP-8b32 proof, as
+Mastodon checks them, so one that carries both is taken on the signature
+and can be passed on. Taken on its proof, or as its origin serves it, it
+keeps none. The same rule decides the `Delete` and `Update` that
+`ActivityPub::Forwarder` passes on (*docs/mastodon/quotes.md*).
 
 ActivityPub's own rule (§7.1.2), forwarding what is addressed to a local
 followers collection, is not followed: Mastodon forwards by what a reply
