@@ -572,6 +572,12 @@ follows them, as Mastodon's web client does:
     (`web-hidden-card-image-not-loaded`). A video card loads its player only
     when Play is clicked, in an `iframe` given the sandbox Mastodon's oEmbed
     sanitizer gives it; only the player's address is taken from the card's HTML.
+ -  A quoted post is drawn as Mastodon's `QuotedStatus` draws it: its content
+    warning, content and poll, then its media under the same rules as a
+    post's own, or, with no media and no quote of its own, its link card. A
+    quote the quoted post makes is not drawn again, only named (“Quoted a
+    post by @…”), as Mastodon stops at one level of nesting. A click on the
+    quote, other than on its media, poll or links, opens its thread.
 
 A `:shortcode:` is drawn as an image only when the post, account, poll or
 announcement it belongs to lists that shortcode in its `emojis`, and only in

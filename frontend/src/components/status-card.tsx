@@ -51,7 +51,7 @@ import {
 } from '@/components/ui/dropdown-menu.tsx'
 import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
-import { QuotedPost } from '@/components/quoted-post.tsx'
+import { QuotedStatus } from '@/components/quoted-post.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { PreviewCard } from '@/components/preview-card.tsx'
@@ -77,40 +77,6 @@ function VisibilityIcon({ v }: { v: mastodon.v1.StatusVisibility }) {
       <Icon className="size-3.5" />
     </span>
   )
-}
-
-// A quote that isn't accepted shows a status message in place of the embedded
-// post. Copy mirrors Mastodon's web client (status_quoted.tsx): pending quotes
-// stay hidden until the original author's server approves them, so the quoted
-// content is never revealed early.
-const QUOTE_PLACEHOLDER: Record<string, string> = {
-  pending: 'Post pending',
-  revoked: 'Post removed by author',
-  rejected: 'Post unavailable',
-  deleted: 'Post unavailable',
-  unauthorized: 'Post unavailable',
-  blocked_account: "This post is hidden because you've blocked this account.",
-  blocked_domain: "This post is hidden because you've blocked this domain.",
-  muted_account: "This post is hidden because you've muted this account.",
-}
-
-// The post embedded by a quote. Like Mastodon, the quoted post is only rendered
-// once the quote is accepted; other states (pending approval, revoked, deleted,
-// blocked/muted, …) show a message instead.
-function QuotedStatus({
-  quote,
-}: {
-  quote: NonNullable<mastodon.v1.Status['quote']>
-}) {
-  const quoted = 'quotedStatus' in quote ? quote.quotedStatus : null
-  if (quote.state !== 'accepted' || !quoted) {
-    return (
-      <div className="text-muted-foreground rounded-md border px-3 py-2 text-xs">
-        {QUOTE_PLACEHOLDER[quote.state] ?? 'Post unavailable'}
-      </div>
-    )
-  }
-  return <QuotedPost status={quoted} />
 }
 
 // The language the reader reads, as Mastodon's web client compares it: the
@@ -598,7 +564,7 @@ export function StatusCard({
                     sensitive={status.sensitive}
                   />
                 )}
-                {status.quote && <QuotedStatus quote={status.quote} />}
+                {status.quote && <QuotedStatus quote={status.quote} token={token} />}
               </>
             )}
           </>
