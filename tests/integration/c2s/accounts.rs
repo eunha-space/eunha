@@ -3634,6 +3634,36 @@ async fn test_update_credentials_invalid_privacy_is_unrescued() {
     assert_ne!(me["source"]["privacy"], json!("direct"));
 }
 
+/// Rails' `params` merges the query string over the body, a key at a time:
+/// the query's `source` replaces the body's whole `source` hash.
+#[tokio::test]
+async fn test_update_credentials_reads_the_query_string() {
+    let ctx = TestContext::new("update-query").await;
+    let resp = ctx
+        .api
+        .http
+        .patch(
+            ctx.api
+                .url("/api/v1/accounts/update_credentials?display_name=Query&source[language]=de"),
+        )
+        .header("host", &ctx.api.host)
+        .bearer_auth(&ctx.alice_token)
+        .form(&[
+            ("display_name", "Body"),
+            ("note", "from the body"),
+            ("source[sensitive]", "true"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let me: Value = resp.json().await.unwrap();
+    assert_eq!(me["display_name"], json!("Query"));
+    assert_eq!(me["source"]["note"], json!("from the body"));
+    assert_eq!(me["source"]["language"], json!("de"));
+    assert_eq!(me["source"]["sensitive"], json!(false));
+}
+
 /// `source.follow_requests_count` counts requests from accounts that are
 /// not suspended (`Account.without_suspended`).
 #[tokio::test]

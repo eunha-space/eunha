@@ -35,13 +35,14 @@ form names nest as Rack nests them, so `poll[options][]` is an array under
 `poll` and `keywords_attributes[0][keyword]` a hash by index.
 
 Take a handler's parameters with `Params<T>` (or `NestedParams` for the raw
-hash) from *src/api/mastodon/extractors.rs*, never with axum's `Json` or
-`Form`, which refuse the other encodings. A form gives every value as a
-string, so a field that is not one reads through the `rails` casts there:
-`opt_bool` casts as `ActiveModel::Type::Boolean` does (`"1"`, `"t"` and
-`"on"` are true, blank is nil), `opt_int` as `to_i`, and `strings` takes an
-array, a lone value, or a form's hash by index. Query structs use the same
-casts, as `truthy_param?` reads the query string.
+hash, or `Parts` for a body that may carry files) from
+*src/api/mastodon/extractors.rs*, never with axum's `Json` or `Form`, which
+refuse the other encodings. All three merge the query string the same way. A
+form gives every value as a string, so a field that is not one reads through
+the `rails` casts there: `opt_bool` casts as `ActiveModel::Type::Boolean` does
+(`"1"`, `"t"` and `"on"` are true, blank is nil), `opt_int` as `to_i`, and
+`strings` takes an array, a lone value, or a form's hash by index. Query
+structs use the same casts, as `truthy_param?` reads the query string.
 
 
 Web client navigation

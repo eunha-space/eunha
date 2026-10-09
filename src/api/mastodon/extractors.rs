@@ -461,7 +461,7 @@ impl Part {
 /// A request body's parameters under Rails' bracketed names
 /// (`source[privacy]`, `fields_attributes[0][name]`, `attribution_domains[]`),
 /// from multipart, form-encoded or JSON, as Rails reads all three into the
-/// same `params`.
+/// same `params`, with the query string's merged over them.
 pub struct Parts(pub Vec<(String, Part)>);
 
 fn flatten_json(prefix: &str, value: &serde_json::Value, out: &mut Vec<(String, Part)>) {
@@ -508,6 +508,10 @@ where
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
+        let query: Vec<(String, String)> =
+            url::form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes())
+                .into_owned()
+                .collect();
         let mut parts = vec![];
         if content_type.contains("multipart/form-data") {
             let mut multipart = Multipart::from_request(req, state)
@@ -560,8 +564,31 @@ where
                 );
             }
         }
-        Ok(Parts(parts))
+        Ok(Parts(merge_query(parts, query)))
     }
+}
+
+/// The key a bracketed name nests under, as `normalize_params` finds it:
+/// `source` of `source[privacy]`.
+fn top_level_key(name: &str) -> &str {
+    let trimmed = name.trim_start_matches(['[', ']']);
+    &trimmed[..trimmed.find(['[', ']']).unwrap_or(trimmed.len())]
+}
+
+/// `request_parameters.merge(query_parameters)`: a shallow merge, so a key
+/// the query string gives replaces everything the body gave under it.
+fn merge_query(
+    mut parts: Vec<(String, Part)>,
+    query: Vec<(String, String)>,
+) -> Vec<(String, Part)> {
+    let keys: std::collections::HashSet<String> = query
+        .iter()
+        .map(|(name, _)| top_level_key(name).to_owned())
+        .filter(|key| !key.is_empty())
+        .collect();
+    parts.retain(|(name, _)| !keys.contains(top_level_key(name)));
+    parts.extend(query.into_iter().map(|(k, v)| (k, Part::Text(v))));
+    parts
 }
 
 #[cfg(test)]
