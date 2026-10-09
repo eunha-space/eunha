@@ -87,3 +87,7 @@ authorization and token, deletes the push subscriptions made through them,
 mails the user that their password changed, and publishes `kill` on each
 revoked token's `timeline:access_token:<id>` channel, so that a stream a
 running server holds open with one of them closes at once.
+
+The rest of `tootctl accounts` — rotating keys, deleting, approving, culling
+and pruning, and the others — is in
+[Accounts, domains and emoji](./maintenance-commands).

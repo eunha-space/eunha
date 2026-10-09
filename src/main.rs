@@ -73,6 +73,11 @@ enum Command {
         #[command(subcommand)]
         command: AccountsCommand,
     },
+    /// Repair the database, as `tootctl maintenance` does.
+    Maintenance {
+        #[command(subcommand)]
+        command: eunha::tootctl::maintenance::Command,
+    },
     /// Manage the site settings Mastodon keeps in its database.
     Settings {
         #[command(subcommand)]
@@ -410,6 +415,8 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    #[command(flatten)]
+    More(eunha::tootctl::accounts::Command),
 }
 
 #[tokio::main]
@@ -578,6 +585,31 @@ async fn main() -> anyhow::Result<()> {
             let db = command_database(&config).await?;
             print_status(&accounts::batch_status(&db, &tag).await?);
             return Ok(());
+        }
+        Some(Command::Accounts {
+            command: AccountsCommand::More(command),
+        }) => {
+            let config = command_config(args.tenants.as_deref(), command.instance())?;
+            let db = command_database_sized(&config, command.connections()).await?;
+            let state = eunha::state::AppState::new(db, config).await?;
+            return command.run(&state, &eunha::tootctl::Terminal).await;
+        }
+        Some(Command::Maintenance { command }) => {
+            // `DATABASE_URL` alone will do, for a Mastodon database repaired
+            // before it is imported.
+            let database_url = match args.tenants.as_deref() {
+                Some(_) => {
+                    command_config(args.tenants.as_deref(), command.instance())?.database_url
+                }
+                None => {
+                    anyhow::ensure!(
+                        command.instance().is_none(),
+                        "--instance picks a tenant, and needs --tenants"
+                    );
+                    migration_database_url()?
+                }
+            };
+            return command.run(&database_url, &eunha::tootctl::Terminal).await;
         }
         Some(Command::Search {
             command:

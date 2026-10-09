@@ -1095,10 +1095,19 @@ async fn attach_linked_data_signature(
             return activity;
         }
     };
-    let private_key = match ojak::sig::PrivateKey::from_pem(&key.private_key) {
+    sign_linked_data_with(activity, key_id, &key.private_key)
+}
+
+/// An activity with an `RsaSignature2017` by `private_key`, named `key_id`,
+/// as `serialize_payload(…, sign_with:)` makes one with a key other than the
+/// account's own: what a key rotation's `Update` is signed with, the old key
+/// the receiving servers still hold. The activity goes unsigned when the key
+/// cannot sign it.
+pub fn sign_linked_data_with(activity: Value, key_id: &str, private_key: &str) -> Value {
+    let private_key = match ojak::sig::PrivateKey::from_pem(private_key) {
         Ok(key) => key,
         Err(e) => {
-            tracing::warn!(account_id, error = %e, "unreadable signing key; delivering without a Linked Data Signature");
+            tracing::warn!(key_id, error = %e, "unreadable signing key; delivering without a Linked Data Signature");
             return activity;
         }
     };
@@ -1113,7 +1122,7 @@ async fn attach_linked_data_signature(
     ) {
         Ok(signed) => signed,
         Err(e) => {
-            tracing::warn!(account_id, error = %e, "could not make a Linked Data Signature");
+            tracing::warn!(key_id, error = %e, "could not make a Linked Data Signature");
             activity
         }
     }

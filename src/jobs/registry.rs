@@ -45,6 +45,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::remove_status::RemovalWorker>(),
         entry::<crate::api::mastodon::polls::PollExpirationNotifyWorker>(),
         entry::<crate::accounts::WelcomeMailJob>(),
+        entry::<crate::tootctl::accounts::UpdateDistributionWorker>(),
         entry::<crate::email_subscriptions::EmailDistributionWorker>(),
         entry::<crate::fasp::workers::AnnounceAccountLifecycleEventWorker>(),
         entry::<crate::fasp::workers::AnnounceContentLifecycleEventWorker>(),

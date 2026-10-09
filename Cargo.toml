@@ -187,6 +187,8 @@ aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 sha1 = "0.10"
 flate2 = "1"
+# `tootctl emoji`'s packs, gzipped tarballs (src/cli/emoji.rs)
+tar = "0.4"
 # Archive takeout (src/portability/backup.rs), zipped as Mastodon's rubyzip does
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

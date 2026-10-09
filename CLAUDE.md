@@ -65,6 +65,9 @@ Running an instance:
     drive, content retention, and the rest of the server administration.
  -  *docs/operating/maintenance.md*: `eunha feeds`, `cache`, `statuses remove`,
     `media` and `preview_cards remove`, `tootctl`'s clean-ups.
+ -  *docs/operating/maintenance-commands.md*: the rest of `tootctl` —
+    `eunha accounts` beyond create and modify, `eunha domains`, `eunha emoji`
+    and `eunha maintenance fix-duplicates`.
  -  *docs/operating/email-subscriptions.md*: email subscriptions, their
     switches, distribution, and the admin API.
  -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,

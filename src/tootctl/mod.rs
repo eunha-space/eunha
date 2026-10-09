@@ -1,16 +1,25 @@
 //! The `tootctl` maintenance commands that look after what an instance keeps:
-//! `feeds`, `cache`, `statuses remove`, `media` and `preview_cards remove`.
+//! `feeds`, `cache`, `statuses remove`, `media` and `preview_cards remove`,
+//! and `emoji` and `domains`. `accounts` is part of `eunha accounts`, and
+//! `maintenance` needs only a database; both are wired in the binary.
 //!
 //! Each is a group of subcommands in the shape `tootctl` gives it, with its
 //! options, its output and its semantics (`lib/mastodon/cli/*.rb`). The
 //! binary flattens [`Command`] into its own, and runs it against the instance
 //! `--instance` picks. See *docs/operating/maintenance.md*.
 
+pub mod accounts;
 pub mod cache;
+pub mod console;
+pub mod domains;
+pub mod emoji;
 pub mod feeds;
+pub mod maintenance;
 pub mod media;
 pub mod preview_cards;
 pub mod statuses;
+
+pub use console::{Console, Recorder, Terminal};
 
 use std::future::Future;
 
@@ -57,6 +66,24 @@ pub enum Command {
         #[arg(long, value_name = "HOST", global = true)]
         instance: Option<String>,
     },
+    /// Import, export and purge custom emoji, as `tootctl emoji` does.
+    Emoji {
+        #[command(subcommand)]
+        command: emoji::Command,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST", global = true)]
+        instance: Option<String>,
+    },
+    /// Purge and crawl other servers, as `tootctl domains` does.
+    Domains {
+        #[command(subcommand)]
+        command: domains::Command,
+        /// With `--tenants`, the instance, by its domain or one of its
+        /// aliases.
+        #[arg(long, value_name = "HOST", global = true)]
+        instance: Option<String>,
+    },
     /// Remove preview card images, as `tootctl preview_cards` does.
     #[command(name = "preview_cards", alias = "preview-cards")]
     PreviewCards {
@@ -78,6 +105,8 @@ impl Command {
             | Self::Cache { instance, .. }
             | Self::Statuses { instance, .. }
             | Self::Media { instance, .. }
+            | Self::Emoji { instance, .. }
+            | Self::Domains { instance, .. }
             | Self::PreviewCards { instance, .. } => instance.as_deref(),
         }
     }
@@ -91,7 +120,8 @@ impl Command {
             Self::Cache { command, .. } => command.concurrency(),
             Self::Media { command, .. } => command.concurrency(),
             Self::PreviewCards { command, .. } => command.concurrency(),
-            Self::Statuses { .. } => 1,
+            Self::Domains { command, .. } => command.concurrency(),
+            Self::Statuses { .. } | Self::Emoji { .. } => 1,
         };
         u32::try_from(concurrency)
             .unwrap_or(u32::MAX)
@@ -106,6 +136,8 @@ impl Command {
             Self::Statuses { command, .. } => statuses::run(state, command).await,
             Self::Media { command, .. } => media::run(state, command).await,
             Self::PreviewCards { command, .. } => preview_cards::run(state, command).await,
+            Self::Emoji { command, .. } => command.run(state, &Terminal).await,
+            Self::Domains { command, .. } => command.run(state, &Terminal).await,
         }
     }
 }

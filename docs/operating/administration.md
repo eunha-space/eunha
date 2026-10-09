@@ -662,6 +662,10 @@ the category's `featured` one when it has a category. A remote emoji is shown
 from the server it came from rather than from a copy
 (`remote-account-images-not-downloaded`).
 
+`eunha emoji` imports packs of emoji, exports them, and purges them, as
+`tootctl emoji` does; see
+[Accounts, domains and emoji](./maintenance-commands#custom-emoji).
+
 
 The dashboard
 -------------

@@ -247,6 +247,62 @@ pub async fn store_sealed(
     Ok(())
 }
 
+/// Replace a local account's RSA keys with a newly generated one, as `tootctl
+/// accounts rotate` does: every RSA keypair it had goes, and the new key is
+/// its `#main-key`, in `keypairs` when the private half can be encrypted and in
+/// the legacy columns otherwise. Its other keys, the Ed25519 assertion key
+/// among them, stay.
+pub async fn replace_local(
+    state: &AppState,
+    account_id: i64,
+    private_key: &str,
+    public_key: &str,
+) -> Result<()> {
+    let mut tx = state.db.begin().await?;
+    sqlx::query("DELETE FROM keypairs WHERE account_id = $1 AND type = $2")
+        .bind(account_id)
+        .bind(TYPE_RSA)
+        .execute(&mut *tx)
+        .await?;
+    match state.encryptor.as_ref() {
+        Some(encryptor) => {
+            store_sealed(&mut tx, encryptor, account_id, private_key, public_key).await?;
+        }
+        None => {
+            sqlx::query(
+                "UPDATE accounts SET private_key = $2, public_key = $3, updated_at = now()
+                 WHERE id = $1",
+            )
+            .bind(account_id)
+            .bind(private_key)
+            .bind(public_key)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// `Account#keypair(type: :rsa)`'s public half: the oldest usable RSA
+/// keypair's, or else the legacy column's. What tells two rows for one remote
+/// actor apart from two actors.
+pub async fn rsa_public_key<'e>(db: impl sqlx::PgExecutor<'e>, account_id: i64) -> Result<String> {
+    Ok(sqlx::query_scalar(
+        "SELECT COALESCE(
+           (SELECT public_key FROM keypairs
+            WHERE account_id = $1 AND type = $2 AND NOT revoked
+              AND (expires_at IS NULL OR expires_at > now())
+            ORDER BY id ASC LIMIT 1),
+           (SELECT public_key FROM accounts WHERE id = $1),
+           '')",
+    )
+    .bind(account_id)
+    .bind(TYPE_RSA)
+    .fetch_one(db)
+    .await?)
+}
+
 /// Mastodon's `20260702144128_migrate_local_account_keypairs`.
 ///
 /// Moves every local account's key out of `accounts` and into `keypairs`, then

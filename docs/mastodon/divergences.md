@@ -68,7 +68,13 @@ The recorded decisions cover:
  -  how a profile link's redirect back to the account is asked about;
  -  `tootctl`'s feeds, cache, statuses, media and preview card commands in
     eunha's terms;
- -  mail written in eunha's own words, its text part made from its HTML.
+ -  mail written in eunha's own words, its text part made from its HTML;
+ -  the keys `eunha accounts rotate` replaces, and the instance actor that it
+    and `eunha accounts follow` leave out;
+ -  what `eunha accounts refresh` fetches, and how two rows for one remote
+    actor are told apart;
+ -  the schema and the running processes `eunha maintenance fix-duplicates`
+    works with.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

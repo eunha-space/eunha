@@ -869,3 +869,79 @@ async fn test_an_account_without_a_feature_policy_is_refreshed_when_its_server_h
         .unwrap();
     assert_eq!(run().await, "Eve, refreshed");
 }
+
+/// `eunha accounts refresh`, which is `tootctl accounts refresh`: the actor
+/// is fetched again, for the accounts named or for a domain's, and one its
+/// server no longer serves is reported.
+#[tokio::test]
+async fn test_accounts_refresh_fetches_the_actor_again() {
+    use eunha::tootctl::{accounts, Recorder};
+    let (ctx, server) = spawn_server("actors-cli-refresh").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    let id = eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor)
+        .await
+        .expect("the actor is stored");
+    let rename = async |name: &str| {
+        sqlx::query("UPDATE accounts SET display_name = $2 WHERE id = $1")
+            .bind(id)
+            .bind(name)
+            .execute(&ctx.db)
+            .await
+            .unwrap();
+    };
+    let name = async || -> String {
+        sqlx::query_scalar("SELECT display_name FROM accounts WHERE id = $1")
+            .bind(id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap()
+    };
+    let only = |domain: Option<String>| accounts::Scope { all: false, domain };
+    let acct = format!("eve@{}", server.host);
+    let named = std::slice::from_ref(&acct);
+    rename("stale").await;
+
+    let console = Recorder::default();
+    accounts::refresh(&ctx.state, &console, named, only(None), 1, false, true)
+        .await
+        .unwrap();
+    assert_eq!(console.lines(), ["OK (DRY RUN)"]);
+    assert_eq!(name().await, "stale");
+
+    let console = Recorder::default();
+    accounts::refresh(&ctx.state, &console, named, only(None), 1, false, false)
+        .await
+        .unwrap();
+    assert_eq!(console.lines(), ["OK"]);
+    assert_eq!(name().await, "Eve :blobcat:");
+
+    rename("stale").await;
+    let console = Recorder::default();
+    let domain = Some(server.host.clone());
+    accounts::refresh(&ctx.state, &console, &[], only(domain), 2, false, false)
+        .await
+        .unwrap();
+    assert_eq!(console.lines(), ["Refreshed 1 accounts"]);
+    assert_eq!(name().await, "Eve :blobcat:");
+
+    server.remote.put("/users/eve", json!({"status": 410}));
+    let console = Recorder::default();
+    accounts::refresh(&ctx.state, &console, named, only(None), 1, false, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        console.lines(),
+        [format!("Account failed: {acct}"), "OK".into()]
+    );
+
+    let error = accounts::refresh(&ctx.state, &console, &[], only(None), 1, false, false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "No account(s) given");
+    let nobody = ["nobody@nowhere.invalid".to_owned()];
+    let error = accounts::refresh(&ctx.state, &console, &nobody, only(None), 1, false, false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "No such account");
+}

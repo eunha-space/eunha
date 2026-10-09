@@ -145,6 +145,29 @@ pub async fn create(state: &AppState, account_id: i64) -> AppResult<Backup> {
     })
 }
 
+/// `user.backups.create!` and `BackupWorker.perform_async(backup.id)`, as
+/// `tootctl accounts backup` asks for an archive: no lock and no six-day
+/// limit. Returns the backup's id. The archive is built by the job loops of
+/// the running server, which mail its owner the link.
+pub async fn request(state: &AppState, user_id: i64) -> anyhow::Result<i64> {
+    let mut tx = state.db.begin().await?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO backups (user_id, processed, created_at, updated_at)
+         VALUES ($1, false, now(), now())
+         RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO eunha.backup_jobs (backup_id) VALUES ($1)")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    state.queues.backups.notify_one();
+    Ok(id)
+}
+
 /// Paperclip's path for a backup's dump.
 fn dump_key(backup_id: i64, file_name: &str) -> String {
     format!(

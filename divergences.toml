@@ -1342,3 +1342,118 @@ reader sees is the same whichever it picks."""
 evidence = "src/email.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "key-rotation-replaces-the-rsa-keys"
+kind = "behaviour"
+summary = "`eunha accounts rotate` replaces an account's RSA keys and keeps its others"
+mastodon = """
+`tootctl accounts rotate` assigns the account's `keypairs` a single new \
+`#main-key` RSA keypair, which on a 4.7 database whose keys have moved into \
+`keypairs` collides with the `#main-key` already there, and would drop every \
+other keypair the account has."""
+eunha = """
+Deletes the account's RSA keypairs and writes the new key as its `#main-key`, \
+encrypted in `keypairs` when the ActiveRecord encryption keys are configured \
+and in the legacy columns otherwise, in one transaction. Its other keys, the \
+Ed25519 assertion key among them, stay. The profile's `Update` is signed with \
+the old key and delivered as `ActivityPub::UpdateDistributionWorker` delivers \
+it, a thousand accounts every five minutes."""
+why = """
+Rotation is meant to retire the RSA key; the assertion key is a different key \
+for a different purpose, and an instance with no encryption keys keeps every \
+key in the legacy columns, where both implementations read it."""
+evidence = "tests/integration/surfaces/tootctl_accounts.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "command-line-leaves-the-instance-actor-out"
+kind = "behaviour"
+summary = "`accounts rotate` and `accounts follow` leave the instance actor out"
+mastodon = """
+`tootctl accounts rotate --all` and `tootctl accounts follow` act on \
+`Account.local.without_suspended`, which includes the instance actor: its key \
+is rotated and an `Update` sent for it, and it follows the account named. \
+`rotate` also takes its username, the domain."""
+eunha = """
+Acts on every local account but the instance actor, and refuses it by name \
+as an account that does not exist."""
+why = """
+A running eunha reads the instance actor's key once and signs every fetch \
+with it for the life of the process, so rotating it underneath would have the \
+server sign with a key nobody can find. The instance actor is not a person, and \
+following someone does not make sense for it."""
+evidence = "tests/integration/surfaces/tootctl_accounts.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "accounts-refresh-fetches-the-actor"
+kind = "behaviour"
+summary = "`eunha accounts refresh` fetches the actor again instead of its images"
+mastodon = """
+`tootctl accounts refresh` downloads each account's avatar and header again \
+(`reset_avatar!`, `reset_header!`) from the URLs it has, and stores its own \
+copies."""
+eunha = """
+Fetches each account's actor again and processes it as \
+`ActivityPub::FetchRemoteAccountService` does, which is where the avatar and \
+header URLs come from. `Account failed` and the dry run are upstream's."""
+why = """
+Eunha keeps no copies of remote images (`remote-account-images-not-downloaded`), \
+so there is nothing to download again; what an operator refreshing an account \
+wants is what its server says about it now."""
+evidence = "tests/remote_actors.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "remote-duplicates-told-apart-by-their-keypairs"
+kind = "behaviour"
+summary = "Merging remote accounts compares the keys they are verified with"
+mastodon = """
+`tootctl accounts merge` refuses two accounts whose `public_key` differs, and \
+`tootctl maintenance fix-duplicates` merges two remote rows when it is equal. \
+Since 4.7 a remote account's key lives in `keypairs` and `public_key` is blank, \
+so every pair compares equal."""
+eunha = """
+Compares the key each account is verified with, `Account#keypair(type: :rsa)`: \
+its oldest usable RSA keypair, or else the legacy column."""
+why = """
+The check exists to keep two different actors from being merged into one, and \
+comparing two blank columns no longer checks anything."""
+evidence = "tests/integration/surfaces/tootctl_accounts.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "fix-duplicates-for-the-tracked-schema"
+kind = "behaviour"
+summary = "`eunha maintenance fix-duplicates` repairs the tracked schema only, beside nothing running"
+mastodon = """
+`tootctl maintenance fix-duplicates` handles schemas from Mastodon 3.0 to \
+2023-10, rebuilding each index the way the schema's version had it, asks \
+before going on with a newer one, refuses while Sidekiq processes are \
+registered, and clears `Rails.cache` at the end. Merging conversations writes \
+the kept conversation's id into its participants' and mutes' `account_id`, \
+merging remote duplicates moves its own older list of tables (with \
+`appeals.account_warning_id` taken for an account id), and the files of the \
+emoji and preview cards it destroys are deleted."""
+eunha = """
+Refuses a schema older than the release it tracks, asks before going on with a \
+newer one, and rebuilds each index as the tracked schema has it. Refuses \
+while any other connection to the database is open. Moves participants and \
+mutes by `conversation_id`, and remote duplicates' rows by \
+`Account::Merging`'s list plus bulk imports. Removes rows only: the files of \
+removed emoji and preview cards stay in storage. There is no `Rails.cache`."""
+why = """
+Eunha only builds the schema it tracks, so the older branches have no database \
+to run on. Its processes register nowhere Sidekiq would look, and an open \
+connection is what every process using the database has. Writing a \
+conversation id into an account column is a bug. The task also runs against a \
+Mastodon database before it is dumped for `eunha import-mastodon`, whose \
+storage is not this instance's to delete from."""
+evidence = "tests/integration/surfaces/fix_duplicates.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

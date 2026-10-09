@@ -49,6 +49,17 @@ URLs, and its instance actor, to a different domain, which is only useful for an
 instance nobody federates with yet: remote servers remember accounts at the
 domain they were seen under and will not follow them to a new one.
 
+A dump whose unique indexes were corrupted by a change of collation holds
+rows they no longer kept apart, and the restore stops at the first index it
+cannot build again, leaving the database empty. Run
+[`eunha maintenance fix-duplicates`](./maintenance-commands#duplicates-in-the-database)
+against the source Mastodon database, or `tootctl maintenance fix-duplicates`
+there, and dump it again:
+
+~~~~ sh
+DATABASE_URL=postgres:///mastodon_production eunha maintenance fix-duplicates
+~~~~
+
 An imported instance keeps its accounts'
 [signing keys](../mastodon/signing-keys), so it needs the ActiveRecord
 encryption secrets the source Mastodon used. The import reads a dump, not the

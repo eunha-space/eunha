@@ -1612,7 +1612,7 @@ async fn refollow(state: &AppState, account_id: i64) -> Result<()> {
 
 /// `Account::Merging::ACCOUNT_MERGING_CLASSES`: every column that points at
 /// an account, by table.
-const MERGED_COLUMNS: &[(&str, &str)] = &[
+pub(crate) const MERGED_COLUMNS: &[(&str, &str)] = &[
     ("statuses", "account_id"),
     ("status_pins", "account_id"),
     ("media_attachments", "account_id"),
@@ -1714,7 +1714,7 @@ impl crate::jobs::Job for AccountMergingWorker {
 /// `Account#merge_with!`, then `duplicate.destroy`. A row that would collide
 /// with one the account already has stays where it is, and goes with the
 /// duplicate.
-async fn merge_with(state: &AppState, account_id: i64, duplicate: i64) -> Result<()> {
+pub async fn merge_with(state: &AppState, account_id: i64, duplicate: i64) -> Result<()> {
     for (table, column) in MERGED_COLUMNS {
         let moved = sqlx::query(&format!(
             "UPDATE {table} SET {column} = $1 WHERE {column} = $2"

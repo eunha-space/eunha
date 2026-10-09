@@ -1281,33 +1281,38 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
         crate::moderation::webhooks::Object::Account(account_id),
     )
     .await;
-    let state = state.clone();
-    async move {
-        // `autofollow_inviter!`
-        if let Some(invite_id) = invite_id {
-            crate::api::mastodon::signup::autofollow_inviter(&state, account_id, invite_id).await;
-        }
-        // `notify_staff!`
-        match crate::push::accounts_who_can(&state, &[crate::moderation::role::flag::MANAGE_USERS])
-            .await
-        {
-            Ok(staff) => {
-                for staff_id in staff {
-                    crate::push::notify_local(
-                        &state,
-                        staff_id,
-                        "admin.sign_up",
-                        "Account",
-                        account_id,
-                        account_id,
-                    )
-                    .await;
-                }
-            }
-            Err(error) => tracing::warn!(%error, "could not list staff for a sign-up"),
-        }
+    bootstrap_timeline(state, account_id, invite_id).await;
+}
+
+/// `BootstrapTimelineService`: follow the inviter when the invite `invite_id`
+/// says to, and tell the staff who manage users that the account signed up.
+pub async fn bootstrap_timeline(
+    state: &crate::state::AppState,
+    account_id: i64,
+    invite_id: Option<i64>,
+) {
+    // `autofollow_inviter!`
+    if let Some(invite_id) = invite_id {
+        crate::api::mastodon::signup::autofollow_inviter(state, account_id, invite_id).await;
     }
-    .await;
+    // `notify_staff!`
+    match crate::push::accounts_who_can(state, &[crate::moderation::role::flag::MANAGE_USERS]).await
+    {
+        Ok(staff) => {
+            for staff_id in staff {
+                crate::push::notify_local(
+                    state,
+                    staff_id,
+                    "admin.sign_up",
+                    "Account",
+                    account_id,
+                    account_id,
+                )
+                .await;
+            }
+        }
+        Err(error) => tracing::warn!(%error, "could not list staff for a sign-up"),
+    }
 }
 
 /// How long after a new user is prepared its welcome mail goes.
