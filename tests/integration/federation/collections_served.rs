@@ -619,3 +619,59 @@ async fn a_remote_post_links_to_the_collections_it_tags() {
     .await;
     eventually_tagged(&ctx.db, &note_id, vec![local_cid]).await;
 }
+
+/// `ActivityPub::NoteSerializer#virtual_tags` ends with the post's
+/// `tagged_objects`' collections, each as `FeaturedCollectionSerializer`
+/// writes one, and the context gains the terms that serializer declares.
+#[tokio::test]
+async fn a_notes_tagged_collections_are_among_its_tags() {
+    let ctx = TestContext::new("ap-note-tagged-collection").await;
+    let mine: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Alice's", "discoverable": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let cid: i64 = mine["collection"]["id"].as_str().unwrap().parse().unwrap();
+    let status: Value = ctx
+        .api
+        .post_status(&ctx.alice_token, "see this #hashtag", "public")
+        .await;
+    sqlx::query(
+        "INSERT INTO tagged_objects (status_id, object_type, object_id, ap_type, created_at, updated_at)
+         VALUES ($1, 'Collection', $2, 'FeaturedCollection', now(), now())",
+    )
+    .bind(status["id"].as_str().unwrap().parse::<i64>().unwrap())
+    .bind(cid)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let uri = status["uri"].as_str().unwrap();
+    let path = uri
+        .strip_prefix(&format!("https://{}", ctx.domain))
+        .unwrap();
+    let note = ap(&ctx, path).await;
+    let tags = note["tag"].as_array().unwrap();
+    assert_eq!(tags.len(), 2, "{tags:?}");
+    assert_eq!(tags[0]["type"], "Hashtag");
+    let collection = &tags[1];
+    assert_eq!(collection["type"], "FeaturedCollection");
+    assert_eq!(
+        collection["id"],
+        json!(format!(
+            "https://{}/ap/users/{}/collections/{cid}",
+            ctx.domain, ctx.alice_id
+        ))
+    );
+    assert_eq!(collection["name"], "Alice's");
+    assert_eq!(collection["totalItems"], 0);
+    let terms = note["@context"][1].as_object().unwrap();
+    assert!(terms.contains_key("FeaturedCollection"), "{terms:?}");
+    assert!(terms.contains_key("discoverable"), "{terms:?}");
+}

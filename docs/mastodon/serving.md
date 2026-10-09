@@ -204,6 +204,12 @@ longer names. One whose server could not be reached is tried again half a
 minute to ten minutes later (`TaggedCollectionResolveWorker`); one whose
 server answered with an error is not.
 
+A post's `Note` ends its `tag` with its tagged collections, each written as
+`ActivityPub::FeaturedCollectionSerializer` writes it, as
+`ActivityPub::NoteSerializer#virtual_tags` does, and its `@context` then
+names the terms that serializer brings. Since Mastodon makes none for a
+local post, only a local collection is looked for.
+
 
 Followers synchronization
 -------------------------

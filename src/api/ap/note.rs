@@ -88,15 +88,33 @@ pub struct NoteBundle {
     pub to: Vec<String>,
     pub cc: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Whether its `tag` carries a `FeaturedCollection`, whose serializer
+    /// brings the `discoverable` and `featured_collections` extensions.
+    pub has_collections: bool,
 }
 
 impl NoteBundle {
+    /// [`note_context`], with the terms a tagged collection brings.
+    fn context(&self) -> Value {
+        let mut context = note_context();
+        if self.has_collections {
+            if let Some(Value::Object(terms)) = context.get_mut(1) {
+                for name in ["discoverable", "featured_collections"] {
+                    if let Some(Value::Object(extra)) = super::context_helper::extension(name) {
+                        terms.extend(extra);
+                    }
+                }
+            }
+        }
+        context
+    }
+
     /// Wrap the note in a `Create` activity (id `{note_uri}/activity`), with the
     /// full `@context`.
     pub fn into_create(self) -> Value {
         let activity_id = format!("{}/activity", self.note_uri);
         json!({
-            "@context": note_context(),
+            "@context": self.context(),
             "id": activity_id,
             "type": "Create",
             "actor": self.actor_url,
@@ -110,7 +128,7 @@ impl NoteBundle {
     /// The standalone `Note` object with its `@context`, for serving at the
     /// note's own URI.
     pub fn into_note(mut self) -> Value {
-        self.note["@context"] = note_context();
+        self.note["@context"] = self.context();
         self.note
     }
 }
@@ -326,9 +344,32 @@ pub async fn build_note(
     emojifiable.extend(poll_options.iter().map(String::as_str));
     let emoji_tags = emoji_tags_for(state, &emojifiable).await?;
 
+    // ── Collections: `object.tagged_objects.filter_map(&:object)` ──────────
+    // Each as `ActivityPub::FeaturedCollectionSerializer` writes it. Mastodon
+    // 4.7 makes none for a local post (`ProcessLinksService` is never
+    // called), so only a local collection is looked for here; one whose
+    // object is gone is skipped, as `filter_map` skips it.
+    let tagged_collections = sqlx::query_scalar!(
+        r#"SELECT object_id AS "object_id!" FROM tagged_objects
+           WHERE status_id = $1 AND object_type = 'Collection' AND object_id IS NOT NULL
+           ORDER BY id"#,
+        s.id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut collection_tags = Vec::with_capacity(tagged_collections.len());
+    for id in tagged_collections {
+        if let Some(c) = super::collections::load_ap_collection(state, id).await? {
+            collection_tags
+                .push(super::collections::featured_collection_body(state, domain, &c).await?);
+        }
+    }
+    let has_collections = !collection_tags.is_empty();
+
     let mut tag: Vec<Value> = mention_tags;
     tag.extend(hashtag_tags);
     tag.extend(emoji_tags);
+    tag.extend(collection_tags);
 
     // ── Media attachments ───────────────────────────────────────────────────
     // `object.ordered_media_attachments`.
@@ -491,6 +532,7 @@ pub async fn build_note(
         to,
         cc,
         created_at: s.created_at.and_utc(),
+        has_collections,
     }))
 }
 
