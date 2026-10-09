@@ -514,7 +514,9 @@ privacy section uses both.
     are the appearance page's `web.display_media`,
     `web.expand_content_warnings` and `web.auto_play`. Apps read them from
     `GET /api/v1/preferences` as `reading:expand:media`,
-    `reading:expand:spoilers` and `reading:autoplay:gifs`.
+    `reading:expand:spoilers` and `reading:autoplay:gifs`. The web client
+    applies them as Mastodon's does; see [How posts are
+    shown](#how-posts-are-shown).
  -  `notification_emails` turns the mails eunha sends on or off: the
     notification emails `follow`, `follow_request`, `reblog`, `favourite`,
     `mention` and `quote` (see [Notification emails](#notification-emails)),
@@ -530,6 +532,33 @@ posting defaults, which it still reads when Mastodon's key is missing.
 `GET /api/v1/preferences` gives as the posting language the one chosen,
 else the member's interface language, else the request's
 (`preferred_posting_language`).
+
+
+How posts are shown
+-------------------
+
+The web client loads the signed-in account's `display_media`,
+`expand_content_warnings` and `auto_play` when it starts, keeps a copy per
+account so the next load paints with them, and takes a new value as soon as
+the settings page saves it. Switching accounts reloads the page with the other
+account's preferences. Signed out, it uses Mastodon's defaults: sensitive
+media hidden, content warnings folded, and nothing animated until hovered.
+Each post on a timeline, a thread, a profile, the notifications and search
+follows them, as Mastodon's web client does:
+
+ -  Media starts shown with `show_all`, hidden with `hide_all`, and with
+    `default` hidden only when the post is marked sensitive (the server
+    already marks every post of an account forced sensitive). A custom filter
+    that blurs media hides it whatever the setting. The cover says why
+    (“Sensitive content”, “Media hidden”, or the filter's name), and Hide puts
+    it back. Hidden media is drawn from its blurhash alone: none of it is
+    loaded until it is shown.
+ -  A post with a content warning starts folded, or open with
+    `expand_content_warnings`. The same goes for a quoted post.
+ -  With `auto_play`, GIFs (`gifv` attachments), avatars and profile headers
+    animate. Without it, a GIF plays while the pointer is over it, an avatar
+    shows its `avatar_static` until hovered, and a header shows its
+    `header_static`.
 
 
 Boosts in timelines

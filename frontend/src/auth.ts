@@ -62,6 +62,11 @@ interface ClientCreds {
 
 const redirectUri = () => `${window.location.origin}/auth/callback`
 
+/** The id of the account this tab acts as, before `loadMe` has confirmed it. */
+export function getActiveAccountId(): string | null {
+  return localStorage.getItem(ACTIVE_ACCOUNT_KEY)
+}
+
 export function getToken(): string | null {
   const id = localStorage.getItem(ACTIVE_ACCOUNT_KEY)
   return getSavedAccounts().find((entry) => entry.account.id === id)?.token ?? null

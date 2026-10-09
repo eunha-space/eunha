@@ -67,6 +67,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { useAnimatedHeader, useAnimatedImage } from '@/hooks/use-animated-image.ts'
 
 // Limits mirror Mastodon's server-side validations (app/models/account.rb,
 // app/models/featured_tag.rb): display name ≤ 40, note ≤ 500, at most 4 custom
@@ -617,6 +618,8 @@ export default function Profile() {
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const headerInputRef = useRef<HTMLInputElement>(null)
+  const avatar = useAnimatedImage(account?.avatar, account?.avatarStatic)
+  const headerSrc = useAnimatedHeader(account?.header, account?.headerStatic)
 
   const feed = useInfiniteFeed<mastodon.v1.Status>(
     (maxId) =>
@@ -888,7 +891,7 @@ export default function Profile() {
           {hasCustomHeader(account.header) && (
             <div className="relative">
               <img
-                src={account.header}
+                src={headerSrc}
                 alt=""
                 className="h-32 w-full rounded-xl object-cover"
               />
@@ -932,8 +935,8 @@ export default function Profile() {
           )}
           <div className="mt-3 flex items-start gap-3">
             <div className="flex flex-col items-center gap-1">
-              <Avatar className="size-16">
-                <AvatarImage src={account.avatar} alt="" />
+              <Avatar className="size-16" {...avatar.hover}>
+                <AvatarImage src={avatar.src} alt="" />
                 <AvatarFallback>
                   {(account.displayName || account.username).slice(0, 1).toUpperCase()}
                 </AvatarFallback>

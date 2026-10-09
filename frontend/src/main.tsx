@@ -82,12 +82,18 @@ import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { getToken } from './auth.ts'
 import { loadMe } from './me.ts'
+import { loadReadingPreferences } from './reading-preferences.ts'
 import { NavigationScroll } from './components/navigation-scroll.tsx'
 import './styles.css'
 
-// Warm the current-user id cache for edit/delete controls.
+// Warm the current-user id cache for edit/delete controls, and fetch how the
+// account wants posts shown. Switching accounts reloads the page, so each
+// account's preferences are loaded afresh.
 const token = getToken()
-if (token) void loadMe(token)
+if (token) {
+  void loadMe(token)
+  void loadReadingPreferences(token)
+}
 
 // Static routes outrank dynamic ones in React Router's ranking, so
 // `/auth/callback`, `/local`, etc. are matched before `/:acct`. `:acct`

@@ -7,6 +7,7 @@ import type { mastodon } from '../masto.ts'
 import { deleteConversation, getConversations, markConversationRead } from '../api.ts'
 import { beginLogin, getToken } from '../auth.ts'
 import { useInfinitePaginator } from '../hooks/use-infinite-paginator.ts'
+import { useAnimatedImage } from '../hooks/use-animated-image.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { ColumnHeader } from '@/components/column-header.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
@@ -45,6 +46,7 @@ function ConversationRow({
   const last = conversation.lastStatus
   const accounts = conversation.accounts
   const lead = accounts[0]
+  const avatar = useAnimatedImage(lead?.avatar, lead?.avatarStatic)
   const name = participants(accounts)
   // Without a last status there is no thread to open and nothing to preview,
   // so the row is a dead end — the server can return one after its only post
@@ -75,8 +77,8 @@ function ConversationRow({
   const inner = (
     <>
       <div className="relative shrink-0">
-        <Avatar className="size-10">
-          <AvatarImage src={lead?.avatar} alt="" />
+        <Avatar className="size-10" {...avatar.hover}>
+          <AvatarImage src={avatar.src} alt="" />
           <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
         {conversation.unread && (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { getPreferences, updatePreferences, type Preferences } from '../security-api.ts'
+import { applyPreferences } from '../reading-preferences.ts'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import {
@@ -31,7 +32,10 @@ export function TimelinePreferences({ token }: { token: string }) {
 
   useEffect(() => {
     getPreferences(token)
-      .then(setPrefs)
+      .then((loaded) => {
+        setPrefs(loaded)
+        applyPreferences(loaded)
+      })
       .catch(() => {})
   }, [token])
 
@@ -39,7 +43,10 @@ export function TimelinePreferences({ token }: { token: string }) {
 
   const save = async (changes: Parameters<typeof updatePreferences>[1]) => {
     try {
-      setPrefs(await updatePreferences(token, changes))
+      const saved = await updatePreferences(token, changes)
+      setPrefs(saved)
+      // Posts shown from here on follow the saved setting.
+      applyPreferences(saved)
     } catch {
       toast.error('Could not save the setting')
     }

@@ -68,9 +68,9 @@ test('images open in-app with gallery navigation and return keyboard focus', asy
 
 test('sensitive images must be revealed before the viewer opens', async ({ page }) => {
   await setup(page, { sensitive: true })
-  await expect(page.getByRole('button', { name: 'View image: A blue portrait' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'View image: A blue portrait' })).toHaveCount(0)
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Sensitive content — show' }).click()
+  await page.getByRole('button', { name: /Sensitive content/ }).click()
   await page.getByRole('button', { name: 'View image: A blue portrait' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
 })

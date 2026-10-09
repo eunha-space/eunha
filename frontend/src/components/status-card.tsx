@@ -36,6 +36,8 @@ import {
   type TranslationLanguages,
 } from '../api.ts'
 import { getMeId } from '../me.ts'
+import { useReadingPreferences } from '../reading-preferences.ts'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -197,7 +199,16 @@ export function StatusCard({
 }) {
   const [status, setStatus] = useState(initial)
   const [busy, setBusy] = useState(false)
-  const [expanded, setExpanded] = useState(!initial.spoilerText)
+  // A post with a content warning starts folded, unless the reader always
+  // expands them (Mastodon's `expandSpoilers`, which sets `hidden` false).
+  const { expandSpoilers } = useReadingPreferences()
+  const [expanded, setExpanded] = useState(expandSpoilers || !initial.spoilerText)
+  const [expandSpoilersBefore, setExpandSpoilersBefore] = useState(expandSpoilers)
+  if (expandSpoilersBefore !== expandSpoilers) {
+    setExpandSpoilersBefore(expandSpoilers)
+    setExpanded(expandSpoilers || !status.spoilerText)
+  }
+  const avatar = useAnimatedImage(status.account.avatar, status.account.avatarStatic)
   const [deleted, setDeleted] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -233,7 +244,8 @@ export function StatusCard({
 
   useEffect(() => {
     setStatus(initial)
-    setExpanded(!initial.spoilerText)
+    setExpanded(expandSpoilers || !initial.spoilerText)
+    // Only a new post resets this; a changed setting is handled above.
   }, [initial])
 
   // A post edited since it was translated is translated afresh.
@@ -305,7 +317,7 @@ export function StatusCard({
         token,
       )
       setStatus(updated)
-      setExpanded(!updated.spoilerText)
+      setExpanded(expandSpoilers || !updated.spoilerText)
       setEditing(false)
     } catch {
       // ignore
@@ -383,7 +395,9 @@ export function StatusCard({
       </Card>
     )
   }
-  const blurred = filterMatches.some((r) => r.filter.filterAction === 'blur')
+  const blurredBy = filterMatches
+    .filter((r) => r.filter.filterAction === 'blur')
+    .map((r) => r.filter.title)
 
   return (
     <Card className="gap-0 rounded-none border-0 bg-transparent py-0 shadow-none ring-0">
@@ -395,9 +409,9 @@ export function StatusCard({
           </p>
         )}
         <div className="@container flex items-center gap-2 text-sm">
-          <Link to={profilePath} className="shrink-0">
+          <Link to={profilePath} className="shrink-0" {...avatar.hover}>
             <Avatar className="size-8">
-              <AvatarImage src={status.account.avatar} alt="" />
+              <AvatarImage src={avatar.src} alt="" />
               <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
             </Avatar>
           </Link>
@@ -563,7 +577,8 @@ export function StatusCard({
                 {mediaAttachments.length > 0 && (
                   <MediaAttachments
                     attachments={mediaAttachments}
-                    sensitive={status.sensitive || blurred}
+                    sensitive={status.sensitive}
+                    filteredBy={blurredBy}
                   />
                 )}
                 {status.poll && (

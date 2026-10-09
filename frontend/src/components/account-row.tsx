@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 
 export function AccountRow({
   account,
@@ -14,14 +15,15 @@ export function AccountRow({
   action?: ReactNode
 }) {
   const name = account.displayName || account.username
+  const avatar = useAnimatedImage(account.avatar, account.avatarStatic)
   return (
     <div className="flex items-center gap-2">
       <Link
         to={`/@${account.acct}`}
         className="hover:bg-muted/50 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 no-underline"
       >
-        <Avatar className="size-10">
-          <AvatarImage src={account.avatar} alt="" />
+        <Avatar className="size-10" {...avatar.hover}>
+          <AvatarImage src={avatar.src} alt="" />
           <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div className="min-w-0">

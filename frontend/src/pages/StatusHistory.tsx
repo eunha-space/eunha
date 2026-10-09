@@ -8,6 +8,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
+import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 
 function Version({
   edit,
@@ -70,6 +71,7 @@ export default function StatusHistory() {
   const newestFirst = edits ? [...edits].reverse() : null
   const author = edits?.[0]?.account
   const name = author ? author.displayName || author.username : handle
+  const avatar = useAnimatedImage(author?.avatar, author?.avatarStatic)
 
   return (
     <div className="page-frame">
@@ -77,8 +79,8 @@ export default function StatusHistory() {
       <h1 className="text-lg font-bold">Edit history</h1>
       <div className="text-muted-foreground mb-3 flex items-center gap-2 text-sm">
         {author && (
-          <Avatar className="size-5">
-            <AvatarImage src={author.avatar} alt="" />
+          <Avatar className="size-5" {...avatar.hover}>
+            <AvatarImage src={avatar.src} alt="" />
             <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
           </Avatar>
         )}
