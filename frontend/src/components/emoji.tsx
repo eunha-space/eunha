@@ -235,14 +235,21 @@ export function EmojiHtml({ html, emojis, as = 'div', onMouseEnter, onMouseLeave
   // Built with the files auto-play asks for, so a page that animates them
   // does not first fetch the still ones; hovering only swaps the `src`s
   // below, and leaves the rest of the element (a selection, say) alone.
-  const __html = useMemo(() => emojifyHtml(html, map, autoPlayGif), [html, map, autoPlayGif])
+  //
+  // The object is kept, not just its string: React writes `innerHTML` again
+  // for a new one, which would replace the node under the pointer while it
+  // hovers, and the browser then never says the pointer left.
+  const inner = useMemo(
+    () => ({ __html: emojifyHtml(html, map, autoPlayGif) }),
+    [html, map, autoPlayGif],
+  )
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     for (const img of ref.current?.querySelectorAll<HTMLImageElement>('img.custom-emoji') ?? []) {
       const src = animate ? img.dataset.original : img.dataset.static
       if (src && img.getAttribute('src') !== src) img.setAttribute('src', src)
     }
-  }, [animate, __html])
+  }, [animate, inner])
   const Element = as as 'div'
   return (
     <Element
@@ -256,7 +263,7 @@ export function EmojiHtml({ html, emojis, as = 'div', onMouseEnter, onMouseLeave
         onMouseLeave?.(event)
         handlers.onMouseLeave?.()
       }}
-      dangerouslySetInnerHTML={{ __html }}
+      dangerouslySetInnerHTML={inner}
     />
   )
 }

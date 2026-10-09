@@ -124,7 +124,7 @@ test('a sensitive post’s card is hidden behind its blurhash, and its image not
   expect(requested).not.toContain('/cards/story.png')
   await card(page).getByRole('button', { name: /Sensitive content/ }).click()
   await expect(card(page).locator('img[src="/cards/story.png"]')).toBeVisible()
-  expect(requested).toContain('/cards/story.png')
+  await expect.poll(() => requested).toContain('/cards/story.png')
 })
 
 test('showing all media does not uncover a sensitive post’s card', async ({ page }) => {
