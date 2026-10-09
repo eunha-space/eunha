@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT t.name FROM statuses_tags st JOIN tags t ON t.id = st.tag_id\n           WHERE st.status_id = $1 ORDER BY t.name",
+  "query": "SELECT t.name FROM statuses_tags st JOIN tags t ON t.id = st.tag_id\n           WHERE st.status_id = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "c277da0cd0c0b2e0d9a11f3de0cd0d67240ba5d665664ad51678af8e38c739c4"
+  "hash": "64dc5de5d1c964c2cf6d73e54843fc7c8b6708ce321b841d8f7a5f9d60942d04"
 }

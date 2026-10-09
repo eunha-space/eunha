@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, shortcode, image_file_name, image_content_type,\n                  image_storage_schema_version, updated_at\n           FROM custom_emojis\n           WHERE domain IS NULL AND disabled = false AND shortcode = ANY($1)",
+  "query": "SELECT id, shortcode, image_file_name, image_content_type,\n                  image_storage_schema_version, updated_at\n           FROM custom_emojis\n           WHERE domain IS NULL AND disabled = false AND shortcode = ANY($1)\n           ORDER BY array_position($1, shortcode::text)",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       false
     ]
   },
-  "hash": "137df8df7a47d23ee566ae4807d16f2b43b17610153e7941999a9a3a408862f3"
+  "hash": "201e2e63057cc5b257c75ef4ce6dce79f9b51fce5ae058a4b732fabc2d437eab"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.uri, s.visibility, a.id AS account_id, a.id_scheme, a.username,\n                  a.domain, a.uri AS account_uri\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND s.deleted_at IS NULL",
+  "query": "SELECT s.id, s.uri, s.visibility, a.id AS account_id, a.id_scheme, a.username,\n                  a.domain, a.uri AS account_uri\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND (s.deleted_at IS NULL OR NOT $2)",
   "describe": {
     "columns": [
       {
@@ -46,7 +46,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Bool"
       ]
     },
     "nullable": [
@@ -60,5 +61,5 @@
       true
     ]
   },
-  "hash": "2eee9986fcc9e94477986518891def9ef8275e92cc438a7a90e4978a8aad04b1"
+  "hash": "528bda30c8784f5e5b935f13f791e3dfb38f268c22cb1c5ea70842aa666f5b1e"
 }

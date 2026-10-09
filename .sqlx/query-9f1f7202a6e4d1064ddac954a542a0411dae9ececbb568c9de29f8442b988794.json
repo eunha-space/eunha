@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.uri, t.url, t.reblog_of_id,\n                      (COALESCE(t.local, false) OR t.uri IS NULL) AS \"local!\",\n                      a.id AS account_id, a.id_scheme, a.username\n               FROM statuses t JOIN accounts a ON a.id = t.account_id\n               WHERE t.id = $1 AND t.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reblog_of_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "id_scheme",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      null,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9f1f7202a6e4d1064ddac954a542a0411dae9ececbb568c9de29f8442b988794"
+}
