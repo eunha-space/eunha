@@ -37,7 +37,7 @@ async fn test_idle_moderators_close_open_registrations() {
         .mail_to("alice@test.invalid", "have been automatically switched")
         .await
         .expect("the administrator is told");
-    assert!(mail.html.contains("lack of recent moderator activity"));
+    assert!(mail.text.contains("lack of recent moderator activity"));
 
     // Already approval: nothing more to do.
     assert!(!eunha::auto_close_registrations::check(&ctx.state)

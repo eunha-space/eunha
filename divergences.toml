@@ -1318,3 +1318,27 @@ file it is unsure of is the safe side of deleting."""
 evidence = "tests/integration/surfaces/tootctl_commands.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "mail-text-made-from-html"
+kind = "behaviour"
+summary = "Writes mail in eunha's own words, with the text part made from the HTML"
+mastodon = """
+Renders each mail from its own templates in every locale it has: a \
+`.text.erb` and a `.html.haml` for `UserMailer`, `NotificationMailer` and \
+`EmailSubscriptionMailer`, and a `.text.erb` alone for `AdminMailer`."""
+eunha = """
+Sends the same parts, `multipart/alternative` or, for what `AdminMailer` \
+sends, `text/plain` alone, with the headers Mastodon's mailers set, but \
+writes each body in its own words, in English and Korean, as HTML, and makes \
+the text part from that HTML."""
+why = """
+Eunha's server-side text is written in those two locales, as its push titles \
+and rate limit message are; some of its mail says what is true of eunha \
+rather than Mastodon (the update and end-of-support notices name the tracked \
+release, not eunha's own version). One body per mail keeps its two parts \
+from saying different things. A mail client shows either part, so what a \
+reader sees is the same whichever it picks."""
+evidence = "src/email.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

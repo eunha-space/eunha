@@ -681,3 +681,22 @@ The checks are Mastodon's, less the two for services eunha does not use
     `view_devops`. It is critical: anyone could list every upload;
  -  `database_schema_check`, while migrations are pending, for `view_devops`;
  -  `rules_check`, while the server has no rules, for `manage_rules`.
+
+
+Mail
+----
+
+Eunha's mail is shaped as Mastodon's mailers send theirs. What the staff are
+told (new reports, appeals, accounts and trends to review, closed
+registrations, software updates and the end of support) is plain text alone,
+as `AdminMailer`'s templates are; every other mail is `multipart/alternative`,
+its text beside its HTML. The text is made from the HTML, and the wording is
+eunha's own, in English and Korean, rather than Mastodon's translations.
+
+Every mail but those to an account about itself (`UserMailer`, a
+`Devise::Mailer`) carries `ApplicationMailer`'s
+`Auto-Submitted: auto-generated`, `Precedence: list` and
+`X-Auto-Response-Suppress: All`, so that an out-of-office reply is not sent
+back. The mail about a critical software update, and the one saying the tracked
+release is out of support, carry `Importance: high`, `Priority: urgent` and
+`X-Priority: 1` besides; the earlier end-of-support warnings do not.

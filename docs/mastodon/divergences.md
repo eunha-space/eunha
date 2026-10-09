@@ -67,7 +67,8 @@ The recorded decisions cover:
     is written in;
  -  how a profile link's redirect back to the account is asked about;
  -  `tootctl`'s feeds, cache, statuses, media and preview card commands in
-    eunha's terms.
+    eunha's terms;
+ -  mail written in eunha's own words, its text part made from its HTML.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

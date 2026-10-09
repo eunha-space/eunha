@@ -16,7 +16,11 @@ pub fn capture_for_tests() {
 pub struct SentMail {
     pub to: String,
     pub subject: String,
+    /// The `text/html` part; empty for a mail that is text alone, as an
+    /// `AdminMailer` one is.
     pub html: String,
+    /// The `text/plain` part.
+    pub text: String,
     pub headers: Vec<(String, String)>,
 }
 
@@ -46,7 +50,12 @@ pub struct EmailSender {
 pub struct MailDeliveryJob {
     pub to: String,
     pub subject: String,
+    /// Empty for a mail that is text alone.
     pub html: String,
+    /// The `text/plain` part; one queued before eunha wrote it has it made
+    /// from the HTML when it is delivered.
+    #[serde(default)]
+    pub text: Option<String>,
     #[serde(default)]
     pub headers: Vec<(String, String)>,
 }
@@ -61,7 +70,13 @@ impl crate::jobs::Job for MailDeliveryJob {
     async fn perform(self, state: &crate::state::AppState) -> anyhow::Result<()> {
         state
             .email
-            .deliver_now(&self.to, &self.subject, &self.html, self.headers)
+            .deliver_now(
+                &self.to,
+                &self.subject,
+                &self.html,
+                self.text.as_deref(),
+                self.headers,
+            )
             .await
     }
 }
@@ -323,16 +338,13 @@ impl EmailSender {
             preferences_url = html_escape(&mail.preferences_url),
             unsubscribe_url = html_escape(&mail.unsubscribe_url),
         );
-        let mut headers = vec![
-            // `ApplicationMailer#set_autoreply_headers!`
-            ("Auto-Submitted", "auto-generated".to_owned()),
-            ("Precedence", "list".to_owned()),
-            ("X-Auto-Response-Suppress", "All".to_owned()),
-            // `set_list_headers!`
+        let mut headers = autoreply_headers();
+        // `set_list_headers!`
+        headers.extend([
             ("List-ID", mail.list_id.clone()),
             ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click".into()),
             ("List-Unsubscribe", format!("<{}>", mail.unsubscribe_url)),
-        ];
+        ]);
         // `thread_by_conversation!`
         if let Some(thread) = &mail.conversation_message_id {
             headers.push(("In-Reply-To", thread.clone()));
@@ -385,7 +397,7 @@ impl EmailSender {
              upgrade. Nothing here updates itself.</p>"
         );
 
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, urgent).await
     }
 
     /// Tell an administrator that the Mastodon release this build implements is
@@ -428,7 +440,8 @@ impl EmailSender {
              out of this; see the project's release notes.</p>"
         );
 
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, days_remaining < 0)
+            .await
     }
 
     /// Mastodon's `UserMailer#warning`: a strike, told to the account it is
@@ -552,7 +565,7 @@ impl EmailSender {
         };
         let url = format!("https://{instance_domain}/admin/reports/{report_id}");
         let body = format!("<p>{line}</p><p><a href=\"{url}\">{url}</a></p>");
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, false).await
     }
 
     /// `AdminMailer#auto_close_registrations`.
@@ -568,13 +581,14 @@ impl EmailSender {
              from being used as a platform for potential bad actors. You can switch it back to \
              open registrations at any time.</p>"
         );
-        self.send(
+        self.send_admin(
             to,
             &format!(
                 "Registrations for {instance_domain} have been automatically switched to \
                  requiring approval"
             ),
             &body,
+            false,
         )
         .await
     }
@@ -599,7 +613,7 @@ impl EmailSender {
              application.</p><p><strong>{}</strong></p>{reason}<p><a href=\"{url}\">{url}</a></p>",
             html_escape(username)
         );
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, false).await
     }
 
     /// `UserMailer#welcome`, in `user_mailer.welcome`'s words: the welcome
@@ -764,7 +778,7 @@ impl EmailSender {
             ),
             section("Trending posts", &requested.statuses, "/admin/trends/statuses"),
         );
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, false).await
     }
 
     /// The address these emails come from, which the page confirming a
@@ -984,7 +998,7 @@ impl EmailSender {
             html_escape(action_taken_by),
             html_escape(text).replace('\n', "<br>"),
         );
-        self.send(to, &subject, &body).await
+        self.send_admin(to, &subject, &body, false).await
     }
 
     /// `UserMailer#two_factor_disabled`.
@@ -1153,15 +1167,53 @@ impl EmailSender {
         self.send(to, subject, &body).await
     }
 
+    /// A `UserMailer` mail: `Devise::Mailer`'s, which does not take
+    /// `ApplicationMailer`'s auto-reply headers, in HTML and text.
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {
         self.send_with_headers(to, subject, html, &[]).await
     }
 
+    /// A mail in HTML and text, with `headers`.
     async fn send_with_headers(
         &self,
         to: &str,
         subject: &str,
         html: &str,
+        headers: &[(&'static str, String)],
+    ) -> anyhow::Result<()> {
+        self.enqueue(to, subject, html, &html_to_text(html), headers)
+            .await
+    }
+
+    /// An `AdminMailer` mail: text alone, as its templates are, with
+    /// `ApplicationMailer#set_autoreply_headers!`, and, when `important`,
+    /// `AdminMailer#set_important_headers!`. `html` is the body eunha writes,
+    /// which the text is made from.
+    async fn send_admin(
+        &self,
+        to: &str,
+        subject: &str,
+        html: &str,
+        important: bool,
+    ) -> anyhow::Result<()> {
+        let mut headers = autoreply_headers();
+        if important {
+            headers.extend([
+                ("Importance", "high".to_owned()),
+                ("Priority", "urgent".to_owned()),
+                ("X-Priority", "1".to_owned()),
+            ]);
+        }
+        self.enqueue(to, subject, "", &html_to_text(html), &headers)
+            .await
+    }
+
+    async fn enqueue(
+        &self,
+        to: &str,
+        subject: &str,
+        html: &str,
+        text: &str,
         headers: &[(&'static str, String)],
     ) -> anyhow::Result<()> {
         let headers = headers
@@ -1176,13 +1228,17 @@ impl EmailSender {
                         to: to.to_owned(),
                         subject: subject.to_owned(),
                         html: html.to_owned(),
+                        text: Some(text.to_owned()),
                         headers,
                     },
                 )
                 .await?;
                 Ok(())
             }
-            None => self.deliver_now(to, subject, html, headers).await,
+            None => {
+                self.deliver_now(to, subject, html, Some(text), headers)
+                    .await
+            }
         }
     }
 
@@ -1194,16 +1250,21 @@ impl EmailSender {
         sender
     }
 
-    /// Send a mail now.
+    /// Send a mail now: `multipart/alternative` with its text and its HTML,
+    /// as a mailer with both templates sends it, or `text/plain` alone when
+    /// `html` is empty. `text` is made from the HTML when not given.
     pub async fn deliver_now(
         &self,
         to: &str,
         subject: &str,
         html: &str,
+        text: Option<&str>,
         headers: Vec<(String, String)>,
     ) -> anyhow::Result<()> {
+        let text = text.map_or_else(|| html_to_text(html), str::to_owned);
         if let Some(smtp) = &self.smtp {
             use lettre::message::header::{HeaderName, HeaderValue};
+            use lettre::message::{MultiPart, SinglePart};
             use lettre::AsyncTransport;
             let mut builder = lettre::Message::builder()
                 .from(
@@ -1214,16 +1275,21 @@ impl EmailSender {
                 .to(to
                     .parse()
                     .map_err(|_| anyhow::anyhow!("Invalid email recipient"))?)
-                .subject(subject)
-                .header(lettre::message::header::ContentType::TEXT_HTML);
+                .subject(subject);
             for (name, value) in &headers {
                 let name = HeaderName::new_from_ascii(name.clone())
                     .map_err(|_| anyhow::anyhow!("Invalid email header"))?;
                 builder = builder.raw_header(HeaderValue::new(name, value.clone()));
             }
-            let message = builder
-                .body(html.to_owned())
-                .map_err(|_| anyhow::anyhow!("Could not build email"))?;
+            let message = if html.is_empty() {
+                builder.singlepart(SinglePart::plain(text.clone()))
+            } else {
+                builder.multipart(MultiPart::alternative_plain_html(
+                    text.clone(),
+                    html.to_owned(),
+                ))
+            }
+            .map_err(|_| anyhow::anyhow!("Could not build email"))?;
             smtp.send(message)
                 .await
                 .map_err(|_| anyhow::anyhow!("SMTP delivery failed"))?;
@@ -1234,6 +1300,7 @@ impl EmailSender {
                 to: to.to_owned(),
                 subject: subject.to_owned(),
                 html: html.to_owned(),
+                text,
                 headers,
             });
             return Ok(());
@@ -1371,17 +1438,155 @@ pub struct NotificationMail {
     pub conversation_message_id: Option<String>,
 }
 
-/// `set_list_headers`: what lets a mail client offer to unsubscribe in one
-/// click.
-fn list_headers(envelope: &SubscriptionEnvelope) -> Vec<(&'static str, String)> {
+/// `ApplicationMailer#set_autoreply_headers!`, which every mailer but
+/// `UserMailer` (a `Devise::Mailer`) runs after each mail.
+fn autoreply_headers() -> Vec<(&'static str, String)> {
     vec![
+        ("Auto-Submitted", "auto-generated".to_owned()),
+        ("Precedence", "list".to_owned()),
+        ("X-Auto-Response-Suppress", "All".to_owned()),
+    ]
+}
+
+/// The `text/plain` part of a mail eunha writes in HTML: its text, a
+/// paragraph, heading, list or quotation to a block of its own, a line
+/// break kept, a list item marked `*`, an image left out, and a link that
+/// does not read as its own address followed by the address.
+#[must_use]
+pub fn html_to_text(html: &str) -> String {
+    use scraper::Node;
+
+    fn walk(node: ego_tree::NodeRef<'_, Node>, out: &mut String) {
+        match node.value() {
+            Node::Text(text) => {
+                // Whitespace runs collapse, as a browser shows them.
+                let mut last_space = out.ends_with([' ', '\n']) || out.is_empty();
+                for c in text.chars() {
+                    if c.is_whitespace() {
+                        if !last_space {
+                            out.push(' ');
+                            last_space = true;
+                        }
+                    } else {
+                        out.push(c);
+                        last_space = false;
+                    }
+                }
+            }
+            Node::Element(element) => {
+                let name = element.name();
+                let block = matches!(
+                    name,
+                    "p" | "div"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "blockquote"
+                        | "ul"
+                        | "ol"
+                        | "table"
+                        | "tr"
+                        | "hr"
+                );
+                match name {
+                    "br" => {
+                        trim_end_spaces(out);
+                        out.push('\n');
+                        return;
+                    }
+                    "img" | "style" | "script" | "head" => return,
+                    "hr" => {
+                        break_block(out);
+                        out.push_str("---");
+                        break_block(out);
+                        return;
+                    }
+                    _ => {}
+                }
+                if block {
+                    break_block(out);
+                }
+                if name == "li" {
+                    trim_end_spaces(out);
+                    if !out.is_empty() && !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    out.push_str("* ");
+                }
+                let start = out.len();
+                for child in node.children() {
+                    walk(child, out);
+                }
+                if name == "a" {
+                    if let Some(href) = element.attr("href") {
+                        let label = out[start..].trim().to_owned();
+                        if label != href && !href.is_empty() {
+                            if label.is_empty() {
+                                out.push_str(href);
+                            } else {
+                                out.push_str(" (");
+                                out.push_str(href);
+                                out.push(')');
+                            }
+                        }
+                    }
+                }
+                if block {
+                    break_block(out);
+                }
+            }
+            _ => {
+                for child in node.children() {
+                    walk(child, out);
+                }
+            }
+        }
+    }
+
+    fn trim_end_spaces(out: &mut String) {
+        while out.ends_with(' ') {
+            out.pop();
+        }
+    }
+
+    /// End the block being written with a blank line, once.
+    fn break_block(out: &mut String) {
+        trim_end_spaces(out);
+        if out.is_empty() {
+            return;
+        }
+        while !out.ends_with("\n\n") {
+            out.push('\n');
+        }
+    }
+
+    let fragment = scraper::Html::parse_fragment(html);
+    let mut out = String::new();
+    walk(fragment.tree.root(), &mut out);
+    let mut text: String = out
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned();
+    text.push('\n');
+    text
+}
+
+/// `set_list_headers`: what lets a mail client offer to unsubscribe in one
+/// click, after `ApplicationMailer`'s auto-reply headers.
+fn list_headers(envelope: &SubscriptionEnvelope) -> Vec<(&'static str, String)> {
+    let mut headers = autoreply_headers();
+    headers.extend([
         ("List-ID", envelope.list_id.clone()),
         ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click".into()),
         (
             "List-Unsubscribe",
             format!("<{}>", envelope.unsubscribe_url),
         ),
-    ]
+    ]);
+    headers
 }
 
 /// The footer of `email_subscription_mailer/notification`, which the
@@ -1449,6 +1654,107 @@ mod smtp_tests {
                 .unwrap_err()
                 .to_string(),
             "SMTP is not configured"
+        );
+    }
+
+    fn capturing() -> EmailSender {
+        EmailSender {
+            smtp: None,
+            from: "mail@example.com".into(),
+            outbox: Some(Arc::new(Mutex::new(Vec::new()))),
+            later: None,
+        }
+    }
+
+    const AUTOREPLY: [(&str, &str); 3] = [
+        ("Auto-Submitted", "auto-generated"),
+        ("Precedence", "list"),
+        ("X-Auto-Response-Suppress", "All"),
+    ];
+    const IMPORTANT: [(&str, &str); 3] = [
+        ("Importance", "high"),
+        ("Priority", "urgent"),
+        ("X-Priority", "1"),
+    ];
+
+    /// `AdminMailer` mails are text alone, with `ApplicationMailer`'s
+    /// auto-reply headers, and `set_important_headers!` only on
+    /// `new_critical_software_updates` and
+    /// `end_of_support_out_of_support_warning`.
+    #[tokio::test]
+    async fn admin_mail_is_text_with_its_headers() {
+        let sender = capturing();
+        for urgent in [false, true] {
+            sender
+                .send_software_updates("a@example.com", "a", "x.test", "4.7.2", &[], urgent)
+                .await
+                .unwrap();
+        }
+        for days_remaining in [14, -1] {
+            sender
+                .send_end_of_support(
+                    "a@example.com",
+                    "a",
+                    "x.test",
+                    "4.7",
+                    "2027-01-01",
+                    days_remaining,
+                )
+                .await
+                .unwrap();
+        }
+        sender
+            .send_new_report("a@example.com", "x.test", 7, Some("bob"), None, "eve")
+            .await
+            .unwrap();
+        let sent = sender.sent();
+        assert_eq!(sent.len(), 5);
+        for (mail, important) in sent.iter().zip([false, true, false, true, false]) {
+            assert!(mail.html.is_empty(), "{}", mail.subject);
+            assert!(!mail.text.is_empty());
+            for (name, value) in AUTOREPLY {
+                assert_eq!(mail.header(name), Some(value), "{name} on {}", mail.subject);
+            }
+            for (name, value) in IMPORTANT {
+                assert_eq!(
+                    mail.header(name),
+                    important.then_some(value),
+                    "{name} on {}",
+                    mail.subject
+                );
+            }
+        }
+        assert_eq!(
+            sent[4].text,
+            "bob has reported eve\n\nhttps://x.test/admin/reports/7\n"
+        );
+    }
+
+    /// A `UserMailer` mail (a `Devise::Mailer`) goes as HTML and text, and
+    /// without the auto-reply headers.
+    #[tokio::test]
+    async fn user_mail_is_html_and_text() {
+        let sender = capturing();
+        sender
+            .send_password_reset("a@example.com", "x.test", "https://x.test/r?t=1", "en")
+            .await
+            .unwrap();
+        let mail = sender.sent().pop().unwrap();
+        assert!(!mail.html.is_empty());
+        assert!(mail.text.contains("https://x.test/r?t=1"), "{}", mail.text);
+        assert_eq!(mail.header("Auto-Submitted"), None);
+    }
+
+    #[test]
+    fn html_is_written_as_text() {
+        assert_eq!(
+            html_to_text(
+                "<h1>Title</h1><p>Hi <strong>you</strong>,<br>see\n  <a href=\"https://a.test/x\">this</a>.</p>\
+                 <ul><li>one</li><li>two</li></ul><blockquote>q &amp; a</blockquote>\
+                 <p><img src=\"x.png\" alt=\"\"><a href=\"https://a.test/y\">https://a.test/y</a></p><hr><p>end</p>"
+            ),
+            "Title\n\nHi you,\nsee this (https://a.test/x).\n\n* one\n* two\n\nq & a\n\n\
+             https://a.test/y\n\n---\n\nend\n"
         );
     }
 }
