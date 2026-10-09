@@ -154,3 +154,19 @@ A new favourite of a remote post is a `Like` with the id
 inbox rather than their server's shared one, as `FavouriteService` sends it;
 favouriting the post again sends nothing. Undoing it sends the `Undo` with
 `/undo` added to that id (`UndoLikeSerializer`), to the same inbox.
+
+
+What a post is federated as
+---------------------------
+
+The `Note` a post is federated as is `NoteSerializer`'s. Its custom emoji are
+those its content warning, text and poll options name, each once, in the
+order first named; a shortcode stuck to a letter or a colon is not one, as
+`CustomEmoji::SCAN_RE` reads them. Its `inReplyTo` is nothing once the post
+replied to is deleted, that post's `url` when its URI is not HTTP, and
+otherwise its URI, a local post's named by its account's scheme. Its
+mentions are tagged in the order they were made. An edit's `Update` is
+`published` at the edit, in whole seconds; a poll's `Update` is addressed
+`to` alone, as `UpdatePollSerializer` writes it; and pinning or unpinning
+sends an `Add` or `Remove` without an `id`, as `AddNoteSerializer` and
+`RemoveNoteSerializer` do.
