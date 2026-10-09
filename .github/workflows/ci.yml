@@ -1,13 +1,14 @@
 # What has to hold before a change lands.
 #
-# Five of these exist because something drifted when nothing was watching:
+# Six of these exist because something drifted when nothing was watching:
 # formatting went unenforced until thirteen files had moved and a commit shipped
 # broken while separating real changes from the churn; the sqlx cache went stale
 # and would have failed the deploy's offline build rather than the tests; the
 # schema check is the 100%-compatibility claim, and a claim nothing checks stops
 # being true; and the differential harness, which nothing ran, spent weeks
 # reporting ten differences that were entirely its own. The federation
-# harness had never run from a clean checkout at all.
+# harness had never run from a clean checkout at all, and the web client's
+# browser tests sat with three failing.
 name: CI
 
 on:
@@ -194,6 +195,45 @@ jobs:
 
       - name: Federate with a live Mastodon 4.7.0
         run: scripts/federation_test.sh
+
+  # The web client's typecheck and its browser tests. Nothing ran them, and
+  # three of them sat failing on main over a fixture the client had outgrown.
+  # They run against the Vite dev server with every API call answered by the
+  # test, so no backend is needed.
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck and build
+        working-directory: frontend
+        run: pnpm run build
+      - name: Install Chromium
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser tests
+        working-directory: frontend
+        run: pnpm exec playwright test
+      - name: Keep the report of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
 
   # The docs deploy only from main, so a dead link would otherwise be found by
   # the Pages workflow after it had landed. VitePress fails the build on one.

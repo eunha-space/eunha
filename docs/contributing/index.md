@@ -58,3 +58,20 @@ without fetching those pages again. These snapshots are scoped to the history
 entry, account token and feed parameters, live only in memory, and retain at
 most thirty feeds. A fresh visit loads current posts; reloading the browser
 clears the snapshots. Profile details and pinned posts still refresh on return.
+
+
+Web client tests
+----------------
+
+The web client's browser tests live in *frontend/e2e/*. They run against the
+Vite dev server, and each test answers the API calls it needs itself, so no
+backend is involved. CI runs them on every push along with the typecheck:
+
+~~~~ bash
+cd frontend
+pnpm run build
+pnpm exec playwright test
+~~~~
+
+A fake API response should have every field the real one always has. The
+client reads them without checking, as it may.
