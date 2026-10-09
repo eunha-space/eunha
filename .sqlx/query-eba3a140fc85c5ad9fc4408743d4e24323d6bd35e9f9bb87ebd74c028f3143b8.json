@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts (id, username, domain, display_name, note, url, uri,\n                                     inbox_url, outbox_url, protocol, created_at, updated_at)\n               VALUES ($1, 'gone', 'former.invalid', 'gone', '',\n                       'https://former.invalid/@gone', 'https://former.invalid/users/gone',\n                       'https://former.invalid/users/gone/inbox',\n                       'https://former.invalid/users/gone/outbox', 1, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eba3a140fc85c5ad9fc4408743d4e24323d6bd35e9f9bb87ebd74c028f3143b8"
+}

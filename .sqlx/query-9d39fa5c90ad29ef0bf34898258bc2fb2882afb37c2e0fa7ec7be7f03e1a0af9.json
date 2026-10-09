@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,\n                  -- `FeaturedTag#display_name`\n                  COALESCE(ft.name, t.display_name, t.name) AS \"display_name!\", a.username, a.domain\n           FROM featured_tags ft\n           JOIN tags t ON t.id = ft.tag_id\n           JOIN accounts a ON a.id = ft.account_id\n           WHERE ft.account_id = $1\n           ORDER BY ft.id",
+  "query": "SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,\n                  -- `FeaturedTag#display_name`\n                  COALESCE(ft.name, t.display_name, t.name) AS \"display_name!\", a.username\n           FROM featured_tags ft\n           JOIN tags t ON t.id = ft.tag_id\n           JOIN accounts a ON a.id = ft.account_id\n           WHERE ft.account_id = $1\n           ORDER BY ft.id",
   "describe": {
     "columns": [
       {
@@ -32,11 +32,6 @@
         "ordinal": 5,
         "name": "username",
         "type_info": "Varchar"
-      },
-      {
-        "ordinal": 6,
-        "name": "domain",
-        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -50,9 +45,8 @@
       false,
       true,
       null,
-      false,
-      true
+      false
     ]
   },
-  "hash": "50c30dadb23b4067941345011f76dc635e6bcd01687ce174ef68cfcdc88006f4"
+  "hash": "9d39fa5c90ad29ef0bf34898258bc2fb2882afb37c2e0fa7ec7be7f03e1a0af9"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM follow_requests f USING accounts a\n           WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2\n           RETURNING f.id, f.uri, a.uri AS follower_uri, a.inbox_url",
+  "query": "DELETE FROM follows f USING accounts a\n           WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2\n           RETURNING f.id, f.uri, a.id AS follower_id, a.uri AS follower_uri, a.inbox_url, a.protocol",
   "describe": {
     "columns": [
       {
@@ -15,13 +15,23 @@
       },
       {
         "ordinal": 2,
+        "name": "follower_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "follower_uri",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "inbox_url",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "protocol",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -33,9 +43,11 @@
     "nullable": [
       false,
       true,
+      false,
       true,
+      false,
       false
     ]
   },
-  "hash": "fe95deb27c634a36c6a66d248aebd207fe57c3ceb5e9f249b953935dfeea26bc"
+  "hash": "fee7294710ee1b23fed9b908050790c0449ed9bcbe4d0560fab5dfba9bc100a8"
 }

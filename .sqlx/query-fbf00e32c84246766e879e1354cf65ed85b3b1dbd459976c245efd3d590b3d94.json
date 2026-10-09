@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM accounts WHERE id = ANY($1::bigint[]) AND suspended_at IS NULL AND requested_deletion_at IS NULL",
+  "query": "SELECT id FROM accounts WHERE id = ANY($1::bigint[]) AND (suspended_at IS NULL OR $2) AND requested_deletion_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,13 @@
     ],
     "parameters": {
       "Left": [
-        "Int8Array"
+        "Int8Array",
+        "Bool"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "146ea1f80b4af769ef18d7385614ef1c9bcceb8f1dd827b493bf14ca26382163"
+  "hash": "fbf00e32c84246766e879e1354cf65ed85b3b1dbd459976c245efd3d590b3d94"
 }

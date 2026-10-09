@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT object_id AS \"object_id!\" FROM tagged_objects\n           WHERE status_id = $1 AND object_type = 'Collection' AND object_id IS NOT NULL\n           ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "53ac10e621ad993b43ac672aab5dccbb5d019f6a032545c7764f0c5d26678a21"
+}

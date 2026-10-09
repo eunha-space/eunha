@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts\n             (id, username, domain, display_name, note, url, uri, public_key,\n              inbox_url, outbox_url, protocol, created_at, updated_at)\n           VALUES ($1, 'stranger', $2, 'stranger', '', $3::text, $3::text, 'remote-key',\n                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5c08a2bd9bfc117993817a33795a46030d04183c36a0031996b061213674f84"
+}
