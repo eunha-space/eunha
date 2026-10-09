@@ -43,7 +43,11 @@ async fn test_push_subscription_lifecycle() {
         .await;
     assert_eq!(create_resp.status(), StatusCode::OK);
     let sub: Value = create_resp.json().await.unwrap();
-    assert!(sub["id"].as_str().is_some(), "id missing");
+    // `REST::WebPushSubscriptionSerializer` does not stringify its id.
+    assert!(
+        sub["id"].as_i64().is_some(),
+        "id missing or not a number: {sub}"
+    );
     assert_eq!(
         sub["endpoint"].as_str(),
         Some("https://push.example.com/test-endpoint")
@@ -59,7 +63,7 @@ async fn test_push_subscription_lifecycle() {
         .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
     let got: Value = get_resp.json().await.unwrap();
-    assert_eq!(got["id"].as_str(), sub["id"].as_str());
+    assert_eq!(got["id"], sub["id"]);
     assert_eq!(
         got["endpoint"].as_str(),
         Some("https://push.example.com/test-endpoint")
@@ -323,7 +327,7 @@ async fn subscribe(ctx: &TestContext, endpoint: &str, standard: bool) -> i64 {
         .json()
         .await
         .unwrap();
-    resp["id"].as_str().unwrap().parse().unwrap()
+    resp["id"].as_i64().unwrap()
 }
 
 /// An `admin.sign_up` notification of bob's sign-up, for alice.
@@ -451,7 +455,7 @@ async fn subscribe_with(ctx: &TestContext, endpoint: &str, data: Value) -> i64 {
         .json()
         .await
         .unwrap();
-    resp["id"].as_str().unwrap().parse().unwrap()
+    resp["id"].as_i64().unwrap()
 }
 
 /// Bob's sign-up, told to alice as `admin.sign_up`; how many pushes reached

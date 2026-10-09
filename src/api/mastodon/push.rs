@@ -14,7 +14,9 @@ use crate::{
 /// `REST::WebPushSubscriptionSerializer`.
 #[derive(Debug, Serialize)]
 pub struct PushSubscription {
-    pub id: String,
+    /// A number: unlike most entities, the serializer does not override
+    /// `id` with `object.id.to_s`.
+    pub id: i64,
     pub endpoint: String,
     pub standard: bool,
     /// The alerts as stored, each cast as `ActiveModel::Type::Boolean` casts
@@ -54,7 +56,7 @@ impl PushSubscription {
             Some(policy) => policy.clone(),
         };
         PushSubscription {
-            id: id.to_string(),
+            id,
             endpoint,
             standard,
             alerts,
