@@ -5450,3 +5450,44 @@ async fn test_roles_only_on_local_accounts() {
         .unwrap();
     assert_eq!(local["roles"], json!([]));
 }
+
+/// `feature_approval.current_user` is where the viewer stands: a
+/// discoverable, unlocked local account may be featured by anyone signed in
+/// (`automatic`), and by nobody when nobody is asking (`denied`).
+#[tokio::test]
+async fn test_feature_approval_is_for_the_viewer() {
+    let ctx = TestContext::new("feature-approval-lookup").await;
+    sqlx::query("UPDATE accounts SET discoverable = true, locked = false WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let path = format!("/api/v1/accounts/{}", ctx.bob_id);
+    let seen: Value = ctx
+        .api
+        .get(&path, Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        seen["feature_approval"]["current_user"], "automatic",
+        "{seen}"
+    );
+    let looked_up: Value = ctx
+        .api
+        .get("/api/v1/accounts/lookup?acct=bob", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        looked_up["feature_approval"]["current_user"], "automatic",
+        "{looked_up}"
+    );
+    let anonymous: Value = ctx.api.get(&path, None).await.json().await.unwrap();
+    assert_eq!(
+        anonymous["feature_approval"]["current_user"], "denied",
+        "{anonymous}"
+    );
+}
