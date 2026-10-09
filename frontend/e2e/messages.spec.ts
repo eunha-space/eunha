@@ -71,7 +71,10 @@ async function signedIn(page: import('@playwright/test').Page) {
     r.fulfill({ json: { count: 0 } }),
   )
   await page.route('**/api/v2/instance', (r) =>
-    r.fulfill({ json: { domain: 'example.invalid', title: 'Example', configuration: {} } }),
+    r.fulfill({ json: {
+      domain: 'example.invalid', title: 'Example', configuration: {},
+      registrations: { enabled: false, approval_required: false },
+    } }),
   )
 }
 
