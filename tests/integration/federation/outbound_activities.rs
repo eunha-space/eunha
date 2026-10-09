@@ -280,3 +280,55 @@ async fn test_migration_036_names_local_boosts() {
         ]
     );
 }
+
+/// A favourite's `Like` and its `Undo` are named after the favourite
+/// (`LikeSerializer`, `UndoLikeSerializer`) and go to the author's own
+/// inbox, as `FavouriteService` and `UnfavouriteService` send them; a
+/// favourite already made sends nothing again.
+#[tokio::test]
+async fn test_a_like_and_its_undo_are_named_after_the_favourite() {
+    let ctx = TestContext::new("outbound-like").await;
+    let alice = alice_numeric_with_a_follower(&ctx).await;
+    let (rob_id, rob) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    let (post_id, post_uri) = robs_post(&ctx, rob_id, &rob).await;
+
+    for _ in 0..2 {
+        let favourited = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{post_id}/favourite"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(favourited.status(), 200);
+    }
+    let favourite_id: i64 = sqlx::query_scalar("SELECT id FROM favourites WHERE status_id = $1")
+        .bind(post_id)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let likes = queued(&ctx, "Like").await;
+    assert_eq!(likes.len(), 1, "{likes:?}");
+    let (like, inbox) = &likes[0];
+    let like_id = format!("{alice}#likes/{favourite_id}");
+    assert_eq!(like["id"], like_id.as_str());
+    assert_eq!(like["actor"], alice.as_str());
+    assert_eq!(like["object"], post_uri.as_str());
+    assert_eq!(inbox, &format!("{rob}/inbox"));
+
+    ctx.api
+        .post_json(
+            &format!("/api/v1/statuses/{post_id}/unfavourite"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let undos = queued(&ctx, "Undo").await;
+    assert_eq!(undos.len(), 1);
+    let (undo, inbox) = &undos[0];
+    assert_eq!(undo["id"], format!("{like_id}/undo"));
+    assert_eq!(undo["object"]["id"], like_id.as_str());
+    assert_eq!(undo["object"]["object"], post_uri.as_str());
+    assert_eq!(inbox, &format!("{rob}/inbox"));
+}

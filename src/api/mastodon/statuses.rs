@@ -653,6 +653,13 @@ pub async fn delete_status(
 
 // ── POST /api/v1/statuses/:id/favourite ───────────────────────────────────
 
+/// The id of a favourite's `Like`, `ActivityPub::LikeSerializer#id`: the
+/// actor's URI, `#likes/` and the `favourites` row's id. The `Undo` of it is
+/// this with `/undo`.
+fn like_id(actor_url: &str, favourite_id: i64) -> String {
+    format!("{actor_url}#likes/{favourite_id}")
+}
+
 pub async fn favourite_status(
     state: AppState,
     Path(id): Path<i64>,
@@ -662,14 +669,13 @@ pub async fn favourite_status(
     let (s, _) = fetch_status_with_account(&state, id).await?;
     check_status_visible(&state, &s, auth.account_id).await?;
 
-    let favourited = sqlx::query!(
-        "INSERT INTO favourites (account_id, status_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING",
+    let favourite_id = sqlx::query_scalar!(
+        "INSERT INTO favourites (account_id, status_id, created_at, updated_at) VALUES ($1,$2, now(), now()) ON CONFLICT DO NOTHING RETURNING id",
         auth.account_id, id
     )
-    .execute(&state.db)
-    .await?
-    .rows_affected()
-        > 0;
+    .fetch_optional(&state.db)
+    .await?;
+    let favourited = favourite_id.is_some();
     if favourited {
         crate::fasp::events::favourite_created(&state, id).await;
         // `FavouriteService#increment_statistics`, for a new favourite.
@@ -707,30 +713,30 @@ pub async fn favourite_status(
     )
     .await;
 
-    // Send Like to remote status author
-    if account.domain.is_some()
-        && crate::federation::keypair::has_signing_key(&state, from_account.id)
+    // `FavouriteService#create_notification`: a new favourite of a remote
+    // account's post is a `Like` to that account's own inbox.
+    if let Some(favourite_id) = favourite_id.filter(|_| account.domain.is_some()) {
+        if crate::federation::keypair::has_signing_key(&state, from_account.id)
             .await
             .unwrap_or(false)
-    {
-        let domain = state.instance.domain.clone();
-        let actor_url = crate::federation::tag::account_uri_of(&domain, &from_account);
-        let like_id = format!(
-            "https://{}/users/{}/likes/{}",
-            domain, from_account.username, id
-        );
-        let status_uri = status.uri.clone().unwrap_or_default();
-        let like = crate::federation::activity::like(&like_id, &actor_url, &status_uri)?;
-        let key_id = format!("{}#main-key", actor_url);
-        let inbox = if !account.shared_inbox_url.is_empty() {
-            account.shared_inbox_url.clone()
-        } else {
-            account.inbox_url.clone()
-        };
-        if let Err(e) =
-            crate::federation::delivery::deliver_to_inboxes(&state, like, vec![inbox], key_id).await
         {
-            tracing::warn!(error = %e, "failed to enqueue Like delivery");
+            let domain = state.instance.domain.clone();
+            let actor_url = crate::federation::tag::account_uri_of(&domain, &from_account);
+            // `ActivityPub::LikeSerializer#id`.
+            let like_id = like_id(&actor_url, favourite_id);
+            let status_uri = status.uri.clone().unwrap_or_default();
+            let like = crate::federation::activity::like(&like_id, &actor_url, &status_uri)?;
+            let key_id = format!("{}#main-key", actor_url);
+            if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+                &state,
+                like,
+                vec![account.inbox_url.clone()],
+                key_id,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "failed to enqueue Like delivery");
+            }
         }
     }
 
@@ -780,29 +786,42 @@ pub async fn unfavourite_status(
     .execute(&state.db)
     .await?;
 
-    // Send Undo(Like) to remote status author
-    if account.domain.is_some() {
+    // `UnfavouriteService`: the favourite undone, of a remote account's
+    // post, is an `Undo(Like)` to that account's own inbox.
+    if let Some(favourite_id) = unfavourited.filter(|_| account.domain.is_some()) {
         if let Some(actor_row) = sqlx::query!(
-            "SELECT username, inbox_url, shared_inbox_url, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
+            "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
             auth.account_id,
-        ).fetch_optional(&state.db).await? {
-            if crate::federation::keypair::has_signing_key(&state, auth.account_id).await.unwrap_or(false) {
+        )
+        .fetch_optional(&state.db)
+        .await?
+        {
+            if crate::federation::keypair::has_signing_key(&state, auth.account_id)
+                .await
+                .unwrap_or(false)
+            {
                 let domain = state.instance.domain.clone();
-                let actor_url = crate::federation::tag::account_uri(&domain, auth.account_id, actor_row.id_scheme, &actor_row.username);
-                let like_id = format!("{actor_url}/likes/{id}");
+                let actor_url = crate::federation::tag::account_uri(
+                    &domain,
+                    auth.account_id,
+                    actor_row.id_scheme,
+                    &actor_row.username,
+                );
+                // `ActivityPub::UndoLikeSerializer#id`, and its `Like`'s.
+                let like_id = like_id(&actor_url, favourite_id);
                 let status_uri = s.uri.clone().unwrap_or_default();
-                let undo_id = format!("{}#undo", like_id);
-                let undo = crate::federation::activity::undo_like(&undo_id, &actor_url, &like_id, &status_uri)?;
+                let undo_id = format!("{like_id}/undo");
+                let undo = crate::federation::activity::undo_like(
+                    &undo_id,
+                    &actor_url,
+                    &like_id,
+                    &status_uri,
+                )?;
                 let key_id = format!("{}#main-key", actor_url);
-                let inbox = if !account.shared_inbox_url.is_empty() {
-                    account.shared_inbox_url.clone()
-                } else {
-                    account.inbox_url.clone()
-                };
                 if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
                     &state,
                     undo,
-                    vec![inbox],
+                    vec![account.inbox_url.clone()],
                     key_id,
                 )
                 .await

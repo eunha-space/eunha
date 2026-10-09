@@ -148,3 +148,9 @@ public, carrying that `Announce` with the boosted post named by its URI
 (`UndoAnnounceSerializer`). Eunha left local boosts' `uri` empty until
 migration 036; see
 [migrations](../operating/migrations#local-boosts-before-migration-036).
+
+A new favourite of a remote post is a `Like` with the id
+`{actor}#likes/{favourite id}` (`LikeSerializer`), sent to its author's own
+inbox rather than their server's shared one, as `FavouriteService` sends it;
+favouriting the post again sends nothing. Undoing it sends the `Undo` with
+`/undo` added to that id (`UndoLikeSerializer`), to the same inbox.
