@@ -1,4 +1,4 @@
-# Mastodon 4.7.0 for differential testing against eunha.
+# Mastodon 4.7.2 for differential testing against eunha.
 #
 # The official image, so none of the native dependencies that have to be built
 # by hand on macOS — libidn, OpenSSL headers, libvips, and a `pg` gem that
@@ -33,7 +33,7 @@ services:
       retries: 20
 
   web:
-    image: ghcr.io/mastodon/mastodon:v4.7.0
+    image: ghcr.io/mastodon/mastodon:v4.7.2
     command: bash -c "bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p 3000"
     depends_on:
       db: {condition: service_healthy}
@@ -65,7 +65,7 @@ services:
   # timeline answers 206 rather than 200, which reads as a difference from eunha
   # when it is only a missing worker.
   sidekiq:
-    image: ghcr.io/mastodon/mastodon:v4.7.0
+    image: ghcr.io/mastodon/mastodon:v4.7.2
     command: bundle exec sidekiq
     # Sidekiq boots as soon as Postgres answers, but the schema is created by
     # `web`'s `db:prepare` — so on a cold database it starts first, dies on
