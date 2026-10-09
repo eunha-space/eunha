@@ -1401,6 +1401,11 @@ async fn test_status_history_after_edit() {
         ["<p>v1 text</p>", "<p>v2 text</p>", "<p>v3 text</p>"]
     );
     assert_eq!(history[0]["account"]["id"], json!(ctx.alice_id));
+    // `attribute :poll, if: -> { object.poll_options.present? }`.
+    assert!(
+        history.iter().all(|v| v.get("poll").is_none()),
+        "{history:?}"
+    );
 }
 
 /// `ProcessMentionsService` on an edit: a mention the text no longer makes

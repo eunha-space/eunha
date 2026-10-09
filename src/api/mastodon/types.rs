@@ -634,6 +634,9 @@ pub struct StatusEdit {
     pub account: Option<Account>,
     pub media_attachments: Vec<MediaAttachment>,
     pub emojis: Vec<CustomEmoji>,
+    /// `attribute :poll, if: -> { object.poll_options.present? }`: absent,
+    /// not `null`, for a version without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poll: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quote: Option<serde_json::Value>,
