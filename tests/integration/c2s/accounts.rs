@@ -3171,8 +3171,9 @@ async fn test_preferences_defaults() {
     let prefs: Value = resp.json().await.unwrap();
     assert_eq!(prefs["posting:default:visibility"].as_str(), Some("public"));
     assert_eq!(prefs["posting:default:sensitive"].as_bool(), Some(false));
-    // Default language is unset (null) until the user configures one.
-    assert!(prefs["posting:default:language"].is_null());
+    // With none chosen, `preferred_posting_language` falls back to the
+    // interface language, here the site's.
+    assert_eq!(prefs["posting:default:language"].as_str(), Some("en"));
 }
 
 /// PUT /api/v1/profile returns the caller's account object.

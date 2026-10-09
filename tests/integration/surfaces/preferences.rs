@@ -262,3 +262,92 @@ async fn test_time_zone_preference() {
         assert_eq!(changed["time_zone"].as_str(), kept, "{asked}");
     }
 }
+
+/// `GET /api/v1/preferences` as `REST::PreferencesSerializer` serves it: the
+/// reading preferences are the `web.*` settings the appearance page sets,
+/// and the posting language is `User#preferred_posting_language`, the chosen
+/// one, else the interface language, else the request's.
+#[tokio::test]
+async fn test_mastodon_preferences_read_the_web_settings() {
+    let ctx = TestContext::new("preferences-reading").await;
+    let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    let mastodon = |query: &'static str, accept_language: Option<&'static str>| {
+        let api = &ctx.api;
+        let token = ctx.alice_token.clone();
+        async move {
+            let mut request = api
+                .http
+                .get(api.url(&format!("/api/v1/preferences{query}")))
+                .header("host", &api.host)
+                .bearer_auth(token);
+            if let Some(accept_language) = accept_language {
+                request = request.header("accept-language", accept_language);
+            }
+            request.send().await.unwrap().json::<Value>().await.unwrap()
+        }
+    };
+
+    let prefs = mastodon("", None).await;
+    assert_eq!(prefs["reading:expand:media"], "default");
+    assert_eq!(prefs["reading:expand:spoilers"], false);
+    assert_eq!(prefs["reading:autoplay:gifs"], false);
+    assert_eq!(prefs["posting:default:language"], "en", "the site's");
+    assert_eq!(
+        mastodon("?lang=ja", None).await["posting:default:language"],
+        "ja"
+    );
+    assert_eq!(
+        mastodon("", Some("de-DE,de;q=0.9")).await["posting:default:language"],
+        "de"
+    );
+
+    let changed: Value = patch(
+        &ctx,
+        json!({
+            "display_media": "show_all",
+            "expand_content_warnings": true,
+            "auto_play": true,
+            "locale": "ko",
+        }),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(changed["display_media"], "show_all");
+    assert_eq!(changed["expand_content_warnings"], true);
+    assert_eq!(changed["auto_play"], true);
+    let settings: String = sqlx::query_scalar("SELECT settings FROM users WHERE id = $1")
+        .bind(alice_user)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    let settings: Value = serde_json::from_str(&settings).unwrap();
+    assert_eq!(settings["web.display_media"], "show_all");
+    assert_eq!(settings["web.expand_content_warnings"], true);
+    assert_eq!(settings["web.auto_play"], true);
+    assert_eq!(
+        patch(&ctx, json!({ "display_media": "sometimes" }))
+            .await
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let prefs = mastodon("?lang=ja", None).await;
+    assert_eq!(prefs["reading:expand:media"], "show_all");
+    assert_eq!(prefs["reading:expand:spoilers"], true);
+    assert_eq!(prefs["reading:autoplay:gifs"], true);
+    assert_eq!(
+        prefs["posting:default:language"], "ko",
+        "the interface language before the request's"
+    );
+
+    ctx.api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({ "source": { "language": "fr" } }),
+        )
+        .await;
+    assert_eq!(mastodon("", None).await["posting:default:language"], "fr");
+}

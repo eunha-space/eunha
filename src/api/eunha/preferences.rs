@@ -3,8 +3,9 @@
 //! "include profile page in search engines" (`noindex`, which the form shows
 //! inverted as `indexable`) and "display from which app you sent a post"
 //! (`show_application`), and from `Settings::Preferences::*` the interface
-//! language and time zone, the languages to show in public timelines, and the
-//! notification emails eunha sends.
+//! language and time zone, the languages to show in public timelines, how
+//! media, content warnings and GIFs are shown, and the notification emails
+//! eunha sends.
 //!
 //! What Mastodon offers through the REST API already — the posting defaults
 //! (`source[privacy]`, `source[sensitive]`, `source[language]`,
@@ -65,6 +66,15 @@ pub struct Preferences {
     /// Leave out of the home timeline and lists a boost of a post recently
     /// boosted or posted there (`aggregate_reblogs`).
     pub aggregate_reblogs: bool,
+    /// Media marked sensitive hidden (`default`), or all media shown
+    /// (`show_all`) or hidden (`hide_all`): `web.display_media`, which
+    /// clients read as `reading:expand:media`.
+    pub display_media: String,
+    /// Posts behind a content warning expanded (`web.expand_content_warnings`,
+    /// `reading:expand:spoilers`).
+    pub expand_content_warnings: bool,
+    /// Animated GIFs played (`web.auto_play`, `reading:autoplay:gifs`).
+    pub auto_play: bool,
     pub notification_emails: NotificationEmails,
 }
 
@@ -95,14 +105,13 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
     let settings = row.settings.as_deref();
     let site_noindex = crate::settings::boolean(state, "noindex").await;
     let bool_of = |key: &str, default: bool| Some(user_setting_bool(settings, key, default));
-    let software_updates = settings
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| {
-            v.get("notification_emails.software_updates")
-                .and_then(|v| v.as_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| "critical".into());
+    let string_of = |key: &str, default: &str| {
+        settings
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.get(key).and_then(|v| v.as_str()).map(str::to_owned))
+            .unwrap_or_else(|| default.into())
+    };
+    let software_updates = string_of("notification_emails.software_updates", "critical");
     Ok(Preferences {
         noindex: user_setting_bool(settings, "noindex", site_noindex),
         show_application: user_setting_bool(settings, "show_application", true),
@@ -111,6 +120,9 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         time_zone: row.time_zone,
         always_send_emails: user_setting_bool(settings, "always_send_emails", false),
         aggregate_reblogs: crate::feed::aggregates_reblogs(settings),
+        display_media: string_of("web.display_media", "default"),
+        expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
+        auto_play: user_setting_bool(settings, "web.auto_play", false),
         notification_emails: NotificationEmails {
             follow: bool_of("notification_emails.follow", true),
             reblog: bool_of("notification_emails.reblog", false),
@@ -145,6 +157,9 @@ pub struct Update {
     pub show_application: Option<bool>,
     pub always_send_emails: Option<bool>,
     pub aggregate_reblogs: Option<bool>,
+    pub display_media: Option<String>,
+    pub expand_content_warnings: Option<bool>,
+    pub auto_play: Option<bool>,
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
@@ -193,6 +208,21 @@ pub async fn update(
     }
     if let Some(aggregate) = form.aggregate_reblogs {
         set("aggregate_reblogs", aggregate.into());
+    }
+    if let Some(display) = &form.display_media {
+        // `in: %w(hide_all default show_all)`.
+        if !matches!(display.as_str(), "hide_all" | "default" | "show_all") {
+            return Err(AppError::Unprocessable(
+                "Validation failed: Display media is not included in the list".into(),
+            ));
+        }
+        set("web.display_media", display.clone().into());
+    }
+    if let Some(expand) = form.expand_content_warnings {
+        set("web.expand_content_warnings", expand.into());
+    }
+    if let Some(auto_play) = form.auto_play {
+        set("web.auto_play", auto_play.into());
     }
     let emails = &form.notification_emails;
     for ((key, _), value) in NOTIFICATION_EMAILS.iter().zip([

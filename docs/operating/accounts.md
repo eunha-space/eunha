@@ -509,6 +509,12 @@ privacy section uses both.
     [Time zones](#time-zones)).
  -  `aggregate_reblogs` (on unless turned off) groups boosts in the home
     timeline and lists (see [Boosts in timelines](#boosts-in-timelines)).
+ -  `display_media` (`default`, which hides media marked sensitive,
+    `show_all` or `hide_all`), `expand_content_warnings` and `auto_play`
+    are the appearance page's `web.display_media`,
+    `web.expand_content_warnings` and `web.auto_play`. Apps read them from
+    `GET /api/v1/preferences` as `reading:expand:media`,
+    `reading:expand:spoilers` and `reading:autoplay:gifs`.
  -  `notification_emails` turns the mails eunha sends on or off: the
     notification emails `follow`, `follow_request`, `reblog`, `favourite`,
     `mention` and `quote` (see [Notification emails](#notification-emails)),
@@ -518,8 +524,12 @@ privacy section uses both.
     online.
 
 `source[sensitive]` is kept under Mastodon's `default_sensitive` key in
-`users.settings`; eunha used to write `web.default_sensitive`, which it still
-reads.
+`users.settings`; eunha used to write `web.default_sensitive`, and before
+that `sensitive`, `privacy`, `language` and `quote_policy` for the other
+posting defaults, which it still reads when Mastodon's key is missing.
+`GET /api/v1/preferences` gives as the posting language the one chosen,
+else the member's interface language, else the request's
+(`preferred_posting_language`).
 
 
 Boosts in timelines

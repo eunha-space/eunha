@@ -816,23 +816,66 @@ async fn build_credential_account_response(
 
 // ── GET /api/v1/preferences ───────────────────────────────────────────────
 
+/// `Localized`'s `params[:lang]`.
+#[derive(Debug, Deserialize, Default)]
+pub struct LangParam {
+    #[serde(default)]
+    lang: Option<String>,
+}
+
+/// `REST::PreferencesSerializer`.
 pub async fn get_preferences(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
+    headers: HeaderMap,
+    Query(params): Query<LangParam>,
 ) -> AppResult<Json<Preferences>> {
     auth.require_scope("read:accounts")?;
     let d = user_defaults(&state, auth.account_id).await;
-    let (privacy, sensitive, language, quote_policy) =
-        (d.privacy, d.sensitive, d.language, d.quote_policy);
+    let settings = user_settings_json(&state, auth.account_id).await;
+    let user_locale: Option<String> = sqlx::query_scalar!(
+        "SELECT locale FROM users WHERE account_id = $1",
+        auth.account_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    // `I18n.locale`, as `Localized#set_locale` chose it for this request.
+    let request_locale = crate::api::mastodon::translations::requested_locale(
+        &state,
+        &auth,
+        &headers,
+        params.lang.as_deref(),
+    )
+    .await?;
+    // `User#preferred_posting_language`.
+    let language = crate::languages::valid_locale_cascade(&[
+        d.language.as_deref(),
+        user_locale.as_deref(),
+        Some(&request_locale),
+    ]);
 
     Ok(Json(Preferences {
-        posting_default_visibility: privacy,
-        posting_default_sensitive: sensitive,
+        posting_default_visibility: d.privacy,
+        posting_default_sensitive: d.sensitive,
         posting_default_language: language,
-        posting_default_quote_policy: quote_policy,
-        reading_expand_media: "default".into(),
-        reading_expand_spoilers: false,
-        reading_autoplay_gifs: false,
+        posting_default_quote_policy: d.quote_policy,
+        // `setting_display_media`, `setting_expand_spoilers` and
+        // `setting_auto_play_gif`: the `web.*` settings, with `UserSettings`'
+        // defaults.
+        reading_expand_media: settings
+            .get("web.display_media")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("default")
+            .to_owned(),
+        reading_expand_spoilers: settings
+            .get("web.expand_content_warnings")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        reading_autoplay_gifs: settings
+            .get("web.auto_play")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
     }))
 }
 
