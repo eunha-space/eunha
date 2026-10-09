@@ -9,6 +9,7 @@
     "preview": "vitepress preview"
   },
   "devDependencies": {
+    "smol-toml": "^1.9.0",
     "vitepress": "^1.6.4"
   }
 }
