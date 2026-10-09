@@ -403,3 +403,39 @@ async fn test_an_ostatus_account_is_sent_nothing() {
             .unwrap();
     assert_eq!(inboxes, vec!["https://nina.invalid/inbox".to_owned()]);
 }
+
+/// Migration 037 marks a remote account eunha stored before it set
+/// `protocol` as ActivityPub when it has an inbox, and leaves one from
+/// Mastodon's OStatus days, which has none, as it is.
+#[tokio::test]
+async fn test_migration_037_marks_remote_accounts_with_an_inbox_activitypub() {
+    let ctx = TestContext::new("outbound-protocol-migration").await;
+    let (rob_id, _) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    let (olga_id, _) = seed_remote(&ctx, "olga", "olga.invalid").await;
+    sqlx::query("UPDATE accounts SET protocol = 0 WHERE id = ANY($1)")
+        .bind(vec![rob_id, olga_id])
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET inbox_url = '', shared_inbox_url = '' WHERE id = $1")
+        .bind(olga_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/037_remote_accounts_activitypub.sql"
+    ))
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let protocols: Vec<i32> = sqlx::query_scalar(
+        "SELECT protocol FROM accounts WHERE id = ANY($1) ORDER BY array_position($1, id)",
+    )
+    .bind(vec![rob_id, olga_id])
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(protocols, vec![1, 0]);
+}

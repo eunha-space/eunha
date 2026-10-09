@@ -198,6 +198,22 @@ WHERE "type" IN (3, 4) AND file_content_type IS NULL AND remote_url <> '';
 ~~~~
 
 
+Remote accounts before migration 037
+------------------------------------
+
+`accounts.protocol` says whether a remote account speaks ActivityPub (1) or
+OStatus (0), and defaults to 0. Mastodon stores 1 for every actor it takes
+from ActivityPub, and sends nothing to an account that does not
+([remote actors](../mastodon/remote-actors)). Until eunha stored remote actors
+as Mastodon does, it left the column at its default, so a remote account it
+made then and has not refetched since would read as OStatus and be sent
+nothing.
+
+Migration 037 marks each remote account still at 0 that has an inbox as
+ActivityPub. Only an ActivityPub actor gives an inbox, so an account left
+from Mastodon's OStatus days, which has none, stays as it is.
+
+
 Local boosts before migration 036
 ---------------------------------
 
