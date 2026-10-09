@@ -40,6 +40,9 @@ pub fn note_context() -> Value {
             // `interactionPolicy` we emit below survives JSON-LD expansion.
             "gts": "https://gotosocial.org/ns#",
             "interactionPolicy": { "@id": "gts:interactionPolicy", "@type": "@id" },
+            // Mastodon's `interaction_policies` extension names FEP-7aa9's
+            // `canFeature` alongside `canQuote`.
+            "canFeature": { "@id": "https://w3id.org/fep/7aa9#canFeature", "@type": "@id" },
             "canQuote": { "@id": "gts:canQuote", "@type": "@id" },
             "automaticApproval": { "@id": "gts:automaticApproval", "@type": "@id" },
             "manualApproval": { "@id": "gts:manualApproval", "@type": "@id" },
@@ -158,14 +161,41 @@ pub async fn build_note(
     let followers_url = format!("{actor_url}/followers");
 
     // ── inReplyTo ───────────────────────────────────────────────────────────
-    let in_reply_to: Option<String> = if let Some(parent) = s.in_reply_to_id {
-        sqlx::query_scalar!("SELECT uri FROM statuses WHERE id = $1", parent)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten()
-            .filter(|u| !u.is_empty())
-    } else {
-        None
+    // `NoteSerializer#in_reply_to`: none once the post replied to is
+    // discarded (`Status`'s `default_scope` keeps only the kept ones); a URI
+    // that is not HTTP gives way to the post's `url`; otherwise
+    // `TagManager#uri_for`, which names a local post by its account's
+    // scheme, whatever its `uri` holds.
+    let in_reply_to: Option<String> = match s.in_reply_to_id {
+        None => None,
+        Some(parent) => sqlx::query!(
+            r#"SELECT t.id, t.uri, t.url, t.reblog_of_id,
+                      (COALESCE(t.local, false) OR t.uri IS NULL) AS "local!",
+                      a.id AS account_id, a.id_scheme, a.username
+               FROM statuses t JOIN accounts a ON a.id = t.account_id
+               WHERE t.id = $1 AND t.deleted_at IS NULL"#,
+            parent,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .and_then(|thread| match thread.uri {
+            Some(uri) if !uri.starts_with("http") => thread.url,
+            _ if thread.local => {
+                let uri = crate::federation::tag::status_uri(
+                    domain,
+                    thread.account_id,
+                    thread.id_scheme,
+                    &thread.username,
+                    thread.id,
+                );
+                Some(if thread.reblog_of_id.is_some() {
+                    format!("{uri}/activity")
+                } else {
+                    uri
+                })
+            }
+            uri => uri,
+        }),
     };
 
     // A silenced author only addresses mentioned accounts who follow them (or
@@ -188,7 +218,9 @@ pub async fn build_note(
                          WHERE fr.account_id = a.id AND fr.target_account_id = $2) AS "has_request!"
            FROM mentions m JOIN accounts a ON a.id = m.account_id
            -- `active_mentions`: a silent one is neither addressed nor tagged.
-           WHERE m.status_id = $1 AND NOT m.silent"#,
+           -- `virtual_tags` sorts them by id.
+           WHERE m.status_id = $1 AND NOT m.silent
+           ORDER BY m.id"#,
         s.id,
         s.account_id,
     )
@@ -264,9 +296,11 @@ pub async fn build_note(
     }
 
     // ── Hashtags ────────────────────────────────────────────────────────────
+    // `object.tags`, in no order of Mastodon's choosing: the habtm query has
+    // no `ORDER BY`, and neither does this one.
     let hashtag_rows = sqlx::query!(
         r#"SELECT t.name FROM statuses_tags st JOIN tags t ON t.id = st.tag_id
-           WHERE st.status_id = $1 ORDER BY t.name"#,
+           WHERE st.status_id = $1"#,
         s.id,
     )
     .fetch_all(&state.db)
@@ -282,8 +316,15 @@ pub async fn build_note(
         })
         .collect();
 
-    // ── Custom emoji (best effort: only those with a resolvable image) ───────
-    let emoji_tags = emoji_tags_for(state, &s.text, &s.spoiler_text).await?;
+    // ── Custom emoji: `Status#emojis`, the poll's options included ─────────
+    let poll_options: Vec<String> =
+        sqlx::query_scalar!("SELECT options FROM polls WHERE status_id = $1", s.id)
+            .fetch_optional(&state.db)
+            .await?
+            .unwrap_or_default();
+    let mut emojifiable: Vec<&str> = vec![&s.spoiler_text, &s.text];
+    emojifiable.extend(poll_options.iter().map(String::as_str));
+    let emoji_tags = emoji_tags_for(state, &emojifiable).await?;
 
     let mut tag: Vec<Value> = mention_tags;
     tag.extend(hashtag_tags);
@@ -684,23 +725,13 @@ fn media_attachment_ap(urls: &convert::InstanceUrls, m: &models::MediaAttachment
     Some(obj)
 }
 
-/// Scan two text sources for `:shortcode:` tokens and emit `Emoji` tags for any
-/// matching enabled local custom emoji. Used for
-/// both status content (text + spoiler) and actor profiles (display name + note).
-pub(crate) async fn emoji_tags_for(
-    state: &AppState,
-    text: &str,
-    spoiler: &str,
-) -> AppResult<Vec<Value>> {
-    let mut shortcodes: Vec<String> = Vec::new();
-    for src in [text, spoiler] {
-        for cap in EMOJI_RE.captures_iter(src) {
-            let sc = cap[1].to_string();
-            if !shortcodes.contains(&sc) {
-                shortcodes.push(sc);
-            }
-        }
-    }
+/// `CustomEmoji.from_text` on `fields.join(' ')` for a local author: an
+/// `Emoji` tag for each enabled local custom emoji whose `:shortcode:` the
+/// text names (`CustomEmoji::SCAN_RE`), in the order they are first named.
+/// `Status#emojis` gives it the content warning, the text and the poll's
+/// options; `Account#emojis` the profile's `emojifiable_text`.
+pub(crate) async fn emoji_tags_for(state: &AppState, fields: &[&str]) -> AppResult<Vec<Value>> {
+    let shortcodes = convert::scan_emoji_shortcodes(&fields.join(" "));
     if shortcodes.is_empty() {
         return Ok(vec![]);
     }
@@ -709,7 +740,8 @@ pub(crate) async fn emoji_tags_for(
         r#"SELECT id, shortcode, image_file_name, image_content_type,
                   image_storage_schema_version, updated_at
            FROM custom_emojis
-           WHERE domain IS NULL AND disabled = false AND shortcode = ANY($1)"#,
+           WHERE domain IS NULL AND disabled = false AND shortcode = ANY($1)
+           ORDER BY array_position($1, shortcode::text)"#,
         &shortcodes,
     )
     .fetch_all(&state.db)
@@ -797,9 +829,6 @@ pub(crate) fn emoji_document(
         },
     })
 }
-
-static EMOJI_RE: once_cell::sync::Lazy<regex::Regex> =
-    once_cell::sync::Lazy::new(|| regex::Regex::new(r":([a-zA-Z0-9_]+):").unwrap());
 
 #[cfg(test)]
 mod tests {

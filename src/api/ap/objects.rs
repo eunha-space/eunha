@@ -452,16 +452,12 @@ pub async fn actor_json(
     // `virtual_tags`: the custom emoji of the profile (`Account#emojis`,
     // read from its `emojifiable_text`), then its hashtags.
     let (emoji_tags, hashtags) = if available {
-        let mut emojifiable = account.note.clone();
-        for (name, value) in &raw_fields {
-            emojifiable.push(' ');
-            emojifiable.push_str(name);
-            emojifiable.push(' ');
-            emojifiable.push_str(value);
-        }
+        // `[note, display_name, fields.map(&:name), fields.map(&:value)]`.
+        let mut emojifiable: Vec<&str> = vec![&account.note, &account.display_name];
+        emojifiable.extend(raw_fields.iter().map(|(name, _)| name.as_str()));
+        emojifiable.extend(raw_fields.iter().map(|(_, value)| value.as_str()));
         (
-            crate::api::ap::note::emoji_tags_for(state, &account.display_name, &emojifiable)
-                .await?,
+            crate::api::ap::note::emoji_tags_for(state, &emojifiable).await?,
             hashtag_tags(state, domain, account.id).await?,
         )
     } else {

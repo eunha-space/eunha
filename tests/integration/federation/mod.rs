@@ -16,6 +16,7 @@ mod integrity_proofs;
 mod keypairs;
 mod linked_data_signatures;
 mod moves;
+mod note_members;
 mod objects;
 mod outbound_activities;
 mod ownership;
