@@ -5379,3 +5379,45 @@ async fn test_feature_approval_is_answered_for_the_viewer() {
         "automatic"
     );
 }
+
+/// Mastodon serializes `roles` only for a local account (`has_many :roles,
+/// if: :local?`); a remote account has no roles here to show, so the key is
+/// absent rather than an empty list.
+#[tokio::test]
+async fn test_roles_only_on_local_accounts() {
+    let ctx = TestContext::new("roles-local-only").await;
+    let remote = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'faraway', 'roles.invalid', '', '', 'https://roles.invalid/@faraway',
+                   'https://roles.invalid/users/faraway', 'https://roles.invalid/inbox', 1, now(), now())"#,
+    )
+    .bind(remote)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let remote: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{remote}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(remote.get("roles").is_none(), "{remote}");
+
+    let local: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}", ctx.bob_id),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(local["roles"], json!([]));
+}

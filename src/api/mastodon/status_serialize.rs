@@ -751,7 +751,8 @@ pub async fn build_status_with_app(
     );
     let id: i64 = api.id.parse().unwrap_or(0);
     api.account.emojis = fetch_account_emojis(state, account).await;
-    api.account.roles = fetch_account_roles(state, account.id).await;
+    api.account
+        .set_roles(fetch_account_roles(state, account.id).await);
     api.tags = fetch_statuses_tags(state, id).await?;
     api.mentions = mentions;
     api.emojis = status_emojis;
@@ -783,7 +784,8 @@ pub async fn build_status_with_app(
         if rb_account_id != 0 {
             if let Ok(rb_db_acct) = fetch_account(state, rb_account_id).await {
                 rb.account.emojis = fetch_account_emojis(state, &rb_db_acct).await;
-                rb.account.roles = fetch_account_roles(state, rb_account_id).await;
+                rb.account
+                    .set_roles(fetch_account_roles(state, rb_account_id).await);
             }
         }
         rb.tags = fetch_statuses_tags(state, rid).await?;

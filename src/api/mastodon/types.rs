@@ -40,7 +40,10 @@ pub struct Account {
     pub last_status_at: Option<String>,
     pub emojis: Vec<CustomEmoji>,
     pub fields: Vec<Field>,
-    pub roles: Vec<AccountRole>,
+    /// Absent for a remote account: Mastodon serializes `roles` only
+    /// `if: :local?`. Set through [`Account::set_roles`], which keeps it so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<AccountRole>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub moved: Option<Box<Account>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,6 +69,16 @@ pub struct Account {
     pub source: Option<AccountSource>, // only on CredentialAccount
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>, // only on CredentialAccount
+}
+
+impl Account {
+    /// The account's highlighted roles, for a local account; a remote one has
+    /// none to show and keeps `roles` absent.
+    pub fn set_roles(&mut self, roles: Vec<AccountRole>) {
+        if self.roles.is_some() {
+            self.roles = Some(roles);
+        }
+    }
 }
 
 /// Who may feature an account's posts.

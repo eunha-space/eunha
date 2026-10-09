@@ -669,7 +669,8 @@ pub fn account_from_db_for_viewer(
                 &[],
             )
         },
-        roles: vec![],
+        // Mastodon's `has_many :roles, if: :local?`.
+        roles: a.domain.is_none().then(Vec::new),
         moved: None,
         suspended: if suspended { Some(true) } else { None },
         limited: if a.silenced_at.is_some() {

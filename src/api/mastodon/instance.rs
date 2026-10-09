@@ -702,10 +702,10 @@ async fn fetch_contact_account(
     .flatten()?;
     let mut api = super::convert::account_from_db(&state.urls, &account);
     api.emojis = super::accounts::fetch_account_emojis(state, &account).await;
-    api.roles = {
+    api.set_roles({
         let m = super::accounts::batch_account_roles(state, std::slice::from_ref(&account)).await;
         m.get(&account.id).cloned().unwrap_or_default()
-    };
+    });
     super::accounts::apply_account_stats(state, &mut api, account.id).await;
     Some(api)
 }

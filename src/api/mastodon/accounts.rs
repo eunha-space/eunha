@@ -196,7 +196,7 @@ pub async fn lookup_account(
 async fn render_account(state: &AppState, account: &Account) -> ApiAccount {
     let mut api_account = account_from_db(&state.urls, account);
     api_account.emojis = fetch_account_emojis(state, account).await;
-    api_account.roles = fetch_account_roles(state, account.id).await;
+    api_account.set_roles(fetch_account_roles(state, account.id).await);
     apply_account_stats(state, &mut api_account, account.id).await;
     api_account.email_subscriptions = crate::email_subscriptions::serialized(state, account).await;
     if let Some(moved_account_id) = account.moved_to_account_id {
@@ -210,7 +210,7 @@ async fn render_account(state: &AppState, account: &Account) -> ApiAccount {
         {
             let mut moved_api = account_from_db(&state.urls, &moved);
             moved_api.emojis = fetch_account_emojis(state, &moved).await;
-            moved_api.roles = fetch_account_roles(state, moved.id).await;
+            moved_api.set_roles(fetch_account_roles(state, moved.id).await);
             apply_account_stats(state, &mut moved_api, moved.id).await;
             api_account.moved = Some(Box::new(moved_api));
         }
@@ -532,10 +532,12 @@ pub async fn get_account_statuses(
             .get(&account.id)
             .cloned()
             .unwrap_or_default();
-        api.account.roles = statuses_roles_map
-            .get(&account.id)
-            .cloned()
-            .unwrap_or_default();
+        api.account.set_roles(
+            statuses_roles_map
+                .get(&account.id)
+                .cloned()
+                .unwrap_or_default(),
+        );
         api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
         api.mentions = mentions;
         api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -546,7 +548,8 @@ pub async fn get_account_statuses(
             let rid: i64 = rb.id.parse().unwrap_or(0);
             let rb_id: i64 = rb.account.id.parse().unwrap_or(0);
             rb.account.emojis = account_emojis_map.get(&rb_id).cloned().unwrap_or_default();
-            rb.account.roles = statuses_roles_map.get(&rb_id).cloned().unwrap_or_default();
+            rb.account
+                .set_roles(statuses_roles_map.get(&rb_id).cloned().unwrap_or_default());
             rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
             rb.mentions = rb_mentions;
             rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();
@@ -1464,7 +1467,7 @@ pub async fn batch_accounts_to_api(
         .map(|a| {
             let mut api = super::convert::account_from_db(&state.urls, a);
             api.emojis = emojis_map.get(&a.id).cloned().unwrap_or_default();
-            api.roles = roles_map.get(&a.id).cloned().unwrap_or_default();
+            api.set_roles(roles_map.get(&a.id).cloned().unwrap_or_default());
             api.email_subscriptions = email_subscriptions
                 .as_ref()
                 .map(|offering| offering.contains(&a.id));

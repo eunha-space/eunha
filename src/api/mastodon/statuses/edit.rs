@@ -588,7 +588,7 @@ pub(crate) async fn status_edits(
     for editor in &editors {
         let mut api_account = account_from_db(&state.urls, editor);
         api_account.emojis = editor_emojis.get(&editor.id).cloned().unwrap_or_default();
-        api_account.roles = editor_roles.get(&editor.id).cloned().unwrap_or_default();
+        api_account.set_roles(editor_roles.get(&editor.id).cloned().unwrap_or_default());
         crate::api::mastodon::accounts::apply_account_stats(state, &mut api_account, editor.id)
             .await;
         api_editors.insert(editor.id, api_account);

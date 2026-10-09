@@ -360,10 +360,12 @@ pub(crate) async fn statuses_query(
             .get(&account.id)
             .cloned()
             .unwrap_or_default();
-        api.account.roles = account_roles_map
-            .get(&account.id)
-            .cloned()
-            .unwrap_or_default();
+        api.account.set_roles(
+            account_roles_map
+                .get(&account.id)
+                .cloned()
+                .unwrap_or_default(),
+        );
         api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
         api.mentions = mentions;
         api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -373,7 +375,8 @@ pub(crate) async fn statuses_query(
             let rid: i64 = rb.id.parse().unwrap_or(0);
             let rb_id: i64 = rb.account.id.parse().unwrap_or(0);
             rb.account.emojis = account_emojis_map.get(&rb_id).cloned().unwrap_or_default();
-            rb.account.roles = account_roles_map.get(&rb_id).cloned().unwrap_or_default();
+            rb.account
+                .set_roles(account_roles_map.get(&rb_id).cloned().unwrap_or_default());
             rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
             rb.mentions = rb_mentions;
             rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();

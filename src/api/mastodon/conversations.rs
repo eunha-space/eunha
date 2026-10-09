@@ -223,10 +223,12 @@ pub async fn get_conversations(
                 .get(&account.id)
                 .cloned()
                 .unwrap_or_default();
-            api.account.roles = status_account_roles_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
+            api.account.set_roles(
+                status_account_roles_map
+                    .get(&account.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
             api.mentions = mentions;
             api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -239,10 +241,12 @@ pub async fn get_conversations(
                     .get(&rb_id)
                     .cloned()
                     .unwrap_or_default();
-                rb.account.roles = status_account_roles_map
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
+                rb.account.set_roles(
+                    status_account_roles_map
+                        .get(&rb_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
                 rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
                 rb.mentions = rb_mentions;
                 rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();
@@ -279,10 +283,12 @@ pub async fn get_conversations(
                         .get(&a.id)
                         .cloned()
                         .unwrap_or_default();
-                    api_acct.roles = participant_roles_map
-                        .get(&a.id)
-                        .cloned()
-                        .unwrap_or_default();
+                    api_acct.set_roles(
+                        participant_roles_map
+                            .get(&a.id)
+                            .cloned()
+                            .unwrap_or_default(),
+                    );
                     if let Some(&(statuses, following, followers)) =
                         participant_stats_map.get(&a.id)
                     {
@@ -579,10 +585,12 @@ async fn build_conversation_response(
                     .get(&a.id)
                     .cloned()
                     .unwrap_or_default();
-                api.roles = participant_roles_map
-                    .get(&a.id)
-                    .cloned()
-                    .unwrap_or_default();
+                api.set_roles(
+                    participant_roles_map
+                        .get(&a.id)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
                 api
             })
             .collect(),

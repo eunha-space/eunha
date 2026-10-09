@@ -54,7 +54,7 @@ pub async fn verify_credentials(
         quote_policy: default_quote_policy,
     });
 
-    api_account.roles = fetch_account_roles(&state, account.id).await;
+    api_account.set_roles(fetch_account_roles(&state, account.id).await);
     api_account.role = fetch_account_role(&state, account.id).await;
     api_account.email_subscriptions =
         crate::email_subscriptions::serialized(&state, &account).await;
@@ -825,7 +825,7 @@ async fn build_credential_account_response(
         attribution_domains: account.attribution_domains.clone().unwrap_or_default(),
         quote_policy: defaults.quote_policy,
     });
-    api_account.roles = fetch_account_roles(state, auth.account_id).await;
+    api_account.set_roles(fetch_account_roles(state, auth.account_id).await);
     api_account.role = fetch_account_role(state, auth.account_id).await;
     api_account.email_subscriptions = crate::email_subscriptions::serialized(state, &account).await;
     Ok(Json(api_account))
@@ -1033,7 +1033,7 @@ pub async fn delete_profile_avatar(
     distribute_account_update(&state, &instance.domain, &account).await;
     let mut api = account_from_db(&state.urls, &account);
     api.emojis = fetch_account_emojis(&state, &account).await;
-    api.roles = fetch_account_roles(&state, account.id).await;
+    api.set_roles(fetch_account_roles(&state, account.id).await);
     Ok(Json(api))
 }
 
@@ -1063,6 +1063,6 @@ pub async fn delete_profile_header(
     distribute_account_update(&state, &instance.domain, &account).await;
     let mut api = account_from_db(&state.urls, &account);
     api.emojis = fetch_account_emojis(&state, &account).await;
-    api.roles = fetch_account_roles(&state, account.id).await;
+    api.set_roles(fetch_account_roles(&state, account.id).await);
     Ok(Json(api))
 }

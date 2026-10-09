@@ -435,10 +435,12 @@ pub async fn get_notifications(
                 .get(&account.id)
                 .cloned()
                 .unwrap_or_default();
-            api.account.roles = stat_account_roles_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
+            api.account.set_roles(
+                stat_account_roles_map
+                    .get(&account.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
             api.mentions = mentions;
             api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -451,10 +453,12 @@ pub async fn get_notifications(
                     .get(&rb_id)
                     .cloned()
                     .unwrap_or_default();
-                rb.account.roles = stat_account_roles_map
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
+                rb.account.set_roles(
+                    stat_account_roles_map
+                        .get(&rb_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
                 rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
                 rb.mentions = rb_mentions;
                 rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();
@@ -522,10 +526,12 @@ pub async fn get_notifications(
             .get(&account.id)
             .cloned()
             .unwrap_or_default();
-        notif_account.roles = from_account_roles_map
-            .get(&account.id)
-            .cloned()
-            .unwrap_or_default();
+        notif_account.set_roles(
+            from_account_roles_map
+                .get(&account.id)
+                .cloned()
+                .unwrap_or_default(),
+        );
         if let Some(&(statuses_c, following, followers)) = from_account_stats_map.get(&account.id) {
             notif_account.statuses_count = statuses_c;
             notif_account.following_count = following;
@@ -1178,10 +1184,12 @@ async fn notification_statuses(
                 .get(&account.id)
                 .cloned()
                 .unwrap_or_default();
-            api.account.roles = stat_account_roles_map_v2
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
+            api.account.set_roles(
+                stat_account_roles_map_v2
+                    .get(&account.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             api.tags = tags_map.get(&s.id).cloned().unwrap_or_default();
             api.mentions = mentions;
             api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -1194,10 +1202,12 @@ async fn notification_statuses(
                     .get(&rb_id)
                     .cloned()
                     .unwrap_or_default();
-                rb.account.roles = stat_account_roles_map_v2
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
+                rb.account.set_roles(
+                    stat_account_roles_map_v2
+                        .get(&rb_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
                 rb.tags = tags_map.get(&rid).cloned().unwrap_or_default();
                 rb.mentions = rb_mentions;
                 rb.emojis = emojis_map.get(&rid).cloned().unwrap_or_default();
@@ -2105,10 +2115,12 @@ pub async fn get_notification_requests(
                 .get(&account.id)
                 .cloned()
                 .unwrap_or_default();
-            api.account.roles = ls_account_roles_map
-                .get(&account.id)
-                .cloned()
-                .unwrap_or_default();
+            api.account.set_roles(
+                ls_account_roles_map
+                    .get(&account.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             api.tags = ls_tags_map.get(&s.id).cloned().unwrap_or_default();
             api.mentions = mentions;
             api.emojis = ls_emojis_map.get(&s.id).cloned().unwrap_or_default();
@@ -2121,10 +2133,12 @@ pub async fn get_notification_requests(
                     .get(&rb_id)
                     .cloned()
                     .unwrap_or_default();
-                rb.account.roles = ls_account_roles_map
-                    .get(&rb_id)
-                    .cloned()
-                    .unwrap_or_default();
+                rb.account.set_roles(
+                    ls_account_roles_map
+                        .get(&rb_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
                 rb.tags = ls_tags_map.get(&rid).cloned().unwrap_or_default();
                 rb.mentions = rb_mentions;
                 rb.emojis = ls_emojis_map.get(&rid).cloned().unwrap_or_default();
@@ -2168,7 +2182,7 @@ pub async fn get_notification_requests(
         let last_status = r.last_status_id.and_then(|id| last_status_map.remove(&id));
         let mut api_account = super::convert::account_from_db(&state.urls, acc);
         api_account.emojis = req_acc_emojis_map.get(&acc.id).cloned().unwrap_or_default();
-        api_account.roles = req_acc_roles_map.get(&acc.id).cloned().unwrap_or_default();
+        api_account.set_roles(req_acc_roles_map.get(&acc.id).cloned().unwrap_or_default());
         if let Some(&(statuses_c, following, followers)) = req_acc_stats_map.get(&acc.id) {
             api_account.statuses_count = statuses_c;
             api_account.following_count = following;
@@ -2485,10 +2499,10 @@ pub async fn get_notification_request(
     let last_status = fetch_last_status(&state, r.last_status_id).await;
     let mut api_account = super::convert::account_from_db(&state.urls, &acc);
     api_account.emojis = fetch_account_emojis(&state, &acc).await;
-    api_account.roles = {
+    api_account.set_roles({
         let m = batch_account_roles(&state, std::slice::from_ref(&acc)).await;
         m.get(&acc.id).cloned().unwrap_or_default()
-    };
+    });
     apply_account_stats(&state, &mut api_account, acc.id).await;
     crate::email_subscriptions::fill(&state, std::iter::once(&mut api_account)).await;
     Ok(Json(NotificationRequest {
@@ -2623,10 +2637,10 @@ async fn build_notification(
 
     let mut notif_account = account_from_db(&state.urls, &from_account);
     notif_account.emojis = fetch_account_emojis(state, &from_account).await;
-    notif_account.roles = {
+    notif_account.set_roles({
         let m = batch_account_roles(state, std::slice::from_ref(&from_account)).await;
         m.get(&from_account.id).cloned().unwrap_or_default()
-    };
+    });
     apply_account_stats(state, &mut notif_account, from_account.id).await;
     crate::email_subscriptions::fill(state, std::iter::once(&mut notif_account)).await;
     let notification_type = n.r#type.clone().unwrap_or_default();

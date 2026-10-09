@@ -111,7 +111,7 @@ pub async fn get_suggestions_v2(
         .map(|(a, sources)| {
             let mut api = account_from_db(&state.urls, &a);
             api.emojis = emojis_map.get(&a.id).cloned().unwrap_or_default();
-            api.roles = roles_map.get(&a.id).cloned().unwrap_or_default();
+            api.set_roles(roles_map.get(&a.id).cloned().unwrap_or_default());
             SuggestionV2 {
                 source: crate::suggestions::legacy_source(&sources).map(str::to_owned),
                 sources,
