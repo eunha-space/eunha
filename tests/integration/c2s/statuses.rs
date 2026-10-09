@@ -590,6 +590,11 @@ async fn test_delete_status_response_includes_text() {
         text.contains("delete and redraft"),
         "deleted status response should include original text"
     );
+    // `source_requested: true` puts `text` in place of `content`, and the
+    // serializer's `current_user` is the author deleting it.
+    assert!(body.get("content").is_none(), "{body}");
+    assert_eq!(body["favourited"], json!(false), "{body}");
+    assert_eq!(body["pinned"], json!(false), "{body}");
 }
 
 /// Only the author can delete their own status; another user gets 404

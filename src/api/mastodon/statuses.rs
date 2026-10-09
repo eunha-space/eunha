@@ -640,7 +640,7 @@ pub async fn delete_status(
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
     super::extractors::Params(params): super::extractors::Params<DeleteStatusParams>,
-) -> AppResult<Json<Status>> {
+) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:statuses")?;
     let (status, _account) = fetch_status_with_account(&state, id).await?;
     // Mastodon scopes to `current_account.statuses.find`, so another user's
@@ -649,9 +649,15 @@ pub async fn delete_status(
         return Err(AppError::NotFound);
     }
 
-    // Rendered before `discard_with_reblogs`, for the media's own URLs.
-    let mut s = serialize_status(&state, &status, None).await?;
+    // Rendered before `discard_with_reblogs`, for the media's own URLs, for
+    // the author asking (`favourited`, `pinned` and the rest), and with
+    // `source_requested: true`: the source `text` in place of `content`.
+    let mut s = serialize_status(&state, &status, Some(auth.account_id)).await?;
     s.text = Some(status.text.clone());
+    let mut s = serde_json::to_value(&s).map_err(|e| AppError::Internal(e.into()))?;
+    if let Some(fields) = s.as_object_mut() {
+        fields.remove("content");
+    }
 
     crate::remove_status::discard_with_reblogs(&state, &status).await?;
     sqlx::query!("DELETE FROM status_pins WHERE status_id = $1", id)
