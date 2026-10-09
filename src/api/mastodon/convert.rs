@@ -429,10 +429,12 @@ fn render_account_note(urls: &InstanceUrls, a: &models::Account) -> String {
 pub struct AccountViewerContext {
     /// The viewer is the account being serialized.
     pub is_self: bool,
-    /// The account being serialized follows the viewer.
+    /// The viewer follows the account being serialized: Mastodon's
+    /// `account.followed_by?(viewer)`.
+    pub viewer_follows: bool,
+    /// The account being serialized follows the viewer: Mastodon's
+    /// `account.following?(viewer)`.
     pub follows_viewer: bool,
-    /// The viewer follows the account being serialized.
-    pub followed_by_viewer: bool,
 }
 
 /// Mastodon's `feature_approval`, from `Account::InteractionPolicyConcern`.
@@ -473,51 +475,68 @@ fn build_feature_approval(
         )
     };
 
-    let current_user = match viewer {
-        // Mastodon answers `denied` when nobody is asking.
-        None => "denied".to_string(),
-        Some(ctx) if local => {
-            // Two ways to be refused, and they give the same answer: an account
-            // nobody can discover, or a locked one being read by someone who
-            // neither follows it nor is it.
-            let refused = !discoverable || (a.locked && !ctx.follows_viewer && !ctx.is_self);
-            if refused { "denied" } else { "automatic" }.to_string()
-        }
-        Some(ctx) => {
-            let policy = a.feature_approval_policy;
-            let automatic_policy = feature_policy::automatic(policy);
-            let manual_policy = feature_policy::manual(policy);
-            let allows = |sub_policy: i32| {
-                sub_policy & feature_policy::PUBLIC != 0
-                    || (sub_policy & feature_policy::FOLLOWERS != 0 && ctx.follows_viewer)
-                    || (sub_policy & feature_policy::FOLLOWING != 0 && ctx.followed_by_viewer)
-            };
-
-            if ctx.is_self {
-                // An author may always feature themselves.
-                "automatic".to_string()
-            } else if policy == 0 {
-                // Nothing federated yet, so nothing can be said.
-                "missing".to_string()
-            } else if allows(automatic_policy) {
-                "automatic".to_string()
-            } else if allows(manual_policy) {
-                "manual".to_string()
-            } else if (automatic_policy | manual_policy) & feature_policy::UNSUPPORTED != 0 {
-                // A flag from a newer or different implementation: it may well
-                // permit this viewer, and saying `denied` would overstate what
-                // we know.
-                "unknown".to_string()
-            } else {
-                "denied".to_string()
-            }
-        }
-    };
-
     types::FeatureApproval {
         automatic,
         manual,
-        current_user,
+        current_user: feature_policy_for_viewer(
+            local,
+            discoverable,
+            a.locked,
+            a.feature_approval_policy,
+            viewer,
+        )
+        .to_string(),
+    }
+}
+
+/// `Account#feature_policy_for_account(viewer)`: where a viewer stands when it
+/// would feature the account, `automatic`, `manual`, `missing`, `unknown` or
+/// `denied`.
+pub fn feature_policy_for_viewer(
+    local: bool,
+    discoverable: bool,
+    locked: bool,
+    policy: i32,
+    viewer: Option<&AccountViewerContext>,
+) -> &'static str {
+    use crate::db::models::feature_policy;
+
+    // Mastodon answers `denied` when nobody is asking.
+    let Some(ctx) = viewer else {
+        return "denied";
+    };
+    if local {
+        // Two ways to be refused, and they give the same answer: an account
+        // nobody can discover, or a locked one being read by someone who
+        // neither follows it nor is it.
+        let refused = !discoverable || (locked && !ctx.viewer_follows && !ctx.is_self);
+        return if refused { "denied" } else { "automatic" };
+    }
+    let automatic_policy = feature_policy::automatic(policy);
+    let manual_policy = feature_policy::manual(policy);
+    let allows = |sub_policy: i32| {
+        sub_policy & feature_policy::PUBLIC != 0
+            || (sub_policy & feature_policy::FOLLOWERS != 0 && ctx.viewer_follows)
+            || (sub_policy & feature_policy::FOLLOWING != 0 && ctx.follows_viewer)
+    };
+
+    if ctx.is_self {
+        // An author may always feature themselves.
+        "automatic"
+    } else if policy == 0 {
+        // Nothing federated yet, so nothing can be said.
+        "missing"
+    } else if allows(automatic_policy) {
+        "automatic"
+    } else if allows(manual_policy) {
+        "manual"
+    } else if (automatic_policy | manual_policy) & feature_policy::UNSUPPORTED != 0 {
+        // A flag from a newer or different implementation: it may well
+        // permit this viewer, and saying `denied` would overstate what we
+        // know.
+        "unknown"
+    } else {
+        "denied"
     }
 }
 

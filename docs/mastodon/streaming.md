@@ -96,17 +96,20 @@ The hashtag in a subscription is normalized as the streaming server's
     `FeedManager#filter_from_home` and `#filter_from_tags?`, and on
     `timeline:list:<id>` for the lists `#filter_from_list?` lets it into,
     rendered for the timeline's owner: `favourited`, `reblogged`, `muted`,
-    `bookmarked`, `pinned` and `filtered` are theirs. Only users who signed in
-    within a week get these, and only where `FeedManager#add_to_feed` took
-    the post: the fan-out reports what each feed answered, so a boost
-    aggregated away streams nothing. An edit is pushed to the feeds again, as
-    upstream's update distribution pushes it. A follower who also follows one
-    of its hashtags gets it twice, as upstream pushes it twice. An edit also
-    reaches the mentioned accounts' `timeline:<id>:notifications`.
+    `bookmarked`, `pinned` and `filtered` are theirs, and so is each
+    account's `feature_approval.current_user` (`StatusCacheHydrator`). Only
+    users who signed in within a week get these, and only where
+    `FeedManager#add_to_feed` took the post: the fan-out reports what each feed
+    answered, so a boost aggregated away streams nothing. An edit is pushed to
+    the feeds again, as upstream's update distribution pushes it. A follower
+    who also follows one of its hashtags gets it twice, as upstream pushes it
+    twice. An edit also reaches the mentioned accounts'
+    `timeline:<id>:notifications`.
  -  `delete` wherever `FeedManager#remove_from_feed` takes the post out (a
     feed that holds it), to the accounts
     it mentions, and for each boost removed with it.
- -  `notification`, rendered for its recipient, unless it was filtered;
+ -  `notification`, rendered for its recipient, `feature_approval.current_user`
+    included, unless it was filtered;
     `notifications_merged` once the last `UnfilterNotificationsWorker`
     queued by accepting notification requests has let their notifications
     through.

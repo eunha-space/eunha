@@ -14,6 +14,7 @@ pub mod email_subscriptions;
 pub mod emojis;
 pub mod extractors;
 pub mod favourites;
+pub mod feature_approval;
 pub mod featured_tags;
 pub mod filters;
 pub mod formatting;
@@ -1517,6 +1518,7 @@ pub fn router() -> Router {
         .merge(auth_required)
         .merge(uploads)
         .merge(public)
+        .route_layer(middleware::from_fn(feature_approval::for_viewer))
         .route_layer(middleware::from_fn(mw::api_gates))
         .route_layer(middleware::from_fn(mw::api_cache_control))
 }

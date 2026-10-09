@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, (a.domain IS NULL) AS \"local!\",\n                  COALESCE(a.discoverable, false) AS \"discoverable!\",\n                  a.locked, a.feature_approval_policy,\n                  EXISTS (SELECT 1 FROM follows f\n                          WHERE f.account_id = $2 AND f.target_account_id = a.id) AS \"viewer_follows!\",\n                  EXISTS (SELECT 1 FROM follows f\n                          WHERE f.account_id = a.id AND f.target_account_id = $2) AS \"follows_viewer!\"\n           FROM accounts a WHERE a.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "local!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "discoverable!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "locked",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "feature_approval_policy",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "viewer_follows!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "follows_viewer!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "29f0c990f5bc3a09ed235954fa4c5c9ce592698a681ac49c83b9b89b8629588c"
+}

@@ -110,7 +110,11 @@ async fn render(state: &AppState, status: &DbStatus, viewer: Option<i64>) -> Opt
     )
     .await
     .ok()?;
-    serde_json::to_value(rendered.into_iter().next()?).ok()
+    let mut payload = serde_json::to_value(rendered.into_iter().next()?).ok()?;
+    if let Some(viewer) = viewer {
+        crate::api::mastodon::feature_approval::hydrate(state, viewer, &mut payload).await;
+    }
+    Some(payload)
 }
 
 fn status_event(update: bool) -> &'static str {
@@ -830,7 +834,8 @@ pub async fn notification(state: &AppState, recipient_id: i64, notification_id: 
     else {
         return;
     };
-    if let Ok(payload) = serde_json::from_str::<Value>(&rendered) {
+    if let Ok(mut payload) = serde_json::from_str::<Value>(&rendered) {
+        crate::api::mastodon::feature_approval::hydrate(state, recipient_id, &mut payload).await;
         state.streaming.notification(recipient_id, payload).await;
     }
 }

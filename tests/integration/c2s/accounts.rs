@@ -5264,3 +5264,118 @@ async fn test_pin_and_unpin_endorse() {
         assert_eq!(rel["endorsed"].as_bool(), Some(endorsed), "{verb}");
     }
 }
+
+/// `feature_approval.current_user` of account `id`, as `token`'s holder sees it.
+async fn feature_approval_seen(ctx: &TestContext, id: i64, token: Option<&str>) -> Value {
+    let account: Value = ctx
+        .api
+        .get(&format!("/api/v1/accounts/{id}"), token)
+        .await
+        .json()
+        .await
+        .unwrap();
+    account["feature_approval"]["current_user"].clone()
+}
+
+async fn insert_follow(ctx: &TestContext, from: i64, to: i64) {
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES (timestamp_id('follows'), $1, $2, now(), now())",
+    )
+    .bind(from)
+    .bind(to)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
+/// `feature_approval.current_user` is answered for the viewer, as
+/// `REST::AccountSerializer` answers it from `current_user`: on the account
+/// itself, on one embedded in a post, and from the follows in each direction
+/// that `Account#feature_policy_for_account` reads.
+#[tokio::test]
+async fn test_feature_approval_is_answered_for_the_viewer() {
+    let ctx = TestContext::new("feature-approval-viewer").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    sqlx::query("UPDATE accounts SET discoverable = true, locked = true WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    // Locked, and Bob does not follow her.
+    assert_eq!(
+        feature_approval_seen(&ctx, alice, Some(&ctx.bob_token)).await,
+        "denied"
+    );
+    // Nobody asking is refused; Alice may always feature herself.
+    assert_eq!(feature_approval_seen(&ctx, alice, None).await, "denied");
+    assert_eq!(
+        feature_approval_seen(&ctx, alice, Some(&ctx.alice_token)).await,
+        "automatic"
+    );
+
+    // Alice following Bob does not make Bob her follower.
+    insert_follow(&ctx, alice, bob).await;
+    assert_eq!(
+        feature_approval_seen(&ctx, alice, Some(&ctx.bob_token)).await,
+        "denied"
+    );
+    insert_follow(&ctx, bob, alice).await;
+    assert_eq!(
+        feature_approval_seen(&ctx, alice, Some(&ctx.bob_token)).await,
+        "automatic"
+    );
+
+    // An account embedded in a post is answered the same way.
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "featured?", "public")
+        .await;
+    let seen: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{}", post["id"].as_str().unwrap()),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        seen["account"]["feature_approval"]["current_user"],
+        "automatic"
+    );
+
+    // A remote account's federated policy: anyone it follows may feature it
+    // automatically (`following`), its followers with approval (`followers`).
+    let following = 1 << 3;
+    let followers = 1 << 2;
+    let remote: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (id, username, domain, uri, url, discoverable, protocol,
+                               feature_approval_policy, created_at, updated_at)
+         VALUES (timestamp_id('accounts'), 'remy', 'remote.example',
+                 'https://remote.example/users/remy', 'https://remote.example/@remy',
+                 true, 1, $1, now(), now())
+         RETURNING id",
+    )
+    .bind((following << 16) | followers)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        feature_approval_seen(&ctx, remote, Some(&ctx.bob_token)).await,
+        "denied"
+    );
+    insert_follow(&ctx, bob, remote).await;
+    assert_eq!(
+        feature_approval_seen(&ctx, remote, Some(&ctx.bob_token)).await,
+        "manual"
+    );
+    insert_follow(&ctx, remote, bob).await;
+    assert_eq!(
+        feature_approval_seen(&ctx, remote, Some(&ctx.bob_token)).await,
+        "automatic"
+    );
+}
