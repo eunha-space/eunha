@@ -383,17 +383,20 @@ pub async fn fanout_to_followers_signed(
 }
 
 /// Forward another server's `activity` to the remote followers of
-/// `account_id`, signed by that account, as Mastodon forwards a reply to a
-/// local post to its author's followers (ActivityPub §7.1.2). It goes as it
-/// arrived: a proof of ours on someone else's activity would say nothing
-/// true, and would replace the author's.
+/// `account_id` but for the inboxes in `exclude`, signed by that account,
+/// as Mastodon forwards a reply to a local post to its author's followers
+/// (`ActivityPub::RawDistributionWorker`). It goes as it arrived: a proof of
+/// ours on someone else's activity would say nothing true, and would replace
+/// the author's.
 pub async fn forward_to_followers(
     state: &AppState,
     activity: Value,
     account_id: i64,
     key_id: String,
+    exclude: &[String],
 ) -> anyhow::Result<u64> {
-    let inboxes = follower_inboxes(state, account_id).await?;
+    let mut inboxes = follower_inboxes(state, account_id).await?;
+    inboxes.retain(|inbox| !exclude.contains(inbox));
     enqueue(
         state,
         activity,

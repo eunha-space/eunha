@@ -234,7 +234,7 @@ async fn create_locked(
     // followed by someone.
     let replied_to = match replied_to_id {
         Some(id) => sqlx::query!(
-            r#"SELECT s.id, (a.domain IS NULL) AS "is_local!",
+            r#"SELECT s.id, s.account_id, (a.domain IS NULL) AS "is_local!",
                       EXISTS (SELECT 1 FROM follows f WHERE f.target_account_id = s.account_id) AS "followed!"
                FROM statuses s JOIN accounts a ON a.id = s.account_id
                WHERE s.id = $1"#,
@@ -837,6 +837,21 @@ async fn create_locked(
         .await;
     }
 
+    // `forward_for_reply`: a public or unlisted reply to a local post goes on
+    // to its author's followers, however it is addressed, when it carries
+    // its Linked Data signature, so that they can tell who wrote it. What we
+    // fetched carries none.
+    if let Some(replied_to) = replied_to.as_ref().filter(|r| r.is_local) {
+        if !create_options.fetched
+            && matches!(
+                visibility,
+                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+            )
+        {
+            forward_for_reply(state, activity, replied_to.account_id, account_id).await;
+        }
+    }
+
     // Fanout to home and list feeds, then stream it (`DistributionWorker`).
     if !within_realtime_window {
         return Ok(());
@@ -844,6 +859,49 @@ async fn create_locked(
     crate::feed::distribute_later(state, inserted_id).await;
 
     Ok(())
+}
+
+/// `ActivityPub::RawDistributionWorker.perform_async(JSON.generate(@json),
+/// replied_to_status.account_id, [@account.preferred_inbox_url])`: the
+/// activity as its sender signed it, to the followers of the local author
+/// `author_id` it replies to, signed by them, but for the sender's own inbox.
+async fn forward_for_reply(state: &AppState, activity: &Value, author_id: i64, sender_id: i64) {
+    let Some(activity) = super::signed_as_sent(activity) else {
+        return;
+    };
+    let result = async {
+        let sender_inbox: Option<String> = sqlx::query_scalar!(
+            r#"SELECT CASE WHEN shared_inbox_url <> '' THEN shared_inbox_url ELSE inbox_url END AS "inbox!"
+               FROM accounts WHERE id = $1"#,
+            sender_id,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        let author = sqlx::query!(
+            "SELECT username, id_scheme FROM accounts WHERE id = $1",
+            author_id
+        )
+        .fetch_one(&state.db)
+        .await?;
+        let key_id = crate::federation::tag::key_id(
+            &state.instance.domain,
+            author_id,
+            author.id_scheme,
+            &author.username,
+        );
+        crate::federation::delivery::forward_to_followers(
+            state,
+            activity,
+            author_id,
+            key_id,
+            &sender_inbox.into_iter().collect::<Vec<_>>(),
+        )
+        .await
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(author_id, %error, "could not forward a reply");
+    }
 }
 
 /// A mention the status is stored with: `Mention.new(account:, silent:)`.

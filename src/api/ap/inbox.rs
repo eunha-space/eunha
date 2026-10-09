@@ -176,7 +176,7 @@ pub async fn received_from(
     activity: Value,
     forwarder: Option<&str>,
 ) -> AppResult<()> {
-    received_at(state, activity, forwarder, None).await
+    received_at(state, activity, forwarder, None, Forwardable::AsGiven).await
 }
 
 /// Set on an activity by eunha, and never taken from its sender, when it
@@ -188,6 +188,50 @@ pub(crate) const DELIVERED_TO: &str = "eunha:deliveredToAccountId";
 /// actor other than its own passed it on: that actor's URI, Mastodon's
 /// `relayed_through_actor`.
 pub(crate) const RELAYED_THROUGH: &str = "eunha:relayedThroughActor";
+
+/// Set on an activity by eunha, and never taken from its sender, when it was
+/// taken on its Linked Data signature and may be passed on: the activity as
+/// it arrived, which is what the signature covers. The listener reads it as
+/// JSON-LD gave it, which no longer verifies.
+pub(crate) const SIGNED_AS_SENT: &str = "eunha:signedAsSent";
+
+/// Whether, and as what, an activity that arrived can be passed on to other
+/// servers: Mastodon forwards an activity only while it keeps its Linked
+/// Data signature (`@json['signature'].present?`), which
+/// `ActivityPub::ProcessActivityService` throws away when the activity was
+/// passed on by another server and the signature does not verify, or when
+/// what is read of it is no longer what was signed (`safe_for_forwarding?`).
+pub enum Forwardable {
+    /// Its signature, if it has one, is not to be trusted to verify, and is
+    /// taken off.
+    No,
+    /// As it is given: what was signed, signature and all.
+    AsGiven,
+    /// What was signed is this, the activity as it arrived.
+    AsSent(Value),
+}
+
+/// `activity` as it is passed on: as its sender signed it, when it was
+/// taken on its Linked Data signature, and otherwise without what eunha
+/// noted on it on arrival.
+pub(crate) fn as_sent(activity: &Value) -> Value {
+    if let Some(sent) = activity.get(SIGNED_AS_SENT) {
+        return sent.clone();
+    }
+    let mut activity = activity.clone();
+    if let Some(members) = activity.as_object_mut() {
+        members.remove(THROUGH_RELAY);
+        members.remove(DELIVERED_TO);
+        members.remove(RELAYED_THROUGH);
+    }
+    activity
+}
+
+/// [`as_sent`], when `activity` carries a Linked Data signature that still
+/// holds (`@json['signature'].present?`).
+pub(crate) fn signed_as_sent(activity: &Value) -> Option<Value> {
+    Some(as_sent(activity)).filter(|sent| sent.get("signature").is_some_and(Value::is_object))
+}
 
 /// `followed_by_local_accounts?`: someone here follows `account_id`, or the
 /// actor that passed the activity on (`relayed_through_actor.
@@ -221,12 +265,23 @@ pub async fn received_at(
     activity: Value,
     forwarder: Option<&str>,
     delivered_to: Option<i64>,
+    forwardable: Forwardable,
 ) -> AppResult<()> {
     let mut activity = activity;
     if let Some(members) = activity.as_object_mut() {
         members.remove(THROUGH_RELAY);
         members.remove(DELIVERED_TO);
         members.remove(RELAYED_THROUGH);
+        members.remove(SIGNED_AS_SENT);
+        match forwardable {
+            Forwardable::No => {
+                members.remove("signature");
+            }
+            Forwardable::AsGiven => {}
+            Forwardable::AsSent(sent) => {
+                members.insert(SIGNED_AS_SENT.to_owned(), sent);
+            }
+        }
         if let Some(forwarder) = forwarder {
             members.insert(
                 RELAYED_THROUGH.to_owned(),
@@ -336,6 +391,25 @@ async fn received_now(state: &AppState, activity: Value) -> AppResult<()> {
     Ok(())
 }
 
+/// Whether the remote account that sent `activity` is suspended.
+async fn suspended_actor(state: &AppState, activity: &Value) -> AppResult<bool> {
+    let Some(actor) = activity
+        .get("actor")
+        .and_then(crate::federation::json_ld::value_or_id)
+    else {
+        return Ok(false);
+    };
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts
+             WHERE uri = $1 AND domain IS NOT NULL AND suspended_at IS NOT NULL
+           ) AS "e!""#,
+        actor,
+    )
+    .fetch_one(&state.db)
+    .await?)
+}
+
 /// Dispatch a verified activity to its handler. Runs on the ingress queue in
 /// production, inline under [`enable_sync_ingress`].
 pub(super) async fn process_activity(
@@ -344,6 +418,17 @@ pub(super) async fn process_activity(
     activity_type: &str,
     activity: &Value,
 ) -> AppResult<()> {
+    // `suspended_actor?`: a suspended actor is heard only taking things
+    // back, or being taken back (`activity_allowed_while_suspended?`).
+    if !matches!(activity_type, "Delete" | "Reject" | "Undo" | "Update")
+        && suspended_actor(state, activity).await?
+    {
+        tracing::debug!(
+            activity_type,
+            "ActivityPub activity from a suspended actor dropped"
+        );
+        return Ok(());
+    }
     let outcome = match activity_type {
         "Follow" => {
             handle_follow(state, instance, activity).await?;

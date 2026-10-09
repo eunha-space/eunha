@@ -12,7 +12,7 @@ use crate::state::AppState;
 /// `forwardable?`: the activity is signed in itself, so the followers it is
 /// passed on to can tell who wrote it, and the status is public or unlisted.
 pub async fn forwardable(state: &AppState, activity: &Value, status_id: i64) -> bool {
-    if !activity.get("signature").is_some_and(|s| !s.is_null()) {
+    if crate::api::ap::inbox::signed_as_sent(activity).is_none() {
         return false;
     }
     sqlx::query_scalar!("SELECT visibility FROM statuses WHERE id = $1", status_id)
@@ -112,12 +112,7 @@ async fn try_forward(
         &account.username,
     );
     // As its sender signed it: without what eunha noted on it on arrival.
-    let mut activity = activity.clone();
-    if let Some(members) = activity.as_object_mut() {
-        members.remove(crate::api::ap::inbox::THROUGH_RELAY);
-        members.remove(crate::api::ap::inbox::DELIVERED_TO);
-        members.remove(crate::api::ap::inbox::RELAYED_THROUGH);
-    }
+    let activity = crate::api::ap::inbox::as_sent(activity);
     crate::federation::delivery::forward_to_inboxes(state, activity, inboxes, key_id).await?;
     Ok(())
 }

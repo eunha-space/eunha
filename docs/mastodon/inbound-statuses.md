@@ -90,6 +90,40 @@ the root status's id there; eunha does the same, so such a URL rarely finds
 the conversation, and the reply joins its thread's instead.
 
 
+Replies passed on
+-----------------
+
+A new public or unlisted reply to a local post goes on to the local
+author's remote followers, signed by the author, whoever it is addressed to
+(`Create#forward_for_reply`, sent as `ActivityPub::RawDistributionWorker`
+sends it). It goes only when it carries its author's Linked Data signature,
+so that the followers can tell who wrote it, and as it arrived, so that the
+signature still verifies; the inbox of the server that sent it is left out.
+It is passed on once, as the status is created: delivered again, the status
+is known and nothing is sent. A reply that is followers-only or direct,
+unsigned, fetched, or to a post that is not local, is not passed on.
+
+Whether an activity keeps its signature is decided as it arrives, as
+`ActivityPub::ProcessActivityService` decides it. Delivered by its own
+server, its signature is kept unchecked, and the receivers check it; but
+not when the inbox reduced anything it embeds that its sender could not
+vouch for, since the signature does not cover what is left
+(`safe_for_forwarding?`). Passed on by another server, it keeps its
+signature only when that is what it was taken on, and then what is passed on
+is the activity as it arrived, not the JSON-LD reading of it the handlers
+read. Taken on its proof, or as its origin serves it, it keeps none. The
+same rule decides the `Delete` and `Update` that `ActivityPub::Forwarder`
+passes on (*docs/mastodon/quotes.md*).
+
+ActivityPub's own rule (§7.1.2), forwarding what is addressed to a local
+followers collection, is not followed: Mastodon forwards by what a reply
+answers, not whom it is addressed to.
+
+Nothing a suspended account sends is processed, but for a `Delete`,
+`Reject`, `Undo` or `Update` (`activity_allowed_while_suspended?`), so its
+replies are neither taken nor passed on.
+
+
 Deletes and undos
 -----------------
 

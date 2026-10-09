@@ -248,10 +248,10 @@ pub fn federation() -> Federation<AppState> {
         // given here are only what the builder needs to be given. The keys
         // of accounts eunha knows come from `accounts`, where a new actor's
         // is stored as it is fetched, so ojak caches only what eunha does not
-        // keep: the IDs of activities seen, replies forwarded, keys eunha did
-        // not store. In Redis, every process serving the instance shares
-        // them, so a redelivery that reaches another process is still
-        // dropped (docs/operating/redis.md).
+        // keep: the IDs of activities seen, and keys eunha did not store. In
+        // Redis, every process serving the instance shares them, so a
+        // redelivery that reaches another process is still dropped
+        // (docs/operating/redis.md).
         .signed_fetch(
             std::sync::Arc::new(ojak::fetch::Fetcher::new(
                 ojak::client::Client::new(ojak::client::ClientConfig::default())
@@ -351,19 +351,23 @@ pub fn federation() -> Federation<AppState> {
                 Some(recipient) => recipient_account_id(&ctx, recipient).await?,
                 None => None,
             };
+            let forwardable = forwardable(ctx.data(), &received);
             super::inbox::received_at(
                 ctx.data(),
                 received.vouched,
                 received.forwarder.as_ref().map(url::Url::as_str),
                 delivered_to,
+                forwardable,
             )
             .await
-        })
-        // A reply to a local post, addressed to its author's followers, is
-        // passed on to them (ActivityPub §7.1.2), signed by the author.
-        .forward(|ctx: Ctx, forward: ojak::federation::Forward| async move {
-            forward_to_collections(&ctx, forward).await.map_err(|error| error.to_string())
         });
+    // No `forward` hook: ojak would pass on an activity by whom it is
+    // addressed to (ActivityPub §7.1.2). Mastodon forwards by what the
+    // activity is about instead, whoever it is addressed to, and only one
+    // that carries its Linked Data signature: a reply to a local post
+    // (`Create#forward_for_reply`), and a `Delete` or `Update` of a post
+    // local accounts shared (`ActivityPub::Forwarder`). Their handlers pass
+    // those on.
 
     for scheme in [Scheme::Username, Scheme::Id] {
         builder =
@@ -633,35 +637,51 @@ pub fn federation() -> Federation<AppState> {
     builder.build().expect("eunha's federation is well formed")
 }
 
-/// Forward `forward`'s activity to the followers of the local accounts whose
-/// followers collections it names. Eunha is no portable actor's gateway, so
-/// there is nothing to forward to gateways.
-async fn forward_to_collections(ctx: &Ctx, forward: ojak::federation::Forward) -> AppResult<()> {
-    let ojak::federation::ForwardTo::Collections(collections) = forward.to else {
-        return Ok(());
-    };
-    for collection in collections {
-        let scheme = if collection.kind == Scheme::Username.kind("followers") {
-            Scheme::Username
-        } else if collection.kind == Scheme::Id.kind("followers") {
-            Scheme::Id
-        } else {
-            continue;
-        };
-        let Some(account) = scheme.account(ctx, &collection.identifier).await? else {
-            continue;
-        };
-        let key_id = AccountUris::of(&ctx.uris(), &account).key_id()?;
-        crate::federation::delivery::forward_to_followers(
-            ctx.data(),
-            forward.activity.clone(),
-            account.id,
-            key_id.into(),
-        )
-        .await
-        .map_err(AppError::Internal)?;
+/// Whether what `received` carries of its Linked Data signature is kept for
+/// passing it on (`ActivityPub::ProcessActivityService`). Delivered by its
+/// own server, the signature is kept unchecked, as Mastodon keeps it, while
+/// the activity reads as it arrived (`safe_for_forwarding?`): anything
+/// embedded that its sender could not vouch for was reduced to its id, and
+/// the signature no longer covers that. Passed on by another server, it is
+/// kept when it is what the activity was taken on, and what was signed is
+/// then the activity as it arrived rather than the JSON-LD reading of it the
+/// listener reads, kept only for the activities eunha may pass on: a `Create`
+/// of a reply to something here, and a `Delete` or `Update`. Taken on its
+/// proof, or as its origin serves it, Mastodon would not have kept it.
+fn forwardable(
+    state: &AppState,
+    received: &ojak::federation::Received<ojak_vocab::generated::AnyObject>,
+) -> super::inbox::Forwardable {
+    use super::inbox::Forwardable;
+    use ojak::federation::VouchedBy;
+    if !received
+        .document
+        .get("signature")
+        .is_some_and(Value::is_object)
+    {
+        return Forwardable::No;
     }
-    Ok(())
+    match received.vouched_by {
+        VouchedBy::Signature if received.vouched == received.document => Forwardable::AsGiven,
+        VouchedBy::LinkedData if may_be_passed_on(state, &received.document) => {
+            Forwardable::AsSent(received.document.clone())
+        }
+        _ => Forwardable::No,
+    }
+}
+
+/// Whether eunha could pass `activity` on: a `Create` of a reply to
+/// something here, a `Delete` or an `Update`.
+fn may_be_passed_on(state: &AppState, activity: &Value) -> bool {
+    match activity.get("type").and_then(Value::as_str) {
+        Some("Delete" | "Update") => true,
+        Some("Create") => activity
+            .get("object")
+            .and_then(|object| object.get("inReplyTo"))
+            .and_then(crate::federation::json_ld::value_or_id)
+            .is_some_and(|uri| crate::federation::local_uri::is_local(state, uri)),
+        _ => false,
+    }
 }
 
 /// The key eunha holds for `key_id`: the public key of the remote account

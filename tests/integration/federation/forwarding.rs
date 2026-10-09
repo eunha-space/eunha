@@ -1,5 +1,6 @@
-//! A reply to a local post, addressed to its author's followers, is passed
-//! on to them (ActivityPub §7.1.2): they would otherwise see half of the
+//! What eunha passes on of other servers' activities, and sends again of its
+//! own: a reply to a local post goes on to its author's followers
+//! (`Create#forward_for_reply`), who would otherwise see half of the
 //! conversation.
 
 use serde_json::{json, Value};
@@ -12,8 +13,8 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, $2, $3, $2, '', $4, $4, $5, $4 || '/inbox', $4 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, followers_url, created_at, updated_at)
+           VALUES ($1, $2, $3, $2, '', $4, $4, $5, $4 || '/inbox', $4 || '/outbox', $4 || '/followers', now(), now())"#,
     )
     .bind(id)
     .bind(username)
@@ -28,7 +29,7 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 
 async fn queued_for(ctx: &TestContext, inbox: &str) -> Vec<Value> {
     sqlx::query_scalar(
-        "SELECT payload->'activity' FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1",
+        "SELECT payload->'activity' FROM eunha.ojak_queue WHERE queue IN ('delivery', 'delivery-priority') AND payload->>'inbox' = $1 ORDER BY id",
     )
     .bind(inbox)
     .fetch_all(&ctx.db)
@@ -36,8 +37,65 @@ async fn queued_for(ctx: &TestContext, inbox: &str) -> Vec<Value> {
     .unwrap()
 }
 
+async fn follow(ctx: &TestContext, follower: i64, followed: i64) {
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(follower)
+    .bind(followed)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
+/// `activity` with `author`'s Linked Data signature, as Mastodon signs a
+/// public post.
+fn ld_sign(activity: &Value, author: &str, key: &str) -> Value {
+    let now = chrono::Utc::now().timestamp();
+    ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        activity,
+        &format!("{author}#main-key"),
+        &ojak::sig::PrivateKey::from_pem(key).unwrap(),
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    )
+    .unwrap()
+}
+
+/// A reply of `author`'s, numbered `n`, to `in_reply_to`, addressed `to` and
+/// `cc`.
+fn reply(author: &str, n: u32, in_reply_to: &str, to: &[String], cc: &[String]) -> Value {
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{author}/statuses/{n}/activity"),
+        "type": "Create",
+        "actor": author,
+        "to": to,
+        "cc": cc,
+        "object": {
+            "id": format!("{author}/statuses/{n}"),
+            "type": "Note",
+            "attributedTo": author,
+            "inReplyTo": in_reply_to,
+            "to": to,
+            "cc": cc,
+            "content": "a reply",
+            "published": "2026-10-01T12:00:00Z",
+        },
+    })
+}
+
+/// A public or unlisted reply to a local post that carries its author's
+/// Linked Data signature goes on to the local author's followers, however
+/// it is addressed, signed by the local author and as it arrived, so that
+/// the signature still verifies; the inbox of the server that sent it is
+/// left out. Unsigned, followers-only, from a suspended account, or to a
+/// post that is not ours, it does not.
 #[tokio::test]
-async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
+async fn test_a_signed_reply_to_a_local_post_reaches_its_authors_followers() {
     let ctx = TestContext::new("forward-reply").await;
     let (priv_pem, pub_pem) =
         ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
@@ -55,19 +113,14 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
             .await
             .unwrap();
 
-    // Nina follows alice; bob, on another server, replies to her.
+    // Nina and bob follow alice; bob, and carol, on other servers, reply to
+    // her.
     let (nina_id, nina, _) = seed_remote(&ctx, "nina", "nina.invalid").await;
-    sqlx::query(
-        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
-         VALUES ($1, $2, $3, now(), now())",
-    )
-    .bind(eunha::snowflake::next_id())
-    .bind(nina_id)
-    .bind(alice_id)
-    .execute(&ctx.db)
-    .await
-    .unwrap();
-    let (_, bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
+    follow(&ctx, nina_id, alice_id).await;
+    let (bob_id, bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
+    follow(&ctx, bob_id, alice_id).await;
+    let (carol_id, carol, carol_key) = seed_remote(&ctx, "carol", "carol.invalid").await;
+    let (_, relay, relay_key) = seed_remote(&ctx, "relay", "relay.invalid").await;
 
     let post = ctx
         .api
@@ -78,56 +131,152 @@ async fn test_a_reply_to_a_local_post_reaches_its_authors_followers() {
         .expect("the status has a uri")
         .to_owned();
     let nina_inbox = format!("{nina}/inbox");
+    let bob_inbox = format!("{bob}/inbox");
     let before = queued_for(&ctx, &nina_inbox).await.len();
+    let bob_before = queued_for(&ctx, &bob_inbox).await.len();
 
     let alice = format!("https://{}/users/alice", ctx.domain);
-    let reply = |n: u32, in_reply_to: &str| {
-        json!({
-            "@context": "https://www.w3.org/ns/activitystreams",
-            "id": format!("{bob}/statuses/{n}/activity"),
-            "type": "Create",
-            "actor": bob,
-            "to": ["https://www.w3.org/ns/activitystreams#Public"],
-            "cc": [format!("{alice}/followers")],
-            "object": {
-                "id": format!("{bob}/statuses/{n}"),
-                "type": "Note",
-                "attributedTo": bob,
-                "inReplyTo": in_reply_to,
-                "to": ["https://www.w3.org/ns/activitystreams#Public"],
-                "cc": [format!("{alice}/followers")],
-                "content": "a reply",
-            },
-        })
+    let public = vec!["https://www.w3.org/ns/activitystreams#Public".to_owned()];
+    let bob_followers = vec![format!("{bob}/followers")];
+    let deliver = |activity: Value, sender: &str, key: &str| {
+        let api = &ctx.api;
+        let key_id = format!("{sender}#main-key");
+        let key = key.to_owned();
+        async move {
+            let resp = api.post_signed("/inbox", &activity, &key_id, &key).await;
+            assert!(resp.status().is_success(), "{}", resp.status());
+        }
     };
-    let activity = reply(1, &post_uri);
-    let resp = ctx
-        .api
-        .post_signed("/inbox", &activity, &format!("{bob}#main-key"), &bob_key)
-        .await;
-    assert!(resp.status().is_success(), "{}", resp.status());
+    let stored = |author: &str, n: u32| {
+        let uri = format!("{author}/statuses/{n}");
+        let db = ctx.db.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE uri = $1")
+                .bind(uri)
+                .fetch_optional(&db)
+                .await
+                .unwrap()
+                .is_some()
+        }
+    };
+    let bob_public_key: String =
+        sqlx::query_scalar("SELECT public_key FROM accounts WHERE id = $1")
+            .bind(bob_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
 
+    // Public, signed, and addressed to nobody's followers: forwarded.
+    let signed = ld_sign(&reply(&bob, 1, &post_uri, &public, &[]), &bob, &bob_key);
+    deliver(signed.clone(), &bob, &bob_key).await;
+    assert!(stored(&bob, 1).await);
     let queued = queued_for(&ctx, &nina_inbox).await;
     assert_eq!(queued.len(), before + 1, "forwarded to alice's follower");
     let forwarded = queued.last().unwrap();
-    assert_eq!(forwarded["id"], activity["id"]);
+    assert_eq!(forwarded, &signed, "as it arrived");
     assert!(
         forwarded.get("proof").is_none(),
         "no proof of ours on bob's activity"
     );
+    ojak::sig::linked_data::verify(
+        &ojak_jsonld::Registry::bundled(),
+        forwarded,
+        &bob_public_key,
+        chrono::Utc::now().timestamp(),
+    )
+    .expect("bob's signature still verifies");
+    let signer: String = sqlx::query_scalar(
+        "SELECT payload->>'sender' FROM eunha.ojak_queue
+         WHERE payload->'activity'->>'id' = $1 AND payload->>'inbox' = $2",
+    )
+    .bind(signed["id"].as_str())
+    .bind(&nina_inbox)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(signer.contains("alice"), "signed by alice: {signer}");
+    assert_eq!(
+        queued_for(&ctx, &bob_inbox).await.len(),
+        bob_before,
+        "not back to bob's own server"
+    );
 
-    // A reply to something that is not ours is not forwarded.
-    let resp = ctx
-        .api
-        .post_signed(
-            "/inbox",
-            &reply(2, "https://elsewhere.invalid/notes/1"),
-            &format!("{bob}#main-key"),
-            &bob_key,
-        )
-        .await;
-    assert!(resp.status().is_success());
+    // Delivered again: the status is known, and is not forwarded again.
+    deliver(signed, &bob, &bob_key).await;
     assert_eq!(queued_for(&ctx, &nina_inbox).await.len(), before + 1);
+
+    // Unlisted, and passed on by another server on bob's signature:
+    // forwarded as bob signed it, not as eunha read it.
+    let relayed = ld_sign(
+        &reply(&bob, 2, &post_uri, &bob_followers, &public),
+        &bob,
+        &bob_key,
+    );
+    deliver(relayed.clone(), &relay, &relay_key).await;
+    assert!(stored(&bob, 2).await, "taken on bob's signature");
+    let queued = queued_for(&ctx, &nina_inbox).await;
+    assert_eq!(queued.len(), before + 2, "a relayed reply is forwarded");
+    assert_eq!(queued.last().unwrap(), &relayed, "as bob signed it");
+
+    // Unsigned, though addressed to alice's followers: they could not tell
+    // who wrote it.
+    let to_alices_followers = vec![format!("{alice}/followers")];
+    deliver(
+        reply(&bob, 3, &post_uri, &public, &to_alices_followers),
+        &bob,
+        &bob_key,
+    )
+    .await;
+    assert!(stored(&bob, 3).await);
+    // Followers-only, though it names alice.
+    let to_alice = vec![alice.clone()];
+    deliver(
+        ld_sign(
+            &reply(&bob, 4, &post_uri, &bob_followers, &to_alice),
+            &bob,
+            &bob_key,
+        ),
+        &bob,
+        &bob_key,
+    )
+    .await;
+    assert!(stored(&bob, 4).await);
+    // To something that is not ours.
+    deliver(
+        ld_sign(
+            &reply(
+                &bob,
+                5,
+                "https://elsewhere.invalid/notes/1",
+                &public,
+                &to_alice,
+            ),
+            &bob,
+            &bob_key,
+        ),
+        &bob,
+        &bob_key,
+    )
+    .await;
+    assert!(stored(&bob, 5).await);
+    // From a suspended account: not heard at all.
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(carol_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    deliver(
+        ld_sign(
+            &reply(&carol, 1, &post_uri, &public, &[]),
+            &carol,
+            &carol_key,
+        ),
+        &carol,
+        &carol_key,
+    )
+    .await;
+    assert!(!stored(&carol, 1).await, "a suspended account is not heard");
+    assert_eq!(queued_for(&ctx, &nina_inbox).await.len(), before + 2);
 }
 
 /// Every local profile can be sent again to the servers that know it, with

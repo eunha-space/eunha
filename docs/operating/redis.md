@@ -37,7 +37,7 @@ with their attempt counts, translated statuses with the language list of
 the translation service, the JSON-LD contexts fetched to check Linked Data
 signatures (`jsonld:context:<url>`), what ojak remembers for the inbox (the
 activities already processed, `ojak:inbox:<origin>:<id>:<digest>`, for a day;
-those already forwarded, `ojak:forwarded:*`, for a week; and the remote keys
+and the remote keys
 eunha does not store in `accounts`, `ojak:key:<key id>`, for an hour), the
 search index queues
 (`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
