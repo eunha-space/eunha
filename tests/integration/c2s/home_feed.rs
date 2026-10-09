@@ -587,9 +587,9 @@ async fn test_a_domain_block_unmerges_only_through_the_follows_it_ends() {
     sqlx::query(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'stranger', $2, 'stranger', '', $3, $3, 'remote-key',
-                   '', '', now(), now())"#,
+                   '', '', 1, now(), now())"#,
     )
     .bind(stranger)
     .bind(&domain)

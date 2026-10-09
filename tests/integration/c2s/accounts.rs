@@ -2450,9 +2450,9 @@ async fn test_directory_as_mastodon_lists_it() {
         ctx.api.post_status(token, "hello", "public").await;
     }
     let remote: i64 = sqlx::query_scalar(
-        "INSERT INTO accounts (id, username, domain, uri, url, discoverable, created_at, updated_at)
+        "INSERT INTO accounts (id, username, domain, uri, url, discoverable, protocol, created_at, updated_at)
          VALUES (timestamp_id('accounts'), 'remy', 'remote.example', 'https://remote.example/users/remy',
-                 'https://remote.example/@remy', true, now(), now())
+                 'https://remote.example/@remy', true, 1, now(), now())
          RETURNING id",
     )
     .fetch_one(&ctx.db)

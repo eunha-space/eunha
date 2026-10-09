@@ -111,6 +111,7 @@ pub async fn unsuspend(state: &AppState, account_id: i64) -> Result<()> {
 /// follows post. It is made to unfollow them, which cannot be undone.
 async fn reject_remote_follows(state: &AppState, account: &Account) -> Result<()> {
     if account.is_local()
+        || !account.is_activitypub()
         || account.suspension_origin == Some(crate::delete_account::suspension_origin::REMOTE)
     {
         return Ok(());

@@ -91,6 +91,14 @@ suspension, and keeps its keys. While suspended, only the protocol attributes
 are taken. A domain blocked at the time an account is first seen starts it out
 suspended or limited from the time of the block.
 
+A remote account still `ostatus`, the column's default, as one stored before
+Mastodon spoke ActivityPub may be, is sent nothing until it is processed
+again, as upstream checks `activitypub?` before sending: no `Like`, `Follow`,
+`Block`, `Accept`, `Reject` or their `Undo`s to it, no inbox of it among the
+followers and others a post or profile reaches (`Account.inboxes`), and it
+cannot be followed or mentioned until resolving it again makes it
+`activitypub`.
+
 The custom emojis in the profile's `tag` are stored by shortcode and domain,
 unless the domain is blocked with `reject_media`. A profile or post shows the
 emojis of its author's domain, as `CustomEmoji.from_text` looks them up.

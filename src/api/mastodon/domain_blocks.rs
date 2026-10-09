@@ -174,7 +174,7 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     let following = sqlx::query!(
         r#"DELETE FROM follows f USING accounts a
            WHERE f.target_account_id = a.id AND f.account_id = $1 AND a.domain = $2
-           RETURNING f.id, f.uri, a.id AS target_id, a.uri AS target_uri, a.inbox_url, a.shared_inbox_url"#,
+           RETURNING f.id, f.uri, a.id AS target_id, a.uri AS target_uri, a.inbox_url, a.shared_inbox_url, a.protocol"#,
         account_id,
         domain,
     )
@@ -200,7 +200,11 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
         } else {
             follow.shared_inbox_url
         };
-        if let (Some(target_uri), false) = (follow.target_uri, inbox.is_empty()) {
+        // `UnfollowService`: an `Undo` only to an account speaking
+        // ActivityPub.
+        let activitypub = follow.protocol == crate::db::models::PROTOCOL_ACTIVITYPUB;
+        if let (Some(target_uri), false, true) = (follow.target_uri, inbox.is_empty(), activitypub)
+        {
             let undo = activity::undo_follow(
                 &format!("{my_url}#follows/{}/undo", follow.id),
                 &my_url,
@@ -216,7 +220,7 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     let followers = sqlx::query!(
         r#"DELETE FROM follows f USING accounts a
            WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2
-           RETURNING f.id, f.uri, a.id AS follower_id, a.uri AS follower_uri, a.inbox_url"#,
+           RETURNING f.id, f.uri, a.id AS follower_id, a.uri AS follower_uri, a.inbox_url, a.protocol"#,
         account_id,
         domain,
     )
@@ -225,7 +229,7 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     let requests = sqlx::query!(
         r#"DELETE FROM follow_requests f USING accounts a
            WHERE f.account_id = a.id AND f.target_account_id = $1 AND a.domain = $2
-           RETURNING f.id, f.uri, a.uri AS follower_uri, a.inbox_url"#,
+           RETURNING f.id, f.uri, a.uri AS follower_uri, a.inbox_url, a.protocol"#,
         account_id,
         domain,
     )
@@ -236,10 +240,15 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
         // `AccountStat`'s `update_index('accounts', :account)`.
         crate::search::elasticsearch::indexing::accounts(state, &[f.follower_id, account_id]).await;
         crate::counters::on_follow_removed(state, f.follower_id, account_id).await?;
-        rejects.push((f.id, f.uri, f.follower_uri, f.inbox_url));
+        // `return unless follow.account.activitypub?`.
+        if f.protocol == crate::db::models::PROTOCOL_ACTIVITYPUB {
+            rejects.push((f.id, f.uri, f.follower_uri, f.inbox_url));
+        }
     }
     for r in requests {
-        rejects.push((r.id, r.uri, r.follower_uri, r.inbox_url));
+        if r.protocol == crate::db::models::PROTOCOL_ACTIVITYPUB {
+            rejects.push((r.id, r.uri, r.follower_uri, r.inbox_url));
+        }
     }
     for (id, uri, follower_uri, inbox) in rejects {
         let (Some(follower_uri), false) = (follower_uri, inbox.is_empty()) else {

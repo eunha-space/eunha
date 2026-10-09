@@ -398,9 +398,9 @@ async fn test_inbound_flag() {
     let ctx = TestContext::new("mod-flag").await;
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, created_at, updated_at)
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'mod', 'remote.invalid', '', '', 'https://remote.invalid/actor',
-                   'https://remote.invalid/actor', 'https://remote.invalid/inbox', now(), now())"#,
+                   'https://remote.invalid/actor', 'https://remote.invalid/inbox', 1, now(), now())"#,
     )
     .bind(remote_id)
     .execute(&ctx.db)
@@ -461,9 +461,9 @@ async fn test_forwarded_report_sends_flag() {
     let ctx = TestContext::new("mod-forward").await;
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, created_at, updated_at)
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'troll', 'remote.invalid', '', '', 'https://remote.invalid/users/troll',
-                   'https://remote.invalid/users/troll', 'https://remote.invalid/users/troll/inbox', now(), now())"#,
+                   'https://remote.invalid/users/troll', 'https://remote.invalid/users/troll/inbox', 1, now(), now())"#,
     )
     .bind(remote_id)
     .execute(&ctx.db)
@@ -536,8 +536,8 @@ async fn test_remote_suspension_follows_the_actor() {
     let remote_id = eunha::snowflake::next_id();
     let uri = "https://remote.invalid/users/zed";
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, created_at, updated_at)
-           VALUES ($1, 'zed', 'remote.invalid', 'Zed', '', $2, $2, $2 || '/inbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'zed', 'remote.invalid', 'Zed', '', $2, $2, $2 || '/inbox', 1, now(), now())"#,
     )
     .bind(remote_id)
     .bind(uri)
@@ -581,8 +581,8 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
     let id = eunha::snowflake::next_id();
     let uri = format!("https://{domain}/users/{username}");
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, created_at, updated_at)
-           VALUES ($1, $2, $3, $2, 'bio', $4, $4, $4 || '/inbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, protocol, created_at, updated_at)
+           VALUES ($1, $2, $3, $2, 'bio', $4, $4, $4 || '/inbox', 1, now(), now())"#,
     )
     .bind(id)
     .bind(username)

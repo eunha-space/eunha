@@ -319,8 +319,8 @@ async fn test_accounts_tags_and_peers() {
         .post_status(&ctx.alice_token, "about #Wombatology", "public")
         .await;
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at) \
-         VALUES (9100000, 'peer', 'wombat-peer.example', 'https://wombat-peer.example/u/peer', now(), now())",
+        "INSERT INTO accounts (id, username, domain, uri, protocol, created_at, updated_at) \
+         VALUES (9100000, 'peer', 'wombat-peer.example', 'https://wombat-peer.example/u/peer', 1, now(), now())",
     )
     .execute(&ctx.db)
     .await

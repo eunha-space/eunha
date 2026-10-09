@@ -714,8 +714,11 @@ pub async fn favourite_status(
     .await;
 
     // `FavouriteService#create_notification`: a new favourite of a remote
-    // account's post is a `Like` to that account's own inbox.
-    if let Some(favourite_id) = favourite_id.filter(|_| account.domain.is_some()) {
+    // account's post is a `Like` to that account's own inbox, if it speaks
+    // ActivityPub (`status.account.activitypub?`).
+    if let Some(favourite_id) =
+        favourite_id.filter(|_| account.domain.is_some() && account.is_activitypub())
+    {
         if crate::federation::keypair::has_signing_key(&state, from_account.id)
             .await
             .unwrap_or(false)
@@ -787,8 +790,11 @@ pub async fn unfavourite_status(
     .await?;
 
     // `UnfavouriteService`: the favourite undone, of a remote account's
-    // post, is an `Undo(Like)` to that account's own inbox.
-    if let Some(favourite_id) = unfavourited.filter(|_| account.domain.is_some()) {
+    // post, is an `Undo(Like)` to that account's own inbox, if it speaks
+    // ActivityPub.
+    if let Some(favourite_id) =
+        unfavourited.filter(|_| account.domain.is_some() && account.is_activitypub())
+    {
         if let Some(actor_row) = sqlx::query!(
             "SELECT username, id_scheme FROM accounts WHERE id = $1 AND domain IS NULL",
             auth.account_id,
@@ -2112,12 +2118,15 @@ pub async fn resolve_mention_accounts(
             .flatten()
         };
 
-        // Unknown remote account: resolve it via WebFinger and fetch the actor,
-        // mirroring Mastodon's ProcessMentionsService, so that mentioning a user
-        // this instance has never seen still creates the mention and federates.
+        // Unknown remote account, or one not speaking ActivityPub
+        // (`mention_undeliverable?`): resolve it via WebFinger and fetch the
+        // actor, mirroring Mastodon's ProcessMentionsService, so that
+        // mentioning a user this instance has never seen still creates the
+        // mention and federates. One still undeliverable is no mention.
+        let undeliverable = |a: &Account| a.domain.is_some() && !a.is_activitypub();
         let account = match account {
-            Some(acct) => Some(acct),
-            None => match domain {
+            Some(acct) if !undeliverable(&acct) => Some(acct),
+            _ => match domain {
                 Some(d) => match crate::federation::webfinger::resolve_allowed(state, username, d)
                     .await
                 {
@@ -2147,7 +2156,7 @@ pub async fn resolve_mention_accounts(
             },
         };
 
-        if let Some(acct) = account {
+        if let Some(acct) = account.filter(|a| !undeliverable(a)) {
             result.push((username.clone(), acct));
         }
     }

@@ -151,9 +151,9 @@ async fn a_server_that_delivers_to_us_is_available_again() {
     sqlx::query(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'carol', $2, 'carol', '', $3, $3, $4,
-                   $5, $3 || '/outbox', now(), now())"#,
+                   $5, $3 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(&remote)

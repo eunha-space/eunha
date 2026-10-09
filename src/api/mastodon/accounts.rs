@@ -988,7 +988,7 @@ pub async fn remove_from_followers(
         crate::counters::on_follow_removed(&state, requester_id, auth.account_id).await?;
 
         let follower = fetch_account(&state, requester_id).await?;
-        if follower.domain.is_some() {
+        if follower.domain.is_some() && follower.is_activitypub() {
             let remover = fetch_account(&state, auth.account_id).await?;
             send_reject_follow(
                 &state,

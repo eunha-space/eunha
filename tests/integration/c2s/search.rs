@@ -604,8 +604,8 @@ async fn test_peers_search() {
     .enumerate()
     {
         sqlx::query(
-            "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at) \
-             VALUES ($1, 'someone', $2, $3, now(), now())",
+            "INSERT INTO accounts (id, username, domain, uri, protocol, created_at, updated_at) \
+             VALUES ($1, 'someone', $2, $3, 1, now(), now())",
         )
         .bind(9_000_000 + i as i64)
         .bind(domain)

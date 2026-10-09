@@ -18,9 +18,9 @@ async fn seed_remote_actor(ctx: &TestContext, username: &str, domain: &str) -> S
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, $2, $3, $2, '', $4::text, $4::text, 'remote-key',
-                   $4::text||'/inbox', $4::text||'/outbox', now(), now())"#,
+                   $4::text||'/inbox', $4::text||'/outbox', 1, now(), now())"#,
         eunha::snowflake::next_id(),
         username,
         domain,

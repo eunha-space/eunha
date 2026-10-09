@@ -53,8 +53,7 @@ const BACKGROUND_REFRESH_INTERVAL: chrono::Duration = chrono::Duration::weeks(1)
 /// `Account::REFRESH_DEADLINE`.
 const REFRESH_DEADLINE: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// `accounts.protocol`: `ostatus: 0, activitypub: 1`.
-const PROTOCOL_ACTIVITYPUB: i32 = 1;
+use crate::db::models::PROTOCOL_ACTIVITYPUB;
 
 /// `keypairs.type`: `rsa: 0, ed25519: 1, 'ml-dsa-44': 2`.
 mod key_type {

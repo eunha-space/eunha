@@ -227,11 +227,11 @@ async fn unallowing_a_domain_deletes_its_accounts() {
         let account_id = eunha::snowflake::next_id();
         sqlx::query!(
             r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri,
-                                     inbox_url, outbox_url, created_at, updated_at)
+                                     inbox_url, outbox_url, protocol, created_at, updated_at)
                VALUES ($1, 'gone', 'former.invalid', 'gone', '',
                        'https://former.invalid/@gone', 'https://former.invalid/users/gone',
                        'https://former.invalid/users/gone/inbox',
-                       'https://former.invalid/users/gone/outbox', now(), now())"#,
+                       'https://former.invalid/users/gone/outbox', 1, now(), now())"#,
             account_id,
         )
         .execute(&ctx.db)

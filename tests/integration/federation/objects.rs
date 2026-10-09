@@ -397,8 +397,8 @@ async fn test_profile_update_reaches_recently_followed() {
     let remote_inbox = "https://remote.invalid/users/rob/inbox";
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, shared_inbox_url, created_at, updated_at)
-         VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, 'k', $3, $2, '', now(), now())",
+        "INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, shared_inbox_url, protocol, created_at, updated_at)
+         VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, 'k', $3, $2, '', 1, now(), now())",
     )
     .bind(remote_id)
     .bind("https://remote.invalid/users/rob")

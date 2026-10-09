@@ -15,9 +15,9 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
     let id = eunha::snowflake::next_id();
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key,
-                                 inbox_url, outbox_url, followers_url, created_at, updated_at)
+                                 inbox_url, outbox_url, followers_url, protocol, created_at, updated_at)
            VALUES ($1, $2, $3, $2, '', $4, $4, $5, $4 || '/inbox', $4 || '/outbox',
-                   $4 || '/followers', now(), now())"#,
+                   $4 || '/followers', 1, now(), now())"#,
     )
     .bind(id)
     .bind(username)

@@ -10,9 +10,9 @@ use crate::helpers::TestContext;
 async fn remote(ctx: &TestContext, username: &str, domain: &str, uri_host: &str) -> i64 {
     sqlx::query_scalar(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri,
-                                 created_at, updated_at)
+                                 protocol, created_at, updated_at)
            VALUES ($1, $2, $3, $2, '', 'https://' || $4 || '/@' || $2,
-                   'https://' || $4 || '/users/' || $2, now(), now())
+                   'https://' || $4 || '/users/' || $2, 1, now(), now())
            RETURNING id"#,
     )
     .bind(eunha::snowflake::next_id())

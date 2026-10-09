@@ -86,7 +86,7 @@ async fn try_forward(
     let inboxes: Vec<String> = sqlx::query_scalar!(
         r#"SELECT DISTINCT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS "inbox!"
            FROM accounts a
-           WHERE a.domain IS NOT NULL AND a.inbox_url <> ''
+           WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
              AND a.id IN (SELECT account_id FROM follows WHERE target_account_id = ANY($1::bigint[]))"#,
         &targets,
     )

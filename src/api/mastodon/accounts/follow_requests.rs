@@ -187,7 +187,7 @@ pub async fn authorize_follow(state: &AppState, source_id: i64, target_id: i64) 
         return Ok(false);
     };
     let source = fetch_account(state, source_id).await?;
-    if source.domain.is_some() {
+    if source.domain.is_some() && source.is_activitypub() {
         let target = fetch_account(state, target_id).await?;
         super::relationships::send_accept_follow(
             state,

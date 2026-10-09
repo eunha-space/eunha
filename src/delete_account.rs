@@ -374,8 +374,10 @@ async fn distribute_activities(state: &AppState, account: &Account, options: &Op
     }
     let result = if account.is_local() {
         delete_actor(state, account).await
-    } else {
+    } else if account.is_activitypub() {
         sever_remote_follows(state, account).await
+    } else {
+        Ok(())
     };
     if let Err(e) = result {
         tracing::warn!(account_id = account.id, error = %e, "failed to distribute account deletion activities");
@@ -427,7 +429,7 @@ async fn delete_actor_inboxes(state: &AppState) -> Result<Vec<String>> {
         SELECT DISTINCT inbox AS "inbox!" FROM (
             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
             FROM accounts a
-            WHERE a.domain IS NOT NULL AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
             UNION
             SELECT inbox_url FROM relays WHERE state = 2 AND inbox_url <> ''
         ) reach

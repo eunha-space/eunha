@@ -42,8 +42,8 @@ async fn test_signature_actor_host_mismatch_does_nothing() {
         ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let attacker_uri = "https://attacker.invalid/users/eve";
     sqlx::query!(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'eve', 'attacker.invalid', 'eve', '', $2::text, $2::text, $3, $2::text||'/inbox', $2::text||'/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'eve', 'attacker.invalid', 'eve', '', $2::text, $2::text, $3, $2::text||'/inbox', $2::text||'/outbox', 1, now(), now())"#,
         eunha::snowflake::next_id(),
         attacker_uri,
         pub_pem,
@@ -137,8 +137,8 @@ async fn test_mastodon_shaped_signature_is_accepted() {
         ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/mona";
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'mona', 'remote.invalid', 'Mona', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'mona', 'remote.invalid', 'Mona', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(uri)

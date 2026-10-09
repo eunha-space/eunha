@@ -442,8 +442,8 @@ async fn test_migrate_imports_the_configuration_once_when_owed() {
 async fn test_contact_account_may_be_remote() {
     let ctx = TestContext::new("srv-settings-contact").await;
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at)
-         VALUES ($1, 'Staff', 'remote.example', 'https://remote.example/users/staff', now(), now())",
+        "INSERT INTO accounts (id, username, domain, uri, protocol, created_at, updated_at)
+         VALUES ($1, 'Staff', 'remote.example', 'https://remote.example/users/staff', 1, now(), now())",
     )
     .bind(eunha::snowflake::next_id())
     .execute(&ctx.db)
@@ -578,9 +578,9 @@ async fn test_site_uploads() {
 async fn test_content_retention() {
     let ctx = TestContext::new("srv-retention").await;
     let remote: i64 = sqlx::query_scalar(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, created_at, updated_at)
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, protocol, created_at, updated_at)
            VALUES ($1, 'far', 'remote.invalid', 'far', '', 'https://remote.invalid/@far',
-                   'https://remote.invalid/users/far', now(), now())
+                   'https://remote.invalid/users/far', 1, now(), now())
            RETURNING id"#,
     )
     .bind(eunha::snowflake::next_id())

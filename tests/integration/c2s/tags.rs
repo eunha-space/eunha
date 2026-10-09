@@ -601,9 +601,9 @@ async fn test_tag_urls_are_percent_encoded() {
 async fn test_featured_tag_url_is_written_by_username() {
     let ctx = TestContext::new("featured-tag-url").await;
     let remy: i64 = sqlx::query_scalar(
-        "INSERT INTO accounts (id, username, domain, uri, url, created_at, updated_at)
+        "INSERT INTO accounts (id, username, domain, uri, url, protocol, created_at, updated_at)
          VALUES (timestamp_id('accounts'), 'remy', 'remote.example', 'https://remote.example/users/remy',
-                 'https://remote.example/@remy', now(), now())
+                 'https://remote.example/@remy', 1, now(), now())
          RETURNING id",
     )
     .fetch_one(&ctx.db)

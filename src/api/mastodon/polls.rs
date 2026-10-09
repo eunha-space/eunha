@@ -451,20 +451,20 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
                          THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
                FROM mentions m
                JOIN accounts a ON a.id = m.account_id
-              WHERE m.status_id = $1 AND a.domain IS NOT NULL AND a.inbox_url <> ''
+              WHERE m.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
              UNION
              SELECT CASE WHEN a.shared_inbox_url IS NOT NULL AND a.shared_inbox_url <> ''
                          THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
                FROM statuses b
                JOIN accounts a ON a.id = b.account_id
-              WHERE b.reblog_of_id = $1 AND b.deleted_at IS NULL AND a.domain IS NOT NULL AND a.inbox_url <> ''
+              WHERE b.reblog_of_id = $1 AND b.deleted_at IS NULL AND a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
              UNION
              SELECT CASE WHEN a.shared_inbox_url IS NOT NULL AND a.shared_inbox_url <> ''
                          THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
                FROM poll_votes pv
                JOIN polls p ON p.id = pv.poll_id
                JOIN accounts a ON a.id = pv.account_id
-              WHERE p.status_id = $1 AND a.domain IS NOT NULL AND a.inbox_url <> ''
+              WHERE p.status_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
            ) recipients
            WHERE inbox IS NOT NULL AND inbox <> ''"#,
         status_id,
@@ -485,7 +485,7 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
                FROM follows f
                JOIN accounts a ON a.id = f.account_id
                WHERE f.target_account_id = $1
-                 AND a.domain IS NOT NULL
+                 AND a.domain IS NOT NULL AND a.protocol = 1
                  AND a.inbox_url <> ''"#,
             status.account_id,
         )

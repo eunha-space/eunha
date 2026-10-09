@@ -271,10 +271,11 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     // `BlockWorker.perform_async(account.id, target_account.id)`.
     queue_block_worker(state, account_id, target_id).await;
 
-    // `create_notification(block) if !target_account.local?`: the
-    // `BlockSerializer` of it, to the target's inbox.
+    // `create_notification(block) if !target_account.local? &&
+    // target_account.activitypub?`: the `BlockSerializer` of it, to the
+    // target's inbox.
     let target = fetch_account(state, target_id).await?;
-    if target.domain.is_some() {
+    if target.domain.is_some() && target.is_activitypub() {
         let blocker = fetch_account(state, account_id).await?;
         if let Some(target_uri) = target.stored_uri() {
             let actor_url =
@@ -351,8 +352,9 @@ pub async fn unblock(state: &AppState, account_id: i64, target_id: i64) -> AppRe
         return Ok(());
     };
 
+    // `if !target_account.local? && target_account.activitypub?`.
     let target = fetch_account(state, target_id).await?;
-    if target.domain.is_some() {
+    if target.domain.is_some() && target.is_activitypub() {
         let blocker = fetch_account(state, account_id).await?;
         if let Some(target_uri) = target.stored_uri() {
             let actor_url =

@@ -1153,7 +1153,7 @@ pub(crate) async fn distribute_collection_raw(
                                     ELSE a.inbox_url END AS "inbox!"
                FROM collection_items ci JOIN accounts a ON a.id = ci.account_id
                WHERE ci.collection_id = $1 AND ci.state IN (0, 1)
-                 AND a.domain IS NOT NULL AND a.inbox_url <> ''"#,
+                 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''"#,
             collection_id,
         )
         .fetch_all(&state.db)

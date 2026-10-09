@@ -153,7 +153,10 @@ pub async fn follow(
             return Err(AppError::Forbidden);
         }
     }
-    if target.moved_to_account_id.is_some() {
+    // `@target_account.moved?`, and `(!@target_account.local? &&
+    // @target_account.ostatus?)`: a remote account not speaking ActivityPub.
+    if target.moved_to_account_id.is_some() || (target.domain.is_some() && !target.is_activitypub())
+    {
         return Err(AppError::Forbidden);
     }
     let blocked_either = sqlx::query_scalar!(
@@ -503,7 +506,8 @@ async fn unfollow_locked(
 
         let follower = fetch_account(state, follower_id).await?;
         let target = fetch_account(state, target_id).await?;
-        if target.domain.is_none() && follower.domain.is_some() {
+        // Either only to an account that speaks ActivityPub (`activitypub?`).
+        if target.domain.is_none() && follower.domain.is_some() && follower.is_activitypub() {
             // `send_reject_follow`.
             send_reject_follow(
                 state,
@@ -513,7 +517,7 @@ async fn unfollow_locked(
                 follow.uri.as_deref(),
             )
             .await;
-        } else if target.domain.is_some() {
+        } else if target.domain.is_some() && target.is_activitypub() {
             // `send_undo_follow`.
             send_undo_follow(state, &follower, &target, follow.id, follow.uri.as_deref()).await;
         }
@@ -584,7 +588,7 @@ pub async fn reject_follow(state: &AppState, source_id: i64, target_id: i64) -> 
     .execute(&state.db)
     .await?;
     let source = fetch_account(state, source_id).await?;
-    if source.domain.is_some() {
+    if source.domain.is_some() && source.is_activitypub() {
         let target = fetch_account(state, target_id).await?;
         send_reject_follow(
             state,

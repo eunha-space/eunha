@@ -64,11 +64,11 @@ async fn test_domain_block_clears_notifications_and_requests() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, display_name, note, domain, url, uri, public_key,
-              inbox_url, outbox_url, shared_inbox_url, discoverable, id_scheme, created_at, updated_at)
+              inbox_url, outbox_url, shared_inbox_url, discoverable, id_scheme, protocol, created_at, updated_at)
            VALUES ($1,'carol','carol','', 'evil.example',
                    'https://evil.example/carol','https://evil.example/users/carol','k',
                    'https://evil.example/users/carol/inbox','https://evil.example/users/carol/outbox','',
-                   true, 0, now(), now())"#,
+                   true, 0, 1, now(), now())"#,
         carol_id,
     ).execute(&ctx.db).await.unwrap();
 

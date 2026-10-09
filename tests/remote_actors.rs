@@ -627,8 +627,8 @@ async fn test_a_confirmed_rename_takes_the_handle() {
     // Someone else holds `eve` here.
     let squatter = eunha::snowflake::next_id();
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, uri, created_at, updated_at)
-         VALUES ($1, 'eve', $2, 'https://elsewhere.invalid/eve', now(), now())",
+        "INSERT INTO accounts (id, username, domain, uri, protocol, created_at, updated_at)
+         VALUES ($1, 'eve', $2, 'https://elsewhere.invalid/eve', 1, now(), now())",
     )
     .bind(squatter)
     .bind(&server.host)
@@ -843,8 +843,8 @@ async fn test_an_account_without_a_feature_policy_is_refreshed_when_its_server_h
     assert_eq!(run().await, "Eve :blobcat:", "nobody on its server has one");
 
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, uri, feature_approval_policy, created_at, updated_at)
-         VALUES ($1, 'frank', $2, $3, 65536, now(), now())",
+        "INSERT INTO accounts (id, username, domain, uri, feature_approval_policy, protocol, created_at, updated_at)
+         VALUES ($1, 'frank', $2, $3, 65536, 1, now(), now())",
     )
     .bind(eunha::snowflake::next_id())
     .bind(&server.host)

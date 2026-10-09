@@ -399,8 +399,8 @@ async fn featuring_a_hashtag_is_announced_to_followers() {
     let remote_inbox = "https://remote.invalid/users/rob/inbox";
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, shared_inbox_url, created_at, updated_at)
-         VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, 'k', $3, $2, '', now(), now())",
+        "INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, shared_inbox_url, protocol, created_at, updated_at)
+         VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, 'k', $3, $2, '', 1, now(), now())",
     )
     .bind(remote_id)
     .bind("https://remote.invalid/users/rob")
@@ -513,9 +513,9 @@ async fn a_remote_post_links_to_the_collections_it_tags() {
     let rob_id = eunha::snowflake::next_id();
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key,
-                                 inbox_url, outbox_url, created_at, updated_at)
+                                 inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'rob', 'remote.invalid', 'rob', '', $2, $2, $3, $2 || '/inbox',
-                   $2 || '/outbox', now(), now())"#,
+                   $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(rob_id)
     .bind(rob)

@@ -176,9 +176,9 @@ async fn test_a_federated_reply_is_counted() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'mallory', $2, 'mallory', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         eunha::snowflake::next_id(),
         domain,
         actor_uri,
@@ -256,9 +256,9 @@ async fn test_a_deleted_federated_reply_is_uncounted() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'mallory', $2, 'mallory', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         eunha::snowflake::next_id(),
         domain,
         actor_uri,
@@ -432,9 +432,9 @@ async fn test_a_federated_status_counts_for_its_author() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'mallory', $2, 'mallory', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         account_id,
         domain,
         actor_uri,
@@ -526,9 +526,9 @@ async fn test_a_federated_follow_counts() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'eve', $2, 'eve', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         eunha::snowflake::next_id(),
         domain,
         actor_uri,
@@ -655,9 +655,9 @@ async fn test_a_federated_boost_counts_for_the_booster() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'booster', $2, 'booster', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         booster_id,
         domain,
         actor_uri,
@@ -820,9 +820,9 @@ async fn test_a_federated_boost_takes_the_announce_lock() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'booster', $2, 'booster', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         booster_id,
         domain,
         actor_uri,
@@ -875,9 +875,9 @@ async fn test_an_unrelated_boost_does_not_wait_for_the_announce_lock() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'booster', $2, 'booster', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         booster_id,
         domain,
         actor_uri,

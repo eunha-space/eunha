@@ -430,7 +430,7 @@ async fn forward_report(
     let inboxes: Vec<String> = sqlx::query_scalar!(
         r#"SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS "inbox!"
            FROM accounts a
-           WHERE a.domain = ANY($1)
+           WHERE a.domain = ANY($1) AND a.protocol = 1
              AND a.id IN (SELECT s.in_reply_to_account_id FROM statuses s
                           WHERE s.id = ANY($2) AND s.in_reply_to_account_id IS NOT NULL)"#,
         forward_to_domains,

@@ -185,9 +185,9 @@ async fn seed_remote_actor(db: &sqlx::PgPool, uri: &str, public_key: &str) {
     sqlx::query(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'carol', 'remote-tenant.invalid', 'carol', '', $2, $2, $3,
-                   $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+                   $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(uri)

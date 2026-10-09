@@ -67,9 +67,9 @@ async fn remote(ctx: &TestContext, remote: &Remote) -> (String, i64, String, Str
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key,
                                  inbox_url, outbox_url, shared_inbox_url, followers_url,
-                                 created_at, updated_at)
+                                 protocol, created_at, updated_at)
            VALUES ($1, 'rob', $2, 'rob', '', $3, $3, $4, $3 || '/inbox', $3 || '/outbox',
-                   $5 || '/inbox', $3 || '/followers', now(), now())"#,
+                   $5 || '/inbox', $3 || '/followers', 1, now(), now())"#,
     )
     .bind(id)
     .bind(base.trim_start_matches("http://"))

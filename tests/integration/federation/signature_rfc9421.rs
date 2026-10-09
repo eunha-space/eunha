@@ -17,8 +17,8 @@ async fn test_inbound_rfc9421_activity_is_accepted() {
         ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/kim";
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'kim', 'remote.invalid', 'Kim', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'kim', 'remote.invalid', 'Kim', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(uri)
@@ -71,8 +71,8 @@ async fn test_inbound_rfc9421_rejects_a_swapped_body() {
         ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
     let uri = "https://remote.invalid/users/lee";
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'lee', 'remote.invalid', 'Lee', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'lee', 'remote.invalid', 'Lee', '', $2, $2, $3, $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(uri)

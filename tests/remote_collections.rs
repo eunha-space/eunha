@@ -79,10 +79,10 @@ async fn account(ctx: &TestContext, base: &str, username: &str) -> (i64, String,
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key,
                                  inbox_url, outbox_url, shared_inbox_url, followers_url,
                                  featured_collection_url, collections_url,
-                                 created_at, updated_at)
+                                 protocol, created_at, updated_at)
            VALUES ($1, $2, $3, $2, '', $4, $4, $5, $4 || '/inbox', $4 || '/outbox',
                    $6 || '/inbox', $4 || '/followers', $4 || '/collections/featured',
-                   $4 || '/featured_collections', now(), now())"#,
+                   $4 || '/featured_collections', 1, now(), now())"#,
     )
     .bind(id)
     .bind(username)

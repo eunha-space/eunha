@@ -1,6 +1,10 @@
 use chrono::NaiveDateTime;
 use sqlx::FromRow;
 
+/// `accounts.protocol`'s `activitypub`, of `enum :protocol, { ostatus: 0,
+/// activitypub: 1 }`. The column defaults to `ostatus`.
+pub const PROTOCOL_ACTIVITYPUB: i32 = 1;
+
 #[derive(Debug, Clone, FromRow)]
 pub struct Account {
     pub id: i64,
@@ -111,6 +115,13 @@ impl Account {
     /// Mastodon's `Account#deleted?`.
     pub fn is_deleted(&self) -> bool {
         self.requested_deletion_at.is_some()
+    }
+
+    /// Mastodon's `Account#activitypub?`: `protocol` is `activitypub`, as
+    /// `ProcessAccountService` makes every remote account it processes. A
+    /// remote account still `ostatus` is sent nothing.
+    pub fn is_activitypub(&self) -> bool {
+        self.protocol == PROTOCOL_ACTIVITYPUB
     }
 
     /// Mastodon's `Account#invalidated_username?`.

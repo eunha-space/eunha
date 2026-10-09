@@ -162,9 +162,9 @@ async fn test_blocking_takes_both_accounts_out_of_each_others_collections() {
     let rob_id = eunha::snowflake::next_id();
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, uri, url, inbox_url,
-                                 created_at, updated_at)
+                                 protocol, created_at, updated_at)
            VALUES ($1, 'rob', 'remote.invalid', 'rob', '', 'https://remote.invalid/users/rob',
-                   'https://remote.invalid/@rob', 'https://remote.invalid/users/rob/inbox', now(), now())"#,
+                   'https://remote.invalid/@rob', 'https://remote.invalid/users/rob/inbox', 1, now(), now())"#,
     )
     .bind(rob_id)
     .execute(&ctx.db)

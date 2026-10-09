@@ -549,8 +549,8 @@ async fn test_a_move_is_sent_to_followers_and_blockers() {
         let id = eunha::snowflake::next_id();
         let uri = format!("https://{username}.invalid/users/{username}");
         sqlx::query(
-            r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, outbox_url, created_at, updated_at)
-               VALUES ($1, $2, $3, $2, '', $4, $4, $4 || '/inbox', $4 || '/outbox', now(), now())"#,
+            r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, inbox_url, outbox_url, protocol, created_at, updated_at)
+               VALUES ($1, $2, $3, $2, '', $4, $4, $4 || '/inbox', $4 || '/outbox', 1, now(), now())"#,
         )
         .bind(id)
         .bind(username)

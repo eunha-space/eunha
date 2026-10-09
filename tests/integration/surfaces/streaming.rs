@@ -800,9 +800,9 @@ async fn test_remote_posts_on_public_streams() {
     sqlx::query(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'eve', $2, 'eve', '', $3, $3, 'remote-key',
-                   $3 || '/inbox', $3 || '/outbox', now(), now())"#,
+                   $3 || '/inbox', $3 || '/outbox', 1, now(), now())"#,
     )
     .bind(eunha::snowflake::next_id())
     .bind(domain)

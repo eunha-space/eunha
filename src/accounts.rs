@@ -1173,7 +1173,7 @@ async fn remote_follows(
             "SELECT f.id, a.uri,
                     CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
              FROM {table} f JOIN accounts a ON a.id = f.target_account_id
-             WHERE f.account_id = $1 AND a.domain IS NOT NULL
+             WHERE f.account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1
                AND a.inbox_url <> '' AND a.uri <> '' AND a.suspended_at IS NULL"
         ))
         .bind(account_id)

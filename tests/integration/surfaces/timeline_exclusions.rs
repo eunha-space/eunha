@@ -132,9 +132,9 @@ async fn test_an_account_on_a_blocked_domain_is_kept_out() {
     sqlx::query!(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, created_at, updated_at)
+              inbox_url, outbox_url, protocol, created_at, updated_at)
            VALUES ($1, 'stranger', $2, 'stranger', '', $3::text, $3::text, 'remote-key',
-                   $3::text||'/inbox', $3::text||'/outbox', now(), now())"#,
+                   $3::text||'/inbox', $3::text||'/outbox', 1, now(), now())"#,
         stranger_id,
         domain,
         actor_uri,

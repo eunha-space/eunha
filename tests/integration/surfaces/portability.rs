@@ -12,8 +12,8 @@ async fn remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
         r#"INSERT INTO accounts
              (id, username, domain, display_name, note, url, uri, public_key,
-              inbox_url, outbox_url, shared_inbox_url, discoverable, created_at, updated_at)
-           VALUES ($1, $2, $3, $2, '', $4, $4, 'remote-key', $4 || '/inbox', $4 || '/outbox', '', true, now(), now())
+              inbox_url, outbox_url, shared_inbox_url, discoverable, protocol, created_at, updated_at)
+           VALUES ($1, $2, $3, $2, '', $4, $4, 'remote-key', $4 || '/inbox', $4 || '/outbox', '', true, 1, now(), now())
            RETURNING id"#,
     )
     .bind(eunha::snowflake::next_id())

@@ -31,8 +31,8 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
 
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'nina', 'remote.invalid', 'Nina', '', $2, $2, '', $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'nina', 'remote.invalid', 'Nina', '', $2, $2, '', $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(remote_id)
     .bind("https://remote.invalid/users/nina")
@@ -160,8 +160,8 @@ async fn test_proofs_are_not_attached_unless_asked_for() {
 
     let remote_id = eunha::snowflake::next_id();
     sqlx::query(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, created_at, updated_at)
-           VALUES ($1, 'olive', 'remote.invalid', 'Olive', '', $2, $2, '', $2 || '/inbox', $2 || '/outbox', now(), now())"#,
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
+           VALUES ($1, 'olive', 'remote.invalid', 'Olive', '', $2, $2, '', $2 || '/inbox', $2 || '/outbox', 1, now(), now())"#,
     )
     .bind(remote_id)
     .bind("https://remote.invalid/users/olive")

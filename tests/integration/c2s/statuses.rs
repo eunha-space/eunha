@@ -3099,9 +3099,9 @@ async fn test_a_remote_poll_is_noticed_to_its_local_voters() {
     let remy = eunha::snowflake::next_id();
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, uri, url, inbox_url,
-                                 created_at, updated_at)
+                                 protocol, created_at, updated_at)
            VALUES ($1, 'remy', 'remote.invalid', 'remy', '', 'https://remote.invalid/users/remy',
-                   'https://remote.invalid/@remy', 'https://remote.invalid/users/remy/inbox', now(), now())"#,
+                   'https://remote.invalid/@remy', 'https://remote.invalid/users/remy/inbox', 1, now(), now())"#,
     )
     .bind(remy)
     .execute(&ctx.db)

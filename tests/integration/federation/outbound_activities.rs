@@ -332,3 +332,74 @@ async fn test_a_like_and_its_undo_are_named_after_the_favourite() {
     assert_eq!(undo["object"]["object"], post_uri.as_str());
     assert_eq!(inbox, &format!("{rob}/inbox"));
 }
+
+/// A remote account still `ostatus` (`protocol` 0) is sent nothing, as
+/// Mastodon checks `activitypub?`: no `Like` or `Undo` of a favourite of its
+/// post, no `Block` or its `Undo`, and no inbox of it among its followed
+/// account's followers'; following it is not allowed.
+#[tokio::test]
+async fn test_an_ostatus_account_is_sent_nothing() {
+    let ctx = TestContext::new("outbound-ostatus").await;
+    alice_numeric_with_a_follower(&ctx).await;
+    let (rob_id, rob) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    sqlx::query("UPDATE accounts SET protocol = 0 WHERE id = $1")
+        .bind(rob_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let (post_id, _) = robs_post(&ctx, rob_id, &rob).await;
+
+    for action in ["favourite", "unfavourite"] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{post_id}/{action}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), 200, "{action}");
+    }
+    for action in ["block", "unblock"] {
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/accounts/{rob_id}/{action}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), 200, "{action}");
+    }
+    for kind in ["Like", "Undo", "Block"] {
+        assert_eq!(queued(&ctx, kind).await, vec![], "{kind}");
+    }
+
+    let follow = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{rob_id}/follow"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(follow.status(), 403);
+
+    // A follower of alice's that is `ostatus` is not among the inboxes her
+    // posts reach.
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(rob_id)
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let inboxes =
+        eunha::federation::delivery::follower_inboxes(&ctx.state, ctx.alice_id.parse().unwrap())
+            .await
+            .unwrap();
+    assert_eq!(inboxes, vec!["https://nina.invalid/inbox".to_owned()]);
+}

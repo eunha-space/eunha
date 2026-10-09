@@ -368,7 +368,7 @@ async fn distribute_move(state: &AppState, migration_id: i64, source_id: i64, ta
         r#"SELECT DISTINCT inbox AS "inbox!" FROM (
              SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
              FROM accounts a
-             WHERE a.domain IS NOT NULL AND a.inbox_url <> ''
+             WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''
                AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                AND (EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id AND f.target_account_id = $1)
                     OR EXISTS (SELECT 1 FROM blocks b WHERE b.account_id = a.id AND b.target_account_id = $1))

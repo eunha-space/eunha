@@ -7,9 +7,9 @@ const MANAGE_FEDERATION: i64 = 1 << 5;
 
 async fn remote(ctx: &TestContext, username: &str, domain: &str) -> i64 {
     sqlx::query_scalar(
-        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, created_at, updated_at)
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, protocol, created_at, updated_at)
            VALUES ($1, $2, $3, $2, '', 'https://' || $3 || '/@' || $2,
-                   'https://' || $3 || '/users/' || $2, now(), now())
+                   'https://' || $3 || '/users/' || $2, 1, now(), now())
            RETURNING id"#,
     )
     .bind(eunha::snowflake::next_id())
@@ -357,9 +357,9 @@ async fn test_domain_block_and_allow_csv() {
 async fn test_instances_view_is_refreshed() {
     let ctx = crate::helpers::TestContext::new("instances-refresh").await;
     sqlx::query(
-        "INSERT INTO accounts (id, username, domain, uri, url, created_at, updated_at)
+        "INSERT INTO accounts (id, username, domain, uri, url, protocol, created_at, updated_at)
          VALUES (777001, 'far', 'far.example', 'https://far.example/users/far',
-                 'https://far.example/@far', now(), now())",
+                 'https://far.example/@far', 1, now(), now())",
     )
     .execute(&ctx.db)
     .await
