@@ -7,7 +7,11 @@ use axum::{
 use serde::Deserialize;
 
 use super::types::PaginationParams;
-use crate::{error::AppResult, middleware::AuthenticatedUser, state::AppState};
+use crate::{
+    error::{AppError, AppResult},
+    middleware::AuthenticatedUser,
+    state::AppState,
+};
 
 // ── GET /api/v1/domain_blocks ─────────────────────────────────────────────
 
@@ -69,7 +73,20 @@ pub async fn block_domain(
     super::extractors::Params(form): super::extractors::Params<DomainBlockForm>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:blocks")?;
-    block_domain_for(&state, auth.account_id, &form.domain.to_lowercase()).await?;
+    // `AccountDomainBlock`: `DomainNormalizable`, then `validates :domain,
+    // presence: true, domain: true` — a 422 from `find_or_create_by!`.
+    use crate::federation::tag_manager::{compliant_domain, normalize_domain};
+    let invalid = || AppError::Unprocessable("Validation failed: Domain is invalid".into());
+    let domain = normalize_domain(&form.domain).map_err(|_| invalid())?;
+    if domain.is_empty() {
+        return Err(AppError::Unprocessable(
+            "Validation failed: Domain can't be blank".into(),
+        ));
+    }
+    if !compliant_domain(&domain) {
+        return Err(invalid());
+    }
+    block_domain_for(&state, auth.account_id, &domain).await?;
     Ok(Json(serde_json::json!({})))
 }
 

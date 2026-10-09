@@ -31,9 +31,41 @@ pub fn normalize_domain(domain: &str) -> Result<String, InvalidDomain> {
     normalize_host(domain, Port::Keep).ok_or(InvalidDomain)
 }
 
+/// `DomainValidator#compliant?`: Addressable's normalized host shorter than
+/// 256 characters, every dot-separated label one to 63 letters, digits or
+/// hyphens.
+pub fn compliant_domain(domain: &str) -> bool {
+    // `Addressable::URI#host=` refuses a `:`, where a URL would read the rest
+    // as a port and keep only what came before it.
+    if domain.contains(':') {
+        return false;
+    }
+    let Ok(url) = url::Url::parse(&format!("https://{domain}/")) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    host.len() < 256
+        && host.split('.').all(|label| {
+            (1..=63).contains(&label.len())
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compliant_as_domain_validator_is() {
+        assert!(compliant_domain("blocked.example"));
+        assert!(compliant_domain("xn--bcher-kva.example"));
+        assert!(!compliant_domain(""));
+        assert!(!compliant_domain("a..example"));
+        assert!(!compliant_domain("a_b.example"));
+        assert!(!compliant_domain("a.example:443"));
+    }
 
     #[test]
     fn normalizes_as_tag_manager_does() {

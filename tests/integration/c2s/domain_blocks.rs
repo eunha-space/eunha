@@ -52,6 +52,46 @@ async fn test_domain_blocks_add_and_list() {
     );
 }
 
+/// `AccountDomainBlock` normalizes and validates the domain, so a blank or
+/// malformed one is a 422 and a mixed-case one is stored as its host.
+#[tokio::test]
+async fn test_domain_blocks_validate_the_domain() {
+    let ctx = TestContext::new("dblk-validate").await;
+    for domain in ["", "  ", "not a domain", "under_score.example"] {
+        let resp = ctx
+            .api
+            .post_json(
+                "/api/v1/domain_blocks",
+                Some(&ctx.alice_token),
+                &serde_json::json!({ "domain": domain }),
+            )
+            .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{domain:?}"
+        );
+    }
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/domain_blocks",
+            Some(&ctx.alice_token),
+            &serde_json::json!({ "domain": " Evil.EXAMPLE/ " }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Vec<String> = ctx
+        .api
+        .get("/api/v1/domain_blocks", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body, vec!["evil.example".to_string()]);
+}
+
 /// Blocking a domain clears the blocker's notifications and pending follow
 /// requests from that domain (Mastodon AfterBlockDomainFromAccountService).
 #[tokio::test]

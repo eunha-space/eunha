@@ -54,17 +54,7 @@ fn acct_domain_valid(acct: &str) -> bool {
     let Some(domain) = acct.split('@').nth(1).filter(|d| !d.is_empty()) else {
         return true;
     };
-    let Ok(url) = url::Url::parse(&format!("https://{domain}/")) else {
-        return false;
-    };
-    let Some(host) = url.host_str() else {
-        return false;
-    };
-    host.len() < 256
-        && host.split('.').all(|label| {
-            (1..=63).contains(&label.len())
-                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-        })
+    crate::federation::tag_manager::compliant_domain(domain)
 }
 
 /// The validation errors a form collected, as `ActiveRecord::RecordInvalid`
