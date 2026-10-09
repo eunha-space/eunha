@@ -4994,7 +4994,36 @@ async fn test_get_profile() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["id"].as_str(), Some(ctx.alice_id.as_str()));
-    assert_eq!(body["username"].as_str(), Some("alice"));
+    // `REST::ProfileSerializer`: no `username`, the pictures' descriptions
+    // and the profile tab settings, and `null` for a picture never uploaded.
+    assert!(body.get("username").is_none(), "{body}");
+    assert_eq!(body["avatar"], Value::Null, "{body}");
+    assert_eq!(body["header_static"], Value::Null, "{body}");
+    assert_eq!(body["avatar_description"], json!(""), "{body}");
+    assert_eq!(body["header_description"], json!(""), "{body}");
+    for key in ["show_media", "show_media_replies", "show_featured"] {
+        assert!(body[key].is_boolean(), "{key} in {body}");
+    }
+}
+
+/// PUT /api/v1/profile is the same update as PATCH — Rails routes a
+/// singular resource's `update` from both.
+#[tokio::test]
+async fn test_put_profile_updates() {
+    let ctx = TestContext::new("put-profile").await;
+    let body: Value = ctx
+        .api
+        .put_json(
+            "/api/v1/profile",
+            Some(&ctx.alice_token),
+            &json!({"display_name": "Put Alice", "show_media": false}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["display_name"], json!("Put Alice"), "{body}");
+    assert_eq!(body["show_media"], json!(false), "{body}");
 }
 
 /// GET /api/v1/profile without a token → 401.

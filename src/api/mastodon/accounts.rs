@@ -50,7 +50,7 @@ pub use relationships::{
 mod credentials;
 pub use credentials::{
     delete_profile_avatar, delete_profile_header, get_preferences, get_profile, patch_profile,
-    put_profile, update_credentials, verify_credentials,
+    update_credentials, verify_credentials,
 };
 
 /// Fetch highlighted roles for a local account.  Returns an empty vec for

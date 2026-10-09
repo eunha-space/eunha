@@ -107,10 +107,22 @@ async fn store_profile_image(
     )))
 }
 
+/// Which of Mastodon's two account updates a request is, for the parameters
+/// each permits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpdateEndpoint {
+    /// `PATCH /api/v1/accounts/update_credentials`.
+    Credentials,
+    /// `PATCH` or `PUT /api/v1/profile`, which also takes the profile tab's
+    /// settings.
+    Profile,
+}
+
 async fn do_update_credentials(
     state: &AppState,
     auth: &AuthenticatedUser,
     parts: Vec<(String, super::super::extractors::Part)>,
+    endpoint: UpdateEndpoint,
 ) -> AppResult<Account> {
     let mut display_name: Option<String> = None;
     let mut note: Option<String> = None;
@@ -140,6 +152,9 @@ async fn do_update_credentials(
         std::collections::BTreeMap::new();
     let mut fields_submitted = false;
     let mut attribution_domains: Option<Vec<String>> = None;
+    // The profile tab's settings, which `ProfilesController` permits and
+    // `CredentialsController` does not. `null: false`, as `locked` is.
+    let mut tab_settings: Vec<(&'static str, Option<bool>)> = vec![];
 
     for (name, part) in parts {
         // Parse attribution_domains[] array fields
@@ -227,6 +242,17 @@ async fn do_update_credentials(
             }
             "avatar_description" => avatar_description = Some(part.text()),
             "header_description" => header_description = Some(part.text()),
+            "show_media" | "show_media_replies" | "show_featured"
+                if endpoint == UpdateEndpoint::Profile =>
+            {
+                let column = match name.as_str() {
+                    "show_media" => "show_media",
+                    "show_media_replies" => "show_media_replies",
+                    _ => "show_featured",
+                };
+                tab_settings.retain(|(c, _)| *c != column);
+                tab_settings.push((column, cast_bool(&part.text())));
+            }
             _ => {}
         }
     }
@@ -342,7 +368,14 @@ async fn do_update_credentials(
     // as NULL, which the column refuses: `ActiveRecord::NotNullViolation`,
     // which nothing rescues. The transaction leaves the account as it was,
     // and the settings, saved after it, are not reached.
-    for (column, value) in [("locked", locked), ("indexable", indexable)] {
+    let nullable = [("locked", locked), ("indexable", indexable)]
+        .into_iter()
+        .chain(
+            tab_settings
+                .iter()
+                .map(|&(column, value)| (column, Some(value))),
+        );
+    for (column, value) in nullable {
         if value == Some(None) {
             return Err(AppError::Unrescued(format!(
                 "PG::NotNullViolation: null value in column \"{column}\" of relation \"accounts\""
@@ -445,6 +478,16 @@ async fn do_update_credentials(
             )
             .await
             .map_err(AppError::Internal)?;
+        }
+    }
+    for (column, value) in &tab_settings {
+        if let Some(value) = value {
+            // The column is one of three fixed names, never the request's.
+            sqlx::query(&format!("UPDATE accounts SET {column} = $1 WHERE id = $2"))
+                .bind(value)
+                .bind(auth.account_id)
+                .execute(&state.db)
+                .await?;
         }
     }
     if let Some(b) = bot {
@@ -690,7 +733,7 @@ pub async fn update_credentials(
     super::super::extractors::Parts(parts): super::super::extractors::Parts,
 ) -> AppResult<Json<ApiAccount>> {
     auth.require_scope("write:accounts")?;
-    let account = do_update_credentials(&state, &auth, parts).await?;
+    let account = do_update_credentials(&state, &auth, parts, UpdateEndpoint::Credentials).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::verify(&state, auth.account_id).await;
     build_credential_account_response(&state, &auth, account).await
@@ -707,78 +750,13 @@ pub async fn patch_profile(
     super::super::extractors::Parts(parts): super::super::extractors::Parts,
 ) -> AppResult<Json<crate::api::mastodon::types::Profile>> {
     auth.require_scope("write:accounts")?;
-    let account = do_update_credentials(&state, &auth, parts).await?;
+    let account = do_update_credentials(&state, &auth, parts, UpdateEndpoint::Profile).await?;
     distribute_account_update(&state, &instance.domain, &account).await;
     crate::link_verification::verify(&state, auth.account_id).await;
 
-    let domain = &instance.domain;
-    let featured_tag_rows = sqlx::query!(
-        r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
-                  -- `FeaturedTag#display_name`
-                  COALESCE(ft.name, t.display_name, t.name) AS "display_name!"
-           FROM featured_tags ft
-           JOIN tags t ON t.id = ft.tag_id
-           WHERE ft.account_id = $1
-           ORDER BY ft.id"#,
-        account.id,
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let featured_tags = featured_tag_rows
-        .into_iter()
-        .map(|r| crate::api::mastodon::types::FeaturedTag {
-            id: r.id.to_string(),
-            name: r.display_name,
-            url: crate::formatter::text::short_account_tag_url(domain, &account.username, &r.name),
-            statuses_count: r.statuses_count.to_string(),
-            last_status_at: r.last_status_at.map(|t| t.format("%Y-%m-%d").to_string()),
-        })
-        .collect();
-
-    let a = &account;
-    let fields = crate::api::mastodon::convert::fields_from_db(
-        a.fields.as_ref().unwrap_or(&serde_json::json!([])),
-        true,
-    );
-    // `ProfileSerializer`: `account_bio_format` and `account_field_value_format`.
-    let mut texts: Vec<&str> = vec![&a.note];
-    texts.extend(fields.iter().map(|f| f.value.as_str()));
-    let lookup = crate::api::mastodon::formatting::mention_lookup(&state, &texts).await;
-    let formatted_fields =
-        crate::api::mastodon::formatting::field_values(domain, fields.clone(), true, &lookup);
-    Ok(Json(crate::api::mastodon::types::Profile {
-        id: a.id.to_string(),
-        username: a.username.clone(),
-        display_name: a.display_name.clone(),
-        note: a.note.clone(),
-        fields,
-        formatted_note: crate::formatter::local_bio(&a.note, domain, &lookup),
-        formatted_fields,
-        avatar: Some(crate::api::mastodon::convert::account_avatar_url_for(
-            &state.urls,
-            a,
-        )),
-        avatar_static: Some(crate::api::mastodon::convert::account_avatar_static_url(
-            &state.urls,
-            a,
-        )),
-        header: Some(crate::api::mastodon::convert::account_header_url_for(
-            &state.urls,
-            a,
-        )),
-        header_static: Some(crate::api::mastodon::convert::account_header_static_url(
-            &state.urls,
-            a,
-        )),
-        locked: a.locked,
-        bot: a.actor_type.as_deref() == Some("Service"),
-        hide_collections: a.hide_collections,
-        discoverable: a.discoverable,
-        indexable: a.indexable,
-        attribution_domains: a.attribution_domains.clone().unwrap_or_default(),
-        featured_tags,
-    }))
+    Ok(Json(
+        build_profile(&state, &instance.domain, account.id).await?,
+    ))
 }
 
 async fn build_credential_account_response(
@@ -911,22 +889,6 @@ pub async fn get_profile(
     ))
 }
 
-/// PUT /api/v1/profile — accepts a JSON body and returns the current profile.
-/// (Profile field edits go through update_credentials / the multipart PATCH.)
-pub async fn put_profile(
-    state: AppState,
-    Extension(auth): Extension<AuthenticatedUser>,
-    Extension(crate::middleware::ResolvedInstance(instance)): Extension<
-        crate::middleware::ResolvedInstance,
-    >,
-    _body: Option<Json<serde_json::Value>>,
-) -> AppResult<Json<crate::api::mastodon::types::Profile>> {
-    auth.require_scope("write:accounts")?;
-    Ok(Json(
-        build_profile(&state, &instance.domain, auth.account_id).await?,
-    ))
-}
-
 async fn build_profile(
     state: &AppState,
     domain: &str,
@@ -972,35 +934,35 @@ async fn build_profile(
     let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
     let formatted_fields =
         crate::api::mastodon::formatting::field_values(domain, fields.clone(), true, &lookup);
+    // `avatar_file_name.present? ? full_asset_url(…) : nil`: no picture is
+    // `null` here, not the placeholder the account entity shows.
+    let avatar = a.avatar_file_name.as_deref().is_some_and(|f| !f.is_empty());
+    let header = a.header_file_name.as_deref().is_some_and(|f| !f.is_empty());
     let profile = crate::api::mastodon::types::Profile {
         id: a.id.to_string(),
-        username: a.username.clone(),
         display_name: a.display_name.clone(),
         note: a.note.clone(),
         fields,
         formatted_note: crate::formatter::local_bio(&a.note, domain, &lookup),
         formatted_fields,
-        avatar: Some(crate::api::mastodon::convert::account_avatar_url_for(
-            &state.urls,
-            a,
-        )),
-        avatar_static: Some(crate::api::mastodon::convert::account_avatar_static_url(
-            &state.urls,
-            a,
-        )),
-        header: Some(crate::api::mastodon::convert::account_header_url_for(
-            &state.urls,
-            a,
-        )),
-        header_static: Some(crate::api::mastodon::convert::account_header_static_url(
-            &state.urls,
-            a,
-        )),
+        avatar: avatar
+            .then(|| crate::api::mastodon::convert::account_avatar_url_for(&state.urls, a)),
+        avatar_static: avatar
+            .then(|| crate::api::mastodon::convert::account_avatar_static_url(&state.urls, a)),
+        avatar_description: a.avatar_description.clone(),
+        header: header
+            .then(|| crate::api::mastodon::convert::account_header_url_for(&state.urls, a)),
+        header_static: header
+            .then(|| crate::api::mastodon::convert::account_header_static_url(&state.urls, a)),
+        header_description: a.header_description.clone(),
         locked: a.locked,
         bot: a.actor_type.as_deref() == Some("Service"),
         hide_collections: a.hide_collections,
         discoverable: a.discoverable,
         indexable: a.indexable,
+        show_media: a.show_media,
+        show_media_replies: a.show_media_replies,
+        show_featured: a.show_featured,
         attribution_domains: a.attribution_domains.clone().unwrap_or_default(),
         featured_tags,
     };

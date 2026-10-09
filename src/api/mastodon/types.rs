@@ -717,7 +717,6 @@ pub struct FilterV1 {
 #[derive(Debug, Serialize)]
 pub struct Profile {
     pub id: String,
-    pub username: String,
     pub display_name: String,
     pub note: String, // plain text
     pub fields: Vec<Field>,
@@ -725,13 +724,18 @@ pub struct Profile {
     pub formatted_fields: Vec<Field>,
     pub avatar: Option<String>,
     pub avatar_static: Option<String>,
+    pub avatar_description: String,
     pub header: Option<String>,
     pub header_static: Option<String>,
+    pub header_description: String,
     pub locked: bool,
     pub bot: bool,
     pub hide_collections: Option<bool>,
     pub discoverable: Option<bool>,
     pub indexable: bool,
+    pub show_media: bool,
+    pub show_media_replies: bool,
+    pub show_featured: bool,
     pub attribution_domains: Vec<String>,
     pub featured_tags: Vec<FeaturedTag>,
 }
