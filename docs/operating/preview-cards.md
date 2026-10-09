@@ -5,7 +5,9 @@ A post that links somewhere gets a preview card: the page's title,
 description and image, shown under the post. Eunha builds cards as
 Mastodon's `FetchLinkCardService` does, into the same `preview_cards` and
 `preview_cards_statuses` rows, so a Mastodon booted on the database shows
-the same cards, and the same images.
+the same cards, and the same images. How the web client draws a card, and
+when it hides the image, is in
+[How posts are shown](./accounts#how-posts-are-shown).
 
 
 Which link

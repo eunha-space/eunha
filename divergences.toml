@@ -811,6 +811,17 @@ since = "4.7.1"
 reviewed_for = "4.7.2"
 
 [[divergence]]
+id = "web-hidden-card-image-not-loaded"
+kind = "behaviour"
+summary = "The web client does not load a hidden preview card's image"
+mastodon = "The web client's `Card` renders a hidden card's image with `visibility: hidden` over its blurhash, so the browser fetches it before the reader asks to see it."
+eunha = "A hidden card draws its blurhash alone and adds the image only once it is shown, as both clients do for hidden media attachments."
+why = "Hiding a sensitive post's image, or every image with `hide_all`, is a reason not to fetch it: the request reaches the host the card points at, and the bytes cost a metered connection, for an image the reader chose not to see."
+evidence = "frontend/e2e/preview-cards.spec.ts"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
 id = "web-custom-emoji-only-picker"
 kind = "omission"
 summary = "The web client's emoji picker and suggestions offer only custom emoji"

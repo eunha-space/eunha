@@ -54,6 +54,7 @@ import { Poll } from '@/components/poll.tsx'
 import { QuotedPost } from '@/components/quoted-post.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
+import { PreviewCard } from '@/components/preview-card.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
@@ -587,6 +588,15 @@ export function StatusCard({
                 )}
                 {status.poll && (
                   <Poll poll={status.poll} token={token} titles={pollTitles} />
+                )}
+                {/* Mastodon's `StatusAttachments`: a post's card shows only
+                    when it has no media and quotes nothing. */}
+                {mediaAttachments.length === 0 && !status.quote && status.card && (
+                  <PreviewCard
+                    key={`${status.id}-${status.editedAt}`}
+                    card={status.card}
+                    sensitive={status.sensitive}
+                  />
                 )}
                 {status.quote && <QuotedStatus quote={status.quote} />}
               </>

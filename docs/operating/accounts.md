@@ -561,6 +561,15 @@ follows them, as Mastodon's web client does:
     shows its `header_static`, and a custom emoji shows its `static_url`
     until the pointer is over what it is part of: a post's text, its content
     warning, a name, a poll option, a profile's header, or an announcement.
+ -  A post's link preview card is shown when the post has no media and quotes
+    nothing, as Mastodon's `StatusAttachments` does. Its image starts hidden
+    when the post is sensitive or with `hide_all`; `show_all` does not
+    uncover a sensitive post's card, since Mastodon's card does not read it.
+    A hidden image is drawn from its blurhash and not loaded until it is
+    shown, as for media, where Mastodon's card loads it behind the cover
+    (`web-hidden-card-image-not-loaded`). A video card loads its player only
+    when Play is clicked, in an `iframe` given the sandbox Mastodon's oEmbed
+    sanitizer gives it; only the player's address is taken from the card's HTML.
 
 A `:shortcode:` is drawn as an image only when the post, account, poll or
 announcement it belongs to lists that shortcode in its `emojis`, and only in
