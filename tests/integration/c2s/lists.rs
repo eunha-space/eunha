@@ -741,6 +741,58 @@ async fn test_list_add_unfollowed_account_returns_422() {
     );
 }
 
+/// An account already on the list is refused (`ListAccount`'s uniqueness
+/// validation), and the request it came in adds nothing, since
+/// `AddAccountsToListService` adds them all in one transaction.
+#[tokio::test]
+async fn test_list_add_existing_member_returns_422() {
+    let ctx = TestContext::new("list-add-twice").await;
+    ctx.api.follow(&ctx.alice_token, &ctx.bob_id).await;
+    let list: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/lists",
+            Some(&ctx.alice_token),
+            &json!({ "title": "twice" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let list_id = list["id"].as_str().unwrap();
+    let add = |ids: Value| {
+        let path = format!("/api/v1/lists/{list_id}/accounts");
+        let token = ctx.alice_token.clone();
+        let api = &ctx.api;
+        async move {
+            api.post_json(&path, Some(&token), &json!({ "account_ids": ids }))
+                .await
+                .status()
+        }
+    };
+    assert_eq!(add(json!([ctx.bob_id])).await, StatusCode::OK);
+    assert_eq!(
+        add(json!([ctx.bob_id])).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // Herself, then Bob again: refused, and she is not left on the list.
+    assert_eq!(
+        add(json!([ctx.alice_id, ctx.bob_id])).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let accts: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/lists/{list_id}/accounts"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(accts.len(), 1, "{accts:?}");
+}
+
 /// The list owner may add themselves to their own list without following
 /// themselves (Mastodon ListAccount list_owner_account_is_account?).
 #[tokio::test]

@@ -259,7 +259,10 @@ pub async fn add_list_accounts(
     auth.require_scope("write:lists")?;
     fetch_list(&state, id, auth.account_id).await?;
 
+    // `AddAccountsToListService#update_list!`: every `@list.accounts <<` in
+    // one transaction, so an account refused leaves none of them added.
     let mut added: Vec<i64> = Vec::new();
+    let mut tx = state.db.begin().await?;
     for id_str in &form.account_ids {
         if let Ok(account_id) = id_str.parse::<i64>() {
             // Mastodon ListAccount#validate_relationship: you may add an account
@@ -274,7 +277,7 @@ pub async fn add_list_accounts(
                        )"#,
                     auth.account_id, account_id,
                 )
-                .fetch_one(&state.db)
+                .fetch_one(&mut *tx)
                 .await?
                 .unwrap_or(false);
             if !allowed {
@@ -284,7 +287,9 @@ pub async fn add_list_accounts(
             }
             // `ListAccount#set_follow`: the follow, or else the follow
             // request, the membership hangs on; the owner's own has neither.
-            sqlx::query!(
+            // `validates :account_id, uniqueness: { scope: :list_id }`: an
+            // account already on the list is refused, not passed over.
+            let inserted = sqlx::query!(
                 "INSERT INTO list_accounts (list_id, account_id, follow_id, follow_request_id)
                  SELECT $1, $2, f.id, CASE WHEN f.id IS NULL THEN fr.id END
                  FROM (SELECT 1) one
@@ -297,11 +302,18 @@ pub async fn add_list_accounts(
                 account_id,
                 auth.account_id,
             )
-            .execute(&state.db)
-            .await?;
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if inserted == 0 {
+                return Err(AppError::Unprocessable(
+                    "Validation failed: Account has already been taken".into(),
+                ));
+            }
             added.push(account_id);
         }
     }
+    tx.commit().await?;
 
     // `AddAccountsToListService#merge_into_list!`: a `MergeWorker` for each
     // added account the owner follows.
