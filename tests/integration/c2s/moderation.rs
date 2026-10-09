@@ -264,6 +264,18 @@ async fn test_admin_report_entity() {
     assert_eq!(report["category"], "violation");
     assert_eq!(report["rule_ids"], json!([rule.to_string()]));
     let rid = report["id"].as_str().unwrap();
+    // The reported posts are serialized for the moderator reading them, as
+    // `REST::StatusSerializer` is for any `current_user`.
+    ctx.api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/favourite",
+                status["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
 
     let assigned: Value = ctx
         .api
@@ -278,6 +290,8 @@ async fn test_admin_report_entity() {
         .unwrap();
     assert_eq!(assigned["assigned_account"]["id"], ctx.alice_id);
     assert_eq!(assigned["statuses"][0]["id"], status["id"]);
+    assert_eq!(assigned["statuses"][0]["favourited"], true);
+    assert_eq!(assigned["statuses"][0]["bookmarked"], false);
     assert_eq!(assigned["rules"][0]["text"], "Be kind");
     assert!(
         assigned["target_account"]["email"].is_string(),

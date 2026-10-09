@@ -72,10 +72,14 @@ async fn admin_account(state: &AppState, id: Option<i64>) -> AppResult<Option<Ad
     }
 }
 
-/// `Report#statuses`: `Status.with_discarded.where(id: status_ids)`.
+/// `Report#statuses`: `Status.with_discarded.where(id: status_ids)`, each
+/// serialized for `viewer` — the moderator reading the report, whose
+/// `favourited`, `bookmarked` and the rest `REST::StatusSerializer` fills in
+/// from `current_user` — or for nobody where nobody is reading, as a webhook.
 pub(crate) async fn report_statuses(
     state: &AppState,
     ids: &[i64],
+    viewer: Option<i64>,
 ) -> AppResult<Vec<super::super::types::Status>> {
     use super::super::status_serialize::{build_status, fetch_reblog_data, fetch_status_media};
     let statuses = sqlx::query_as!(
@@ -99,12 +103,16 @@ pub(crate) async fn report_statuses(
         };
         let media = fetch_status_media(state, s.id).await?;
         let reblog = fetch_reblog_data(state, &s).await?;
-        out.push(build_status(state, &s, &author, media, reblog, None).await?);
+        let viewer_ctx = match viewer {
+            Some(v) => Some(super::super::statuses::build_viewer_context(state, v, s.id).await?),
+            None => None,
+        };
+        out.push(build_status(state, &s, &author, media, reblog, viewer_ctx).await?);
     }
     Ok(out)
 }
 
-async fn build(state: &AppState, r: ReportRow) -> AppResult<AdminReport> {
+async fn build(state: &AppState, r: ReportRow, viewer: Option<i64>) -> AppResult<AdminReport> {
     let rules = match r.rule_ids.as_deref() {
         Some(ids) if !ids.is_empty() => {
             crate::moderation::rules::serialize(state, Some(ids)).await?
@@ -124,7 +132,7 @@ async fn build(state: &AppState, r: ReportRow) -> AppResult<AdminReport> {
         target_account: admin_account(state, Some(r.target_account_id)).await?,
         assigned_account: admin_account(state, r.assigned_account_id).await?,
         action_taken_by_account: admin_account(state, r.action_taken_by_account_id).await?,
-        statuses: report_statuses(state, &r.status_ids).await?,
+        statuses: report_statuses(state, &r.status_ids, viewer).await?,
         rules,
     })
 }
@@ -143,15 +151,15 @@ async fn find(state: &AppState, id: i64) -> AppResult<ReportRow> {
     .ok_or(AppError::NotFound)
 }
 
-async fn render(state: &AppState, id: i64) -> AppResult<Json<AdminReport>> {
+async fn render(state: &AppState, id: i64, viewer: i64) -> AppResult<Json<AdminReport>> {
     let row = find(state, id).await?;
-    Ok(Json(build(state, row).await?))
+    Ok(Json(build(state, row, Some(viewer)).await?))
 }
 
 /// `REST::Admin::ReportSerializer` of one report, if it exists.
 pub async fn admin_report_entity(state: &AppState, id: i64) -> AppResult<Option<AdminReport>> {
     match find(state, id).await {
-        Ok(row) => Ok(Some(build(state, row).await?)),
+        Ok(row) => Ok(Some(build(state, row, None).await?)),
         Err(AppError::NotFound) => Ok(None),
         Err(e) => Err(e),
     }
@@ -230,7 +238,7 @@ pub async fn list_admin_reports(
 
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        result.push(build(&state, row).await?);
+        result.push(build(&state, row, Some(auth.account_id)).await?);
     }
     let bounds = result
         .first()
@@ -250,7 +258,7 @@ pub async fn get_admin_report(
     require_scope(&auth, false)?;
     let row = find(&state, id).await?;
     super::require_permission(&state, auth.account_id, flag::MANAGE_REPORTS).await?;
-    Ok(Json(build(&state, row).await?))
+    Ok(Json(build(&state, row, Some(auth.account_id)).await?))
 }
 
 // ── PATCH /api/v1/admin/reports/:id ──────────────────────────────────────
@@ -315,7 +323,7 @@ pub async fn update_admin_report(
         crate::moderation::webhooks::Object::Report(id),
     )
     .await;
-    render(&state, id).await
+    render(&state, id, auth.account_id).await
 }
 
 async fn act(
@@ -340,7 +348,7 @@ async fn act(
         crate::moderation::webhooks::Object::Report(id),
     )
     .await;
-    render(state, id).await
+    render(state, id, auth.account_id).await
 }
 
 // ── POST /api/v1/admin/reports/:id/assign_to_self ────────────────────────
@@ -473,5 +481,5 @@ pub async fn report_moderation_action(
         // `admin.reports.unknown_action_msg`.
         other => return Err(AppError::Unprocessable(format!("Unknown action: {other}"))),
     }
-    render(&state, id).await
+    render(&state, id, auth.account_id).await
 }

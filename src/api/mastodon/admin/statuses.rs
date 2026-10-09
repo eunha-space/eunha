@@ -105,7 +105,7 @@ pub async fn list_admin_account_statuses(
     if min_id.is_some() {
         ids.reverse();
     }
-    let statuses = super::report_statuses(&state, &ids).await?;
+    let statuses = super::report_statuses(&state, &ids, None).await?;
     let bounds = statuses
         .first()
         .zip(statuses.last())
@@ -170,7 +170,7 @@ pub async fn get_admin_account_status(
             .is_ok();
     authorize(acting.can(&[flag::MANAGE_REPORTS, flag::MANAGE_USERS]) && eligible)?;
     let edits = super::super::statuses::status_edits(&state, &status).await?;
-    let status = super::report_statuses(&state, &[id])
+    let status = super::report_statuses(&state, &[id], None)
         .await?
         .pop()
         .ok_or(AppError::NotFound)?;

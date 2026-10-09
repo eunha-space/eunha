@@ -148,7 +148,7 @@ async fn build(state: &AppState, row: StrikeRow, viewer: i64, role: &Role) -> Ap
         appeal_eligible: eligible,
         appeal_deadline: mastodon_date(row.created_at + APPEAL_WINDOW),
         // `Status.with_discarded.where(id: status_ids)`.
-        statuses: super::admin::report_statuses(state, &status_ids).await?,
+        statuses: super::admin::report_statuses(state, &status_ids, None).await?,
         account: match (staff, row.account_id) {
             (true, Some(id)) => super::admin::api_account(state, id).await?,
             _ => None,
