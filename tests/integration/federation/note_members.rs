@@ -215,3 +215,95 @@ async fn test_mentions_are_tagged_in_their_order() {
         json!({ "@id": "https://w3id.org/fep/7aa9#canFeature", "@type": "@id" })
     );
 }
+
+/// An edit's `Update` is `published` at its `edited_at` in whole seconds
+/// (`UpdateNoteSerializer`), and a pin's `Add` and an unpin's `Remove` have
+/// no id (`AddNoteSerializer`, `RemoveNoteSerializer`).
+#[tokio::test]
+async fn test_updates_and_pins_are_written_as_mastodon_writes_them() {
+    let ctx = TestContext::new("note-update-pin").await;
+    alice_with_a_follower(&ctx).await;
+    let status = post(&ctx, &json!({ "status": "before", "visibility": "public" })).await;
+    let status_id = status["id"].as_str().unwrap();
+
+    let edited = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{status_id}"),
+            Some(&ctx.alice_token),
+            &json!({ "status": "after" }),
+        )
+        .await;
+    assert_eq!(edited.status(), 200);
+    let update = queued(&ctx, "Update").await.pop().expect("an Update");
+    let published = update["published"].as_str().unwrap();
+    assert!(
+        chrono::NaiveDateTime::parse_from_str(published, "%Y-%m-%dT%H:%M:%SZ").is_ok(),
+        "{published}"
+    );
+
+    for (path, kind) in [("pin", "Add"), ("unpin", "Remove")] {
+        let response = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{status_id}/{path}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(response.status(), 200);
+        let activity = queued(&ctx, kind).await.pop().expect("queued");
+        assert!(activity.get("id").is_none(), "{activity}");
+        assert_eq!(activity["object"], status["uri"]);
+        assert!(activity["target"]
+            .as_str()
+            .unwrap()
+            .ends_with("/collections/featured"));
+    }
+}
+
+/// `UpdatePollSerializer` serializes `id`, `type`, `actor` and `to`, and no
+/// `cc`.
+#[tokio::test]
+async fn test_a_poll_update_has_no_cc() {
+    let ctx = TestContext::new("note-poll-update").await;
+    alice_with_a_follower(&ctx).await;
+    let status = post(
+        &ctx,
+        &json!({
+            "status": "which?",
+            "visibility": "public",
+            "poll": { "options": ["one", "two"], "expires_in": 86400 },
+        }),
+    )
+    .await;
+    let poll_id = status["poll"]["id"].as_str().unwrap();
+    // Rob, elsewhere, voted, so the tallies go to him.
+    let (rob_id, _) = seed_remote(&ctx, "rob", "rob.invalid").await;
+    sqlx::query(
+        "INSERT INTO poll_votes (account_id, poll_id, choice, created_at, updated_at)
+         VALUES ($1, $2::bigint, 1, now(), now())",
+    )
+    .bind(rob_id)
+    .bind(poll_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let voted = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/polls/{poll_id}/votes"),
+            Some(&ctx.bob_token),
+            &json!({ "choices": [0] }),
+        )
+        .await;
+    assert_eq!(voted.status(), 200);
+    ctx.state.jobs.settle().await;
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+
+    let update = queued(&ctx, "Update").await.pop().expect("an Update");
+    assert_eq!(update["object"]["type"], "Question");
+    assert!(update.get("to").is_some());
+    assert!(update.get("cc").is_none(), "{update}");
+}

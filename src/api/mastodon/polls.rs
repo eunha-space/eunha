@@ -427,13 +427,14 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
         bundle.note_uri,
         status.poll_updated_at.and_utc().timestamp(),
     );
+    // `ActivityPub::UpdatePollSerializer`, whose attributes are `id`,
+    // `type`, `actor` and `to`: it defines `cc` but does not serialize it.
     let activity = serde_json::json!({
         "@context": crate::api::ap::note::note_context(),
         "id": update_id,
         "type": "Update",
         "actor": bundle.actor_url,
         "to": bundle.to,
-        "cc": bundle.cc,
         "object": bundle.note,
     });
     let actor_url = crate::federation::tag::account_uri(

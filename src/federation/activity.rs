@@ -222,40 +222,29 @@ pub fn block(id: &str, actor_uri: &str, object: &str) -> anyhow::Result<Value> {
     }))
 }
 
-/// `Add` a status to the actor's featured (pinned) collection
-/// (Mastodon `ActivityPub::AddNoteSerializer`).
-pub fn add_to_collection(
-    id: &str,
-    actor: &str,
-    object: &str,
-    target: &str,
-) -> anyhow::Result<Value> {
-    Ok(serde_json::json!({
+/// `Add` a status to the actor's featured (pinned) collection, as
+/// `ActivityPub::AddNoteSerializer` writes it: `type`, `actor`, `target`
+/// and `object`, and no `id`.
+pub fn add_to_collection(actor: &str, object: &str, target: &str) -> Value {
+    serde_json::json!({
         "@context": "https://www.w3.org/ns/activitystreams",
-        "id": id,
         "type": "Add",
         "actor": actor,
-        "object": object,
         "target": target,
-    }))
+        "object": object,
+    })
 }
 
-/// `Remove` a status from the actor's featured (pinned) collection
-/// (Mastodon `ActivityPub::RemoveNoteSerializer`).
-pub fn remove_from_collection(
-    id: &str,
-    actor: &str,
-    object: &str,
-    target: &str,
-) -> anyhow::Result<Value> {
-    Ok(serde_json::json!({
+/// `Remove` a status from the actor's featured (pinned) collection, as
+/// `ActivityPub::RemoveNoteSerializer` writes it, without an `id`.
+pub fn remove_from_collection(actor: &str, object: &str, target: &str) -> Value {
+    serde_json::json!({
         "@context": "https://www.w3.org/ns/activitystreams",
-        "id": id,
         "type": "Remove",
         "actor": actor,
-        "object": object,
         "target": target,
-    }))
+        "object": object,
+    })
 }
 
 #[cfg(test)]
@@ -285,29 +274,17 @@ mod tests {
     fn add_and_remove_collection_shape() {
         let target = "https://a.test/u/alice/collections/featured";
         assert_eq!(
-            add_to_collection(
-                "https://a.test/act/1",
-                "https://a.test/u/alice",
-                "https://a.test/s/5",
-                target
-            )
-            .unwrap(),
+            add_to_collection("https://a.test/u/alice", "https://a.test/s/5", target),
             json!({
                 "@context": "https://www.w3.org/ns/activitystreams",
-                "id": "https://a.test/act/1",
                 "type": "Add",
                 "actor": "https://a.test/u/alice",
                 "object": "https://a.test/s/5",
                 "target": target,
             })
         );
-        let remove = remove_from_collection(
-            "https://a.test/act/2",
-            "https://a.test/u/alice",
-            "https://a.test/s/5",
-            target,
-        )
-        .unwrap();
+        let remove = remove_from_collection("https://a.test/u/alice", "https://a.test/s/5", target);
+        assert!(remove.get("id").is_none());
         assert_eq!(remove["type"], "Remove");
         assert_eq!(remove["target"], target);
         assert_eq!(remove["object"], "https://a.test/s/5");

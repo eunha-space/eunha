@@ -1224,27 +1224,11 @@ async fn federate_pin_change(state: &AppState, account: &Account, status: &DbSta
     let domain = &state.instance.domain;
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let target = format!("{actor_url}/collections/featured");
-    let activity_id = format!(
-        "https://{}/activities/{}",
-        domain,
-        crate::snowflake::next_id()
-    );
     let activity = if is_add {
-        crate::federation::activity::add_to_collection(
-            &activity_id,
-            &actor_url,
-            &status_uri,
-            &target,
-        )
+        crate::federation::activity::add_to_collection(&actor_url, &status_uri, &target)
     } else {
-        crate::federation::activity::remove_from_collection(
-            &activity_id,
-            &actor_url,
-            &status_uri,
-            &target,
-        )
+        crate::federation::activity::remove_from_collection(&actor_url, &status_uri, &target)
     };
-    let Ok(activity) = activity else { return };
     let key_id = format!("{actor_url}#main-key");
     if let Err(e) =
         crate::federation::delivery::fanout_to_followers(state, activity, account.id, key_id).await
@@ -1822,7 +1806,8 @@ pub(crate) async fn federate_status_update(
         "id": update_id,
         "type": "Update",
         "actor": bundle.actor_url,
-        "published": updated_at.to_rfc3339(),
+        // `edited_at.iso8601`: whole seconds, with a `Z`.
+        "published": crate::api::ap::note::iso8601(updated_at),
         "to": bundle.to,
         "cc": bundle.cc,
         "object": bundle.note,
