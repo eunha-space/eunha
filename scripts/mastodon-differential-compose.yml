@@ -57,6 +57,11 @@ services:
       ES_ENABLED: "false"
       SMTP_DELIVERY_METHOD: test
       RAILS_LOG_LEVEL: warn
+      # A VAPID pair, as a real instance has one: without it a push
+      # subscription's `server_key` and the instance's `vapid.public_key` are
+      # null, a Mastodon no client ever talks to.
+      VAPID_PRIVATE_KEY: "9lcbmc8H8bAgPw1co8IYuhbXhJ_5I2M8D5JGdTn2ulg="
+      VAPID_PUBLIC_KEY: "BGwd_MjrkNn9nchvfGmeA8aKgcy1suCgtmm_g_TlEbxtqPbGH-9N6_ApDq629LwHGnnhChDU0t73UVuEGw7imzU="
     ports:
       - "3000:3000"
 
@@ -94,3 +99,5 @@ services:
       ES_ENABLED: "false"
       SMTP_DELIVERY_METHOD: test
       RAILS_LOG_LEVEL: warn
+      VAPID_PRIVATE_KEY: "9lcbmc8H8bAgPw1co8IYuhbXhJ_5I2M8D5JGdTn2ulg="
+      VAPID_PUBLIC_KEY: "BGwd_MjrkNn9nchvfGmeA8aKgcy1suCgtmm_g_TlEbxtqPbGH-9N6_ApDq629LwHGnnhChDU0t73UVuEGw7imzU="

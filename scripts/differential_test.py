@@ -31,6 +31,8 @@ import time
 import urllib.error
 import urllib.request
 
+import differential_flows
+
 # Endpoints worth comparing: what a client touches on an ordinary session.
 # Each is (method, path, needs_auth).
 ENDPOINTS = [
@@ -128,6 +130,12 @@ VOLATILE_FIELDS = frozenset({
     "blurhash", "group_key", "most_recent_notification_id",
     "sample_account_ids", "page_min_id", "page_max_id",
     "latest_page_notification_at", "content", "text", "emojis", "meta",
+    "action_taken_at",
+    # Ids by another name. Where which ones matters — the statuses a report
+    # names — a flow compares them by the fixture names they stand for.
+    "status_ids", "rule_ids", "account_ids", "last_read_id", "application_id",
+    # The instance's VAPID key, as each server generated its own.
+    "server_key",
     # Totals over everything an instance has ever done, rather than anything
     # this request decided. The two databases hold different histories, so these
     # differ by construction and would drown the fields that do not.
@@ -554,6 +562,11 @@ def main():
     parser.add_argument("--eunha-fans", help="`id:token` pairs on eunha that act together, for grouping")
     parser.add_argument("--mastodon-fans", help="the same, on Mastodon")
     parser.add_argument("--mastodon-other-id", help="the same, on Mastodon")
+    parser.add_argument("--eunha-fixture", help="JSON naming eunha's seeded ids and tokens, for the flows")
+    parser.add_argument("--mastodon-fixture", help="the same, for Mastodon")
+    parser.add_argument("--flow", help="run just the flows whose name contains this")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print each flow step's status codes, eunha's then Mastodon's")
     parser.add_argument(
         "--mastodon-host",
         help="Host header for Mastodon, when it answers on a name this machine "
@@ -566,7 +579,7 @@ def main():
 
     findings, compared, skipped = [], 0, []
     for method, path, needs_auth in ENDPOINTS:
-        if args.only and args.only not in path:
+        if args.flow or (args.only and args.only not in path):
             continue
         e_status, e_body, _ = request(
             args.eunha, path, args.eunha_token if needs_auth else None, method
@@ -604,9 +617,13 @@ def main():
                     f"{m_values[field]!r} on Mastodon"
                 )
 
-    if not args.only:
+    if args.flow:
+        compared += differential_flows.run(args, findings)
+    elif not args.only:
         compared += compare_writes(args, findings)
         compared += compare_interactions(args, findings)
+        # Before grouping, which clears the notifications some flows read.
+        compared += differential_flows.run(args, findings)
         # Last, because it is the only comparison that depends on what the
         # account's notification list already holds.
         compared += compare_notification_grouping(args, findings)

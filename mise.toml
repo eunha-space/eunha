@@ -50,7 +50,7 @@ description = "Federate eunha with a real Mastodon in Docker, both directions"
 run = "scripts/federation_test.sh"
 
 [tasks."differential"]
-description = "Compare eunha against a live Mastodon in Docker (needs eunha running)"
+description = "Compare eunha against a live Mastodon in Docker (needs target/release/eunha)"
 run = "scripts/differential_test.sh"
 
 [tasks."entities:build"]
