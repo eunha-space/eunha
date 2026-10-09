@@ -646,3 +646,79 @@ async fn test_filter_v1_whole_word_reads_from_db() {
         "whole_word should be true as stored"
     );
 }
+
+/// A keyword made without `whole_word` takes the column's default, `true`,
+/// and an update that leaves it out leaves it as it was — `update!` with
+/// only the attributes given.
+#[tokio::test]
+async fn test_whole_word_defaults_and_is_kept() {
+    let ctx = TestContext::new("filter-ww-default").await;
+    let token = Some(ctx.alice_token.as_str());
+
+    let v1: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/filters",
+            token,
+            &json!({"phrase": "oldstyle", "context": ["home"]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v1["whole_word"], json!(true), "{v1}");
+    let id = v1["id"].as_str().unwrap();
+    let updated: Value = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/filters/{id}"),
+            token,
+            &json!({"phrase": "oldstyle2", "context": ["home"], "whole_word": false}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated["whole_word"], json!(false), "{updated}");
+    let kept: Value = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/filters/{id}"),
+            token,
+            &json!({"phrase": "oldstyle3", "context": ["home"]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(kept["whole_word"], json!(false), "{kept}");
+
+    let v2: Value = ctx
+        .api
+        .post_json(
+            "/api/v2/filters",
+            token,
+            &json!({"title": "t", "context": ["home"],
+                    "keywords_attributes": [{"keyword": "word"}]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v2["keywords"][0]["whole_word"], json!(true), "{v2}");
+    let keyword = v2["keywords"][0]["id"].as_str().unwrap();
+    for whole_word in [Some(false), None] {
+        let mut body = json!({"keyword": "word2"});
+        if let Some(w) = whole_word {
+            body["whole_word"] = json!(w);
+        }
+        let kw: Value = ctx
+            .api
+            .put_json(&format!("/api/v2/filters/keywords/{keyword}"), token, &body)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(kw["whole_word"], json!(false), "{kw}");
+    }
+}

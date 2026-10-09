@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE custom_filter_keywords fk\n           SET keyword = $2, whole_word = $3, updated_at = now()\n           FROM custom_filters f\n           WHERE fk.id = $1 AND fk.custom_filter_id = f.id AND f.account_id = $4\n           RETURNING fk.id, fk.keyword, fk.whole_word",
+  "query": "UPDATE custom_filter_keywords fk\n           SET keyword = $2, whole_word = COALESCE($3, fk.whole_word), updated_at = now()\n           FROM custom_filters f\n           WHERE fk.id = $1 AND fk.custom_filter_id = f.id AND f.account_id = $4\n           RETURNING fk.id, fk.keyword, fk.whole_word",
   "describe": {
     "columns": [
       {
@@ -33,5 +33,5 @@
       false
     ]
   },
-  "hash": "61c8dff26aedb98b782c52e2e3b9c367370921f5918f547b5b197e2fe5fdcc14"
+  "hash": "a69cd0fc26d83dda31dee015ff6c540578263316c9e6dc67162e5e86f9738a37"
 }

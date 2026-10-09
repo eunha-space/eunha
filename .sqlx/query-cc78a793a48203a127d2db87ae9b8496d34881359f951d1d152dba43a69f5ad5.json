@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE custom_filter_keywords SET keyword = $1, whole_word = COALESCE($2, whole_word), updated_at = now() WHERE id = $3 AND custom_filter_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc78a793a48203a127d2db87ae9b8496d34881359f951d1d152dba43a69f5ad5"
+}

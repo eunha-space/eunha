@@ -178,6 +178,10 @@ const VALID_FILTER_ACTIONS: &[&str] = &["warn", "hide", "blur"];
 /// Validate a v2 filter submission the way Mastodon's CustomFilter model does:
 /// title presence/length, non-empty context restricted to the valid set, and a
 /// recognized filter action. Used by both create and update.
+/// `custom_filter_keywords.whole_word`'s column default, which a keyword
+/// created without one takes.
+const WHOLE_WORD_DEFAULT: bool = true;
+
 fn validate_filter_form(form: &CreateFilterForm) -> AppResult<()> {
     if form.title.trim().is_empty() {
         return Err(AppError::Unprocessable("Title can't be blank".into()));
@@ -256,7 +260,7 @@ pub async fn create_filter_v2(
                     "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at) VALUES ($1, $2, $3, now(), now())",
                     filter_id,
                     keyword,
-                    kw.whole_word.unwrap_or(false),
+                    kw.whole_word.unwrap_or(WHOLE_WORD_DEFAULT),
                 )
                 .execute(&state.db)
                 .await?;
@@ -320,9 +324,9 @@ pub async fn update_filter_v2(
                 (Some(kid), _) => {
                     if let Some(keyword) = kw.keyword {
                         sqlx::query!(
-                            "UPDATE custom_filter_keywords SET keyword = $1, whole_word = $2, updated_at = now() WHERE id = $3 AND custom_filter_id = $4",
+                            "UPDATE custom_filter_keywords SET keyword = $1, whole_word = COALESCE($2, whole_word), updated_at = now() WHERE id = $3 AND custom_filter_id = $4",
                             keyword,
-                            kw.whole_word.unwrap_or(false),
+                            kw.whole_word,
                             kid,
                             id,
                         )
@@ -337,7 +341,7 @@ pub async fn update_filter_v2(
                                 "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at) VALUES ($1, $2, $3, now(), now())",
                                 id,
                                 keyword,
-                                kw.whole_word.unwrap_or(false),
+                                kw.whole_word.unwrap_or(WHOLE_WORD_DEFAULT),
                             )
                             .execute(&state.db)
                             .await?;
@@ -450,7 +454,7 @@ pub async fn create_filter_keyword(
         "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at) VALUES ($1, $2, $3, now(), now()) RETURNING id",
         id,
         form.keyword,
-        form.whole_word.unwrap_or(false),
+        form.whole_word.unwrap_or(WHOLE_WORD_DEFAULT),
     )
     .fetch_one(&state.db)
     .await?;
@@ -461,7 +465,7 @@ pub async fn create_filter_keyword(
         Json(FilterKeyword {
             id: kid.to_string(),
             keyword: form.keyword,
-            whole_word: form.whole_word.unwrap_or(false),
+            whole_word: form.whole_word.unwrap_or(WHOLE_WORD_DEFAULT),
         }),
     ))
 }
@@ -507,13 +511,13 @@ pub async fn update_filter_keyword(
     }
     let updated = sqlx::query!(
         r#"UPDATE custom_filter_keywords fk
-           SET keyword = $2, whole_word = $3, updated_at = now()
+           SET keyword = $2, whole_word = COALESCE($3, fk.whole_word), updated_at = now()
            FROM custom_filters f
            WHERE fk.id = $1 AND fk.custom_filter_id = f.id AND f.account_id = $4
            RETURNING fk.id, fk.keyword, fk.whole_word"#,
         id,
         form.keyword,
-        form.whole_word.unwrap_or(false),
+        form.whole_word,
         auth.account_id,
     )
     .fetch_optional(&state.db)
@@ -804,7 +808,7 @@ pub async fn create_filter_v1(
     .fetch_one(&state.db)
     .await?;
 
-    let whole_word = form.whole_word.unwrap_or(false);
+    let whole_word = form.whole_word.unwrap_or(WHOLE_WORD_DEFAULT);
     let keyword_id = sqlx::query_scalar!(
         "INSERT INTO custom_filter_keywords (custom_filter_id, keyword, whole_word, created_at, updated_at) VALUES ($1, $2, $3, now(), now()) RETURNING id",
         filter_id, form.phrase, whole_word,
@@ -867,8 +871,6 @@ pub async fn update_filter_v1(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let whole_word = form.whole_word.unwrap_or(false);
-
     sqlx::query!(
         r#"UPDATE custom_filters
            SET phrase = $3, context = $4, action = $5,
@@ -887,11 +889,11 @@ pub async fn update_filter_v1(
     .execute(&state.db)
     .await?;
 
-    sqlx::query!(
-        "UPDATE custom_filter_keywords SET keyword = $2, whole_word = $3, updated_at = now() WHERE id = $1",
-        id, form.phrase, whole_word,
+    let whole_word = sqlx::query_scalar!(
+        "UPDATE custom_filter_keywords SET keyword = $2, whole_word = COALESCE($3, whole_word), updated_at = now() WHERE id = $1 RETURNING whole_word",
+        id, form.phrase, form.whole_word,
     )
-    .execute(&state.db)
+    .fetch_one(&state.db)
     .await?;
 
     let f = sqlx::query!(
