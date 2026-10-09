@@ -201,19 +201,34 @@ if [ "$(workers)" -lt 1 ]; then
   exit 1
 fi
 
+# `masto` is an owner, with the admin scopes, so the forwarded-report check can
+# ask Mastodon's admin API what arrived. `masto2` is where it moves to at the end.
 MASTODON_TOKEN=$(compose exec -T web bin/rails runner '
-  a = Account.find_or_create_by!(username: "masto") { |x| x.domain = nil }
-  u = User.find_by(email: "masto@localhost") || User.create!(
-    email: "masto@localhost", password: SecureRandom.hex(16), account: a,
-    agreement: true, approved: true, confirmed_at: Time.now.utc)
-  u.update!(approved: true, confirmed_at: Time.now.utc)
-  app = Doorkeeper::Application.find_or_create_by!(name: "fed") do |x|
-    x.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"; x.scopes = "read write follow"
+  scopes = "read write follow admin:read admin:write"
+  %w(masto masto2).each do |name|
+    a = Account.find_or_create_by!(username: name) { |x| x.domain = nil }
+    u = User.find_by(email: "#{name}@localhost") || User.create!(
+      email: "#{name}@localhost", password: SecureRandom.hex(16), account: a,
+      agreement: true, approved: true, confirmed_at: Time.now.utc)
+    u.update!(approved: true, confirmed_at: Time.now.utc,
+              role: name == "masto" ? UserRole.find_by!(name: "Owner") : UserRole.everyone)
+    next unless name == "masto"
+    app = Doorkeeper::Application.find_or_create_by!(name: "fed") do |x|
+      x.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"; x.scopes = scopes
+    end
+    t = Doorkeeper::AccessToken.find_or_create_by!(
+      application: app, resource_owner_id: u.id, revoked_at: nil
+    ) { |x| x.scopes = scopes; x.expires_in = nil }
+    puts t.token
   end
-  t = Doorkeeper::AccessToken.find_or_create_by!(
-    application: app, resource_owner_id: u.id, revoked_at: nil
-  ) { |x| x.scopes = "read write follow"; x.expires_in = nil }
-  puts t.token' | tr -d '\r' | tail -1)
+  # The alias the move at the end needs, made now rather than then: Mastodon
+  # serves an actor from `render_with_cache` for three minutes under a key
+  # that does not change when the account does, so an alias added after eunha
+  # first fetched masto2 is missing from every fetch eunha makes for the next
+  # three minutes — including the one that checks the `Move` — and eunha
+  # rightly refuses a move its target does not confirm.
+  AccountAlias.find_or_create_by!(account: Account.find_local!("masto2"),
+                                  acct: "masto@#{Rails.configuration.x.local_domain}")' | tr -d '\r' | tail -1)
 [ -n "$MASTODON_TOKEN" ] || { echo "!! Mastodon minted no token" >&2; exit 1; }
 
 echo "==> eunha"
@@ -234,23 +249,38 @@ ALICE_PUB=$(printf '%s' "$ALICE_KEY" | openssl rsa -pubout 2>/dev/null)
 # the same act, and only one of them is being tested.
 BOB_KEY=$(openssl genrsa 2048 2>/dev/null)
 BOB_PUB=$(printf '%s' "$BOB_KEY" | openssl rsa -pubout 2>/dev/null)
+# Carol is where alice moves to at the end, so she has to be able to sign the
+# `Accept` of the follows that move with her.
+CAROL_KEY=$(openssl genrsa 2048 2>/dev/null)
+CAROL_PUB=$(printf '%s' "$CAROL_KEY" | openssl rsa -pubout 2>/dev/null)
 compose exec -T eunha-db psql -q -U eunha -d eunha -v ON_ERROR_STOP=1 >/dev/null <<SQL
 INSERT INTO accounts (id, username, domain, display_name, note, created_at, updated_at)
 VALUES (1, 'alice', NULL, 'Alice', '', now(), now()),
-       (2, 'bob',   NULL, 'Bob',   '', now(), now()) ON CONFLICT DO NOTHING;
-INSERT INTO users (id, email, account_id, created_at, updated_at, confirmed_at, approved, encrypted_password)
-VALUES (1, 'alice@localhost', 1, now(), now(), now(), true, 'x'),
-       (2, 'bob@localhost',   2, now(), now(), now(), true, 'x') ON CONFLICT DO NOTHING;
+       (2, 'bob',   NULL, 'Bob',   '', now(), now()),
+       (3, 'carol', NULL, 'Carol', '', now(), now()) ON CONFLICT DO NOTHING;
+-- Alice is an owner, so the admin API can be asked what reports arrived, and
+-- has no password, so her move is confirmed by her username — the challenge
+-- for an account that signs in some other way.
+INSERT INTO users (id, email, account_id, created_at, updated_at, confirmed_at, approved, encrypted_password, role_id)
+VALUES (1, 'alice@localhost', 1, now(), now(), now(), true, '',
+        (SELECT id FROM user_roles WHERE name = 'Owner')),
+       (2, 'bob@localhost',   2, now(), now(), now(), true, 'x', NULL),
+       (3, 'carol@localhost', 3, now(), now(), now(), true, 'x', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO oauth_applications (id, name, uid, secret, redirect_uri, scopes, created_at, updated_at)
 VALUES (1, 'fed', 'u', 's', 'urn:ietf:wg:oauth:2.0:oob', 'read write follow push', now(), now())
 ON CONFLICT DO NOTHING;
 INSERT INTO oauth_access_tokens (id, token, resource_owner_id, application_id, scopes, created_at)
-VALUES (1, 'eunha-federation-token', 1, 1, 'read write follow push', now()),
-       (2, 'eunha-federation-bob-token', 2, 1, 'read write follow push', now()) ON CONFLICT DO NOTHING;
+VALUES (1, 'eunha-federation-token', 1, 1, 'read write follow push admin:read admin:write', now()),
+       (2, 'eunha-federation-bob-token', 2, 1, 'read write follow push', now()),
+       (3, 'eunha-federation-carol-token', 3, 1, 'read write follow push', now()) ON CONFLICT DO NOTHING;
+SELECT setval('users_id_seq', (SELECT max(id) FROM users));
+SELECT setval('oauth_access_tokens_id_seq', (SELECT max(id) FROM oauth_access_tokens));
 UPDATE accounts SET private_key = \$P\$$ALICE_KEY\$P\$, public_key = \$U\$$ALICE_PUB\$U\$
 WHERE id = 1;
 UPDATE accounts SET private_key = \$P\$$BOB_KEY\$P\$, public_key = \$U\$$BOB_PUB\$U\$
 WHERE id = 2;
+UPDATE accounts SET private_key = \$P\$$CAROL_KEY\$P\$, public_key = \$U\$$CAROL_PUB\$U\$
+WHERE id = 3;
 SQL
 
 # No peer seeding. eunha resolves Mastodon's actor over the wire, webfinger and
@@ -276,6 +306,11 @@ python3 "$ROOT/scripts/federation_test.py" \
   --eunha-token="eunha-federation-token" \
   --eunha-acct="alice@$EUNHA_DOMAIN" \
   --eunha-second-token="eunha-federation-bob-token" \
+  --eunha-second-acct="bob@$EUNHA_DOMAIN" \
+  --eunha-third-token="eunha-federation-carol-token" \
+  --eunha-third-acct="carol@$EUNHA_DOMAIN" \
+  --mastodon-second-acct="masto2@$MASTODON_DOMAIN" \
+  --mastodon-runner="docker compose -f $WORK/docker-compose.yml exec -T web bin/rails runner" \
   --mastodon="http://localhost:$MASTODON_HOST_PORT" \
   --mastodon-host="$MASTODON_DOMAIN" \
   --mastodon-token="$MASTODON_TOKEN" \
