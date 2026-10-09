@@ -552,9 +552,6 @@ async fn do_update_credentials(
         .await?;
     }
 
-    // default_privacy, default_sensitive, default_language are stored in users.settings (YAML)
-    // in Mastodon's schema; we don't persist them here.
-    let _ = (&source_privacy, source_sensitive, &source_language);
     if let Some(hc) = source_hide_collections {
         sqlx::query!(
             "UPDATE accounts SET hide_collections = $1 WHERE id = $2",
@@ -589,8 +586,6 @@ async fn do_update_credentials(
         .rows_affected()
             > 0;
     }
-    // default_quote_policy is in users.settings (YAML) in Mastodon's schema; not persisted here.
-    let _ = &source_quote_policy;
 
     sqlx::query!(
         "UPDATE accounts SET updated_at = now() WHERE id = $1",

@@ -1479,6 +1479,12 @@ pub struct UserDefaults {
     pub quote_policy: String,
 }
 
+/// `setting_default_privacy`, `setting_default_sensitive`,
+/// `setting_default_language` and `setting_default_quote_policy`, under
+/// Mastodon's keys. Eunha once wrote them as `privacy`, `sensitive` (later
+/// `web.default_sensitive`), `language` and `quote_policy`, and still reads
+/// those when Mastodon's key is missing, so that what a member chose then is
+/// not lost; Mastodon never writes them.
 pub async fn user_defaults(state: &AppState, account_id: i64) -> UserDefaults {
     let s = user_settings_json(state, account_id).await;
     let locked = sqlx::query_scalar::<_, bool>("SELECT locked FROM accounts WHERE id = $1")
