@@ -590,7 +590,8 @@ pub async fn get_status(
     .await
     .remove(&status.id);
 
-    let s = super::status_serialize::build_status_with_app(
+    let viewer_id = viewer_ctx.as_ref().map(|c| c.account_id);
+    let mut s = super::status_serialize::build_status_with_app(
         &state,
         &status,
         &account,
@@ -600,6 +601,25 @@ pub async fn get_status(
         application,
     )
     .await?;
+    // `filtered`: `current_user.account.status_matches_filters(object)`,
+    // every filter the viewer has that matches, whatever its context.
+    if let Some(viewer_id) = viewer_id {
+        let matches = super::timelines::compute_filter_results(
+            &state.db,
+            viewer_id,
+            std::slice::from_ref(&status),
+        )
+        .await;
+        if let Some(serde_json::Value::Array(found)) = matches.get(&status.id) {
+            s.filtered = Some(found.clone());
+        }
+        if let Some(reblog) = s.reblog.as_mut() {
+            let reblog_id = reblog.id.parse().unwrap_or(0);
+            if let Some(serde_json::Value::Array(found)) = matches.get(&reblog_id) {
+                reblog.filtered = Some(found.clone());
+            }
+        }
+    }
     Ok(Json(s))
 }
 

@@ -722,3 +722,57 @@ async fn test_whole_word_defaults_and_is_kept() {
         assert_eq!(kw["whole_word"], json!(false), "{kw}");
     }
 }
+
+/// A single status carries the viewer's matching filters in `filtered`
+/// (`status_matches_filters`), whatever context those filters apply in.
+#[tokio::test]
+async fn test_single_status_carries_matching_filters() {
+    let ctx = TestContext::new("filter-show").await;
+    let filter: Value = ctx
+        .api
+        .post_json(
+            "/api/v2/filters",
+            Some(&ctx.alice_token),
+            &json!({"title": "words", "context": ["notifications"],
+                    "keywords_attributes": [{"keyword": "parityword"}]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "a parityword here", "public")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    let seen: Value = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}"), Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(seen["filtered"][0]["filter"]["id"], filter["id"], "{seen}");
+    assert_eq!(
+        seen["filtered"][0]["keyword_matches"],
+        json!(["parityword"]),
+        "{seen}"
+    );
+
+    let other = ctx
+        .api
+        .post_status(&ctx.bob_token, "nothing to see", "public")
+        .await;
+    let other_id = other["id"].as_str().unwrap();
+    let seen: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{other_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(seen["filtered"], json!([]), "{seen}");
+}
