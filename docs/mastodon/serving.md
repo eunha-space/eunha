@@ -157,16 +157,33 @@ conditions, so a suspended account may be added; adding an account that has
 asked to be deleted is a 404, as is naming an account that does not exist,
 and both are answered before whether the collection is the caller's.
 
+A local collection's activities go to its reach, as
+`CollectionRawDistributionWorker` sends them (`CollectionReachFinder`):
+everyone its owner reaches (`AccountReachFinder`: followers, the accounts
+that reported the owner, those it mentioned, followed or asked to follow in
+the last two days, and the enabled relays) and the remote accounts the
+collection features or has asked to. That is where a collection's own `Add`
+goes when it is created, and its `Update` when it is edited, or marked
+sensitive by a moderator, so that its name, description, language,
+sensitivity, discoverability or hashtag changed; an edit that changes none
+of them sends nothing.
+
 Adding a local account sends the item's `Add` (a `FeaturedItem`) to the
-collection's reach, as `CollectionRawDistributionWorker` sends it: the
-owner's followers and the remote accounts the collection features or has
-asked to. A collection's own `Add` goes to the owner's followers when it is
-created, and its `Update` when it is edited. Adding a remote account asks it
-with a `FeatureRequest` at its own inbox; when it accepts with an
-authorization on its own host, the item is accepted under that
-authorization and its `Add` sent to the collection's reach, and when it
-rejects, the item is rejected. Taking an item out, or the featured account
-deleting its authorization, sends the item's `Remove` to the same reach.
+collection's reach. Adding a remote account asks it with a `FeatureRequest`
+at its own inbox; when it accepts with an authorization on its own host,
+the item is accepted under that authorization and its `Add` sent to the
+collection's reach, and when it rejects, the item is rejected. Taking an
+item out, or the featured account deleting its authorization, sends the
+item's `Remove` to the same reach.
+
+Deleting a collection sends its `Remove` to everyone the owner reaches
+(`AccountRawDistributionWorker`), and not, through the collection that is
+gone, to the accounts it featured. Mastodon also queues a delivery per
+featured account, signed as that account and addressed to the owner's inbox
+URL, which a local owner does not have, so none of them is delivered; eunha
+does not queue them. A collection a moderator deletes is removed the same
+way, which Mastodon does not send at all (`moderated-collection-removal` in
+*divergences.toml*).
 
 A remote collection asking to feature a local account is answered the same
 way: when the request comes from the sender's own host, for one of the

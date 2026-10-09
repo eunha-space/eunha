@@ -106,6 +106,9 @@ pub async fn save(
     };
     let mut to_remove: Vec<Status> = vec![];
     let mut to_update: Vec<Status> = vec![];
+    // The collections `mark_collections_as_sensitive!` changed, which
+    // `UpdateCollectionService` tells their members and reach of.
+    let mut made_sensitive: Vec<i64> = vec![];
     // `Account.representative`, who edits a local post marked sensitive.
     let representative = if kind != "delete" && target.is_local() && !statuses.is_empty() {
         crate::federation::instance_actor::representative(state)
@@ -209,12 +212,18 @@ pub async fn save(
         }
         // `mark_collections_as_sensitive!`.
         for collection in &collections {
-            sqlx::query!(
-                "UPDATE collections SET sensitive = true, updated_at = now() WHERE id = $1",
+            let changed = sqlx::query!(
+                "UPDATE collections SET sensitive = true, updated_at = now()
+                 WHERE id = $1 AND NOT sensitive",
                 collection.id
             )
             .execute(&mut *tx)
-            .await?;
+            .await?
+            .rows_affected()
+                > 0;
+            if changed {
+                made_sensitive.push(collection.id);
+            }
             action_log::log(
                 &mut *tx,
                 actor_id,
@@ -319,8 +328,7 @@ pub async fn save(
     }
 
     // `RemovalWorker` for each post, a local one kept for the strike
-    // (`preserve`) and a remote one destroyed (`immediate`), and what the
-    // collections' owners' followers are told.
+    // (`preserve`) and a remote one destroyed (`immediate`).
     let options = crate::remove_status::Options {
         preserve: target.is_local(),
         immediate: !target.is_local(),
@@ -345,24 +353,36 @@ pub async fn save(
             tracing::warn!(status_id = updated.id, %error, "could not federate a sensitive post");
         }
     }
-    for collection in collections.iter().filter(|c| c.local) {
+    // `DeleteCollectionService` is not called for a collection a moderator
+    // deletes, so upstream tells no one; eunha sends its `Remove` to the
+    // owner's reach as the owner's own deletion does (see
+    // `moderated-collection-removal` in divergences.toml).
+    // `UpdateCollectionService` for one made sensitive: its local members
+    // are told (`NotifyOfCollectionUpdateService`), and a local one's
+    // `Update` goes to its reach.
+    for collection in &collections {
         if kind == "delete" {
-            crate::api::mastodon::collections::distribute_collection_removal(
-                state,
-                &state.instance.domain,
-                collection.id,
-                target.id,
-            )
-            .await;
-        } else {
-            crate::api::mastodon::collections::distribute_collection(
-                state,
-                &state.instance.domain,
-                collection.id,
-                target.id,
-                false,
-            )
-            .await;
+            if collection.local {
+                crate::api::mastodon::collections::distribute_collection_removal(
+                    state,
+                    &state.instance.domain,
+                    collection.id,
+                    target.id,
+                )
+                .await;
+            }
+        } else if made_sensitive.contains(&collection.id) {
+            crate::api::mastodon::collections::notify_of_collection_update(state, collection.id)
+                .await;
+            if collection.local {
+                crate::api::mastodon::collections::distribute_collection(
+                    state,
+                    &state.instance.domain,
+                    collection.id,
+                    false,
+                )
+                .await;
+            }
         }
     }
     Ok(())

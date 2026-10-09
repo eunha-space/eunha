@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS \"inbox!\"\n               FROM collection_items ci JOIN accounts a ON a.id = ci.account_id\n               WHERE ci.collection_id = $1 AND ci.state IN (0, 1)\n                 AND a.domain IS NOT NULL AND a.protocol = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "24974724a8fda04de10345e208945adbe5fc45828066a0ac92099b746e4f0843"
+}

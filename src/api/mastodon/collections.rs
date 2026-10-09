@@ -4,11 +4,11 @@
 //! (`pending` / `accepted` / `rejected` / `revoked`). Local accounts added to a
 //! local collection are auto-accepted; remote accounts start `pending`.
 //!
-//! This implements the local REST surface, and what it sends: the `Add`,
-//! `Update` and `Remove` of a collection to its owner's followers, the
-//! `Add` and `Remove` of an item to the collection's reach, and the
-//! `FeatureRequest` asking a remote account to be featured. Remote
-//! collections are kept by `crate::federation::featured_collections`.
+//! This implements the local REST surface, and what it sends: the `Add` and
+//! `Update` of a collection, and the `Add` and `Remove` of an item, to the
+//! collection's reach; the `Remove` of a deleted collection to its owner's
+//! reach; and the `FeatureRequest` asking a remote account to be featured.
+//! Remote collections are kept by `crate::federation::featured_collections`.
 
 use axum::{
     extract::{Path, Query},
@@ -530,7 +530,7 @@ pub async fn create_collection(
         .await?
         .ok_or(AppError::NotFound)?;
     let entity = collection_entity(&state, &instance.domain, &c, Some(auth.account_id)).await?;
-    distribute_collection(&state, &instance.domain, new_id, auth.account_id, true).await;
+    distribute_collection(&state, &instance.domain, new_id, true).await;
     Ok(Json(json!({ "collection": entity })))
 }
 
@@ -629,7 +629,16 @@ pub async fn update_collection(
         notify_of_collection_update(&state, id).await;
     }
     let entity = collection_entity(&state, &instance.domain, &c, Some(auth.account_id)).await?;
-    distribute_collection(&state, &instance.domain, id, auth.account_id, false).await;
+    // `UpdateCollectionService#relevant_attributes_changed?`.
+    if previous.name != c.name
+        || previous.description != c.description
+        || previous.language != c.language
+        || previous.sensitive != c.sensitive
+        || previous.discoverable != c.discoverable
+        || previous.tag_name != c.tag_name
+    {
+        distribute_collection(&state, &instance.domain, id, false).await;
+    }
     Ok(Json(json!({ "collection": entity })))
 }
 
@@ -884,7 +893,7 @@ async fn add_item(
     ))
 }
 
-// ── ActivityPub distribution to followers (best-effort) ───────────────────────
+// ── ActivityPub distribution (best-effort) ────────────────────────────────────
 
 /// The owner's username, if it's a local account with a usable signing key.
 /// (The key itself is loaded from the account at delivery time.)
@@ -902,12 +911,14 @@ async fn owner_signing_username(state: &AppState, owner_account_id: i64) -> Opti
         .then_some(row.username)
 }
 
-/// Distribute an `Add`/`Update(FeaturedCollection)` to the owner's followers.
+/// `CreateCollectionService#distribute_add_activity` and
+/// `UpdateCollectionService#distribute_update_activity`: the `Add` (or, for
+/// an update, the `Update`) of the local collection, to the collection's
+/// reach (`CollectionRawDistributionWorker`).
 pub(crate) async fn distribute_collection(
     state: &AppState,
     domain: &str,
     collection_id: i64,
-    owner_account_id: i64,
     is_create: bool,
 ) {
     let Some(ap) = ap_coll::load_ap_collection(state, collection_id)
@@ -920,27 +931,23 @@ pub(crate) async fn distribute_collection(
     let Ok(body) = ap_coll::featured_collection_body(state, domain, &ap).await else {
         return;
     };
-    if owner_signing_username(state, owner_account_id)
-        .await
-        .is_none()
-    {
-        return;
-    }
-    let key_id = format!("{}#main-key", ap.actor_uri(domain));
     let activity = if is_create {
         ap_coll::add_collection_activity(domain, &ap, body)
     } else {
         ap_coll::update_collection_activity(domain, &ap, body)
     };
-    if let Err(e) =
-        crate::federation::delivery::fanout_to_followers(state, activity, owner_account_id, key_id)
-            .await
-    {
-        tracing::warn!(error = %e, "failed to enqueue collection fanout");
+    if let Err(e) = distribute_collection_raw(state, collection_id, activity).await {
+        tracing::warn!(error = %e, "failed to enqueue a collection's activity");
     }
 }
 
-/// Distribute a `Remove` (collection deleted) to the owner's followers.
+/// `DeleteCollectionService#distribute_remove_activity`: the `Remove` of a
+/// deleted collection, to its owner's reach (`AccountRawDistributionWorker`,
+/// `AccountReachFinder`). The collection is gone, so the accounts it
+/// featured are not reached through it. Upstream also queues a
+/// `DeliveryWorker` per featured account, signed as that account and
+/// addressed to the owner's `inbox_url`, which a local owner does not have:
+/// none of those is ever delivered, so eunha does not queue them.
 pub(crate) async fn distribute_collection_removal(
     state: &AppState,
     domain: &str,
@@ -968,14 +975,25 @@ pub(crate) async fn distribute_collection_removal(
         owner.id_scheme,
         &owner.username,
     );
-    let key_id = format!("{actor}#main-key");
+    let inboxes =
+        match crate::federation::delivery::account_reach_inboxes(state, owner_account_id).await {
+            Ok(inboxes) => inboxes,
+            Err(error) => {
+                tracing::warn!(%error, "could not find a collection owner's reach");
+                return;
+            }
+        };
     let activity =
         ap_coll::remove_collection_activity(domain, &actor, owner_account_id, collection_id);
-    if let Err(e) =
-        crate::federation::delivery::fanout_to_followers(state, activity, owner_account_id, key_id)
-            .await
+    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+        state,
+        activity,
+        inboxes,
+        format!("{actor}#main-key"),
+    )
+    .await
     {
-        tracing::warn!(error = %e, "failed to enqueue collection removal fanout");
+        tracing::warn!(error = %e, "failed to enqueue collection removal");
     }
 }
 
@@ -1147,13 +1165,14 @@ pub(crate) async fn distribute_collection_raw(
     let mut inboxes = crate::federation::delivery::account_reach_inboxes(state, owner.id)
         .await
         .map_err(AppError::Internal)?;
+    // `@collection.accounts.inboxes`: the accounts of its pending and
+    // accepted items, suspended or not.
     inboxes.extend(
         sqlx::query_scalar!(
-            r#"SELECT DISTINCT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url
-                                    ELSE a.inbox_url END AS "inbox!"
+            r#"SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS "inbox!"
                FROM collection_items ci JOIN accounts a ON a.id = ci.account_id
                WHERE ci.collection_id = $1 AND ci.state IN (0, 1)
-                 AND a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''"#,
+                 AND a.domain IS NOT NULL AND a.protocol = 1"#,
             collection_id,
         )
         .fetch_all(&state.db)

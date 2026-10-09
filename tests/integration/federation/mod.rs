@@ -3,6 +3,7 @@
 mod account_delete;
 mod audience;
 mod authorized_fetch;
+mod collection_reach;
 mod collections_served;
 mod delivery_failures;
 mod delivery_queue;

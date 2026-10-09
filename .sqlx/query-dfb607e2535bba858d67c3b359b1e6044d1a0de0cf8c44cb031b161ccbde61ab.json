@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE collections SET sensitive = true, updated_at = now()\n                 WHERE id = $1 AND NOT sensitive",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dfb607e2535bba858d67c3b359b1e6044d1a0de0cf8c44cb031b161ccbde61ab"
+}

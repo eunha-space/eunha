@@ -75,7 +75,8 @@ The recorded decisions cover:
     actor are told apart;
  -  the schema and the running processes `eunha maintenance fix-duplicates`
     works with;
- -  the audit log entry for a hashtag reviewed through the admin API.
+ -  the audit log entry for a hashtag reviewed through the admin API;
+ -  the `Remove` of a collection a moderator deletes.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.
