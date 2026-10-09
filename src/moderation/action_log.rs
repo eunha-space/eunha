@@ -92,12 +92,6 @@ impl Target {
         Self::new("CustomEmoji", id, shortcode)
     }
 
-    /// `Tag#to_log_human_identifier` is `formatted_name`, the `#`-prefixed
-    /// display name.
-    pub fn tag(id: i64, formatted_name: impl Into<String>) -> Self {
-        Self::new("Tag", id, formatted_name)
-    }
-
     pub fn user_role(id: i64, name: impl Into<String>) -> Self {
         Self::new("UserRole", id, name)
     }
@@ -167,26 +161,11 @@ pub async fn log<'e>(
     action: &str,
     target: &Target,
 ) -> AppResult<()> {
-    log_with_changes(db, account_id, action, target, None).await
-}
-
-/// `log_action` for a target whose `LOG_ATTRIBUTES` changes are recorded too
-/// (`recorded_changes`, used for tags' usable/trendable/listable), in the
-/// format named with them (`recorded_changes_format`).
-pub async fn log_with_changes<'e>(
-    db: impl PgExecutor<'e>,
-    account_id: i64,
-    action: &str,
-    target: &Target,
-    recorded_changes: Option<(serde_json::Value, &str)>,
-) -> AppResult<()> {
-    let (recorded_changes, recorded_changes_format) = recorded_changes.unzip();
     sqlx::query!(
         r#"INSERT INTO admin_action_logs
              (account_id, action, target_type, target_id, human_identifier,
-              route_param, permalink, recorded_changes, recorded_changes_format,
-              created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())"#,
+              route_param, permalink, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())"#,
         account_id,
         action,
         target.kind,
@@ -194,8 +173,6 @@ pub async fn log_with_changes<'e>(
         target.human_identifier,
         target.route_param,
         target.permalink,
-        recorded_changes,
-        recorded_changes_format,
     )
     .execute(db)
     .await?;

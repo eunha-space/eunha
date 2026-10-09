@@ -394,12 +394,6 @@ accounts that have acted and the action types by label. A report's own history
 (what was logged about it, its account, its posts and its strikes) is at
 `/api/v1/admin/reports/:id/history`.
 
-A hashtag reviewed through `PATCH /api/v1/admin/tags/:id` is logged as
-Mastodon's admin page logs it, with what `usable`, `trendable` and
-`listable` were changed to, which the entry's sentence ends with.
-Mastodon's own API logs nothing there; eunha's hashtag page is a client of
-it.
-
 ### Warning presets
 
 `/api/v1/admin/warning_presets` holds canned warning texts, managed with

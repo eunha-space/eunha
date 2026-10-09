@@ -1457,25 +1457,3 @@ storage is not this instance's to delete from."""
 evidence = "tests/integration/surfaces/fix_duplicates.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
-
-[[divergence]]
-id = "admin-tag-update-logged-from-api"
-kind = "behaviour"
-summary = "Logs a hashtag's review from the admin API, as upstream's admin page does"
-mastodon = """
-Writes an `update` audit log entry for a hashtag reviewed on the admin page \
-(`Admin::TagsController#log_action_from_change`), recording what `usable`, \
-`trendable` and `listable` were changed to in `tags_format_1.0`. `PATCH \
-/api/v1/admin/tags/:id` (`Api::V1::Admin::TagsController#update`) writes \
-none."""
-eunha = """
-`PATCH /api/v1/admin/tags/:id` writes the entry the admin page writes, with \
-the same `recorded_changes` and `recorded_changes_format`."""
-why = """
-Eunha has no server-rendered admin; its hashtag page is a client of this API, \
-and stands in for upstream's page, whose changes the audit log shows. Telling \
-its requests from another client's would take a second endpoint doing the same \
-thing."""
-evidence = "tests/integration/c2s/admin.rs"
-since = "4.7.2"
-reviewed_for = "4.7.2"

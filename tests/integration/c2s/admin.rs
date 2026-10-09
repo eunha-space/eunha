@@ -1589,8 +1589,8 @@ async fn test_admin_update_tag() {
     assert_eq!(updated["usable"].as_bool(), Some(true));
     assert_eq!(updated["requires_review"].as_bool(), Some(false));
 
-    // Logged as the admin page's `log_action_from_change` logs it: what
-    // changed, and only that.
+    // `Api::V1::Admin::TagsController#update` logs nothing, unlike the
+    // admin page's `log_action_from_change`.
     ctx.api
         .patch_json(
             &format!("/api/v1/admin/tags/{tag_id}"),
@@ -1598,31 +1598,14 @@ async fn test_admin_update_tag() {
             &json!({"trendable": false, "usable": true}),
         )
         .await;
-    let logs: Vec<(String, String, Value, String)> = sqlx::query_as(
-        "SELECT action, human_identifier, recorded_changes, recorded_changes_format
-         FROM admin_action_logs WHERE target_type = 'Tag' AND target_id = $1 ORDER BY id",
+    let logs: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM admin_action_logs WHERE target_type = 'Tag' AND target_id = $1",
     )
     .bind(tag_id.parse::<i64>().unwrap())
-    .fetch_all(&ctx.db)
+    .fetch_one(&ctx.db)
     .await
     .unwrap();
-    assert_eq!(
-        logs,
-        [
-            (
-                "update".to_owned(),
-                "#updatabletag".to_owned(),
-                json!({"usable": true, "trendable": true, "listable": true}),
-                "tags_format_1.0".to_owned(),
-            ),
-            (
-                "update".to_owned(),
-                "#updatabletag".to_owned(),
-                json!({"trendable": false}),
-                "tags_format_1.0".to_owned(),
-            ),
-        ]
-    );
+    assert_eq!(logs, 0);
 }
 
 // ── GET /api/v2/admin/accounts ────────────────────────────────────────────────

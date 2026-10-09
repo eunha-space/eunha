@@ -488,14 +488,6 @@ pub async fn update_admin_tag(
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
     let domain = &instance.domain;
-    let mut tx = state.db.begin().await?;
-    let before = sqlx::query!(
-        "SELECT trendable, usable, listable FROM tags WHERE id = $1 FOR UPDATE",
-        id
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(AppError::NotFound)?;
     let r = sqlx::query!(
         r#"UPDATE tags SET
                trendable   = COALESCE($2, trendable),
@@ -514,31 +506,9 @@ pub async fn update_admin_tag(
         form.listable,
         auth.account_id,
     )
-    .fetch_one(&mut *tx)
-    .await?;
-    // `Admin::TagsController#log_action_from_change`, which the admin page,
-    // a client of this API, stands in for: what `usable`, `trendable` and
-    // `listable` were changed to. `reviewed_at` changes every time, so
-    // there is always an entry (`saved_changes?`).
-    let mut changes = serde_json::Map::new();
-    for (key, was, is) in [
-        ("usable", before.usable, r.usable),
-        ("trendable", before.trendable, r.trendable),
-        ("listable", before.listable, r.listable),
-    ] {
-        if was != is {
-            changes.insert(key.to_owned(), is.into());
-        }
-    }
-    crate::moderation::action_log::log_with_changes(
-        &mut *tx,
-        auth.account_id,
-        "update",
-        &crate::moderation::action_log::Target::tag(r.id, format!("#{}", r.display_name)),
-        Some((changes.into(), "tags_format_1.0")),
-    )
-    .await?;
-    tx.commit().await?;
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     // `Tag`'s `update_index('tags', :self)`.
     crate::search::elasticsearch::indexing::tags(&state, &[r.id]).await;
     Ok(Json(AdminTag {
