@@ -47,7 +47,9 @@ async fn test_file_report() {
     assert_eq!(category, 1_000);
 }
 
-/// A `legal` report is accepted, and an unknown category is not.
+/// A `legal` report is accepted, and an unknown category is not — with a
+/// 422, where Mastodon's enum raises and answers 500
+/// (`report-unknown-category-rejected`).
 #[tokio::test]
 async fn test_file_report_categories() {
     let ctx = TestContext::new("report-categories").await;

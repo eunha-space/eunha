@@ -1468,3 +1468,41 @@ storage is not this instance's to delete from."""
 evidence = "tests/integration/surfaces/fix_duplicates.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "report-unknown-category-rejected"
+kind = "behaviour"
+summary = "Refuses a report in a category that does not exist, rather than failing"
+mastodon = """
+`POST /api/v1/reports` with a `category` that is not one of `Report`'s enum \
+values raises the enum's `ArgumentError`, which nothing in the API rescues, \
+and answers 500."""
+eunha = """
+Answers 422, with Rails' own wording of the error: `'…' is not a valid \
+category`."""
+why = """
+The request is the client's mistake, and a 500 tells it the server broke and \
+it may as well retry. A 422 is what Mastodon gives every other invalid report, \
+and is surely what the controller means; nothing depends on the crash."""
+evidence = "tests/integration/c2s/reports.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "push-subscription-unusable-key-rejected"
+kind = "behaviour"
+summary = "Refuses a push subscription whose key is not a key, rather than failing"
+mastodon = """
+`WebPushKeyValidator` rescues `ArgumentError` and \
+`OpenSSL::PKey::EC::Point::Error` from a trial encryption, so a key that is \
+not a point on the curve is a 422. One that decodes to the point at infinity, \
+such as `AAAA`, raises `OpenSSL::PKey::PKeyError` instead, which nothing \
+rescues, and `POST /api/v1/push/subscription` answers 500."""
+eunha = "Answers 422 for any `p256dh` or `auth` a message cannot be encrypted to."
+why = """
+The validator is there to turn a bad key into a 422, and the 500 is only a \
+key bad in a way it did not anticipate. A client that sent one learns nothing \
+from a server error, and a 422 is the answer the validation exists to give."""
+evidence = "tests/integration/c2s/push.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

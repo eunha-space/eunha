@@ -673,12 +673,17 @@ async fn push_subscriptions_are_validated() {
     assert_eq!(error["error"], "Validation failed: Endpoint is invalid");
 
     body["subscription"]["endpoint"] = json!("https://push.example.com/x");
-    body["subscription"]["keys"]["p256dh"] = json!("BNotAKey");
-    let resp = ctx
-        .api
-        .post_json("/api/v1/push/subscription", Some(&ctx.alice_token), &body)
-        .await;
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    // Not a point on the curve; and the point at infinity, which Mastodon's
+    // validator does not rescue and answers with a 500
+    // (`push-subscription-unusable-key-rejected`).
+    for key in ["BNotAKey", "AAAA"] {
+        body["subscription"]["keys"]["p256dh"] = json!(key);
+        let resp = ctx
+            .api
+            .post_json("/api/v1/push/subscription", Some(&ctx.alice_token), &body)
+            .await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY, "{key}");
+    }
     assert_eq!(subscriptions(&ctx).await, 0);
 }
 
