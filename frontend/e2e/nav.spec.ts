@@ -1,4 +1,21 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+// `/api/v2/instance` with the live feed access settings in
+// `configuration.timelines_access`.
+async function liveFeedAccess(page: Page, remote: string) {
+  await page.route('**/api/v2/instance', (r) => r.fulfill({
+    json: {
+      domain: 'community.example',
+      title: 'Community',
+      icon: [],
+      registrations: { enabled: false },
+      configuration: {
+        translation: { enabled: false },
+        timelines_access: { live_feeds: { local: 'public', remote } },
+      },
+    },
+  }))
+}
 
 test('the sidebar retains its domain while instance details refresh after navigation', async ({ page }) => {
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
@@ -50,27 +67,42 @@ test('the rail carries the timelines, and no tab strip remains', async ({ page }
   await page.route('**/api/v1/notifications/unread_count**', (r) =>
     r.fulfill({ json: { count: 0 } }),
   )
+  await liveFeedAccess(page, 'authenticated')
 
   await page.goto('/')
   const rail = page.locator('aside')
-  for (const label of ['Home', 'Local', 'Messages', 'Saved']) {
+  for (const label of ['Home', 'Local', 'Federated', 'Messages', 'Saved']) {
     await expect(rail.getByRole('link', { name: label })).toBeVisible()
   }
 
-  await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(0)
   await rail.getByRole('link', { name: 'Local' }).click()
   await expect(page).toHaveURL(/\/local$/)
+  await rail.getByRole('link', { name: 'Federated' }).click()
+  await expect(page).toHaveURL(/\/public$/)
 })
 
 // Signed out, "/" *is* the local timeline, so that row has to own both paths
 // or a visitor lands on a page with nothing lit.
 test('signed out, the local row owns the root path', async ({ page }) => {
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+  await liveFeedAccess(page, 'public')
   await page.goto('/')
 
-  await expect(page.locator('aside').getByRole('link', { name: 'Federated' })).toHaveCount(0)
+  await expect(page.locator('aside').getByRole('link', { name: 'Federated' })).toBeVisible()
   const local = page.locator('aside').getByRole('link', { name: 'Local' })
   await expect(local).toHaveClass(/bg-muted/)
   // And there is still a way to change the theme without an account menu.
   await expect(page.getByRole('button', { name: 'Toggle theme' })).toBeVisible()
+})
+
+// Mastodon's navigation offers a live feed only to whoever may read it:
+// `authenticated` keeps the federated timeline from visitors.
+test('signed out, the federated row follows remote_live_feed_access', async ({ page }) => {
+  await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+  await liveFeedAccess(page, 'authenticated')
+  await page.goto('/')
+
+  const rail = page.locator('aside')
+  await expect(rail.getByRole('link', { name: 'Local' })).toBeVisible()
+  await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(0)
 })

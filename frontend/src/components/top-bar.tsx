@@ -5,6 +5,7 @@ import {
   Check,
   Bookmark,
   Compass,
+  Globe,
   MessageCircle,
   Home,
   Info,
@@ -57,6 +58,7 @@ import {
 } from '@/components/ui/sidebar.tsx'
 import { cn } from '@/lib/utils.ts'
 import { firstAdminSection } from '@/lib/admin-sections.ts'
+import { can } from '../admin-api.ts'
 
 // Roomier rows and a full-width pill for the current one, matching the weight
 // 5.0 gives the rail now that it carries fewer things.
@@ -94,6 +96,35 @@ function InviteCount({ count }: { count?: number | null }) {
   return count ? <span className="bg-muted text-muted-foreground ml-auto rounded-md px-1.5 py-0.5 text-xs tabular-nums" aria-label={`${count} available single-use invite links`}>{count}</span> : null
 }
 
+/**
+ * Mastodon's `canViewFeed`, over a `*_live_feed_access` setting the instance
+ * reports in `configuration.timelines_access`: `public` for anyone,
+ * `authenticated` for the signed in, and otherwise for a role that may
+ * `view_feeds`, which is what the server lets through.
+ */
+function canViewFeed(
+  signedIn: boolean,
+  account: MeAccount | null,
+  setting: string | undefined,
+): boolean {
+  switch (setting) {
+    case 'public':
+      return true
+    case 'authenticated':
+      return signedIn
+    default:
+      return can(account?.permissions ?? 0, 'view_feeds')
+  }
+}
+
+/** `remote_live_feed_access`, from the instance the top bar last loaded. */
+function remoteLiveFeedAccess(): string | undefined {
+  const configuration = getCachedInstance()?.configuration as
+    | { timelinesAccess?: { liveFeeds?: { remote?: string } } }
+    | undefined
+  return configuration?.timelinesAccess?.liveFeeds?.remote
+}
+
 function useNavItems(
   token: string | null,
   unread: number,
@@ -105,11 +136,17 @@ function useNavItems(
   // feature leaves a rail that is mostly empty. What eunha has instead is
   // home and local timelines, which were a tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
-  // is the community rather than a curiosity. So they live here.
+  // is the community rather than a curiosity. So they live here. The
+  // federated timeline follows them, shown as Mastodon shows its live feeds:
+  // to whoever the server's `remote_live_feed_access` lets read it.
+  const federated: NavItem[] = canViewFeed(!!token, account, remoteLiveFeedAccess())
+    ? [{ to: '/public', icon: Globe, label: 'Federated' }]
+    : []
   if (!token) {
     return [
       // Signed out, "/" *is* the local timeline, so that row owns both paths.
       { to: '/local', icon: Users, label: 'Local', matchAlso: (p) => p === '/' },
+      ...federated,
       { to: '/explore', icon: Compass, label: 'Explore' },
       { to: '/about', icon: Info, label: 'About' },
     ]
@@ -131,6 +168,7 @@ function useNavItems(
   return [
     { to: '/', end: true, icon: Home, label: 'Home' },
     { to: '/local', icon: Users, label: 'Local' },
+    ...federated,
     ...(invites.hasAvailable || moderation.length > 0 ? [{
       to: '/invites', icon: Ticket,
       label: 'Invite people', inviteCount: invites.count,

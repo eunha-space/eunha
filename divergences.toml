@@ -842,17 +842,6 @@ reviewed_for = "4.7.2"
 
 
 [[divergence]]
-id = "federated-timeline-navigation"
-kind = "behaviour"
-summary = "Omits the federated timeline from sidebar navigation"
-mastodon = "Offers navigation to the federated public timeline in its web client."
-eunha = "The desktop sidebar and mobile drawer omit Federated for visitors and signed-in members; /public and the federated column remain available."
-why = "Keep the sidebar focused on the member's home feed and local community."
-evidence = "frontend/e2e/nav.spec.ts"
-since = "4.7.1"
-reviewed_for = "4.7.2"
-
-[[divergence]]
 id = "collection-notification-push-titles"
 kind = "behaviour"
 summary = "Titles the web push of a collection notification with what happened"
