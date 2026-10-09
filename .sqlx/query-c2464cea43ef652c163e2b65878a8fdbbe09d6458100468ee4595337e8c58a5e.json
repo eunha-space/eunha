@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM accounts\n                 WHERE domain IS NOT NULL\n                   AND last_webfingered_at <= now() - make_interval(days => $1)\n                   AND updated_at <= now() - make_interval(days => $1)\n                   AND id > $2\n                 ORDER BY id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c2464cea43ef652c163e2b65878a8fdbbe09d6458100468ee4595337e8c58a5e"
+}

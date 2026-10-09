@@ -76,7 +76,9 @@ user, the matching key pattern, and only the commands Eunha uses:
 
 `SCAN` is only ever given a `MATCH` pattern under the instance's own prefix: the
 federation admin page uses it to find the servers deliveries are failing to, as
-Mastodon lists its `exhausted_deliveries` keys. `SSCAN` reads the search index
+Mastodon lists its `exhausted_deliveries` keys, and `eunha feeds clear`,
+`feeds vacuum` and `cache clear` use it where `tootctl` uses `KEYS` (see
+[maintenance commands](./maintenance)). `SSCAN` reads the search index
 queues, and is only used when Elasticsearch is enabled.
 
 The hosting provisioner installs the fixed `eunha_compare_delete` function used

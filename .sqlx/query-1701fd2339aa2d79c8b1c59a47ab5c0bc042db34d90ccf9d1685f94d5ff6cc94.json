@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.file_file_name, m.thumbnail_file_name FROM media_attachments m\n               WHERE m.status_id IS NULL AND m.scheduled_status_id IS NULL\n                 AND m.created_at < now() - make_interval(days => $1)\n                 AND NOT EXISTS (\n                   SELECT 1 FROM scheduled_statuses ss,\n                     jsonb_array_elements_text(\n                       CASE WHEN jsonb_typeof(ss.params::jsonb -> 'media_ids') = 'array'\n                            THEN ss.params::jsonb -> 'media_ids' ELSE '[]'::jsonb END\n                     ) e\n                   WHERE e = m.id::text\n                 )\n                 AND m.id > $2\n               ORDER BY m.id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "thumbnail_file_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "1701fd2339aa2d79c8b1c59a47ab5c0bc042db34d90ccf9d1685f94d5ff6cc94"
+}

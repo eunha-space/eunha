@@ -1290,3 +1290,31 @@ by its status and headers, not the message."""
 evidence = "src/rate_limit.rs"
 since = "4.7.2"
 reviewed_for = "4.7.2"
+
+[[divergence]]
+id = "maintenance-commands-in-eunha-terms"
+kind = "behaviour"
+summary = "Runs tootctl's feeds, cache, statuses, media and preview_cards commands in eunha's terms"
+mastodon = """
+`tootctl cache clear` deletes `Rails.cache`'s `cache:` namespace, \
+`statuses remove` keeps its working lists in `public` and builds a \
+temporary index, `media refresh` downloads remote media again, \
+`media remove-orphans --fix-permissions` resets object ACLs, and each draws \
+a progress bar."""
+eunha = """
+`eunha cache clear` deletes `cache:*` and the entries eunha keeps outside \
+that namespace under names Mastodon reads from its cache, under the \
+instance's prefix only. `statuses remove` keeps its lists in the `eunha` \
+schema and builds no index. `media refresh` and `--fix-permissions` are not \
+offered, `media remove-orphans` lists only the instance's key prefix and \
+keeps any file sharing the stem of the one its record holds, and the \
+commands print their final line without a progress bar."""
+why = """
+Several instances share a Redis and a bucket, so nothing may reach past the \
+instance's prefix; eunha keeps no copies of remote media to download and \
+sets no per-object ACLs; tables only eunha needs belong in its schema, and \
+the tracked schema already indexes `statuses.conversation_id`. Keeping a \
+file it is unsure of is the safe side of deleting."""
+evidence = "tests/integration/surfaces/tootctl_commands.rs"
+since = "4.7.2"
+reviewed_for = "4.7.2"

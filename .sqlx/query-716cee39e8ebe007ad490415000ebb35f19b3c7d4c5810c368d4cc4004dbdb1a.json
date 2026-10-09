@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.id FROM lists l JOIN users u ON u.account_id = l.account_id\n               WHERE u.confirmed_at IS NOT NULL\n                 AND u.current_sign_in_at >= now() - make_interval(days => $1)\n                 AND l.id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "716cee39e8ebe007ad490415000ebb35f19b3c7d4c5810c368d4cc4004dbdb1a"
+}

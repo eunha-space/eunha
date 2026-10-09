@@ -65,7 +65,9 @@ The recorded decisions cover:
  -  the rate limits counted at eunha's own sign-in and account pages, and
     the switch that turns them off, and the locales the rate limit message
     is written in;
- -  how a profile link's redirect back to the account is asked about.
+ -  how a profile link's redirect back to the account is asked about;
+ -  `tootctl`'s feeds, cache, statuses, media and preview card commands in
+    eunha's terms.
 
 Read the file rather than this paragraph: the file is the one that has to stay
 true.

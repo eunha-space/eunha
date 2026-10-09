@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_file_name, file_file_size, thumbnail_file_name, thumbnail_file_size\n         FROM media_attachments WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "thumbnail_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "thumbnail_file_size",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8f56a85175bcd3193ed8aeb1b281e9cf58bfce9a5e3669745da5c9567cfddb37"
+}

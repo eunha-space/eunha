@@ -78,6 +78,52 @@ pub async fn spawn_fake_s3() -> String {
                         .body(Body::empty())
                         .unwrap()
                 }
+                _ if req.uri().query().is_some_and(|q| q.contains("list-type=2")) => {
+                    let query: HashMap<String, String> =
+                        url::form_urlencoded::parse(req.uri().query().unwrap().as_bytes())
+                            .into_owned()
+                            .collect();
+                    let bucket = format!("{}/", path.trim_end_matches('/'));
+                    let prefix = query.get("prefix").cloned().unwrap_or_default();
+                    let after = query.get("start-after").cloned().unwrap_or_default();
+                    let max: usize = query
+                        .get("max-keys")
+                        .and_then(|m| m.parse().ok())
+                        .unwrap_or(1000);
+                    let mut listed: Vec<(String, usize)> = objects
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|(p, body)| {
+                            let key = p.strip_prefix(&bucket)?;
+                            (key.starts_with(&prefix) && key > after.as_str())
+                                .then(|| (key.to_owned(), body.len()))
+                        })
+                        .collect();
+                    listed.sort();
+                    let truncated = listed.len() > max;
+                    listed.truncate(max);
+                    let contents: String = listed
+                        .iter()
+                        .map(|(key, size)| {
+                            format!("<Contents><Key>{key}</Key><Size>{size}</Size></Contents>")
+                        })
+                        .collect();
+                    let xml = format!(
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+                         <ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\
+                         <Name>{}</Name><Prefix>{prefix}</Prefix><KeyCount>{}</KeyCount>\
+                         <MaxKeys>{max}</MaxKeys><IsTruncated>{truncated}</IsTruncated>\
+                         {contents}</ListBucketResult>",
+                        bucket.trim_matches('/'),
+                        listed.len()
+                    );
+                    Response::builder()
+                        .status(AxumStatus::OK)
+                        .header("Content-Type", "application/xml")
+                        .body(Body::from(xml))
+                        .unwrap()
+                }
                 _ => {
                     let body = objects.lock().unwrap().get(&path).cloned();
                     Response::builder()

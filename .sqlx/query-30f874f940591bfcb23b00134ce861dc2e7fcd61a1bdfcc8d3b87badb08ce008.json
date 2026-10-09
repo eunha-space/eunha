@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH c AS (\n             SELECT (SELECT count(*) FROM statuses\n                     WHERE in_reply_to_id = $1 AND deleted_at IS NULL AND visibility <> 3)\n                      AS replies,\n                    (SELECT count(*) FROM statuses\n                     WHERE reblog_of_id = $1 AND deleted_at IS NULL) AS reblogs,\n                    (SELECT count(*) FROM favourites WHERE status_id = $1) AS favourites,\n                    (SELECT count(*) FROM quotes WHERE quoted_status_id = $1 AND state = 1)\n                      AS quotes\n           ), updated AS (\n             UPDATE status_stats s\n             SET replies_count = c.replies, reblogs_count = c.reblogs,\n                 favourites_count = c.favourites, quotes_count = c.quotes,\n                 updated_at = now()\n             FROM c\n             WHERE s.status_id = $1\n               AND (s.replies_count, s.reblogs_count, s.favourites_count, s.quotes_count)\n                   IS DISTINCT FROM (c.replies, c.reblogs, c.favourites, c.quotes)\n             RETURNING s.id\n           )\n           INSERT INTO status_stats\n             (status_id, replies_count, reblogs_count, favourites_count, quotes_count,\n              created_at, updated_at)\n           SELECT $1, c.replies, c.reblogs, c.favourites, c.quotes, now(), now() FROM c\n           WHERE (c.replies, c.reblogs, c.favourites, c.quotes) <> (0, 0, 0, 0)\n             AND NOT EXISTS (SELECT 1 FROM status_stats WHERE status_id = $1)\n           ON CONFLICT (status_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30f874f940591bfcb23b00134ce861dc2e7fcd61a1bdfcc8d3b87badb08ce008"
+}

@@ -29,5 +29,6 @@ mod signup_requirements;
 mod software_updates;
 mod streaming;
 mod timeline_exclusions;
+mod tootctl_commands;
 mod trends_pagination;
 mod two_factor;

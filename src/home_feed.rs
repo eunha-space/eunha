@@ -146,16 +146,31 @@ pub async fn regenerate(state: &AppState, account_id: i64) {
     if !account_exists(state, account_id).await {
         return;
     }
+    precompute(state, account_id, false).await;
+}
+
+/// `PrecomputeFeedService#call(account, skip_filled_timelines:)`: fill the
+/// home feed and each of the account's lists, leaving out, with
+/// `skip_filled_timelines`, any already more than half full; then finish the
+/// regeneration however that went.
+pub async fn precompute(state: &AppState, account_id: i64, skip_filled_timelines: bool) {
     let finish = async_refresh::FinishOnDrop::new(state, &regeneration_key(account_id));
     let mut redis = state.redis.clone();
-    crate::feed::populate_home(&mut redis, &state.redis_keys, &state.db, account_id).await;
+    let keys = &state.redis_keys;
+    // `skip_timeline?`: `timeline_size(type, id) * 2 > FeedManager::MAX_ITEMS`.
+    let filled = |size: u64| skip_filled_timelines && size * 2 > crate::feed::MAX_ITEMS;
+    if !filled(crate::feed::home_size(&mut redis, keys, account_id).await) {
+        crate::feed::populate_home(&mut redis, keys, &state.db, account_id).await;
+    }
     let lists: Vec<i64> =
         sqlx::query_scalar!("SELECT id FROM lists WHERE account_id = $1", account_id)
             .fetch_all(&state.db)
             .await
             .unwrap_or_default();
     for list_id in lists {
-        crate::feed::populate_list(&mut redis, &state.redis_keys, &state.db, list_id).await;
+        if !filled(crate::feed::list_size(&mut redis, keys, list_id).await) {
+            crate::feed::populate_list(&mut redis, keys, &state.db, list_id).await;
+        }
     }
     finish.finish().await;
 }

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id AS \"account_id!\" FROM users\n               WHERE confirmed_at IS NOT NULL\n                 AND current_sign_in_at >= now() - make_interval(days => $1)\n                 AND account_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "73e7c66be89c7ba6bc3e4b0fe9ea6b187d32bf5a8b2ad3e01293b8405d1ad7fd"
+}

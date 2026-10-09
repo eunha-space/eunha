@@ -63,6 +63,8 @@ Running an instance:
     `[instance.elasticsearch]` settings, indexing, and `eunha search deploy`.
  -  *docs/operating/administration.md*: the server settings and what they
     drive, content retention, and the rest of the server administration.
+ -  *docs/operating/maintenance.md*: `eunha feeds`, `cache`, `statuses remove`,
+    `media` and `preview_cards remove`, `tootctl`'s clean-ups.
  -  *docs/operating/email-subscriptions.md*: email subscriptions, their
     switches, distribution, and the admin API.
  -  *docs/operating/account-moves.md*: aliases, moving an account, redirects,

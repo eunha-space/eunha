@@ -178,6 +178,9 @@ enum Command {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    /// `tootctl feeds`, `cache`, `statuses`, `media` and `preview_cards`.
+    #[command(flatten)]
+    Tootctl(eunha::tootctl::Command),
 }
 
 #[derive(Subcommand, Debug)]
@@ -684,6 +687,12 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::SelfDestruct { instance }) => {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
             return self_destruct(config).await;
+        }
+        Some(Command::Tootctl(command)) => {
+            let config = command_config(args.tenants.as_deref(), command.instance())?;
+            let db = command_database_sized(&config, command.connections()).await?;
+            let state = eunha::state::AppState::new(db, config).await?;
+            return command.run(&state).await;
         }
         None => {}
     }

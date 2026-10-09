@@ -2235,6 +2235,25 @@ pub async fn delete_list_feed(redis: &mut ConnectionManager, keys: &RedisKeyspac
     clean_feed(redis, &Timeline::list(keys, list_id)).await;
 }
 
+/// `FeedManager::MAX_ITEMS`, for those outside deciding whether a feed is
+/// full.
+pub const MAX_ITEMS: u64 = FEED_MAX_ITEMS as u64;
+
+/// `FeedManager#timeline_size(:home, account_id)`: how many entries the home
+/// feed holds, none when Redis cannot say.
+pub async fn home_size(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    account_id: i64,
+) -> u64 {
+    redis.zcard(feed_key(keys, account_id)).await.unwrap_or(0)
+}
+
+/// `FeedManager#timeline_size(:list, list_id)`.
+pub async fn list_size(redis: &mut ConnectionManager, keys: &RedisKeyspace, list_id: i64) -> u64 {
+    redis.zcard(list_feed_key(keys, list_id)).await.unwrap_or(0)
+}
+
 /// `Vacuum::FeedsVacuum`: remove the home feeds and list feeds of confirmed
 /// users who have not signed in within [`crate::home_feed::ACTIVE_DAYS`]
 /// (`User.confirmed.not_signed_in_recently`), so that they are regenerated

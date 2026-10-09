@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id FROM media_attachments m\n                   WHERE m.remote_url <> '' AND m.file_file_name IS NOT NULL\n                     AND m.created_at <= now() - make_interval(days => $1)\n                     AND (NOT $2 OR (\n                       NOT EXISTS (SELECT 1 FROM favourites f JOIN accounts a ON a.id = f.account_id\n                                   WHERE a.domain IS NULL AND f.status_id = m.status_id)\n                       AND NOT EXISTS (SELECT 1 FROM bookmarks b WHERE b.status_id = m.status_id)\n                       AND NOT EXISTS (SELECT 1 FROM statuses s\n                                       WHERE s.local AND s.deleted_at IS NULL\n                                         AND s.in_reply_to_id = m.status_id)\n                       AND NOT EXISTS (SELECT 1 FROM statuses s\n                                       WHERE s.local AND s.deleted_at IS NULL\n                                         AND s.reblog_of_id = m.status_id)\n                       AND NOT EXISTS (SELECT 1 FROM quotes q JOIN statuses s ON s.id = q.status_id\n                                       WHERE s.local AND s.deleted_at IS NULL\n                                         AND q.quoted_status_id = m.status_id)\n                       AND NOT EXISTS (SELECT 1 FROM quotes q\n                                       JOIN statuses s ON s.id = q.quoted_status_id\n                                       WHERE s.local AND s.deleted_at IS NULL\n                                         AND q.status_id = m.status_id)))\n                     AND m.id > $3\n                   ORDER BY m.id LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "27c637b1e9ed3980da01451db966367ca855b7d1b4407279cccdb9020436c24a"
+}

@@ -138,6 +138,44 @@ impl Storage {
         Ok(data.into_bytes().to_vec())
     }
 
+    /// Up to a thousand of the instance's objects whose keys start with
+    /// `prefix`, in key order, after `start_after`: each key as the database
+    /// names it (without `S3_KEY_PREFIX`), with its size. Nothing outside the
+    /// instance's key prefix is listed, so instances sharing a bucket never
+    /// see each other's objects.
+    pub async fn list(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> AppResult<Vec<(String, i64)>> {
+        let namespace = if self.key_prefix.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.key_prefix)
+        };
+        let mut request = self
+            .client
+            .list_objects_v2()
+            .bucket(&self.bucket)
+            .prefix(format!("{namespace}{}", prefix.trim_start_matches('/')))
+            .max_keys(1000);
+        if let Some(after) = start_after {
+            request = request.start_after(self.object_key(after));
+        }
+        let page = request
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("S3 list: {}", e)))?;
+        Ok(page
+            .contents()
+            .iter()
+            .filter_map(|object| {
+                let key = object.key()?.strip_prefix(namespace.as_str())?;
+                Some((key.to_owned(), object.size().unwrap_or(0)))
+            })
+            .collect())
+    }
+
     pub async fn delete(&self, key: &str) -> AppResult<()> {
         self.client
             .delete_object()

@@ -32,6 +32,7 @@ export default defineConfig({
           { text: "Search", link: "/operating/search" },
           { text: "Account security", link: "/operating/accounts" },
           { text: "Administration", link: "/operating/administration" },
+          { text: "Maintenance commands", link: "/operating/maintenance" },
           { text: "Email subscriptions", link: "/operating/email-subscriptions" },
           { text: "Terms of service and privacy policy", link: "/operating/terms-of-service" },
           { text: "Account moves", link: "/operating/account-moves" },

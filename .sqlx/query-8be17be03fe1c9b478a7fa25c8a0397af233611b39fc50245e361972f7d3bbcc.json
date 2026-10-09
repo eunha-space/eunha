@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id FROM accounts a JOIN users u ON u.account_id = a.id\n                   WHERE u.confirmed_at IS NOT NULL\n                     AND u.current_sign_in_at >= now() - make_interval(days => $1)\n                     AND a.suspended_at IS NULL\n                     AND NOT EXISTS (SELECT 1 FROM account_deletion_requests r\n                                     WHERE r.account_id = a.id)\n                     AND a.id > $2\n                   ORDER BY a.id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8be17be03fe1c9b478a7fa25c8a0397af233611b39fc50245e361972f7d3bbcc"
+}

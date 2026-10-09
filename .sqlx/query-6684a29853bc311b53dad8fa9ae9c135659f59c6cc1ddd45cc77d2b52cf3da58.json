@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT avatar_file_name, avatar_file_size, header_file_name, header_file_size,\n                  EXISTS (SELECT 1 FROM follows\n                          WHERE account_id = $1 OR target_account_id = $1) AS \"follows!\"\n           FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avatar_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "avatar_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "header_file_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "header_file_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "follows!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "6684a29853bc311b53dad8fa9ae9c135659f59c6cc1ddd45cc77d2b52cf3da58"
+}

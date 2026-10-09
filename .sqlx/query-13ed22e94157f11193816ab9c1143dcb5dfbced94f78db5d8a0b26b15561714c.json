@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET\n               header_file_name = NULL, header_content_type = NULL,\n               header_file_size = NULL, header_updated_at = NULL,\n               avatar_file_name = CASE WHEN $2 THEN NULL ELSE avatar_file_name END,\n               avatar_content_type = CASE WHEN $2 THEN NULL ELSE avatar_content_type END,\n               avatar_file_size = CASE WHEN $2 THEN NULL ELSE avatar_file_size END,\n               avatar_updated_at = CASE WHEN $2 THEN NULL ELSE avatar_updated_at END,\n               updated_at = now()\n             WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13ed22e94157f11193816ab9c1143dcb5dfbced94f78db5d8a0b26b15561714c"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH c AS (\n             SELECT (SELECT count(*) FROM follows WHERE account_id = $1) AS following,\n                    (SELECT count(*) FROM follows WHERE target_account_id = $1) AS followers,\n                    (SELECT count(*) FROM statuses\n                     WHERE account_id = $1 AND deleted_at IS NULL AND visibility <> 3)\n                      AS statuses\n           ), updated AS (\n             UPDATE account_stats s\n             SET following_count = c.following, followers_count = c.followers,\n                 statuses_count = c.statuses, updated_at = now()\n             FROM c\n             WHERE s.account_id = $1\n               AND (s.following_count, s.followers_count, s.statuses_count)\n                   IS DISTINCT FROM (c.following, c.followers, c.statuses)\n             RETURNING s.id\n           )\n           INSERT INTO account_stats\n             (account_id, following_count, followers_count, statuses_count,\n              created_at, updated_at)\n           SELECT $1, c.following, c.followers, c.statuses, now(), now() FROM c\n           WHERE (c.following, c.followers, c.statuses) <> (0, 0, 0)\n             AND NOT EXISTS (SELECT 1 FROM account_stats WHERE account_id = $1)\n           ON CONFLICT (account_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac56a78ffdec6f8f41882b07eb57fdb430f5e928cba5a9496c5e13ccb2abf5c5"
+}

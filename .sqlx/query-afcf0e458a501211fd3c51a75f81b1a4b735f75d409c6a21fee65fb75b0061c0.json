@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT COALESCE(SUM(COALESCE(file_file_size, 0) + COALESCE(thumbnail_file_size, 0)), 0)\n              FROM media_attachments)::bigint AS \"attachments!\",\n             (SELECT COALESCE(SUM(COALESCE(m.file_file_size, 0) + COALESCE(m.thumbnail_file_size, 0)), 0)\n              FROM media_attachments m JOIN accounts a ON a.id = m.account_id\n              WHERE a.domain IS NULL)::bigint AS \"local_attachments!\",\n             (SELECT COALESCE(SUM(image_file_size), 0) FROM custom_emojis)::bigint AS \"emoji!\",\n             (SELECT COALESCE(SUM(image_file_size), 0) FROM custom_emojis\n              WHERE domain IS NULL)::bigint AS \"local_emoji!\",\n             (SELECT COALESCE(SUM(avatar_file_size), 0) FROM accounts)::bigint AS \"avatars!\",\n             (SELECT COALESCE(SUM(avatar_file_size), 0) FROM accounts\n              WHERE domain IS NULL)::bigint AS \"local_avatars!\",\n             (SELECT COALESCE(SUM(header_file_size), 0) FROM accounts)::bigint AS \"headers!\",\n             (SELECT COALESCE(SUM(header_file_size), 0) FROM accounts\n              WHERE domain IS NULL)::bigint AS \"local_headers!\",\n             (SELECT COALESCE(SUM(image_file_size), 0) FROM preview_cards)::bigint\n               AS \"preview_cards!\",\n             (SELECT COALESCE(SUM(dump_file_size), 0) FROM backups)::bigint AS \"backups!\",\n             (SELECT COALESCE(SUM(file_file_size), 0) FROM site_uploads)::bigint AS \"settings!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attachments!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "local_attachments!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "emoji!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_emoji!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatars!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "local_avatars!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "headers!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "local_headers!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "preview_cards!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "backups!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "settings!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "afcf0e458a501211fd3c51a75f81b1a4b735f75d409c6a21fee65fb75b0061c0"
+}

@@ -258,7 +258,8 @@ everything.
     are deleted (`Vacuum::AccessTokensVacuum`).
 
 Eunha does not cache remote media itself, so the media retention matters only
-for a database that came from Mastodon.
+for a database that came from Mastodon. The [maintenance
+commands](./maintenance) do the same on demand, with their own thresholds.
 
 ### Deleted posts
 

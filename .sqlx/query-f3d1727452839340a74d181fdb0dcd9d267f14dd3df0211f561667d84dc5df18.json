@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM preview_cards\n                 WHERE image_file_name IS NOT NULL AND image_file_name <> ''\n                   AND (NOT $1 OR type = 0)\n                   AND updated_at < now() - make_interval(days => $2)\n                   AND id > $3\n                 ORDER BY id LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f3d1727452839340a74d181fdb0dcd9d267f14dd3df0211f561667d84dc5df18"
+}
