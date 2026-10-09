@@ -242,7 +242,7 @@ pub async fn purge(
         .fetch_all(&state.db)
         .await?;
     let dry_run = options.dry_run;
-    let (processed, _) = parallelize(
+    let super::Tally { processed, .. } = parallelize(
         console,
         ids,
         options.concurrency,
@@ -260,7 +260,7 @@ pub async fn purge(
                 )
                 .await?;
             }
-            Ok(0)
+            Ok(None)
         },
     )
     .await?;

@@ -589,9 +589,12 @@ pub async fn cull(
     .await?;
     let skip_domains: Mutex<BTreeSet<String>> = Mutex::default();
     let skip_domains = &skip_domains;
-    let (processed, culled) = parallelize(console, ids, concurrency, false, |id| async move {
+    let super::Tally {
+        processed,
+        aggregate: culled,
+    } = parallelize(console, ids, concurrency, false, |id| async move {
         let Some(account) = load(&state.db, id).await? else {
-            return Ok(0);
+            return Ok(None);
         };
         let domain = account.domain.clone().unwrap_or_default();
         let skipped = skip_domains
@@ -604,7 +607,7 @@ pub async fn cull(
                 .is_some_and(|at| at >= threshold)
             || skipped
         {
-            return Ok(0);
+            return Ok(None);
         }
         let code = match head(state, account.uri.as_deref().unwrap_or_default()).await {
             Some(code) => code,
@@ -628,14 +631,14 @@ pub async fn cull(
                 )
                 .await?;
             }
-            return Ok(1);
+            return Ok(Some(1));
         }
         // Touched even in a dry run, so that the account leaves the window.
         sqlx::query("UPDATE accounts SET updated_at = now() WHERE id = $1")
             .bind(account.id)
             .execute(&state.db)
             .await?;
-        Ok(0)
+        Ok(None)
     })
     .await?;
     console.say(&format!(
@@ -691,17 +694,18 @@ pub async fn refresh(
         .bind(&scope.domain)
         .fetch_all(&state.db)
         .await?;
-        let (processed, _) = parallelize(console, ids, concurrency, verbose, |id| async move {
-            if dry_run {
-                return Ok(0);
-            }
-            let Some(account) = load(&state.db, id).await? else {
-                return Ok(0);
-            };
-            refetch(state, &account).await?;
-            Ok(0)
-        })
-        .await?;
+        let super::Tally { processed, .. } =
+            parallelize(console, ids, concurrency, verbose, |id| async move {
+                if dry_run {
+                    return Ok(None);
+                }
+                let Some(account) = load(&state.db, id).await? else {
+                    return Ok(None);
+                };
+                refetch(state, &account).await?;
+                Ok(None)
+            })
+            .await?;
         console.say(&format!("Refreshed {processed} accounts{suffix}"));
         return Ok(());
     }
@@ -762,24 +766,25 @@ pub async fn follow(
     .fetch_all(&state.db)
     .await?;
     let target = &target;
-    let (processed, _) = parallelize(console, ids, concurrency, verbose, |id| async move {
-        let Some(source) = load(&state.db, id).await? else {
-            return Ok(0);
-        };
-        crate::api::mastodon::accounts::follow(
-            state,
-            &source,
-            target,
-            crate::api::mastodon::accounts::FollowOptions {
-                bypass_limit: true,
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-        Ok(0)
-    })
-    .await?;
+    let super::Tally { processed, .. } =
+        parallelize(console, ids, concurrency, verbose, |id| async move {
+            let Some(source) = load(&state.db, id).await? else {
+                return Ok(None);
+            };
+            crate::api::mastodon::accounts::follow(
+                state,
+                &source,
+                target,
+                crate::api::mastodon::accounts::FollowOptions {
+                    bypass_limit: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            Ok(None)
+        })
+        .await?;
     console.say(&format!("OK, followed target from {processed} accounts"));
     Ok(())
 }
@@ -804,11 +809,12 @@ pub async fn unfollow(
     .fetch_all(&state.db)
     .await?;
     let target_id = target.id;
-    let (processed, _) = parallelize(console, ids, concurrency, verbose, |id| async move {
-        unfollow_one(state, id, target_id).await?;
-        Ok(0)
-    })
-    .await?;
+    let super::Tally { processed, .. } =
+        parallelize(console, ids, concurrency, verbose, |id| async move {
+            unfollow_one(state, id, target_id).await?;
+            Ok(None)
+        })
+        .await?;
     console.say(&format!("OK, unfollowed target from {processed} accounts"));
     Ok(())
 }
@@ -941,16 +947,18 @@ pub async fn prune(
     dry_run: bool,
 ) -> anyhow::Result<()> {
     let ids: Vec<i64> = sqlx::query_scalar(PRUNABLE).fetch_all(&state.db).await?;
-    let (_, deleted) = parallelize(console, ids, concurrency, false, |id| async move {
+    let super::Tally {
+        aggregate: deleted, ..
+    } = parallelize(console, ids, concurrency, false, |id| async move {
         let Some(account) = load(&state.db, id).await? else {
-            return Ok(0);
+            return Ok(None);
         };
         let automated = matches!(
             account.actor_type.as_deref(),
             Some("Application" | "Service" | "Group")
         );
         if automated || account.suspended_at.is_some() || account.silenced_at.is_some() {
-            return Ok(0);
+            return Ok(None);
         }
         if !dry_run {
             sqlx::query("DELETE FROM accounts WHERE id = $1")
@@ -959,7 +967,7 @@ pub async fn prune(
                 .await?;
             crate::search::elasticsearch::indexing::account(state, account.id).await;
         }
-        Ok(1)
+        Ok(Some(1))
     })
     .await?;
     console.say(&format!(

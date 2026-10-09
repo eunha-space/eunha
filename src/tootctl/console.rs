@@ -134,25 +134,23 @@ pub fn dry_run_suffix(dry_run: bool) -> &'static str {
 }
 
 /// `ProgressHelper#parallelize_with_progress`: `work` for each item, at most
-/// `concurrency` at once. Returns how many items there were, and the sum of
-/// what `work` counted; an item whose work fails is reported as Mastodon
-/// reports it and counts nothing.
+/// `concurrency` at once, refusing a concurrency below one. Returns how many
+/// items there were, and the sum of the integers `work` returned (`nil`
+/// being `None`); an item whose work fails is reported as Mastodon reports
+/// it, `Error processing <id>: …` on the console, and counts nothing.
 pub async fn parallelize<F, Fut>(
     console: &dyn Console,
     ids: Vec<i64>,
     concurrency: usize,
     verbose: bool,
     work: F,
-) -> anyhow::Result<(u64, u64)>
+) -> anyhow::Result<super::Tally>
 where
     F: Fn(i64) -> Fut,
-    Fut: Future<Output = anyhow::Result<u64>>,
+    Fut: Future<Output = anyhow::Result<Option<i64>>>,
 {
-    anyhow::ensure!(
-        concurrency >= 1,
-        "Cannot run with this concurrency setting, must be at least 1"
-    );
-    let total = ids.len() as u64;
+    super::check_concurrency(concurrency)?;
+    let processed = ids.len() as u64;
     let work = &work;
     let aggregate = futures::stream::iter(ids)
         .map(|id| async move {
@@ -160,7 +158,7 @@ where
                 console.say(&format!("Processing {id}"));
             }
             match work(id).await {
-                Ok(counted) => counted,
+                Ok(counted) => counted.unwrap_or(0),
                 Err(error) => {
                     console.say(&format!("Error processing {id}: {error:#}"));
                     0
@@ -168,9 +166,12 @@ where
             }
         })
         .buffer_unordered(concurrency)
-        .fold(0u64, |sum, counted| async move { sum + counted })
+        .fold(0i64, |sum, counted| async move { sum + counted })
         .await;
-    Ok((total, aggregate))
+    Ok(super::Tally {
+        processed,
+        aggregate,
+    })
 }
 
 /// The connection pool a command acting `concurrency` items at a time needs:

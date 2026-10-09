@@ -69,6 +69,7 @@ pub async fn remove(state: &AppState, options: &RemoveOptions) -> anyhow::Result
     let link_only = options.link;
     let dry_run = options.dry_run;
     let tally = super::parallelize_batches(
+        &super::Terminal,
         options.concurrency,
         options.verbose,
         |after| async move {

@@ -114,6 +114,7 @@ pub async fn build_all(
     skip_filled_timelines: bool,
 ) -> anyhow::Result<u64> {
     let tally = super::parallelize_batches(
+        &super::Terminal,
         concurrency,
         verbose,
         |after| async move {

@@ -224,6 +224,7 @@ async fn delete_objects(state: &AppState, keys: Vec<String>) {
 async fn prune_profiles(state: &AppState, options: &RemoveOptions) -> anyhow::Result<super::Tally> {
     let days = i32::try_from(options.days).unwrap_or(i32::MAX);
     super::parallelize_batches(
+        &super::Terminal,
         options.concurrency,
         options.verbose,
         |after| async move {
@@ -316,6 +317,7 @@ async fn remove_attachments(
     let days = i32::try_from(options.days).unwrap_or(i32::MAX);
     let keep_interacted = options.keep_interacted;
     super::parallelize_batches(
+        &super::Terminal,
         options.concurrency,
         options.verbose,
         |after| async move {

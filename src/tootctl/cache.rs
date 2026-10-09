@@ -100,6 +100,7 @@ pub async fn recount_accounts(
     verbose: bool,
 ) -> anyhow::Result<u64> {
     let tally = super::parallelize_batches(
+        &super::Terminal,
         concurrency,
         verbose,
         |after| async move {
@@ -162,6 +163,7 @@ pub async fn recount_statuses(
     verbose: bool,
 ) -> anyhow::Result<u64> {
     let tally = super::parallelize_batches(
+        &super::Terminal,
         concurrency,
         verbose,
         |after| async move {

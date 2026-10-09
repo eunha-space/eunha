@@ -23,8 +23,6 @@ pub use console::{Console, Recorder, Terminal};
 
 use std::future::Future;
 
-use futures::StreamExt as _;
-
 use crate::state::AppState;
 
 /// The groups, as `eunha <group> <command>`.
@@ -160,49 +158,10 @@ impl Tally {
     }
 }
 
-/// `ProgressHelper#parallelize_with_progress` over one batch of `ids`: each
-/// handed to `work` with at most `concurrency` at once. An error is printed
-/// with the id it came from, and the rest go on; an `Ok(Some(n))` adds `n` to
-/// the aggregate.
-pub(crate) async fn parallelize<F, Fut>(
-    ids: Vec<i64>,
-    concurrency: usize,
-    verbose: bool,
-    work: F,
-) -> Tally
-where
-    F: Fn(i64) -> Fut,
-    Fut: Future<Output = anyhow::Result<Option<i64>>>,
-{
-    let processed = ids.len() as u64;
-    let aggregate = futures::stream::iter(ids)
-        .map(|id| {
-            let job = work(id);
-            async move {
-                if verbose {
-                    println!("Processing {id}");
-                }
-                match job.await {
-                    Ok(n) => n.unwrap_or(0),
-                    Err(error) => {
-                        eprintln!("Error processing {id}: {error:#}");
-                        0
-                    }
-                }
-            }
-        })
-        .buffer_unordered(concurrency.max(1))
-        .fold(0i64, |sum, n| async move { sum + n })
-        .await;
-    Tally {
-        processed,
-        aggregate,
-    }
-}
-
-/// [`parallelize`] over every id `batch` returns, read a batch at a time by
-/// the last id of the one before, as `find_in_batches` reads them.
+/// [`console::parallelize`] over every id `batch` returns, read a batch at a
+/// time by the last id of the one before, as `find_in_batches` reads them.
 pub(crate) async fn parallelize_batches<B, BFut, F, Fut>(
+    console: &dyn Console,
     concurrency: usize,
     verbose: bool,
     mut batch: B,
@@ -223,7 +182,7 @@ where
             return Ok(tally);
         };
         after = last;
-        tally.add(parallelize(ids, concurrency, verbose, &work).await);
+        tally.add(console::parallelize(console, ids, concurrency, verbose, &work).await?);
     }
 }
 
