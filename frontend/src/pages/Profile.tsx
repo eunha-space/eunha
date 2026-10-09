@@ -55,6 +55,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import {
@@ -888,6 +889,9 @@ export default function Profile() {
               />
             </>
           )}
+          {/* Mastodon's account header animates every emoji in it — the
+              name's, the bio's, the fields' — while the pointer is over it. */}
+          <AnimateEmoji>
           {hasCustomHeader(account.header) && (
             <div className="relative">
               <img
@@ -968,7 +972,7 @@ export default function Profile() {
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">
-                {account.displayName || account.username}
+                <DisplayName account={account} />
               </div>
               <div className="text-muted-foreground">@{account.acct}</div>
             </div>
@@ -1074,9 +1078,10 @@ export default function Profile() {
             <p className="text-destructive mt-2 text-sm">{imageError}</p>
           )}
           {account.note && (
-            <div
+            <EmojiHtml
               className="mt-3 text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary [&_a]:decoration-2 [&_a]:underline-offset-2"
-              dangerouslySetInnerHTML={{ __html: account.note }}
+              html={account.note}
+              emojis={account.emojis}
             />
           )}
           {account.fields.length > 0 && (
@@ -1091,12 +1096,14 @@ export default function Profile() {
                   {/* A field's name is plain text, a remote account's as it
                       arrived: Mastodon escapes it, and so does React. */}
                   <dt className="text-muted-foreground truncate font-medium">
-                    {field.name}
+                    <EmojiText text={field.name} emojis={account.emojis} />
                   </dt>
                   <dd className="flex min-w-0 items-center gap-1">
-                    <span
+                    <EmojiHtml
+                      as="span"
                       className="[&_a]:text-primary min-w-0 truncate [&_a]:underline"
-                      dangerouslySetInnerHTML={{ __html: field.value }}
+                      html={field.value}
+                      emojis={account.emojis}
                     />
                     {field.verifiedAt && (
                       <CheckCircle2
@@ -1109,6 +1116,7 @@ export default function Profile() {
               ))}
             </dl>
           )}
+          </AnimateEmoji>
           <div className="text-muted-foreground mt-3 mb-4 flex gap-4 text-sm">
             <span>
               <b className="text-foreground">{account.statusesCount}</b> posts

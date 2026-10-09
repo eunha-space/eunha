@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import type { mastodon } from '../masto.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
+import { DisplayName } from '@/components/emoji.tsx'
 
 export function AccountRow({
   account,
@@ -27,7 +28,7 @@ export function AccountRow({
           <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div className="min-w-0">
-          <div className="truncate font-medium">{name}</div>
+          <DisplayName account={account} className="block truncate font-medium" />
           <div className="text-muted-foreground truncate text-sm">@{account.acct}</div>
         </div>
       </Link>

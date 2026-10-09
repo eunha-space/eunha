@@ -622,3 +622,28 @@ export function getRebloggedBy(
 ): mastodon.Paginator<mastodon.v1.Account[]> {
   return restClient(token).v1.statuses.$select(id).rebloggedBy.list()
 }
+
+// The server's own custom emoji, for the composer's picker and suggestions:
+// Mastodon's `CustomEmoji.listed`, so only those shown in the picker.
+export async function getCustomEmojis(): Promise<mastodon.v1.CustomEmoji[]> {
+  return restClient().v1.customEmojis.list()
+}
+
+// Announcements, as Mastodon's home column shows them.
+export async function getAnnouncements(token: string): Promise<mastodon.v1.Announcement[]> {
+  return restClient(token).v1.announcements.list()
+}
+
+export function dismissAnnouncement(token: string, id: string): Promise<void> {
+  return restClient(token).v1.announcements.$select(id).dismiss()
+}
+
+export function setAnnouncementReaction(
+  token: string,
+  id: string,
+  name: string,
+  on: boolean,
+): Promise<void> {
+  const reaction = restClient(token).v1.announcements.$select(id).reactions.$select(name)
+  return on ? reaction.update() : reaction.remove()
+}

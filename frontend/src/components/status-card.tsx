@@ -53,6 +53,7 @@ import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
 import { QuotedPost } from '@/components/quoted-post.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
+import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
@@ -405,7 +406,7 @@ export function StatusCard({
         {boostedBy && (
           <p className="text-muted-foreground flex items-center gap-1 text-xs">
             <Repeat2 className="size-3.5" />
-            {boostedBy.displayName || boostedBy.username} boosted
+            <DisplayName account={boostedBy} /> boosted
           </p>
         )}
         <div className="@container flex items-center gap-2 text-sm">
@@ -426,7 +427,7 @@ export function StatusCard({
               to={profilePath}
               className="truncate font-semibold no-underline hover:underline"
             >
-              {name}
+              <DisplayName account={status.account} />
             </Link>
             <span className="text-muted-foreground truncate">
               @{status.account.acct}
@@ -530,8 +531,10 @@ export function StatusCard({
         ) : (
           <>
             {status.spoilerText && (
-              <div className="text-sm">
-                <span>{spoilerText}</span>
+              <AnimateEmoji className="text-sm">
+                <span>
+                  <EmojiText text={spoilerText} emojis={status.emojis} />
+                </span>
                 <button
                   type="button"
                   onClick={() => setExpanded((e) => !e)}
@@ -539,13 +542,14 @@ export function StatusCard({
                 >
                   {expanded ? 'Show less' : 'Show more'}
                 </button>
-              </div>
+              </AnimateEmoji>
             )}
             {expanded && (
               <>
-                <div
-                  className="text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
-                  dangerouslySetInnerHTML={{ __html: content }}
+                <EmojiHtml
+                  className="status-content text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
+                  html={content}
+                  emojis={status.emojis}
                 />
                 {canTranslate && (
                   <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">

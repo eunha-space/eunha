@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import type { mastodon } from '../masto.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
+import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
 
@@ -31,14 +32,19 @@ export function QuotedPost({
           <AvatarImage src={avatar.src} alt="" />
           <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
         </Avatar>
-        <span className="text-foreground truncate font-semibold">{name}</span>
+        <DisplayName
+          account={status.account}
+          className="text-foreground truncate font-semibold"
+        />
         <span className="text-muted-foreground truncate">
           @{status.account.acct}
         </span>
       </div>
       {status.spoilerText && (
-        <div className="mt-1 text-sm">
-          <span>{status.spoilerText}</span>
+        <AnimateEmoji className="mt-1 text-sm">
+          <span>
+            <EmojiText text={status.spoilerText} emojis={status.emojis} />
+          </span>
           <button
             type="button"
             onClick={(event) => {
@@ -51,16 +57,13 @@ export function QuotedPost({
           >
             {expanded ? 'Show less' : 'Show more'}
           </button>
-        </div>
+        </AnimateEmoji>
       )}
       {expanded && (
-        <div
+        <EmojiHtml
           className="text-foreground/90 mt-1 line-clamp-6 text-sm [&_a]:underline"
-          dangerouslySetInnerHTML={{
-            __html: status.quote
-              ? stripQuoteFallback(status.content)
-              : status.content,
-          }}
+          html={status.quote ? stripQuoteFallback(status.content) : status.content}
+          emojis={status.emojis}
         />
       )}
       {expanded && status.mediaAttachments.length > 0 && (

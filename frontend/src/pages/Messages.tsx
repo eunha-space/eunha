@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn, errorMessage } from '@/lib/utils.ts'
+import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
 
 // The plain text of a status, for a one-line preview. The API sends HTML and a
 // conversation row is not the place to render it.
@@ -90,11 +91,21 @@ function ConversationRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span
+          {/* Mastodon's `conversation__content__names`: every name, with its
+              emoji, animating together on hover. */}
+          <AnimateEmoji
+            as="span"
             className={cn('truncate text-sm', conversation.unread && 'font-semibold')}
           >
-            {name}
-          </span>
+            {accounts.length === 0
+              ? name
+              : accounts.map((a, i) => (
+                  <span key={a.id}>
+                    {i > 0 && ', '}
+                    <EmojiText text={a.displayName || a.username} emojis={a.emojis} />
+                  </span>
+                ))}
+          </AnimateEmoji>
           {last && (
             <span className="text-muted-foreground shrink-0 text-xs">
               <RelativeTime value={last.createdAt} />
@@ -102,7 +113,11 @@ function ConversationRow({
           )}
         </div>
         <p className="text-muted-foreground truncate text-sm">
-          {last ? excerpt(last.content) : 'No messages left in this thread.'}
+          {last ? (
+            <EmojiText text={excerpt(last.content)} emojis={last.emojis} />
+          ) : (
+            'No messages left in this thread.'
+          )}
         </p>
       </div>
     </>

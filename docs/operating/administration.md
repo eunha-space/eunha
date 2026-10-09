@@ -380,7 +380,8 @@ editing a published one, links the posts its text names (`status_ids`, which
 user's stream as an `announcement` event. Unpublishing or deleting sends
 `announcement.delete`, and a reaction sends `announcement.reaction` with its new
 count. `/api/v1/announcements` lists the published ones in Mastodon's order,
-by start, schedule or publication.
+by start, schedule or publication. The web client shows them from the home
+column, as [How posts are shown](./accounts#how-posts-are-shown) describes.
 
 `…/:id/preview`, `…/:id/test` and `…/:id/distribution` mail a published
 announcement, as Mastodon's announcement notifications do: the preview counts

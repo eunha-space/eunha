@@ -12,6 +12,11 @@ import type { mastodon } from '../masto.ts'
 import { postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
 import { getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
 import { useMentionAutocomplete } from '../hooks/use-mention-autocomplete.ts'
+import { useEmojiAutocomplete } from '../hooks/use-emoji-autocomplete.ts'
+import { insertShortcode, useCustomEmojis } from '../hooks/use-custom-emojis.ts'
+import { useReadingPreferences } from '../reading-preferences.ts'
+import { EmojiPicker } from '@/components/emoji-picker.tsx'
+import { DisplayName } from '@/components/emoji.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Input } from '@/components/ui/input.tsx'
@@ -23,6 +28,22 @@ import { ComposeHints } from '@/components/compose-hints.tsx'
 import { cn } from '@/lib/utils.ts'
 
 const MAX_ATTACHMENTS = 4
+
+// A suggested emoji, drawn as Mastodon's `AutosuggestEmoji`: the image, then
+// its shortcode.
+function SuggestionEmoji({ emoji }: { emoji: mastodon.v1.CustomEmoji }) {
+  const { autoPlayGif } = useReadingPreferences()
+  return (
+    <>
+      <img
+        src={autoPlayGif ? emoji.url : emoji.staticUrl}
+        alt=""
+        className="size-6 shrink-0 object-contain"
+      />
+      <span className="truncate">:{emoji.shortcode}:</span>
+    </>
+  )
+}
 
 // Seed a reply's text with the handles of everyone in the conversation, the way
 // Mastodon's web client does (reducers/compose.js `statusToTextMentions`): the
@@ -240,6 +261,31 @@ export function Compose({
     textareaRef,
   })
 
+  const emojiSuggestions = useEmojiAutocomplete({
+    enabled: !!token,
+    text,
+    setText,
+    caret,
+    setCaret,
+    textareaRef,
+  })
+  const customEmojis = useCustomEmojis(!!token)
+
+  const insertEmoji = (shortcode: string) => {
+    const el = textareaRef.current
+    const at = el ? el.selectionStart ?? caret : caret
+    const next = insertShortcode(text, shortcode, at)
+    setText(next.text)
+    setCaret(next.caret)
+    requestAnimationFrame(() => {
+      const field = textareaRef.current
+      if (field) {
+        field.focus()
+        field.setSelectionRange(next.caret, next.caret)
+      }
+    })
+  }
+
   // Keep the tracked caret in sync as it moves (arrows, clicks, selection).
   const syncCaret = (e: SyntheticEvent<HTMLTextAreaElement>) =>
     setCaret(e.currentTarget.selectionStart ?? 0)
@@ -255,6 +301,7 @@ export function Compose({
       return
     }
     mentions.onKeyDown(e)
+    if (!e.defaultPrevented) emojiSuggestions.onKeyDown(e)
   }
 
   const canPost =
@@ -374,12 +421,40 @@ export function Compose({
                       alt=""
                       className="size-6 shrink-0 rounded"
                     />
-                    <span className="truncate font-medium">
-                      {a.displayName || a.username}
-                    </span>
+                    <DisplayName account={a} className="truncate font-medium" />
                     <span className="text-muted-foreground truncate text-xs">
                       @{a.acct}
                     </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {emojiSuggestions.open && (
+            <ul
+              className="bg-popover absolute right-0 bottom-0 left-0 z-50 max-h-56 overflow-auto rounded-md border py-1 shadow-md"
+              role="listbox"
+              aria-label="Emoji suggestions"
+            >
+              {emojiSuggestions.suggestions.map((emoji, i) => (
+                <li
+                  key={emoji.shortcode}
+                  role="option"
+                  aria-selected={i === emojiSuggestions.active}
+                >
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      emojiSuggestions.select(emoji)
+                    }}
+                    onMouseEnter={() => emojiSuggestions.setActive(i)}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm',
+                      i === emojiSuggestions.active && 'bg-accent',
+                    )}
+                  >
+                    <SuggestionEmoji emoji={emoji} />
                   </button>
                 </li>
               ))}
@@ -451,6 +526,7 @@ export function Compose({
             >
               <Paperclip />
             </Button>
+            {customEmojis.length > 0 && <EmojiPicker onPick={insertEmoji} />}
             {uploading && (
               <span className="text-muted-foreground motion-safe:animate-pulse text-xs">
                 Uploading…

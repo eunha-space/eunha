@@ -9,6 +9,7 @@ import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
+import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 
 function Version({
   edit,
@@ -26,11 +27,14 @@ function Version({
         </span>
       </div>
       {edit.spoilerText && (
-        <div className="mb-1 text-sm font-medium">{edit.spoilerText}</div>
+        <AnimateEmoji className="mb-1 text-sm font-medium">
+          <EmojiText text={edit.spoilerText} emojis={edit.emojis} />
+        </AnimateEmoji>
       )}
-      <div
-        className="text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
-        dangerouslySetInnerHTML={{ __html: edit.content }}
+      <EmojiHtml
+        className="status-content text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
+        html={edit.content}
+        emojis={edit.emojis}
       />
       {edit.mediaAttachments.length > 0 && (
         <div className="mt-2">
@@ -88,7 +92,7 @@ export default function StatusHistory() {
           to={`/@${handle}/${id}`}
           className="text-foreground no-underline hover:underline"
         >
-          {name}’s post
+          {author ? <DisplayName account={author} /> : handle}’s post
         </Link>
       </div>
 

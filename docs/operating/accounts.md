@@ -555,10 +555,27 @@ follows them, as Mastodon's web client does:
     loaded until it is shown.
  -  A post with a content warning starts folded, or open with
     `expand_content_warnings`. The same goes for a quoted post.
- -  With `auto_play`, GIFs (`gifv` attachments), avatars and profile headers
-    animate. Without it, a GIF plays while the pointer is over it, an avatar
-    shows its `avatar_static` until hovered, and a header shows its
-    `header_static`.
+ -  With `auto_play`, GIFs (`gifv` attachments), avatars, profile headers
+    and custom emoji animate. Without it, a GIF plays while the pointer is
+    over it, an avatar shows its `avatar_static` until hovered, a header
+    shows its `header_static`, and a custom emoji shows its `static_url`
+    until the pointer is over what it is part of: a post's text, its content
+    warning, a name, a poll option, a profile's header, or an announcement.
+
+A `:shortcode:` is drawn as an image only when the post, account, poll or
+announcement it belongs to lists that shortcode in its `emojis`, and only in
+text: a shortcode inside a tag's attribute stays as it is. Its `alt` and
+`title` are the shortcode, as in Mastodon. An emoji whose URL is not an
+`http` or `https` one is left as text.
+
+The composer suggests the server's custom emoji once a `:` and two more
+characters are typed, five at most, best match first, and offers a picker of
+them by category beside the media button. Both list what
+`GET /api/v1/custom_emojis` does; Mastodon's also offer Unicode emoji, which
+eunha's do not (`web-custom-emoji-only-picker`). The home column's
+announcements button opens the published announcements, newest first, marks the
+one on screen read, and shows their reactions, which can be added to from the
+same picker.
 
 
 Boosts in timelines

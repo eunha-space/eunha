@@ -288,3 +288,22 @@
 .ellipsis::after {
   content: '…';
 }
+
+/* Custom emoji, sized as Mastodon sizes them: 16px inline in a name or a
+   line of small text, 20px in a post's or an announcement's body. */
+.emojione {
+  display: inline-block;
+  font-size: inherit;
+  vertical-align: middle;
+  object-fit: contain;
+  margin: -0.2ex 0.15em 0.2ex;
+  width: 16px;
+  height: 16px;
+}
+
+.status-content .emojione,
+.announcement-content .emojione {
+  width: 20px;
+  height: 20px;
+  margin: -3px 0 0;
+}

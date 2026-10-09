@@ -26,6 +26,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { DisplayName } from '@/components/emoji.tsx'
 
 function describe(type: string): { icon: ReactNode; verb: string } {
   switch (type) {
@@ -144,7 +145,6 @@ function NotificationItem({
   }
 
   const { icon, verb } = describe(n.type)
-  const name = n.account.displayName || n.account.username
   const header = (
     <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
       {icon}
@@ -152,7 +152,7 @@ function NotificationItem({
         to={`/@${n.account.acct}`}
         className="text-foreground font-medium no-underline hover:underline"
       >
-        {name}
+        <DisplayName account={n.account} />
       </Link>
       <span>{verb}</span>
     </div>

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { mastodon } from '../masto.ts'
 import { votePoll } from '../api.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
 
 export function Poll({
   poll: initial,
@@ -20,6 +21,9 @@ export function Poll({
 
   const showResults = !!poll.voted || poll.expired || !token
   const total = poll.votesCount || 0
+  // The poll's own emoji, which Mastodon's `Poll` draws its options with;
+  // masto.js does not model them.
+  const pollEmojis = (poll as { emojis?: mastodon.v1.CustomEmoji[] }).emojis
 
   const toggle = (i: number) => {
     setChoices((c) =>
@@ -58,10 +62,10 @@ export function Poll({
               style={{ width: `${pct}%` }}
             />
             <div className="relative flex justify-between gap-2">
-              <span>
+              <AnimateEmoji as="span">
                 {mine ? '✓ ' : ''}
-                {titles?.[i] ?? opt.title}
-              </span>
+                <EmojiText text={titles?.[i] ?? opt.title} emojis={pollEmojis} />
+              </AnimateEmoji>
               <span className="text-muted-foreground">{pct}%</span>
             </div>
           </div>
@@ -76,7 +80,9 @@ export function Poll({
               checked={choices.includes(i)}
               onChange={() => toggle(i)}
             />
-            <span>{titles?.[i] ?? opt.title}</span>
+            <AnimateEmoji as="span">
+              <EmojiText text={titles?.[i] ?? opt.title} emojis={pollEmojis} />
+            </AnimateEmoji>
           </label>
         )
       })}
