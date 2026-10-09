@@ -355,7 +355,7 @@ export interface AdminTag {
 
 /** `REST::Admin::Trends::LinkSerializer`. */
 export interface TrendLink {
-  id: string
+  id: number
   url: string
   title: string
   description: string
@@ -367,7 +367,7 @@ export interface TrendLink {
 
 /** `REST::Admin::Trends::Links::PreviewCardProviderSerializer`. */
 export interface Publisher {
-  id: string
+  id: number
   domain: string
   trendable: boolean
   reviewed_at: string | null
@@ -637,7 +637,7 @@ export type TrendKind = 'tags' | 'statuses' | 'links' | 'links/publishers'
 export function reviewTrend<T>(
   token: string,
   kind: TrendKind,
-  id: string,
+  id: string | number,
   decision: 'approve' | 'reject',
 ) {
   return json<T>(token, 'POST', `/api/v1/admin/trends/${kind}/${id}/${decision}`)

@@ -1184,6 +1184,53 @@ async fn test_trends_need_review() {
     assert_eq!(staff[0]["requires_review"], true);
 }
 
+/// `REST::Admin::Trends::LinkSerializer` lists `id` without defining it,
+/// so a trending link's is the card's id as a number, in the list and in a
+/// review's answer alike.
+#[tokio::test]
+async fn test_trending_links_are_numbered_for_staff() {
+    let ctx = TestContext::new("mod-trend-links").await;
+    make_admin(&ctx).await;
+    crate::helpers::open_trends(&ctx.db).await;
+    let card_id: i64 = sqlx::query_scalar(
+        r#"INSERT INTO preview_cards (url, title, type, created_at, updated_at)
+           VALUES ('https://links.example/1', 'a link', 0, now(), now()) RETURNING id"#,
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO preview_card_trends (id, preview_card_id, allowed, score, rank)
+         VALUES ($1, $1, false, 1.0, 1)",
+    )
+    .bind(card_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let list: Vec<Value> = ctx
+        .api
+        .get("/api/v1/admin/trends/links", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!(list[0]["id"], json!(card_id));
+    let approved: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/trends/links/{card_id}/approve"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(approved["id"], json!(card_id));
+    assert_eq!(approved["requires_review"], false);
+}
+
 /// Link publishers are reviewed through their own endpoints.
 #[tokio::test]
 async fn test_review_link_publishers() {

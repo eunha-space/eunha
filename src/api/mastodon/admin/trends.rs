@@ -300,11 +300,9 @@ pub async fn admin_trending_links(
         rows.into_iter()
             .map(|(card, id, pending)| {
                 if staff {
-                    // `REST::Admin::Trends::LinkSerializer`.
-                    merge(
-                        card,
-                        json!({ "id": id.to_string(), "requires_review": pending }),
-                    )
+                    // `REST::Admin::Trends::LinkSerializer`, whose `id` is
+                    // the card's as it is, a number.
+                    merge(card, json!({ "id": id, "requires_review": pending }))
                 } else {
                     merge(card, json!({}))
                 }
@@ -348,7 +346,7 @@ async fn review_link(
     // Once a card has its own say, it no longer waits on its provider.
     Ok(Json(merge(
         card,
-        json!({ "id": id.to_string(), "requires_review": false }),
+        json!({ "id": id, "requires_review": false }),
     )))
 }
 
