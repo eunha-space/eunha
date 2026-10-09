@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-// A suspended or deleted account is still served by the API — blanked, with
+// A suspended account is still served by the API — blanked, with
 // `suspended: true` — so the profile page has to say so rather than render an
 // empty shell. Stubbed here; no backend needed.
 test('a suspended account shows a tombstone instead of a profile', async ({

@@ -9,6 +9,7 @@ pub async fn endorse_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:accounts")?;
+    find_account(&state, target_id).await?;
     // Mastodon AccountPin#validate_follow_relationship: you can only endorse
     // accounts you follow.
     let following = sqlx::query_scalar!(
@@ -43,6 +44,7 @@ pub async fn unendorse_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:accounts")?;
+    find_account(&state, target_id).await?;
     sqlx::query!(
         "DELETE FROM account_pins WHERE account_id = $1 AND target_account_id = $2",
         auth.account_id,
@@ -64,6 +66,10 @@ pub async fn get_endorsements(
     req_headers: HeaderMap,
     Query(q): Query<PaginationParams>,
 ) -> AppResult<impl IntoResponse> {
+    // `@account.unavailable? ? [] : paginated_endorsed_accounts`.
+    if find_account(&state, id).await?.is_unavailable() {
+        return Ok((HeaderMap::new(), Json(Vec::new())));
+    }
     let limit = q.limit_clamped(40, 80);
     let max_id = q.max_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let since_id = q.since_id.as_deref().and_then(|s| s.parse::<i64>().ok());

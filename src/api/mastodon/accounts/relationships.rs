@@ -32,17 +32,17 @@ pub async fn get_relationships(
         return Ok(Json(vec![]));
     }
 
-    // Without with_suspended, filter out suspended accounts (matches Mastodon default)
-    if !with_suspended {
-        let non_suspended: Vec<i64> = sqlx::query_scalar!(
-            "SELECT id FROM accounts WHERE id = ANY($1::bigint[]) AND suspended_at IS NULL AND requested_deletion_at IS NULL",
-            &ids,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        let allowed: std::collections::HashSet<i64> = non_suspended.into_iter().collect();
-        ids.retain(|id| allowed.contains(id));
-    }
+    // `Account.without_requested_deletion`, and `without_suspended` too
+    // unless `with_suspended`.
+    let available: Vec<i64> = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE id = ANY($1::bigint[]) AND (suspended_at IS NULL OR $2) AND requested_deletion_at IS NULL",
+        &ids,
+        with_suspended,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let allowed: std::collections::HashSet<i64> = available.into_iter().collect();
+    ids.retain(|id| allowed.contains(id));
 
     if ids.is_empty() {
         return Ok(Json(vec![]));
@@ -85,7 +85,7 @@ pub async fn follow_account(
         return Err(AppError::Forbidden);
     }
     let requester = fetch_account(&state, auth.account_id).await?;
-    let target = fetch_account(&state, target_id).await?;
+    let target = find_visible_account(&state, target_id).await?;
     follow(
         &state,
         &requester,
@@ -425,6 +425,7 @@ pub async fn unfollow_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
+    find_visible_account(&state, target_id).await?;
     unfollow(&state, auth.account_id, target_id, false).await?;
     build_relationship(&state, auth.account_id, target_id)
         .await
@@ -720,7 +721,7 @@ pub async fn get_account_followers(
     Query(q): Query<FollowersQuery>,
     viewer: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<impl IntoResponse> {
-    let target = fetch_account(&state, id).await?;
+    let target = find_account(&state, id).await?;
     if target.is_unavailable() {
         return Ok((HeaderMap::new(), Json(Vec::<ApiAccount>::new())));
     }
@@ -829,7 +830,7 @@ pub async fn get_account_following(
     Query(q): Query<FollowersQuery>,
     viewer: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<impl IntoResponse> {
-    let target = fetch_account(&state, id).await?;
+    let target = find_account(&state, id).await?;
     if target.is_unavailable() {
         return Ok((HeaderMap::new(), Json(Vec::<ApiAccount>::new())));
     }

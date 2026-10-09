@@ -31,6 +31,7 @@ pub async fn mute_account(
     >,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:mutes")?;
+    find_visible_account(&state, target_id).await?;
     // Mastodon MuteService: muting yourself is a no-op.
     if auth.account_id == target_id {
         return build_relationship(&state, auth.account_id, target_id)
@@ -134,6 +135,7 @@ pub async fn unmute_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:mutes")?;
+    find_visible_account(&state, target_id).await?;
     unmute(&state, auth.account_id, target_id).await?;
     build_relationship(&state, auth.account_id, target_id)
         .await
@@ -197,6 +199,7 @@ pub async fn block_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:blocks")?;
+    find_visible_account(&state, target_id).await?;
     block(&state, auth.account_id, target_id).await?;
     build_relationship(&state, auth.account_id, target_id)
         .await
@@ -326,6 +329,7 @@ pub async fn unblock_account(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:blocks")?;
+    find_visible_account(&state, target_id).await?;
     unblock(&state, auth.account_id, target_id).await?;
     build_relationship(&state, auth.account_id, target_id)
         .await

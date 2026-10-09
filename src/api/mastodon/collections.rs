@@ -296,6 +296,8 @@ pub async fn account_collections(
     if let Some(Extension(a)) = &auth {
         a.require_scope("read:collections")?;
     }
+    // `Account.without_requested_deletion.find`.
+    super::accounts::find_account(&state, account_id).await?;
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
     let only_discoverable = viewer_id != Some(account_id);
 
@@ -332,6 +334,8 @@ pub async fn account_in_collections(
     Query(params): Query<OffsetParams>,
 ) -> AppResult<Json<Value>> {
     auth.require_scope("read:collections")?;
+    // `Account.without_requested_deletion.find`.
+    super::accounts::find_account(&state, account_id).await?;
 
     let ids = sqlx::query_scalar!(
         r#"SELECT DISTINCT c.id

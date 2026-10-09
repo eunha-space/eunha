@@ -3499,20 +3499,14 @@ async fn test_delete_account_keeps_reported_statuses() {
     );
 }
 
-/// A deleted account is still served by id as a blanked tombstone with
-/// `suspended: true` (Mastodon's `REST::AccountSerializer`); a lookup by
-/// name is a 404, as `LookupController` raises for `@account.deleted?`.
+/// An account whose deletion was asked for is a 404 wherever Mastodon finds
+/// it with `Account.without_requested_deletion` (`AccountsController`,
+/// `Accounts::BaseController`, the collections controllers), and by name,
+/// as `LookupController` raises for `@account.deleted?`. Its relationship is
+/// left out even `with_suspended`.
 #[tokio::test]
-async fn test_deleted_account_is_served_as_suspended_tombstone() {
-    let ctx = TestContext::new("del-acct-tombstone").await;
-
-    ctx.api
-        .patch_json(
-            "/api/v1/accounts/update_credentials",
-            Some(&ctx.alice_token),
-            &json!({"display_name": "Alice", "note": "hello"}),
-        )
-        .await;
+async fn test_deleted_account_is_not_found() {
+    let ctx = TestContext::new("del-acct-404").await;
 
     ctx.api
         .http
@@ -3524,11 +3518,74 @@ async fn test_deleted_account_is_served_as_suspended_tombstone() {
         .await
         .unwrap();
 
-    let resp = ctx
+    let id = &ctx.alice_id;
+    for path in [
+        format!("/api/v1/accounts/{id}"),
+        "/api/v1/accounts/lookup?acct=alice".to_owned(),
+        format!("/api/v1/accounts/{id}/statuses"),
+        format!("/api/v1/accounts/{id}/followers"),
+        format!("/api/v1/accounts/{id}/following"),
+        format!("/api/v1/accounts/{id}/featured_tags"),
+        format!("/api/v1/accounts/{id}/endorsements"),
+        format!("/api/v1/accounts/{id}/lists"),
+        format!("/api/v1/accounts/{id}/collections"),
+        format!("/api/v1/accounts/{id}/in_collections"),
+    ] {
+        let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "GET {path}");
+    }
+    for action in [
+        "follow",
+        "unfollow",
+        "block",
+        "unblock",
+        "mute",
+        "unmute",
+        "remove_from_followers",
+        "endorse",
+        "unendorse",
+        "note",
+    ] {
+        let path = format!("/api/v1/accounts/{id}/{action}");
+        let resp = ctx
+            .api
+            .post_json(&path, Some(&ctx.bob_token), &json!({}))
+            .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "POST {path}");
+    }
+
+    let rels: Value = ctx
         .api
-        .get("/api/v1/accounts/lookup?acct=alice", Some(&ctx.bob_token))
+        .get(
+            &format!("/api/v1/accounts/relationships?id[]={id}&with_suspended=true"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rels, json!([]));
+}
+
+/// A suspended account is still served by id as a blanked tombstone with
+/// `suspended: true` (Mastodon's `REST::AccountSerializer`).
+#[tokio::test]
+async fn test_suspended_account_is_served_as_tombstone() {
+    let ctx = TestContext::new("susp-acct-tombstone").await;
+
+    ctx.api
+        .patch_json(
+            "/api/v1/accounts/update_credentials",
+            Some(&ctx.alice_token),
+            &json!({"display_name": "Alice", "note": "hello"}),
+        )
         .await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE accounts SET suspended_at = now(), suspension_origin = 0 WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
     {
         let path = format!("/api/v1/accounts/{}", ctx.alice_id);
         let resp = ctx.api.get(&path, Some(&ctx.bob_token)).await;

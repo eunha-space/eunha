@@ -221,12 +221,29 @@ async fn render_account(state: &AppState, account: &Account) -> ApiAccount {
 // ── GET /api/v1/accounts/:id ───────────────────────────────────────────────
 
 pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json<ApiAccount>> {
-    let account = fetch_account(&state, id).await?;
-    // Local accounts that are unconfirmed or pending approval are invisible (404).
-    // A suspended one is not: Mastodon serves the blanked tombstone with
-    // `suspended: true`, and after deletion there is no user row left to check.
-    if account.domain.is_none() && !account.is_unavailable() {
-        let approval_required = crate::settings::registrations_mode(&state)
+    let account = find_visible_account(&state, id).await?;
+    Ok(Json(render_account(&state, &account).await))
+}
+
+/// `Account.without_requested_deletion.find(id)`, the `set_account` of
+/// `AccountsController` and of the controllers under `Accounts::`: an
+/// account whose deletion was asked for is a 404, like one that never was.
+/// A suspended one is found, and is served as the blanked tombstone.
+pub async fn find_account(state: &AppState, id: i64) -> AppResult<Account> {
+    let account = fetch_account(state, id).await?;
+    if account.is_deleted() {
+        return Err(AppError::NotFound);
+    }
+    Ok(account)
+}
+
+/// [`find_account`], then `AccountsController`'s `check_account_approval`
+/// and `check_account_confirmation`: a local account whose user is
+/// unconfirmed, pending approval, or gone is a 404 too.
+pub async fn find_visible_account(state: &AppState, id: i64) -> AppResult<Account> {
+    let account = find_account(state, id).await?;
+    if account.domain.is_none() {
+        let approval_required = crate::settings::registrations_mode(state)
             .await
             .approval_required();
         let ok = sqlx::query_scalar!(
@@ -244,7 +261,7 @@ pub async fn get_account(state: AppState, Path(id): Path<i64>) -> AppResult<Json
             _ => {}
         }
     }
-    Ok(Json(render_account(&state, &account).await))
+    Ok(account)
 }
 
 // ── GET /api/v1/accounts/:id/statuses ─────────────────────────────────────
@@ -289,7 +306,7 @@ pub async fn get_account_statuses(
     Query(q): Query<StatusesQuery>,
     auth: Option<Extension<AuthenticatedUser>>,
 ) -> AppResult<impl IntoResponse> {
-    let account = fetch_account(&state, id).await?;
+    let account = find_account(&state, id).await?;
     if account.is_unavailable() {
         return Ok((HeaderMap::new(), Json(Vec::<super::types::Status>::new())));
     }
@@ -905,6 +922,7 @@ pub async fn set_account_note(
     super::extractors::Params(form): super::extractors::Params<NoteForm>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:accounts")?;
+    find_account(&state, target_id).await?;
     let comment = form.comment.unwrap_or_default();
     // Mastodon AccountNote::COMMENT_SIZE_LIMIT.
     if comment.chars().count() > 2_000 {
@@ -947,6 +965,7 @@ pub async fn remove_from_followers(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Relationship>> {
     auth.require_scope("write:follows")?;
+    find_visible_account(&state, requester_id).await?;
     let deleted = sqlx::query!(
         "DELETE FROM follows WHERE account_id = $1 AND target_account_id = $2 RETURNING id, uri",
         requester_id,
@@ -996,6 +1015,10 @@ pub async fn get_account_featured_tags(
     >,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Vec<super::types::FeaturedTag>>> {
+    // `@account.unavailable? ? [] : @account.featured_tags`.
+    if find_account(&state, id).await?.is_unavailable() {
+        return Ok(Json(vec![]));
+    }
     let domain = &instance.domain;
     let rows = sqlx::query!(
         r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
@@ -1243,6 +1266,14 @@ pub async fn get_account_lists(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Vec<super::types::List>>> {
     auth.require_scope("read:lists")?;
+    // `@account.suspended? ? [] : …`.
+    if find_account(&state, target_id)
+        .await?
+        .suspended_at
+        .is_some()
+    {
+        return Ok(Json(vec![]));
+    }
     let rows = sqlx::query!(
         r#"SELECT l.id, l.title, l.exclusive,
                   CASE l.replies_policy WHEN 0 THEN 'list' WHEN 1 THEN 'followed' WHEN 2 THEN 'none' ELSE 'list' END AS "replies_policy!"
