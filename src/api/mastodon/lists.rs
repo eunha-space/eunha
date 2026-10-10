@@ -181,7 +181,13 @@ pub async fn delete_list(
     .await?;
     {
         let mut redis = state.redis.clone();
-        feed::delete_list_feed(&mut redis, &state.redis_keys, id).await;
+        feed::delete_list_feed_because(
+            &mut redis,
+            &state.redis_keys,
+            id,
+            feed::reason::LIST_DELETED,
+        )
+        .await;
     }
     Ok(Json(serde_json::json!({})))
 }

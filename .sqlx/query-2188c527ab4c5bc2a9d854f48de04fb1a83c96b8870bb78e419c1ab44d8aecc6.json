@@ -1,11 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM lists WHERE account_id = ANY($1)",
+  "query": "SELECT id, account_id FROM lists WHERE account_id = ANY($1)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
         "type_info": "Int8"
       }
     ],
@@ -15,8 +20,9 @@
       ]
     },
     "nullable": [
+      false,
       false
     ]
   },
-  "hash": "008dea62c00f28a175b5dc600a56dfdf6eb06fad1714d87d34856f8d56870e2e"
+  "hash": "2188c527ab4c5bc2a9d854f48de04fb1a83c96b8870bb78e419c1ab44d8aecc6"
 }

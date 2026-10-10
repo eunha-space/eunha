@@ -54,6 +54,8 @@ async fn delete_if_not_hash(state: &AppState, key: &str) -> bool {
             .arg(&redis_key)
             .query_async(&mut redis)
             .await;
+        // Only the regeneration marker, never the feed itself.
+        tracing::info!(key, "regeneration marker kept as a string replaced");
         return true;
     }
     false
@@ -146,21 +148,30 @@ pub async fn regenerate(state: &AppState, account_id: i64) {
     if !account_exists(state, account_id).await {
         return;
     }
-    precompute(state, account_id, false).await;
+    precompute(state, account_id, false, crate::feed::reason::REGENERATION).await;
 }
 
 /// `PrecomputeFeedService#call(account, skip_filled_timelines:)`: fill the
 /// home feed and each of the account's lists, leaving out, with
 /// `skip_filled_timelines`, any already more than half full; then finish the
-/// regeneration however that went.
-pub async fn precompute(state: &AppState, account_id: i64, skip_filled_timelines: bool) {
+/// regeneration however that went. Each feed filled is logged with how many
+/// entries it held before and after, and `reason`.
+pub async fn precompute(
+    state: &AppState,
+    account_id: i64,
+    skip_filled_timelines: bool,
+    reason: &'static str,
+) {
     let finish = async_refresh::FinishOnDrop::new(state, &regeneration_key(account_id));
     let mut redis = state.redis.clone();
     let keys = &state.redis_keys;
     // `skip_timeline?`: `timeline_size(type, id) * 2 > FeedManager::MAX_ITEMS`.
     let filled = |size: u64| skip_filled_timelines && size * 2 > crate::feed::MAX_ITEMS;
-    if !filled(crate::feed::home_size(&mut redis, keys, account_id).await) {
+    let before = crate::feed::home_size(&mut redis, keys, account_id).await;
+    if !filled(before) {
         crate::feed::populate_home(&mut redis, keys, &state.db, account_id).await;
+        let entries = crate::feed::home_size(&mut redis, keys, account_id).await;
+        tracing::info!(account_id, reason, before, entries, "home feed regenerated");
     }
     let lists: Vec<i64> =
         sqlx::query_scalar!("SELECT id FROM lists WHERE account_id = $1", account_id)
@@ -168,8 +179,18 @@ pub async fn precompute(state: &AppState, account_id: i64, skip_filled_timelines
             .await
             .unwrap_or_default();
     for list_id in lists {
-        if !filled(crate::feed::list_size(&mut redis, keys, list_id).await) {
+        let before = crate::feed::list_size(&mut redis, keys, list_id).await;
+        if !filled(before) {
             crate::feed::populate_list(&mut redis, keys, &state.db, list_id).await;
+            let entries = crate::feed::list_size(&mut redis, keys, list_id).await;
+            tracing::info!(
+                list_id,
+                account_id,
+                reason,
+                before,
+                entries,
+                "list feed regenerated"
+            );
         }
     }
     finish.finish().await;
@@ -268,22 +289,24 @@ pub async fn unmerge(state: &AppState, from_account_id: i64, into_id: i64, feed:
     let mut redis = state.redis.clone();
     match feed {
         FeedType::Home => {
-            crate::feed::unmerge_from_home(
+            crate::feed::unmerge_from_home_because(
                 &mut redis,
                 &state.redis_keys,
                 &state.db,
                 from_account_id,
                 into_id,
+                crate::feed::reason::UNMERGE,
             )
             .await;
         }
         FeedType::List => {
-            crate::feed::unmerge_from_list(
+            crate::feed::unmerge_from_list_because(
                 &mut redis,
                 &state.redis_keys,
                 &state.db,
                 from_account_id,
                 into_id,
+                crate::feed::reason::UNMERGE,
             )
             .await;
         }

@@ -70,8 +70,13 @@ pub async fn run(state: &AppState, command: Command) -> anyhow::Result<()> {
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("No such account"))?;
                     if !dry_run {
-                        crate::home_feed::precompute(state, account_id, skip_filled_timelines)
-                            .await;
+                        crate::home_feed::precompute(
+                            state,
+                            account_id,
+                            skip_filled_timelines,
+                            crate::feed::reason::BUILD_COMMAND,
+                        )
+                        .await;
                     }
                     println!("OK {suffix}");
                 }
@@ -136,7 +141,13 @@ pub async fn build_all(
         },
         |account_id| async move {
             if !dry_run {
-                crate::home_feed::precompute(state, account_id, skip_filled_timelines).await;
+                crate::home_feed::precompute(
+                    state,
+                    account_id,
+                    skip_filled_timelines,
+                    crate::feed::reason::BUILD_COMMAND,
+                )
+                .await;
             }
             Ok(None)
         },
@@ -149,7 +160,13 @@ pub async fn build_all(
 /// tracks their boosts.
 pub async fn clear(state: &AppState) -> anyhow::Result<u64> {
     let mut redis = state.redis.clone();
-    super::delete_matching(&mut redis, &state.redis_keys, "feed:*").await
+    let keys = super::delete_matching(&mut redis, &state.redis_keys, "feed:*").await?;
+    tracing::info!(
+        keys,
+        reason = crate::feed::reason::CLEAR,
+        "every home and list feed deleted"
+    );
+    Ok(keys)
 }
 
 /// The id a feed key carries, `feed:<type>:<id>…`'s third part, read as
@@ -179,7 +196,7 @@ pub async fn vacuum_home(state: &AppState) -> anyhow::Result<u64> {
         )
         .fetch_all(&state.db)
         .await?;
-        deleted += delete_unknown(&mut redis, slice, &ids, &known).await?;
+        deleted += delete_unknown(&mut redis, slice, &ids, &known, "home").await?;
     }
     Ok(deleted)
 }
@@ -202,25 +219,37 @@ pub async fn vacuum_lists(state: &AppState) -> anyhow::Result<u64> {
         )
         .fetch_all(&state.db)
         .await?;
-        deleted += delete_unknown(&mut redis, slice, &ids, &known).await?;
+        deleted += delete_unknown(&mut redis, slice, &ids, &known, "list").await?;
     }
     Ok(deleted)
 }
 
+/// Delete each of `keys` whose id is not `known`, logging the ids of the
+/// `feed` feeds (`home` or `list`) that went.
 async fn delete_unknown(
     redis: &mut redis::aio::ConnectionManager,
     keys: &[String],
     ids: &[i64],
     known: &[i64],
+    feed: &'static str,
 ) -> anyhow::Result<u64> {
-    let doomed: Vec<&String> = keys
+    let (doomed, mut doomed_ids): (Vec<&String>, Vec<i64>) = keys
         .iter()
         .zip(ids)
         .filter(|(_, id)| !known.contains(id))
-        .map(|(key, _)| key)
-        .collect();
+        .map(|(key, id)| (key, *id))
+        .unzip();
     if doomed.is_empty() {
         return Ok(0);
     }
-    Ok(redis::cmd("DEL").arg(doomed).query_async(redis).await?)
+    let deleted: u64 = redis::cmd("DEL").arg(&doomed).query_async(redis).await?;
+    doomed_ids.dedup();
+    tracing::info!(
+        feed,
+        ids = ?doomed_ids,
+        keys = deleted,
+        reason = crate::feed::reason::VACUUM_COMMAND,
+        "feeds deleted"
+    );
+    Ok(deleted)
 }

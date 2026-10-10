@@ -59,6 +59,14 @@ pub const REBLOG_FALLOFF: usize = 80;
 struct Timeline {
     key: String,
     reblogs: String,
+    /// Whose feed this is, for the log: an account's home feed or a list's.
+    owner: FeedOwner,
+}
+
+#[derive(Clone, Copy)]
+enum FeedOwner {
+    Home(i64),
+    List(i64),
 }
 
 impl Timeline {
@@ -66,6 +74,7 @@ impl Timeline {
         Self {
             key: feed_key(keys, account_id),
             reblogs: keys.key(format!("feed:home:{account_id}:reblogs")),
+            owner: FeedOwner::Home(account_id),
         }
     }
 
@@ -73,12 +82,65 @@ impl Timeline {
         Self {
             key: list_feed_key(keys, list_id),
             reblogs: keys.key(format!("feed:list:{list_id}:reblogs")),
+            owner: FeedOwner::List(list_id),
         }
     }
 
     fn reblog_set(&self, reblog_of_id: i64) -> String {
         format!("{}:{reblog_of_id}", self.reblogs)
     }
+
+    /// Log that `entries` left this feed at once, and why: what makes a feed
+    /// that lost its history attributable afterwards. Only the operations
+    /// that delete, empty or take many entries out of a feed say so, once
+    /// each; a post coming or going does not.
+    fn log_removal(&self, reason: &str, entries: u64, target_account_id: Option<i64>) {
+        match self.owner {
+            FeedOwner::Home(account_id) => tracing::info!(
+                account_id,
+                reason,
+                entries,
+                target_account_id,
+                "home feed entries removed"
+            ),
+            FeedOwner::List(list_id) => tracing::info!(
+                list_id,
+                reason,
+                entries,
+                target_account_id,
+                "list feed entries removed"
+            ),
+        }
+    }
+}
+
+/// Why a feed is deleted, emptied, or has many entries taken out at once,
+/// as its log line says: named after the Mastodon worker or service that
+/// does the same.
+pub mod reason {
+    /// `DeleteAccountService#purge_feeds!`, and `SuspendAccountService`'s
+    /// unmerges, for an account suspended or deleted.
+    pub const ACCOUNT_REMOVED: &str = "account suspended or deleted";
+    /// `Vacuum::FeedsVacuum`: the user has not signed in for a week.
+    pub const INACTIVE: &str = "FeedsVacuum";
+    /// `UnmergeWorker`: an unfollow, a domain block, a list member removed.
+    pub const UNMERGE: &str = "UnmergeWorker";
+    /// `MuteWorker` and `BlockWorker` (`FeedManager#clear_from_home`).
+    pub const MUTE_OR_BLOCK: &str = "MuteWorker or BlockWorker";
+    /// `TagUnmergeWorker`: a hashtag unfollowed.
+    pub const TAG_UNFOLLOWED: &str = "TagUnmergeWorker";
+    /// `List#clean_feed_manager`: the list was deleted.
+    pub const LIST_DELETED: &str = "list deleted";
+    /// A lists import in overwrite mode deleted the list.
+    pub const LIST_IMPORT: &str = "lists import";
+    /// `tootctl feeds clear`.
+    pub const CLEAR: &str = "feeds clear";
+    /// `tootctl feeds vacuum`.
+    pub const VACUUM_COMMAND: &str = "feeds vacuum";
+    /// `RegenerationWorker`: a user back after a week away.
+    pub const REGENERATION: &str = "RegenerationWorker";
+    /// `tootctl feeds build`.
+    pub const BUILD_COMMAND: &str = "feeds build";
 }
 
 /// `User#aggregates_reblogs?`: the `aggregate_reblogs` setting, on unless the
@@ -1943,9 +2005,8 @@ pub async fn merge_into_list(
     .await;
 }
 
-/// `FeedManager#unmerge_from_home`: take `from_account_id`'s statuses out of
-/// `into_account_id`'s home feed, as an unfollow, a block or a suspension
-/// does.
+/// `FeedManager#unmerge_from_home` for a suspended or deleted account: take
+/// `from_account_id`'s statuses out of `into_account_id`'s home feed.
 pub async fn unmerge_from_home(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -1953,23 +2014,66 @@ pub async fn unmerge_from_home(
     from_account_id: i64,
     into_account_id: i64,
 ) {
+    unmerge_from_home_because(
+        redis,
+        keys,
+        db,
+        from_account_id,
+        into_account_id,
+        reason::ACCOUNT_REMOVED,
+    )
+    .await;
+}
+
+/// `FeedManager#unmerge_from_home`: take `from_account_id`'s statuses out of
+/// `into_account_id`'s home feed, as an unfollow, a block or a suspension
+/// does, for the `reason` the log gives.
+pub async fn unmerge_from_home_because(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    from_account_id: i64,
+    into_account_id: i64,
+    reason: &'static str,
+) {
     unmerge_account(
         redis,
         db,
         from_account_id,
         into_account_id,
         &Timeline::home(keys, into_account_id),
+        reason,
     )
     .await;
 }
 
-/// `FeedManager#unmerge_from_list`.
+/// `FeedManager#unmerge_from_list` for a suspended or deleted account.
 pub async fn unmerge_from_list(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     db: &PgPool,
     from_account_id: i64,
     list_id: i64,
+) {
+    unmerge_from_list_because(
+        redis,
+        keys,
+        db,
+        from_account_id,
+        list_id,
+        reason::ACCOUNT_REMOVED,
+    )
+    .await;
+}
+
+/// `FeedManager#unmerge_from_list`, for the `reason` the log gives.
+pub async fn unmerge_from_list_because(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    from_account_id: i64,
+    list_id: i64,
+    reason: &'static str,
 ) {
     let Some((owner_id, _)) = find_list(db, list_id).await else {
         return;
@@ -1980,6 +2084,7 @@ pub async fn unmerge_from_list(
         from_account_id,
         owner_id,
         &Timeline::list(keys, list_id),
+        reason,
     )
     .await;
 }
@@ -1991,6 +2096,7 @@ async fn unmerge_account(
     from_account_id: i64,
     owner_id: i64,
     timeline: &Timeline,
+    reason: &'static str,
 ) {
     // The feed's *members* are exact status ids (only the scores are lossy
     // f64s), so read the members and keep the ones the account wrote.
@@ -2010,7 +2116,10 @@ async fn unmerge_account(
     .fetch_all(db)
     .await
     .unwrap_or_default();
-    unmerge(redis, db, owner_id, timeline, &ids).await;
+    let removed = unmerge(redis, db, owner_id, timeline, &ids).await;
+    if removed > 0 {
+        timeline.log_removal(reason, removed, Some(from_account_id));
+    }
 }
 
 /// `FeedManager#unmerge_tag_from_home`: take out of `into_account_id`'s home
@@ -2050,29 +2159,38 @@ pub async fn unmerge_tag_from_home(
     .fetch_all(db)
     .await
     .unwrap_or_default();
-    unmerge(redis, db, into_account_id, &timeline, &ids).await;
+    let removed = unmerge(redis, db, into_account_id, &timeline, &ids).await;
+    if removed > 0 {
+        timeline.log_removal(reason::TAG_UNFOLLOWED, removed, None);
+    }
 }
 
-/// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it.
+/// [`remove_from_feed`] for each of `ids`, as `unmerge_from_home` runs it:
+/// how many the feed held.
 async fn unmerge(
     redis: &mut ConnectionManager,
     db: &PgPool,
     owner_id: i64,
     timeline: &Timeline,
     ids: &[i64],
-) {
+) -> u64 {
     if ids.is_empty() {
-        return;
+        return 0;
     }
     let reblogs = reblogs_of(db, ids).await;
     let aggregate = aggregates(db, owner_id).await;
+    let mut removed = 0;
     for &id in ids {
         let reblog_of_id = reblogs.get(&id).copied();
-        if let Err(error) = remove_from_feed(redis, timeline, id, reblog_of_id, aggregate).await {
-            tracing::warn!(%error, key = %timeline.key, "could not remove a status from a feed");
-            return;
+        match remove_from_feed(redis, timeline, id, reblog_of_id, aggregate).await {
+            Ok(held) => removed += u64::from(held),
+            Err(error) => {
+                tracing::warn!(%error, key = %timeline.key, "could not remove a status from a feed");
+                break;
+            }
         }
     }
+    removed
 }
 
 /// `FeedManager#clear_from_home` and `#clear_from_list`: take out of the
@@ -2132,6 +2250,7 @@ async fn clear_from(
     .into_iter()
     .collect();
     let aggregate = aggregates(db, owner_id).await;
+    let mut removed = 0;
     for status in statuses {
         let boosts_target = status
             .reblog_of_id
@@ -2151,13 +2270,19 @@ async fn clear_from(
         )
         .await
         {
-            Ok(true) => state.streaming.delete(channel, status.id).await,
+            Ok(true) => {
+                removed += 1;
+                state.streaming.delete(channel, status.id).await;
+            }
             Ok(false) => {}
             Err(error) => {
                 tracing::warn!(%error, key = %timeline.key, "could not clear a feed");
-                return;
+                break;
             }
         }
+    }
+    if removed > 0 {
+        timeline.log_removal(reason::MUTE_OR_BLOCK, removed, Some(target_account_id));
     }
 }
 
@@ -2204,35 +2329,74 @@ pub async fn clear_from_lists(
 // ── Cleaning ──────────────────────────────────────────────────────────────
 
 /// `FeedManager#clean_feeds!` for one feed: the feed, its tracked boosts, and
-/// every set of boosts held back.
-async fn clean_feed(redis: &mut ConnectionManager, timeline: &Timeline) {
+/// every set of boosts held back. How many entries the feed held, none when
+/// there was no feed (Redis keeps no empty sorted set).
+async fn clean_feed(redis: &mut ConnectionManager, timeline: &Timeline) -> u64 {
     let tracked: Vec<i64> = redis
         .zrange(&timeline.reblogs, 0, -1)
         .await
         .unwrap_or_default();
     let mut pipe = redis::pipe();
-    pipe.del(&timeline.key)
+    pipe.zcard(&timeline.key)
+        .del(&timeline.key)
         .ignore()
         .del(&timeline.reblogs)
         .ignore();
     for boosted in tracked {
         pipe.del(timeline.reblog_set(boosted)).ignore();
     }
-    let _: redis::RedisResult<()> = pipe.query_async(redis).await;
+    match pipe.query_async::<(u64,)>(redis).await {
+        Ok((entries,)) => entries,
+        Err(error) => {
+            tracing::warn!(%error, key = %timeline.key, "could not delete a feed");
+            0
+        }
+    }
 }
 
-/// `FeedManager#clean_feeds!(:home, [account_id])`.
+/// [`clean_feed`], logged with `reason` when there was a feed to delete.
+async fn clean_feed_because(
+    redis: &mut ConnectionManager,
+    timeline: &Timeline,
+    reason: &'static str,
+) -> u64 {
+    let entries = clean_feed(redis, timeline).await;
+    if entries > 0 {
+        timeline.log_removal(reason, entries, None);
+    }
+    entries
+}
+
+/// `FeedManager#clean_feeds!(:home, [account_id])`, as
+/// `DeleteAccountService#purge_feeds!` runs it.
 pub async fn delete_home_feed(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
     account_id: i64,
 ) {
-    clean_feed(redis, &Timeline::home(keys, account_id)).await;
+    clean_feed_because(
+        redis,
+        &Timeline::home(keys, account_id),
+        reason::ACCOUNT_REMOVED,
+    )
+    .await;
 }
 
-/// `FeedManager#clean_feeds!(:list, [list_id])`.
+/// `FeedManager#clean_feeds!(:list, [list_id])`, as
+/// `DeleteAccountService#purge_feeds!` runs it.
 pub async fn delete_list_feed(redis: &mut ConnectionManager, keys: &RedisKeyspace, list_id: i64) {
-    clean_feed(redis, &Timeline::list(keys, list_id)).await;
+    delete_list_feed_because(redis, keys, list_id, reason::ACCOUNT_REMOVED).await;
+}
+
+/// `FeedManager#clean_feeds!(:list, [list_id])`, for the `reason` the log
+/// gives.
+pub async fn delete_list_feed_because(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    list_id: i64,
+    reason: &'static str,
+) {
+    clean_feed_because(redis, &Timeline::list(keys, list_id), reason).await;
 }
 
 /// `FeedManager::MAX_ITEMS`, for those outside deciding whether a feed is
@@ -2258,6 +2422,12 @@ pub async fn list_size(redis: &mut ConnectionManager, keys: &RedisKeyspace, list
 /// users who have not signed in within [`crate::home_feed::ACTIVE_DAYS`]
 /// (`User.confirmed.not_signed_in_recently`), so that they are regenerated
 /// when those users return.
+///
+/// Each feed removed is logged with the user row that put it on the list and
+/// its `current_sign_in_at`. One whose account has another user row that
+/// signed in recently is logged as a warning: the fan-out counts such an
+/// account as active, so its feed is removed from under a member who uses
+/// it, as Mastodon's vacuum removes it too.
 pub async fn vacuum_inactive_feeds(
     redis: &mut ConnectionManager,
     keys: &RedisKeyspace,
@@ -2265,13 +2435,19 @@ pub async fn vacuum_inactive_feeds(
 ) -> sqlx::Result<()> {
     const BATCH: i64 = 1000;
     let mut after = 0i64;
+    let (mut home_feeds, mut list_feeds) = (0u64, 0u64);
     loop {
         let users = sqlx::query!(
-            r#"SELECT id, account_id FROM users
-               WHERE confirmed_at IS NOT NULL
-                 AND current_sign_in_at < now() - make_interval(days => $1)
-                 AND id > $2
-               ORDER BY id LIMIT $3"#,
+            r#"SELECT u.id, u.account_id, u.current_sign_in_at,
+                      EXISTS (SELECT 1 FROM users other
+                              WHERE other.account_id = u.account_id AND other.id <> u.id
+                                AND other.current_sign_in_at >= now() - make_interval(days => $1))
+                        AS "active_elsewhere!"
+               FROM users u
+               WHERE u.confirmed_at IS NOT NULL
+                 AND u.current_sign_in_at < now() - make_interval(days => $1)
+                 AND u.id > $2
+               ORDER BY u.id LIMIT $3"#,
             crate::home_feed::ACTIVE_DAYS,
             after,
             BATCH,
@@ -2279,21 +2455,55 @@ pub async fn vacuum_inactive_feeds(
         .fetch_all(db)
         .await?;
         let Some(last) = users.last() else {
+            tracing::info!(home_feeds, list_feeds, "feeds vacuum finished");
             return Ok(());
         };
         after = last.id;
-        let account_ids: Vec<i64> = users.iter().map(|u| u.account_id).collect();
-        for &account_id in &account_ids {
-            delete_home_feed(redis, keys, account_id).await;
+        for user in &users {
+            let entries = clean_feed(redis, &Timeline::home(keys, user.account_id)).await;
+            if entries == 0 {
+                continue;
+            }
+            home_feeds += 1;
+            if user.active_elsewhere {
+                tracing::warn!(
+                    account_id = user.account_id,
+                    user_id = user.id,
+                    current_sign_in_at = ?user.current_sign_in_at,
+                    entries,
+                    reason = reason::INACTIVE,
+                    "home feed of an account another user keeps active removed as inactive"
+                );
+            } else {
+                tracing::info!(
+                    account_id = user.account_id,
+                    user_id = user.id,
+                    current_sign_in_at = ?user.current_sign_in_at,
+                    entries,
+                    reason = reason::INACTIVE,
+                    "home feed entries removed"
+                );
+            }
         }
-        let lists: Vec<i64> = sqlx::query_scalar!(
-            "SELECT id FROM lists WHERE account_id = ANY($1)",
+        let account_ids: Vec<i64> = users.iter().map(|u| u.account_id).collect();
+        let lists = sqlx::query!(
+            "SELECT id, account_id FROM lists WHERE account_id = ANY($1)",
             &account_ids,
         )
         .fetch_all(db)
         .await?;
-        for list_id in lists {
-            delete_list_feed(redis, keys, list_id).await;
+        for list in lists {
+            let entries = clean_feed(redis, &Timeline::list(keys, list.id)).await;
+            if entries > 0 {
+                list_feeds += 1;
+                tracing::info!(
+                    list_id = list.id,
+                    account_id = list.account_id,
+                    entries,
+                    reason = reason::INACTIVE,
+                    "list feed entries removed"
+                );
+            }
         }
     }
 }

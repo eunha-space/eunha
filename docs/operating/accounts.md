@@ -686,6 +686,22 @@ with another hashtag they still follow. Unfollowing an account, however it
 happens, also removes the member's endorsement of it, as Mastodon's `Follow`
 does when it is destroyed.
 
+Whatever deletes a feed, or takes an account's or a hashtag's posts out of
+it, logs a line at `info` saying whose feed it was (`account_id` or
+`list_id`), how many entries went (`entries`), the account whose posts went
+(`target_account_id`) where there is one, and the `reason`, named after the
+Mastodon worker that does the same: `FeedsVacuum`, `UnmergeWorker`,
+`MuteWorker or BlockWorker`, `TagUnmergeWorker`,
+`account suspended or deleted`, `list deleted`, `lists import`, `feeds clear`
+or `feeds vacuum`. A feed with nothing in it, or nothing to take out, logs
+nothing, and neither do single posts coming and going or the trim to 800
+entries. The vacuum's lines also give the user row it went by and that row's
+`current_sign_in_at`; it logs a warning instead when another user row of the
+same account signed in within the week, since the fan-out counts that account
+as active and keeps filling a feed the vacuum then removes, as Mastodon's does.
+Each regeneration logs the entries a feed held `before` and after (`entries`),
+with the reason `RegenerationWorker` or `feeds build`.
+
 When a notification reaches a member, eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:
 

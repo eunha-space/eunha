@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.account_id, u.current_sign_in_at,\n                      EXISTS (SELECT 1 FROM users other\n                              WHERE other.account_id = u.account_id AND other.id <> u.id\n                                AND other.current_sign_in_at >= now() - make_interval(days => $1))\n                        AS \"active_elsewhere!\"\n               FROM users u\n               WHERE u.confirmed_at IS NOT NULL\n                 AND u.current_sign_in_at < now() - make_interval(days => $1)\n                 AND u.id > $2\n               ORDER BY u.id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "current_sign_in_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "active_elsewhere!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "a3f1558ba1c957a17db13e85caee0b654cb84eec1e9c4cedfc7aa8a7011a61a1"
+}

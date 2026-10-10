@@ -89,7 +89,8 @@ async fn feeds_are_cleared_and_built_again() {
 
     let found = feeds::find_local(&ctx.state, "ALICE").await.unwrap();
     assert_eq!(found, Some(alice));
-    eunha::home_feed::precompute(&ctx.state, alice, false).await;
+    eunha::home_feed::precompute(&ctx.state, alice, false, eunha::feed::reason::BUILD_COMMAND)
+        .await;
     assert!(zcard(&ctx, &home).await > 0);
 
     // Only users who signed in within the week are active.

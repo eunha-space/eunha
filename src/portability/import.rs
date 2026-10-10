@@ -1260,7 +1260,13 @@ async fn bulk_import_service(
                 .await?;
                 let mut redis = state.redis.clone();
                 for list_id in dropped {
-                    crate::feed::delete_list_feed(&mut redis, &state.redis_keys, list_id).await;
+                    crate::feed::delete_list_feed_because(
+                        &mut redis,
+                        &state.redis_keys,
+                        list_id,
+                        crate::feed::reason::LIST_IMPORT,
+                    )
+                    .await;
                 }
                 // Membership changes do not reach back into timelines, so
                 // upstream simply clears every list.
