@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 // `/api/v2/instance` with the live feed access settings in
 // `configuration.timelines_access`.
-async function liveFeedAccess(page: Page, remote: string) {
+async function liveFeedAccess(page: Page, remote: string, local = 'public') {
   await page.route('**/api/v2/instance', (r) => r.fulfill({
     json: {
       domain: 'community.example',
@@ -11,7 +11,7 @@ async function liveFeedAccess(page: Page, remote: string) {
       registrations: { enabled: false },
       configuration: {
         translation: { enabled: false },
-        timelines_access: { live_feeds: { local: 'public', remote } },
+        timelines_access: { live_feeds: { local, remote } },
       },
     },
   }))
@@ -20,7 +20,10 @@ async function liveFeedAccess(page: Page, remote: string) {
 test('the sidebar retains its domain while instance details refresh after navigation', async ({ page }) => {
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
   await page.route('**/api/v2/instance', (r) => r.fulfill({
-    json: { domain: 'community.example', title: 'Community', icon: [], registrations: { enabled: false } },
+    json: {
+      domain: 'community.example', title: 'Community', icon: [], registrations: { enabled: false },
+      configuration: { timelines_access: { live_feeds: { local: 'public', remote: 'public' } } },
+    },
   }))
   await page.goto('/')
   const domain = page.locator('aside.sidebar-frame').getByText('community.example', { exact: true })
@@ -106,3 +109,43 @@ test('signed out, the federated row follows remote_live_feed_access', async ({ p
   await expect(rail.getByRole('link', { name: 'Local' })).toBeVisible()
   await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(0)
 })
+
+// And `local_live_feed_access` does the same for the local row.
+test('signed out, the local row follows local_live_feed_access', async ({ page }) => {
+  await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+  await liveFeedAccess(page, 'public', 'authenticated')
+  await page.goto('/explore')
+
+  const rail = page.locator('aside')
+  await expect(rail.getByRole('link', { name: 'Federated' })).toBeVisible()
+  await expect(rail.getByRole('link', { name: 'Local' })).toHaveCount(0)
+})
+
+// With the feeds `disabled`, Mastodon's client shows them to a role whose
+// permissions carry `view_feeds` (0x100000) and reads that bit alone, so
+// `administrator` by itself does not.
+for (const [role, permissions, shown] of [
+  ['view_feeds', String(0x100000), true],
+  ['administrator', '1', false],
+  ['no', '0', false],
+] as const) {
+  test(`with live feeds disabled, a ${role} role ${shown ? 'sees' : 'does not see'} them`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+      localStorage.setItem('eunha:active-account', '1')
+    })
+    await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+    await page.route('**/api/v1/notifications/unread_count**', (r) => r.fulfill({ json: { count: 0 } }))
+    await page.route('**/api/v1/accounts/verify_credentials**', (r) => r.fulfill({ json: {
+      id: '1', acct: 'alice', username: 'alice', display_name: 'Alice', avatar: '',
+      source: { privacy: 'public' }, role: { id: '2', name: 'Role', permissions },
+    } }))
+    await liveFeedAccess(page, 'disabled', 'disabled')
+    await page.goto('/')
+
+    const rail = page.locator('aside')
+    await expect(rail.getByRole('link', { name: 'Home' })).toBeVisible()
+    await expect(rail.getByRole('link', { name: 'Local' })).toHaveCount(shown ? 1 : 0)
+    await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(shown ? 1 : 0)
+  })
+}

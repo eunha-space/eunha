@@ -58,7 +58,7 @@ import {
 } from '@/components/ui/sidebar.tsx'
 import { cn } from '@/lib/utils.ts'
 import { firstAdminSection } from '@/lib/admin-sections.ts'
-import { can } from '../admin-api.ts'
+import { PERMISSION } from '../admin-api.ts'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { DisplayName } from '@/components/emoji.tsx'
 
@@ -101,8 +101,10 @@ function InviteCount({ count }: { count?: number | null }) {
 /**
  * Mastodon's `canViewFeed`, over a `*_live_feed_access` setting the instance
  * reports in `configuration.timelines_access`: `public` for anyone,
- * `authenticated` for the signed in, and otherwise for a role that may
- * `view_feeds`, which is what the server lets through.
+ * `authenticated` for the signed in, and otherwise for a role whose
+ * permissions carry the `view_feeds` bit. Like Mastodon's client, it reads
+ * that bit alone: `administrator`, which grants it on the server, does not
+ * show the row by itself.
  */
 function canViewFeed(
   signedIn: boolean,
@@ -115,16 +117,19 @@ function canViewFeed(
     case 'authenticated':
       return signedIn
     default:
-      return can(account?.permissions ?? 0, 'view_feeds')
+      return ((account?.permissions ?? 0) & PERMISSION.view_feeds) === PERMISSION.view_feeds
   }
 }
 
-/** `remote_live_feed_access`, from the instance the top bar last loaded. */
-function remoteLiveFeedAccess(): string | undefined {
+/**
+ * `local_live_feed_access` and `remote_live_feed_access`, from the instance
+ * the top bar last loaded.
+ */
+function liveFeedAccess(): { local?: string; remote?: string } {
   const configuration = getCachedInstance()?.configuration as
-    | { timelinesAccess?: { liveFeeds?: { remote?: string } } }
+    | { timelinesAccess?: { liveFeeds?: { local?: string; remote?: string } } }
     | undefined
-  return configuration?.timelinesAccess?.liveFeeds?.remote
+  return configuration?.timelinesAccess?.liveFeeds ?? {}
 }
 
 function useNavItems(
@@ -138,16 +143,21 @@ function useNavItems(
   // feature leaves a rail that is mostly empty. What eunha has instead is
   // home and local timelines, which were a tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
-  // is the community rather than a curiosity. So they live here. The
-  // federated timeline follows them, shown as Mastodon shows its live feeds:
-  // to whoever the server's `remote_live_feed_access` lets read it.
-  const federated: NavItem[] = canViewFeed(!!token, account, remoteLiveFeedAccess())
+  // is the community rather than a curiosity. So they live here. Local and
+  // federated are shown as Mastodon shows its live feeds: to whoever the
+  // server's `local_live_feed_access` and `remote_live_feed_access` let read
+  // them.
+  const access = liveFeedAccess()
+  const local = canViewFeed(!!token, account, access.local)
+  const federated: NavItem[] = canViewFeed(!!token, account, access.remote)
     ? [{ to: '/public', icon: Globe, label: 'Federated' }]
     : []
   if (!token) {
     return [
       // Signed out, "/" *is* the local timeline, so that row owns both paths.
-      { to: '/local', icon: Users, label: 'Local', matchAlso: (p) => p === '/' },
+      ...(local
+        ? [{ to: '/local', icon: Users, label: 'Local', matchAlso: (p: string) => p === '/' }]
+        : []),
       ...federated,
       { to: '/explore', icon: Compass, label: 'Explore' },
       { to: '/about', icon: Info, label: 'About' },
@@ -169,7 +179,7 @@ function useNavItems(
       : []
   return [
     { to: '/', end: true, icon: Home, label: 'Home' },
-    { to: '/local', icon: Users, label: 'Local' },
+    ...(local ? [{ to: '/local', icon: Users, label: 'Local' }] : []),
     ...federated,
     ...(invites.hasAvailable || moderation.length > 0 ? [{
       to: '/invites', icon: Ticket,

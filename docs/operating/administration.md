@@ -52,10 +52,14 @@ The web client keeps the last loaded instance branding while navigating,
 so the sidebar's domain, title and icon stay visible while it refreshes the
 instance details.
 
-The desktop sidebar and mobile drawer show the federated timeline (`/public`)
-to whoever `remote_live_feed_access` lets read it, as Mastodon's web client
-shows its live feeds: everyone when it is `public`, the signed in when it is
-`authenticated`, and otherwise only a role that may `view_feeds`.
+The desktop sidebar and mobile drawer show the local timeline (`/local`) to
+whoever `local_live_feed_access` lets read it, and the federated timeline
+(`/public`) to whoever `remote_live_feed_access` does, as Mastodon's web
+client shows its live feeds: everyone when it is `public`, the signed in when
+it is `authenticated`, and otherwise only a role whose permissions carry the
+`view_feeds` bit. Like Mastodon's client, that last check reads the bit alone,
+so a role with only `administrator`, which the server lets read the feeds, is
+not shown the rows.
 
 | Setting                                                          | What reads it                                                                          |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
