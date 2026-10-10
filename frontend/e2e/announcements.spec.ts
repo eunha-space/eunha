@@ -86,6 +86,20 @@ test('announcements open from the home column, newest first, with their emoji', 
   await expect(custom.locator('img')).toHaveAttribute('src', /\/emoji\/blob\.gif$/)
 })
 
+test('a reaction can be a Unicode emoji from the picker', async ({ page }) => {
+  const calls = await setup(page)
+  await page.getByRole('button', { name: 'Show announcements' }).click()
+  const panel = page.getByRole('region', { name: 'Announcements' })
+  const slide = panel.getByRole('group').filter({ hasText: 'Maintenance' })
+  await slide.getByRole('button', { name: 'Add reaction' }).click()
+  await page.getByRole('searchbox', { name: 'Search emoji' }).fill('tada')
+  await page.getByRole('region', { name: 'Search results' }).getByRole('button', { name: /^🎉 / }).click()
+  const tada = slide.getByRole('button', { name: /🎉/ })
+  await expect(tada).toContainText('1')
+  await expect(tada).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => calls).toContain('PUT /api/v1/announcements/2/reactions/🎉')
+})
+
 // The user stream, standing in for the server's: every connection that has
 // subscribed to `user` gets what is sent.
 async function stream(page: Page) {

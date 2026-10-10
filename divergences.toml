@@ -821,17 +821,6 @@ evidence = "frontend/e2e/preview-cards.spec.ts"
 since = "4.7.2"
 reviewed_for = "4.7.2"
 
-[[divergence]]
-id = "web-custom-emoji-only-picker"
-kind = "omission"
-summary = "The web client's emoji picker and suggestions offer only custom emoji"
-mastodon = "The composer's emoji picker and `:` suggestions, and the picker announcement reactions are added with, offer Unicode emoji from its emoji database alongside the server's custom emoji."
-eunha = "They offer the server's custom emoji (`GET /api/v1/custom_emojis`) alone; Unicode emoji are typed with the system's own emoji input. A Unicode reaction already on an announcement is shown and can be toggled."
-why = "Mastodon's Unicode emoji data and its IndexedDB search are a sizable piece of the client of their own, while every system the web client runs on already has an emoji keyboard; custom emoji are the ones only the server can offer."
-evidence = "frontend/e2e/custom-emoji.spec.ts"
-since = "4.7.2"
-reviewed_for = "4.7.2"
-
 
 [[divergence]]
 id = "invite-resolution-api"

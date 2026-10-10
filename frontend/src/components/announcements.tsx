@@ -253,7 +253,11 @@ function Reactions({
       {visible.length < 8 && (
         <EmojiPicker
           label="Add reaction"
-          onPick={(shortcode) => react(shortcode, true)}
+          // Mastodon reacts with a custom emoji's shortcode, or the
+          // Unicode emoji itself.
+          onPick={(picked) =>
+            react(picked.type === 'custom' ? picked.shortcode : picked.native, true)
+          }
           trigger={
             <Button variant="ghost" size="icon-xs" aria-label="Add reaction">
               <Plus />

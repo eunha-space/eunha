@@ -585,11 +585,24 @@ text: a shortcode inside a tag's attribute stays as it is. Its `alt` and
 `title` are the shortcode, as in Mastodon. An emoji whose URL is not an
 `http` or `https` one is left as text.
 
-The composer suggests the server's custom emoji once a `:` and two more
-characters are typed, five at most, best match first, and offers a picker of
-them by category beside the media button. Both list what
-`GET /api/v1/custom_emojis` does; Mastodon's also offer Unicode emoji, which
-eunha's do not (`web-custom-emoji-only-picker`). The home column's
+The composer suggests emoji once a `:` and two more characters are typed,
+and offers a picker beside the media button. Both offer Unicode emoji, from
+the same `emojibase-data` set and shortcodes (CLDR, and iamcal's as the
+legacy ones) Mastodon uses, alongside the server's custom emoji
+(`GET /api/v1/custom_emojis`, those `visible_in_picker`). The suggestions are
+five at most, ranked as Mastodon's emoji search ranks them: a match on what
+names an emoji (its label, shortcode, shortcodes or emoticons) before one on
+what describes it, then exact before prefix before substring, then a custom
+emoji before a Unicode one. A Unicode suggestion is named by its label in
+snake case and inserts the emoji itself; a custom one inserts `:shortcode:`.
+The picker lists, as Mastodon's does, the frequently used emoji (Mastodon's
+sixteen defaults until there is a history), the custom emoji by category,
+then People, Nature, Food & Drink, Activity, Travel & Places, Objects,
+Symbols and Flags, with a search over all of them. The counts behind
+“Frequently used” are kept in the browser, per account, where Mastodon keeps
+them in the account's web settings, and the picker has no skin tone choice.
+The Unicode data is fetched the first time a picker or a suggestion needs it.
+The home column's
 announcements button, in the single column and in the advanced layout's home
 column alike, opens the published announcements, newest first, marks the one
 on screen read, and shows their reactions, which can be added to from the

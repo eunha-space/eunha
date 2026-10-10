@@ -181,18 +181,87 @@ test('the composer suggests custom emoji on a colon and inserts the picked one',
   await field.pressSequentially('Hi :b')
   // One letter is not enough to ask.
   await expect(page.getByRole('listbox', { name: 'Emoji suggestions' })).toHaveCount(0)
-  await field.pressSequentially('lo')
+  await field.pressSequentially('lob')
   const list = page.getByRole('listbox', { name: 'Emoji suggestions' })
   await expect(list.getByRole('option')).toHaveCount(2)
   await expect(list.getByRole('option').first()).toContainText(':blob:')
   await field.press('ArrowDown')
+  await expect(list.getByRole('option', { selected: true })).toContainText(':blobcat:')
   await field.press('Enter')
   await expect(field).toHaveValue('Hi :blobcat: ')
 
   // The picker lists the server's emoji by category and inserts at the caret.
-  await page.getByRole('button', { name: 'Insert custom emoji' }).click()
+  await page.getByRole('button', { name: 'Insert emoji' }).click()
   await expect(page.getByRole('region', { name: 'Cats' })).toBeVisible()
   await expect(page.getByRole('button', { name: ':hidden_blob:' })).toHaveCount(0)
   await page.getByRole('button', { name: ':blob:', exact: true }).click()
   await expect(field).toHaveValue('Hi :blobcat: :blob: ')
+})
+
+test('the composer suggests Unicode emoji too, and inserts the emoji itself', async ({ page }) => {
+  await stubMedia(page)
+  await signIn(page, false)
+  await page.route('**/api/v1/custom_emojis', (r) => r.fulfill({ json: [
+    blob,
+    { shortcode: 'thumbsup_parrot', url: '/emoji/p.gif', static_url: '/emoji/p.png', visible_in_picker: true },
+  ] }))
+  await page.route('**/api/v1/timelines/home**', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/announcements**', (r) => r.fulfill({ json: [] }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  const field = page.getByPlaceholder('What would you like to say?')
+  await field.click()
+  await field.pressSequentially('Yes :thumbs_up')
+  const list = page.getByRole('listbox', { name: 'Emoji suggestions' })
+  // Custom and Unicode emoji are offered together, ranked as Mastodon's
+  // search ranks them; a Unicode one is named by its label in snake case.
+  await expect(list.getByRole('option')).toContainText([':thumbsup_parrot:', ':thumbs_up:'])
+  const thumbs = list.getByRole('option').filter({ hasText: ':thumbs_up:' })
+  await expect(thumbs).toContainText('👍')
+  await thumbs.getByRole('button').dispatchEvent('mousedown')
+  await expect(field).toHaveValue('Yes 👍 ')
+
+  await field.pressSequentially(':party_pop')
+  await expect(list.getByRole('option').first()).toContainText('🎉')
+  await field.press('Enter')
+  await expect(field).toHaveValue('Yes 👍 🎉 ')
+})
+
+test('the picker offers Unicode emoji by category, searches them, and remembers what is used', async ({ page }) => {
+  await stubMedia(page)
+  await signIn(page, false)
+  await page.route('**/api/v1/custom_emojis', (r) => r.fulfill({ json: [blob] }))
+  await page.route('**/api/v1/timelines/home**', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/announcements**', (r) => r.fulfill({ json: [] }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  const field = page.getByPlaceholder('What would you like to say?')
+
+  await page.getByRole('button', { name: 'Insert emoji' }).click()
+  // Mastodon's categories, in its order, after the custom ones.
+  const nav = page.getByRole('navigation', { name: 'Emoji categories' })
+  await expect.poll(() =>
+    nav.getByRole('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))),
+  ).toEqual([
+    'Frequently used', 'Custom', 'People', 'Nature', 'Food & Drink', 'Activity',
+    'Travel & Places', 'Objects', 'Symbols', 'Flags',
+  ])
+  // Mastodon's defaults fill the frequently used row until there is a history.
+  const frequent = page.getByRole('region', { name: 'Frequently used' })
+  await expect(frequent.getByRole('button').first()).toHaveAttribute('aria-label', /^👍 /)
+  await expect(page.getByRole('region', { name: 'Food & Drink' }).getByRole('button', { name: /^🍕 / })).toBeAttached()
+
+  await page.getByRole('searchbox', { name: 'Search emoji' }).fill('tada')
+  const results = page.getByRole('region', { name: 'Search results' })
+  await results.getByRole('button', { name: /^🎉 / }).click()
+  await expect(field).toHaveValue('🎉 ')
+
+  await page.getByRole('button', { name: 'Insert emoji' }).click()
+  await page.getByRole('searchbox', { name: 'Search emoji' }).fill('zzzzqq')
+  await expect(page.getByText('No matching emojis found')).toBeVisible()
+  await page.getByRole('searchbox', { name: 'Search emoji' }).fill('')
+  // What was picked leads the row now.
+  await expect(frequent.getByRole('button').first()).toHaveAttribute('aria-label', /^🎉 /)
+  await frequent.getByRole('button', { name: /^🎉 / }).click()
+  await expect(field).toHaveValue('🎉 🎉 ')
 })

@@ -8,8 +8,10 @@ import {
   type SetStateAction,
 } from 'react'
 
-import type { mastodon } from '../masto.ts'
-import { searchCustomEmojis, useCustomEmojis } from './use-custom-emojis.ts'
+import { useCustomEmojis } from './use-custom-emojis.ts'
+import { useUnicodeEmojis } from './use-unicode-emojis.ts'
+import { searchEmojis, type AnyEmoji } from '@/lib/emoji-search.ts'
+import { recordEmojiUse } from '@/lib/frequent-emoji.ts'
 
 // The `:shortcode` being typed just left of the caret. Mastodon's composer
 // suggests once the token, colon included, is three characters long, and only
@@ -21,9 +23,10 @@ function activeShortcode(text: string, caret: number): { start: number; query: s
 }
 
 /**
- * Custom emoji suggestions for a textarea, as Mastodon's composer offers them
- * on `:`: up to five of the server's emoji, best match first. Picking one
- * replaces the typed token with `:shortcode: `.
+ * Emoji suggestions for a textarea, as Mastodon's composer offers them on
+ * `:`: up to five, Unicode and the server's custom emoji together, best match
+ * first (Mastodon's emoji `search`). Picking one replaces the typed token with
+ * the emoji itself, or `:shortcode:` for a custom one, and a space.
  */
 export function useEmojiAutocomplete({
   enabled,
@@ -43,9 +46,11 @@ export function useEmojiAutocomplete({
   const emojis = useCustomEmojis(enabled)
   const token = enabled ? activeShortcode(text, caret) : null
   const query = token?.query ?? null
+  // Fetched the first time a `:` asks for them.
+  const unicode = useUnicodeEmojis(query !== null)
   const suggestions = useMemo(
-    () => (query ? searchCustomEmojis(emojis, query, 5) : []),
-    [emojis, query],
+    () => (query ? searchEmojis(unicode ?? [], emojis, query, 5) : []),
+    [unicode, emojis, query],
   )
 
   const [active, setActive] = useState(0)
@@ -61,9 +66,12 @@ export function useEmojiAutocomplete({
   const open = token != null && dismissed !== query && suggestions.length > 0
 
   const select = useCallback(
-    (emoji: mastodon.v1.CustomEmoji) => {
+    (emoji: AnyEmoji) => {
       if (!token) return
-      const insert = `:${emoji.shortcode}: `
+      const completion =
+        emoji.type === 'custom' ? `:${emoji.emoji.shortcode}:` : emoji.emoji.native
+      recordEmojiUse(completion)
+      const insert = `${completion} `
       const next = text.slice(0, token.start) + insert + text.slice(caret)
       const nextCaret = token.start + insert.length
       setText(next)

@@ -13,10 +13,11 @@ import { postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
 import { getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
 import { useMentionAutocomplete } from '../hooks/use-mention-autocomplete.ts'
 import { useEmojiAutocomplete } from '../hooks/use-emoji-autocomplete.ts'
-import { insertShortcode, useCustomEmojis } from '../hooks/use-custom-emojis.ts'
+import { insertShortcode, insertUnicodeEmoji } from '../hooks/use-custom-emojis.ts'
 import { useAnimatedImage } from '../hooks/use-animated-image.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
-import { EmojiPicker } from '@/components/emoji-picker.tsx'
+import { EmojiPicker, type PickedEmoji } from '@/components/emoji-picker.tsx'
+import type { AnyEmoji } from '@/lib/emoji-search.ts'
 import { DisplayName } from '@/components/emoji.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
@@ -38,16 +39,28 @@ function SuggestionAvatar({ account }: { account: mastodon.v1.Account }) {
 
 // A suggested emoji, drawn as Mastodon's `AutosuggestEmoji`: the image, then
 // its shortcode.
-function SuggestionEmoji({ emoji }: { emoji: mastodon.v1.CustomEmoji }) {
+// Mastodon's `AutosuggestEmoji`: the emoji, then its name in colons — a
+// Unicode emoji's being its label in snake case.
+function SuggestionEmoji({ emoji }: { emoji: AnyEmoji }) {
   const { autoPlayGif } = useReadingPreferences()
+  if (emoji.type === 'unicode') {
+    return (
+      <>
+        <span className="flex size-6 shrink-0 items-center justify-center text-lg leading-none">
+          {emoji.emoji.native}
+        </span>
+        <span className="truncate">:{emoji.emoji.id}:</span>
+      </>
+    )
+  }
   return (
     <>
       <img
-        src={autoPlayGif ? emoji.url : emoji.staticUrl}
+        src={autoPlayGif ? emoji.emoji.url : emoji.emoji.staticUrl}
         alt=""
         className="size-6 shrink-0 object-contain"
       />
-      <span className="truncate">:{emoji.shortcode}:</span>
+      <span className="truncate">:{emoji.emoji.shortcode}:</span>
     </>
   )
 }
@@ -276,12 +289,13 @@ export function Compose({
     setCaret,
     textareaRef,
   })
-  const customEmojis = useCustomEmojis(!!token)
-
-  const insertEmoji = (shortcode: string) => {
+  const insertEmoji = (picked: PickedEmoji) => {
     const el = textareaRef.current
     const at = el ? el.selectionStart ?? caret : caret
-    const next = insertShortcode(text, shortcode, at)
+    const next =
+      picked.type === 'custom'
+        ? insertShortcode(text, picked.shortcode, at)
+        : insertUnicodeEmoji(text, picked.native, at)
     setText(next.text)
     setCaret(next.caret)
     requestAnimationFrame(() => {
@@ -441,7 +455,7 @@ export function Compose({
             >
               {emojiSuggestions.suggestions.map((emoji, i) => (
                 <li
-                  key={emoji.shortcode}
+                  key={emoji.type === 'custom' ? `:${emoji.emoji.shortcode}` : emoji.emoji.hexcode}
                   role="option"
                   aria-selected={i === emojiSuggestions.active}
                 >
@@ -529,7 +543,7 @@ export function Compose({
             >
               <Paperclip />
             </Button>
-            {customEmojis.length > 0 && <EmojiPicker onPick={insertEmoji} />}
+            <EmojiPicker onPick={insertEmoji} />
             {uploading && (
               <span className="text-muted-foreground motion-safe:animate-pulse text-xs">
                 Uploading…
