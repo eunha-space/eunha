@@ -243,9 +243,10 @@ Asked without a range, eunha covers the last week, where Mastodon fails.
 
 ### Content retention
 
-Once a day each instance runs what Mastodon's `VacuumScheduler` runs for the
-retention settings. A period that is not a positive number of days keeps
-everything.
+Once a day, at a time of its own between 03:00 and 05:59 UTC (see [scheduled
+tasks](./jobs.md#scheduled-tasks)), each instance runs what Mastodon's
+`VacuumScheduler` runs for the retention settings. A period that is not a
+positive number of days keeps everything.
 
  -  With `content_cache_retention_period`, posts from other servers older than
     that many days are deleted, boosts and replies included, whatever local
@@ -261,6 +262,9 @@ everything.
     [accounts](./accounts.md#the-home-feed-while-away)).
  -  Access tokens and authorization grants that have expired or been revoked
     are deleted (`Vacuum::AccessTokensVacuum`).
+ -  With `backups_retention_period`, archives older than that many days are
+    deleted, and imports past their time are cleared away (see [imports and
+    exports](./import-export.md)).
 
 Eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon. The [maintenance
@@ -291,8 +295,9 @@ their files, with the post. A kept post keeps its media.
 
 ### Addresses
 
-Once a day each instance runs Mastodon's `IpCleanupScheduler`, which keeps
-what is known of people's addresses for a year:
+Once a day, at a time of its own between 03:00 and 05:59 UTC, each instance
+runs Mastodon's `IpCleanupScheduler`, which keeps what is known of people's
+addresses for a year:
 
  -  web sessions not used for a year are signed out, their access tokens and
     web push subscriptions with them, and their streams closed;
@@ -311,7 +316,8 @@ either.
  -  Every hour, collection items that were rejected or revoked more than a day
     ago are deleted (`CollectionItemCleanupScheduler`), and their collections'
     item counts recounted.
- -  A second after the instance starts, and then daily, remote collections
+ -  A second after the instance starts, and then daily (no more than once a
+    day across restarts), remote collections
     stored under an account other than the one they are attributed to are
     fetched again and given to that account
     (`RepairRemoteCollectionsScheduler`); see
@@ -424,7 +430,7 @@ that port, and a block on `example.com:8080` covers only that port. Where a
 URL is checked rather than an account's domain, as when an incoming request is
 signed, only its host counts, without the port.
 
-The `instances` materialized view itself is refreshed every hour, as
+The `instances` materialized view itself is refreshed on the hour, as
 Mastodon's `Scheduler::InstanceRefreshScheduler` does, so a Mastodon sharing
 the database, or anything else reading the view, sees current servers. The
 schema creates it empty, so the first refresh fills it plainly and later ones
@@ -555,7 +561,8 @@ through it with `offset` sees one list, as Mastodon's cached list does.
 Mastodon's similar-profiles source needs Elasticsearch and its FASP source a
 FASP provider; eunha has neither, as a Mastodon without them has neither.
 
-Once a day each instance refreshes the recommendations as Mastodon's
+Once a day, at a time of its own between 06:00 and 09:59 UTC, each instance
+refreshes the recommendations as Mastodon's
 `FollowRecommendationsScheduler` does: it records the language and
 sensitivity each discoverable, unlocked account mostly posts with
 (`account_summaries`), then recommends the accounts at least five recently

@@ -810,28 +810,10 @@ impl crate::jobs::Job for VerifyFeaturedItemWorker {
 
 // ── Scheduler::RepairRemoteCollectionsScheduler ───────────────────────────
 
-/// The scheduler runs every 24 hours (`every: ['24h', first_in: '1s']`)…
-pub const REPAIR_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
-/// …the first time a second in.
-pub const REPAIR_FIRST_IN: Duration = Duration::from_secs(1);
 /// sidekiq-unique-jobs' `lock_ttl: 1.day`.
 const REPAIR_LOCK_TTL_MS: usize = 24 * 60 * 60 * 1000;
 /// `remote_collection_repair:last_known_good`.
 const LAST_KNOWN_GOOD: &str = "remote_collection_repair:last_known_good";
-
-/// Run the repair a second after the instance starts, then daily.
-pub async fn run_repair(state: AppState) {
-    crate::background::rest(&state.stop, REPAIR_FIRST_IN).await;
-    loop {
-        if state.stop.is_cancelled() {
-            break;
-        }
-        if let Err(error) = repair_remote_collections(&state).await {
-            tracing::error!(%error, "remote collection repair failed");
-        }
-        crate::background::rest(&state.stop, REPAIR_EVERY).await;
-    }
-}
 
 /// `Scheduler::RepairRemoteCollectionsScheduler#perform`: a remote
 /// collection whose `/ap/users/<id>/` differs from its owner's

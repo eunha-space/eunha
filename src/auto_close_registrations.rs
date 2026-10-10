@@ -8,8 +8,6 @@
 //! `disable_automatic_switching_to_approved_registrations` turns it off, as
 //! `DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS=true` does.
 
-use std::time::Duration;
-
 use crate::moderation::role::flag;
 use crate::settings::RegistrationsMode;
 use crate::state::AppState;
@@ -17,22 +15,6 @@ use crate::state::AppState;
 /// `OPEN_REGISTRATIONS_MODERATOR_THRESHOLD`: a week, and the day
 /// `UserTrackingConcern::SIGN_IN_UPDATE_FREQUENCY` lets a sign-in time lag.
 const MODERATOR_THRESHOLD_HOURS: i64 = 7 * 24 + 24;
-
-/// The scheduler's `interval: 1 hour`.
-pub(crate) const INTERVAL: Duration = Duration::from_secs(3600);
-
-/// Run [`check`] every hour until the instance stops.
-pub async fn run(state: AppState) {
-    loop {
-        crate::background::rest(&state.stop, INTERVAL).await;
-        if state.stop.is_cancelled() {
-            return;
-        }
-        if let Err(error) = check(&state).await {
-            tracing::warn!(%error, "could not check for active moderators");
-        }
-    }
-}
 
 /// `perform`: whether registrations were switched to approval.
 pub async fn check(state: &AppState) -> anyhow::Result<bool> {

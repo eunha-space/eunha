@@ -25,7 +25,15 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
         vec![until_stopped(
             &state,
             "self-destruct",
-            crate::self_destruct::run(state.clone()),
+            crate::scheduled_tasks::run(
+                state.clone(),
+                &crate::scheduled_tasks::SELF_DESTRUCT,
+                |state| async move {
+                    if let Err(error) = crate::self_destruct::perform(&state).await {
+                        tracing::error!(%error, "self-destruct pass failed");
+                    }
+                },
+            ),
         )]
     } else {
         schedules(&state)
@@ -69,85 +77,189 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
     tasks
 }
 
-/// The timed tasks: what Mastodon's *config/sidekiq.yml* schedules.
+/// The timed tasks: what Mastodon's *config/sidekiq.yml* schedules, each run
+/// on its schedule by [`crate::scheduled_tasks`].
 fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
-    let state = state.clone();
-    vec![
+    use crate::scheduled_tasks::{self as tasks, run};
+    let mut handles = vec![
         until_stopped(
-            &state,
+            state,
             "scheduled statuses",
             run_scheduled_statuses(state.clone()),
         ),
         until_stopped(
-            &state,
+            state,
             "suspended account cleanup",
             run_suspended_account_cleanup(state.clone()),
         ),
-        until_stopped(&state, "trends refresh", run_trends_refresh(state.clone())),
         until_stopped(
-            &state,
+            state,
+            "trends refresh",
+            run(state.clone(), &tasks::TRENDS_REFRESH, |state| async move {
+                if let Err(e) = crate::trends::refresh(&state).await {
+                    tracing::error!(error = %e, "trends refresh failed");
+                }
+            }),
+        ),
+        until_stopped(
+            state,
+            "trends review",
+            run(
+                state.clone(),
+                &tasks::TRENDS_REVIEW_NOTIFICATIONS,
+                |state| async move {
+                    if let Err(e) = crate::trends::request_review(&state).await {
+                        tracing::error!(error = %e, "trends review request failed");
+                    }
+                },
+            ),
+        ),
+        until_stopped(
+            state,
             "instances refresh",
-            run_instances_refresh(state.clone()),
+            run(
+                state.clone(),
+                &tasks::INSTANCE_REFRESH,
+                |state| async move {
+                    refresh_instances_and_index(&state).await;
+                },
+            ),
         ),
-        until_stopped(&state, "trends review", run_trends_review(state.clone())),
         until_stopped(
-            &state,
+            state,
             "user cleanup",
-            crate::email_subscriptions::run_cleanup(state.clone()),
+            run(state.clone(), &tasks::USER_CLEANUP, |state| async move {
+                crate::email_subscriptions::perform_user_cleanup(&state).await;
+            }),
         ),
         until_stopped(
-            &state,
+            state,
             "delivery cleanup",
             crate::federation::delivery::run_delivery_cleanup(state.clone()),
         ),
         until_stopped(
-            &state,
-            "import and archive vacuum",
-            crate::portability::run_vacuum(state.clone()),
+            state,
+            "vacuum",
+            run(state.clone(), &tasks::VACUUM, |state| async move {
+                crate::vacuum::perform(&state).await;
+            }),
         ),
-        until_stopped(&state, "vacuum", crate::vacuum::run(state.clone())),
-        until_stopped(&state, "IP cleanup", crate::ip_cleanup::run(state.clone())),
         until_stopped(
-            &state,
+            state,
+            "IP cleanup",
+            run(state.clone(), &tasks::IP_CLEANUP, |state| async move {
+                if let Err(error) = crate::ip_cleanup::perform(&state).await {
+                    tracing::error!(%error, "IP cleanup failed");
+                }
+            }),
+        ),
+        until_stopped(
+            state,
             "account statuses cleanup",
-            crate::statuses_cleanup::run(state.clone()),
+            run(
+                state.clone(),
+                &tasks::ACCOUNTS_STATUSES_CLEANUP,
+                |state| async move {
+                    if let Err(error) = crate::statuses_cleanup::perform(&state).await {
+                        tracing::error!(%error, "account statuses cleanup failed");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "collection item cleanup",
-            crate::collection_item_cleanup::run(state.clone()),
+            run(
+                state.clone(),
+                &tasks::COLLECTION_ITEM_CLEANUP,
+                |state| async move {
+                    if let Err(error) = crate::collection_item_cleanup::perform(&state.db).await {
+                        tracing::error!(%error, "collection item cleanup failed");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "remote collection repair",
-            crate::federation::featured_collections::run_repair(state.clone()),
+            run(
+                state.clone(),
+                &tasks::REPAIR_REMOTE_COLLECTIONS,
+                |state| async move {
+                    if let Err(error) =
+                        crate::federation::featured_collections::repair_remote_collections(&state)
+                            .await
+                    {
+                        tracing::error!(%error, "remote collection repair failed");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "announcement schedule",
-            crate::announcements::run_schedule(state.clone()),
+            run(
+                state.clone(),
+                &tasks::SCHEDULED_ANNOUNCEMENTS,
+                |state| async move {
+                    if let Err(error) = crate::announcements::run_schedule_once(&state).await {
+                        tracing::error!(%error, "announcement schedule failed");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "follow recommendations",
-            crate::suggestions::run(state.clone()),
+            run(
+                state.clone(),
+                &tasks::FOLLOW_RECOMMENDATIONS,
+                |state| async move {
+                    if let Err(error) = crate::suggestions::refresh(&state).await {
+                        tracing::error!(%error, "follow recommendations refresh failed");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "auto-close registrations",
-            crate::auto_close_registrations::run(state.clone()),
+            run(
+                state.clone(),
+                &tasks::AUTO_CLOSE_REGISTRATIONS,
+                |state| async move {
+                    if let Err(error) = crate::auto_close_registrations::check(&state).await {
+                        tracing::warn!(%error, "could not check for active moderators");
+                    }
+                },
+            ),
         ),
         until_stopped(
-            &state,
+            state,
             "FASP follow recommendation cleanup",
-            crate::fasp::workers::run_follow_recommendation_cleanup(state.clone()),
+            run(
+                state.clone(),
+                &tasks::FASP_FOLLOW_RECOMMENDATION_CLEANUP,
+                |state| async move {
+                    crate::fasp::workers::clean_up_follow_recommendations(&state).await;
+                },
+            ),
         ),
-        until_stopped(
-            &state,
+    ];
+    // `return unless Chewy.enabled?`: without Elasticsearch there is nothing
+    // to drain, and no reason to wake every minute to find that out.
+    if state.search.is_some() {
+        handles.push(until_stopped(
+            state,
             "search indexing",
-            crate::search::elasticsearch::indexing::run(state.clone()),
-        ),
-    ]
+            run(state.clone(), &tasks::INDEXING, |state| async move {
+                if let Err(error) = crate::search::elasticsearch::indexing::drain(&state).await {
+                    tracing::warn!(%error, "could not import queued search index updates; they stay queued");
+                }
+            }),
+        ));
+    }
+    handles
 }
 
 /// Spawn `work`, one of the loops above, which returns by itself once the
@@ -314,7 +426,17 @@ const TIMED_TASK_FAILURE_FLOOR: Duration = Duration::from_secs(60);
 async fn run_scheduled_statuses(state: AppState) {
     let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
     while !state.stop.is_cancelled() {
-        let floor = match publish_due_statuses(&state).await {
+        // One process at a time, or two would publish the same post twice.
+        let mut published = Ok(());
+        crate::scheduled_tasks::exclusive(
+            &state,
+            &crate::scheduled_tasks::SCHEDULED_STATUSES,
+            async {
+                published = publish_due_statuses(&state).await;
+            },
+        )
+        .await;
+        let floor = match published {
             Ok(()) => TIMED_TASK_FLOOR,
             Err(e) => {
                 tracing::error!(error = %e, "scheduled status publish failed");
@@ -678,20 +800,23 @@ fn classify_app(e: crate::error::AppError, context: &str) -> PublishError {
     }
 }
 
-/// `Scheduler::InstanceRefreshScheduler`: `Instance.refresh` every hour,
-/// which refreshes the `instances` materialized view concurrently. A view
-/// never populated (the schema creates it `WITH NO DATA`) is filled plainly
-/// first, since PostgreSQL refuses `CONCURRENTLY` on one.
-async fn run_instances_refresh(state: AppState) {
-    while !state.stop.is_cancelled() {
-        if let Err(e) = refresh_instances(&state).await {
-            tracing::error!(error = %e, "instances refresh failed");
+/// `Scheduler::InstanceRefreshScheduler`, on the hour: `Instance.refresh`,
+/// and `InstancesIndex.sync if Chewy.enabled?`.
+async fn refresh_instances_and_index(state: &AppState) {
+    if let Err(e) = refresh_instances(state).await {
+        tracing::error!(error = %e, "instances refresh failed");
+    }
+    if state.search.is_some() {
+        if let Err(error) = crate::search::elasticsearch::indexing::sync_instances(state).await {
+            tracing::warn!(%error, "could not sync the instances index");
         }
-        rest(&state.stop, Duration::from_secs(60 * 60)).await;
     }
 }
 
-/// `Instance.refresh`.
+/// `Instance.refresh`, which refreshes the `instances` materialized view
+/// concurrently. A view never populated (the schema creates it `WITH NO
+/// DATA`) is filled plainly first, since PostgreSQL refuses `CONCURRENTLY` on
+/// one.
 pub async fn refresh_instances(state: &AppState) -> anyhow::Result<()> {
     let populated: bool = sqlx::query_scalar(
         "SELECT ispopulated FROM pg_matviews WHERE schemaname = 'public' AND matviewname = 'instances'",
@@ -708,32 +833,6 @@ pub async fn refresh_instances(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `Scheduler::Trends::RefreshScheduler`: `every: ['5m', first_in: '4m']`.
-async fn run_trends_refresh(state: AppState) {
-    rest(&state.stop, crate::trends::REFRESH_FIRST_IN).await;
-    while !state.stop.is_cancelled() {
-        if let Err(e) = crate::trends::refresh(&state).await {
-            tracing::error!(error = %e, "trends refresh failed");
-        }
-        rest(&state.stop, crate::trends::REFRESH_EVERY).await;
-    }
-}
-
-/// `Scheduler::Trends::ReviewNotificationsScheduler`: ask staff every six
-/// hours about trends waiting on a review. The first pass waits its six hours,
-/// as a newly started Sidekiq scheduler does.
-async fn run_trends_review(state: AppState) {
-    loop {
-        rest(&state.stop, crate::trends::REVIEW_EVERY).await;
-        if state.stop.is_cancelled() {
-            break;
-        }
-        if let Err(e) = crate::trends::request_review(&state).await {
-            tracing::error!(error = %e, "trends review request failed");
-        }
-    }
-}
-
 // ── Suspended account cleanup ─────────────────────────────────────────────
 
 /// Mastodon's `Scheduler::SuspendedUserCleanupScheduler`: once a suspension has
@@ -746,9 +845,16 @@ async fn run_trends_review(state: AppState) {
 async fn run_suspended_account_cleanup(state: AppState) {
     let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
     while !state.stop.is_cancelled() {
-        if let Err(e) = process_deletion_requests(&state).await {
-            tracing::error!(error = %e, "suspended account cleanup failed");
-        }
+        crate::scheduled_tasks::exclusive(
+            &state,
+            &crate::scheduled_tasks::SUSPENDED_USER_CLEANUP,
+            async {
+                if let Err(e) = process_deletion_requests(&state).await {
+                    tracing::error!(error = %e, "suspended account cleanup failed");
+                }
+            },
+        )
+        .await;
         let due = next_deletion_request_due(&state).await.unwrap_or_else(|e| {
             tracing::error!(error = %e, "could not find when the next deletion request is due");
             None
@@ -944,54 +1050,5 @@ mod timed_task_tests {
         assert!(jittered(nap, MOST) >= Duration::from_secs(225));
         assert_eq!(jittered(nap, 7.0), Duration::from_secs(225));
         assert_eq!(jittered(nap, -1.0), nap);
-    }
-}
-
-#[cfg(test)]
-mod schedule_tests {
-    use std::time::Duration;
-
-    const MINUTE: Duration = Duration::from_secs(60);
-    const HOUR: Duration = Duration::from_secs(60 * 60);
-    const DAY: Duration = Duration::from_secs(24 * 60 * 60);
-
-    /// The timed tasks run as often as Mastodon 4.7.2's *config/sidekiq.yml*
-    /// schedules the scheduler each one ports. Its daily crons, at a random
-    /// minute of a random early hour, are a day apart here too.
-    #[test]
-    fn timed_tasks_keep_sidekiq_yml_intervals() {
-        let schedules = [
-            // trends_refresh_scheduler: every: ['5m', first_in: '4m']
-            (crate::trends::REFRESH_EVERY, 5 * MINUTE),
-            (crate::trends::REFRESH_FIRST_IN, 4 * MINUTE),
-            // trends_review_notifications_scheduler: every: '6h'
-            (crate::trends::REVIEW_EVERY, 6 * HOUR),
-            // indexing_scheduler: interval: 1 minute
-            (crate::search::elasticsearch::indexing::INTERVAL, MINUTE),
-            // vacuum_scheduler, user_cleanup_scheduler, ip_cleanup_scheduler:
-            // daily crons
-            (crate::vacuum::EVERY, DAY),
-            (crate::email_subscriptions::CLEANUP_EVERY, DAY),
-            (crate::ip_cleanup::EVERY, DAY),
-            // accounts_statuses_cleanup_scheduler: interval: 1 minute
-            (crate::statuses_cleanup::EVERY, MINUTE),
-            // suspended_user_cleanup_scheduler: interval: 1 minute
-            (super::DELETION_PASS_FLOOR, MINUTE),
-            // software_update_check_scheduler: interval: 30 minutes
-            (crate::software_updates::CHECK_INTERVAL, 30 * MINUTE),
-            // auto_close_registrations_scheduler: interval: 1 hour
-            (crate::auto_close_registrations::INTERVAL, HOUR),
-            // collection_item_cleanup_scheduler: interval: 1 hour
-            (crate::collection_item_cleanup::EVERY, HOUR),
-            // repair_remote_collections_scheduler: every: ['24h', first_in: '1s']
-            (crate::federation::featured_collections::REPAIR_EVERY, DAY),
-            (
-                crate::federation::featured_collections::REPAIR_FIRST_IN,
-                Duration::from_secs(1),
-            ),
-        ];
-        for (index, (ours, mastodon)) in schedules.into_iter().enumerate() {
-            assert_eq!(ours, mastodon, "schedule {index}");
-        }
     }
 }

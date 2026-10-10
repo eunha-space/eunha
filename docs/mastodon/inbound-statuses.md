@@ -189,7 +189,8 @@ minute to ten minutes later (`VerifyFeaturedItemWorker`, retried five
 times). A local account's item it already accepted, from its
 `FeatureRequest`, is taken as the item.
 
-Once a day, a second after the instance starts, a remote collection whose
+Once a day, first a second after the instance starts (but no more than once a
+day across restarts), a remote collection whose
 `/ap/users/{id}/` differs from its owner's `featuredCollections`‘ is fetched
 again and given to the account it is attributed to
 (`Scheduler::RepairRemoteCollectionsScheduler`); eunha once stored a

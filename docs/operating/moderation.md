@@ -342,7 +342,8 @@ A link trends only from a preview card with a language that Mastodon
 recognizes, an article with a title, a description, an image and a
 publisher name.
 
-Every six hours, unless `trendable_by_default` is on or trends are off, Eunha
+Every six hours (and soon after a restart, once six hours have passed since
+the last time), unless `trendable_by_default` is on or trends are off, Eunha
 looks for trends awaiting review that score above the allowed trend
 ranked third in their language. It marks each one as asked about and
 mails every moderator with `manage_taxonomies` who has trend emails on.

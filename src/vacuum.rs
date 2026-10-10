@@ -10,18 +10,21 @@
 //!     `media_cache_retention_period` days are forgotten;
 //!  -  `Vacuum::AccessTokensVacuum`: access tokens and authorization grants
 //!     that have expired or been revoked are deleted;
+//!  -  `Vacuum::BackupsVacuum`: archives older than
+//!     `backups_retention_period` days are deleted
+//!     ([`crate::portability::backup::vacuum`]);
 //!  -  `Vacuum::FeedsVacuum`: the home and list feeds of users who have not
-//!     signed in for a week are removed from Redis (see [`crate::home_feed`]).
+//!     signed in for a week are removed from Redis (see [`crate::home_feed`]);
+//!  -  `Vacuum::ImportsVacuum`: imports past their time are deleted
+//!     ([`crate::portability::import::vacuum`]).
+//!
+//! It runs once a day at a time of the instance's own between 03:00 and 05:59
+//! UTC ([`crate::scheduled_tasks::VACUUM`]).
 //!
 //! A period that is not a positive number of days keeps everything, as an
 //! unset one does.
 
-use std::time::Duration;
-
 use crate::state::AppState;
-
-/// The scheduler runs daily.
-pub const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// `MediaAttachmentsVacuum::TTL`: how long an upload may wait for its post.
 const ORPHAN_TTL_DAYS: i64 = 1;
@@ -40,18 +43,6 @@ fn id_at(time: chrono::DateTime<chrono::Utc>) -> i64 {
     time.timestamp_millis() << 16
 }
 
-/// Run the vacuum daily for as long as the instance runs. The first pass waits
-/// its day, as a newly started Sidekiq scheduler does.
-pub async fn run(state: AppState) {
-    loop {
-        crate::background::rest(&state.stop, EVERY).await;
-        if state.stop.is_cancelled() {
-            break;
-        }
-        perform(&state).await;
-    }
-}
-
 /// `VacuumScheduler#perform`: each operation in turn, an error in one logged
 /// and the rest still run.
 pub async fn perform(state: &AppState) {
@@ -67,6 +58,9 @@ pub async fn perform(state: &AppState) {
     if let Err(error) = vacuum_preview_cards(state, media).await {
         tracing::error!(%error, "preview cards vacuum failed");
     }
+    if let Err(error) = crate::portability::backup::vacuum(state).await {
+        tracing::error!(%error, "backups vacuum failed");
+    }
     if let Err(error) = vacuum_access_tokens(&state.db).await {
         tracing::error!(%error, "access tokens vacuum failed");
     }
@@ -75,6 +69,9 @@ pub async fn perform(state: &AppState) {
         crate::feed::vacuum_inactive_feeds(&mut redis, &state.redis_keys, &state.db).await
     {
         tracing::error!(%error, "feeds vacuum failed");
+    }
+    if let Err(error) = crate::portability::import::vacuum(state).await {
+        tracing::error!(%error, "imports vacuum failed");
     }
 }
 

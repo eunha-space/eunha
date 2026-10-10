@@ -50,6 +50,7 @@ pub mod redis_lock;
 pub mod relays;
 pub mod remote_ip;
 pub mod remove_status;
+pub mod scheduled_tasks;
 pub mod schema_check;
 pub mod search;
 pub mod secret_key_base;

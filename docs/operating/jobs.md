@@ -141,6 +141,80 @@ lock is released with `eunha_compare_delete` where the keyspace is shared, as
 every other lock is.
 
 
+Scheduled tasks
+---------------
+
+What Mastodon's *config/sidekiq.yml* schedules, each instance runs on the
+same kind of schedule:
+
+ -  An `every:` or `interval:` entry runs its period after the process starts,
+    or after its `first_in`, and then every period, as sidekiq-scheduler runs
+    it.
+ -  A `cron:` entry runs at its time of day on the UTC clock. Where
+    *sidekiq.yml* picks the minute and hour at random each time Sidekiq boots,
+    eunha picks them from the same ranges once for the instance, from a hash
+    of its domain: every process serving the instance, and every restart,
+    agrees on the time, and instances on one host spread out over the range.
+    The time each one picked is logged at debug level when the instance
+    starts.
+
+Each task's last finished run is kept in `eunha.scheduled_tasks`, one row per
+task, named by its *sidekiq.yml* key:
+
+ -  A cron run that was missed because no process was running is made up two
+    minutes after the next one starts; only the latest missed run is.
+ -  An interval task whose last run finished more than a period ago, or that
+    has never run, runs two minutes after start (or at its `first_in`, if that
+    is sooner) instead of waiting out a period. A daily interval would
+    otherwise never run on an instance that is redeployed more often than
+    daily.
+ -  A run holds a lease on its row, renewed every minute while it lasts, so no
+    two processes run one task at once, as a scheduler's sidekiq-unique-jobs
+    `until_executed` lock keeps them from it. A process that dies mid-run
+    lets the task go five minutes later, and another process takes it up.
+ -  A cron slot is run once by whichever process gets to it first, and an
+    interval task at most once a period across all the instance's processes.
+
+The tasks:
+
+| *sidekiq.yml* entry                            | Mastodon's schedule             | Eunha                                                           |
+| ---------------------------------------------- | ------------------------------- | --------------------------------------------------------------- |
+| `scheduled_statuses_scheduler`                 | every 5 minutes                 | when the next scheduled post falls due; one process at a time   |
+| `trends_refresh_scheduler`                     | every 5 minutes, first after 4  | the same                                                        |
+| `trends_review_notifications_scheduler`        | every 6 hours                   | the same, or soon after start if 6 hours have passed            |
+| `indexing_scheduler`                           | every minute                    | the same, with Elasticsearch only                               |
+| `vacuum_scheduler`                             | daily, at a random 03:00–05:59  | daily, at the instance's own time in 03:00–05:59 UTC            |
+| `follow_recommendations_scheduler`             | daily, at a random 06:00–09:59  | daily, at the instance's own time in 06:00–09:59 UTC            |
+| `user_cleanup_scheduler`                       | daily, at a random 04:00–06:59  | daily, at the instance's own time in 04:00–06:59 UTC            |
+| `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59  | daily, at the instance's own time in 03:00–05:59 UTC            |
+| `pghero_scheduler`                             | daily at 00:00                  | not run: eunha has no PgHero                                    |
+| `instance_refresh_scheduler`                   | on the hour                     | on the hour, UTC                                                |
+| `accounts_statuses_cleanup_scheduler`          | every minute                    | the same                                                        |
+| `suspended_user_cleanup_scheduler`             | every minute                    | when the next deletion request falls due; one process at a time |
+| `software_update_check_scheduler`              | every 30 minutes                | at start, then every 30 minutes, once for the whole process     |
+| `auto_close_registrations_scheduler`           | every hour                      | the same                                                        |
+| `fasp_follow_recommendation_cleanup_scheduler` | every day                       | the same, or soon after start if a day has passed               |
+| `collection_item_cleanup_scheduler`            | every hour                      | the same                                                        |
+| `repair_remote_collections_scheduler`          | every 24 hours, first after 1 s | the same, but once a day across restarts                        |
+
+A self-destructing instance runs `self_destruct_scheduler`, every minute, and
+nothing else, as Mastodon replaces its schedule with it. The announcements
+`ScheduledStatusesScheduler` publishes and unpublishes are looked at every
+minute (`eunha_scheduled_announcements`). Failed deliveries a week old are
+pruned every hour, as eunha's own task.
+
+When each task last ran, and whether one is running:
+
+~~~~ sql
+SELECT name, last_slot, last_finished_at, leased_until
+FROM eunha.scheduled_tasks ORDER BY name;
+~~~~
+
+Deleting a row makes its task due again: a cron task runs at its next time
+or the next start, whichever comes first, and an interval task at its next
+beat.
+
+
 Seeing whether the queue moves
 ------------------------------
 

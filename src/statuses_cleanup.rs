@@ -14,15 +14,10 @@
 //! accounts, a few per account at a time, starting after the policy it stopped
 //! at last time, and skips its turn while the job queues are behind.
 
-use std::time::Duration;
-
 use redis::AsyncCommands;
 
 use crate::db::models::Status;
 use crate::state::AppState;
-
-/// The scheduler runs every minute.
-pub const EVERY: Duration = Duration::from_secs(60);
 
 /// `MAX_BUDGET`: at most this many posts deleted per run.
 const MAX_BUDGET: i64 = 300;
@@ -300,20 +295,6 @@ pub async fn clean(state: &AppState, policy: &Policy, budget: i64) -> anyhow::Re
         .record_last_inspected(state, last_deleted.unwrap_or(cutoff_id))
         .await;
     Ok(deleted)
-}
-
-/// Run the scheduler every minute for as long as the instance runs, the
-/// first pass a minute in.
-pub async fn run(state: AppState) {
-    loop {
-        crate::background::rest(&state.stop, EVERY).await;
-        if state.stop.is_cancelled() {
-            break;
-        }
-        if let Err(error) = perform(&state).await {
-            tracing::error!(%error, "account statuses cleanup failed");
-        }
-    }
 }
 
 /// `compute_budget`: five posts for each thread that runs jobs, Sidekiq's

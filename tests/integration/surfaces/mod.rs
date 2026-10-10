@@ -21,6 +21,7 @@ mod poll_semantics;
 mod portability;
 mod preferences;
 mod preview_cards;
+mod scheduled_tasks;
 mod schema_compatibility;
 mod self_destruct;
 mod sessions;

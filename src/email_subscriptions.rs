@@ -39,8 +39,6 @@ pub const DISTRIBUTION_DELAY: Duration = Duration::from_secs(5 * 60);
 pub const DISTRIBUTION_TTL: i64 = 60 * 60;
 /// `Scheduler::UserCleanupScheduler::UNCONFIRMED_ACCOUNTS_MAX_AGE_DAYS`.
 pub const UNCONFIRMED_MAX_AGE_DAYS: i64 = 7;
-/// How often the unconfirmed subscriptions are cleaned: the scheduler is daily.
-pub const CLEANUP_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 /// The `validates :email, length: { maximum: 320 }`.
 const MAX_EMAIL_LENGTH: usize = 320;
 
@@ -904,22 +902,19 @@ pub async fn clean_unconfirmed(state: &AppState) -> anyhow::Result<u64> {
     .rows_affected())
 }
 
-/// The daily pass of `Scheduler::UserCleanupScheduler`: unconfirmed accounts
+/// `Scheduler::UserCleanupScheduler#perform`, daily: unconfirmed accounts
 /// ([`crate::accounts::clean_unconfirmed`]), statuses discarded a month ago
 /// ([`crate::remove_status::clean_discarded_statuses`]) and [`clean_unconfirmed`]
 /// subscriptions.
-pub async fn run_cleanup(state: AppState) {
-    while !state.stop.is_cancelled() {
-        if let Err(error) = crate::accounts::clean_unconfirmed(&state.db).await {
-            tracing::error!(%error, "unconfirmed account cleanup failed");
-        }
-        if let Err(error) = crate::remove_status::clean_discarded_statuses(&state).await {
-            tracing::error!(%error, "discarded status cleanup failed");
-        }
-        if let Err(error) = clean_unconfirmed(&state).await {
-            tracing::error!(%error, "unconfirmed email subscription cleanup failed");
-        }
-        crate::background::rest(&state.stop, CLEANUP_EVERY).await;
+pub async fn perform_user_cleanup(state: &AppState) {
+    if let Err(error) = crate::accounts::clean_unconfirmed(&state.db).await {
+        tracing::error!(%error, "unconfirmed account cleanup failed");
+    }
+    if let Err(error) = crate::remove_status::clean_discarded_statuses(state).await {
+        tracing::error!(%error, "discarded status cleanup failed");
+    }
+    if let Err(error) = clean_unconfirmed(state).await {
+        tracing::error!(%error, "unconfirmed email subscription cleanup failed");
     }
 }
 

@@ -12,18 +12,10 @@
 //! without the commands loses the use, not the request.
 
 use std::collections::{BTreeSet, HashSet};
-use std::time::Duration;
 
 use chrono::{NaiveDateTime, Utc};
 
 use crate::{moderation::history, state::AppState};
-
-/// `Scheduler::Trends::RefreshScheduler`'s every five minutes.
-pub const REFRESH_EVERY: Duration = Duration::from_secs(5 * 60);
-/// The four minutes *config/sidekiq.yml* gives the refresh as `first_in`.
-pub const REFRESH_FIRST_IN: Duration = Duration::from_secs(4 * 60);
-/// `Scheduler::Trends::ReviewNotificationsScheduler`'s every six hours.
-pub const REVIEW_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// `default_options[:threshold]`, the same for all three.
 const THRESHOLD: f64 = 5.0;

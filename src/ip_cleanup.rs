@@ -11,12 +11,7 @@
 //! Mastodon reads both periods from `IP_RETENTION_PERIOD` and
 //! `SESSION_RETENTION_PERIOD`, a year unless set; eunha keeps the default.
 
-use std::time::Duration;
-
 use crate::state::AppState;
-
-/// The scheduler runs daily.
-pub const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// `IP_RETENTION_PERIOD`'s default, `1.year`, in seconds (365.2425 days).
 pub const IP_RETENTION_SECS: i64 = 31_556_952;
@@ -25,20 +20,6 @@ pub const SESSION_RETENTION_SECS: i64 = 31_556_952;
 
 /// How many rows one batch handles, as `in_batches` does.
 const BATCH: i64 = 1000;
-
-/// Run the cleanup daily for as long as the instance runs. The first pass
-/// waits its day, as a newly started Sidekiq scheduler does.
-pub async fn run(state: AppState) {
-    loop {
-        crate::background::rest(&state.stop, EVERY).await;
-        if state.stop.is_cancelled() {
-            break;
-        }
-        if let Err(error) = perform(&state).await {
-            tracing::error!(%error, "IP cleanup failed");
-        }
-    }
-}
 
 /// `IpCleanupScheduler#perform`: `clean_ip_columns!`, then
 /// `clean_expired_ip_blocks!`.

@@ -10,8 +10,6 @@
 //! Nothing local is erased: the database is meant to be dropped once every
 //! notice is out (docs/operating/self-destruct.md).
 
-use std::time::Duration;
-
 use anyhow::Result;
 use axum::{
     extract::Request,
@@ -26,9 +24,6 @@ use crate::state::AppState;
 
 /// `SelfDestructHelper::VERIFY_PURPOSE`, the name of the message verifier.
 pub const VERIFY_PURPOSE: &str = "self-destruct";
-
-/// The `interval: ['1m']` Mastodon schedules `SelfDestructScheduler` at.
-pub const EVERY: Duration = Duration::from_secs(60);
 
 /// `SelfDestructScheduler::MAX_ENQUEUED`.
 const MAX_ENQUEUED: i64 = 10_000;
@@ -183,21 +178,6 @@ fn gone(path: &str, headers: &HeaderMap, domain: &str) -> Response {
 }
 
 // ── SelfDestructScheduler ────────────────────────────────────────────────
-
-/// The schedule a self-destructing instance runs instead of all its others,
-/// as Mastodon replaces `Sidekiq.schedule` with this one: a pass every
-/// minute, the first a minute after the instance starts.
-pub async fn run(state: AppState) {
-    while !state.stop.is_cancelled() {
-        crate::background::rest(&state.stop, EVERY).await;
-        if state.stop.is_cancelled() {
-            break;
-        }
-        if let Err(error) = perform(&state).await {
-            tracing::error!(%error, "self-destruct pass failed");
-        }
-    }
-}
 
 /// `SelfDestructScheduler#perform`.
 pub async fn perform(state: &AppState) -> Result<()> {

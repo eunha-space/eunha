@@ -9,7 +9,6 @@
 //! eunha does not have.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use crate::state::AppState;
 
@@ -359,16 +358,4 @@ pub async fn refresh_follow_recommendations(state: &AppState) -> anyhow::Result<
 pub async fn refresh(state: &AppState) -> anyhow::Result<()> {
     refresh_account_summaries(state).await?;
     refresh_follow_recommendations(state).await
-}
-
-/// The scheduler, daily, for as long as the instance runs. The first pass
-/// waits a few minutes, so a starting instance is not slowed by it.
-pub async fn run(state: AppState) {
-    crate::background::rest(&state.stop, Duration::from_secs(10 * 60)).await;
-    while !state.stop.is_cancelled() {
-        if let Err(error) = refresh(&state).await {
-            tracing::error!(%error, "follow recommendations refresh failed");
-        }
-        crate::background::rest(&state.stop, Duration::from_secs(24 * 60 * 60)).await;
-    }
 }

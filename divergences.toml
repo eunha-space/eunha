@@ -1518,3 +1518,75 @@ whole file, for a parameter no client puts there. Clients send the \
 evidence = "tests/integration/c2s/oauth_server.rs"
 since = "4.7.3"
 reviewed_for = "4.7.3"
+
+[[divergence]]
+id = "scheduled-tasks-on-the-utc-clock"
+kind = "behaviour"
+summary = "Runs the daily cron schedules in UTC, at a time picked once per instance"
+mastodon = """
+sidekiq-scheduler runs `config/sidekiq.yml`'s `cron:` entries in the Sidekiq \
+process's local time zone, which the official image sets to `Etc/UTC` and a \
+source install leaves to the host. The vacuum, IP cleanup, user cleanup and \
+follow recommendations pick their minute and hour with `Random.rand` each time \
+the file is read, at every boot."""
+eunha = """
+Runs them on the UTC clock whatever the host's zone, at a minute and hour \
+picked from the same ranges by a hash of the instance's domain and the entry, \
+so that the time stays the same across restarts and processes."""
+why = """
+Several processes serve an instance, on hosts that need not share a zone, and \
+blue/green deploys restart them often; a slot that moved at each boot, or \
+differed between processes, could not be run once per day by whichever process \
+reaches it. UTC is what Mastodon's own image runs in, and a per-instance pick \
+still spreads many instances on one host over the range, as the random pick \
+spreads Mastodon servers."""
+evidence = "src/scheduled_tasks.rs"
+since = "4.7.3"
+reviewed_for = "4.7.3"
+
+[[divergence]]
+id = "scheduled-tasks-remember-their-runs"
+kind = "behaviour"
+summary = "Makes up a scheduled run missed while down, and runs each once across processes"
+mastodon = """
+sidekiq-scheduler keeps no record of past runs: a `cron:` slot that passes \
+while Sidekiq is down is skipped, and an `every:` or `interval:` entry starts \
+its period again at every boot, so a daily interval runs only in a process \
+that stays up for a day. Every Sidekiq process fires every entry; the \
+`until_executed` lock only keeps a second copy from being queued while one \
+waits or runs."""
+eunha = """
+Records each task's last finished run in `eunha.scheduled_tasks`. A cron slot \
+missed while no process ran is made up two minutes after the next start, and \
+an interval task whose last run is more than a period old runs two minutes \
+after start rather than a period after. A run takes a lease on the row, \
+renewed while it lasts, so one process runs a task at a time; a cron slot is \
+run once, and an interval task at most once a period, across all of an \
+instance's processes."""
+why = """
+Eunha restarts on every deploy, more often than daily, so with Mastodon's \
+semantics the daily vacuum, IP cleanup and FASP cleanup never ran in \
+production: revoked access tokens and the feeds of inactive users piled up \
+for weeks. Remembering runs keeps the schedule's intent, once a day, which \
+Mastodon gets from a Sidekiq that stays up."""
+evidence = "tests/integration/surfaces/scheduled_tasks.rs"
+since = "4.7.3"
+reviewed_for = "4.7.3"
+
+[[divergence]]
+id = "no-pghero-space-stats"
+kind = "omission"
+summary = "Does not capture PgHero's daily space stats"
+mastodon = """
+`Scheduler::PgheroScheduler` runs `PgHero.capture_space_stats` daily at \
+midnight, recording relation sizes in `pghero_space_stats` for the PgHero \
+dashboard mounted at `/pghero`."""
+eunha = """
+Has no PgHero dashboard and does not run the scheduler; `pghero_space_stats` \
+is kept as the schema has it, and not written."""
+why = """
+The table only feeds PgHero's own pages, which eunha does not serve; \
+PostgreSQL's statistics views answer the same questions for an operator."""
+evidence = "src/scheduled_tasks.rs"
+since = "4.7.3"
+reviewed_for = "4.7.3"

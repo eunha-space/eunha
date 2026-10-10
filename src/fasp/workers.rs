@@ -10,7 +10,6 @@
 //! recorded after every attempt.
 
 use std::future::Future;
-use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -753,20 +752,18 @@ async fn follow_recommendation(
 
 /// `Scheduler::Fasp::FollowRecommendationCleanupScheduler`, daily: forget
 /// recommendations more than a day old.
-pub async fn run_follow_recommendation_cleanup(state: AppState) {
-    while !state.stop.is_cancelled() {
-        if super::enabled(&state) {
-            if let Err(error) = sqlx::query!(
-                "DELETE FROM fasp_follow_recommendations WHERE created_at < now() - make_interval(secs => $1)",
-                FOLLOW_RECOMMENDATION_MAX_AGE_SECONDS,
-            )
-            .execute(&state.db)
-            .await
-            {
-                tracing::warn!(%error, "could not clean up FASP follow recommendations");
-            }
-        }
-        crate::background::rest(&state.stop, Duration::from_secs(24 * 60 * 60)).await;
+pub async fn clean_up_follow_recommendations(state: &AppState) {
+    if !super::enabled(state) {
+        return;
+    }
+    if let Err(error) = sqlx::query!(
+        "DELETE FROM fasp_follow_recommendations WHERE created_at < now() - make_interval(secs => $1)",
+        FOLLOW_RECOMMENDATION_MAX_AGE_SECONDS,
+    )
+    .execute(&state.db)
+    .await
+    {
+        tracing::warn!(%error, "could not clean up FASP follow recommendations");
     }
 }
 

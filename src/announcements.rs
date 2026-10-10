@@ -5,14 +5,7 @@
 //! `Scheduler::ScheduledStatusesScheduler` that publishes scheduled
 //! announcements and unpublishes expired ones.
 
-use std::time::Duration;
-
 use crate::state::AppState;
-
-/// How often the schedule is looked at. Mastodon's scheduler runs every five
-/// minutes and queues each announcement for its exact time; a minute is close
-/// enough to that without a job queue.
-const SCHEDULE_EVERY: Duration = Duration::from_secs(60);
 
 /// `Status.from_text`: the posts the announcement's text links to, local ones
 /// by their URL and remote ones by their URI or URL.
@@ -216,14 +209,4 @@ pub async fn run_schedule_once(state: &AppState) -> anyhow::Result<()> {
     .execute(&state.db)
     .await?;
     Ok(())
-}
-
-/// The schedule, for as long as the instance runs.
-pub async fn run_schedule(state: AppState) {
-    while !state.stop.is_cancelled() {
-        if let Err(error) = run_schedule_once(&state).await {
-            tracing::error!(%error, "announcement schedule failed");
-        }
-        crate::background::rest(&state.stop, SCHEDULE_EVERY).await;
-    }
 }

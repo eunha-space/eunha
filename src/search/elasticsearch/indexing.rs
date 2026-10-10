@@ -10,8 +10,6 @@
 //! Mastodon names them, under the instance's Redis key prefix, so a queue a
 //! Mastodon left behind on the same Redis is drained too.
 
-use std::time::Duration;
-
 use super::documents::{bulk_lines, documents};
 use super::Index;
 use crate::state::AppState;
@@ -20,10 +18,6 @@ use crate::state::AppState;
 const IMPORT_BATCH_SIZE: usize = 1000;
 /// `SCAN_BATCH_SIZE`.
 const SCAN_BATCH_SIZE: usize = 10 * IMPORT_BATCH_SIZE;
-/// The scheduler's `interval: 1 minute`.
-pub(crate) const INTERVAL: Duration = Duration::from_secs(60);
-/// `Scheduler::InstanceRefreshScheduler`'s `cron: '0 * * * *'`.
-const INSTANCES_INTERVAL: Duration = Duration::from_secs(3600);
 /// `lock_ttl: 30.minutes`.
 const LOCK_TTL_MS: usize = 30 * 60 * 1000;
 
@@ -185,29 +179,4 @@ pub async fn sync_instances(state: &AppState) -> anyhow::Result<()> {
         client.bulk(&index, &bulk_lines(chunk.to_vec())).await?;
     }
     Ok(())
-}
-
-/// The scheduler: every minute drain the queues, and every hour sync the
-/// instances index, until the instance stops.
-pub async fn run(state: AppState) {
-    if state.search.is_none() {
-        return;
-    }
-    let mut since_instances = INSTANCES_INTERVAL;
-    loop {
-        crate::background::rest(&state.stop, INTERVAL).await;
-        if state.stop.is_cancelled() {
-            return;
-        }
-        if let Err(error) = drain(&state).await {
-            tracing::warn!(%error, "could not import queued search index updates; they stay queued");
-        }
-        since_instances += INTERVAL;
-        if since_instances >= INSTANCES_INTERVAL {
-            since_instances = Duration::ZERO;
-            if let Err(error) = sync_instances(&state).await {
-                tracing::warn!(%error, "could not sync the instances index");
-            }
-        }
-    }
 }
