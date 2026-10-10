@@ -18,6 +18,9 @@ function Version({
   edit: mastodon.v1.StatusEdit
   label: string
 }) {
+  // A version of a poll carries its options' titles (`StatusEditSerializer`),
+  // which masto.js does not model.
+  const poll = (edit as { poll?: { options: { title: string }[] } | null }).poll
   return (
     <li className="rounded-md border px-3 py-3 sm:px-4">
       <div className="mb-1.5 flex items-baseline gap-2">
@@ -36,6 +39,25 @@ function Version({
         html={edit.content}
         emojis={edit.emojis}
       />
+      {poll && (
+        // Mastodon's `CompareHistoryModal` lists the version's options as
+        // they read then, each beside an empty choice, with no counts.
+        <AnimateEmoji className="mt-2">
+          <div role="list" aria-label="Poll options" className="space-y-1">
+            {poll.options.map((option, i) => (
+              <div role="listitem" key={`${option.title}-${i}`} className="flex items-center gap-2 text-sm">
+                <span
+                  aria-hidden
+                  className="border-muted-foreground size-4 shrink-0 rounded-full border"
+                />
+                <span>
+                  <EmojiText text={option.title} emojis={edit.emojis} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </AnimateEmoji>
+      )}
       {edit.mediaAttachments.length > 0 && (
         <div className="mt-2">
           <MediaAttachments

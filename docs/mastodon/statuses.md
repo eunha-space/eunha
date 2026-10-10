@@ -76,6 +76,9 @@ edit that changes nothing records nothing and leaves `edited_at` alone.
 `GET /api/v1/statuses/:id/history` serves exactly those rows, oldest first,
 each with the account that made it. A post never edited has no rows, and its
 history is the one version built on the spot, stamped with its `created_at`.
+The web client's history page shows them newest first, each with its content
+warning, its text, its poll's options as that version had them (without
+counts, as Mastodon's history modal shows them), and its media.
 
 A moderator marking a local post sensitive, and an approved appeal marking it
 not sensitive again, edit it as the instance actor (`Account.representative`).

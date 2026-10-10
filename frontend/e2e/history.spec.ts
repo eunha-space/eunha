@@ -69,3 +69,29 @@ test('a status with no edits shows its single current version', async ({ page })
   await expect(page.locator('li .font-semibold')).toHaveText(['Current version'])
   await expect(page.locator('li')).toContainText('only ever this')
 })
+
+// Mastodon's history modal lists each version's poll options as they read.
+test('each version shows its poll options as they were', async ({ page }) => {
+  const blob = { shortcode: 'blob', url: '/emoji/blob.png', static_url: '/emoji/blob.png', visible_in_picker: true }
+  await page.route('**/api/v1/statuses/*/history', (route) =>
+    route.fulfill({
+      json: [
+        { ...version('<p>vote</p>', '2026-01-01T00:00:00.000Z'), poll: { options: [{ title: 'Tea' }, { title: 'Cofee' }] } },
+        { ...version('<p>vote</p>', '2026-01-02T00:00:00.000Z'), emojis: [blob],
+          poll: { options: [{ title: 'Tea :blob:' }, { title: 'Coffee' }, { title: 'Water' }] } },
+      ],
+    }),
+  )
+  await page.route('**/emoji/*', (r) => r.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#c44" /></svg>',
+  }))
+
+  await page.goto('/@bob/1/history')
+  const items = page.locator('li')
+  const current = items.first().getByRole('list', { name: 'Poll options' }).getByRole('listitem')
+  await expect(current).toHaveText(['Tea', 'Coffee', 'Water'])
+  await expect(current.first().locator('img.custom-emoji')).toHaveAttribute('alt', ':blob:')
+  const original = items.last().getByRole('list', { name: 'Poll options' }).getByRole('listitem')
+  await expect(original).toHaveText(['Tea', 'Cofee'])
+})
