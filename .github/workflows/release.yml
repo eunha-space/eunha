@@ -1,0 +1,85 @@
+# The build the eunha.space runtimes run: eunha and its web client, compiled
+# for the Apple Silicon host they share. The control plane downloads this
+# artifact for the commit it is releasing rather than compiling that commit
+# into a source checkout on the host, which used to leave a release target of
+# every build ever deployed behind it.
+#
+# The artifact is found through this workflow's run for the commit, so its name
+# never changes. It is a tarball inside the artifact's zip because the zip
+# drops the executable bit.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    env:
+      CARGO_TERM_COLOR: always
+      SQLX_OFFLINE: "true"
+      # web-push needs OpenSSL. Linked dynamically, the binary would load
+      # whatever OpenSSL the host's Homebrew had upgraded to, not the one it
+      # was built against, so it carries its own.
+      OPENSSL_STATIC: "1"
+      OPENSSL_DIR: /opt/homebrew/opt/openssl@3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build the web client
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Build eunha
+        run: cargo build --release --locked --bin eunha
+
+      # Anything outside the OS would have to be installed on the host at the
+      # same version, which is the coupling this build exists to remove.
+      - name: Links nothing but the system
+        run: |
+          otool -L target/release/eunha
+          if otool -L target/release/eunha | tail -n +2 \
+            | grep -Ev '^[[:space:]]+/(usr/lib|System/Library)/'; then
+            echo "::error::eunha links a library the host may not have"
+            exit 1
+          fi
+
+      - name: Package
+        run: |
+          mkdir -p package/frontend
+          cp target/release/eunha package/
+          cp -R frontend/dist package/frontend/
+          tar -czf eunha-macos-arm64.tar.gz -C package eunha frontend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eunha-macos-arm64
+          path: eunha-macos-arm64.tar.gz
+          if-no-files-found: error
+          # Already gzipped.
+          compression-level: 0
+          # Long enough to roll back to; the host keeps what it deployed.
+          retention-days: 30
