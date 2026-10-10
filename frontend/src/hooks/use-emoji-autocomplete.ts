@@ -93,11 +93,12 @@ export function useEmojiAutocomplete({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setActive((a) => (a + 1) % suggestions.length)
+          // Mastodon's `AutosuggestTextarea` stops at the last and the first.
+          setActive((a) => Math.min(a + 1, suggestions.length - 1))
           break
         case 'ArrowUp':
           e.preventDefault()
-          setActive((a) => (a - 1 + suggestions.length) % suggestions.length)
+          setActive((a) => Math.max(a - 1, 0))
           break
         case 'Enter':
         case 'Tab':

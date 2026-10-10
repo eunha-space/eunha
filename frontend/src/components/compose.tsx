@@ -431,9 +431,11 @@ export function Compose({
                       e.preventDefault()
                       mentions.select(a)
                     }}
-                    onMouseEnter={() => mentions.setActive(i)}
                     className={cn(
                       'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm',
+                      // Hover only highlights; as in Mastodon, it does not move
+                      // the selection the keys move.
+                      'hover:bg-accent/60',
                       i === mentions.active && 'bg-accent',
                     )}
                   >
@@ -465,9 +467,11 @@ export function Compose({
                       e.preventDefault()
                       emojiSuggestions.select(emoji)
                     }}
-                    onMouseEnter={() => emojiSuggestions.setActive(i)}
                     className={cn(
                       'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm',
+                      // Hover only highlights; as in Mastodon, it does not move
+                      // the selection the keys move.
+                      'hover:bg-accent/60',
                       i === emojiSuggestions.active && 'bg-accent',
                     )}
                   >
