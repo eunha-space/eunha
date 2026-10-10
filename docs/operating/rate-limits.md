@@ -47,6 +47,11 @@ the first. Periods are fixed windows on the clock: a five-minute period ends
 on a multiple of five minutes since the epoch, whenever its first request
 came.
 
+An email address is counted as the email blocks read it, lower-cased and
+with the dots and any `+tag` taken out of its local part, so that
+`F.o.o+1@example.com` and `foo@example.com` share a count, as they do since
+Mastodon 4.7.3.
+
 Mastodon's sign-in, password and setup pages are its own server-rendered
 ones; eunha's are at other paths, so the throttles count eunha's: a sign-in is
 `POST /account/login`, or `POST /oauth/authorize` with an email, a password or

@@ -220,7 +220,7 @@ struct Facts {
     /// to its /64.
     ip: Option<String>,
     paging: bool,
-    /// `params.dig('user', 'email')`.
+    /// `params.dig('user', 'email')`, canonicalized (`normalized_email`).
     email: Option<String>,
     /// Whether the form signs in: an email, a password or a pending
     /// sign-in, as eunha's authorization page tells a sign-in from its
@@ -642,7 +642,10 @@ fn request_facts(req: &Request, form: &[(String, String)]) -> Facts {
             .and_then(|c| c.0)
             .map(throttleable),
         paging,
-        email: param(form, &["user[email]", "email"]).map(str::to_owned),
+        // `normalized_email`: since Mastodon 4.7.3 (#40658) the address is
+        // counted canonicalized, so dots and a `+tag` do not make it another.
+        email: param(form, &["user[email]", "email"])
+            .map(crate::moderation::signup::canonicalize_email),
         ..Facts::default()
     };
     facts.credentials = param(form, &["email", "user[email]", "password", "attempt"]).is_some();
@@ -771,6 +774,20 @@ mod tests {
             "2001:db8:1:2::"
         );
         assert_eq!(throttleable("192.0.2.1".parse().unwrap()), "192.0.2.1");
+    }
+
+    #[test]
+    fn emails_are_counted_canonicalized() {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/auth/password")
+            .body(Body::empty())
+            .unwrap();
+        for given in ["foo@bar.com", "F.o.o+spam@Bar.com", "FOO@BAR.COM"] {
+            let form = vec![("user[email]".to_owned(), given.to_owned())];
+            let facts = request_facts(&req, &form);
+            assert_eq!(facts.email.as_deref(), Some("foo@bar.com"), "{given}");
+        }
     }
 
     #[test]
