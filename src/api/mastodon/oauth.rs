@@ -21,12 +21,11 @@ use crate::{
 pub async fn verify_app_credentials(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
-    headers: axum::http::HeaderMap,
+    bearer: Option<Extension<crate::middleware::BearerToken>>,
 ) -> AppResult<Json<AppCredentials>> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
+    let token = bearer
+        .as_ref()
+        .map(|Extension(t)| t.0.as_str())
         .ok_or(AppError::Unauthorized)?;
 
     let row = sqlx::query!(

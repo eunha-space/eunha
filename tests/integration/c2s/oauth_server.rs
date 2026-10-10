@@ -752,3 +752,81 @@ async fn the_applications_pages_are_closed() {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{path}");
     }
 }
+
+/// Doorkeeper's `access_token_methods`: the `Authorization` header, the
+/// `access_token` parameter and the `bearer_token` one; and since 5.9.7
+/// (Mastodon 4.7.3), a request that sends the token more than one of those
+/// ways carries none, even when it is the same token.
+#[tokio::test]
+async fn a_token_is_taken_from_one_method_only() {
+    let ctx = TestContext::new("oauth-token-methods").await;
+    let verify = "/api/v1/accounts/verify_credentials";
+    let token = ctx.alice_token.clone();
+    let host = ctx.api.host.clone();
+    let send = |request: reqwest::RequestBuilder| {
+        let request = request.header("host", host.clone());
+        async move { request.send().await.unwrap().status() }
+    };
+
+    let http = &ctx.api.http;
+    assert_eq!(
+        send(http.get(ctx.api.url(verify)).bearer_auth(&token)).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            http.get(ctx.api.url(verify))
+                .header("authorization", format!("bearer {token}"))
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(http.get(ctx.api.url(&format!("{verify}?access_token={token}")))).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(http.get(ctx.api.url(&format!("{verify}?bearer_token={token}")))).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            http.get(ctx.api.url(&format!("{verify}?access_token={token}")))
+                .bearer_auth(&token)
+        )
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send(
+            http.patch(ctx.api.url(&format!(
+                "/api/v1/accounts/update_credentials?access_token={token}"
+            )))
+            .form(&[("access_token", token.as_str()), ("note", "hi")])
+        )
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send(
+            http.patch(ctx.api.url("/api/v1/accounts/update_credentials"))
+                .json(&serde_json::json!({"access_token": token, "note": "hi"}))
+        )
+        .await,
+        StatusCode::OK
+    );
+    // A multipart body is not read for one (`token-not-read-from-multipart`).
+    let body = format!(
+        "--x\r\nContent-Disposition: form-data; name=\"access_token\"\r\n\r\n{token}\r\n\
+         --x\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\nhi\r\n--x--\r\n"
+    );
+    assert_eq!(
+        send(
+            http.patch(ctx.api.url("/api/v1/accounts/update_credentials"))
+                .header("content-type", "multipart/form-data; boundary=x")
+                .body(body)
+        )
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+}

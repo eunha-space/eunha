@@ -83,16 +83,18 @@ fn now() -> chrono::NaiveDateTime {
 
 /// The bearer token of the request: Doorkeeper's `access_token_methods`,
 /// the `Authorization` header, then the `access_token` and `bearer_token`
-/// parameters.
+/// parameters, and none when more than one of them carries one.
 fn bearer(headers: &HeaderMap, params: &TokenParams) -> Option<String> {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|t| t.trim().to_owned())
-        .or_else(|| params.access_token.clone())
-        .or_else(|| params.bearer_token.clone())
-        .filter(|t| !t.is_empty())
+    crate::middleware::doorkeeper_token(
+        headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok()),
+        &crate::middleware::TokenParams {
+            access_token: params.access_token.clone(),
+            bearer_token: params.bearer_token.clone(),
+        },
+        &crate::middleware::TokenParams::default(),
+    )
 }
 
 #[derive(Debug, Default, Deserialize)]

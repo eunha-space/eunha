@@ -113,8 +113,10 @@ impl AuthenticatedUser {
 /// Bearer token authentication. Attaches `AuthenticatedUser` if a valid token
 /// is present; passes through unauthenticated requests so endpoints can decide
 /// whether auth is required.
-pub async fn authenticate(state: AppState, mut req: Request, next: Next) -> Response {
-    if let Some(token) = extract_bearer(&req) {
+pub async fn authenticate(state: AppState, req: Request, next: Next) -> Response {
+    let (mut req, token) = extract_bearer(req).await;
+    if let Some(token) = token {
+        req.extensions_mut().insert(BearerToken(token.clone()));
         if let Some(tok) = sqlx::query!(
             r#"SELECT t.id, t.resource_owner_id, u.account_id AS "account_id?", t.application_id, t.scopes,
                       t.expires_in, t.created_at, t.revoked_at, t.last_used_at, u.id as "user_id?",
@@ -590,13 +592,220 @@ fn claimed_key_id(headers: &axum::http::HeaderMap) -> Option<String> {
     Some(value[start..start + end].to_owned())
 }
 
-fn extract_bearer(req: &Request) -> Option<String> {
-    let header = req
+/// The token a request carried, as [`doorkeeper_token`] found it, put there
+/// by [`authenticate`] whether or not it is any good: `doorkeeper_token`'s
+/// string, for the endpoints that look it up themselves.
+#[derive(Debug, Clone)]
+pub struct BearerToken(pub String);
+
+/// The `access_token` and `bearer_token` parameters of one of the places a
+/// request carries parameters. `Some("")` is a parameter given blank, which
+/// still shadows the other place's, as Rails merges them.
+#[derive(Debug, Default, Clone)]
+pub struct TokenParams {
+    pub access_token: Option<String>,
+    pub bearer_token: Option<String>,
+}
+
+impl TokenParams {
+    /// Read from `key=value` pairs, the last of a repeated key winning, as
+    /// Rack reads them.
+    pub fn from_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
+        let mut params = Self::default();
+        for (key, value) in pairs {
+            match key {
+                "access_token" => params.access_token = Some(value.to_owned()),
+                "bearer_token" => params.bearer_token = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+        params
+    }
+
+    /// From a query string.
+    pub fn from_query(query: Option<&str>) -> Self {
+        let pairs: Vec<(String, String)> = query
+            .and_then(|q| serde_urlencoded::from_str(q).ok())
+            .unwrap_or_default();
+        Self::from_pairs(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+    }
+
+    /// From a JSON object's top-level strings.
+    fn from_json(value: &serde_json::Value) -> Self {
+        let text = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+        Self {
+            access_token: text("access_token"),
+            bearer_token: text("bearer_token"),
+        }
+    }
+}
+
+/// Ruby's `present?` of a string: not empty and not only whitespace.
+fn present(value: Option<&str>) -> Option<&str> {
+    value.filter(|v| !v.trim().is_empty())
+}
+
+/// `Doorkeeper::OAuth::Token.from_request` with Mastodon's (the default)
+/// `access_token_methods`: the `Authorization: Bearer` header, then the
+/// `access_token` parameter, then `bearer_token`, the query's winning over
+/// the body's. Since Doorkeeper 5.9.7 (Mastodon 4.7.3) a request that sends
+/// a token by more than one method — the header, the query and the body
+/// each counting as one — carries none (RFC 6750 §2), even when the tokens
+/// agree.
+pub fn doorkeeper_token(
+    authorization: Option<&str>,
+    query: &TokenParams,
+    body: &TokenParams,
+) -> Option<String> {
+    // `from_bearer_authorization`: `/^Bearer /i`, the rest of the header.
+    let header = authorization
+        .filter(|h| h.len() >= 7 && h.as_bytes()[..7].eq_ignore_ascii_case(b"bearer "))
+        .and_then(|h| present(Some(&h[7..])));
+    let used = usize::from(header.is_some())
+        + [
+            &query.access_token,
+            &body.access_token,
+            &query.bearer_token,
+            &body.bearer_token,
+        ]
+        .iter()
+        .filter(|v| present(v.as_deref()).is_some())
+        .count();
+    if used > 1 {
+        return None;
+    }
+    let merged = |query: &Option<String>, body: &Option<String>| {
+        present(query.as_deref().or(body.as_deref())).map(str::to_owned)
+    };
+    header
+        .map(str::to_owned)
+        .or_else(|| merged(&query.access_token, &body.access_token))
+        .or_else(|| merged(&query.bearer_token, &body.bearer_token))
+}
+
+/// What a body Doorkeeper reads parameters from may be: a form or JSON, and
+/// small enough to read twice. A multipart body (an upload) is not read for
+/// a token.
+const TOKEN_BODY_LIMIT: u64 = 1024 * 1024;
+
+/// The request's token, as [`doorkeeper_token`] finds it, reading a form or
+/// JSON body and putting it back for the handler.
+async fn extract_bearer(req: Request) -> (Request, Option<String>) {
+    let authorization = req
         .headers()
-        .get(axum::http::header::AUTHORIZATION)?
-        .to_str()
-        .ok()?;
-    header.strip_prefix("Bearer ").map(str::to_string)
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    // The streaming API is Mastodon's other process, not Doorkeeper's: it
+    // reads its own `access_token` (see `api::mastodon::streaming`), and
+    // that must not count as an API request signing the user in.
+    if req.uri().path().starts_with("/api/v1/streaming") {
+        let token = authorization
+            .as_deref()
+            .and_then(|h| h.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        return (req, token);
+    }
+    let query = TokenParams::from_query(req.uri().query());
+    let content_type = req
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        });
+    let form = match content_type.as_deref() {
+        Some("application/x-www-form-urlencoded") => Some(false),
+        Some(ct) if ct == "application/json" || ct.ends_with("+json") => Some(true),
+        _ => None,
+    };
+    let length = req
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    let (req, body) = match (form, length) {
+        (Some(json), Some(length)) if length > 0 && length <= TOKEN_BODY_LIMIT => {
+            let (parts, body) = req.into_parts();
+            let bytes = axum::body::to_bytes(body, TOKEN_BODY_LIMIT as usize)
+                .await
+                .unwrap_or_default();
+            let params = if json {
+                serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .map(|v| TokenParams::from_json(&v))
+                    .unwrap_or_default()
+            } else {
+                let pairs: Vec<(String, String)> =
+                    serde_urlencoded::from_bytes(&bytes).unwrap_or_default();
+                TokenParams::from_pairs(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            };
+            (
+                Request::from_parts(parts, axum::body::Body::from(bytes)),
+                params,
+            )
+        }
+        _ => (req, TokenParams::default()),
+    };
+    let token = doorkeeper_token(authorization.as_deref(), &query, &body);
+    (req, token)
+}
+
+#[cfg(test)]
+mod doorkeeper_token_tests {
+    use super::{doorkeeper_token, TokenParams};
+
+    fn params(access_token: Option<&str>, bearer_token: Option<&str>) -> TokenParams {
+        TokenParams {
+            access_token: access_token.map(str::to_owned),
+            bearer_token: bearer_token.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn one_method_gives_the_token() {
+        let none = TokenParams::default();
+        assert_eq!(
+            doorkeeper_token(Some("Bearer abc"), &none, &none).as_deref(),
+            Some("abc")
+        );
+        assert_eq!(
+            doorkeeper_token(Some("bearer abc"), &none, &none).as_deref(),
+            Some("abc")
+        );
+        assert_eq!(
+            doorkeeper_token(None, &params(Some("abc"), None), &none).as_deref(),
+            Some("abc")
+        );
+        assert_eq!(
+            doorkeeper_token(None, &none, &params(None, Some("abc"))).as_deref(),
+            Some("abc")
+        );
+        assert_eq!(doorkeeper_token(Some("Basic abc"), &none, &none), None);
+        assert_eq!(doorkeeper_token(Some("Bearer  "), &none, &none), None);
+    }
+
+    #[test]
+    fn more_than_one_method_gives_none() {
+        let none = TokenParams::default();
+        let abc = params(Some("abc"), None);
+        assert_eq!(doorkeeper_token(Some("Bearer abc"), &abc, &none), None);
+        assert_eq!(doorkeeper_token(Some("Bearer abc"), &none, &abc), None);
+        assert_eq!(doorkeeper_token(None, &abc, &abc), None);
+        assert_eq!(
+            doorkeeper_token(None, &params(Some("abc"), Some("abc")), &none),
+            None
+        );
+        // A blank parameter is not a method, but shadows the body's.
+        assert_eq!(doorkeeper_token(None, &params(Some(""), None), &abc), None);
+        assert_eq!(
+            doorkeeper_token(Some("Bearer abc"), &params(Some(" "), None), &none).as_deref(),
+            Some("abc")
+        );
+    }
 }
 
 fn token_not_expired(created_at: chrono::NaiveDateTime, expires_in: Option<i32>) -> bool {

@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{
     extract::{Extension, Query},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{Html, IntoResponse, Json, Redirect, Response},
 };
 use serde::Deserialize;
@@ -698,12 +698,8 @@ pub async fn register(
 
 /// The bearer token's app, when the token is one the client-credentials grant
 /// gave it, with its scopes.
-async fn app_token(state: &AppState, headers: &HeaderMap) -> Option<(Option<i64>, String, i64)> {
-    let value = headers
-        .get(axum::http::header::AUTHORIZATION)?
-        .to_str()
-        .ok()?;
-    let token = value.strip_prefix("Bearer ")?.trim();
+async fn app_token(state: &AppState, token: Option<&str>) -> Option<(Option<i64>, String, i64)> {
+    let token = token?;
     let row = sqlx::query!(
         r#"SELECT t.application_id, t.resource_owner_id, t.scopes,
                   t.revoked_at IS NOT NULL AS "revoked!",
@@ -740,11 +736,12 @@ pub async fn api_create_account(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
-    req_headers: HeaderMap,
+    bearer: Option<Extension<crate::middleware::BearerToken>>,
     super::extractors::Params(form): super::extractors::Params<ApiCreateAccountForm>,
 ) -> Result<Json<super::types::Token>, SignupError> {
     // `doorkeeper_authorize!` and `require_client_credentials!`.
-    let Some((owner, scopes, app_id)) = app_token(&state, &req_headers).await else {
+    let token = bearer.as_ref().map(|Extension(t)| t.0.as_str());
+    let Some((owner, scopes, app_id)) = app_token(&state, token).await else {
         return Err(AppError::UnauthorizedMsg("The access token is invalid".into()).into());
     };
     if !grants_write_accounts(&scopes) {

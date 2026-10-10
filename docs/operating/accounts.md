@@ -167,6 +167,14 @@ setting it up, then back to the page; one pending approval, a memorial or
 moved goes to the account page; and one with an unconfirmed address to
 `/auth/setup`. Each keeps the page to come back to.
 
+A request's token is read as Doorkeeper reads it: from an
+`Authorization: Bearer` header (`bearer` in any case), an `access_token`
+parameter or a `bearer_token` one, in the query or in a form or JSON body (not
+in a multipart one, which eunha does not read for it). As of Doorkeeper 5.9.7
+(Mastodon 4.7.3), a request that sends a token more than one of those ways,
+the query and the body counting apart, carries none, even when the tokens
+are the same (RFC 6750 §2).
+
 `POST /oauth/revoke` is RFC 7009 revocation as Doorkeeper answers it. The
 request names its client, by HTTP Basic or in the request, with the client's
 secret unless the application is a public one (`confidential` false); without
