@@ -115,6 +115,17 @@ async fn test_a_minimum_age_asks_for_a_date_of_birth() {
     let missing: Value = sign_up(&ctx, base.clone()).await.json().await.unwrap();
     assert_eq!(details(&missing, "date_of_birth"), ["ERR_BLANK"]);
 
+    // A date that is no date casts to nil, as `attribute :date_of_birth,
+    // :date` casts it, and is refused as missing rather than failing: the
+    // server error Mastodon 4.7.3 fixed (#40607) was in reading the web
+    // form's three date fields, which eunha's form does not have.
+    let mut body = base.clone();
+    body["date_of_birth"] = json!("2019-02-31");
+    let impossible = sign_up(&ctx, body).await;
+    assert_eq!(impossible.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let impossible: Value = impossible.json().await.unwrap();
+    assert_eq!(details(&impossible, "date_of_birth"), ["ERR_BLANK"]);
+
     let today = chrono::Utc::now().date_naive();
     let too_young = today
         .checked_sub_months(chrono::Months::new(15 * 12))

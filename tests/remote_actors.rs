@@ -564,6 +564,39 @@ async fn test_an_actor_webfinger_disowns_is_not_stored() {
     assert_eq!(stored, 0);
 }
 
+/// A WebFinger subject missing its username or its domain is an error that
+/// keeps the actor out, as `ProcessAccountService#check_webfinger!` raises
+/// for it since Mastodon 4.7.3 (#40731), where it used to fail on the
+/// missing half.
+#[tokio::test]
+async fn test_an_actor_whose_webfinger_subject_is_malformed_is_not_stored() {
+    let (ctx, server) = spawn_server("actors-webfinger-subject").await;
+    let actor = server.actor();
+    server.remote.put("/users/eve", server.full_actor());
+    for subject in [
+        "acct:eve".to_owned(),
+        "acct:eve@".to_owned(),
+        format!("acct:@{}", server.host),
+    ] {
+        server.remote.put(
+            "/.well-known/webfinger",
+            json!({
+                "subject": subject,
+                "links": [{"rel": "self", "type": "application/activity+json", "href": actor}],
+            }),
+        );
+        let result =
+            eunha::api::ap::inbox::resolve_or_fetch_remote_account(&ctx.state, &actor).await;
+        assert!(result.is_err(), "{subject}");
+        let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE uri = $1")
+            .bind(&actor)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+        assert_eq!(stored, 0, "{subject}");
+    }
+}
+
 /// An account first seen from a silenced domain starts out limited.
 #[tokio::test]
 async fn test_new_account_from_blocked_domain_starts_limited() {
