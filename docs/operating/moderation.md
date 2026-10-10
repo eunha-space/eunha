@@ -57,6 +57,11 @@ Each action:
  -  for a local account, sends a `moderation_warning` notification, and an
     email unless `send_email_notification` is false.
 
+Every action, a plain warning and `disable` included, needs a role that may
+manage users or reports and is positioned above the account's, because the
+strike does (`AccountPolicy#warn?`, which Mastodon 4.7.3 began asking). An
+action refused for it leaves nothing done.
+
 `disable` freezes the login (`users.disabled`) and leaves the account
 visible; `POST …/enable` undoes it. `suspend` hides the account and records
 a deletion request. Thirty days later the data is erased, unless
@@ -382,7 +387,10 @@ for a role with `manage_reports`. Its `moderation_action` is one of:
     actor's, and is the version the post's edit history shows last;
  -  `silence` or `suspend`, which is the account action of that type.
 
-The first two resolve the report and strike the account citing the posts. A
+The first two resolve the report and strike the account citing the posts,
+so they too need a role above the account's; refused, they change nothing,
+where Mastodon keeps what `mark_as_sensitive` did before the strike was
+refused. A
 `text` goes with the strike. The account is notified unless the report is
 spam.
 

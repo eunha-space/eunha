@@ -179,7 +179,11 @@ pub async fn save(
         _ => {}
     }
 
-    // `process_strike!`.
+    // `process_strike!`, which since Mastodon 4.7.3 (#40646) asks
+    // `AccountPolicy#warn?` first, so even a plain warning or a disabled
+    // login needs a role above the target's. Refused, the transaction takes
+    // back whatever `handle_type!` did.
+    authorize(warn_policy(&acting, target_role.as_ref()))?;
     let status_ids: Option<Vec<String>> = report
         .as_ref()
         .filter(|_| action.include_statuses)

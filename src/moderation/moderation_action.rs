@@ -246,7 +246,15 @@ pub async fn save(
     .await?;
     action_log::log(&mut *tx, actor_id, "resolve", &Target::report(report_id)).await?;
 
-    // `process_strike!`, citing the report's posts.
+    // `process_strike!`, citing the report's posts, behind
+    // `AccountPolicy#warn?` since Mastodon 4.7.3 (#40646). Refused, nothing
+    // done above is kept: eunha acts in one transaction, where upstream's
+    // marking as sensitive is not in one and stays done.
+    let target_role = role::of_account(&state.db, target.id).await?;
+    authorize(super::account_action::warn_policy(
+        &acting,
+        target_role.as_ref(),
+    ))?;
     let warning_id = sqlx::query_scalar!(
         r#"INSERT INTO account_warnings
              (account_id, target_account_id, report_id, action, text, status_ids,

@@ -193,6 +193,119 @@ async fn test_moderator_cannot_act_on_higher_roles() {
     assert_eq!(strikes, 0, "a refused action leaves nothing behind");
 }
 
+/// Since Mastodon 4.7.3 (#40646) a strike asks `AccountPolicy#warn?` too, so
+/// a moderator cannot warn an admin, nor take down an admin's reported post,
+/// which comes with a strike; and a refused action leaves nothing done.
+#[tokio::test]
+async fn test_moderator_cannot_warn_higher_roles() {
+    let ctx = TestContext::new("mod-warn-overrides").await;
+    let moderator_role: i64 = sqlx::query_scalar(
+        "INSERT INTO user_roles (name, position, permissions, highlighted, created_at, updated_at)
+         VALUES ('Mod', 10, $1, true, now(), now()) RETURNING id",
+    )
+    .bind((1_i64 << 4) | (1_i64 << 10))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET role_id = $1 WHERE account_id = $2")
+        .bind(moderator_role)
+        .bind(id(&ctx.alice_id))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    crate::helpers::grant_admin_scopes(&ctx.db, id(&ctx.alice_id)).await;
+    crate::helpers::make_admin(&ctx.db, id(&ctx.bob_id)).await;
+    let (_, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({"type": "none", "text": "be nice"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "reported", "public")
+        .await;
+    let status_id = status["id"].as_str().unwrap().to_owned();
+    let report = file_report(
+        &ctx,
+        &carol_token,
+        json!({"account_id": ctx.bob_id, "status_ids": [status_id], "category": "other"}),
+    )
+    .await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/admin/reports/{}/actions",
+                report["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({"moderation_action": "delete"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // Marking it sensitive is refused alike, and, unlike upstream, does not
+    // stay done (`refused-strike-keeps-nothing` in divergences.toml).
+    let card: i64 = sqlx::query_scalar(
+        "INSERT INTO preview_cards (url, created_at, updated_at)
+         VALUES ('https://example.com/', now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO preview_cards_statuses (preview_card_id, status_id) VALUES ($1, $2)")
+        .bind(card)
+        .bind(id(&status_id))
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/admin/reports/{}/actions",
+                report["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({"moderation_action": "mark_as_sensitive"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let sensitive: bool = sqlx::query_scalar("SELECT sensitive FROM statuses WHERE id = $1")
+        .bind(id(&status_id))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert!(!sensitive);
+
+    let strikes: i64 = sqlx::query_scalar("SELECT count(*) FROM account_warnings")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(strikes, 0);
+    let (deleted, resolved): (bool, bool) = sqlx::query_as(
+        "SELECT s.deleted_at IS NOT NULL, r.action_taken_at IS NOT NULL
+         FROM statuses s, reports r WHERE s.id = $1 AND r.id = $2",
+    )
+    .bind(id(&status_id))
+    .bind(id(report["id"].as_str().unwrap()))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(
+        !deleted && !resolved,
+        "a refused action leaves nothing behind"
+    );
+}
+
 /// `AccountPolicy#unsuspend?`: only a suspension made here is undone here.
 #[tokio::test]
 async fn test_remote_origin_suspension_cannot_be_unsuspended() {
