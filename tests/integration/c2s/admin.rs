@@ -406,6 +406,31 @@ async fn test_admin_delete_account_purges_suspended_account() {
         account_exists.is_some(),
         "account record should be reserved"
     );
+
+    // Since Mastodon 4.7.3 (#40645) the account stays suspended, locally,
+    // and is not marked as deleted by its owner.
+    let (suspended, origin, requested): (bool, Option<i32>, bool) = sqlx::query_as(
+        "SELECT suspended_at IS NOT NULL, suspension_origin, requested_deletion_at IS NOT NULL
+         FROM accounts WHERE id = $1",
+    )
+    .bind(bob_account_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert!(suspended);
+    assert_eq!(origin, Some(0));
+    assert!(!requested, "a suspended account is not marked as deleted");
+
+    // And the moderator's deletion is in the audit log (#40572).
+    let logged: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM admin_action_logs
+         WHERE action = 'destroy' AND target_type = 'Account' AND target_id = $1",
+    )
+    .bind(bob_account_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(logged, 1);
 }
 
 /// GET /api/v1/admin/reports returns a list (empty when no reports filed).

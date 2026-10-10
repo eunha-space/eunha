@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET deleted_at = COALESCE(deleted_at, now())\n           WHERE account_id = $1 AND id = ANY($2::bigint[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bcca82756dae9e68f5eac536a79f2cb219581d7c786d22bb117ad073fcd9e47"
+}

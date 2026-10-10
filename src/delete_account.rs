@@ -314,8 +314,37 @@ impl crate::jobs::Job for AdminAccountDeletionWorker {
         ));
 
     async fn perform(self, state: &AppState) -> Result<()> {
-        call(state, self.account_id, Options::default()).await
+        admin_delete(state, self.account_id).await
     }
+}
+
+/// `Admin::AccountDeletionWorker#perform`: nothing for an account that is no
+/// longer unavailable; otherwise both records are kept and the data goes.
+/// Since Mastodon 4.7.3 (#40645) a suspended account stays suspended, from
+/// the time it was, rather than also being marked as deleted by its owner.
+pub async fn admin_delete(state: &AppState, account_id: i64) -> Result<()> {
+    let Some(account) = sqlx::query!(
+        "SELECT suspended_at, requested_deletion_at FROM accounts WHERE id = $1",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(());
+    };
+    // `Account#unavailable?`.
+    if account.suspended_at.is_none() && account.requested_deletion_at.is_none() {
+        return Ok(());
+    }
+    call(
+        state,
+        account_id,
+        Options {
+            suspended_at: account.suspended_at,
+            ..Options::default()
+        },
+    )
+    .await
 }
 
 pub async fn call(state: &AppState, account_id: i64, options: Options) -> Result<()> {
@@ -757,6 +786,19 @@ async fn purge_statuses(
 ) -> Result<()> {
     const BATCH: i64 = 200;
 
+    // Since Mastodon 4.7.3 (#40650) the statuses kept for an unresolved
+    // report are discarded rather than left up: the moderators still see
+    // them, nobody else does. `update_all`, so no callback runs and nothing
+    // is sent.
+    sqlx::query!(
+        r#"UPDATE statuses SET deleted_at = COALESCE(deleted_at, now())
+           WHERE account_id = $1 AND id = ANY($2::bigint[])"#,
+        account.id,
+        reported,
+    )
+    .execute(&state.db)
+    .await?;
+
     loop {
         let ids: Vec<i64> = sqlx::query_scalar!(
             r#"SELECT id FROM statuses
@@ -817,9 +859,18 @@ async fn purge_statuses(
         )
         .execute(&state.db)
         .await?;
+        let removed: Vec<i64> = ids.iter().chain(&reblog_ids).copied().collect();
+        // `PreviewCardsStatus` rows have no foreign key to cascade by, so
+        // `BatchedRemoveStatusService` deletes them since Mastodon 4.7.3
+        // (#40624).
+        sqlx::query!(
+            "DELETE FROM preview_cards_statuses WHERE status_id = ANY($1::bigint[])",
+            &removed,
+        )
+        .execute(&state.db)
+        .await?;
         // `BatchedRemoveStatusService`: the callbacks were skipped, so the
         // statuses are de-indexed by hand.
-        let removed: Vec<i64> = ids.iter().chain(&reblog_ids).copied().collect();
         crate::search::elasticsearch::indexing::enqueue(
             state,
             crate::search::elasticsearch::Index::Statuses,
@@ -1131,6 +1182,23 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
             .execute(&state.db)
             .await?;
     }
+
+    // `collection_items` (Mastodon 4.7.3, #40623): the places this account
+    // is featured in other accounts' collections, each destroyed, so its
+    // collection's `item_count` counter cache drops by one. Nothing is sent:
+    // `CollectionItem` has no callback that federates. `account_id` has no
+    // ON DELETE either, so these too kept an account from being deleted.
+    sqlx::query!(
+        r#"WITH deleted AS (
+               DELETE FROM collection_items WHERE account_id = $1 RETURNING collection_id
+           )
+           UPDATE collections c SET item_count = COALESCE(c.item_count, 0) - d.n
+           FROM (SELECT collection_id, count(*)::int AS n FROM deleted GROUP BY collection_id) d
+           WHERE c.id = d.collection_id"#,
+        account_id,
+    )
+    .execute(&state.db)
+    .await?;
 
     // The rest of ASSOCIATIONS_ON_PURGE.
     let statements: &[&str] = &[

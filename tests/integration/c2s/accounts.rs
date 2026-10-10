@@ -3421,6 +3421,82 @@ async fn test_purging_an_account_that_owns_a_collection() {
     assert_eq!(alice_purgeable_associations(&ctx).await, [0, 0, 0, 0]);
 }
 
+/// Since Mastodon 4.7.3, a deleted account's statuses take their links to
+/// preview cards with them (#40624), and the account leaves the collections
+/// that featured it, each counting one item fewer (#40623).
+#[tokio::test]
+async fn test_delete_account_removes_card_links_and_featured_items() {
+    let ctx = TestContext::new("del-acct-cards").await;
+    let bob: i64 = ctx.bob_id.parse().unwrap();
+    // Alice features bob.
+    give_alice_purgeable_associations(&ctx).await;
+    let collection: i64 =
+        sqlx::query_scalar("SELECT collection_id FROM collection_items WHERE account_id = $1")
+            .bind(bob)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    let before: i32 = sqlx::query_scalar("SELECT item_count FROM collections WHERE id = $1")
+        .bind(collection)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    // Bob's post carries a card.
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "a link", "public")
+        .await;
+    let status_id: i64 = status["id"].as_str().unwrap().parse().unwrap();
+    let card: i64 = sqlx::query_scalar(
+        "INSERT INTO preview_cards (url, title, description, created_at, updated_at)
+         VALUES ('https://example.com/', 'Example', '', now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO preview_cards_statuses (preview_card_id, status_id) VALUES ($1, $2)")
+        .bind(card)
+        .bind(status_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    Box::pin(eunha::delete_account::call(
+        &ctx.state,
+        bob,
+        eunha::delete_account::Options::purge(),
+    ))
+    .await
+    .unwrap();
+
+    let links: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM preview_cards_statuses WHERE status_id = $1")
+            .bind(status_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(links, 0, "the card links should go with the statuses");
+    let items: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM collection_items WHERE account_id = $1")
+            .bind(bob)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(items, 0, "bob should leave alice's collection");
+    let after: i32 = sqlx::query_scalar("SELECT item_count FROM collections WHERE id = $1")
+        .bind(collection)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(after, before - 1);
+    let gone: Option<i64> = sqlx::query_scalar("SELECT id FROM accounts WHERE id = $1")
+        .bind(bob)
+        .fetch_optional(&ctx.db)
+        .await
+        .unwrap();
+    assert!(gone.is_none(), "the featured account can now be deleted");
+}
+
 /// Statuses attached to an unresolved report survive the purge so moderators
 /// can still act on them (`reported_status_ids`), while everything else —
 /// including uploads never attached to a status — still goes.
@@ -3486,6 +3562,14 @@ async fn test_delete_account_keeps_reported_statuses() {
         vec![reported_id],
         "only the reported status should survive (plain status {plain_id} should be gone)",
     );
+    // Kept for the moderators, but discarded since Mastodon 4.7.3 (#40650).
+    let discarded: bool =
+        sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM statuses WHERE id = $1")
+            .bind(reported_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(discarded, "the reported status should be discarded");
 
     let media: i64 =
         sqlx::query_scalar("SELECT count(*) FROM media_attachments WHERE account_id = $1")

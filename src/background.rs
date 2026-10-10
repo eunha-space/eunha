@@ -799,13 +799,7 @@ pub async fn process_deletion_requests(state: &AppState) -> anyhow::Result<()> {
 
     for account_id in due {
         // `Admin::AccountDeletionWorker`: both records are kept, only the data goes.
-        if let Err(e) = crate::delete_account::call(
-            state,
-            account_id,
-            crate::delete_account::Options::default(),
-        )
-        .await
-        {
+        if let Err(e) = crate::delete_account::admin_delete(state, account_id).await {
             tracing::error!(account_id, error = %e, "scheduled account deletion failed");
         }
     }

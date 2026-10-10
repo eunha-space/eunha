@@ -756,7 +756,7 @@ pub async fn delete_admin_account(
     )?;
     // `Admin::AccountDeletionWorker`.
     if crate::feed::sync_fanout() {
-        crate::delete_account::call(&state, id, crate::delete_account::Options::default()).await?;
+        crate::delete_account::admin_delete(&state, id).await?;
     } else {
         crate::jobs::push(
             &state,
@@ -764,6 +764,8 @@ pub async fn delete_admin_account(
         )
         .await;
     }
+    // Logged since Mastodon 4.7.3 (#40572), as "deleted account data for".
+    action_log::log(&state.db, auth.account_id, "destroy", &s.account_target()).await?;
     Ok(Json(serde_json::json!({})))
 }
 

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM preview_cards_statuses WHERE status_id = ANY($1::bigint[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb5ed66e6cdf59c45ebd4954b83055ccbc59189a971d7f169fb57629e5ee3ec5"
+}

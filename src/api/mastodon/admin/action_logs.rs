@@ -117,6 +117,7 @@ const ACTION_TYPE_LABELS: &[(&str, &str)] = &[
     ("create_user_role", "Create Role"),
     ("create_username_block", "Create Username Rule"),
     ("demote_user", "Demote User"),
+    ("destroy_account", "Delete Account Data"),
     ("destroy_announcement", "Delete Announcement"),
     ("destroy_canonical_email_block", "Delete Email Block"),
     ("destroy_custom_emoji", "Delete Custom Emoji"),
@@ -230,6 +231,10 @@ const ACTIONS: &[(&str, &str)] = &[
         "%{name} added rule for usernames containing %{target}",
     ),
     ("demote_user", "%{name} demoted user %{target}"),
+    (
+        "destroy_account",
+        "%{name} deleted account data for %{target}",
+    ),
     (
         "destroy_announcement",
         "%{name} deleted announcement %{target}",
@@ -859,6 +864,10 @@ mod tests {
         assert_eq!(r.template, "%{name} suspended %{target}'s account");
         assert_eq!(r.text, "suspended bob's account");
         assert_eq!(r.target.unwrap().href.as_deref(), Some("/admin/accounts/7"));
+
+        // Mastodon 4.7.3 logs deleting a suspended account's data.
+        let r = render(row("destroy", "Account", Some("bob"), None), None);
+        assert_eq!(r.text, "deleted account data for bob");
 
         let r = render(row("resolve", "Report", Some("7"), None), None);
         assert_eq!(r.text, "resolved report #7");

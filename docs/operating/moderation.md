@@ -60,8 +60,13 @@ Each action:
 `disable` freezes the login (`users.disabled`) and leaves the account
 visible; `POST …/enable` undoes it. `suspend` hides the account and records
 a deletion request. Thirty days later the data is erased, unless
-`POST …/unsuspend` came first. Only a suspension made on this instance can be
-lifted here. Suspending an account also does the following:
+`POST …/unsuspend` came first; `DELETE /api/v1/admin/accounts/:id` erases it
+at once, for a role with `delete_user_data`, and is logged as having
+“deleted account data”. Either way the account stays suspended, with the
+suspension now its own, rather than being marked as deleted by its owner. The
+posts of open reports about it are kept for the moderators but taken down.
+Only a suspension made on this instance can be lifted here. Suspending an
+account also does the following:
 
  -  for a local account, sends the new state of the actor to every server
     that knows the account;
