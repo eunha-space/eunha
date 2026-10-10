@@ -154,8 +154,11 @@ user already holds an unrevoked token of with the same scopes, unless the
 request says `force_login=true`. The code, and a denial, come back with a
 302, as Rails redirects. **Deny** posts `_method=delete`, which is
 `DELETE /oauth/authorize`: from a signed-in browser it turns the client away,
-sending `access_denied`, with its `state`, to a redirect URI it registered (an
-unregistered one is refused, where Doorkeeper would follow it).
+sending `access_denied`, with its `state`, to a redirect URI it registered.
+As Doorkeeper 5.9.9 (Mastodon 4.7.3) does, the client is checked first, and
+a refusal is shown rather than sent anywhere: 400 when `client_id` is
+missing, 401 when no app has it, and 400 for a redirect URI it did not
+register.
 
 Before any of that, the page, the authorize button and deny each run
 Mastodon's `require_functional!` for a signed-in user who is not functional:

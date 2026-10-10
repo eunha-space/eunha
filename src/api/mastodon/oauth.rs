@@ -1924,9 +1924,12 @@ pub struct DenyParams {
 ///
 /// `authenticate_resource_owner!` comes first: without a session the browser
 /// is sent to sign in. The parameters are read from the query and a form
-/// body both, as Rails merges them. Doorkeeper builds the answer from the
-/// redirect URI as given; eunha sends it only to a redirect URI the client
-/// registered (`oauth-deny-checks-the-redirect-uri` in divergences.toml).
+/// body both, as Rails merges them. Since Doorkeeper 5.9.9 (Mastodon 4.7.3)
+/// the client and its redirect URI are checked first, as they are before
+/// authorizing (`refuse_invalid_client?`), and a refusal is shown, never
+/// sent to the redirect URI: a missing `client_id` is `invalid_request`, an
+/// unknown one `invalid_client`, and a redirect URI the client did not
+/// register `invalid_redirect_uri`.
 pub async fn authorize_deny(
     state: AppState,
     headers: axum::http::HeaderMap,
@@ -1966,30 +1969,32 @@ pub async fn authorize_deny(
     if let Some(response) = require_functional(&state, user_id, &page, continuation, locale).await {
         return response;
     }
-    let registered = match params.client_id.as_deref() {
-        Some(client_id) => sqlx::query_scalar!(
-            "SELECT redirect_uri FROM oauth_applications WHERE uid = $1",
-            client_id
+    // `validate_client_id`: blank is missing.
+    let Some(client_id) = params.client_id.as_deref().filter(|id| !id.is_empty()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Missing required parameter: client_id.",
         )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten(),
-        None => None,
+            .into_response();
     };
+    let registered = sqlx::query_scalar!(
+        "SELECT redirect_uri FROM oauth_applications WHERE uid = $1",
+        client_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
     let Some(registered) = registered else {
         return (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "invalid_client",
-                "error_description": "Client authentication failed due to unknown client, no client authentication included, or unsupported authentication method.",
-            })),
+            "Client authentication failed due to unknown client, no client authentication included, or unsupported authentication method.",
         )
             .into_response();
     };
     let redirect_uri = params.redirect_uri.unwrap_or_default();
     if !redirect_uri_allowed(&redirect_uri, &registered) {
-        return oauth_error("invalid_redirect_uri", INVALID_REDIRECT_URI);
+        return (StatusCode::BAD_REQUEST, INVALID_REDIRECT_URI).into_response();
     }
     let description = "The resource owner or authorization server denied the request.";
     let state_param = params.extras.state.clone().unwrap_or_default();

@@ -321,8 +321,23 @@ async fn denying_sends_access_denied_to_the_client() {
         "/oauth/authorize?client_id={client_id}&redirect_uri={}",
         urlencoding::encode("https://evil.example/")
     );
-    let resp = deny(Some(cookie), elsewhere).await.unwrap();
+    let resp = deny(Some(cookie.clone()), elsewhere).await.unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // Doorkeeper 5.9.9 (Mastodon 4.7.3) checks the client first: missing,
+    // it is `invalid_request`; unknown, `invalid_client`; neither redirects.
+    let missing = format!(
+        "/oauth/authorize?redirect_uri={}",
+        urlencoding::encode(CALLBACK)
+    );
+    let resp = deny(Some(cookie.clone()), missing).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let unknown = format!(
+        "/oauth/authorize?client_id=nobody&redirect_uri={}",
+        urlencoding::encode(CALLBACK)
+    );
+    let resp = deny(Some(cookie), unknown).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 /// `Oauth::AuthorizationsController#new` for a signed-in user: the
