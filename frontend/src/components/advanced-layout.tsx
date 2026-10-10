@@ -14,6 +14,11 @@ import { StatusFeed } from '@/components/status-feed.tsx'
 import { NotificationsFeed } from '@/pages/Notifications.tsx'
 import { MessagesFeed } from '@/pages/Messages.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
+import {
+  AnnouncementsButton,
+  AnnouncementsPanel,
+  useAnnouncements,
+} from '@/components/announcements.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import {
   DropdownMenu,
@@ -77,6 +82,9 @@ function Pane({
   token: string | null
   openCompose: ReturnType<typeof useComposeModal>['openCompose']
 }) {
+  // The home column carries the announcements, as Mastodon's does in its
+  // advanced layout too.
+  const announcements = useAnnouncements(id === 'home' ? token : null)
   const { ref, handleRef, isDragSource } = useSortable({
     id,
     index,
@@ -88,6 +96,13 @@ function Pane({
   return (
     <div ref={ref} className={cn('advanced-pane', isDragSource && 'shadow-xl')}>
       <ColumnHeader title={paneTitle(id)} gripRef={handleRef}>
+        {announcements.items.length > 0 && (
+          <AnnouncementsButton
+            unread={announcements.unread}
+            shown={announcements.shown}
+            onToggle={announcements.toggle}
+          />
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -101,6 +116,13 @@ function Pane({
           <X />
         </Button>
       </ColumnHeader>
+      {announcements.shown && token && (
+        <AnnouncementsPanel
+          items={announcements.items}
+          token={token}
+          update={announcements.update}
+        />
+      )}
       <div className="flex-1 space-y-2 overflow-y-auto p-3">
         <PaneBody id={id} token={token} openCompose={openCompose} />
       </div>

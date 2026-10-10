@@ -1,14 +1,16 @@
 // The server's announcements, as Mastodon's home column shows them: a button
 // in the column's header, badged with how many are unread, that opens them
 // above the timeline one at a time, newest first. An announcement is marked
-// read once it is the one on screen, and its reactions can be added to.
-import { useCallback, useEffect, useRef, useState } from 'react'
+// read once it is the one on screen, and its reactions can be added to. They
+// change live as the user stream reports them.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Megaphone, Plus } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
 import { dismissAnnouncement, getAnnouncements, setAnnouncementReaction } from '../api.ts'
 import { AnimateEmoji, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { EmojiPicker } from '@/components/emoji-picker.tsx'
+import { useStreamingSubscription } from '@/hooks/use-streaming-subscription.ts'
 import { Button } from '@/components/ui/button.tsx'
 import {
   Carousel,
@@ -22,25 +24,116 @@ import { cn } from '@/lib/utils.ts'
 
 type Announcement = mastodon.v1.Announcement & { read?: boolean }
 
+// What an `announcement.reaction` event carries: the reaction's new count for
+// everyone, with no `me`, and which announcement it is on.
+type ReactionUpdate = Partial<mastodon.v1.Reaction> & {
+  name: string
+  count: number
+  announcementId?: string | number
+}
+
+// Mastodon's `sortAnnouncements`: oldest first by when it starts, or else by
+// when it was published. They are shown the other way round.
+const sortAnnouncements = (list: Announcement[]) =>
+  [...list].sort((a, b) => {
+    const at = (x: Announcement) => new Date(x.startsAt ?? x.publishedAt).getTime()
+    return at(a) - at(b)
+  })
+
+// Mastodon's `updateAnnouncement`: a new one joins the list, a known one takes
+// the new fields but keeps what only this reader's own copy knows, whether it
+// is read and which reactions are theirs, since the stream sends neither.
+function upsertAnnouncement(list: Announcement[], incoming: Announcement) {
+  const known = list.find((a) => a.id === incoming.id)
+  if (!known) return sortAnnouncements([incoming, ...list])
+  const merged: Announcement = {
+    ...known,
+    ...incoming,
+    read: incoming.read ?? known.read,
+    reactions: incoming.reactions.map((r) => ({
+      ...r,
+      me: known.reactions.find((k) => k.name === r.name)?.me ?? !!r.me,
+    })),
+  }
+  return sortAnnouncements(list.map((a) => (a.id === incoming.id ? merged : a)))
+}
+
+// Mastodon's `updateReactionCount`: the count from the stream, this reader's
+// `me` kept; a reaction not seen before is added as nobody's yet.
+function updateReactionCount(list: Announcement[], update: ReactionUpdate) {
+  const id = String(update.announcementId)
+  return list.map((a) => {
+    if (a.id !== id) return a
+    const known = a.reactions.some((r) => r.name === update.name)
+    return {
+      ...a,
+      reactions: known
+        ? a.reactions.map((r) =>
+            r.name === update.name ? { ...r, count: update.count } : r,
+          )
+        : [
+            ...a.reactions,
+            {
+              name: update.name,
+              count: update.count,
+              me: false,
+              url: update.url ?? '',
+              staticUrl: update.staticUrl ?? '',
+            },
+          ],
+    }
+  })
+}
+
+const subscribeUser = (client: mastodon.streaming.Client) => client.user.subscribe()
+
 export function useAnnouncements(token: string | null) {
-  const [items, setItems] = useState<Announcement[]>([])
+  // Kept in Mastodon's order, oldest first.
+  const [list, setList] = useState<Announcement[]>([])
   const [shown, setShown] = useState(false)
   useEffect(() => {
     if (!token) return
     let live = true
     getAnnouncements(token)
-      // Mastodon lists them newest first.
-      .then((list) => live && setItems([...list].reverse()))
+      .then((fetched) => live && setList(fetched))
       .catch(() => {})
     return () => {
       live = false
     }
   }, [token])
+
+  // Published, edited, reacted to and taken down live, from the user stream
+  // Mastodon's home column listens to.
+  const onEvent = useCallback((event: mastodon.streaming.Event) => {
+    switch (event.event) {
+      case 'announcement':
+        setList((l) => upsertAnnouncement(l, event.payload))
+        break
+      case 'announcement.reaction':
+        setList((l) => updateReactionCount(l, event.payload as ReactionUpdate))
+        break
+      case 'announcement.delete': {
+        // The id is the bare payload, which masto.js reads as JSON: a number.
+        const id = String(event.payload)
+        setList((l) => l.filter((a) => a.id !== id))
+        break
+      }
+    }
+  }, [])
+  useStreamingSubscription({
+    enabled: !!token,
+    token: token ?? undefined,
+    subscribe: subscribeUser,
+    onEvent,
+  })
+
   const update = useCallback(
     (id: string, change: (a: Announcement) => Announcement) =>
-      setItems((list) => list.map((a) => (a.id === id ? change(a) : a))),
+      setList((l) => l.map((a) => (a.id === id ? change(a) : a))),
     [],
   )
+  // Mastodon shows them newest first.
+  const items = useMemo(() => [...list].reverse(), [list])
   return {
     items,
     unread: items.filter((a) => !a.read).length,
@@ -245,8 +338,11 @@ export function AnnouncementsPanel({
     const onSelect = () => setIndex(api.selectedScrollSnap())
     onSelect()
     api.on('select', onSelect)
+    // One arriving or going live changes the slides under the selection.
+    api.on('reInit', onSelect)
     return () => {
       api.off('select', onSelect)
+      api.off('reInit', onSelect)
     }
   }, [api])
 

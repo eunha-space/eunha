@@ -590,9 +590,13 @@ characters are typed, five at most, best match first, and offers a picker of
 them by category beside the media button. Both list what
 `GET /api/v1/custom_emojis` does; Mastodon's also offer Unicode emoji, which
 eunha's do not (`web-custom-emoji-only-picker`). The home column's
-announcements button opens the published announcements, newest first, marks the
-one on screen read, and shows their reactions, which can be added to from the
-same picker.
+announcements button, in the single column and in the advanced layout's home
+column alike, opens the published announcements, newest first, marks the one
+on screen read, and shows their reactions, which can be added to from the
+same picker. They follow the user stream as Mastodon's do: an `announcement`
+event adds one or updates it (keeping whether it is read and which reactions
+are the reader's), `announcement.reaction` sets a reaction's count, and
+`announcement.delete` takes one away.
 
 
 Boosts in timelines
