@@ -826,8 +826,11 @@ pub async fn delete_page(
             t_warning_username_unavailable => locale.t("delete_warning_username_unavailable"),
             t_warning_data_removal => locale.t("delete_warning_data_removal"),
             t_warning_caches => locale.t("delete_warning_caches"),
+            username => account.username.clone(),
+            t_title => locale.t("delete_title").replace("%{acct}", &format!("{}@{}", account.username, state.instance.domain)),
             t_confirm_password => locale.t("delete_confirm_password"),
             t_confirm_username => locale.t("delete_confirm_username"),
+            t_confirm_username_hint => locale.t("delete_confirm_username_hint").split_once("%{username}").map(|(before, after)| [before, after]),
             t_challenge_not_passed => locale.t("delete_challenge_not_passed"),
             t_sign_out => locale.t("sign_out"),
             t_back_to_account => locale.t("back_to_account"),
@@ -897,16 +900,14 @@ pub async fn delete_post(
     }
 
     // `challenge_passed?`
-    let passed = if account.encrypted_password.is_empty() {
-        form.username.as_deref() == Some(account.username.as_str())
-    } else {
-        verify_password(
-            form.password.as_deref().unwrap_or(""),
-            &account.encrypted_password,
-        )
-        .await
-        .is_ok()
-    };
+    let passed = crate::delete_account::challenge_passed(
+        &account.username,
+        &state.instance.domain,
+        &account.encrypted_password,
+        form.username.as_deref().unwrap_or(""),
+        form.password.as_deref().unwrap_or(""),
+    )
+    .await;
     if !passed {
         if htmx {
             return Html(format!(

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ t_delete_account }} · {{ domain }}</title>
+<title>{{ t_title }} · {{ domain }}</title>
 <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
 <script>
 function clearElkAndGo(){
@@ -29,7 +29,7 @@ function clearElkAndGo(){
   </div>
 </div>
 <div class="content">
-  <h1>{{ t_delete_account }}</h1>
+  <h1>{{ t_title }}</h1>
   <p class="hint">{{ t_warning_before }}</p>
   <ul class="hint">
     {% if confirmed_and_approved %}
@@ -49,12 +49,12 @@ function clearElkAndGo(){
     {% if err %}<div class="error">{{ t_challenge_not_passed }}</div>{% endif %}
   </div>
   <form hx-post="/account/delete" hx-target="#msg" hx-swap="innerHTML">
+    <label for="username">{{ t_confirm_username }}</label>
+    <input type="text" id="username" name="username" required autocomplete="off">
+    <p class="hint">{{ t_confirm_username_hint[0] }}<code>{{ username }}</code>{{ t_confirm_username_hint[1] }}</p>
     {% if has_password %}
     <label for="password">{{ t_confirm_password }}</label>
     <input type="password" id="password" name="password" required autocomplete="current-password">
-    {% else %}
-    <label for="username">{{ t_confirm_username }}</label>
-    <input type="text" id="username" name="username" required autocomplete="off">
     {% endif %}
     <button type="submit" class="danger">{{ t_delete_account }}</button>
   </form>

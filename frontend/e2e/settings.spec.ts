@@ -31,7 +31,7 @@ test('settings asks to sign in when logged out', async ({ page }) => {
   ).toBeHidden()
 })
 
-test('deleting an account takes a password and a confirmation', async ({
+test('deleting an account takes the username, a password and a confirmation', async ({
   page,
 }) => {
   await signedIn(page)
@@ -57,6 +57,10 @@ test('deleting an account takes a password and a confirmation', async ({
     .getByRole('button', { name: 'Delete account' })
   await expect(submit).toBeDisabled()
   await page.getByLabel('Current password').fill('hunter2hunter2')
+  // Since Mastodon 4.7.3 the username is asked for as well.
+  await expect(submit).toBeDisabled()
+  await expect(page.locator('form code')).toHaveText('alice')
+  await page.getByLabel('Confirm username').fill('alice')
   await expect(submit).toBeEnabled()
 
   // Submitting only opens the confirmation; cancelling sends nothing.
@@ -74,7 +78,9 @@ test('deleting an account takes a password and a confirmation', async ({
     .getByRole('button', { name: 'Delete account' })
     .click()
 
-  expect(deleteBody).toBe(JSON.stringify({ password: 'hunter2hunter2' }))
+  expect(deleteBody).toBe(
+    JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }),
+  )
   await expect(page).toHaveURL(/\/$/)
   expect(await page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBeNull()
 })

@@ -46,7 +46,7 @@ async fn test_self_deletion_federates_delete_actor() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();

@@ -473,14 +473,17 @@ Deleting the account
 --------------------
 
 `/account/delete`, and `DELETE /api/v1/accounts` for the settings page, are
-Mastodon's `Settings::DeletesController`: the password (or, for an account
-without one, the username) as the challenge, then `Account#mark_deleted!` —
+Mastodon's `Settings::DeletesController`: the username, and the password for
+an account that has one, as the challenge, then `Account#mark_deleted!` —
 `requested_deletion_at` and the suspension that hides the account at once — the
 purge as an `AccountDeletionWorker` in the [job queue](./jobs.md), with the
 username kept reserved, and the browser signed out. The page warns a confirmed,
 approved member that this is irreversible and their username stays taken; a
 member not yet confirmed or approved is told instead how to fix their address
-and that the username becomes available again, as upstream's page does. Eunha's
+and that the username becomes available again, as upstream's page does. The
+page is titled with the account's `username@domain`, and the username is read
+as Mastodon 4.7.3 reads it: surrounding spaces and one leading `@` are dropped,
+case does not matter, and the full `username@domain` will do. Eunha's
 `DELETE /api/v1/accounts` has no Mastodon counterpart and is recorded as a
 divergence.
 

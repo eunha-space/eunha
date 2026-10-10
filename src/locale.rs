@@ -260,10 +260,16 @@ impl Locale {
             (Self::Ko, "delete_confirm_password") => {
                 "본인 확인을 위해 현재 사용 중인 암호를 입력해 주십시오"
             }
-            (Self::En, "delete_confirm_username") => "Enter your username to confirm the procedure",
-            (Self::Ko, "delete_confirm_username") => {
-                "절차를 진행하려면 당신의 사용자명을 입력하세요"
+            (Self::En, "delete_confirm_username") => "Confirm username",
+            (Self::Ko, "delete_confirm_username") => "사용자명 확인",
+            (Self::En, "delete_confirm_username_hint") => {
+                "Please type %{username} to confirm the account you want to delete"
             }
+            (Self::Ko, "delete_confirm_username_hint") => {
+                "삭제하려는 계정이 맞는지 확인하기 위해 %{username}을(를) 입력해 주세요"
+            }
+            (Self::En, "delete_title") => "Delete account %{acct}",
+            (Self::Ko, "delete_title") => "%{acct} 계정 삭제",
             (Self::En, "delete_challenge_not_passed") => {
                 "The information you entered was not correct"
             }

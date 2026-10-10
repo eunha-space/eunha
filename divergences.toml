@@ -625,8 +625,9 @@ Deletes an account only through the `/settings/delete` web form \
 (`Settings::DeletesController`), behind a session."""
 eunha = """
 Serves the same challenge and the same effects at `DELETE /api/v1/accounts`, \
-to a token with `write:accounts`: the password, or the username for an \
-account without one, then `Account#mark_deleted!` and the purge."""
+to a token with `write:accounts`: the username, read as leniently as \
+upstream's form reads it, and the password for an account that has one, then \
+`Account#mark_deleted!` and the purge."""
 why = """
 Eunha's settings page is a single-page app holding a token. The path is the \
 one upstream would use for it, and the challenge keeps a token alone from \

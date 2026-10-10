@@ -1610,14 +1610,18 @@ pub async fn delete_account(
         return Err(AppError::Forbidden);
     }
 
-    // `challenge_passed?`: the password, or the username for accounts that have
-    // none (OAuth-only sign-ins).
-    if user.encrypted_password.is_empty() {
-        if field("username") != user.username {
-            return Err(AppError::Unauthorized);
-        }
-    } else {
-        crate::crypto::verify_password(&field("password"), &user.encrypted_password).await?;
+    // `challenge_passed?`: the username, and the password for an account
+    // that has one.
+    if !crate::delete_account::challenge_passed(
+        &user.username,
+        &state.instance.domain,
+        &user.encrypted_password,
+        &field("username"),
+        &field("password"),
+    )
+    .await
+    {
+        return Err(AppError::Unauthorized);
     }
 
     // `Account#mark_deleted!`.

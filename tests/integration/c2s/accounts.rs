@@ -3203,7 +3203,7 @@ async fn test_delete_account_with_valid_password() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -3257,7 +3257,7 @@ async fn test_delete_account_reserves_username_and_destroys_user() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -3387,7 +3387,7 @@ async fn test_delete_account_purges_collections_tag_follows_and_annual_reports()
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -3545,7 +3545,7 @@ async fn test_delete_account_keeps_reported_statuses() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -3599,7 +3599,7 @@ async fn test_deleted_account_is_not_found() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .form(&[("password", "testpassword123")])
+        .form(&[("username", "alice"), ("password", "testpassword123")])
         .send()
         .await
         .unwrap();
@@ -4054,7 +4054,7 @@ async fn test_delete_account_preserves_chained_invite_lineage() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -4063,7 +4063,7 @@ async fn test_delete_account_preserves_chained_invite_lineage() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.bob_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "bob", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -4120,7 +4120,7 @@ async fn test_delete_account_preserves_invite_lineage() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "testpassword123"}))
+        .json(&json!({"username": "alice", "password": "testpassword123"}))
         .send()
         .await
         .unwrap();
@@ -4178,11 +4178,49 @@ async fn test_delete_account_wrong_password_is_401() {
         .delete(ctx.api.url("/api/v1/accounts"))
         .header("host", &ctx.api.host)
         .bearer_auth(&ctx.alice_token)
-        .json(&json!({"password": "notmypassword"}))
+        .json(&json!({"username": "alice", "password": "notmypassword"}))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Since Mastodon 4.7.3 the username is asked for even with the password
+/// (#40576), and read leniently (#40733): with or without a leading `@`,
+/// in any case, as `username@domain`, with spaces around it.
+#[tokio::test]
+async fn test_delete_account_asks_for_the_username() {
+    let ctx = TestContext::new("del-acct-username").await;
+    let delete = |body: Value| {
+        ctx.api
+            .http
+            .delete(ctx.api.url("/api/v1/accounts"))
+            .header("host", &ctx.api.host)
+            .bearer_auth(&ctx.alice_token)
+            .json(&body)
+            .send()
+    };
+    for username in [None, Some("bob"), Some("alicex"), Some("@@alice")] {
+        let mut body = json!({"password": "testpassword123"});
+        if let Some(username) = username {
+            body["username"] = username.into();
+        }
+        let resp = delete(body).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "{username:?}");
+    }
+    let live: bool =
+        sqlx::query_scalar("SELECT requested_deletion_at IS NULL FROM accounts WHERE id = $1")
+            .bind(ctx.alice_id.parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(live);
+
+    let acct = format!(" @ALICE@{} ", ctx.state.instance.domain.to_uppercase());
+    let resp = delete(json!({"username": acct, "password": "testpassword123"}))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 // ── GET /api/v1/accounts (batch) ─────────────────────────────────────────────

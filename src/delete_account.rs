@@ -94,6 +94,36 @@ impl Options {
     }
 }
 
+// ── Settings::DeletesController#challenge_passed? ─────────────────────────
+
+/// `Settings::DeletesController#challenge_passed?` as of Mastodon 4.7.3: the
+/// username is always asked for (#40576), read leniently — surrounding
+/// whitespace and one leading `@` are dropped, case is ignored, and the
+/// full `username@domain` will do too (#40733) — and then the password, for
+/// an account that has one.
+pub async fn challenge_passed(
+    username: &str,
+    domain: &str,
+    encrypted_password: &str,
+    given_username: &str,
+    given_password: &str,
+) -> bool {
+    // Ruby's `String#strip`: ASCII whitespace and NUL, at both ends.
+    let given = given_username
+        .trim_matches(|c| matches!(c, '\0' | '\t' | '\n' | '\x0b' | '\x0c' | '\r' | ' '));
+    let given = given.strip_prefix('@').unwrap_or(given);
+    // `casecmp` folds ASCII letters only.
+    let named = given.eq_ignore_ascii_case(username)
+        || given.eq_ignore_ascii_case(&format!("{username}@{domain}"));
+    if !named {
+        return false;
+    }
+    encrypted_password.is_empty()
+        || crate::crypto::verify_password(given_password, encrypted_password)
+            .await
+            .is_ok()
+}
+
 // ── Account#suspend! / #unsuspend! ────────────────────────────────────────
 
 /// Port of `Account#suspend!`. Records a deletion request (which is what makes

@@ -44,6 +44,9 @@ const WARNINGS = [
 ]
 
 function DeleteAccount({ token }: { token: string }) {
+  // A local account's acct is its username, which the challenge asks for.
+  const username = getMeAccount()?.acct ?? ''
+  const [typedUsername, setTypedUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -51,7 +54,7 @@ function DeleteAccount({ token }: { token: string }) {
   const submit = async () => {
     setDeleting(true)
     try {
-      await deleteAccount(token, { password })
+      await deleteAccount(token, { username: typedUsername, password })
       // The account is marked deleted the moment that returns, so this token
       // is already dead — drop the local session rather than let the next
       // request fail on its own.
@@ -93,6 +96,20 @@ function DeleteAccount({ token }: { token: string }) {
         }}
       >
         <div className="space-y-1">
+          <Label htmlFor="delete-username">Confirm username</Label>
+          <Input
+            id="delete-username"
+            autoComplete="off"
+            value={typedUsername}
+            onChange={(e) => setTypedUsername(e.target.value)}
+            required
+          />
+          <p className="text-muted-foreground text-xs">
+            Please type <code>{username}</code> to confirm the account you want
+            to delete.
+          </p>
+        </div>
+        <div className="space-y-1">
           <Label htmlFor="delete-password">Current password</Label>
           <Input
             id="delete-password"
@@ -106,7 +123,11 @@ function DeleteAccount({ token }: { token: string }) {
             Enter your current password to verify your identity.
           </p>
         </div>
-        <Button type="submit" variant="destructive" disabled={!password}>
+        <Button
+          type="submit"
+          variant="destructive"
+          disabled={!typedUsername.trim() || !password}
+        >
           Delete account
         </Button>
       </form>

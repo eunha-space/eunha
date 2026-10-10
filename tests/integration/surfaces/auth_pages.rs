@@ -34,6 +34,10 @@ async fn test_account_delete_page_and_challenge() {
         body.contains("name=\"password\""),
         "should ask for the password challenge",
     );
+    // Since Mastodon 4.7.3, the username too, and the page names the account.
+    assert!(body.contains("name=\"username\""));
+    assert!(body.contains("<code>alice</code>"));
+    assert!(body.contains("Delete account alice@"));
 
     // A failed challenge leaves the account alone.
     let wrong = ctx
@@ -43,7 +47,7 @@ async fn test_account_delete_page_and_challenge() {
         .header("host", &ctx.api.host)
         .header("cookie", &cookie)
         .header("HX-Request", "true")
-        .form(&[("password", "notmypassword")])
+        .form(&[("username", "alice"), ("password", "notmypassword")])
         .send()
         .await
         .unwrap();
@@ -57,6 +61,20 @@ async fn test_account_delete_page_and_challenge() {
             .unwrap();
     assert!(still_live, "a failed challenge must not delete anything");
 
+    // The right password is not enough without the username.
+    let unnamed = ctx
+        .api
+        .http
+        .post(ctx.api.url("/account/delete"))
+        .header("host", &ctx.api.host)
+        .header("cookie", &cookie)
+        .header("HX-Request", "true")
+        .form(&[("username", "bob"), ("password", "testpassword123")])
+        .send()
+        .await
+        .unwrap();
+    assert!(unnamed.text().await.unwrap().contains("error"));
+
     let ok = ctx
         .api
         .http
@@ -64,7 +82,7 @@ async fn test_account_delete_page_and_challenge() {
         .header("host", &ctx.api.host)
         .header("cookie", &cookie)
         .header("HX-Request", "true")
-        .form(&[("password", "testpassword123")])
+        .form(&[("username", "@Alice"), ("password", "testpassword123")])
         .send()
         .await
         .unwrap();
