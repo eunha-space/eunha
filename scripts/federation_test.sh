@@ -1,5 +1,5 @@
 #!/bin/bash
-# Federate eunha with a real Mastodon 4.7.2, both directions, and check what lands.
+# Federate eunha with a real Mastodon 4.7.3, both directions, and check what lands.
 #
 # eunha's other federation tests run eunha against eunha, where both sides share
 # eunha's reading of ActivityPub — so a misreading is invisible. This builds a
@@ -84,7 +84,7 @@ openssl x509 -req -in "$WORK/leaf.csr" -days 2 \
 # and that is where they come from. The bundle is the image's own roots with this
 # CA appended — appended, not replacing, or each would trust this CA and no
 # public one, and anything reaching the wider internet would fail obscurely.
-docker run --rm ghcr.io/mastodon/mastodon:v4.7.2 \
+docker run --rm ghcr.io/mastodon/mastodon:v4.7.3 \
   cat /etc/ssl/certs/ca-certificates.crt > "$WORK/ca-bundle.crt"
 cat "$WORK/ca.pem" >> "$WORK/ca-bundle.crt"
 

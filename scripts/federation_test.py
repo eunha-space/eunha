@@ -4,7 +4,7 @@
 The rest of this repo's federation tests run eunha against eunha. Both sides
 then share eunha's reading of ActivityPub, so a misreading is invisible: two
 servers agreeing about something they are both wrong about looks exactly like
-correctness. This drives the same activities between eunha and Mastodon 4.7.2,
+correctness. This drives the same activities between eunha and Mastodon 4.7.3,
 where nothing is shared but the specification.
 
 Each case makes something happen through one server's own API — so the activity

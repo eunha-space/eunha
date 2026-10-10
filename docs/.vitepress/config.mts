@@ -65,7 +65,7 @@ export default defineConfig({
           { text: "Differential testing", link: "/mastodon/differential-testing" },
           { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },
           { text: "Deliberate divergences", link: "/mastodon/divergences" },
-          { text: "Outstanding from 4.7.2", link: "/mastodon/4.7.2" },
+          { text: "Outstanding from 4.7.3", link: "/mastodon/4.7.3" },
         ],
       },
       {

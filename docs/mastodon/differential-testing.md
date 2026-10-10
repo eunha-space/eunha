@@ -25,7 +25,7 @@ already solved — seeds both servers, and compares what a client actually does:
 follow, block, mute, and their undos), and about two hundred steps of
 [flows](#flows) — domain blocks, reports and moderation, moves, and the
 everyday client endpoints — each a sequence in which one request sets up what
-the next reads. It is Mastodon 4.7.2, the release eunha tracks, and the whole
+the next reads. It is Mastodon 4.7.3, the release eunha tracks, and the whole
 comparison takes about a minute once the image is pulled.
 
 The stack runs Sidekiq as well as the web process. Without a worker nothing

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 const base = {
   domain: 'example.invalid',
   title: 'Example',
-  version: '0.2.0 (compatible; Mastodon 4.7.2)',
+  version: '0.2.0 (compatible; Mastodon 4.7.3)',
   source_url: 'https://github.com/limeburst/eunha',
   description: 'A place.',
   usage: { users: { active_month: 4 } },

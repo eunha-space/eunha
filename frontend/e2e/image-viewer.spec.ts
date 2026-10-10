@@ -24,7 +24,7 @@ async function setup(page: Page, changes: Partial<typeof post> = {}) {
   await page.route('**/api/v1/statuses/10', r => r.fulfill({ json: { ...post, ...changes } }))
   await page.route('**/api/v1/statuses/10/context', r => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.route('**/api/v2/instance', r => r.fulfill({ json: {
-    title: 'Example', domain: 'example.invalid', version: '4.7.2', configuration: {},
+    title: 'Example', domain: 'example.invalid', version: '4.7.3', configuration: {},
     registrations: { enabled: false, approval_required: false },
   } }))
   await page.route('**/media/*.svg', r => {

@@ -116,7 +116,7 @@ Tracking Mastodon:
     and *docs/mastodon/federation-testing.md*: the harnesses that compare
     eunha with upstream, and the environment traps that fake failures.
  -  *docs/mastodon/divergences.md*: how *divergences.toml* works.
- -  *docs/mastodon/4.7.2.md*: what the tracked release changed.
+ -  *docs/mastodon/4.7.3.md*: what the tracked release changed.
 
 Design records and handoff notes:
 
