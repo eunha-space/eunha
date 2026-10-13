@@ -24,30 +24,120 @@ async fn test_search_accounts() {
         .any(|a| a["username"].as_str() == Some("alice")));
 }
 
-/// Without Elasticsearch, posts are not searched by their text at all
-/// (`SearchService#status_searchable?` is `Chewy.enabled? && ...`): only a
-/// URL resolves to one. tests/integration/c2s/search_elasticsearch.rs covers
-/// post search with Elasticsearch.
+/// Deliberate divergence: literal database post search without Elasticsearch.
 #[tokio::test]
-async fn test_search_statuses_need_elasticsearch() {
+async fn test_search_statuses_without_elasticsearch() {
     let ctx = TestContext::new("search-status").await;
-
-    ctx.api
-        .post_status(&ctx.alice_token, "uniqueterm12345", "public")
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "UniqueTerm12345 100%_done", "private")
         .await;
-
+    ctx.api
+        .post_status(&ctx.alice_token, "100XYZQdone", "public")
+        .await;
     for path in [
         "/api/v2/search?q=uniqueterm12345&type=statuses",
         "/api/v2/search?q=uniqueterm12345",
+        "/api/v2/search?q=100%25_done&type=statuses",
     ] {
         let resp = ctx.api.get(path, Some(&ctx.alice_token)).await;
         assert_eq!(resp.status(), StatusCode::OK);
         let body: Value = resp.json().await.unwrap();
-        assert!(
-            body["statuses"].as_array().unwrap().is_empty(),
-            "{path}: no post search without Elasticsearch",
-        );
+        assert_eq!(body["statuses"].as_array().unwrap().len(), 1, "{path}");
+        assert_eq!(body["statuses"][0]["id"], post["id"], "{path}");
     }
+    for token in [None, Some(ctx.bob_token.as_str())] {
+        let body: Value = ctx
+            .api
+            .get("/api/v2/search?q=uniqueterm12345&type=statuses", token)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert!(body["statuses"].as_array().unwrap().is_empty());
+    }
+    for query in ["100X_done", "100%25Xdone"] {
+        let body: Value = ctx
+            .api
+            .get(
+                &format!("/api/v2/search?q={query}&type=statuses"),
+                Some(&ctx.alice_token),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert!(body["statuses"].as_array().unwrap().is_empty());
+    }
+    let body: Value = ctx
+        .api
+        .get(
+            "/api/v2/search?q=uniqueterm12345&type=statuses&offset=1",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(body["statuses"].as_array().unwrap().is_empty());
+}
+
+/// Public search respects opt-in and filters muted authors before pagination.
+#[tokio::test]
+async fn test_search_database_post_scope_and_filters() {
+    let ctx = TestContext::new("search-db-scope").await;
+    let own = ctx
+        .api
+        .post_status(&ctx.alice_token, "scopeterm999", "public")
+        .await;
+    let other = ctx
+        .api
+        .post_status(&ctx.bob_token, "scopeterm999", "public")
+        .await;
+    sqlx::query("UPDATE accounts SET indexable = false WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let path = "/api/v2/search?q=scopeterm999&type=statuses&limit=1";
+    let body: Value = ctx
+        .api
+        .get(path, Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["statuses"][0]["id"], own["id"]);
+    sqlx::query("UPDATE accounts SET indexable = true WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let body: Value = ctx
+        .api
+        .get(path, Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["statuses"][0]["id"], other["id"]);
+    let response = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/mute", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = ctx
+        .api
+        .get(path, Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["statuses"][0]["id"], own["id"]);
 }
 
 /// Search without a type param returns accounts, statuses, and hashtags.

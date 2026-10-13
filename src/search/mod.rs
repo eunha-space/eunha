@@ -1,7 +1,7 @@
 //! Search, as Mastodon's `SearchService` and the services it calls do it.
 //!
 //! Without Elasticsearch, accounts are found with PostgreSQL's text search,
-//! hashtags by name prefix, and posts not at all — only a post's URL resolves.
+//! hashtags by name prefix, and posts by literal substring.
 //! With it (crate::search::elasticsearch), the search server answers first
 //! and the database only when it fails. docs/operating/search.md describes
 //! both backends.
@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod elasticsearch;
 pub mod peers;
 pub mod query;
+pub mod statuses;
 pub mod tags;
 
 use crate::state::AppState;

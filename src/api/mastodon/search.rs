@@ -145,9 +145,8 @@ pub async fn search(
         results.accounts = batch_accounts_to_api(&state, &found).await;
     }
 
-    // `status_searchable?`: posts are searched only with Elasticsearch, and
-    // only for a signed-in user. Without it, a post is found by its URL alone.
-    if wants("statuses") && state.search.is_some() {
+    // Post search requires a signed-in user; without Elasticsearch use ILIKE.
+    if wants("statuses") {
         if let Some(viewer) = viewer_id {
             let parse_id = |v: Option<&str>| present(v).map(ruby_to_i);
             let options = crate::search::elasticsearch::StatusOptions {
@@ -158,15 +157,18 @@ pub async fn search(
                 max_id: parse_id(q.max_id.as_deref()),
             };
             use crate::search::elasticsearch::StatusSearchError;
-            let ids = match crate::search::elasticsearch::statuses(&state, &query, viewer, &options)
-                .await
-            {
-                Ok(ids) => ids,
-                Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
-                Err(StatusSearchError::InvalidDate) => {
-                    return Err(AppError::Unprocessable("Invalid date supplied".into()))
+            let ids = if state.search.is_none() {
+                crate::search::statuses::search(&state, &query, viewer, &options).await?
+            } else {
+                match crate::search::elasticsearch::statuses(&state, &query, viewer, &options).await
+                {
+                    Ok(ids) => ids,
+                    Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
+                    Err(StatusSearchError::InvalidDate) => {
+                        return Err(AppError::Unprocessable("Invalid date supplied".into()))
+                    }
+                    Err(StatusSearchError::App(e)) => return Err(e),
                 }
-                Err(StatusSearchError::App(e)) => return Err(e),
             };
             results.statuses = render_statuses(&state, &ids, viewer).await?;
         }

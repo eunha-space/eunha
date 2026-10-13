@@ -3,9 +3,9 @@ Search
 
 Search works as Mastodon's does, with the same two backends. Without
 Elasticsearch, which is the default, accounts and hashtags are found in
-PostgreSQL and posts are found only by their URL. With Elasticsearch or
-OpenSearch configured, posts are searched by their text too, and accounts and
-hashtags are ranked by the search server.
+PostgreSQL, and posts use case-insensitive substring search in PostgreSQL. With
+Elasticsearch or OpenSearch configured, posts are searched by their text too,
+and accounts and hashtags are ranked by the search server.
 
 The code is in *src/search/*. `GET /api/v2/search` is `SearchService`,
 `GET /api/v1/accounts/search` is `AccountSearchService` on its own, and
@@ -49,7 +49,23 @@ forms. With `exclude_unreviewed=true`, only reviewed hashtags are returned,
 except the one whose name is the query itself. For a signed-in searcher each
 hashtag says whether they follow and feature it.
 
-**Posts.** Not searched. A post is found by its URL only, with `resolve=true`:
+**Posts.** Signed-in users can search post text and content warnings with
+PostgreSQL `ILIKE`. The entire query is a literal substring, with `%`, `_`
+and backslashes escaped; Elasticsearch's query syntax is not interpreted.
+Results are newest first, with `account_id`, `min_id`, `max_id`, `limit` and
+`offset` supported. Visibility, blocks, mutes and account search eligibility
+are checked before pagination. The searchable scope is the same as the search
+indexes: public posts by indexable accounts, and the user's own posts, posts
+mentioning them (excluding silent mentions), and posts they favourited,
+boosted, bookmarked or voted in. Anonymous users receive no posts.
+
+This is a deliberate divergence from Mastodon, recorded in
+[the divergence list](../mastodon/divergences). Substring matching can scan
+many database rows; Elasticsearch remains the option for larger instances
+and advanced queries. Poll options and media descriptions are searched only
+with Elasticsearch.
+
+A post can also be found by its URL with `resolve=true`:
 the URL is resolved instead of searched for, as Mastodon's `ResolveURLService`
 does, and the result is the post or account it names, if the searcher may see
 it.
@@ -73,8 +89,8 @@ The request
 | `resolve`            | Resolve a URL, or look up an unknown remote handle over WebFinger.                             |
 | `following`          | Only accounts the searcher follows. Ignored for anonymous searches.                            |
 | `exclude_unreviewed` | Leave out hashtags not yet reviewed.                                                           |
-| `account_id`         | With Elasticsearch, only that account's posts.                                                 |
-| `min_id`, `max_id`   | With Elasticsearch, only posts after or before that id's time.                                 |
+| `account_id`         | Only that account's posts.                                                                     |
+| `min_id`, `max_id`   | Only posts after or before that id (by time with Elasticsearch).                               |
 
 Typographic quotes (`“”„«»「」『』《》`) in `q` are read as `"`.
 
@@ -195,7 +211,8 @@ is the query moved to the front. **Peers** are matched by domain prefix and
 weighed by number of accounts.
 
 If the cluster fails, accounts and hashtags are searched in the database
-instead and posts find nothing, as in Mastodon. A peers search answers 500, as
+instead and posts find nothing, as in Mastodon. The substring backend is
+used only when Elasticsearch is disabled. A peers search answers 500, as
 upstream queries the index there without a rescue and without the stoplight.
 After ten failures in a row the
 instance stops asking the cluster for five minutes (Mastodon's
