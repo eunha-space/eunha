@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "uri?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "uri"
+          }
+        }
       }
     ],
     "parameters": {

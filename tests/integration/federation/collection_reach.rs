@@ -43,8 +43,10 @@ async fn remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String
 
 async fn around(ctx: &TestContext) -> Around {
     let alice: i64 = ctx.alice_id.parse().unwrap();
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice)
         .bind(private_pem)

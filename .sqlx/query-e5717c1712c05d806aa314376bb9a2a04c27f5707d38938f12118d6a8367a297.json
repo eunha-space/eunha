@@ -6,47 +6,86 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "trendable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "trendable"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "usable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "usable"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "listable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "listable"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "reviewed_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "reviewed_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "display_name!",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": "Expression"
       },
       {
         "ordinal": 7,
         "name": "following!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 8,
         "name": "featuring!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

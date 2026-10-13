@@ -215,7 +215,7 @@ pub async fn list_admin_instances(
          LIMIT $6 OFFSET $7"
     );
     let page = filter.page.unwrap_or(1).max(1);
-    let rows: Vec<InstanceRow> = sqlx::query_as(&sql)
+    let rows: Vec<InstanceRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(limited)
         .bind(limited_mode)
         .bind(by_domain)
@@ -271,7 +271,7 @@ fn domain_param(domain: &str) -> AppResult<String> {
 
 async fn detail(state: &AppState, domain: &str) -> AppResult<AdminInstanceDetail> {
     let sql = format!("{INSTANCES} {SELECT} WHERE i.domain = $1");
-    let row: Option<InstanceRow> = sqlx::query_as(&sql)
+    let row: Option<InstanceRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(domain)
         .fetch_optional(&state.db)
         .await?;
@@ -284,7 +284,7 @@ async fn detail(state: &AppState, domain: &str) -> AppResult<AdminInstanceDetail
             let sql = format!(
                 "WITH instances AS (SELECT $1::text AS domain, 0::bigint AS accounts_count) {SELECT}"
             );
-            sqlx::query_as(&sql)
+            sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(domain)
                 .fetch_one(&state.db)
                 .await?
@@ -673,7 +673,7 @@ pub(super) async fn measure(
             ),
         ),
     };
-    let total: i64 = sqlx::query_scalar(&total_sql)
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(total_sql.as_str()))
         .bind(&domain)
         .fetch_one(&state.db)
         .await?;

@@ -38,7 +38,7 @@ async fn remote_status(ctx: &TestContext, account_id: i64, uri: &str) -> i64 {
     .unwrap()
 }
 
-async fn exec(ctx: &TestContext, sql: &str, binds: &[i64]) {
+async fn exec(ctx: &TestContext, sql: &'static str, binds: &[i64]) {
     let mut query = sqlx::query(sql);
     for bind in binds {
         query = query.bind(*bind);
@@ -168,7 +168,7 @@ async fn error_of(resp: reqwest::Response) -> String {
     body["error"].as_str().unwrap_or_default().to_owned()
 }
 
-async fn count(ctx: &TestContext, sql: &str, binds: &[i64]) -> i64 {
+async fn count(ctx: &TestContext, sql: &'static str, binds: &[i64]) -> i64 {
     let mut query = sqlx::query_scalar::<_, i64>(sql);
     for bind in binds {
         query = query.bind(*bind);

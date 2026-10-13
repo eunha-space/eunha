@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "hide_notifications",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "expires_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {

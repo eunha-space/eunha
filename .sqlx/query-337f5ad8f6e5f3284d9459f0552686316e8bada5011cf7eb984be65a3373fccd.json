@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "status_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "status_id"
+          }
+        }
       }
     ],
     "parameters": {

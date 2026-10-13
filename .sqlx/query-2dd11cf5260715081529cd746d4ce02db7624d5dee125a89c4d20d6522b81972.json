@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.account_id AS \"account_id!\", n.comment AS \"comment!\", u.locale AS \"locale?\"\n         FROM account_notes n LEFT JOIN users u ON u.account_id = n.account_id\n         WHERE n.target_account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_notes",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "comment!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_notes",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "locale?",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2dd11cf5260715081529cd746d4ce02db7624d5dee125a89c4d20d6522b81972"
+}

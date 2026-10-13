@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "display_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "suspended_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "suspended_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "suspension_origin",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "suspension_origin"
+          }
+        }
       }
     ],
     "parameters": {

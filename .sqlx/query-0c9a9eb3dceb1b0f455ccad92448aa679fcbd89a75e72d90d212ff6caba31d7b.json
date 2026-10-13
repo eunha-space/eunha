@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "bulk_import_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "bulk_import_id"
+          }
+        }
       }
     ],
     "parameters": {

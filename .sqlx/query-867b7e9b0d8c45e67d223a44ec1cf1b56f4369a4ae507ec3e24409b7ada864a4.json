@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "fasp_provider_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "fasp_provider_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "threshold_timeframe",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "threshold_timeframe"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "threshold_shares",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "threshold_shares"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "threshold_likes",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "threshold_likes"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "threshold_replies",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "fasp_subscriptions",
+            "name": "threshold_replies"
+          }
+        }
       }
     ],
     "parameters": {

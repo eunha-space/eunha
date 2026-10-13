@@ -55,7 +55,11 @@ async fn follow(ctx: &TestContext, follower: i64, target: i64) {
 }
 
 async fn count(ctx: &TestContext, sql: &str) -> i64 {
-    sqlx::query_scalar(sql).fetch_one(&ctx.db).await.unwrap()
+    // The tests' own SQL, with nothing in it but fixture ids.
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
 }
 
 fn ids(ctx: &TestContext) -> (i64, i64) {
@@ -79,8 +83,10 @@ async fn eventually<T>(mut query: impl AsyncFnMut() -> Option<T>) -> T {
 async fn test_rotate_replaces_the_key_and_signs_with_the_old_one() {
     let ctx = TestContext::new("cli-rotate").await;
     let (alice, _) = ids(&ctx);
-    let (old_private, old_public) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (old_private, old_public) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice)
         .bind(&old_private)

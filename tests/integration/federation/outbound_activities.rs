@@ -32,8 +32,10 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 /// key and a remote follower; her actor URI.
 async fn alice_numeric_with_a_follower(ctx: &TestContext) -> String {
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $2, public_key = $3, id_scheme = 1 WHERE id = $1",
     )

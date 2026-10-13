@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "collection_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "collection_id"
+          }
+        }
       }
     ],
     "parameters": {

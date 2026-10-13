@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "show_reblogs",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "show_reblogs"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "notify",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "notify"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "languages",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "languages"
+          }
+        }
       }
     ],
     "parameters": {

@@ -93,7 +93,7 @@ async fn first(db: &PgPool, condition: &str, order: &str) -> AppResult<Option<Te
     let sql = format!(
         "SELECT {COLUMNS} FROM terms_of_services WHERE {condition} ORDER BY {order} LIMIT 1"
     );
-    let query = sqlx::query_as::<_, TermsOfService>(&sql);
+    let query = sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()));
     let query = if condition.contains("$1") {
         query.bind(now())
     } else {
@@ -133,9 +133,11 @@ pub async fn published_all(state: &AppState) -> AppResult<Vec<TermsOfService>> {
         "SELECT {COLUMNS} FROM terms_of_services WHERE published_at IS NOT NULL \
          ORDER BY {PUBLISHED_ORDER}"
     );
-    Ok(sqlx::query_as::<_, TermsOfService>(&sql)
-        .fetch_all(&state.db)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()))
+            .fetch_all(&state.db)
+            .await?,
+    )
 }
 
 /// `TermsOfService.published.find_by!(effective_date:)`. A date Rails cannot
@@ -146,7 +148,7 @@ pub async fn published_by_date(state: &AppState, date: &str) -> AppResult<TermsO
         "SELECT {COLUMNS} FROM terms_of_services WHERE published_at IS NOT NULL \
          AND effective_date IS NOT DISTINCT FROM $1 ORDER BY {PUBLISHED_ORDER} LIMIT 1"
     );
-    sqlx::query_as::<_, TermsOfService>(&sql)
+    sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(date)
         .fetch_optional(&state.db)
         .await?
@@ -156,7 +158,7 @@ pub async fn published_by_date(state: &AppState, date: &str) -> AppResult<TermsO
 /// `TermsOfService.find(id)`.
 pub async fn find(db: &PgPool, id: i64) -> AppResult<TermsOfService> {
     let sql = format!("SELECT {COLUMNS} FROM terms_of_services WHERE id = $1");
-    sqlx::query_as::<_, TermsOfService>(&sql)
+    sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(id)
         .fetch_optional(db)
         .await?
@@ -169,9 +171,11 @@ pub async fn draft_first(db: &PgPool) -> AppResult<Option<TermsOfService>> {
         "SELECT {COLUMNS} FROM terms_of_services WHERE published_at IS NULL \
          ORDER BY id DESC LIMIT 1"
     );
-    Ok(sqlx::query_as::<_, TermsOfService>(&sql)
-        .fetch_optional(db)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()))
+            .fetch_optional(db)
+            .await?,
+    )
 }
 
 /// `succeeded_by`: of the published versions effective on or after this one,
@@ -183,12 +187,14 @@ pub async fn succeeded_by(db: &PgPool, tos: &TermsOfService) -> AppResult<Option
          AND ($1::date IS NULL OR effective_date >= $1) AND id <> $2 \
          ORDER BY {PUBLISHED_ORDER} LIMIT 1"
     );
-    Ok(sqlx::query_as::<_, TermsOfService>(&sql)
-        .bind(tos.effective_date)
-        .bind(tos.id)
-        .fetch_optional(db)
-        .await?
-        .and_then(|t| t.effective_date))
+    Ok(
+        sqlx::query_as::<_, TermsOfService>(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(tos.effective_date)
+            .bind(tos.id)
+            .fetch_optional(db)
+            .await?
+            .and_then(|t| t.effective_date),
+    )
 }
 
 /// `REST::TermsOfServiceSerializer`.

@@ -532,8 +532,10 @@ async fn test_a_local_move_rewrites_follows_and_carries_relationships() {
 #[tokio::test]
 async fn test_a_move_is_sent_to_followers_and_blockers() {
     let ctx = TestContext::new("move-delivery").await;
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )
@@ -559,10 +561,10 @@ async fn test_a_move_is_sent_to_followers_and_blockers() {
         .execute(&ctx.db)
         .await
         .unwrap();
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO {relation} (account_id, target_account_id, created_at, updated_at)
              VALUES ($1, $2, now(), now())"
-        ))
+        )))
         .bind(id)
         .bind(alice_id)
         .execute(&ctx.db)

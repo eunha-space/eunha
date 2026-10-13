@@ -32,8 +32,10 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> String 
 }
 
 async fn give_signing_key(ctx: &TestContext, username: &str) {
-    let (private, public) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private, public) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = $3 AND domain IS NULL",
     )

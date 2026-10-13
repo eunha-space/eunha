@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "visibility",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
       }
     ],
     "parameters": {

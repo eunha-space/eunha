@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       }
     ],
     "parameters": {

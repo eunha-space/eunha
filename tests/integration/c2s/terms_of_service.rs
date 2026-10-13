@@ -572,10 +572,10 @@ async fn distributing_mails_the_active_and_flags_the_rest() {
         (never_id, None),
     ] {
         let at = sign_in.unwrap_or("NULL");
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE users SET current_sign_in_at = {at}, created_at = now() - interval '3 years'
              WHERE account_id = $1"
-        ))
+        )))
         .bind(id)
         .execute(&ctx.db)
         .await

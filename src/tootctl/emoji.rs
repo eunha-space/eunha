@@ -424,7 +424,7 @@ async fn delete_where(
     domain: Option<&str>,
 ) -> anyhow::Result<u64> {
     let sql = format!("SELECT id FROM custom_emojis WHERE {condition}");
-    let mut query = sqlx::query_scalar(&sql);
+    let mut query = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()));
     if let Some(domain) = domain {
         query = query.bind(domain);
     }

@@ -236,9 +236,9 @@ pub async fn purge(
 
     let suffix = dry_run_suffix(options.dry_run);
     let ids: Vec<i64> = binds
-        .apply(sqlx::query_scalar(&format!(
+        .apply(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT id FROM accounts WHERE {accounts} ORDER BY id"
-        )))
+        ))))
         .fetch_all(&state.db)
         .await?;
     let dry_run = options.dry_run;
@@ -268,16 +268,16 @@ pub async fn purge(
 
     if let Some(blocks) = blocks {
         let count: i64 = binds
-            .apply(sqlx::query_scalar(&format!(
+            .apply(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
                 "SELECT count(*) FROM domain_blocks WHERE {blocks}"
-            )))
+            ))))
             .fetch_one(&state.db)
             .await?;
         if !dry_run {
             binds
-                .apply_query(sqlx::query(&format!(
+                .apply_query(sqlx::query(sqlx::AssertSqlSafe(format!(
                     "DELETE FROM domain_blocks WHERE {blocks}"
-                )))
+                ))))
                 .execute(&state.db)
                 .await?;
         }
@@ -285,16 +285,16 @@ pub async fn purge(
     }
 
     let emoji_count: i64 = binds
-        .apply(sqlx::query_scalar(&format!(
+        .apply(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT count(*) FROM custom_emojis WHERE {emojis}"
-        )))
+        ))))
         .fetch_one(&state.db)
         .await?;
     if !dry_run {
         let ids: Vec<i64> = binds
-            .apply(sqlx::query_scalar(&format!(
+            .apply(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
                 "SELECT id FROM custom_emojis WHERE {emojis}"
-            )))
+            ))))
             .fetch_all(&state.db)
             .await?;
         super::emoji::delete_ids(state, &ids).await?;

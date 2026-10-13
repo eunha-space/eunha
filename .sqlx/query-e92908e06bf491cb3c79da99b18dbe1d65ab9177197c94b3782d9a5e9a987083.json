@@ -6,62 +6,134 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "enabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "enabled"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "min_status_age",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_status_age"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "keep_direct",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_direct"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "keep_pinned",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_pinned"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "keep_polls",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_polls"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "keep_media",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_media"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "keep_self_fav",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_fav"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "keep_self_bookmark",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_bookmark"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "min_favs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_favs"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "min_reblogs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_reblogs"
+          }
+        }
       }
     ],
     "parameters": {

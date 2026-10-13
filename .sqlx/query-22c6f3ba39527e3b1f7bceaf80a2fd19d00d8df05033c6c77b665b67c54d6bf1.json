@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "options",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "options"
+          }
+        }
       }
     ],
     "parameters": {

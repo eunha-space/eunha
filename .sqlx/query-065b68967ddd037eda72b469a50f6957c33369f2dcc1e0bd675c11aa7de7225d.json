@@ -6,62 +6,129 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "approval_uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_uri"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "collection_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "owner_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "owner_username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "owner_id_scheme",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "account_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "account_uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "username?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "id_scheme",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "local?",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -77,9 +144,9 @@
       false,
       false,
       true,
-      false,
       true,
-      false,
+      true,
+      true,
       true,
       null
     ]

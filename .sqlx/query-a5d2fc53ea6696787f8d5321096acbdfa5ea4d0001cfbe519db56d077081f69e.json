@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "from_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "from_account_id"
+          }
+        }
       }
     ],
     "parameters": {

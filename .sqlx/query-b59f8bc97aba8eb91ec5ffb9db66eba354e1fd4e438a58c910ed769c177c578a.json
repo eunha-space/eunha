@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "reblog_of_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
       }
     ],
     "parameters": {

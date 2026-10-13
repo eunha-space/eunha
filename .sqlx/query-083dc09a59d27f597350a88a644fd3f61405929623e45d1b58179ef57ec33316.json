@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "followers_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "followers_url"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "following_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "following_url"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       }
     ],
     "parameters": {

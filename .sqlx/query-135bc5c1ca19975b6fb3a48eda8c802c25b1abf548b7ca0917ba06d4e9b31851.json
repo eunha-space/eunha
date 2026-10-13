@@ -6,177 +6,387 @@
       {
         "ordinal": 0,
         "name": "username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "display_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "note",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "note"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "url"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "locked",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "locked"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "discoverable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "discoverable"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "indexable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "indexable"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "memorial",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "memorial"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "fields",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "fields"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "also_known_as",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "also_known_as"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "attribution_domains",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "attribution_domains"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "avatar_remote_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_remote_url"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "avatar_description",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_description"
+          }
+        }
       },
       {
         "ordinal": 15,
         "name": "header_remote_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_remote_url"
+          }
+        }
       },
       {
         "ordinal": 16,
         "name": "header_description",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_description"
+          }
+        }
       },
       {
         "ordinal": 17,
         "name": "inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "inbox_url"
+          }
+        }
       },
       {
         "ordinal": 18,
         "name": "outbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "outbox_url"
+          }
+        }
       },
       {
         "ordinal": 19,
         "name": "shared_inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "shared_inbox_url"
+          }
+        }
       },
       {
         "ordinal": 20,
         "name": "followers_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "followers_url"
+          }
+        }
       },
       {
         "ordinal": 21,
         "name": "following_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "following_url"
+          }
+        }
       },
       {
         "ordinal": 22,
         "name": "featured_collection_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "featured_collection_url"
+          }
+        }
       },
       {
         "ordinal": 23,
         "name": "collections_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "collections_url"
+          }
+        }
       },
       {
         "ordinal": 24,
         "name": "actor_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "actor_type"
+          }
+        }
       },
       {
         "ordinal": 25,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 26,
         "name": "feature_approval_policy",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "feature_approval_policy"
+          }
+        }
       },
       {
         "ordinal": 27,
         "name": "show_media",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "show_media"
+          }
+        }
       },
       {
         "ordinal": 28,
         "name": "show_featured",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "show_featured"
+          }
+        }
       },
       {
         "ordinal": 29,
         "name": "show_media_replies",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "show_media_replies"
+          }
+        }
       },
       {
         "ordinal": 30,
         "name": "last_webfingered_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "last_webfingered_at"
+          }
+        }
       },
       {
         "ordinal": 31,
         "name": "protocol",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "protocol"
+          }
+        }
       },
       {
         "ordinal": 32,
         "name": "public_key",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "public_key"
+          }
+        }
       },
       {
         "ordinal": 33,
         "name": "hide_collections",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "hide_collections"
+          }
+        }
       },
       {
         "ordinal": 34,
         "name": "moved_to_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "moved_to_account_id"
+          }
+        }
       }
     ],
     "parameters": {

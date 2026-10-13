@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "require_tos_interstitial",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "require_tos_interstitial"
+          }
+        }
       }
     ],
     "parameters": {

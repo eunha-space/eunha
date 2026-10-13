@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "collection_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "collection_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "local",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "local"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "owner_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "account_id"
+          }
+        }
       }
     ],
     "parameters": {

@@ -233,9 +233,9 @@ async fn test_every_pooled_connection_works_in_utc() {
         .await
         .unwrap();
     // As production's server is set, here for this database alone.
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "ALTER DATABASE \"{database}\" SET TimeZone TO 'Asia/Seoul'"
-    ))
+    )))
     .execute(&ctx.db)
     .await
     .unwrap();

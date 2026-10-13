@@ -6,67 +6,145 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "target_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "target_account_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "assigned_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "assigned_account_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "action_taken_by_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "action_taken_by_account_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "action_taken_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "action_taken_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "category",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "category"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "comment",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "comment"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "forwarded",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "forwarded"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "status_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status_ids"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "rule_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "rule_ids"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

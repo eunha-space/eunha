@@ -11,8 +11,10 @@ use crate::helpers::TestContext;
 /// Give an account a signing key the old way, as a database that has not run
 /// the move still has.
 async fn seed_legacy_key(ctx: &TestContext, account_id: i64) -> String {
-    let (private_key, public_key) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_key, public_key) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query!(
         "UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1",
         account_id,

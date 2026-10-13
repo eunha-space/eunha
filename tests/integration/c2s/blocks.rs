@@ -145,8 +145,10 @@ async fn collection_featuring(ctx: &TestContext, token: &str, featured: &str) ->
 #[tokio::test]
 async fn test_blocking_takes_both_accounts_out_of_each_others_collections() {
     let ctx = TestContext::new("blocks-collections").await;
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )

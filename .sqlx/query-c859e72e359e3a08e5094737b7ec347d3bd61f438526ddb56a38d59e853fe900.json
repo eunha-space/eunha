@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"id!\", s.spoiler_text AS \"spoiler_text!\", s.text AS \"text!\", (s.local OR a.domain IS NULL) AS \"local!\",\n                  COALESCE((SELECT string_agg(o, E'\\n\\n') FROM unnest(p.options) o), '') AS \"poll!\",\n                  COALESCE((SELECT string_agg(m.description, E'\\n\\n'\n                                              ORDER BY array_position(s.ordered_media_attachment_ids, m.id), m.id)\n                            FROM media_attachments m\n                            WHERE m.status_id = s.id AND m.description IS NOT NULL\n                              AND (s.ordered_media_attachment_ids IS NULL\n                                   OR m.id = ANY(s.ordered_media_attachment_ids))), '') AS \"media!\"\n           FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           LEFT JOIN polls p ON p.id = s.poll_id\n           WHERE s.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "spoiler_text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "local!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "poll!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "media!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c859e72e359e3a08e5094737b7ec347d3bd61f438526ddb56a38d59e853fe900"
+}

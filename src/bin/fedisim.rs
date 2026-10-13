@@ -36,7 +36,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use clap::Parser;
 use rand::seq::SliceRandom;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -262,7 +262,9 @@ async fn main() -> anyhow::Result<()> {
 
     let generating = (0..args.keys).map(|_| {
         eunha::tenants::spawn_blocking(|| {
-            ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+            ojak::sig::signature::generate_rsa_keypair(&mut rand::rand_core::UnwrapErr(
+                rand::rngs::SysRng,
+            ))
         })
     });
     let mut keys = Vec::with_capacity(args.keys);

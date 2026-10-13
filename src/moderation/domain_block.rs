@@ -69,9 +69,9 @@ pub async fn block(state: &AppState, id: i64, update: bool) -> Result<()> {
 
     // `process_domain_block!`
     if severity == domain_severity::SILENCE {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE accounts a SET silenced_at = $2 WHERE {BY_DOMAIN} AND a.silenced_at IS NULL"
-        ))
+        )))
         .bind(&block.domain)
         .bind(block.created_at)
         .execute(&state.db)
@@ -116,18 +116,18 @@ pub async fn block(state: &AppState, id: i64, update: bool) -> Result<()> {
 /// account is purged; a block that purges nobody makes none, and so notifies
 /// nobody. Returns it, if it was made.
 async fn suspend_accounts(state: &AppState, block: &Block) -> Result<Option<i64>> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE accounts a SET suspended_at = $2, suspension_origin = 0
          WHERE {BY_DOMAIN} AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL"
-    ))
+    )))
     .bind(&block.domain)
     .bind(block.created_at)
     .execute(&state.db)
     .await?;
     let mut event = None;
-    let accounts: Vec<i64> = sqlx::query_scalar(&format!(
+    let accounts: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT a.id FROM accounts a WHERE {BY_DOMAIN} AND a.suspended_at = $2 ORDER BY a.id"
-    ))
+    )))
     .bind(&block.domain)
     .bind(block.created_at)
     .fetch_all(&state.db)
@@ -162,9 +162,9 @@ async fn suspend_accounts(state: &AppState, block: &Block) -> Result<Option<i64>
 }
 
 async fn unsilence_from(state: &AppState, block: &Block) -> Result<()> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE accounts a SET silenced_at = NULL WHERE {BY_DOMAIN} AND a.silenced_at = $2"
-    ))
+    )))
     .bind(&block.domain)
     .bind(block.created_at)
     .execute(&state.db)
@@ -173,10 +173,10 @@ async fn unsilence_from(state: &AppState, block: &Block) -> Result<()> {
 }
 
 async fn unsuspend_from(state: &AppState, block: &Block) -> Result<()> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE accounts a SET suspended_at = NULL, suspension_origin = NULL
          WHERE {BY_DOMAIN} AND a.suspended_at = $2"
-    ))
+    )))
     .bind(&block.domain)
     .bind(block.created_at)
     .execute(&state.db)
@@ -252,23 +252,23 @@ pub async fn clear_media(state: &AppState, id: i64) -> Result<()> {
     if !block.reject_media {
         return Ok(());
     }
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE accounts a SET avatar_file_name = NULL, avatar_content_type = NULL,
                 avatar_file_size = NULL, avatar_updated_at = NULL,
                 header_file_name = NULL, header_content_type = NULL,
                 header_file_size = NULL, header_updated_at = NULL
          WHERE {BY_DOMAIN}"
-    ))
+    )))
     .bind(&block.domain)
     .execute(&state.db)
     .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE media_attachments m SET file_file_name = NULL, file_content_type = NULL,
                 file_file_size = NULL, file_updated_at = NULL,
                 thumbnail_file_name = NULL, thumbnail_content_type = NULL,
                 thumbnail_file_size = NULL, thumbnail_updated_at = NULL
          FROM accounts a WHERE m.account_id = a.id AND {BY_DOMAIN}"
-    ))
+    )))
     .bind(&block.domain)
     .execute(&state.db)
     .await?;

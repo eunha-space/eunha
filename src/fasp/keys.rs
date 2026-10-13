@@ -12,7 +12,7 @@ use sha2::{Digest as _, Sha256};
 
 /// `OpenSSL::PKey.generate_key('ed25519').private_to_pem`.
 pub fn generate_private_key_pem() -> anyhow::Result<String> {
-    ojak::sig::integrity::generate_ed25519_key(&mut rsa::rand_core::OsRng)
+    ojak::sig::integrity::generate_ed25519_key(&mut rand::rand_core::UnwrapErr(rand::rngs::SysRng))
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 

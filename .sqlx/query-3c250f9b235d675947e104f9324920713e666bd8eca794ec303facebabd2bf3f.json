@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "fav_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "account_id"
+          }
+        }
       }
     ],
     "parameters": {

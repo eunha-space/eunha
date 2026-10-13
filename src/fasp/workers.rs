@@ -487,7 +487,7 @@ async fn next_objects(
                 "SELECT a.id {DISCOVERABLE_ACCOUNTS} AND ($1::bigint IS NULL OR a.id < $1)
                  ORDER BY a.id DESC LIMIT $2"
             );
-            let ids: Vec<i64> = sqlx::query_scalar(&sql)
+            let ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(cursor)
                 .bind(limit)
                 .fetch_all(&state.db)
@@ -508,7 +508,7 @@ async fn next_objects(
                 "SELECT s.id {INDEXABLE_STATUSES} AND ($1::bigint IS NULL OR s.id < $1)
                  ORDER BY s.id DESC LIMIT $2"
             );
-            let ids: Vec<i64> = sqlx::query_scalar(&sql)
+            let ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(cursor)
                 .bind(limit)
                 .fetch_all(&state.db)
@@ -539,7 +539,7 @@ async fn more_objects_available(
         "content" => format!("SELECT EXISTS (SELECT 1 {INDEXABLE_STATUSES} AND s.id < $1)"),
         _ => return Ok(false),
     };
-    Ok(sqlx::query_scalar(&sql)
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(last)
         .fetch_one(&state.db)
         .await

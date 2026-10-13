@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "severity",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "severity"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "reject_media",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "reject_media"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "reject_reports",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "reject_reports"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,72 +6,141 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "reply",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reply"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "in_reply_to_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "in_reply_to_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_account_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "language",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "reblog_of_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "visibility",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "author_domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "author_silenced!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 10,
         "name": "author_suspended!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 11,
         "name": "reblog_account_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "reblog_domain?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "reblog_suspended?",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -91,7 +160,7 @@
       true,
       null,
       null,
-      false,
+      true,
       true,
       null
     ]

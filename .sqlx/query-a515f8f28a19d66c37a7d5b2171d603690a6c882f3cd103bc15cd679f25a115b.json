@@ -6,47 +6,91 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "queue",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "queue"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "kind",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "kind"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "args",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "args"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "attempts"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "due!",
-        "type_info": "Float8"
+        "type_info": "Float8",
+        "origin": "Expression"
       },
       {
         "ordinal": 6,
         "name": "dead!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 7,
         "name": "unique_key",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "unique_key"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "last_error",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "last_error"
+          }
+        }
       }
     ],
     "parameters": {

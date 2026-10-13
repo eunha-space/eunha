@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "ordered_media_attachment_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "ordered_media_attachment_ids"
+          }
+        }
       }
     ],
     "parameters": {

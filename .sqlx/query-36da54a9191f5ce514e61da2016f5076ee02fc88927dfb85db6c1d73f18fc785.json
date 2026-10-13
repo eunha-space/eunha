@@ -6,27 +6,47 @@
       {
         "ordinal": 0,
         "name": "application_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "application_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "resource_owner_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "resource_owner_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "scopes",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "scopes"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "revoked!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "expired!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

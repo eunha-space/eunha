@@ -6,77 +6,167 @@
       {
         "ordinal": 0,
         "name": "display_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "note",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "note"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "locked",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "locked"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "discoverable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "discoverable"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "indexable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "indexable"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "memorial",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "memorial"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "fields",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "fields"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "also_known_as",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "also_known_as"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "attribution_domains",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "attribution_domains"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "featured_collection_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "featured_collection_url"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "actor_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "actor_type"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "avatar_remote_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_remote_url"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "avatar_description",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_description"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "url"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "shared_inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "shared_inbox_url"
+          }
+        }
       }
     ],
     "parameters": {

@@ -362,9 +362,9 @@ pub async fn rename(db: &PgPool, old: &str, new: &str) -> Result<()> {
     .context("rewriting local status URLs")?;
     // The ids of Follows and Blocks local accounts sent, which an Undo names.
     for table in ["follows", "follow_requests", "blocks"] {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE public.{table} SET uri = replace(uri, $1, $2) WHERE uri LIKE $1 || '%'"
-        ))
+        )))
         .bind(format!("https://{old}"))
         .bind(format!("https://{new}"))
         .execute(&mut *tx)

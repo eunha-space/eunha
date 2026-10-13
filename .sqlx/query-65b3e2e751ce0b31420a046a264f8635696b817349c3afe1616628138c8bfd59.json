@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "reporter_username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "reporter_domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "target_username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "target_domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "keypairs",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "type",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "keypairs",
+            "name": "type"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "public_key",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "keypairs",
+            "name": "public_key"
+          }
+        }
       }
     ],
     "parameters": {

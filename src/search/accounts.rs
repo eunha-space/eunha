@@ -226,12 +226,14 @@ pub async fn search_for(
          ORDER BY ({boost} * ts_rank_cd({ranks}, to_tsquery('simple', $1), 32)) DESC \
          LIMIT $2 OFFSET $3"
     );
-    Ok(sqlx::query_as::<_, Account>(&sql)
-        .bind(tsquery(terms))
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Account>(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(tsquery(terms))
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?,
+    )
 }
 
 /// `Account.advanced_search_for`: `ADVANCED_SEARCH_WITH_FOLLOWING` limits the
@@ -281,13 +283,15 @@ pub async fn advanced_search_for(
              LIMIT $3 OFFSET $4"
         )
     };
-    Ok(sqlx::query_as::<_, Account>(&sql)
-        .bind(tsquery(terms))
-        .bind(viewer)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Account>(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(tsquery(terms))
+            .bind(viewer)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?,
+    )
 }
 
 #[cfg(test)]

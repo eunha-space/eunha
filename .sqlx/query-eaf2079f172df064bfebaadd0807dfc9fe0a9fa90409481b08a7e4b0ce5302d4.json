@@ -6,67 +6,145 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "type",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "type"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "state",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "state"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "overwrite",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "overwrite"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "original_filename",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "original_filename"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "likely_mismatched",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "likely_mismatched"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "missing_status",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "missing_status"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "total_items",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "total_items"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "processed_items",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "processed_items"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "imported_items",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "imported_items"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "finished_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "bulk_imports",
+            "name": "finished_at"
+          }
+        }
       }
     ],
     "parameters": {

@@ -331,7 +331,7 @@ async fn act(
     auth: &AuthenticatedUser,
     id: i64,
     action: &str,
-    sql: &str,
+    sql: &'static str,
 ) -> AppResult<Json<AdminReport>> {
     require_scope(auth, true)?;
     find(state, id).await?;

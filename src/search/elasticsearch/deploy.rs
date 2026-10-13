@@ -386,7 +386,7 @@ async fn import(
             // once; the cursor is saved once the whole wave is written.
             let mut wave = vec![];
             for _ in 0..options.concurrency {
-                let rows: Vec<(i64, i64)> = sqlx::query_as(sql)
+                let rows: Vec<(i64, i64)> = sqlx::query_as(*sql)
                     .bind(cursor)
                     .bind(options.batch_size)
                     .fetch_all(&state.db)
@@ -450,7 +450,7 @@ async fn clean_up(
                     "SELECT id::text FROM {} WHERE id = ANY($1){extra}",
                     index.table()
                 );
-                sqlx::query_scalar::<_, String>(&sql)
+                sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql.as_str()))
                     .bind(&ids)
                     .fetch_all(&state.db)
                     .await?

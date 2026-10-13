@@ -6,52 +6,112 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "color",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "color"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "position",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "position"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "permissions",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "permissions"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "highlighted",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "highlighted"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "collection_limit",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "collection_limit"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "require_2fa",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "require_2fa"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

@@ -21,7 +21,7 @@ mod der;
 mod x509;
 
 use base64::Engine as _;
-use rand::RngCore as _;
+use rand::Rng as _;
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 

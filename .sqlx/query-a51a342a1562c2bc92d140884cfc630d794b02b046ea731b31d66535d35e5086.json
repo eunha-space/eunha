@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "image_file_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "image_content_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_content_type"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "image_file_size",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_size"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "image_updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_updated_at"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "image_storage_schema_version",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_storage_schema_version"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "image_remote_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_remote_url"
+          }
+        }
       }
     ],
     "parameters": {

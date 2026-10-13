@@ -6,22 +6,41 @@
       {
         "ordinal": 0,
         "name": "user_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "backups",
+            "name": "user_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "email?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "active?",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -31,8 +50,8 @@
     },
     "nullable": [
       true,
-      false,
-      false,
+      true,
+      true,
       null
     ]
   },

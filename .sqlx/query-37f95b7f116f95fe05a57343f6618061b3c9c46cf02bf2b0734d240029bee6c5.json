@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "participant_account_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "account_conversations",
+            "name": "participant_account_ids"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "last_status_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_conversations",
+            "name": "last_status_id"
+          }
+        }
       }
     ],
     "parameters": {

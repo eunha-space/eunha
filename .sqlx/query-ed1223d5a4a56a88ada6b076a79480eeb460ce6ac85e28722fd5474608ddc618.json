@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "confirmed_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "confirmed_at"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "approved",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved"
+          }
+        }
       }
     ],
     "parameters": {

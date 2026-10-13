@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "visibility",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "account_uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "id_scheme",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "poll_updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

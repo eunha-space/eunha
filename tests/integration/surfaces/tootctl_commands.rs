@@ -47,9 +47,9 @@ async fn remote_status(ctx: &TestContext, account_id: i64, id: i64) {
 }
 
 async fn exists(ctx: &TestContext, table: &str, id: i64) -> bool {
-    sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1)"
-    ))
+    )))
     .bind(id)
     .fetch_one(&ctx.db)
     .await
@@ -297,11 +297,13 @@ async fn cached_media(ctx: &TestContext, account_id: i64, days: i64) -> i64 {
 }
 
 async fn file_name(ctx: &TestContext, table: &str, column: &str, id: i64) -> Option<String> {
-    sqlx::query_scalar(&format!("SELECT {column} FROM {table} WHERE id = $1"))
-        .bind(id)
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap()
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT {column} FROM {table} WHERE id = $1"
+    )))
+    .bind(id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
 }
 
 /// `media remove` forgets old copies of remote media, and with

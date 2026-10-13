@@ -11,8 +11,10 @@ use crate::helpers::TestContext;
 /// A remote account whose key this instance holds: its id, key id and
 /// private key.
 async fn remote_account(ctx: &TestContext, domain: &str, username: &str) -> (i64, String, String) {
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(

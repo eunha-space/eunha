@@ -28,11 +28,13 @@ async fn post_status(ctx: &TestContext, token: &str) -> (StatusCode, String) {
 }
 
 async fn set_user(ctx: &TestContext, sql: &str) {
-    sqlx::query(&format!("UPDATE users SET {sql} WHERE account_id = $1"))
-        .bind(ctx.bob_id.parse::<i64>().unwrap())
-        .execute(&ctx.db)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE users SET {sql} WHERE account_id = $1"
+    )))
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
 }
 
 /// Each way a user can fall short of `functional?` gets Mastodon's refusal

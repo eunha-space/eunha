@@ -483,11 +483,13 @@ async fn do_update_credentials(
     for (column, value) in &tab_settings {
         if let Some(value) = value {
             // The column is one of three fixed names, never the request's.
-            sqlx::query(&format!("UPDATE accounts SET {column} = $1 WHERE id = $2"))
-                .bind(value)
-                .bind(auth.account_id)
-                .execute(&state.db)
-                .await?;
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE accounts SET {column} = $1 WHERE id = $2"
+            )))
+            .bind(value)
+            .bind(auth.account_id)
+            .execute(&state.db)
+            .await?;
         }
     }
     if let Some(b) = bot {

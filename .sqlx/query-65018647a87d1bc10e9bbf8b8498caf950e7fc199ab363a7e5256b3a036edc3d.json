@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "req_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follow_requests",
+            "name": "account_id"
+          }
+        }
       }
     ],
     "parameters": {

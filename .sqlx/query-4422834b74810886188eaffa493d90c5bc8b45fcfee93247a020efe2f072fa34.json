@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "token?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "token"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "locale",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
       }
     ],
     "parameters": {
@@ -20,7 +32,7 @@
       ]
     },
     "nullable": [
-      false,
+      true,
       true
     ]
   },

@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "year",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "generated_annual_reports",
+            "name": "year"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "data",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "generated_annual_reports",
+            "name": "data"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "schema_version",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "generated_annual_reports",
+            "name": "schema_version"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "share_key",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "generated_annual_reports",
+            "name": "share_key"
+          }
+        }
       }
     ],
     "parameters": {

@@ -348,7 +348,7 @@ impl Page {
         }
     }
 
-    fn push(&self, q: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+    fn push(&self, q: &mut sqlx::QueryBuilder<sqlx::Postgres>) {
         if let Some(max_id) = self.max_id {
             q.push(" AND a.id < ").push_bind(max_id);
         }

@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "for_not_following",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_not_following"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "for_not_followers",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_not_followers"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "for_new_accounts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_new_accounts"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "for_private_mentions",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_private_mentions"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "for_limited_accounts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_limited_accounts"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "for_bots",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "notification_policies",
+            "name": "for_bots"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,27 +6,47 @@
       {
         "ordinal": 0,
         "name": "status_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_stats",
+            "name": "status_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "replies_count",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_stats",
+            "name": "replies_count"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "reblogs_count!",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "favourites_count!",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "quotes_count",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_stats",
+            "name": "quotes_count"
+          }
+        }
       }
     ],
     "parameters": {

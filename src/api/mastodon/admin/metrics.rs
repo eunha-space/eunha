@@ -184,7 +184,7 @@ pub(super) async fn per_day(
          FROM (SELECT generate_series($1::timestamp, $2::timestamp, '1 day')::date AS period) AS axis
          ORDER BY axis.period"
     );
-    let mut query = sqlx::query_as::<_, (NaiveDate, i64)>(&sql)
+    let mut query = sqlx::query_as::<_, (NaiveDate, i64)>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(window.start)
         .bind(window.end);
     for arg in args {

@@ -6,47 +6,91 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "email",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "confirmed!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "approved",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "disabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "disabled"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "locale",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "created_by_application_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "created_by_application_id"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "invite_request?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 8,
         "name": "invited_by_account_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "account_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -63,7 +107,7 @@
       true,
       true,
       null,
-      false
+      true
     ]
   },
   "hash": "7baf9725d4244daf4dfb9478e090fcd554c8a97d6858e7d883b30e35f9791e86"

@@ -381,7 +381,9 @@ async fn rotate_keys_for_account(
         .await
         .ok();
     let (private_key, public_key) = crate::tenants::spawn_blocking(|| {
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+        ojak::sig::signature::generate_rsa_keypair(&mut rand::rand_core::UnwrapErr(
+            rand::rngs::SysRng,
+        ))
     })
     .await?
     .map_err(|e| anyhow::anyhow!("generating a key: {e}"))?;

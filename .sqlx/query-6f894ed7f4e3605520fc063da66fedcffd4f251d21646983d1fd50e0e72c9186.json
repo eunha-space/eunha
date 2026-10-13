@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "inbox_url"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "state",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "state"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "follow_activity_id",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "follow_activity_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

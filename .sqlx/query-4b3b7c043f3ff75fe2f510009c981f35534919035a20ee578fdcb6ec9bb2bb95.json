@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "target_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "target_account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "status_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status_ids"
+          }
+        }
       }
     ],
     "parameters": {

@@ -159,8 +159,10 @@ async fn spawn_server(label: &str) -> (TestContext, Server) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let host = listener.local_addr().unwrap().to_string();
     let base = format!("http://{host}");
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let app = Router::new().fallback(serve).with_state(remote.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let server = Server {

@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "poll_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "poll_votes",
+            "name": "poll_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "choice",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "poll_votes",
+            "name": "choice"
+          }
+        }
       }
     ],
     "parameters": {

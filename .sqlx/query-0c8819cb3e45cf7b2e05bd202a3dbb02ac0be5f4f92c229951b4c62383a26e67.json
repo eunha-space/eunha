@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "end_of_support",
-        "type_info": "Date"
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "software_deprecations",
+            "name": "end_of_support"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "warning_issued",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "software_deprecations",
+            "name": "warning_issued"
+          }
+        }
       }
     ],
     "parameters": {

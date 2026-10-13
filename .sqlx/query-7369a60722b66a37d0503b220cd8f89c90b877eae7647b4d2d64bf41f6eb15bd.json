@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "target_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "target_account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "show_reblogs",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "show_reblogs"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "notify",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "notify"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "languages",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
       }
     ],
     "parameters": {

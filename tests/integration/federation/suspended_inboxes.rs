@@ -23,8 +23,10 @@ async fn queued(ctx: &TestContext) -> Vec<String> {
 #[tokio::test]
 async fn test_a_suspended_domain_is_not_delivered_to_port_and_all() {
     let ctx = TestContext::new("suspended-inboxes").await;
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query(
         "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
     )

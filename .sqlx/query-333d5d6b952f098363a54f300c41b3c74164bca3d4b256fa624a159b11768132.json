@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "public_key",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "keypairs",
+            "name": "public_key"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "actor!",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       }
     ],
     "parameters": {

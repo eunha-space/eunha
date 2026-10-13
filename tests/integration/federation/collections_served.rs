@@ -507,8 +507,10 @@ async fn eventually_tagged(db: &sqlx::PgPool, uri: &str, want: Vec<i64>) {
 #[tokio::test]
 async fn a_remote_post_links_to_the_collections_it_tags() {
     let ctx = TestContext::new("ap-tagged-in").await;
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let rob = "https://remote.invalid/users/rob";
     let rob_id = eunha::snowflake::next_id();
     sqlx::query(

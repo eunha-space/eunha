@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "following_count",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_stats",
+            "name": "following_count"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "followers_count",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_stats",
+            "name": "followers_count"
+          }
+        }
       }
     ],
     "parameters": {

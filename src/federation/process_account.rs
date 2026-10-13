@@ -1715,9 +1715,9 @@ impl crate::jobs::Job for AccountMergingWorker {
 /// duplicate.
 pub async fn merge_with(state: &AppState, account_id: i64, duplicate: i64) -> Result<()> {
     for (table, column) in MERGED_COLUMNS {
-        let moved = sqlx::query(&format!(
+        let moved = sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE {table} SET {column} = $1 WHERE {column} = $2"
-        ))
+        )))
         .bind(account_id)
         .bind(duplicate)
         .execute(&state.db)
@@ -1725,17 +1725,20 @@ pub async fn merge_with(state: &AppState, account_id: i64, duplicate: i64) -> Re
         if moved.is_ok() {
             continue;
         }
-        let ids: Vec<i64> =
-            sqlx::query_scalar(&format!("SELECT id FROM {table} WHERE {column} = $1"))
-                .bind(duplicate)
-                .fetch_all(&state.db)
-                .await?;
+        let ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT id FROM {table} WHERE {column} = $1"
+        )))
+        .bind(duplicate)
+        .fetch_all(&state.db)
+        .await?;
         for row in ids {
-            let _ = sqlx::query(&format!("UPDATE {table} SET {column} = $1 WHERE id = $2"))
-                .bind(account_id)
-                .bind(row)
-                .execute(&state.db)
-                .await;
+            let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE {table} SET {column} = $1 WHERE id = $2"
+            )))
+            .bind(account_id)
+            .bind(row)
+            .execute(&state.db)
+            .await;
         }
     }
     sqlx::query!("DELETE FROM accounts WHERE id = $1", duplicate)

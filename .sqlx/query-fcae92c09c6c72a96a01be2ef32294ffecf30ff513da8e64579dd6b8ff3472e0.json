@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "status_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards_statuses",
+            "name": "status_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "preview_card_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards_statuses",
+            "name": "preview_card_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "preview_cards_statuses",
+            "name": "url"
+          }
+        }
       }
     ],
     "parameters": {

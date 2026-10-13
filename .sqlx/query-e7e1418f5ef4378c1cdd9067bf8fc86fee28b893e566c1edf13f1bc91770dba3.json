@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "encrypted_password",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "encrypted_password"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "suspended_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "suspended_at"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "requested_deletion_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "requested_deletion_at"
+          }
+        }
       }
     ],
     "parameters": {

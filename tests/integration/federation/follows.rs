@@ -26,8 +26,10 @@ async fn seed_remote(ctx: &TestContext, username: &str) -> (i64, String) {
 
 /// Gives a local account a key, so that what it sends is signed and queued.
 async fn give_key(ctx: &TestContext, id: i64) {
-    let (private, public) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private, public) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
         .bind(&private)
         .bind(&public)
@@ -64,9 +66,9 @@ async fn follow(ctx: &TestContext, from: i64, to: i64, uri: &str) {
 }
 
 async fn exists(ctx: &TestContext, table: &str, from: i64, to: i64) -> bool {
-    sqlx::query_scalar::<_, bool>(&format!(
+    sqlx::query_scalar::<_, bool>(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM {table} WHERE account_id = $1 AND target_account_id = $2)"
-    ))
+    )))
     .bind(from)
     .bind(to)
     .fetch_one(&ctx.db)
@@ -482,9 +484,9 @@ fn generated(ctx: &TestContext, uri: Option<&str>) -> bool {
 }
 
 async fn uri_of(ctx: &TestContext, table: &str, from: i64, to: i64) -> Option<String> {
-    sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT uri FROM {table} WHERE account_id = $1 AND target_account_id = $2"
-    ))
+    )))
     .bind(from)
     .bind(to)
     .fetch_one(&ctx.db)

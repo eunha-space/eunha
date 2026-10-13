@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "show_reblogs",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "show_reblogs"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "notify",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "notify"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "languages",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
       }
     ],
     "parameters": {

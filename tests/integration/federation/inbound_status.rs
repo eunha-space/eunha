@@ -9,8 +9,10 @@ use crate::helpers::TestContext;
 const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
 
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, String, String) {
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let uri = format!("https://{domain}/users/{username}");
     let id = eunha::snowflake::next_id();
     sqlx::query(

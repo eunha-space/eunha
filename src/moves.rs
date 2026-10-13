@@ -914,7 +914,7 @@ async fn copy_account_notes(
     deferred: &mut Option<AppError>,
 ) -> AppResult<()> {
     let notes = sqlx::query!(
-        "SELECT n.account_id, n.comment, u.locale AS \"locale?\"
+        "SELECT n.account_id AS \"account_id!\", n.comment AS \"comment!\", u.locale AS \"locale?\"
          FROM account_notes n LEFT JOIN users u ON u.account_id = n.account_id
          WHERE n.target_account_id = $1",
         source.id,

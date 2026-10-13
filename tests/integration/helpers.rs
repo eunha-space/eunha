@@ -540,9 +540,9 @@ impl Drop for TestContext {
                         .connect_with(opts.database("postgres"))
                         .await
                     {
-                        let _ = sqlx::query(&format!(
+                        let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
                             "DROP DATABASE IF EXISTS \"{db_name}\" WITH (FORCE)"
-                        ))
+                        )))
                         .execute(&pool)
                         .await;
                     }
@@ -751,10 +751,12 @@ impl TestContext {
                 .connect_with(base_opts.clone().database("postgres"))
                 .await
                 .expect("connect to maintenance database");
-            sqlx::query(&format!("CREATE DATABASE \"{test_db_name}\""))
-                .execute(&admin)
-                .await
-                .expect("create per-test database");
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "CREATE DATABASE \"{test_db_name}\""
+            )))
+            .execute(&admin)
+            .await
+            .expect("create per-test database");
             admin.close().await;
         }
 

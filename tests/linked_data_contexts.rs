@@ -65,8 +65,10 @@ async fn serve(State(remote): State<Remote>, Path(path): Path<String>) -> axum::
 
 /// A remote account with a key, known here as Mastodon would know it.
 async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (String, String) {
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let uri = format!("https://{domain}/users/{username}");
     sqlx::query(
         r#"INSERT INTO accounts (id, username, domain, display_name, note, url, uri, public_key, inbox_url, outbox_url, protocol, created_at, updated_at)
@@ -238,10 +240,13 @@ async fn test_a_relayed_reply_is_taken_on_its_signature_before_its_proof() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let bob = format!("{base}/users/bob");
-    let pem = integrity::generate_ed25519_key(&mut rsa::rand_core::OsRng).unwrap();
+    let pem = integrity::generate_ed25519_key(&mut rand::rand_core::UnwrapErr(rand::rngs::SysRng))
+        .unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
-    let (bob_rsa, bob_public_rsa) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (bob_rsa, bob_public_rsa) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let actor = json!({
         "@context": [
             "https://www.w3.org/ns/activitystreams",

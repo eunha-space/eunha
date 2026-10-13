@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "version",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "software_updates",
+            "name": "version"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "urgent",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "software_updates",
+            "name": "urgent"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "type",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "software_updates",
+            "name": "type"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "release_notes",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "software_updates",
+            "name": "release_notes"
+          }
+        }
       }
     ],
     "parameters": {

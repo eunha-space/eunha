@@ -36,7 +36,7 @@ async fn corrupt_indexes(ctx: &TestContext) {
         "index_domain_blocks_on_domain",
         "index_preview_cards_on_url",
     ] {
-        sqlx::query(&format!("DROP INDEX public.{index}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP INDEX public.{index}")))
             .execute(&ctx.db)
             .await
             .unwrap();
@@ -82,7 +82,11 @@ async fn status(ctx: &TestContext, account_id: i64, uri: &str) -> i64 {
 }
 
 async fn count(ctx: &TestContext, sql: &str) -> i64 {
-    sqlx::query_scalar(sql).fetch_one(&ctx.db).await.unwrap()
+    // The tests' own SQL, with nothing in it but fixture ids.
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap()
 }
 
 /// Every kind of duplicate Mastodon's task handles is handled as it handles

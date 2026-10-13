@@ -6,42 +6,85 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "authentication_method",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "authentication_method"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "provider",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "provider"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "success",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "success"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "failure_reason",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "failure_reason"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "ip",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 6,
         "name": "user_agent",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "user_agent"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "created_at"
+          }
+        }
       }
     ],
     "parameters": {

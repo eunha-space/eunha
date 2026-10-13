@@ -541,9 +541,9 @@ async fn activity_present(
     } else {
         ""
     };
-    Ok(sqlx::query_scalar::<_, bool>(&format!(
+    Ok(sqlx::query_scalar::<_, bool>(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1{kept})"
-    ))
+    )))
     .bind(activity_id)
     .fetch_one(&state.db)
     .await?)
@@ -845,12 +845,14 @@ async fn activity_created_at(
         "AccountRelationshipSeveranceEvent" => "account_relationship_severance_events",
         _ => return None,
     };
-    sqlx::query_scalar(&format!("SELECT created_at FROM {table} WHERE id = $1"))
-        .bind(activity_id)
-        .fetch_optional(db)
-        .await
-        .ok()
-        .flatten()
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT created_at FROM {table} WHERE id = $1"
+    )))
+    .bind(activity_id)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
 }
 
 pub async fn create_and_push(

@@ -14,7 +14,7 @@
 //!     stretches) of ten 16-character hex codes.
 
 use hmac::{Hmac, Mac};
-use rand::RngCore as _;
+use rand::Rng as _;
 use sqlx::PgPool;
 
 use crate::{

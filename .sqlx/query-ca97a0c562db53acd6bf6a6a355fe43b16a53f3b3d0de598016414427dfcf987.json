@@ -6,67 +6,145 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "uid",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "uid"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "secret",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "secret"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "redirect_uri",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "redirect_uri"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "scopes",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "scopes"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "superapp",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "superapp"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "website",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "website"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "owner_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "owner_type"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "owner_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "owner_id"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "confidential",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "confidential"
+          }
+        }
       }
     ],
     "parameters": {

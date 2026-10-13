@@ -240,7 +240,7 @@ async fn require_invite_users(state: &AppState, account_id: i64) -> AppResult<()
 }
 
 pub fn generate_code() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     // Mastodon VALID_CODE_CHARACTERS: a-z A-Z 0-9 minus the homoglyphs 0 1 I l O,
     // sampled into an 8-character code.
     const CHARS: &[u8] = b"abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";

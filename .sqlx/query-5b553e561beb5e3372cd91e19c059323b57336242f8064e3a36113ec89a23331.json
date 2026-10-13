@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_warning_presets",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "title",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "account_warning_presets",
+            "name": "title"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "text",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_warning_presets",
+            "name": "text"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "account_warning_presets",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "account_warning_presets",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

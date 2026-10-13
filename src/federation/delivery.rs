@@ -143,7 +143,7 @@ pub const RETRY: ojak::queue::RetryPolicy = ojak::queue::RetryPolicy::custom(ret
 /// `sidekiq_retry_in` adds, truncated to whole seconds, and up to
 /// `10 * (count + 1)` more, which Sidekiq's `delay_for` adds to anything.
 pub fn retry_in(failed: u32) -> Duration {
-    use rand::Rng as _;
+    use rand::RngExt as _;
 
     let count = u64::from(failed.saturating_sub(1));
     let base = count.saturating_pow(4);

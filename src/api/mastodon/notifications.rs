@@ -197,7 +197,7 @@ async fn batch_notification_status_ids(
         return std::collections::HashMap::new();
     }
     sqlx::query!(
-        r#"SELECT n.id,
+        r#"SELECT n.id AS "id!",
                CASE n.activity_type
                    -- `status&.reblog` for a boost, the boost being the activity.
                    WHEN 'Status'    THEN CASE WHEN n."type" = 'reblog' THEN st.reblog_of_id ELSE n.activity_id END
@@ -846,7 +846,7 @@ async fn paginate_groups(
          )
          SELECT * FROM grouped_notifications ORDER BY id {dir} LIMIT $2"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(account_id)
         .bind(limit)
         .bind(filter.types.as_deref())
@@ -913,7 +913,7 @@ async fn load_groups_data(
         i64,
         Option<i64>,
         Option<chrono::NaiveDateTime>,
-    )> = sqlx::query_as(&sql)
+    )> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(account_id)
         .bind(SAMPLE_ACCOUNTS_SIZE as i64)
         .bind(group_keys)

@@ -68,8 +68,10 @@ async fn serve(State(remote): State<Remote>, uri: Uri) -> axum::response::Respon
 async fn spawn_remote(remote: &Remote) -> (String, String) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let actor = format!("{base}/users/eve");
     remote.put(
         "/users/eve",
@@ -783,8 +785,10 @@ fn question(base: &str, votes: i64) -> Value {
 async fn test_a_stale_remote_poll_is_fetched_again() {
     let (ctx, remote, base, _) = context_ctx("poll-refresh").await;
     // The fetch is signed on alice's behalf, with her key.
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     eunha::federation::keypair::store_local(
         &ctx.state,
         ctx.alice_id.parse().unwrap(),

@@ -51,7 +51,7 @@ fn verify_password_blocking(password: &str, hash: &str) -> AppResult<()> {
 }
 
 pub fn generate_token(len: usize) -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut rng = rand::rng();
     (0..len)
         .map(|_| format!("{:02x}", rng.next_u32() as u8))

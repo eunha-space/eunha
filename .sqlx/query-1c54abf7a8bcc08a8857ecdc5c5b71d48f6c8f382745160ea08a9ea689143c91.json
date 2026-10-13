@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "media_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "media_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "media_type",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "media_type"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "source_key",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "source_key"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "attempts"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "max_attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "eunha.media_processing_jobs",
+            "name": "max_attempts"
+          }
+        }
       }
     ],
     "parameters": {

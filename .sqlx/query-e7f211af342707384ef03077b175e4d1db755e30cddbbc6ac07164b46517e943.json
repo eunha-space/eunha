@@ -6,42 +6,85 @@
       {
         "ordinal": 0,
         "name": "announcement_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "announcement_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "count!",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "emoji_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "emoji_domain?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "domain"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "image_file_name?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "image_remote_url?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_remote_url"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "image_storage_schema_version?",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_storage_schema_version"
+          }
+        }
       }
     ],
     "parameters": {

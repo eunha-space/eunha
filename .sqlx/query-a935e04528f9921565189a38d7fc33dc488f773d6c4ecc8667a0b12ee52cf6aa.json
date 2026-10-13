@@ -6,52 +6,97 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "comment",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "comment"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "forwarded!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "category!",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "action_taken_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "action_taken_at"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "status_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status_ids"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "rule_ids",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "rule_ids"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "target_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "target_account_id"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "collection_ids!",
-        "type_info": "Int8Array"
+        "type_info": "Int8Array",
+        "origin": "Expression"
       }
     ],
     "parameters": {

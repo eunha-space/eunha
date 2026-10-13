@@ -753,7 +753,11 @@ pub(crate) fn announce_document(mut announce: Value) -> Value {
 }
 
 /// The URIs a likes or bookmarks query names.
-async fn collection_uris(state: &AppState, query: &str, account_id: i64) -> AppResult<Vec<String>> {
+async fn collection_uris(
+    state: &AppState,
+    query: &'static str,
+    account_id: i64,
+) -> AppResult<Vec<String>> {
     use sqlx::Row as _;
     let rows = sqlx::query(query)
         .bind(account_id)

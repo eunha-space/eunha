@@ -123,9 +123,9 @@ async fn delete_listed(
     let mut removed = 0;
     let mut after = i64::MIN;
     loop {
-        let ids: Vec<i64> = sqlx::query_scalar(&format!(
+        let ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT id FROM eunha.{table} WHERE id > $1 ORDER BY id LIMIT $2"
-        ))
+        )))
         .bind(after)
         .bind(batch_size)
         .fetch_all(&state.db)
@@ -133,13 +133,15 @@ async fn delete_listed(
         let Some(&last) = ids.last() else { break };
         after = last;
         processed += ids.len() as u64;
-        removed += sqlx::query(&format!("DELETE FROM {target} WHERE id = ANY($1)"))
-            .bind(&ids)
-            .execute(&state.db)
-            .await?
-            .rows_affected();
+        removed += sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DELETE FROM {target} WHERE id = ANY($1)"
+        )))
+        .bind(&ids)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
     }
-    sqlx::query(&format!("DROP TABLE eunha.{table}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE eunha.{table}")))
         .execute(&state.db)
         .await?;
     Ok((processed, removed))
@@ -167,7 +169,7 @@ async fn remove_statuses(
         } else {
             "AND NOT EXISTS (SELECT 1 FROM follows WHERE statuses.account_id = follows.target_account_id)"
         };
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO eunha.statuses_to_be_deleted (id)
              SELECT statuses.id FROM statuses WHERE deleted_at IS NULL AND NOT local AND uri IS NOT NULL AND (id < $1)
              AND NOT EXISTS (SELECT 1 FROM statuses AS statuses1 WHERE statuses.id = statuses1.in_reply_to_id)
@@ -180,7 +182,7 @@ async fn remove_statuses(
              AND NOT EXISTS (SELECT 1 FROM quotes JOIN statuses statuses1 ON quotes.status_id = statuses1.id WHERE quotes.quoted_status_id = statuses.id AND (statuses1.uri IS NULL OR statuses1.local))
              AND NOT EXISTS (SELECT 1 FROM quotes JOIN statuses statuses1 ON quotes.quoted_status_id = statuses1.id WHERE quotes.status_id = statuses.id AND (statuses1.uri IS NULL OR statuses1.local))
              {clean_followed}"
-        ))
+        )))
         .bind(max_id)
         .execute(&state.db)
         .await?;
@@ -329,7 +331,9 @@ async fn vacuum_and_analyze(
     };
     for statement in statements {
         say(&format!("Running \"{statement}\"..."));
-        sqlx::query(&statement).execute(&state.db).await?;
+        sqlx::query(sqlx::AssertSqlSafe(statement.as_str()))
+            .execute(&state.db)
+            .await?;
     }
     Ok(())
 }

@@ -41,7 +41,9 @@ pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)>
     }
 
     let (private_pem, public_pem) = crate::tenants::spawn_blocking(|| {
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+        ojak::sig::signature::generate_rsa_keypair(&mut rand::rand_core::UnwrapErr(
+            rand::rngs::SysRng,
+        ))
     })
     .await?
     .map_err(|e| anyhow::anyhow!("instance actor keygen: {e}"))?;

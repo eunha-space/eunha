@@ -60,8 +60,10 @@ async fn remote(ctx: &TestContext, remote: &Remote) -> (String, i64, String, Str
     let base = format!("http://{}", listener.local_addr().unwrap());
     let app = Router::new().fallback(serve).with_state(remote.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let rob = format!("{base}/users/rob");
     let id = eunha::snowflake::next_id();
     sqlx::query(

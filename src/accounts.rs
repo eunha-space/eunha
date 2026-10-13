@@ -81,7 +81,9 @@ pub async fn prepare_local(db: &PgPool, new_account: bool) -> Result<PreparedLoc
         // A 2048-bit key is on the order of a hundred milliseconds of CPU.
         Some(
             crate::tenants::spawn_blocking(|| {
-                ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng)
+                ojak::sig::signature::generate_rsa_keypair(&mut rand::rand_core::UnwrapErr(
+                    rand::rngs::SysRng,
+                ))
             })
             .await
             .context("generating a signing key did not finish")??,
@@ -1134,11 +1136,13 @@ pub async fn move_followers(
                     batch,
                 )
                 .await?;
-                sqlx::query(&format!("UPDATE {table} SET uri = $2 WHERE id = $1"))
-                    .bind(id)
-                    .bind(&follow_id)
-                    .execute(&state.db)
-                    .await?;
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE {table} SET uri = $2 WHERE id = $1"
+                )))
+                .bind(id)
+                .bind(&follow_id)
+                .execute(&state.db)
+                .await?;
             }
             let activity = crate::federation::activity::move_actor(
                 &format!("{old}#moves/{}", crate::snowflake::next_id()),
@@ -1169,13 +1173,13 @@ async fn remote_follows(
 ) -> anyhow::Result<Vec<(&'static str, i64, String, String)>> {
     let mut found = Vec::new();
     for table in ["follows", "follow_requests"] {
-        let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
+        let rows: Vec<(i64, String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT f.id, a.uri,
                     CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END
              FROM {table} f JOIN accounts a ON a.id = f.target_account_id
              WHERE f.account_id = $1 AND a.domain IS NOT NULL AND a.protocol = 1
                AND a.inbox_url <> '' AND a.uri <> '' AND a.suspended_at IS NULL"
-        ))
+        )))
         .bind(account_id)
         .fetch_all(&state.db)
         .await?;

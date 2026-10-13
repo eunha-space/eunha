@@ -529,7 +529,7 @@ pub async fn tag_timeline(
            ORDER BY s.id {order}
            LIMIT $10"#
     );
-    let statuses: Vec<DbStatus> = sqlx::query_as(&sql)
+    let statuses: Vec<DbStatus> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(&tag_name)
         .bind(max_id)
         .bind(since_id)
@@ -647,7 +647,7 @@ pub(crate) async fn compute_filter_results(
     // `Status#searchable_text`: content warning, plain text, poll options and
     // media descriptions of the proper post.
     let texts: std::collections::HashMap<i64, String> = sqlx::query!(
-        r#"SELECT s.id, s.spoiler_text, s.text, (s.local OR a.domain IS NULL) AS "local!",
+        r#"SELECT s.id AS "id!", s.spoiler_text AS "spoiler_text!", s.text AS "text!", (s.local OR a.domain IS NULL) AS "local!",
                   COALESCE((SELECT string_agg(o, E'\n\n') FROM unnest(p.options) o), '') AS "poll!",
                   COALESCE((SELECT string_agg(m.description, E'\n\n'
                                               ORDER BY array_position(s.ordered_media_attachment_ids, m.id), m.id)

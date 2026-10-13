@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "last_read_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "last_read_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "lock_version",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "lock_version"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "keyword_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filter_keywords",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "filter_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "id"
+          }
+        }
       }
     ],
     "parameters": {

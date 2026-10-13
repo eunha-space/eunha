@@ -1278,7 +1278,10 @@ async fn purge_associations(state: &AppState, account_id: i64, options: &Options
         on_destroy
     };
     for sql in statements.iter().chain(also_on_destroy) {
-        sqlx::query(sql).bind(account_id).execute(&state.db).await?;
+        sqlx::query(*sql)
+            .bind(account_id)
+            .execute(&state.db)
+            .await?;
     }
     Ok(())
 }

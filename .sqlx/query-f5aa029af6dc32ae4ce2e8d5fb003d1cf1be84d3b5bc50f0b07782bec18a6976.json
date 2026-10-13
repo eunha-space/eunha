@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "website",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "oauth_applications",
+            "name": "website"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "hide_notifications",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "locale?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
       }
     ],
     "parameters": {

@@ -18,7 +18,7 @@ async fn statuses_count(ctx: &TestContext, account_id: &str) -> i64 {
     account["statuses_count"].as_i64().unwrap()
 }
 
-async fn rows(ctx: &TestContext, sql: &str, id: i64) -> i64 {
+async fn rows(ctx: &TestContext, sql: &'static str, id: i64) -> i64 {
     sqlx::query_scalar::<_, i64>(sql)
         .bind(id)
         .fetch_one(&ctx.db)

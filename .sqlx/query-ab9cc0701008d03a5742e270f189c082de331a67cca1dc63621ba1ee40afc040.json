@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "target_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "target_account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "hide_notifications",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "expires_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "autofollow",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "invites",
+            "name": "autofollow"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "target_id!",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "locked",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "locked"
+          }
+        }
       }
     ],
     "parameters": {

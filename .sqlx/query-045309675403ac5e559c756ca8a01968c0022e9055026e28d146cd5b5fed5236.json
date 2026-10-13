@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "old_state",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "state"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "new_state",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "state"
+          }
+        }
       }
     ],
     "parameters": {

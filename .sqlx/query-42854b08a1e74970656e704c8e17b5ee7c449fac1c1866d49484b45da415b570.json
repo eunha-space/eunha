@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "owner_uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "inbox_url"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "status_uri?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
       }
     ],
     "parameters": {

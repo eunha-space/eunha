@@ -6,77 +6,167 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "confirmed",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "confirmed"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "base_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "base_url"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "sign_in_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "sign_in_url"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "remote_identifier",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "remote_identifier"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "provider_public_key_pem",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "provider_public_key_pem"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "server_private_key_pem",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "server_private_key_pem"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "capabilities",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "capabilities"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "privacy_policy",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "privacy_policy"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "contact_email",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "contact_email"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "fediverse_account",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "fediverse_account"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "delivery_last_failed_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "fasp_providers",
+            "name": "delivery_last_failed_at"
+          }
+        }
       }
     ],
     "parameters": {

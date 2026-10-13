@@ -274,12 +274,12 @@ async fn candidates(state: &AppState, kind: Kind, trending: Vec<i64>) -> Vec<i64
 /// `RankedTrend.recalculate_ordered_rank`.
 async fn recalculate_ordered_rank(state: &AppState, table: &str) -> sqlx::Result<()> {
     // `table` is one of three constants, never input.
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE {table} SET rank = inner_ordered.calculated_rank
          FROM (SELECT id, row_number() OVER w AS calculated_rank FROM {table}
                WINDOW w AS (PARTITION BY language ORDER BY score DESC)) inner_ordered
          WHERE {table}.id = inner_ordered.id"
-    ))
+    )))
     .execute(&state.db)
     .await?;
     Ok(())
@@ -629,11 +629,11 @@ async fn score_at_threshold(
     language: Option<&str>,
 ) -> sqlx::Result<f64> {
     // `table` is one of three constants, never input.
-    let score: Option<f64> = sqlx::query_scalar(&format!(
+    let score: Option<f64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT score FROM {table} WHERE allowed AND rank <= $1
            AND language IS NOT DISTINCT FROM $2
          ORDER BY rank DESC LIMIT 1"
-    ))
+    )))
     .bind(REVIEW_THRESHOLD)
     .bind(language)
     .fetch_optional(&state.db)
@@ -674,9 +674,11 @@ async fn request_tag_reviews(state: &AppState) -> anyhow::Result<Vec<ReviewItem>
 /// The languages a trend table holds (`RankedTrend.locales`).
 async fn locales(state: &AppState, table: &str) -> sqlx::Result<Vec<Option<String>>> {
     // `table` is one of three constants, never input.
-    sqlx::query_scalar(&format!("SELECT DISTINCT language FROM {table}"))
-        .fetch_all(&state.db)
-        .await
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT DISTINCT language FROM {table}"
+    )))
+    .fetch_all(&state.db)
+    .await
 }
 
 /// `Trends::Statuses#request_review`, which marks the authors as asked about.

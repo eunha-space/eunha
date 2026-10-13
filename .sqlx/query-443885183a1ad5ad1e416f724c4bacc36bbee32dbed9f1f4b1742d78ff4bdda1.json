@@ -6,62 +6,134 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "description",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "description"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "language",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "language"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "sensitive",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "sensitive"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "discoverable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "discoverable"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "updated_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "id_scheme",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "tag_name?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
       }
     ],
     "parameters": {
@@ -81,7 +153,7 @@
       false,
       false,
       true,
-      false
+      true
     ]
   },
   "hash": "443885183a1ad5ad1e416f724c4bacc36bbee32dbed9f1f4b1742d78ff4bdda1"

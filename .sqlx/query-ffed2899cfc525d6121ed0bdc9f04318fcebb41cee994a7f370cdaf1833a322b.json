@@ -6,12 +6,19 @@
       {
         "ordinal": 0,
         "name": "approved",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "confirmed!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

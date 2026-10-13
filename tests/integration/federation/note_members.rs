@@ -27,8 +27,10 @@ async fn seed_remote(ctx: &TestContext, username: &str, domain: &str) -> (i64, S
 /// Give alice a key and a remote follower, so that what she does is queued.
 async fn alice_with_a_follower(ctx: &TestContext) {
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
-    let (priv_pem, pub_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (priv_pem, pub_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(alice_id)
         .bind(&priv_pem)

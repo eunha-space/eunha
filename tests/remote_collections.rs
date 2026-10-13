@@ -68,8 +68,10 @@ async fn spawn_remote(remote: &Remote) -> String {
 /// A remote account on `base`'s host (an `https://` URL elsewhere), known
 /// here with a key: its id, URI and private key.
 async fn account(ctx: &TestContext, base: &str, username: &str) -> (i64, String, String) {
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     let uri = format!("{base}/users/{username}");
     let domain = base
         .trim_start_matches("http://")
@@ -118,8 +120,10 @@ async fn eventually(mut done: impl AsyncFnMut() -> bool) -> bool {
 
 /// Give a local account a key to sign with.
 async fn give_key(ctx: &TestContext, account_id: i64) {
-    let (private_pem, public_pem) =
-        ojak::sig::signature::generate_rsa_keypair(&mut rsa::rand_core::OsRng).unwrap();
+    let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
     sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
         .bind(account_id)
         .bind(private_pem)

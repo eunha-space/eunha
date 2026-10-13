@@ -79,7 +79,7 @@ async fn featured(state: &AppState, viewer: i64) -> anyhow::Result<Vec<i64>> {
          WHERE {BASE_SCOPE}
          LIMIT $4"
     );
-    Ok(sqlx::query_scalar(&sql)
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(viewer)
         .bind(&usernames)
         .bind(&domains)
@@ -145,7 +145,7 @@ async fn global(
          ORDER BY (s.language IS NOT DISTINCT FROM $2) DESC, g.rank DESC
          LIMIT $3"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(viewer)
         .bind(locale)
         .bind(BATCH_SIZE)
@@ -166,7 +166,7 @@ async fn fasp(state: &AppState, viewer: i64) -> anyhow::Result<Vec<i64>> {
            AND {BASE_SCOPE}
          LIMIT $2"
     );
-    Ok(sqlx::query_scalar(&sql)
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(viewer)
         .bind(BATCH_SIZE)
         .fetch_all(&state.db)

@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "from_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "from_account_id"
+          }
+        }
       }
     ],
     "parameters": {

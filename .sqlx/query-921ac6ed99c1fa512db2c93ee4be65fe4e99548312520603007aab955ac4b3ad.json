@@ -6,42 +6,85 @@
       {
         "ordinal": 0,
         "name": "bookmark_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bookmarks",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "status_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "uri",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "reblog?",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "account_id?",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "id_scheme",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "username?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "domain",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
       }
     ],
     "parameters": {
@@ -51,12 +94,12 @@
     },
     "nullable": [
       false,
-      false,
+      true,
       true,
       null,
-      false,
       true,
-      false,
+      true,
+      true,
       true
     ]
   },

@@ -294,14 +294,16 @@ const INDEX_WEBHOOKS: (&str, &str) = (
 
 /// `remove_index_if_exists!`.
 async fn remove_index(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
-    sqlx::query(&format!("DROP INDEX IF EXISTS public.{name}"))
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP INDEX IF EXISTS public.{name}"
+    )))
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
 /// `database_connection.add_index`.
-async fn add_index(conn: &mut PgConnection, index: (&str, &str)) -> anyhow::Result<()> {
+async fn add_index(conn: &mut PgConnection, index: (&str, &'static str)) -> anyhow::Result<()> {
     sqlx::query(index.1)
         .execute(&mut *conn)
         .await
@@ -311,7 +313,7 @@ async fn add_index(conn: &mut PgConnection, index: (&str, &str)) -> anyhow::Resu
 
 /// `rebuild_index`.
 async fn rebuild_index(conn: &mut PgConnection, name: &str) -> anyhow::Result<()> {
-    sqlx::query(&format!("REINDEX INDEX public.{name}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("REINDEX INDEX public.{name}")))
         .execute(&mut *conn)
         .await
         .with_context(|| format!("rebuilding {name}"))?;
@@ -337,10 +339,10 @@ async fn duplicate_ids(
     } else {
         String::new()
     };
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT array_agg(id ORDER BY id) FROM {table} {filter}
          GROUP BY {group_by} HAVING count(*) > 1"
-    ))
+    )))
     .fetch_all(&mut *conn)
     .await?)
 }
@@ -352,9 +354,9 @@ async fn ordered(
     ids: &[i64],
     order: &str,
 ) -> anyhow::Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT id FROM {table} WHERE id = ANY($1) ORDER BY {order}"
-    ))
+    )))
     .bind(ids)
     .fetch_all(&mut *conn)
     .await?)
@@ -364,10 +366,12 @@ async fn delete_rows(conn: &mut PgConnection, table: &str, ids: &[i64]) -> anyho
     if ids.is_empty() {
         return Ok(());
     }
-    sqlx::query(&format!("DELETE FROM {table} WHERE id = ANY($1)"))
-        .bind(ids)
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DELETE FROM {table} WHERE id = ANY($1)"
+    )))
+    .bind(ids)
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
@@ -382,9 +386,9 @@ async fn reassign(
     to: i64,
     filter: &str,
 ) -> anyhow::Result<()> {
-    let moved = sqlx::query(&format!(
+    let moved = sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE {table} SET {column} = $1 WHERE {column} = $2 {filter}"
-    ))
+    )))
     .bind(to)
     .bind(from)
     .execute(&mut *conn)
@@ -392,18 +396,20 @@ async fn reassign(
     if moved.is_ok() {
         return Ok(());
     }
-    let rows: Vec<i64> = sqlx::query_scalar(&format!(
+    let rows: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT id FROM {table} WHERE {column} = $1 {filter}"
-    ))
+    )))
     .bind(from)
     .fetch_all(&mut *conn)
     .await?;
     for row in rows {
-        let _ = sqlx::query(&format!("UPDATE {table} SET {column} = $1 WHERE id = $2"))
-            .bind(to)
-            .bind(row)
-            .execute(&mut *conn)
-            .await;
+        let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET {column} = $1 WHERE id = $2"
+        )))
+        .bind(to)
+        .bind(row)
+        .execute(&mut *conn)
+        .await;
     }
     Ok(())
 }
@@ -567,7 +573,7 @@ async fn keep_newest(
     console: &dyn Console,
     table: &str,
     group_by: &str,
-    index: (&str, &str),
+    index: (&str, &'static str),
 ) -> anyhow::Result<()> {
     remove_index(conn, index.0).await?;
     console.say(&format!("Deduplicating {table}…"));

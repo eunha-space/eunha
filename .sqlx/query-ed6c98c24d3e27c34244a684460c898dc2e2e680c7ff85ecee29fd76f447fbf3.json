@@ -6,17 +6,30 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "application_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_tokens",
+            "name": "application_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "accessible!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

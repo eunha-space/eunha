@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "from_account_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "from_account_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "kind?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "type"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "activity_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "activity_type"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "activity_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "activity_id"
+          }
+        }
       }
     ],
     "parameters": {

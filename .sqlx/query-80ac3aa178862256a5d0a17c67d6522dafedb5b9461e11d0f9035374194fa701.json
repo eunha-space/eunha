@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "trendable",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "trendable"
+          }
+        }
       }
     ],
     "parameters": {

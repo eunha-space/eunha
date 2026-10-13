@@ -6,27 +6,52 @@
       {
         "ordinal": 0,
         "name": "avatar_file_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_file_name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "avatar_file_size",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_file_size"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "header_file_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_file_name"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "header_file_size",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_file_size"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "follows!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

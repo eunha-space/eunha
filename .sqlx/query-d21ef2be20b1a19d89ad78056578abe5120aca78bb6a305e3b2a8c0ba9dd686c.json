@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "inbox_url"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "follow_activity_id",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "follow_activity_id"
+          }
+        }
       }
     ],
     "parameters": {

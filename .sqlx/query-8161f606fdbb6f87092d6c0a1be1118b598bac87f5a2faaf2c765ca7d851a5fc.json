@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "avatar_content_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_content_type"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "avatar_file_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_file_name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "header_content_type",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_content_type"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "header_file_name",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_file_name"
+          }
+        }
       }
     ],
     "parameters": {

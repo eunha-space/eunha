@@ -26,7 +26,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use rand::TryRngCore;
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 
 /// PBKDF2 iterations, from `ActiveSupport::KeyGenerator`'s default.
@@ -125,7 +125,7 @@ impl Encryptor {
         };
 
         let mut iv = [0u8; 12];
-        rand::rngs::OsRng
+        rand::rngs::SysRng
             .try_fill_bytes(&mut iv)
             .map_err(|e| anyhow!("could not generate an IV: {e}"))?;
 
@@ -220,7 +220,7 @@ impl Encryptor {
 /// and salt, not as key material directly, so its length is a matter of
 /// entropy rather than of the cipher.
 pub fn generate_secret() -> String {
-    use rand::Rng as _;
+    use rand::RngExt as _;
 
     rand::rng()
         .sample_iter(rand::distr::Alphanumeric)

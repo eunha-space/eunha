@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "languages",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,17 +6,30 @@
       {
         "ordinal": 0,
         "name": "context",
-        "type_info": "VarcharArray"
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "context"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "expires_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "expires_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "action!",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {

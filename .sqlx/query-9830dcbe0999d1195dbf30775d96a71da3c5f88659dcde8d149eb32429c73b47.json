@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "uri?",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "inbox_url",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "inbox_url"
+          }
+        }
       }
     ],
     "parameters": {

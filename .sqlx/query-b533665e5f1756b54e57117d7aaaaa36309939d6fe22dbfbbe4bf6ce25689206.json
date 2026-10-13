@@ -6,17 +6,25 @@
       {
         "ordinal": 0,
         "name": "resource_owner_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_access_grants",
+            "name": "resource_owner_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "scopes!",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": "Expression"
       },
       {
         "ordinal": 2,
         "name": "revoked!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
