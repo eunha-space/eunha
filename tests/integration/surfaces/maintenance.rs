@@ -26,12 +26,17 @@ async fn insert_status(ctx: &TestContext, account_id: i64, id: i64, visibility: 
     .unwrap();
 }
 
+/// Whether a post is deleted: discarded, or already destroyed by the
+/// `RemovalWorker` that discarding it queued, which runs in a task of its own
+/// and so may or may not have by the time this asks.
 async fn deleted(ctx: &TestContext, id: i64) -> bool {
-    sqlx::query_scalar::<_, bool>("SELECT deleted_at IS NOT NULL FROM statuses WHERE id = $1")
-        .bind(id)
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap()
+    sqlx::query_scalar::<_, bool>(
+        "SELECT NOT EXISTS (SELECT 1 FROM statuses WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
 }
 
 /// A policy deletes the old posts it does not keep, and a post it kept for

@@ -617,7 +617,20 @@ impl Drop for TestContext {
         let db_name = self.test_db_name.clone();
         // Drop the per-test database on a separate thread (we can't block the
         // async runtime in Drop). FORCE terminates any lingering connections.
-        let _ = std::thread::spawn(move || {
+        //
+        // Wait for it only so long. `DROP DATABASE` waits for every backend
+        // on the server to absorb a barrier, and a backend still
+        // authenticating does not until it finishes or `authentication_timeout`
+        // (60s) passes. If one of this test's pools is opening a connection,
+        // blocking here stops this runtime from finishing that handshake, so
+        // the drop waits on the test and the test on the drop, and every
+        // other test's `CREATE DATABASE` waits with them: in CI, where the
+        // handshake takes a password, a minute at a time. Returning instead
+        // lets the runtime end, which closes the half-open connection and
+        // lets the drop finish, unless the process exits first and leaves
+        // the database behind.
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
             let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -640,8 +653,9 @@ impl Drop for TestContext {
                     }
                 }
             });
-        })
-        .join();
+            let _ = done.send(());
+        });
+        let _ = finished.recv_timeout(std::time::Duration::from_secs(3));
     }
 }
 

@@ -339,22 +339,6 @@ async fn test_a_new_actor_is_stored_as_mastodon_stores_it() {
         .public_key
         .starts_with("-----BEGIN PUBLIC KEY-----\nMCow"));
 
-    let stats = sqlx::query!(
-        "SELECT statuses_count, following_count, followers_count FROM account_stats WHERE account_id = $1",
-        id
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
-    assert_eq!(
-        (
-            stats.statuses_count,
-            stats.following_count,
-            stats.followers_count
-        ),
-        (42, 3, 7)
-    );
-
     let emoji = sqlx::query!(
         "SELECT image_remote_url, uri FROM custom_emojis WHERE shortcode = 'blobcat' AND domain = $1",
         server.host
@@ -385,6 +369,25 @@ async fn test_a_new_actor_is_stored_as_mastodon_stores_it() {
             == 1
     })
     .await;
+    // The outbox's 42, and the pinned post once it is stored: Mastodon counts
+    // every status it stores (`Status#increment_counter_caches`). Read only
+    // after the pinned post is in, since it is fetched by a job of its own.
+    let stats = sqlx::query!(
+        "SELECT statuses_count, following_count, followers_count FROM account_stats WHERE account_id = $1",
+        id
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            stats.statuses_count,
+            stats.following_count,
+            stats.followers_count
+        ),
+        (43, 3, 7)
+    );
+
     eventually("the featured hashtag", async || {
         sqlx::query_scalar::<_, String>(
             "SELECT ft.name FROM featured_tags ft WHERE ft.account_id = $1",
