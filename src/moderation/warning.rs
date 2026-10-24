@@ -1,5 +1,7 @@
 //! `AccountWarning`: a strike against an account, which the account is shown
 //! and can appeal.
+//!
+//! Mastodon: app/models/account_warning.rb
 
 use serde_json::{json, Value};
 

@@ -1,6 +1,10 @@
 //! Admin webhooks: `TriggerWebhookWorker`, `WebhookService` and
 //! `Webhooks::DeliveryWorker`. An enabled `webhooks` row subscribed to an
 //! event gets a signed POST of the event and the object it is about.
+//!
+//! Mastodon: app/workers/trigger_webhook_worker.rb
+//! Mastodon: app/services/webhook_service.rb
+//! Mastodon: app/workers/webhooks/delivery_worker.rb
 
 use serde_json::{json, Value};
 

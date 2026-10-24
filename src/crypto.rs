@@ -1,3 +1,7 @@
+//! Password hashing, random tokens and signed messages.
+//!
+//! Mastodon: none
+
 use crate::error::{AppError, AppResult};
 
 /// Run deliberately expensive work — a password hash takes tens of

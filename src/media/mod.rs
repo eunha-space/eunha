@@ -1,3 +1,7 @@
+//! Media storage: the bucket, and the keys Paperclip stores files under.
+//!
+//! Mastodon: config/initializers/paperclip.rb
+
 use uuid::Uuid;
 
 use crate::{

@@ -1,5 +1,8 @@
 //! `Admin::RelationshipsController` and `RelationshipFilter`: whom an account
 //! follows, who follows it, and whom it invited, as a moderator sees them.
+//!
+//! Mastodon: app/controllers/admin/relationships_controller.rb
+//! Mastodon: app/models/relationship_filter.rb
 
 use axum::{
     extract::{Extension, Path},

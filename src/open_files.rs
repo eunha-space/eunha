@@ -7,6 +7,8 @@
 //! opens — a database connection no more than a delivery. The hard limit is
 //! far higher, and a process may raise its own soft limit up to it, so eunha
 //! does, rather than depend on every deployment's service definition.
+//!
+//! Mastodon: none
 
 /// Below this, the limit is low for a process delivering a fan-out.
 pub const COMFORTABLE: u64 = 4096;

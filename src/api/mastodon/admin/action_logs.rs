@@ -1,5 +1,10 @@
 //! `Admin::ActionLogsController` and `Admin::ActionLogFilter`: the audit log,
 //! each entry worded as Mastodon's admin page words it.
+//!
+//! Mastodon: app/controllers/admin/action_logs_controller.rb
+//! Mastodon: app/models/admin/action_log_filter.rb
+//! Mastodon: app/helpers/admin/action_logs_helper.rb
+//! Mastodon: app/views/admin/action_logs/_action_log.html.haml
 
 use axum::{
     extract::{Extension, Path},

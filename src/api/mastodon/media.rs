@@ -2,6 +2,13 @@
 //! `MediaAttachment`'s processing of what they are given: a file, and for
 //! audio and video a thumbnail, validated, processed and stored as
 //! Paperclip stores them.
+//!
+//! Mastodon: app/controllers/api/v1/media_controller.rb
+//! Mastodon: app/controllers/api/v2/media_controller.rb
+//! Mastodon: app/models/media_attachment.rb
+//! Mastodon: app/serializers/rest/media_attachment_serializer.rb
+//! Mastodon: app/workers/post_process_media_worker.rb
+//! Mastodon: app/controllers/media_proxy_controller.rb
 
 use super::{
     convert::media_from_db,

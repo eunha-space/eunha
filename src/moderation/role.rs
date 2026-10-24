@@ -1,4 +1,6 @@
 //! Mastodon's `UserRole`, and the role a policy check judges by.
+//!
+//! Mastodon: app/models/user_role.rb
 
 use sqlx::PgPool;
 

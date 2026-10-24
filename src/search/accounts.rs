@@ -2,6 +2,9 @@
 //! `user@domain`, then ranked results — from Elasticsearch when the instance
 //! has it, from PostgreSQL's text search (`Account.search_for` and
 //! `Account.advanced_search_for`) otherwise, or when Elasticsearch fails.
+//!
+//! Mastodon: app/services/account_search_service.rb
+//! Mastodon: app/models/concerns/account/search.rb
 
 use std::sync::LazyLock;
 

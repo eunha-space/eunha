@@ -60,12 +60,54 @@ schema DSL. That needs Ruby, but not Mastodon: `activerecord` and `pg`, not its
 thousand-gem bundle.
 
 
+Counterparts
+------------
+
+Eunha is laid out by feature and Mastodon by Rails layer, so one eunha module
+often stands for a controller, a service, a worker and a serializer upstream.
+Rather than mirror Mastodon's directories, every Rust file under *src/* names
+its counterparts at the end of its module documentation:
+
+~~~~ rust
+//! Mastodon: app/services/remove_status_service.rb
+//! Mastodon: app/workers/removal_worker.rb
+~~~~
+
+Each line holds one or more comma-separated paths in the Mastodon repository;
+a path ending in `/` names a directory. A module with no counterpart says
+`//! Mastodon: none`, so that every module has declared one or the other.
+
+`cargo test` holds the headers to the tracked release: every module must have
+one, and every path must be in *mastodon/files.txt*, the server-side tree of
+that release (`app/` without its web client, `config/` without translations,
+`lib/`, `streaming/` and `db/views/`). The file starts with the tag it was
+recorded from, and the suite fails when that is not the tracked release, so
+adopting one means recording it again, and a header naming a file upstream
+renamed or deleted fails until it is corrected.
+
+Read the other way round, the headers answer what a release touches:
+
+~~~~
+mise run mastodon:changes --to v4.8.0
+~~~~
+
+lists every server file changed between the tracked release and the target,
+under each eunha module that names it, followed by the changed files no module
+names, which eunha does not implement. A rename is listed under its old path,
+the one headers name. Both this and `mise run mastodon:files` read a local
+Mastodon checkout (`$MASTODON_REPO`, or *~/Git/mastodon*; `--repo` for
+another), fetching its tags if it lacks one, because a release's diff runs to
+more files than GitHub's compare API returns.
+
+
 Adopting a release
 ------------------
 
 1.  `mise run mastodon:plan --to vX.Y.Z` lists the Rails migrations upstream
     added since the tracked release, and the deliberate divergences that now
-    need re-examining against it.
+    need re-examining against it. `mise run mastodon:changes --to vX.Y.Z`
+    lists the eunha modules whose counterparts changed, which is the
+    behavioural side of the same question.
 
 2.  Write one eunha migration reproducing them, ending with an
     `INSERT INTO public.schema_migrations` of the versions it covers — a
@@ -75,7 +117,8 @@ Adopting a release
 
 3.  Update `mastodon.toml` and `Cargo.toml`, replace `mastodon/schema.rb` with
     that release's, and run `mise run schema:build-reference`. The reference's
-    diff is the schema delta you are adopting.
+    diff is the schema delta you are adopting. Run `mise run mastodon:files`
+    too, and correct any header that names a path the release no longer has.
 
 4.  Re-examine each divergence and move its `reviewed_for` forward in
     `divergences.toml`; the suite fails until every entry has been looked at.

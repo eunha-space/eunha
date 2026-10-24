@@ -1,6 +1,10 @@
 //! `Admin::StatusesController`, `Admin::StatusFilter` and
 //! `Admin::StatusBatchAction`: an account's posts as a moderator sees them,
 //! and gathering some of them into a report.
+//!
+//! Mastodon: app/controllers/admin/statuses_controller.rb
+//! Mastodon: app/models/admin/status_filter.rb
+//! Mastodon: app/models/admin/status_batch_action.rb
 
 use axum::{
     extract::{Extension, Path},

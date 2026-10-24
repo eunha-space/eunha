@@ -1,6 +1,10 @@
 //! `Api::V1::Accounts::EmailSubscriptionsController`, and the pages a
 //! subscriber reaches from their email: `EmailSubscriptions::ConfirmationsController`
 //! and `UnsubscriptionsController`. See [`crate::email_subscriptions`].
+//!
+//! Mastodon: app/controllers/api/v1/accounts/email_subscriptions_controller.rb
+//! Mastodon: app/controllers/email_subscriptions/confirmations_controller.rb
+//! Mastodon: app/controllers/unsubscriptions_controller.rb
 
 use axum::{
     extract::{Path, Query},

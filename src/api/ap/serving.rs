@@ -20,6 +20,22 @@
 //! ojak, with the keys eunha already holds in `accounts` tried first, and
 //! handed to eunha's own dispatcher (`super::inbox::received`) reduced to
 //! what its sender can vouch for.
+//!
+//! Mastodon: app/controllers/accounts_controller.rb
+//! Mastodon: app/controllers/statuses_controller.rb
+//! Mastodon: app/controllers/activitypub/outboxes_controller.rb
+//! Mastodon: app/controllers/activitypub/collections_controller.rb
+//! Mastodon: app/controllers/activitypub/inboxes_controller.rb
+//! Mastodon: app/controllers/follower_accounts_controller.rb
+//! Mastodon: app/controllers/following_accounts_controller.rb
+//! Mastodon: app/controllers/instance_actors_controller.rb
+//! Mastodon: app/controllers/emojis_controller.rb
+//! Mastodon: app/controllers/well_known/webfinger_controller.rb
+//! Mastodon: app/controllers/well_known/host_meta_controller.rb
+//! Mastodon: app/controllers/well_known/node_info_controller.rb
+//! Mastodon: app/controllers/concerns/signature_verification.rb
+//! Mastodon: app/serializers/webfinger_serializer.rb
+//! Mastodon: app/serializers/node_info/serializer.rb
 
 use ojak::federation::{
     Access, ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Signing,

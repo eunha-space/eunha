@@ -2,6 +2,8 @@
 //! a `Create` and an `Update` both need: which objects are statuses at all,
 //! how one of the converted kinds (an `Article`, a `Video`, …) becomes a
 //! status's text, and the counts a remote server reports for it.
+//!
+//! Mastodon: app/lib/activitypub/parser/status_parser.rb
 
 use serde_json::Value;
 

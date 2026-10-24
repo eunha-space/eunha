@@ -3,6 +3,9 @@
 //! Turns database status rows into Mastodon API `Status` entities and batch-
 //! hydrates the associated media, reblogs, quotes, polls, tags, mentions,
 //! emojis, cards and counters. Split out of `accounts.rs`.
+//!
+//! Mastodon: app/serializers/rest/status_serializer.rb
+//! Mastodon: app/presenters/status_relationships_presenter.rb
 
 use super::accounts::{
     batch_account_stats, fetch_account, fetch_account_emojis, fetch_account_roles,

@@ -1,5 +1,7 @@
 //! Mastodon's `TagSearchService`: hashtags by name, from Elasticsearch when
 //! the instance has it, otherwise (or when it fails) `Tag.search_for`.
+//!
+//! Mastodon: app/services/tag_search_service.rb, app/models/tag.rb
 
 use unicode_normalization::UnicodeNormalization;
 

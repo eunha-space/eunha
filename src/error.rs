@@ -1,3 +1,9 @@
+//! The errors a request handler returns, and the JSON error bodies they
+//! answer with.
+//!
+//! Mastodon: app/controllers/concerns/api/error_handling.rb
+//! Mastodon: app/controllers/api/base_controller.rb
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},

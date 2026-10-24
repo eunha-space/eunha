@@ -1,5 +1,10 @@
 //! `Admin::UsernameBlocksController`: the usernames sign-ups may not take, or
 //! may take only with approval.
+//!
+//! Mastodon: app/controllers/admin/username_blocks_controller.rb
+//! Mastodon: app/models/username_block.rb
+//! Mastodon: app/models/form/username_block_batch.rb
+//! Mastodon: app/policies/username_block_policy.rb
 
 use axum::{
     extract::{Extension, Path},

@@ -8,6 +8,9 @@
 //! codes, turning it off — asks for the password with the request, as do the
 //! security key changes, which a session-less API would otherwise leave to
 //! any token with `write:accounts`.
+//!
+//! Mastodon: app/controllers/settings/two_factor_authentication_methods_controller.rb
+//! Mastodon: app/controllers/settings/two_factor_authentication/
 
 use axum::{
     extract::Path,

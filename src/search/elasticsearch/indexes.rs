@@ -1,5 +1,7 @@
 //! Mastodon's Chewy indexes (*app/chewy/*): their names, settings,
 //! analyzers and mappings, as Chewy sends them when it creates an index.
+//!
+//! Mastodon: app/chewy/
 
 use serde_json::{json, Value};
 

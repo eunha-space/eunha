@@ -8,6 +8,11 @@
 //! on S3 with `S3_PERMISSION` set or on the filesystem; eunha's bucket serves
 //! objects without per-object ACLs, which is the `S3_PERMISSION=''` case it
 //! returns early for.
+//!
+//! Mastodon: app/services/suspend_account_service.rb
+//! Mastodon: app/services/unsuspend_account_service.rb
+//! Mastodon: app/workers/admin/suspension_worker.rb
+//! Mastodon: app/workers/admin/unsuspension_worker.rb
 
 use anyhow::Result;
 

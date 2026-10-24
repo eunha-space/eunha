@@ -1,3 +1,11 @@
+//! Polls: showing one and voting in it.
+//!
+//! Mastodon: app/controllers/api/v1/polls_controller.rb
+//! Mastodon: app/controllers/api/v1/polls/votes_controller.rb
+//! Mastodon: app/serializers/rest/poll_serializer.rb
+//! Mastodon: app/services/vote_service.rb
+//! Mastodon: app/workers/poll_expiration_notify_worker.rb
+
 use axum::extract::{Extension, Json, Path};
 use serde::Deserialize;
 

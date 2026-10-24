@@ -1,5 +1,10 @@
 //! Creating statuses: `POST /api/v1/statuses`, including multipart/form
 //! parsing, poll/media/quote assembly, scheduling, and federation.
+//!
+//! Mastodon: app/controllers/api/v1/statuses_controller.rb
+//! Mastodon: app/services/post_status_service.rb
+//! Mastodon: app/services/process_mentions_service.rb
+//! Mastodon: app/services/process_hashtags_service.rb
 
 use super::*;
 

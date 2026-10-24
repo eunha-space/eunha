@@ -1,3 +1,13 @@
+//! Featured hashtags: listing, featuring and unfeaturing them, and the
+//! suggestions.
+//!
+//! Mastodon: app/controllers/api/v1/featured_tags_controller.rb
+//! Mastodon: app/controllers/api/v1/featured_tags/suggestions_controller.rb
+//! Mastodon: app/controllers/api/v1/tags_controller.rb
+//! Mastodon: app/serializers/rest/featured_tag_serializer.rb
+//! Mastodon: app/services/create_featured_tag_service.rb
+//! Mastodon: app/services/remove_featured_tag_service.rb
+
 use axum::{
     extract::{Extension, Path},
     Json,

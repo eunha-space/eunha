@@ -1,6 +1,8 @@
 //! Mastodon's `Scheduler::CollectionItemCleanupScheduler`: every hour, the
 //! collection items that were rejected or revoked more than a day ago are
 //! deleted.
+//!
+//! Mastodon: app/workers/scheduler/collection_item_cleanup_scheduler.rb
 
 /// `RETENTION_PERIOD`, 24 hours.
 const RETENTION_HOURS: i32 = 24;

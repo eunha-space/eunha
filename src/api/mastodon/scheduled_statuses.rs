@@ -1,3 +1,8 @@
+//! Scheduled posts: listing, rescheduling and cancelling them.
+//!
+//! Mastodon: app/controllers/api/v1/scheduled_statuses_controller.rb
+//! Mastodon: app/serializers/rest/scheduled_status_serializer.rb
+
 use crate::{
     error::{AppError, AppResult},
     middleware::AuthenticatedUser,

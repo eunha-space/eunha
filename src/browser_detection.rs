@@ -2,6 +2,8 @@
 //! `BrowserDetection` asks the `browser` gem. Only the identifiers Mastodon
 //! has names for (`sessions.browsers.*` and `sessions.platforms.*`) are told
 //! apart; everything else is `generic` on `unknown_platform`.
+//!
+//! Mastodon: app/models/concerns/browser_detection.rb
 
 /// `(browser id, platform id)`.
 pub fn detect(user_agent: &str) -> (&'static str, &'static str) {

@@ -1,5 +1,9 @@
 //! `Admin::DashboardController#index`: the counts of what waits for a
 //! moderator, and `Admin::SystemCheck`, for `view_dashboard`.
+//!
+//! Mastodon: app/controllers/admin/dashboard_controller.rb
+//! Mastodon: app/lib/admin/system_check.rb, app/lib/admin/system_check/
+//! Mastodon: app/policies/dashboard_policy.rb
 
 use axum::{extract::Extension, Json};
 use serde::Serialize;

@@ -18,6 +18,8 @@
 //!
 //! Tests run jobs as soon as they are queued, in a task of their own
 //! ([`Mode::Immediate`]), or leave them queued and [`drain`] them.
+//!
+//! Mastodon: config/sidekiq.yml, config/initializers/sidekiq.rb
 
 mod registry;
 

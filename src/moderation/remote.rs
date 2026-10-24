@@ -1,6 +1,9 @@
 //! A remote account's own server suspending it, as `ActivityPub::
 //! ProcessAccountService#set_suspension!` reads it from the actor's
 //! `suspended` property.
+//!
+//! Mastodon: app/services/activitypub/process_account_service.rb
+//! Mastodon: app/services/unsuspend_account_service.rb
 
 use anyhow::Result;
 

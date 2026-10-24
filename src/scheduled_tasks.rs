@@ -43,6 +43,8 @@
 //! instance's memory of what it has done: losing them to an eviction or a
 //! flushed Redis would make every task run at once, and every process serving
 //! an instance shares its database.
+//!
+//! Mastodon: config/sidekiq.yml
 
 use std::future::Future;
 use std::time::Duration;

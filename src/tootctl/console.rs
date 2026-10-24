@@ -1,6 +1,8 @@
 //! Where `eunha accounts`, `domains`, `emoji` and `maintenance` say what they
 //! do and ask what they have to: a [`Console`], so that the tests can read it
 //! and answer its questions; the terminal is [`Terminal`].
+//!
+//! Mastodon: lib/mastodon/cli/base.rb
 
 use std::collections::VecDeque;
 use std::future::Future;

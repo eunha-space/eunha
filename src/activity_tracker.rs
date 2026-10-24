@@ -9,6 +9,8 @@
 //! in), `activity:accounts:local` (sign-ups), `activity:statuses:local` (local
 //! public and unlisted posts) and `activity:interactions` (favourites, boosts,
 //! follows, poll votes, and replies to someone else).
+//!
+//! Mastodon: app/lib/activity_tracker.rb
 
 use chrono::{Datelike, NaiveDate};
 

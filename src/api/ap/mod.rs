@@ -1,3 +1,8 @@
+//! ActivityPub URIs opened in a browser, which are sent on to the pages they
+//! name.
+//!
+//! Mastodon: config/routes.rb
+
 pub mod collections;
 pub mod context_helper;
 pub mod featured_tags;

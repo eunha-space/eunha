@@ -21,6 +21,10 @@
 //! The media of a status that is kept would be made private
 //! (`UpdateMediaAttachmentsPermissionsService`), which eunha's storage, with no
 //! per-object permissions, has nothing to do for.
+//!
+//! Mastodon: app/services/remove_status_service.rb
+//! Mastodon: app/workers/removal_worker.rb
+//! Mastodon: app/workers/scheduler/user_cleanup_scheduler.rb
 
 use anyhow::{Context, Result};
 use chrono::NaiveDateTime;

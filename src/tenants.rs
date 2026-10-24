@@ -38,6 +38,8 @@
 //! A running process can be handed a new set of tenants with
 //! [`Tenants::reload`] — `eunha` does so on `SIGHUP` — which starts, restarts
 //! and stops only the tenants that changed, while the rest serve on.
+//!
+//! Mastodon: none
 
 use crate::{config, migrate, state::AppState};
 use anyhow::{Context as _, Result};

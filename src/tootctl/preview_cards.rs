@@ -1,4 +1,6 @@
 //! `tootctl preview_cards`: `Mastodon::CLI::PreviewCards`.
+//!
+//! Mastodon: lib/mastodon/cli/preview_cards.rb
 
 use crate::state::AppState;
 

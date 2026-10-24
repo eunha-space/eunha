@@ -1,3 +1,9 @@
+//! Sending mail: the SMTP sender, the mail queue, and the mails eunha writes.
+//!
+//! Mastodon: app/mailers/application_mailer.rb, app/mailers/user_mailer.rb
+//! Mastodon: app/mailers/admin_mailer.rb, app/mailers/notification_mailer.rb
+//! Mastodon: app/mailers/email_subscription_mailer.rb
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 

@@ -1,3 +1,7 @@
+//! The locale eunha's own server-rendered pages are shown in.
+//!
+//! Mastodon: none
+
 /// Two-locale support (en / ko) for server-rendered pages.
 
 #[derive(Debug, Clone, Copy, PartialEq)]

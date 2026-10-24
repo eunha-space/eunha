@@ -3,6 +3,9 @@
 //! passed on. The delivery side (enabled relays in `StatusReachFinder` and
 //! `AccountReachFinder`) is in [`crate::federation::delivery`]; this is
 //! following and unfollowing one, and what its answer does.
+//!
+//! Mastodon: app/models/relay.rb, app/lib/activitypub/activity/accept.rb
+//! Mastodon: app/lib/activitypub/activity/reject.rb
 
 use serde_json::json;
 

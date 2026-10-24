@@ -5,6 +5,8 @@
 //! `manage_email_subscriptions` while the feature is enabled, beside the
 //! count of confirmed subscribers. Mastodon has no API for it, and eunha's
 //! settings page is part of a single-page app, so it is served here.
+//!
+//! Mastodon: app/controllers/settings/privacy_controller.rb
 
 use axum::{routing::get, Extension, Json, Router};
 use serde::{Deserialize, Serialize};

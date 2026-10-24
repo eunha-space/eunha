@@ -2,6 +2,9 @@
 //! disabling its login, marking its media sensitive, limiting it or suspending
 //! it — with the strike, audit log entries, report resolutions and
 //! notifications that come with it.
+//!
+//! Mastodon: app/models/admin/account_action.rb
+//! Mastodon: app/models/admin/base_action.rb
 
 use crate::db::models::Account;
 use crate::error::{AppError, AppResult};

@@ -13,6 +13,15 @@
 //! another's. Its items are taken on as pending, naming only the account they
 //! feature (`object_uri`), and accepted once the `FeatureAuthorization` the
 //! featured account gave is fetched from that account's host and holds.
+//!
+//! Mastodon: app/services/activitypub/process_featured_collection_service.rb
+//! Mastodon: app/services/activitypub/process_featured_item_service.rb
+//! Mastodon: app/services/activitypub/verify_featured_item_service.rb
+//! Mastodon: app/services/activitypub/fetch_remote_featured_collection_service.rb
+//! Mastodon: app/workers/activitypub/process_featured_item_worker.rb
+//! Mastodon: app/workers/activitypub/verify_featured_item_worker.rb
+//! Mastodon: app/workers/scheduler/repair_remote_collections_scheduler.rb
+//! Mastodon: app/policies/account_policy.rb
 
 use std::time::Duration;
 

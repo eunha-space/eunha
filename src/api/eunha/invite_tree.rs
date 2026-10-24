@@ -1,3 +1,7 @@
+//! The invite tree: who invited whom among an instance's local members.
+//!
+//! Mastodon: none
+
 use axum::{Extension, Json};
 use serde::Serialize;
 use std::collections::HashMap;

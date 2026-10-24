@@ -3,6 +3,10 @@
 //! remote actor asks to quote a local status (`QuoteRequest`), our answer,
 //! and theirs to ours; and a quote's stamp taken back (`Delete` of a
 //! `QuoteAuthorization`). Feature requests are in `super::feature`.
+//!
+//! Mastodon: app/services/activitypub/verify_quote_service.rb
+//! Mastodon: app/lib/activitypub/activity/quote_request.rb
+//! Mastodon: app/workers/activitypub/refetch_and_verify_quote_worker.rb
 
 use serde_json::{json, Value};
 

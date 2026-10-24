@@ -1,5 +1,7 @@
 //! `Lockable#with_redis_lock`: a best-effort Redis lock, held for as long as
 //! its guard lives.
+//!
+//! Mastodon: app/models/concerns/lockable.rb
 
 use crate::state::AppState;
 

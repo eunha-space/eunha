@@ -12,6 +12,8 @@
 //!
 //! The caller is responsible for the document being the actor's own: fetched
 //! from the origin of its `id`, or delivered by it.
+//!
+//! Mastodon: app/services/activitypub/process_account_service.rb
 
 use std::time::Duration;
 

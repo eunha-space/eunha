@@ -15,6 +15,9 @@
 //! changes. The one exception is a WebP that needs no transform: the encoder
 //! here writes only lossless WebP, which would multiply a lossy photo's size,
 //! so its metadata chunks are removed instead.
+//!
+//! Mastodon: lib/paperclip/vips_lazy_thumbnail.rb
+//! Mastodon: app/models/media_attachment.rb
 
 use std::io::Cursor;
 

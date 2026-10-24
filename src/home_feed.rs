@@ -21,6 +21,11 @@
 //! lost, answers what it holds, as Mastodon's does. The merges and
 //! unmerges a follow, an unfollow, an unmute or a list change queue are
 //! [`MergeWorker`] and [`UnmergeWorker`].
+//!
+//! Mastodon: app/models/home_feed.rb, app/workers/regeneration_worker.rb
+//! Mastodon: app/services/precompute_feed_service.rb
+//! Mastodon: app/workers/merge_worker.rb
+//! Mastodon: app/workers/unmerge_worker.rb
 
 use crate::async_refresh::{self, AsyncRefresh};
 use crate::state::AppState;

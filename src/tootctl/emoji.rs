@@ -1,6 +1,8 @@
 //! `tootctl emoji` (`Mastodon::CLI::Emoji`): custom emoji packs in and out of
 //! the instance, as gzipped tarballs of PNG and GIF files named for their
 //! shortcodes.
+//!
+//! Mastodon: lib/mastodon/cli/emoji.rb
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};

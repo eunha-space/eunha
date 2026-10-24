@@ -1,5 +1,10 @@
 //! Follow requests: list pending inbound follow requests and authorize or
 //! reject them (updating relationships and notifying via federation).
+//!
+//! Mastodon: app/controllers/api/v1/follow_requests_controller.rb
+//! Mastodon: app/services/authorize_follow_service.rb
+//! Mastodon: app/services/reject_follow_service.rb
+//! Mastodon: app/workers/authorize_follow_worker.rb
 
 use super::*;
 

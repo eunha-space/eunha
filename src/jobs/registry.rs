@@ -1,4 +1,6 @@
 //! Every worker a queued job may name, by its class name.
+//!
+//! Mastodon: none
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

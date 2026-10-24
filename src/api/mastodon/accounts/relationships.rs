@@ -1,5 +1,13 @@
 //! Relationships: `/relationships`, follow/unfollow (with reblog/notify/
 //! languages settings and federation), and the followers/following lists.
+//!
+//! Mastodon: app/controllers/api/v1/accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/relationships_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/follower_accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/following_accounts_controller.rb
+//! Mastodon: app/services/follow_service.rb, app/services/unfollow_service.rb
+//! Mastodon: app/serializers/rest/relationship_serializer.rb
+//! Mastodon: app/presenters/account_relationships_presenter.rb
 
 use super::*;
 

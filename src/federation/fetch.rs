@@ -6,6 +6,8 @@
 //! require signatures simply ignore them. The fetcher follows redirects
 //! itself, checking each hop and signing it again for where it goes, and
 //! retries a refused signature once in the other scheme.
+//!
+//! Mastodon: app/lib/request.rb
 
 use serde_json::Value;
 

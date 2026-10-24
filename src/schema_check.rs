@@ -3,6 +3,8 @@
 //! "Drop-in replacement on top of your existing Mastodon database" only holds
 //! if the two schemas are the same object, so this reads the database back out
 //! of Postgres and diffs it against upstream's `db/schema.rb`.
+//!
+//! Mastodon: none
 
 use std::collections::BTreeSet;
 

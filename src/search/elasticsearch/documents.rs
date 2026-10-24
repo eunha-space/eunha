@@ -4,6 +4,8 @@
 //! [`bulk_lines`] is Chewy's `import!(ids)`: a row in the index scope is
 //! indexed, and an id that is not (deleted, suspended, no longer public, no
 //! longer interacted with) is deleted from the index.
+//!
+//! Mastodon: app/chewy/
 
 use std::sync::LazyLock;
 

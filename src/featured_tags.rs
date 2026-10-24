@@ -11,6 +11,9 @@
 //! count out the tags an edit took away, and `RemoveStatusService` the tags of
 //! a post it removes (`FeaturedTag#decrement`). Only the newest post's date is
 //! ever looked up again, and only when the post going was the newest.
+//!
+//! Mastodon: app/models/featured_tag.rb
+//! Mastodon: app/services/process_hashtags_service.rb
 
 use chrono::NaiveDateTime;
 use sqlx::PgPool;

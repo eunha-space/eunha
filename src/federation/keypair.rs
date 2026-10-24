@@ -12,6 +12,8 @@
 //! a private key eunha wrote in the clear is one a Mastodon pointed at the same
 //! database could not read. Without them configured, eunha keeps using the
 //! legacy columns, which both implementations still understand.
+//!
+//! Mastodon: app/models/keypair.rb
 
 use anyhow::{anyhow, Context, Result};
 

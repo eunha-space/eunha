@@ -1,5 +1,7 @@
 //! Moderation: Mastodon's roles and policies, the admin action log, account
 //! actions and strikes, and what suspending an account sets in motion.
+//!
+//! Mastodon: none
 
 pub mod account_action;
 pub mod action_log;

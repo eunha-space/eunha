@@ -1,5 +1,9 @@
 //! `Admin::WebhooksController` and `Admin::Webhooks::SecretsController`, under
 //! `WebhookPolicy`. Like upstream's controllers, none of it is logged.
+//!
+//! Mastodon: app/controllers/admin/webhooks_controller.rb
+//! Mastodon: app/controllers/admin/webhooks/secrets_controller.rb
+//! Mastodon: app/models/webhook.rb, app/policies/webhook_policy.rb
 
 use axum::{
     extract::{Extension, Path},

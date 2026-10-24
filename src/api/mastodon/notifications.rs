@@ -1,3 +1,22 @@
+//! Notifications, v1 and grouped v2, notification requests and the
+//! notification policy.
+//!
+//! Mastodon: app/controllers/api/v1/notifications_controller.rb
+//! Mastodon: app/controllers/api/v2/notifications_controller.rb
+//! Mastodon: app/controllers/api/v2/notifications/accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/notifications/requests_controller.rb
+//! Mastodon: app/controllers/api/v1/notifications/policies_controller.rb
+//! Mastodon: app/controllers/api/v2/notifications/policies_controller.rb
+//! Mastodon: app/serializers/rest/notification_serializer.rb
+//! Mastodon: app/serializers/rest/notification_group_serializer.rb
+//! Mastodon: app/serializers/rest/notification_request_serializer.rb
+//! Mastodon: app/serializers/rest/notification_policy_serializer.rb
+//! Mastodon: app/serializers/rest/v1/notification_policy_serializer.rb
+//! Mastodon: app/presenters/grouped_notifications_presenter.rb
+//! Mastodon: app/services/accept_notification_request_service.rb
+//! Mastodon: app/services/dismiss_notification_request_service.rb
+//! Mastodon: app/workers/unfilter_notifications_worker.rb
+
 use axum::{
     extract::{Extension, Path, Query, RawQuery},
     http::{HeaderMap, Uri},

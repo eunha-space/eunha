@@ -9,6 +9,8 @@
 //! oldest first, the last one the post as it is; `HistoriesController`
 //! serves exactly those, or a snapshot built on the spot for a post never
 //! edited.
+//!
+//! Mastodon: app/models/concerns/status/snapshot_concern.rb
 
 use chrono::NaiveDateTime;
 use sqlx::PgConnection;

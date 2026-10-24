@@ -10,6 +10,8 @@
 //! re-examined against it. A divergence that was right against one release is
 //! not automatically right against the next, and upstream may have adopted the
 //! same idea, changed the thing being diverged from, or ruled it out.
+//!
+//! Mastodon: none
 
 use serde::Deserialize;
 

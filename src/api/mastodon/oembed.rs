@@ -1,3 +1,8 @@
+//! `GET /api/oembed`: the oEmbed document for a post.
+//!
+//! Mastodon: app/controllers/api/oembed_controller.rb
+//! Mastodon: app/serializers/oembed_serializer.rb
+
 use axum::{
     extract::{Extension, Query},
     Json,

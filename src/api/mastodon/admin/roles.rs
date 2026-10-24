@@ -1,5 +1,8 @@
 //! `Admin::RolesController`: creating, editing and deleting `user_roles`, as
 //! `UserRolePolicy` allows and `UserRole`'s validations accept.
+//!
+//! Mastodon: app/controllers/admin/roles_controller.rb, app/models/user_role.rb
+//! Mastodon: app/policies/user_role_policy.rb
 
 use axum::{
     extract::{Extension, Path},

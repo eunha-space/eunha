@@ -1,5 +1,12 @@
 //! `Api::V1::Admin::IpBlocksController`, `EmailDomainBlocksController` and
 //! `CanonicalEmailBlocksController`.
+//!
+//! Mastodon: app/controllers/api/v1/admin/ip_blocks_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/email_domain_blocks_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/canonical_email_blocks_controller.rb
+//! Mastodon: app/serializers/rest/admin/ip_block_serializer.rb
+//! Mastodon: app/serializers/rest/admin/email_domain_block_serializer.rb
+//! Mastodon: app/serializers/rest/admin/canonical_email_block_serializer.rb
 
 use axum::{
     extract::{Extension, Path},

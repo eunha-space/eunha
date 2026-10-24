@@ -5,6 +5,8 @@
 //! The palettes are libvips' `hist_find_ndim` with ten bins a channel, of the
 //! image shrunk to 100 pixels wide and of its edges; the distances are
 //! `ColorDiff.between`'s CIEDE2000, and the contrasts the W3C's.
+//!
+//! Mastodon: lib/paperclip/color_extractor.rb
 
 use image::{imageops::FilterType, DynamicImage, RgbImage};
 use serde_json::{json, Value};

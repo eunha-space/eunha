@@ -1,5 +1,9 @@
 //! `Admin::WarningPresetsController`: canned warning texts the account action
 //! form offers.
+//!
+//! Mastodon: app/controllers/admin/warning_presets_controller.rb
+//! Mastodon: app/models/account_warning_preset.rb
+//! Mastodon: app/policies/account_warning_preset_policy.rb
 
 use axum::{
     extract::{Extension, Path},

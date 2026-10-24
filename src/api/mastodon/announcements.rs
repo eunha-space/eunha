@@ -1,3 +1,11 @@
+//! Announcements: listing them, dismissing one, and reacting to one.
+//!
+//! Mastodon: app/controllers/api/v1/announcements_controller.rb
+//! Mastodon: app/controllers/api/v1/announcements/reactions_controller.rb
+//! Mastodon: app/serializers/rest/announcement_serializer.rb
+//! Mastodon: app/serializers/rest/reaction_serializer.rb
+//! Mastodon: app/workers/publish_announcement_reaction_worker.rb
+
 use axum::{
     extract::{Extension, Path},
     Json,

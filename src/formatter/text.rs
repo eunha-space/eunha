@@ -1,5 +1,7 @@
 //! Mastodon's `TextFormatter` (*app/lib/text_formatter.rb*): plain text from
 //! a local account turned into HTML, its URLs, hashtags and mentions linked.
+//!
+//! Mastodon: app/lib/text_formatter.rb
 
 use std::sync::LazyLock;
 

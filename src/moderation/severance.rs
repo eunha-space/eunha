@@ -1,5 +1,8 @@
 //! `RelationshipSeveranceEvent`: the follows a domain block cut, kept so the
 //! local accounts that lost them are told how many, and can see which.
+//!
+//! Mastodon: app/models/relationship_severance_event.rb
+//! Mastodon: app/models/account_relationship_severance_event.rb
 
 use serde_json::{json, Value};
 use sqlx::PgPool;

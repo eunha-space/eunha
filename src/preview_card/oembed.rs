@@ -1,5 +1,7 @@
 //! `FetchOEmbedService`: find a page's oEmbed endpoint, from a per-domain
 //! cache or the page's own `<link>`, and ask it about the page.
+//!
+//! Mastodon: app/services/fetch_oembed_service.rb
 
 use std::sync::LazyLock;
 

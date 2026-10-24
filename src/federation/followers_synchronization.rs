@@ -24,6 +24,13 @@
 //! An instance with `disable_followers_synchronization` set, Mastodon's
 //! `DISABLE_FOLLOWERS_SYNCHRONIZATION=true`, neither sends the header nor
 //! acts on one it receives.
+//!
+//! Mastodon: app/controllers/activitypub/followers_synchronizations_controller.rb
+//! Mastodon: app/services/activitypub/prepare_followers_synchronization_service.rb
+//! Mastodon: app/services/activitypub/synchronize_followers_service.rb
+//! Mastodon: app/workers/activitypub/followers_synchronization_worker.rb
+//! Mastodon: app/workers/activitypub/delivery_worker.rb
+//! Mastodon: app/models/concerns/account/interactions.rb
 
 use ojak::synchronization::{CollectionSynchronization, Digest};
 use serde_json::{json, Value};

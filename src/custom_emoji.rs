@@ -10,6 +10,8 @@
 //!
 //! A remote emoji is shown from `image_remote_url`, the server it came from:
 //! eunha keeps no copy of it (`remote-account-images-not-downloaded`).
+//!
+//! Mastodon: app/models/custom_emoji.rb
 
 use std::io::Cursor;
 

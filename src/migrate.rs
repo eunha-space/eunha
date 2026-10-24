@@ -10,6 +10,8 @@
 //! So `eunha migrate` applies them and exits, and startup only *checks*: an
 //! instance whose schema is behind its binary refuses to serve rather than
 //! quietly running queries against a shape that no longer matches.
+//!
+//! Mastodon: none
 
 use std::{
     collections::BTreeMap,

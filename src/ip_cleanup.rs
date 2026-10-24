@@ -10,6 +10,8 @@
 //!
 //! Mastodon reads both periods from `IP_RETENTION_PERIOD` and
 //! `SESSION_RETENTION_PERIOD`, a year unless set; eunha keeps the default.
+//!
+//! Mastodon: app/workers/scheduler/ip_cleanup_scheduler.rb
 
 use crate::state::AppState;
 

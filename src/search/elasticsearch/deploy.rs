@@ -12,6 +12,8 @@
 //! them at a time. Beyond what tootctl does, the last batch written is kept
 //! in Redis, so that `--resume` carries on an interrupted import from there
 //! instead of starting over.
+//!
+//! Mastodon: lib/mastodon/cli/search.rb, app/lib/importer/
 
 use futures::future::try_join_all;
 use serde_json::{json, Value};

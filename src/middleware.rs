@@ -1,3 +1,12 @@
+//! The middleware every request passes: its instance, its token, sign-in
+//! tracking, caching headers, the default locale and the API's gates.
+//!
+//! Mastodon: app/controllers/api/base_controller.rb
+//! Mastodon: app/controllers/concerns/user_tracking_concern.rb
+//! Mastodon: app/controllers/concerns/api/caching_concern.rb
+//! Mastodon: app/controllers/concerns/localized.rb
+//! Mastodon: config/initializers/doorkeeper.rb
+
 use axum::{
     extract::Request,
     middleware::Next,

@@ -1,3 +1,7 @@
+//! The eunha library: its modules, and the router every instance shares.
+//!
+//! Mastodon: config/routes.rb, config/application.rb
+
 pub mod accounts;
 pub mod activity_tracker;
 pub mod announcements;
@@ -9,6 +13,7 @@ pub mod browser_detection;
 pub mod collection_item_cleanup;
 pub mod config;
 pub mod conversation;
+pub mod counterparts;
 pub mod counters;
 pub mod crypto;
 pub mod custom_emoji;

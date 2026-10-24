@@ -1,3 +1,11 @@
+//! The admin API: what Mastodon's `Api::V1::Admin` controllers and its
+//! server-rendered admin pages do, under `/api/v1/admin/`.
+//!
+//! Mastodon: app/controllers/api/v1/admin/tags_controller.rb
+//! Mastodon: app/serializers/rest/admin/tag_serializer.rb
+//! Mastodon: app/lib/admin/metrics/dimension/software_versions_dimension.rb
+//! Mastodon: app/lib/admin/metrics/dimension/space_usage_dimension.rb
+
 use crate::{
     error::{AppError, AppResult},
     middleware::{AuthenticatedUser, ResolvedInstance},

@@ -1,6 +1,10 @@
 //! `Admin::SoftwareUpdatesController`: the releases newer than the one
 //! implemented, as the update check recorded them, for `view_devops`; a 404
 //! when the check is off.
+//!
+//! Mastodon: app/controllers/admin/software_updates_controller.rb
+//! Mastodon: app/models/software_update.rb
+//! Mastodon: app/policies/software_update_policy.rb
 
 use std::cmp::Ordering;
 

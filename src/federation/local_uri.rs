@@ -1,6 +1,8 @@
 //! `ActivityPub::TagManager#uri_to_actor` and `#uri_to_resource` without
 //! fetching: a URI on this instance's domain names a local account or status
 //! by its path; any other is looked up by the `uri` it was stored under.
+//!
+//! Mastodon: app/lib/activitypub/tag_manager.rb
 
 use crate::state::AppState;
 

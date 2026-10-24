@@ -2,6 +2,9 @@
 //! server, for `manage_invites`. Creating and expiring one are the invites
 //! API's own (`/api/v1/invites`), which already asks what Mastodon's
 //! controller asks.
+//!
+//! Mastodon: app/controllers/admin/invites_controller.rb
+//! Mastodon: app/models/invite_filter.rb, app/policies/invite_policy.rb
 
 use axum::{
     extract::{Extension, Query},

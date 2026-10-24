@@ -1,4 +1,7 @@
 //! `Admin::Disputes::AppealsController` and `Admin::AppealFilter`.
+//!
+//! Mastodon: app/controllers/admin/disputes/appeals_controller.rb
+//! Mastodon: app/models/admin/appeal_filter.rb, app/policies/appeal_policy.rb
 
 use axum::{
     extract::{Extension, Path},

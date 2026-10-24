@@ -3,6 +3,13 @@
 //! `SynchronizeFeaturedCollectionWorker`, `SynchronizeFeaturedTagsCollectionWorker`
 //! and `SynchronizeFeaturedCollectionsCollectionWorker` do after
 //! `ProcessAccountService` stores the actor.
+//!
+//! Mastodon: app/workers/activitypub/synchronize_featured_collection_worker.rb
+//! Mastodon: app/workers/activitypub/synchronize_featured_tags_collection_worker.rb
+//! Mastodon: app/workers/activitypub/synchronize_featured_collections_collection_worker.rb
+//! Mastodon: app/services/activitypub/fetch_featured_collection_service.rb
+//! Mastodon: app/services/activitypub/fetch_featured_tags_collection_service.rb
+//! Mastodon: app/services/activitypub/fetch_featured_collections_collection_service.rb
 
 use anyhow::Result;
 use serde_json::Value;

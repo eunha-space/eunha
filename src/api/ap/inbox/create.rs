@@ -1,6 +1,8 @@
 //! Inbound `Create` activities: ingesting a remote Note/Article/Question into a
 //! local status (with media, mentions, tags, polls and quote/reply linkage),
 //! fanning it out to timelines, and the `Create`-carried poll-vote path.
+//!
+//! Mastodon: app/lib/activitypub/activity/create.rb
 
 use serde_json::Value;
 

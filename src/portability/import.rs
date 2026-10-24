@@ -9,6 +9,12 @@
 //!
 //! A row that imported is deleted, as upstream deletes it; one that did not
 //! stays, which is what the failures file lists.
+//!
+//! Mastodon: app/models/form/import.rb, app/models/bulk_import.rb
+//! Mastodon: app/services/bulk_import_service.rb
+//! Mastodon: app/services/bulk_import_row_service.rb
+//! Mastodon: app/workers/bulk_import_worker.rb
+//! Mastodon: app/workers/import/row_worker.rb
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};

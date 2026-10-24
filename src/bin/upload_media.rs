@@ -1,3 +1,7 @@
+//! Uploads a Mastodon media tree into an instance's storage.
+//!
+//! Mastodon: none
+
 /// Uploads a Mastodon media tree into an instance's storage.
 ///
 /// The work is `eunha::import::upload_media`, which `eunha import-media` also

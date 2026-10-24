@@ -2,6 +2,8 @@
 //! extensions its ActivityPub serializers declare, and how
 //! `ActivityPub::Adapter` folds the ones a document used into its
 //! `@context`.
+//!
+//! Mastodon: app/helpers/context_helper.rb, app/lib/activitypub/adapter.rb
 
 use serde_json::{json, Map, Value};
 

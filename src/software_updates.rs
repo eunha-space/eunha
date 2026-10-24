@@ -20,6 +20,10 @@
 //! requests for one answer. What stays each instance's own is the recording:
 //! its `software_updates` and `software_deprecations` rows, and the mail to
 //! whoever it is that should hear.
+//!
+//! Mastodon: app/services/software_update_check_service.rb
+//! Mastodon: app/models/software_update.rb, app/models/software_deprecation.rb
+//! Mastodon: app/workers/scheduler/software_update_check_scheduler.rb
 
 use anyhow::{Context, Result};
 use serde::Deserialize;

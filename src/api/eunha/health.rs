@@ -1,3 +1,7 @@
+//! The health check a control plane polls.
+//!
+//! Mastodon: none
+
 use axum::Json;
 use serde::Serialize;
 

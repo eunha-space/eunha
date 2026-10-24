@@ -1,5 +1,7 @@
 //! `TagManager#normalize_domain`: a domain as Mastodon stores and compares
 //! it, wherever one is typed in or taken from a handle.
+//!
+//! Mastodon: app/lib/tag_manager.rb
 
 use ojak::origin::{normalize_host, Port};
 

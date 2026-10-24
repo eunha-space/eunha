@@ -1,3 +1,7 @@
+//! Rows of Mastodon's tables, and the integer enums stored in them.
+//!
+//! Mastodon: none
+
 use chrono::NaiveDateTime;
 use sqlx::FromRow;
 

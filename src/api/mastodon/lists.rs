@@ -1,3 +1,11 @@
+//! Lists: creating, editing and deleting them, and their members.
+//!
+//! Mastodon: app/controllers/api/v1/lists_controller.rb
+//! Mastodon: app/controllers/api/v1/lists/accounts_controller.rb
+//! Mastodon: app/serializers/rest/list_serializer.rb
+//! Mastodon: app/services/add_accounts_to_list_service.rb
+//! Mastodon: app/services/remove_accounts_from_list_service.rb
+
 use axum::{
     extract::{Extension, Json, Path, Query},
     http::{HeaderMap, Uri},

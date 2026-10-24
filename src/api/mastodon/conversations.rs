@@ -1,3 +1,11 @@
+//! Direct conversations: listing, reading and removing them, and keeping
+//! them up to date as posts arrive.
+//!
+//! Mastodon: app/controllers/api/v1/conversations_controller.rb
+//! Mastodon: app/serializers/rest/conversation_serializer.rb
+//! Mastodon: app/models/account_conversation.rb
+//! Mastodon: app/workers/push_conversation_worker.rb
+
 use axum::{
     extract::{Extension, Path, Query},
     http::{HeaderMap, Uri},

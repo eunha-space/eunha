@@ -7,6 +7,18 @@
 //! generated consent vocabulary as delivery-ready JSON, under a context that
 //! defines the consent terms, as Mastodon's `context_helper` does: a strict
 //! JSON-LD consumer drops a type its context does not define.
+//!
+//! Mastodon: app/serializers/activitypub/quote_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/feature_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/accept_quote_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/accept_feature_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/reject_quote_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/reject_feature_request_serializer.rb
+//! Mastodon: app/serializers/activitypub/quote_authorization_serializer.rb
+//! Mastodon: app/serializers/activitypub/feature_authorization_serializer.rb
+//! Mastodon: app/serializers/activitypub/delete_quote_authorization_serializer.rb
+//! Mastodon: app/serializers/activitypub/delete_feature_authorization_serializer.rb
+//! Mastodon: app/helpers/context_helper.rb
 
 use ojak_vocab as vocab;
 use serde_json::{json, Value};

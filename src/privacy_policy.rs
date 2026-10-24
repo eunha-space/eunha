@@ -2,6 +2,8 @@
 //! writes, or the policy Mastodon ships when that is blank. The instance
 //! configuration's `privacy_policy`, where eunha kept the policy before it
 //! read the setting, is read only by `eunha settings import-config`.
+//!
+//! Mastodon: app/models/privacy_policy.rb
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;

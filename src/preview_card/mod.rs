@@ -2,6 +2,9 @@
 //! post is about, fetches it, asks its oEmbed endpoint or reads its tags, and
 //! keeps what it learns in `preview_cards`, joined to the post through
 //! `preview_cards_statuses`.
+//!
+//! Mastodon: app/services/fetch_link_card_service.rb
+//! Mastodon: app/workers/link_crawl_worker.rb
 
 pub mod attribution;
 pub mod extract;

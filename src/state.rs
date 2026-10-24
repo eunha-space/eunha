@@ -1,3 +1,7 @@
+//! The state every request handler and background task is given.
+//!
+//! Mastodon: none
+
 use crate::config::{Config, InstanceConfig};
 use crate::email::EmailSender;
 use crate::media::Storage;

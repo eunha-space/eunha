@@ -14,6 +14,10 @@
 //! `actor.json`, which points at the others by those names. It is stored
 //! where Paperclip stores a backup's dump:
 //! `backups/dumps/{id partition}/original/archive-{time}-{hex}.zip`.
+//!
+//! Mastodon: app/services/backup_service.rb, app/workers/backup_worker.rb
+//! Mastodon: app/models/backup.rb
+//! Mastodon: app/controllers/settings/exports_controller.rb
 
 use std::io::Write as _;
 use std::time::Duration;

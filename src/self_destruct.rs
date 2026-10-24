@@ -9,6 +9,10 @@
 //! another batch of its local accounts is gone, with a `Delete` of each actor.
 //! Nothing local is erased: the database is meant to be dropped once every
 //! notice is out (docs/operating/self-destruct.md).
+//!
+//! Mastodon: app/helpers/self_destruct_helper.rb
+//! Mastodon: app/controllers/application_controller.rb
+//! Mastodon: app/workers/scheduler/self_destruct_scheduler.rb
 
 use anyhow::Result;
 use axum::{

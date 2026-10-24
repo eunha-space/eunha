@@ -4,6 +4,11 @@
 //! resolving-or-fetching a remote account. These are the shared entry points
 //! the inbound activity handlers and the API use to materialise objects they
 //! reference.
+//!
+//! Mastodon: app/services/activitypub/fetch_remote_status_service.rb
+//! Mastodon: app/services/activitypub/fetch_remote_account_service.rb
+//! Mastodon: app/services/activitypub/fetch_remote_actor_service.rb
+//! Mastodon: app/services/activitypub/fetch_remote_poll_service.rb
 
 use serde_json::Value;
 

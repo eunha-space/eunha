@@ -22,6 +22,8 @@
 //! over plain HTTP. A request for any other host is refused and counted: that
 //! count should stay at zero, and anything in it is traffic that would have
 //! left the machine. `CONNECT` — every `https://` URL — is refused the same way.
+//!
+//! Mastodon: none
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

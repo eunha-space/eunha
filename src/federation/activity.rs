@@ -5,6 +5,20 @@
 //! [`serde_json::Value`] ready for delivery, under the plain ActivityStreams
 //! context Mastodon uses. Mastodon/Misskey-specific JSON-LD (FEP-044f quote
 //! terms) lives in `consent` rather than in the shared vocabulary crate.
+//!
+//! Mastodon: app/serializers/activitypub/follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/accept_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/reject_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/undo_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/like_serializer.rb
+//! Mastodon: app/serializers/activitypub/undo_like_serializer.rb
+//! Mastodon: app/serializers/activitypub/block_serializer.rb
+//! Mastodon: app/serializers/activitypub/undo_block_serializer.rb
+//! Mastodon: app/serializers/activitypub/delete_actor_serializer.rb
+//! Mastodon: app/serializers/activitypub/move_serializer.rb
+//! Mastodon: app/serializers/activitypub/update_actor_serializer.rb
+//! Mastodon: app/serializers/activitypub/add_note_serializer.rb
+//! Mastodon: app/serializers/activitypub/remove_note_serializer.rb
 
 use ojak_vocab as vocab;
 use ojak_vocab::json::ToJson;

@@ -3,6 +3,10 @@
 //! `distributions`), which upstream serves as web forms, over REST at the same
 //! paths under `/api/v1/admin/`. Every one is `TermsOfServicePolicy`'s, which
 //! asks for `manage_settings`; see the `terms-of-service-rest-api` divergence.
+//!
+//! Mastodon: app/controllers/admin/terms_of_service_controller.rb
+//! Mastodon: app/controllers/admin/terms_of_service/
+//! Mastodon: app/policies/terms_of_service_policy.rb
 
 use axum::{
     extract::{Extension, Path},

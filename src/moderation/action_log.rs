@@ -1,4 +1,7 @@
 //! `Admin::ActionLog`, written by `AccountableConcern#log_action`.
+//!
+//! Mastodon: app/models/admin/action_log.rb
+//! Mastodon: app/controllers/concerns/accountable_concern.rb
 
 use sqlx::PgExecutor;
 

@@ -1,3 +1,14 @@
+//! Keyword filters, v1 and v2, with their keywords and filtered posts.
+//!
+//! Mastodon: app/controllers/api/v1/filters_controller.rb
+//! Mastodon: app/controllers/api/v2/filters_controller.rb
+//! Mastodon: app/controllers/api/v2/filters/keywords_controller.rb
+//! Mastodon: app/controllers/api/v2/filters/statuses_controller.rb
+//! Mastodon: app/serializers/rest/filter_serializer.rb
+//! Mastodon: app/serializers/rest/filter_keyword_serializer.rb
+//! Mastodon: app/serializers/rest/filter_status_serializer.rb
+//! Mastodon: app/serializers/rest/v1/filter_serializer.rb
+
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,

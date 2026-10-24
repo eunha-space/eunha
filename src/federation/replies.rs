@@ -22,6 +22,13 @@
 //! so its own first page of replies is read in turn — or, when it is already
 //! held, as an `Update`. The walk and the replies it queues are one
 //! [`crate::worker_batch::WorkerBatch`], whose end finishes the refresh.
+//!
+//! Mastodon: app/services/activitypub/fetch_replies_service.rb
+//! Mastodon: app/services/activitypub/fetch_all_replies_service.rb
+//! Mastodon: app/workers/activitypub/fetch_replies_worker.rb
+//! Mastodon: app/workers/activitypub/fetch_all_replies_worker.rb
+//! Mastodon: app/workers/fetch_reply_worker.rb
+//! Mastodon: app/models/concerns/status/fetch_replies_concern.rb
 
 use std::collections::HashSet;
 

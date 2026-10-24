@@ -1,3 +1,9 @@
+//! The Mastodon REST API: its routes, and the pagination headers its list
+//! endpoints share.
+//!
+//! Mastodon: config/routes/api.rb, config/routes.rb
+//! Mastodon: app/controllers/concerns/api/pagination.rb
+
 pub mod accounts;
 pub mod admin;
 pub mod announcements;

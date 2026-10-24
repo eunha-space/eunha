@@ -4,6 +4,9 @@
 //! authorization stamp's URI (`TagManager#approval_uri_for`), revoking
 //! (`RevokeQuoteService`), and telling local timelines that a status changed
 //! (`DistributionWorker` with `update`).
+//!
+//! Mastodon: app/models/quote.rb, app/services/revoke_quote_service.rb
+//! Mastodon: app/lib/activitypub/tag_manager.rb
 
 use serde_json::Value;
 use sqlx::PgPool;

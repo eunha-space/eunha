@@ -2,6 +2,10 @@
 //! account (`ActivityPub::Activity::FeatureRequest`), and a remote account's
 //! answer to a local collection's request (`Accept#accept_feature_request!`,
 //! `Reject#reject_feature_request!`).
+//!
+//! Mastodon: app/lib/activitypub/activity/feature_request.rb
+//! Mastodon: app/lib/activitypub/activity/accept.rb
+//! Mastodon: app/lib/activitypub/activity/reject.rb
 
 use serde_json::Value;
 

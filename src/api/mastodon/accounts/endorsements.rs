@@ -1,5 +1,8 @@
 //! Endorsements (profile "featured accounts"): endorse/unendorse a followed
 //! account and list a profile's or your own endorsed accounts.
+//!
+//! Mastodon: app/controllers/api/v1/accounts/endorsements_controller.rb
+//! Mastodon: app/controllers/api/v1/endorsements_controller.rb
 
 use super::*;
 

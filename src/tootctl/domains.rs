@@ -1,5 +1,7 @@
 //! `tootctl domains` (`Mastodon::CLI::Domains`): purging what is known of
 //! other servers, and crawling the fediverse for statistics.
+//!
+//! Mastodon: lib/mastodon/cli/domains.rb
 
 use std::collections::{BTreeMap, VecDeque};
 

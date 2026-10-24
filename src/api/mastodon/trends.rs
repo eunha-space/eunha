@@ -1,3 +1,8 @@
+//! Trends: trending hashtags, posts and links.
+//!
+//! Mastodon: app/controllers/api/v1/trends/
+//! Mastodon: app/serializers/rest/trends/link_serializer.rb
+
 use axum::{
     extract::{Extension, Query},
     Json,

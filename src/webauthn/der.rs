@@ -4,6 +4,8 @@
 //! Every value keeps the bytes it was read from, so a signature is checked
 //! over exactly what was signed, as OpenSSL does, rather than over a
 //! re-encoding.
+//!
+//! Mastodon: none
 
 use super::{invalid, Result};
 

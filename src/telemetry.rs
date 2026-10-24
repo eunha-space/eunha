@@ -1,4 +1,6 @@
 //! Opt-in process metrics, served on a separate loopback listener.
+//!
+//! Mastodon: none
 use crate::{state::AppState, tenants::Tenants};
 use axum::{
     extract::{MatchedPath, Request, State},

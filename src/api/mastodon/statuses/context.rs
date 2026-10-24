@@ -1,5 +1,9 @@
 //! The reply-tree context endpoint (`GET /statuses/:id/context`):
 //! ancestors and descendants, with viewer filtering.
+//!
+//! Mastodon: app/controllers/api/v1/statuses/contexts_controller.rb
+//! Mastodon: app/serializers/rest/context_serializer.rb
+//! Mastodon: app/models/concerns/status/threading_concern.rb
 
 use super::*;
 

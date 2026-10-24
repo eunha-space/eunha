@@ -1,3 +1,8 @@
+//! Request extractors that read parameters as Rails does, nested keys and
+//! loose types included.
+//!
+//! Mastodon: none
+
 use axum::{
     extract::{FromRequest, Multipart},
     http::StatusCode,

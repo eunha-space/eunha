@@ -2,6 +2,9 @@
 //! the account — removing the reported posts and collections, or marking
 //! them sensitive — with the strike, audit log entries and notification that
 //! come with it.
+//!
+//! Mastodon: app/models/admin/moderation_action.rb
+//! Mastodon: app/models/admin/base_action.rb
 
 use crate::db::models::{Account, Status};
 use crate::error::{AppError, AppResult};

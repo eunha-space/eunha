@@ -2,6 +2,10 @@
 //! recommendations and the accounts kept out of them, for
 //! `manage_taxonomies` (`FollowRecommendationPolicy`). Suppressing is not
 //! logged, as upstream does not log it.
+//!
+//! Mastodon: app/controllers/admin/follow_recommendations_controller.rb
+//! Mastodon: app/models/follow_recommendation_filter.rb
+//! Mastodon: app/policies/follow_recommendation_policy.rb
 
 use axum::{
     extract::{Extension, Query},

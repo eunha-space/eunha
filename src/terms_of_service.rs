@@ -5,6 +5,8 @@
 //! configuration's `terms_of_service`. It is read no longer;
 //! `eunha settings import-config` publishes it once as a version effective on
 //! 2025-01-01, the date eunha served it as effective from.
+//!
+//! Mastodon: app/models/terms_of_service.rb
 
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Serialize;

@@ -19,6 +19,8 @@
 //!
 //! What publishes status events lives in [`fan_out`]; the streaming server
 //! itself in `api::mastodon::streaming`.
+//!
+//! Mastodon: streaming/index.js
 
 pub mod fan_out;
 

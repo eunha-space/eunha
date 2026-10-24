@@ -3,6 +3,10 @@
 //! `Debug::CallbacksController`. Every action is `Admin::Fasp::ProviderPolicy`,
 //! which is `manage_federation`, and writes no audit log entry, as upstream's
 //! do not. While the `fasp` feature is off, they answer 404.
+//!
+//! Mastodon: app/controllers/admin/fasp/
+//! Mastodon: app/policies/admin/fasp/provider_policy.rb
+//! Mastodon: app/models/fasp/provider.rb
 
 use axum::{
     extract::{Extension, Path},

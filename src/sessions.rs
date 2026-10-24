@@ -7,6 +7,8 @@
 //! (the `superapp` application, when there is one) with
 //! `SessionActivation::DEFAULT_SCOPES`. Revoking the session deletes the row
 //! and its token, which ends the cookie and every request made with it.
+//!
+//! Mastodon: app/models/session_activation.rb
 
 use sqlx::PgPool;
 

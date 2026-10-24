@@ -9,6 +9,10 @@
 //! changed whether it is. A boost, a reply or a favourite also makes the
 //! status it is about a trend candidate. A deletion is announced by calling
 //! the hook before the row goes, or after a status is only marked deleted.
+//!
+//! Mastodon: app/models/concerns/status/fasp_concern.rb
+//! Mastodon: app/models/concerns/account/fasp_concern.rb
+//! Mastodon: app/models/concerns/favourite/fasp_concern.rb
 
 use super::workers::{self, TrendSource};
 use crate::state::AppState;

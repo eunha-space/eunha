@@ -9,6 +9,19 @@
 //! collection's reach; the `Remove` of a deleted collection to its owner's
 //! reach; and the `FeatureRequest` asking a remote account to be featured.
 //! Remote collections are kept by `crate::federation::featured_collections`.
+//!
+//! Mastodon: app/controllers/api/v1/collections_controller.rb
+//! Mastodon: app/controllers/api/v1/collection_items_controller.rb
+//! Mastodon: app/controllers/api/v1/in_collections_controller.rb
+//! Mastodon: app/serializers/rest/collection_serializer.rb
+//! Mastodon: app/serializers/rest/collection_item_serializer.rb
+//! Mastodon: app/serializers/rest/collection_with_accounts_serializer.rb
+//! Mastodon: app/services/create_collection_service.rb
+//! Mastodon: app/services/update_collection_service.rb
+//! Mastodon: app/services/delete_collection_service.rb
+//! Mastodon: app/services/add_account_to_collection_service.rb
+//! Mastodon: app/services/delete_collection_item_service.rb
+//! Mastodon: app/services/revoke_collection_item_service.rb
 
 use axum::{
     extract::{Path, Query},

@@ -8,6 +8,10 @@
 //! `SearchStoplight`, it stops sending searches for five minutes after ten
 //! failures in a row; a search that is not sent falls back as a failed one
 //! does: accounts and hashtags to the database, posts to nothing.
+//!
+//! Mastodon: app/services/concerns/search_stoplight.rb
+//! Mastodon: app/services/statuses_search_service.rb
+//! Mastodon: config/initializers/chewy.rb
 
 pub mod deploy;
 pub mod documents;

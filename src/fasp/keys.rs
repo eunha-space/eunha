@@ -4,6 +4,8 @@
 //! (`public_to_pem`) in `provider_public_key_pem`. Both cross the wire as the
 //! raw 32-byte key in base64, which is what `raw_public_key` and
 //! `new_raw_public_key` read and write.
+//!
+//! Mastodon: app/models/fasp/provider.rb
 
 use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};

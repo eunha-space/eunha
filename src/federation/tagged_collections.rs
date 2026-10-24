@@ -3,6 +3,10 @@
 //! `ActivityPub::ProcessStatusUpdateService#update_tagged_objects!` take
 //! them from its `FeaturedCollection` tags, and
 //! `TaggedCollectionResolveWorker` resolves those it could not reach.
+//!
+//! Mastodon: app/workers/tagged_collection_resolve_worker.rb
+//! Mastodon: app/lib/activitypub/activity/create.rb
+//! Mastodon: app/services/activitypub/process_status_update_service.rb
 
 use serde_json::Value;
 

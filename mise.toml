@@ -22,6 +22,14 @@ run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- status"
 description = "List the upstream migrations adopting a Mastodon release would involve"
 run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- plan"
 
+[tasks."mastodon:changes"]
+description = "List the upstream files a Mastodon release changed, by the eunha module naming each (needs a Mastodon checkout)"
+run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- changes"
+
+[tasks."mastodon:files"]
+description = "Record the tracked Mastodon release's tree into mastodon/files.txt (needs a Mastodon checkout)"
+run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- record-files"
+
 [tasks.fmt]
 description = "Format the tree"
 run = [

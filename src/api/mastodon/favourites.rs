@@ -1,3 +1,7 @@
+//! `GET /api/v1/favourites`: the viewer's favourited posts.
+//!
+//! Mastodon: app/controllers/api/v1/favourites_controller.rb
+
 use axum::{
     extract::{Extension, Query},
     http::{HeaderMap, Uri},

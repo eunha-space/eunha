@@ -8,10 +8,15 @@
 //!   eunha-schema status            — is there a newer Mastodon release?
 //!   eunha-schema plan --to v4.8.0  — what would adopting it involve?
 //!   eunha-schema check             — does a live database match the target?
+//!   eunha-schema changes --to v4.8.0 — which eunha modules does it touch?
+//!
+//! Mastodon: none
+
+use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use eunha::{schema_check, upstream, version};
+use eunha::{counterparts, schema_check, upstream, version};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -51,6 +56,26 @@ enum Command {
         #[arg(long)]
         database_url: String,
     },
+    /// List the upstream files changed since the tracked release, and the
+    /// eunha modules that name each one as a counterpart.
+    ///
+    /// Reads a local Mastodon checkout, since a release's diff runs to more
+    /// files than GitHub's compare API returns.
+    Changes {
+        /// Target release tag, e.g. `v4.8.0`. Defaults to the newest stable release.
+        #[arg(long)]
+        to: Option<String>,
+        /// Mastodon checkout. Defaults to $MASTODON_REPO, then ~/Git/mastodon.
+        #[arg(long)]
+        repo: Option<std::path::PathBuf>,
+    },
+    /// Record the tracked release's tree as `mastodon/files.txt`, which the
+    /// counterpart headers are checked against.
+    RecordFiles {
+        /// Mastodon checkout. Defaults to $MASTODON_REPO, then ~/Git/mastodon.
+        #[arg(long)]
+        repo: Option<std::path::PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -62,6 +87,8 @@ async fn main() -> Result<()> {
         Command::Plan { to, sql } => plan(to, sql).await,
         Command::Check { database_url } => check(database_url).await,
         Command::RecordReference { database_url } => record_reference(database_url).await,
+        Command::Changes { to, repo } => changes(to, repo).await,
+        Command::RecordFiles { repo } => record_files(repo),
     }
 }
 
@@ -144,11 +171,7 @@ async fn status() -> Result<()> {
 }
 
 async fn plan(to: Option<String>, sql: bool) -> Result<()> {
-    let target = match to {
-        Some(tag) if tag.starts_with('v') => tag,
-        Some(version) => format!("v{version}"),
-        None => upstream::latest_release().await?.tag,
-    };
+    let target = target_tag(to).await?;
 
     let migrations = upstream::migrations(&target).await?;
     let covered = schema_check::covered_versions(migrations_dir().as_path())?;
@@ -317,6 +340,158 @@ async fn record_reference(database_url: String) -> Result<()> {
         schema.views.len(),
         path.display()
     );
+    Ok(())
+}
+
+/// `--to` as a tag, or the newest stable release when it is not given.
+async fn target_tag(to: Option<String>) -> Result<String> {
+    Ok(match to {
+        Some(tag) if tag.starts_with('v') => tag,
+        Some(version) => format!("v{version}"),
+        None => upstream::latest_release().await?.tag,
+    })
+}
+
+/// A Mastodon checkout holding `tags`, fetching tags into it if it lacks one.
+fn mastodon_repo(repo: Option<std::path::PathBuf>, tags: &[&str]) -> Result<std::path::PathBuf> {
+    let repo = repo
+        .or_else(|| std::env::var_os("MASTODON_REPO").map(Into::into))
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join("Git/mastodon")))
+        .context("no Mastodon checkout: pass --repo or set MASTODON_REPO")?;
+    anyhow::ensure!(
+        repo.join(".git").exists(),
+        "no Mastodon checkout at {}; clone https://github.com/mastodon/mastodon.git \
+         there, or pass --repo",
+        repo.display()
+    );
+    let has = |tag: &str| {
+        git(
+            &repo,
+            &["rev-parse", "-q", "--verify", &format!("refs/tags/{tag}")],
+        )
+        .is_ok()
+    };
+    if !tags.iter().all(|t| has(t)) {
+        // Tags only: never touches the checkout's branch or working tree.
+        git(&repo, &["fetch", "--tags", "--quiet", "origin"])?;
+        for tag in tags {
+            anyhow::ensure!(
+                has(tag),
+                "{} has no tag {tag}, even after fetching",
+                repo.display()
+            );
+        }
+    }
+    Ok(repo)
+}
+
+/// Run git in `repo`, returning its output.
+fn git(repo: &std::path::Path, args: &[&str]) -> Result<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .output()
+        .context("running git")?;
+    anyhow::ensure!(
+        output.status.success(),
+        "git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+/// Record the tracked release's tree, for the counterpart check.
+fn record_files(repo: Option<std::path::PathBuf>) -> Result<()> {
+    let tag = tracked_tag();
+    let repo = mastodon_repo(repo, &[&tag])?;
+    // Reading the tag rather than the working tree, so whatever the checkout
+    // has checked out does not leak in.
+    let tree = git(&repo, &["ls-tree", "-r", "--name-only", &tag])?;
+    let files: Vec<&str> = tree.lines().filter(|f| counterparts::in_scope(f)).collect();
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mastodon/files.txt");
+    let contents = format!("# {tag}\n{}\n", files.join("\n"));
+    std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
+    println!(
+        "Recorded {} files from {tag} to {}.",
+        files.len(),
+        path.display()
+    );
+    Ok(())
+}
+
+/// What changed upstream between the tracked release and `to`, by eunha module.
+async fn changes(to: Option<String>, repo: Option<std::path::PathBuf>) -> Result<()> {
+    use std::collections::BTreeMap;
+
+    let from = tracked_tag();
+    let target = target_tag(to).await?;
+    let repo = mastodon_repo(repo, &[&from, &target])?;
+    let diff = git(&repo, &["diff", "--name-status", "-M", &from, &target])?;
+    let headers = counterparts::scan(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))?;
+
+    // `M path`, `A path`, `D path`, or `R095 old new`: a rename is reported
+    // under its old path, the one headers name.
+    let changed: Vec<(char, &str, Option<&str>)> = diff
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let status = fields.next()?.chars().next()?;
+            let path = fields.next()?;
+            Some((status, path, fields.next()))
+        })
+        .filter(|(_, path, new)| {
+            counterparts::in_scope(path) || new.is_some_and(counterparts::in_scope)
+        })
+        .collect();
+
+    let describe = |status: char, path: &str, new: Option<&str>| match (status, new) {
+        ('R', Some(new)) => format!("R  {path} -> {new}"),
+        _ => format!("{status}  {path}"),
+    };
+
+    let mut by_module: BTreeMap<&std::path::Path, Vec<String>> = BTreeMap::new();
+    let mut unclaimed = Vec::new();
+    for &(status, path, new) in &changed {
+        let modules: BTreeSet<&std::path::Path> = headers
+            .iter()
+            .filter(|c| counterparts::covers(&c.path, path))
+            .map(|c| c.module.as_path())
+            .collect();
+        if modules.is_empty() {
+            unclaimed.push(describe(status, path, new));
+        }
+        for module in modules {
+            by_module
+                .entry(module)
+                .or_default()
+                .push(describe(status, path, new));
+        }
+    }
+
+    println!(
+        "{} server file(s) changed from {from} to {target}; {} eunha module(s) name one.\n",
+        changed.len(),
+        by_module.len()
+    );
+    for (module, files) in &by_module {
+        println!("{}", module.display());
+        for file in files {
+            println!("    {file}");
+        }
+    }
+    if !unclaimed.is_empty() {
+        println!(
+            "\nNo module names these {}, so eunha does not implement them:",
+            unclaimed.len()
+        );
+        for file in &unclaimed {
+            println!("    {file}");
+        }
+    }
+    println!("\nDiff: https://github.com/mastodon/mastodon/compare/{from}...{target}");
     Ok(())
 }
 

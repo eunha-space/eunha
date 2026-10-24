@@ -2,6 +2,10 @@
 //! Mastodon's `Settings::SessionsController` (the sessions listed on its
 //! account settings page), `OAuth::AuthorizedApplicationsController` and
 //! `Settings::LoginActivitiesController`, which it has only as web pages.
+//!
+//! Mastodon: app/controllers/settings/sessions_controller.rb
+//! Mastodon: app/controllers/oauth/authorized_applications_controller.rb
+//! Mastodon: app/controllers/settings/login_activities_controller.rb
 
 use axum::{
     extract::{Path, Query},

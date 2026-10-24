@@ -1,3 +1,8 @@
+//! Timeline markers: where the viewer stopped reading.
+//!
+//! Mastodon: app/controllers/api/v1/markers_controller.rb
+//! Mastodon: app/serializers/rest/marker_serializer.rb, app/models/marker.rb
+
 use axum::{extract::Extension, http::Uri, Json};
 use std::collections::HashMap;
 

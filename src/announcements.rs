@@ -4,6 +4,11 @@
 //! (`PublishAnnouncementReactionWorker`), and the part of
 //! `Scheduler::ScheduledStatusesScheduler` that publishes scheduled
 //! announcements and unpublishes expired ones.
+//!
+//! Mastodon: app/workers/publish_scheduled_announcement_worker.rb
+//! Mastodon: app/workers/unpublish_announcement_worker.rb
+//! Mastodon: app/workers/publish_announcement_reaction_worker.rb
+//! Mastodon: app/workers/scheduler/scheduled_statuses_scheduler.rb
 
 use crate::state::AppState;
 

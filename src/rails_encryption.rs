@@ -20,6 +20,9 @@
 //!
 //! Deterministic encryption is not implemented: `keypairs.private_key` is the
 //! only encrypted column in Mastodon's schema, and it is not deterministic.
+//!
+//! Mastodon: config/initializers/active_record_encryption.rb
+//! Mastodon: app/models/keypair.rb
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};

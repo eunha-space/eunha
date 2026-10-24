@@ -8,6 +8,8 @@
 //! `config/settings.yml` stands in Mastodon: it is the default, and a value an
 //! administrator saved in the `settings` table wins over it, as a saved value
 //! wins over the YAML default upstream (docs/operating/administration.md).
+//!
+//! Mastodon: app/models/setting.rb, config/settings.yml
 
 use std::collections::HashMap;
 

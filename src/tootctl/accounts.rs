@@ -1,6 +1,8 @@
 //! The rest of `tootctl accounts` (`Mastodon::CLI::Accounts`): `create`,
 //! `modify`, and eunha's own `update`, `move` and `batch-status` are wired in
 //! `main.rs`; these are the others.
+//!
+//! Mastodon: lib/mastodon/cli/accounts.rb
 
 use std::collections::BTreeSet;
 use std::sync::Mutex;

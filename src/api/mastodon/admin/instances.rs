@@ -1,6 +1,14 @@
 //! `Admin::InstancesController`, its moderation notes, the instance measures
 //! and dimensions of its dashboard, and `Admin::ExportDomainBlocksController`
 //! and `Admin::ExportDomainAllowsController`.
+//!
+//! Mastodon: app/controllers/admin/instances_controller.rb
+//! Mastodon: app/controllers/admin/instances/moderation_notes_controller.rb
+//! Mastodon: app/controllers/admin/export_domain_blocks_controller.rb
+//! Mastodon: app/controllers/admin/export_domain_allows_controller.rb
+//! Mastodon: app/models/instance_filter.rb
+//! Mastodon: app/services/purge_domain_service.rb
+//! Mastodon: app/workers/admin/domain_purge_worker.rb
 
 use std::collections::HashMap;
 

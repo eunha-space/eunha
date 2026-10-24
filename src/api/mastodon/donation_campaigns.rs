@@ -2,6 +2,8 @@
 //! which asks the configured campaign API (`[instance.donation_campaigns]`,
 //! Mastodon's `DONATION_CAMPAIGNS_URL`) which campaign a user is to be shown,
 //! and keeps the answer an hour in the cache Mastodon keeps it in.
+//!
+//! Mastodon: app/controllers/api/v1/donation_campaigns_controller.rb
 
 use axum::{
     extract::{Extension, Query},

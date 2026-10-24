@@ -1,6 +1,16 @@
 //! The authenticated account's own credentials and profile: verify,
 //! update_credentials (avatar/header/fields), the /profile endpoints, and
 //! propagating profile Updates to the fediverse.
+//!
+//! Mastodon: app/controllers/api/v1/accounts/credentials_controller.rb
+//! Mastodon: app/controllers/api/v1/profiles_controller.rb
+//! Mastodon: app/controllers/api/v1/profile/avatars_controller.rb
+//! Mastodon: app/controllers/api/v1/profile/headers_controller.rb
+//! Mastodon: app/controllers/api/v1/preferences_controller.rb
+//! Mastodon: app/serializers/rest/credential_account_serializer.rb
+//! Mastodon: app/serializers/rest/profile_serializer.rb
+//! Mastodon: app/serializers/rest/preferences_serializer.rb
+//! Mastodon: app/services/update_account_service.rb
 
 use super::*;
 use crate::email_subscriptions::ValidationErrors;

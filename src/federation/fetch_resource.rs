@@ -20,6 +20,8 @@
 //! Two follow-ups are allowed, each `terminal` — the alternate link, and an
 //! object whose `id` is not the URL it was served from — so a server cannot
 //! walk us around an unbounded chain of redirections of its own choosing.
+//!
+//! Mastodon: app/services/fetch_resource_service.rb
 
 use serde_json::Value;
 

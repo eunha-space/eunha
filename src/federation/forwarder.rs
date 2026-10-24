@@ -3,6 +3,8 @@
 //! status only through them. Mastodon forwards a remote status's `Delete` and
 //! edit (`Update`) when the activity carries a Linked Data Signature
 //! (`forwardable?`), and a quote stamp's `Delete` always.
+//!
+//! Mastodon: app/lib/activitypub/forwarder.rb
 
 use serde_json::Value;
 

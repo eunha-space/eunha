@@ -5,6 +5,10 @@
 //!
 //! Mastodon serves these as web forms only; eunha's admin is a single-page
 //! app, so it needs an API (the `email-subscriptions-rest-api` divergence).
+//!
+//! Mastodon: app/controllers/admin/email_subscriptions_controller.rb
+//! Mastodon: app/controllers/admin/email_subscriptions/
+//! Mastodon: app/policies/email_subscription_policy.rb
 
 use axum::{
     extract::{Extension, Path},

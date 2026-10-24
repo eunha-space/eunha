@@ -9,6 +9,13 @@
 //! eunha set it, or a `Follow.new` that was never saved — falls back to its
 //! actor's id with a fragment, as the serializers' `||` does. The `Accept`,
 //! `Reject` and `Undo` around it are named after the row's database id.
+//!
+//! Mastodon: app/serializers/activitypub/follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/accept_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/reject_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/undo_follow_serializer.rb
+//! Mastodon: app/serializers/activitypub/block_serializer.rb
+//! Mastodon: app/serializers/activitypub/undo_block_serializer.rb
 
 use serde_json::Value;
 

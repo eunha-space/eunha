@@ -1,3 +1,9 @@
+//! The `eunha` command: serving, migrating, importing, and the `tootctl`
+//! commands.
+//!
+//! Mastodon: lib/mastodon/cli/main.rb, lib/mastodon/cli/accounts.rb
+//! Mastodon: lib/mastodon/cli/search.rb
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use eunha::{accounts, config, import, migrate, software_updates, telemetry, tenants, version};

@@ -2,6 +2,12 @@
 //! `Admin::Users::TwoFactorAuthenticationsController`,
 //! `Admin::ChangeEmailsController`, `Admin::ConfirmationsController` and
 //! `Admin::ResetsController`, judged by `UserPolicy`.
+//!
+//! Mastodon: app/controllers/admin/users/
+//! Mastodon: app/controllers/admin/change_emails_controller.rb
+//! Mastodon: app/controllers/admin/confirmations_controller.rb
+//! Mastodon: app/controllers/admin/resets_controller.rb
+//! Mastodon: app/policies/user_policy.rb
 
 use axum::{
     extract::{Extension, Path},

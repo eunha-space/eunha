@@ -1,6 +1,11 @@
 //! Account migration over REST: moving to a new account, redirecting to one,
 //! and managing the `alsoKnownAs` aliases. Mastodon serves these as web
 //! settings forms; the work is [`crate::moves`], and these only translate.
+//!
+//! Mastodon: app/controllers/settings/aliases_controller.rb
+//! Mastodon: app/controllers/settings/migrations_controller.rb
+//! Mastodon: app/controllers/settings/migration/redirects_controller.rb
+//! Mastodon: app/services/move_service.rb
 
 use super::*;
 

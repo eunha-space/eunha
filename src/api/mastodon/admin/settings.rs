@@ -1,6 +1,11 @@
 //! `Admin::SettingsController` and its pages (branding, about, registrations,
 //! discovery, content retention, appearance), over `Form::AdminSettings`, and
 //! `Admin::SiteUploadsController`.
+//!
+//! Mastodon: app/controllers/admin/settings_controller.rb
+//! Mastodon: app/controllers/admin/settings/
+//! Mastodon: app/controllers/admin/site_uploads_controller.rb
+//! Mastodon: app/models/form/admin_settings.rb
 
 use std::collections::HashMap;
 

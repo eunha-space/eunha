@@ -1,3 +1,7 @@
+//! The API entities, as the REST serializers shape them.
+//!
+//! Mastodon: app/serializers/rest/
+
 /// Mastodon REST API serialization types.
 /// Reference: https://docs.joinmastodon.org/entities/
 use serde::{Deserialize, Serialize};

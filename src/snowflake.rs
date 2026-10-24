@@ -1,3 +1,7 @@
+//! Mastodon's Snowflake ids, as `Mastodon::Snowflake` makes them.
+//!
+//! Mastodon: lib/mastodon/snowflake.rb
+
 // Mastodon-compatible Snowflake ID: 48-bit millisecond timestamp in the
 // upper bits, 16 random bits in the lower bits.  Matches Mastodon's Ruby
 // implementation exactly (SecureRandom.random_number(0x10000)).

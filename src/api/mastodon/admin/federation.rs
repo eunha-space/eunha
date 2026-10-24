@@ -1,4 +1,10 @@
 //! `Api::V1::Admin::DomainBlocksController` and `DomainAllowsController`.
+//!
+//! Mastodon: app/controllers/api/v1/admin/domain_blocks_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/domain_allows_controller.rb
+//! Mastodon: app/serializers/rest/admin/domain_block_serializer.rb
+//! Mastodon: app/serializers/rest/admin/domain_allow_serializer.rb
+//! Mastodon: app/serializers/rest/admin/existing_domain_block_error_serializer.rb
 
 use axum::{
     extract::{Extension, Path},

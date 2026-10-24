@@ -1,5 +1,7 @@
 //! eunha-specific HTTP APIs that have no Mastodon C2S equivalent. Kept separate
 //! from `api::mastodon` so the Mastodon-compatible surface stays clean.
+//!
+//! Mastodon: none
 use axum::{routing::get, Router};
 
 pub mod account_email;

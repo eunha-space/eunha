@@ -20,6 +20,10 @@
 //! Mastodon serves all of this from web settings forms. Eunha's client is a
 //! single-page app, so it is served over REST (see the `account-moves-rest-api`
 //! divergence), answering with the same validation messages.
+//!
+//! Mastodon: app/models/account_alias.rb, app/models/account_migration.rb
+//! Mastodon: app/services/move_service.rb, app/workers/move_worker.rb
+//! Mastodon: app/models/form/redirect.rb, app/lib/activitypub/activity/move.rb
 
 use crate::api::mastodon::accounts as relationships;
 use crate::db::models::Account;

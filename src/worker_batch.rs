@@ -13,6 +13,9 @@
 //! finishes is: `worker_batch:{id}`, a hash of the pending and processed
 //! counts and the refresh's key, and `worker_batch:{id}:jobs`, the set of
 //! jobs still in it. Both live an hour.
+//!
+//! Mastodon: app/models/worker_batch.rb
+//! Mastodon: lib/mastodon/worker_batch_middleware.rb
 
 use crate::state::AppState;
 

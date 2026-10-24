@@ -7,6 +7,9 @@
 //! consumed or the parse fails. [`parse`] gives the clauses, [`Query::new`]
 //! sorts them by what they do, and [`Query::request`] builds the request body
 //! once `from:` handles have been looked up.
+//!
+//! Mastodon: app/lib/search_query_parser.rb
+//! Mastodon: app/lib/search_query_transformer.rb
 
 use serde_json::{json, Value};
 

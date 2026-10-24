@@ -1,5 +1,8 @@
 //! `Appeal`: an account asking for a strike against it to be reconsidered,
 //! with `AppealService` and `ApproveAppealService`.
+//!
+//! Mastodon: app/models/appeal.rb, app/services/appeal_service.rb
+//! Mastodon: app/services/approve_appeal_service.rb
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;

@@ -1,6 +1,9 @@
 //! `GET /api/v1_alpha/async_refreshes/:id`
 //! (`Api::V1Alpha::AsyncRefreshesController`): how background work a request
 //! started is getting on. See [`crate::async_refresh`].
+//!
+//! Mastodon: app/controllers/api/v1_alpha/async_refreshes_controller.rb
+//! Mastodon: app/models/async_refresh.rb
 
 use axum::{
     extract::{Extension, Path},

@@ -1,3 +1,13 @@
+//! The background tasks every instance runs besides serving requests: its
+//! schedules, scheduled posts, account deletions and the instances view.
+//!
+//! Mastodon: config/sidekiq.yml
+//! Mastodon: app/workers/scheduler/scheduled_statuses_scheduler.rb
+//! Mastodon: app/workers/publish_scheduled_status_worker.rb
+//! Mastodon: app/workers/scheduler/instance_refresh_scheduler.rb
+//! Mastodon: app/workers/scheduler/suspended_user_cleanup_scheduler.rb
+//! Mastodon: app/workers/admin/account_deletion_worker.rb
+
 use std::future::Future;
 use std::time::Duration;
 

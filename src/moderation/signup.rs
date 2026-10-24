@@ -2,6 +2,11 @@
 //! `EmailMxValidator`, `UnreservedUsernameValidator`, and the IP, email
 //! domain and username blocks that put a sign-up in the approval queue
 //! (`User#requires_approval?`).
+//!
+//! Mastodon: app/validators/user_email_validator.rb
+//! Mastodon: app/validators/email_mx_validator.rb
+//! Mastodon: app/validators/unreserved_username_validator.rb
+//! Mastodon: app/models/user.rb
 
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -9,6 +9,10 @@
 //! counts in Redis itself, `rate_limit:<account id>:<family>:<epoch /
 //! period>`. Both are under the instance's key prefix, so each instance a
 //! process serves has its own counts.
+//!
+//! Mastodon: config/initializers/rack_attack.rb, app/lib/rate_limiter.rb
+//! Mastodon: app/controllers/concerns/api/rate_limit_headers.rb
+//! Mastodon: app/models/concerns/rate_limitable.rb
 
 use axum::{
     body::Body,

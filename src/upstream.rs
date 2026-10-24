@@ -5,6 +5,8 @@
 //! own schema definition is the only authority worth checking against. Rather
 //! than vendoring a copy that silently rots, this module fetches it from GitHub
 //! for whichever tag is being asked about.
+//!
+//! Mastodon: none
 
 use std::collections::{BTreeMap, BTreeSet};
 

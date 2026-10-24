@@ -1,6 +1,10 @@
 //! Inbound moderation-related activities: `Block` (remote actor blocks a local
 //! account), `Flag` (a remote report against local accounts/statuses), and
 //! `Move` (an actor migrating to a new account).
+//!
+//! Mastodon: app/lib/activitypub/activity/block.rb
+//! Mastodon: app/lib/activitypub/activity/flag.rb
+//! Mastodon: app/lib/activitypub/activity/move.rb
 
 use ojak_vocab::json_ld_helper::value_or_id;
 use serde_json::Value;

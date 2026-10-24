@@ -5,6 +5,9 @@
 //! `[instance.translation]` table. Both are operator-configured, so neither
 //! goes through the SSRF-guarded client: Mastodon reaches LibreTranslate with
 //! `allow_local: true`, since it usually runs next to the instance.
+//!
+//! Mastodon: app/lib/translation_service.rb, app/lib/translation_service/
+//! Mastodon: app/services/translate_status_service.rb
 
 use std::time::Duration;
 

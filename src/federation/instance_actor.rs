@@ -5,6 +5,9 @@
 //! servers verifying those signatures). Mastodon stores this actor as a
 //! reserved `accounts` row with id `-99`; Eunha follows that shape so restored
 //! Mastodon databases can keep their existing instance actor keypair.
+//!
+//! Mastodon: app/controllers/instance_actors_controller.rb
+//! Mastodon: app/models/concerns/account/finder_concern.rb
 
 use std::sync::Arc;
 

@@ -1,3 +1,13 @@
+//! Notifications and Web Push: creating a notification, and pushing it to
+//! the recipient's subscriptions.
+//!
+//! Mastodon: app/services/notify_service.rb
+//! Mastodon: app/workers/local_notification_worker.rb
+//! Mastodon: app/workers/web/push_notification_worker.rb
+//! Mastodon: app/lib/web_push_request.rb
+//! Mastodon: app/models/web/push_subscription.rb
+//! Mastodon: app/serializers/web/notification_serializer.rb
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use p256::{
     ecdsa::SigningKey,

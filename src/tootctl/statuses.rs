@@ -2,6 +2,8 @@
 //!
 //! The working tables `tootctl` creates in `public` and leaves behind for
 //! `--continue` are eunha's alone, so they are made in the `eunha` schema.
+//!
+//! Mastodon: lib/mastodon/cli/statuses.rb
 
 use std::time::Instant;
 

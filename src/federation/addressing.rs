@@ -5,6 +5,9 @@
 //! visibility. Follows the common fediverse convention (as used by Mastodon)
 //! where the public collection and the actor's `followers` collection encode
 //! the four visibility levels.
+//!
+//! Mastodon: app/lib/activitypub/tag_manager.rb
+//! Mastodon: app/lib/activitypub/parser/status_parser.rb
 
 use ojak_vocab::ACTIVITYSTREAMS_PUBLIC;
 

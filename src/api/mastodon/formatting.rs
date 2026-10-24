@@ -1,6 +1,9 @@
 //! Formatting as the API serializers use it: Mastodon's `FormattingHelper`
 //! over [`crate::formatter`], with the database lookups `TextFormatter`
 //! makes along the way, and `StatusLengthValidator`.
+//!
+//! Mastodon: app/helpers/formatting_helper.rb, app/lib/text_formatter.rb
+//! Mastodon: app/validators/status_length_validator.rb
 
 use std::collections::HashMap;
 

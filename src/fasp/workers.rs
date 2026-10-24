@@ -8,6 +8,9 @@
 //! available (`Fasp::BaseWorker#with_provider`); a request that cannot reach
 //! it is retried only while it stays available, and its availability is
 //! recorded after every attempt.
+//!
+//! Mastodon: app/workers/fasp/
+//! Mastodon: app/workers/scheduler/fasp/follow_recommendation_cleanup_scheduler.rb
 
 use std::future::Future;
 

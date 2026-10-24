@@ -7,6 +7,8 @@
 //! options, its output and its semantics (`lib/mastodon/cli/*.rb`). The
 //! binary flattens [`Command`] into its own, and runs it against the instance
 //! `--instance` picks. See *docs/operating/maintenance.md*.
+//!
+//! Mastodon: lib/mastodon/cli/main.rb
 
 pub mod accounts;
 pub mod cache;

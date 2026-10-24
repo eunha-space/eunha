@@ -3,6 +3,8 @@
 //! served; `Sanitize` with `MASTODON_STRICT` for the HTML remote servers send,
 //! which is stored as it arrived; `HtmlAwareFormatter` choosing between the
 //! two; and `PlainTextFormatter` going the other way.
+//!
+//! Mastodon: app/lib/html_aware_formatter.rb
 
 pub mod extractor;
 mod html;

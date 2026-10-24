@@ -11,6 +11,9 @@
 //! sent two minutes later from the job queue, as `deliver_later(wait:
 //! 2.minutes)` does, and only if the notification, its post and the member's
 //! standing still allow it then.
+//!
+//! Mastodon: app/services/notify_service.rb, app/mailers/notification_mailer.rb
+//! Mastodon: app/controllers/unsubscriptions_controller.rb
 
 use std::time::Duration;
 

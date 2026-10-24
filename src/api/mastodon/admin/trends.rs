@@ -1,5 +1,8 @@
 //! `Api::V1::Admin::Trends::{Tags,Statuses,Links}Controller` and
 //! `Links::PreviewCardProvidersController`: trends as moderators review them.
+//!
+//! Mastodon: app/controllers/api/v1/admin/trends/
+//! Mastodon: app/serializers/rest/admin/trends/
 
 use axum::{
     extract::{Extension, Path},

@@ -1,3 +1,7 @@
+//! Sends a test Web Push notification to an account's subscriptions.
+//!
+//! Mastodon: none
+
 /// Send a test push notification to all active web push subscriptions for a
 /// given user account.
 ///

@@ -9,6 +9,8 @@
 //! filtered here, for the viewer's languages, blocks, mutes, domain blocks,
 //! the feed access settings and keyword filters, since everything else was
 //! filtered and rendered for the recipient before it was published.
+//!
+//! Mastodon: streaming/, app/controllers/api/v1/streaming_controller.rb
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;

@@ -1,5 +1,7 @@
 //! `Rule`: the server rules a report can cite, as `REST::RuleSerializer`
 //! renders them.
+//!
+//! Mastodon: app/models/rule.rb, app/serializers/rest/rule_serializer.rb
 
 use crate::api::mastodon::types::Rule;
 use crate::error::AppResult;

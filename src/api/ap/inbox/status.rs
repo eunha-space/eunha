@@ -1,6 +1,12 @@
 //! Inbound status-lifecycle activities: `Delete` (tombstone a remote status),
 //! `Announce` (boost), `Like` (favourite), and `Update` (edit a remote status,
 //! sync its poll). Includes notify_status_author, shared by Announce and Like.
+//!
+//! Mastodon: app/lib/activitypub/activity/delete.rb
+//! Mastodon: app/lib/activitypub/activity/announce.rb
+//! Mastodon: app/lib/activitypub/activity/like.rb
+//! Mastodon: app/lib/activitypub/activity/update.rb
+//! Mastodon: app/services/activitypub/process_status_update_service.rb
 
 use serde_json::Value;
 

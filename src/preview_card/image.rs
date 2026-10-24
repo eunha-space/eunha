@@ -2,6 +2,8 @@
 //! downloaded by `remotable_attachment :image, 8.megabytes`, shrunk by
 //! `Paperclip::LazyThumbnail` to at most 230,400 pixels, a GIF turned into a
 //! JPEG, and blurhashed by `Paperclip::BlurhashTranscoder`.
+//!
+//! Mastodon: app/models/preview_card.rb, lib/paperclip/blurhash_transcoder.rb
 
 use image::ImageFormat;
 use url::Url;

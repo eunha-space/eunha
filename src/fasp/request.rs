@@ -12,6 +12,8 @@
 //! through `Request::Socket`. A request that cannot connect counts against
 //! the provider's host at the resolution of minutes; one that is answered,
 //! however, clears its failures.
+//!
+//! Mastodon: app/lib/fasp/request.rb
 
 use serde_json::Value;
 

@@ -12,6 +12,8 @@
 //! `eunha migrate` runs it by itself, once, for a database that was serving
 //! when migration 023 was applied ([`import_if_owed`]), so that no deploy has
 //! to remember it.
+//!
+//! Mastodon: none
 
 use serde_yaml::Value;
 use sqlx::PgPool;

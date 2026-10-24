@@ -1,5 +1,8 @@
 //! Mastodon's `Export` and `ExportSummary`: the files on the data export
 //! page, byte for byte, and the counts beside them.
+//!
+//! Mastodon: app/models/export.rb, app/presenters/export_summary.rb
+//! Mastodon: app/controllers/settings/exports/
 
 use serde::Serialize;
 

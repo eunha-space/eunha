@@ -3,6 +3,8 @@
 //! one `site_uploads` row each, stored where Paperclip stores them
 //! (`site_uploads/files/:id_partition/:style/:filename`) with the styles
 //! `SiteUpload::STYLES` renders.
+//!
+//! Mastodon: app/models/site_upload.rb
 
 use std::io::Cursor;
 

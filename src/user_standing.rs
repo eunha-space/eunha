@@ -2,6 +2,8 @@
 //! `functional?`, `functional_or_moved?` and `missing_2fa?`, which
 //! `require_functional!`, `require_user!`, invites, notification emails and
 //! the feed settings all ask.
+//!
+//! Mastodon: app/models/user.rb
 
 use sqlx::PgPool;
 

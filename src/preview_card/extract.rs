@@ -1,6 +1,8 @@
 //! `LinkDetailsExtractor`: what a page says about itself, read the way
 //! Mastodon reads it — JSON-LD first, then OpenGraph and Twitter tags, then
 //! plain HTML.
+//!
+//! Mastodon: app/lib/link_details_extractor.rb
 
 use std::sync::LazyLock;
 

@@ -12,6 +12,8 @@
 //! redirect that could not be followed), and, as `raise_on_error` says, a
 //! status other than success. Anything else Mastodon reads as `nil` is
 //! `Ok(None)`.
+//!
+//! Mastodon: app/helpers/json_ld_helper.rb
 
 use ojak::fetch::FetchError;
 use ojak::sig::SenderKey;

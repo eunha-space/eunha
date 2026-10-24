@@ -10,6 +10,9 @@
 //!
 //! A remote status names its conversation by `conversation`: a URI of ours
 //! names one of ours, any other is found or recorded by its `uri`.
+//!
+//! Mastodon: app/models/status.rb, app/models/conversation.rb
+//! Mastodon: app/lib/activitypub/activity/create.rb
 
 use sqlx::PgPool;
 

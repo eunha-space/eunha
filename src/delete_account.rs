@@ -23,6 +23,9 @@
 //!   decremented. Mastodon's batched removal path skips its callbacks and
 //!   leaves them stale; eunha keeps them accurate, as its single-status delete
 //!   already does.
+//!
+//! Mastodon: app/services/delete_account_service.rb
+//! Mastodon: app/models/concerns/account/suspensions.rb
 
 use anyhow::Result;
 

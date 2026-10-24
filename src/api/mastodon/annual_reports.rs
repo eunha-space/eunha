@@ -1,3 +1,14 @@
+//! Annual reports (Wrapstodon): generating, reading and sharing a year's
+//! report.
+//!
+//! Mastodon: app/controllers/api/v1/annual_reports_controller.rb
+//! Mastodon: app/lib/annual_report.rb, app/lib/annual_report/
+//! Mastodon: app/serializers/rest/annual_report_serializer.rb
+//! Mastodon: app/serializers/rest/annual_reports_serializer.rb
+//! Mastodon: app/presenters/annual_reports_presenter.rb
+//! Mastodon: app/workers/generate_annual_report_worker.rb
+//! Mastodon: app/controllers/wrapstodon_controller.rb
+
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,

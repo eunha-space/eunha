@@ -5,6 +5,12 @@
 //! started (`ActivityPub::ContextsController`). Each is written as
 //! `ActivityPub::CollectionSerializer` writes it, and paged by the query
 //! Mastodon pages it by, which is already in the documents that link it.
+//!
+//! Mastodon: app/controllers/activitypub/replies_controller.rb
+//! Mastodon: app/controllers/activitypub/likes_controller.rb
+//! Mastodon: app/controllers/activitypub/shares_controller.rb
+//! Mastodon: app/controllers/activitypub/contexts_controller.rb
+//! Mastodon: app/serializers/activitypub/collection_serializer.rb
 
 use ojak::federation::CollectionDocument;
 use serde_json::{json, Value};

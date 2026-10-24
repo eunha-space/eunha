@@ -27,6 +27,8 @@
 //! import restores first and refuses to call the result an instance it is not.
 //! The database a failed import leaves behind is not repairable by re-running:
 //! discard it and restore into a fresh one.
+//!
+//! Mastodon: none
 
 use std::{
     path::{Path, PathBuf},

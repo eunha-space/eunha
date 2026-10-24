@@ -7,6 +7,9 @@
 //! redirect_to_tos_interstitial!`) until they open `/terms-of-service`, which
 //! clears the flag. Eunha's web app is a client of the API, so it asks here
 //! instead; see the `terms-of-service-interstitial-api` divergence.
+//!
+//! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
+//! Mastodon: app/controllers/terms_of_service_controller.rb
 
 use axum::{Extension, Json};
 use serde::Serialize;

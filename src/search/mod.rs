@@ -5,6 +5,8 @@
 //! With it (crate::search::elasticsearch), the search server answers first
 //! and the database only when it fails. docs/operating/search.md describes
 //! both backends.
+//!
+//! Mastodon: app/services/search_service.rb
 
 pub mod accounts;
 pub mod elasticsearch;

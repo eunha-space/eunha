@@ -1,3 +1,7 @@
+//! `GET /api/v1/bookmarks`: the viewer's bookmarked posts.
+//!
+//! Mastodon: app/controllers/api/v1/bookmarks_controller.rb
+
 use axum::{
     extract::{Extension, Query},
     http::{HeaderMap, Uri},

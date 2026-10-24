@@ -11,6 +11,13 @@
 //! once, the same circuit breaker holds back an inbox that keeps failing, a
 //! delivery is retried on the same schedule, and [`DeliveryFailureTracker`]
 //! marks a server unavailable as Mastodon's does.
+//!
+//! Mastodon: app/workers/activitypub/delivery_worker.rb
+//! Mastodon: app/workers/activitypub/distribution_worker.rb
+//! Mastodon: app/workers/activitypub/raw_distribution_worker.rb
+//! Mastodon: app/workers/activitypub/low_priority_delivery_worker.rb
+//! Mastodon: app/workers/activitypub/migrated_follow_delivery_worker.rb
+//! Mastodon: app/lib/status_reach_finder.rb, app/lib/account_reach_finder.rb
 
 use serde_json::Value;
 use std::sync::Arc;

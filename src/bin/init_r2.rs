@@ -1,3 +1,7 @@
+//! Puts the static assets the server needs into a new R2 bucket.
+//!
+//! Mastodon: none
+
 /// Initializes an eunha R2 bucket with the static assets the server requires.
 ///
 /// Currently uploads:

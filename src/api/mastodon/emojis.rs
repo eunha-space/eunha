@@ -1,3 +1,8 @@
+//! `GET /api/v1/custom_emojis`: the server's custom emoji.
+//!
+//! Mastodon: app/controllers/api/v1/custom_emojis_controller.rb
+//! Mastodon: app/serializers/rest/custom_emoji_serializer.rb
+
 use super::convert::{custom_emoji_entity, EmojiRow};
 use super::types::CustomEmoji;
 use crate::{error::AppResult, state::AppState};

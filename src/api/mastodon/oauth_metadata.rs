@@ -1,6 +1,10 @@
 //! What Mastodon says about its OAuth server, and about the user behind a
 //! token: `WellKnown::OAuthMetadataController` and
 //! `OAuth::UserinfoController`.
+//!
+//! Mastodon: app/controllers/well_known/oauth_metadata_controller.rb
+//! Mastodon: app/controllers/oauth/userinfo_controller.rb
+//! Mastodon: app/presenters/oauth_metadata_presenter.rb
 
 use axum::{extract::Extension, Json};
 use serde::Serialize;

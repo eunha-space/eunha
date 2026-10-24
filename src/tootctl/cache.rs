@@ -1,4 +1,6 @@
 //! `tootctl cache`: `Mastodon::CLI::Cache`.
+//!
+//! Mastodon: lib/mastodon/cli/cache.rb
 
 use crate::state::AppState;
 

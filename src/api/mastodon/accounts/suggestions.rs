@@ -1,5 +1,10 @@
 //! Follow suggestions (`/api/v1` and `/api/v2`) and dismissing a suggestion,
 //! from [`crate::suggestions`].
+//!
+//! Mastodon: app/controllers/api/v1/suggestions_controller.rb
+//! Mastodon: app/controllers/api/v2/suggestions_controller.rb
+//! Mastodon: app/serializers/rest/suggestion_serializer.rb
+//! Mastodon: app/models/account_suggestions.rb
 
 use super::*;
 

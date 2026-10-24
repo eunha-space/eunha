@@ -4,6 +4,14 @@
 //! Each measure and dimension is the query Mastodon's class runs, read the
 //! way Mastodon reads its parameters. Mastodon keeps each answer in
 //! `Rails.cache` for five minutes; eunha computes it every time.
+//!
+//! Mastodon: app/controllers/api/v1/admin/measures_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/dimensions_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/retention_controller.rb
+//! Mastodon: app/lib/admin/metrics/
+//! Mastodon: app/serializers/rest/admin/measure_serializer.rb
+//! Mastodon: app/serializers/rest/admin/dimension_serializer.rb
+//! Mastodon: app/serializers/rest/admin/cohort_serializer.rb
 
 use std::collections::HashMap;
 

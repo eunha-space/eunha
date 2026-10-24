@@ -10,6 +10,8 @@
 //! up through one lands under **them** in the invite tree rather than under the
 //! admin who minted it. The count is the limit — there is no allowance to keep
 //! books on, because the codes themselves are the allowance.
+//!
+//! Mastodon: none
 
 use axum::{
     routing::{get, post},

@@ -1,3 +1,11 @@
+//! Inbound ActivityPub activities: queueing what arrives, and handing each
+//! activity to the handler for its type.
+//!
+//! Mastodon: app/controllers/activitypub/inboxes_controller.rb
+//! Mastodon: app/services/activitypub/process_activity_service.rb
+//! Mastodon: app/workers/activitypub/processing_worker.rb
+//! Mastodon: app/lib/activitypub/activity.rb
+
 use serde_json::Value;
 
 use crate::{error::AppResult, state::AppState};

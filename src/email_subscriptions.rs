@@ -20,6 +20,14 @@
 //! eunha's per-instance `email_subscriptions` configuration flag is the same
 //! switch, and the `email_subscriptions` site setting is what an administrator
 //! turns on afterwards.
+//!
+//! Mastodon: app/models/email_subscription.rb
+//! Mastodon: app/controllers/api/v1/accounts/email_subscriptions_controller.rb
+//! Mastodon: app/mailers/email_subscription_mailer.rb
+//! Mastodon: app/controllers/email_subscriptions/confirmations_controller.rb
+//! Mastodon: app/controllers/unsubscriptions_controller.rb
+//! Mastodon: app/workers/email_distribution_worker.rb
+//! Mastodon: app/workers/admin/email_subscriptions_purge_worker.rb
 
 use std::time::Duration;
 

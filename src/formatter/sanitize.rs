@@ -4,6 +4,8 @@
 //! `CleanElement`, before its children. An element that is not allowed is
 //! dropped and its children kept in its place, except for the elements whose
 //! contents go with them; a block-level one leaves a space on either side.
+//!
+//! Mastodon: lib/sanitize_ext/sanitize_config.rb
 
 use std::sync::LazyLock;
 

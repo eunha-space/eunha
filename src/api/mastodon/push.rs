@@ -1,3 +1,10 @@
+//! Web push subscriptions: creating, reading, updating and removing the
+//! viewer's, and unsubscribing from a push's link.
+//!
+//! Mastodon: app/controllers/api/v1/push/subscriptions_controller.rb
+//! Mastodon: app/controllers/api/web/push_subscriptions_controller.rb
+//! Mastodon: app/serializers/rest/web_push_subscription_serializer.rb
+
 use axum::{extract::Extension, Json};
 use serde::Serialize;
 use serde_json::{Map, Value};

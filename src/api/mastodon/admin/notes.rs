@@ -1,5 +1,11 @@
 //! `Admin::ReportNotesController` and `Admin::AccountModerationNotesController`:
 //! the notes moderators leave each other on a report and on an account.
+//!
+//! Mastodon: app/controllers/admin/report_notes_controller.rb
+//! Mastodon: app/controllers/admin/account_moderation_notes_controller.rb
+//! Mastodon: app/models/report_note.rb, app/models/account_moderation_note.rb
+//! Mastodon: app/policies/report_note_policy.rb
+//! Mastodon: app/policies/account_moderation_note_policy.rb
 
 use axum::{
     extract::{Extension, Path},

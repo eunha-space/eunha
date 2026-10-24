@@ -1,3 +1,7 @@
+//! The server-rendered pages' templates, compiled once.
+//!
+//! Mastodon: none
+
 use minijinja::{Environment, Value};
 use once_cell::sync::Lazy;
 

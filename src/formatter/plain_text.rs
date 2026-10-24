@@ -1,5 +1,7 @@
 //! Mastodon's `PlainTextFormatter` (*app/lib/plain_text_formatter.rb*): a
 //! post or bio as plain text, for search, filters and plain-text email.
+//!
+//! Mastodon: app/lib/plain_text_formatter.rb
 
 use std::sync::LazyLock;
 

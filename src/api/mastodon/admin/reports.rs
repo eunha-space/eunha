@@ -1,4 +1,9 @@
 //! `Api::V1::Admin::ReportsController`.
+//!
+//! Mastodon: app/controllers/api/v1/admin/reports_controller.rb
+//! Mastodon: app/controllers/admin/reports/actions_controller.rb
+//! Mastodon: app/serializers/rest/admin/report_serializer.rb
+//! Mastodon: app/models/report_filter.rb, app/policies/report_policy.rb
 
 use axum::{
     extract::{Extension, Path},

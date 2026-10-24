@@ -1,4 +1,6 @@
 //! `REST::PreviewCardSerializer`.
+//!
+//! Mastodon: app/serializers/rest/preview_card_serializer.rb
 
 use std::collections::HashMap;
 

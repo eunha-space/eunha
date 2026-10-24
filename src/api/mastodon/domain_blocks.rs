@@ -1,3 +1,12 @@
+//! Domain blocks a user places: listing, blocking, unblocking, and
+//! previewing what a block would sever.
+//!
+//! Mastodon: app/controllers/api/v1/domain_blocks_controller.rb
+//! Mastodon: app/controllers/api/v1/domain_blocks/previews_controller.rb
+//! Mastodon: app/serializers/rest/domain_block_preview_serializer.rb
+//! Mastodon: app/services/after_block_domain_from_account_service.rb
+//! Mastodon: app/workers/after_account_domain_block_worker.rb
+
 use axum::{
     extract::{Extension, Query},
     http::{HeaderMap, Uri},

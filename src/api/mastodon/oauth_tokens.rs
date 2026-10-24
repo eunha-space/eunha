@@ -2,6 +2,9 @@
 //! (`Doorkeeper::TokenInfoController`), `POST /oauth/introspect`
 //! (`TokensController#introspect`, RFC 7662), and the applications pages,
 //! which Mastodon's `admin_authenticator` closes to everyone.
+//!
+//! Mastodon: app/controllers/oauth/tokens_controller.rb
+//! Mastodon: config/initializers/doorkeeper.rb
 
 use axum::{
     extract::Query,

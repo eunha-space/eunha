@@ -11,6 +11,8 @@
 //! Every sub-resource (`/inbox`, `/outbox`, `/followers`, `/statuses/{id}`, …)
 //! is just the actor URI with a suffix appended, in both schemes. The
 //! human-facing `url` (`/@username`) is independent of the scheme.
+//!
+//! Mastodon: app/lib/activitypub/tag_manager.rb
 
 use crate::db::models::Account;
 use crate::federation::instance_actor::INSTANCE_ACTOR_ID;

@@ -10,6 +10,8 @@
 //!
 //! Everything runs on one connection, as the Rails task does, with the
 //! statement timeout off.
+//!
+//! Mastodon: lib/mastodon/cli/maintenance.rb
 
 use anyhow::{bail, Context as _};
 use sqlx::{PgConnection, Row as _};

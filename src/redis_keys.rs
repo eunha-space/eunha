@@ -1,3 +1,8 @@
+//! The key prefix that keeps an instance's Redis keys apart, as Mastodon's
+//! `REDIS_NAMESPACE` does.
+//!
+//! Mastodon: lib/mastodon/redis_configuration.rb
+
 /// Per-instance Redis key namespace.
 ///
 /// The separator is added by Eunha so an operator supplies an opaque tenant

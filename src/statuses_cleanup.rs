@@ -13,6 +13,10 @@
 //! Every minute the scheduler deletes up to a budget of posts across the
 //! accounts, a few per account at a time, starting after the policy it stopped
 //! at last time, and skips its turn while the job queues are behind.
+//!
+//! Mastodon: app/models/account_statuses_cleanup_policy.rb
+//! Mastodon: app/services/account_statuses_cleanup_service.rb
+//! Mastodon: app/workers/scheduler/accounts_statuses_cleanup_scheduler.rb
 
 use redis::AsyncCommands;
 

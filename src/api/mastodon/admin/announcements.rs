@@ -1,5 +1,9 @@
 //! `Admin::AnnouncementsController` and its distribution, preview and test
 //! (`Admin::Announcements::*Controller`), under `AnnouncementPolicy`.
+//!
+//! Mastodon: app/controllers/admin/announcements_controller.rb
+//! Mastodon: app/controllers/admin/announcements/
+//! Mastodon: app/policies/announcement_policy.rb
 
 use axum::{
     extract::{Extension, Path, Query},

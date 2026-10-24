@@ -9,6 +9,8 @@
 //! its path length and key usage allowing it; a critical extension OpenSSL
 //! does not know refuses the chain; and each signature must hold. The root's
 //! own signature is not checked, as OpenSSL does not check it.
+//!
+//! Mastodon: none
 
 use chrono::{DateTime, NaiveDate, Utc};
 

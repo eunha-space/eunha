@@ -16,6 +16,9 @@
 //!
 //! What is eunha's is where they are kept, [`Store`]: the Redis sets under
 //! the instance's key prefix, and the table.
+//!
+//! Mastodon: app/lib/delivery_failure_tracker.rb
+//! Mastodon: app/models/unavailable_domain.rb
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};

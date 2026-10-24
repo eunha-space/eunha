@@ -7,6 +7,9 @@
 //! The instance configuration's
 //! `disable_automatic_switching_to_approved_registrations` turns it off, as
 //! `DISABLE_AUTOMATIC_SWITCHING_TO_APPROVED_REGISTRATIONS=true` does.
+//!
+//! Mastodon: app/workers/scheduler/auto_close_registrations_scheduler.rb
+//! Mastodon: app/mailers/admin_mailer.rb
 
 use crate::moderation::role::flag;
 use crate::settings::RegistrationsMode;

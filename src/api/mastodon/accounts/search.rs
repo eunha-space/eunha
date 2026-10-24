@@ -1,5 +1,8 @@
 //! `GET /api/v1/accounts/search`: `Api::V1::Accounts::SearchController`,
 //! which hands the query to `AccountSearchService` (crate::search::accounts).
+//!
+//! Mastodon: app/controllers/api/v1/accounts/search_controller.rb
+//! Mastodon: app/services/account_search_service.rb
 
 use super::*;
 use crate::api::mastodon::extractors::FlexBool;

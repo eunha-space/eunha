@@ -1,3 +1,10 @@
+//! The process and instance configuration, read from TOML and the
+//! environment, Mastodon's own environment variables included.
+//!
+//! Mastodon: config/initializers/chewy.rb
+//! Mastodon: config/initializers/active_record_encryption.rb
+//! Mastodon: config/translation.yml
+
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]

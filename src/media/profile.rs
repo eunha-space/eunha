@@ -2,6 +2,9 @@
 //! `Account::Header` take and store them: only JPEG, PNG, GIF and WebP under
 //! 8 MB, fitted by their Paperclip styles, and a GIF's first frame kept as a
 //! PNG `static` style besides.
+//!
+//! Mastodon: app/models/concerns/account/avatar.rb
+//! Mastodon: app/models/concerns/account/header.rb
 
 use crate::email_subscriptions::ValidationErrors;
 use crate::media::picture::{Fit, Picture};

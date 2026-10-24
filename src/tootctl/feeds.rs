@@ -1,4 +1,6 @@
 //! `tootctl feeds`: `Mastodon::CLI::Feeds`.
+//!
+//! Mastodon: lib/mastodon/cli/feeds.rb
 
 use crate::state::AppState;
 

@@ -1,4 +1,8 @@
 //! `GET /api/v2/search`: `Api::V2::SearchController` and `SearchService`.
+//!
+//! Mastodon: app/controllers/api/v2/search_controller.rb
+//! Mastodon: app/services/search_service.rb
+//! Mastodon: app/serializers/rest/search_serializer.rb
 
 use axum::{
     extract::{Extension, Query},

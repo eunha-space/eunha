@@ -4,6 +4,8 @@
 //! when that lookup finds a zone (`normalizes :time_zone`). The times
 //! Mastodon writes into a user's mail are in that zone, formatted
 //! `:with_time_zone`.
+//!
+//! Mastodon: app/models/user.rb
 
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::{OffsetComponents, OffsetName, Tz};

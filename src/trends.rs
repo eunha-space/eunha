@@ -10,6 +10,10 @@
 //!
 //! The Redis writes are best-effort, like the histories': a Redis user
 //! without the commands loses the use, not the request.
+//!
+//! Mastodon: app/models/trends.rb, app/models/trends/
+//! Mastodon: app/workers/scheduler/trends/refresh_scheduler.rb
+//! Mastodon: app/workers/scheduler/trends/review_notifications_scheduler.rb
 
 use std::collections::{BTreeSet, HashSet};
 

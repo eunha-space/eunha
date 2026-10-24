@@ -1,3 +1,10 @@
+//! Hashtags: showing one, and following and unfollowing them.
+//!
+//! Mastodon: app/controllers/api/v1/tags_controller.rb
+//! Mastodon: app/controllers/api/v1/followed_tags_controller.rb
+//! Mastodon: app/serializers/rest/tag_serializer.rb
+//! Mastodon: app/workers/tag_unmerge_worker.rb
+
 use super::types::{Tag, TagHistory};
 use crate::{
     error::{AppError, AppResult},

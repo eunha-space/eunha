@@ -4,6 +4,8 @@
 //! Mastodon release as semver build metadata (`0.2.0+mastodon.4.7.0`).
 //! `build.rs` splits them apart and checks the Mastodon half against
 //! `mastodon.toml`, so these constants cannot drift from the manifest.
+//!
+//! Mastodon: lib/mastodon/version.rb
 
 /// Eunha's own version, without the `+mastodon.x.y.z` build metadata.
 pub const EUNHA: &str = env!("EUNHA_VERSION");

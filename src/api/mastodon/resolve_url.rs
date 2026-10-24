@@ -8,6 +8,8 @@
 //! back with nothing, what the database already holds is offered instead — a
 //! status can be unfetchable (private, or its author's server refusing us) and
 //! still be one this viewer is allowed to see.
+//!
+//! Mastodon: app/services/resolve_url_service.rb
 
 use crate::{
     api::ap::inbox::{fetch_remote_status_prefetched, resolve_or_fetch_remote_account_prefetched},

@@ -3,6 +3,8 @@
 //! `Client::Credentials.from_request` with Mastodon's default
 //! `client_credentials :from_basic, :from_params`, then
 //! `Client.authenticate` (`Application.by_uid_and_secret`).
+//!
+//! Mastodon: config/initializers/doorkeeper.rb
 
 use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},

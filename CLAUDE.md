@@ -29,6 +29,9 @@ Rules
  -  Migrations are applied by `eunha migrate`, never by starting the server.
  -  A deliberate difference from Mastodon gets an entry in *divergences.toml*,
     which `cargo test` checks.
+ -  Every file under *src/* names the Mastodon files it implements in a
+    `//! Mastodon:` line, or says `//! Mastodon: none`; `cargo test` checks
+    the paths against the tracked release.
  -  Run `mise run fmt:check` before committing. It covers Rust and every
     Markdown file, *docs/* included.
  -  Run `mise run docs:build` after editing *docs/*; it fails on dead links.
@@ -95,7 +98,8 @@ Running an instance:
 Tracking Mastodon:
 
  -  *docs/mastodon/tracking.md*: `mastodon.toml`, `eunha-schema`, the schema
-    check, and the steps for adopting a new Mastodon release.
+    check, the `//! Mastodon:` counterpart headers and `mastodon:changes`, and
+    the steps for adopting a new Mastodon release.
  -  *docs/mastodon/signing-keys.md* and *docs/mastodon/http-signatures.md*.
  -  *docs/mastodon/streaming.md*: the streaming API, its channels, and what
     is filtered for each connection.

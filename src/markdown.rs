@@ -12,6 +12,10 @@
 //!     `<script>` reads as text.
 //!  -  `no_images`: Redcarpet declines to render an image, and the source is
 //!     left as it was written.
+//!
+//! Mastodon: app/serializers/rest/terms_of_service_serializer.rb
+//! Mastodon: app/serializers/rest/privacy_policy_serializer.rb
+//! Mastodon: app/helpers/formatting_helper.rb
 
 use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag, TagEnd};
 

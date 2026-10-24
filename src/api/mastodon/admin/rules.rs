@@ -1,5 +1,8 @@
 //! `Admin::RulesController`: the server rules, their translations and their
 //! order. Like upstream's controller, none of it is logged.
+//!
+//! Mastodon: app/controllers/admin/rules_controller.rb, app/models/rule.rb
+//! Mastodon: app/models/rule_translation.rb, app/policies/rule_policy.rb
 
 use axum::{
     extract::{Extension, Path},

@@ -1,5 +1,10 @@
 //! The documents local actors and their statuses are served as; ojak serves
 //! them (`super::serving`).
+//!
+//! Mastodon: app/serializers/activitypub/actor_serializer.rb
+//! Mastodon: app/serializers/activitypub/image_serializer.rb
+//! Mastodon: app/serializers/activitypub/public_key_serializer.rb
+//! Mastodon: app/controllers/instance_actors_controller.rb
 
 use serde_json::{json, Value};
 

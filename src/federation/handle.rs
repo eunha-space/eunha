@@ -7,6 +7,8 @@
 //! an actor document can claim any `preferredUsername` and believing it would
 //! let one account take another's; `ProcessAccountService`
 //! (`crate::federation::process_account`) asks it, and renames.
+//!
+//! Mastodon: app/services/activitypub/process_account_service.rb
 
 use crate::error::AppResult;
 use crate::state::AppState;

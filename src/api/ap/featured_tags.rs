@@ -3,6 +3,11 @@
 //! `collections/tags`), and the `Add` and `Remove` that tell its followers
 //! when one is featured or no longer is (`ActivityPub::AddHashtagSerializer`,
 //! `ActivityPub::RemoveHashtagSerializer`).
+//!
+//! Mastodon: app/controllers/activitypub/collections_controller.rb
+//! Mastodon: app/serializers/activitypub/hashtag_serializer.rb
+//! Mastodon: app/serializers/activitypub/add_hashtag_serializer.rb
+//! Mastodon: app/serializers/activitypub/remove_hashtag_serializer.rb
 
 use serde_json::{json, Value};
 

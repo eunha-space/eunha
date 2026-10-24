@@ -7,6 +7,8 @@
 //! Mastodon. A domain keeps its port, as Mastodon's do: a block on
 //! `example.com` does not cover `example.com:8080`, an account's domain on a
 //! server at a port, and one on `example.com:8080` covers only that.
+//!
+//! Mastodon: app/helpers/domain_control_helper.rb, app/models/domain_block.rb
 
 use crate::db::models::domain_severity;
 use crate::state::AppState;

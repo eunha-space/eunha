@@ -1,4 +1,7 @@
 //! Quote management: listing a status's quotes and revoking a quote.
+//!
+//! Mastodon: app/controllers/api/v1/statuses/quotes_controller.rb
+//! Mastodon: app/services/revoke_quote_service.rb
 
 use super::*;
 

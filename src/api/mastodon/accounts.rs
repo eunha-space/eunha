@@ -1,3 +1,22 @@
+//! Accounts: showing, looking up and listing accounts, their posts,
+//! notes, featured tags, familiar followers and the directory, and rendering
+//! them as `REST::AccountSerializer` does.
+//!
+//! Mastodon: app/controllers/api/v1/accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/lookup_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/statuses_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/notes_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/featured_tags_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/lists_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/familiar_followers_controller.rb
+//! Mastodon: app/controllers/api/v1/accounts/identity_proofs_controller.rb
+//! Mastodon: app/controllers/api/v1/directories_controller.rb
+//! Mastodon: app/serializers/rest/account_serializer.rb
+//! Mastodon: app/lib/account_statuses_filter.rb
+//! Mastodon: app/services/remove_from_followers_service.rb
+//! Mastodon: app/controllers/settings/deletes_controller.rb
+//! Mastodon: app/services/delete_account_service.rb
+
 use axum::{
     extract::{Extension, Path, Query, RawQuery},
     http::{HeaderMap, Uri},

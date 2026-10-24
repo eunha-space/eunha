@@ -10,6 +10,8 @@
 //! is whichever line ending comes first, blank lines are skipped, an empty
 //! unquoted field is `nil` while an empty quoted one is `""`, and malformed
 //! quoting is an error worded as `CSV::MalformedCSVError` words it.
+//!
+//! Mastodon: none
 
 /// One field to write: `None` is Ruby's `nil`.
 pub type Field = Option<String>;

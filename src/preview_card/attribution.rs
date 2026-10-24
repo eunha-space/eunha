@@ -4,6 +4,9 @@
 //! (`unverified_author_account_id`) are its own if it lists that domain
 //! now (`UpdateAccountService#process_attribution_domains`,
 //! `UpdateLinkCardAttributionWorker`).
+//!
+//! Mastodon: app/services/update_account_service.rb
+//! Mastodon: app/workers/update_link_card_attribution_worker.rb
 
 use crate::state::AppState;
 

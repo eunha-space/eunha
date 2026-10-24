@@ -1,3 +1,14 @@
+//! OAuth: registering apps, authorizing them and issuing and revoking
+//! tokens.
+//!
+//! Mastodon: app/controllers/api/v1/apps_controller.rb
+//! Mastodon: app/controllers/api/v1/apps/credentials_controller.rb
+//! Mastodon: app/controllers/oauth/authorizations_controller.rb
+//! Mastodon: app/controllers/oauth/tokens_controller.rb
+//! Mastodon: app/serializers/rest/application_serializer.rb
+//! Mastodon: app/serializers/rest/credential_application_serializer.rb
+//! Mastodon: config/initializers/doorkeeper.rb
+
 use axum::{
     extract::{Extension, Query},
     http::StatusCode,

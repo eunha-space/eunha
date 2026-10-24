@@ -16,6 +16,9 @@
 //! `ProcessAccountService` stores them, against the account's `url`: a value
 //! that is nothing but a link to itself is the candidate there. Its server
 //! sends the fields without `verified_at`, so each refresh verifies afresh.
+//!
+//! Mastodon: app/services/verify_link_service.rb
+//! Mastodon: app/workers/verify_account_links_worker.rb
 
 use std::time::Duration;
 

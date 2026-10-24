@@ -1,3 +1,20 @@
+//! Statuses: showing and deleting them, and favouriting, reblogging,
+//! bookmarking, pinning and muting them.
+//!
+//! Mastodon: app/controllers/api/v1/statuses_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/bookmarks_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/favourites_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/favourited_by_accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/reblogs_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/reblogged_by_accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/pins_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/mutes_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/interaction_policies_controller.rb
+//! Mastodon: app/services/favourite_service.rb
+//! Mastodon: app/services/unfavourite_service.rb
+//! Mastodon: app/services/reblog_service.rb
+//! Mastodon: app/services/remove_status_service.rb
+
 use axum::{
     extract::{Extension, FromRequest, Path, Query, RawQuery},
     http::{HeaderMap, Uri},

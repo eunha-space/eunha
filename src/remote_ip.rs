@@ -4,6 +4,9 @@
 //! Proxies are trusted when they are loopback or private addresses, as Rails'
 //! defaults have it, or listed in `TRUSTED_PROXY_IP` (comma-separated
 //! addresses or CIDR ranges), as Mastodon's configuration adds.
+//!
+//! Mastodon: lib/action_dispatch/remote_ip_extensions.rb
+//! Mastodon: app/models/ip_block.rb
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::OnceLock;

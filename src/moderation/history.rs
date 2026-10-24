@@ -4,6 +4,8 @@
 //!
 //! Writes are best-effort: a Redis user without the commands loses the count,
 //! not the request.
+//!
+//! Mastodon: app/models/trends/history.rb
 
 use serde_json::{json, Value};
 

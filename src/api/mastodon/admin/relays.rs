@@ -1,5 +1,8 @@
 //! `Admin::RelaysController`: every action is `RelayPolicy#update?`, which is
 //! `manage_federation`.
+//!
+//! Mastodon: app/controllers/admin/relays_controller.rb, app/models/relay.rb
+//! Mastodon: app/policies/relay_policy.rb
 
 use axum::{
     extract::{Extension, Path},

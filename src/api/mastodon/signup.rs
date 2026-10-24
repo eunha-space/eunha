@@ -1,3 +1,12 @@
+//! Signing up: `POST /api/v1/accounts`, the sign-up page, and confirming
+//! the email address.
+//!
+//! Mastodon: app/controllers/api/v1/accounts_controller.rb
+//! Mastodon: app/services/app_sign_up_service.rb
+//! Mastodon: app/controllers/auth/registrations_controller.rb
+//! Mastodon: app/controllers/auth/confirmations_controller.rb
+//! Mastodon: app/controllers/api/v1/emails/confirmations_controller.rb
+
 use crate::{
     crypto,
     error::{AppError, AppResult},

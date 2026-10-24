@@ -1,6 +1,11 @@
 //! Inbound relationship-lifecycle activities: `Follow`, `Undo` (of
 //! Follow/Like/Announce), and `Accept`/`Reject` of an outbound follow (and of
 //! our quote/feature requests).
+//!
+//! Mastodon: app/lib/activitypub/activity/follow.rb
+//! Mastodon: app/lib/activitypub/activity/undo.rb
+//! Mastodon: app/lib/activitypub/activity/accept.rb
+//! Mastodon: app/lib/activitypub/activity/reject.rb
 
 use serde_json::Value;
 

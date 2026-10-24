@@ -8,6 +8,9 @@
 //! mailed to it (`reconfirmation_instructions`) is followed, and the address
 //! being left is told (`email_changed`), as `send_email_changed_notification`
 //! does with `reconfirmable`.
+//!
+//! Mastodon: app/controllers/auth/registrations_controller.rb
+//! Mastodon: app/mailers/user_mailer.rb
 
 use axum::{
     response::{IntoResponse, Response},

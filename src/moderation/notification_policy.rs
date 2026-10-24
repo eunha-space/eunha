@@ -1,6 +1,8 @@
 //! `NotifyService`'s `DropCondition` and `FilterCondition` policy checks: what
 //! a recipient's `NotificationPolicy` does with a notification from someone
 //! it has not let through.
+//!
+//! Mastodon: app/services/notify_service.rb, app/models/notification_policy.rb
 
 use sqlx::PgPool;
 

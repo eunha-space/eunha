@@ -14,6 +14,8 @@
 //! The tables are Mastodon's: `fasp_providers`, `fasp_subscriptions`,
 //! `fasp_backfill_requests`, `fasp_debug_callbacks` and
 //! `fasp_follow_recommendations`.
+//!
+//! Mastodon: app/models/fasp.rb, app/models/fasp/
 
 pub mod api;
 pub mod events;

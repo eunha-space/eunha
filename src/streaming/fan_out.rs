@@ -9,6 +9,14 @@
 //! pushed to them. That is decided per subscriber rather than per follower,
 //! which gives the same messages, since Mastodon only pushes to a timeline
 //! with a subscriber (`push_update_required?`).
+//!
+//! Mastodon: app/services/fan_out_on_write_service.rb, app/lib/feed_manager.rb
+//! Mastodon: app/workers/feed_insert_worker.rb
+//! Mastodon: app/workers/push_update_worker.rb
+//! Mastodon: app/services/remove_status_service.rb
+//! Mastodon: app/services/notify_service.rb
+//! Mastodon: app/models/account_conversation.rb
+//! Mastodon: app/workers/publish_scheduled_announcement_worker.rb
 
 use serde_json::{json, Value};
 

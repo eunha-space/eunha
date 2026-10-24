@@ -1,5 +1,7 @@
 //! `LanguagesHelper::SUPPORTED_LOCALES`, generated from Mastodon's
 //! *app/helpers/languages_helper.rb*: code, English name, native name.
+//!
+//! Mastodon: app/helpers/languages_helper.rb
 
 /// Every language code Mastodon accepts, in its order.
 pub const SUPPORTED_LOCALES: &[(&str, &str, &str)] = &[

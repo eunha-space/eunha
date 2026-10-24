@@ -1,5 +1,7 @@
 //! A parsed HTML fragment as an owned tree, for the sanitizer to rewrite, and
 //! its serialization the way Nokogiri's HTML5 `to_html` writes it.
+//!
+//! Mastodon: none
 
 /// Nokogiri's `Nokogiri::Gumbo::DEFAULT_MAX_TREE_DEPTH`: deeper than this, the
 /// parse raises, and `HtmlAwareFormatter` shows nothing.

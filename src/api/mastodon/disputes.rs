@@ -4,6 +4,13 @@
 //!
 //! Mastodon has these as server-rendered pages; eunha serves them over REST
 //! for its web client.
+//!
+//! Mastodon: app/controllers/disputes/strikes_controller.rb
+//! Mastodon: app/controllers/disputes/appeals_controller.rb
+//! Mastodon: app/controllers/admin/disputes/strikes_controller.rb
+//! Mastodon: app/services/appeal_service.rb
+//! Mastodon: app/serializers/rest/account_warning_serializer.rb
+//! Mastodon: app/serializers/rest/appeal_serializer.rb
 
 use axum::{
     extract::{Extension, Path},

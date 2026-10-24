@@ -9,6 +9,8 @@
 //! also where its WebFinger address lives, and keeps its inbox as the
 //! `https` URL at that gateway, so that delivering to it is delivering to
 //! any other inbox.
+//!
+//! Mastodon: none
 
 use ojak::portable::ApUri;
 use serde_json::Value;

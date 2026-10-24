@@ -1,5 +1,12 @@
 //! Editing statuses: `PUT /statuses/:id`, plus the edit-history and source
 //! endpoints (`/history`, `/source`).
+//!
+//! Mastodon: app/controllers/api/v1/statuses_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/histories_controller.rb
+//! Mastodon: app/controllers/api/v1/statuses/sources_controller.rb
+//! Mastodon: app/services/update_status_service.rb
+//! Mastodon: app/serializers/rest/status_edit_serializer.rb
+//! Mastodon: app/serializers/rest/status_source_serializer.rb
 
 use super::*;
 

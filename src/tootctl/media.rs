@@ -4,6 +4,8 @@
 //! (`remote-account-images-not-downloaded`), so `remove` only ever finds the
 //! copies a Mastodon sharing the database made, and `refresh`, which
 //! downloads them again, is not offered (`maintenance-commands-in-eunha-terms`).
+//!
+//! Mastodon: lib/mastodon/cli/media.rb
 
 use std::collections::HashMap;
 

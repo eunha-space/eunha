@@ -6,6 +6,9 @@
 //! once and handed to many receivers. Eunha renders accounts in many places
 //! that do not know the viewer, so, as the hydrator does, it is set on what
 //! was rendered: once per response, for every account object in it.
+//!
+//! Mastodon: app/serializers/rest/account_serializer.rb
+//! Mastodon: app/lib/status_cache_hydrator.rb
 
 use std::collections::HashMap;
 

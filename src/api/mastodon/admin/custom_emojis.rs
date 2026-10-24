@@ -3,6 +3,11 @@
 //! `Form::CustomEmojiBatch`), over the REST API
 //! (`admin-custom-emoji-rest-api`). An upload is validated as `CustomEmoji`
 //! validates one and stored where Paperclip stores it.
+//!
+//! Mastodon: app/controllers/admin/custom_emojis_controller.rb
+//! Mastodon: app/models/form/custom_emoji_batch.rb, app/models/custom_emoji.rb
+//! Mastodon: app/models/custom_emoji_filter.rb
+//! Mastodon: app/policies/custom_emoji_policy.rb
 
 use axum::{
     extract::{Extension, Multipart, Path},

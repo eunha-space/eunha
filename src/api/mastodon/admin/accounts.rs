@@ -1,5 +1,12 @@
 //! `Api::V1::Admin::AccountsController`, `Api::V2::Admin::AccountsController`
 //! and `Api::V1::Admin::AccountActionsController`.
+//!
+//! Mastodon: app/controllers/api/v1/admin/accounts_controller.rb
+//! Mastodon: app/controllers/api/v2/admin/accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/admin/account_actions_controller.rb
+//! Mastodon: app/serializers/rest/admin/account_serializer.rb
+//! Mastodon: app/serializers/rest/admin/ip_serializer.rb
+//! Mastodon: app/models/account_filter.rb
 
 use axum::{
     extract::{Extension, Path},

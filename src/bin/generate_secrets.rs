@@ -11,6 +11,8 @@
 //!
 //!   eunha-generate-secrets            # .env lines, ready to paste
 //!   eunha-generate-secrets --toml     # a config.toml section
+//!
+//! Mastodon: config/initializers/active_record_encryption.rb
 
 use clap::Parser;
 use eunha::rails_encryption::generate_secret;

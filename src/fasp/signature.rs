@@ -12,6 +12,9 @@
 //! one is refused.
 //!
 //! [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
+//!
+//! Mastodon: app/lib/fasp/request.rb
+//! Mastodon: app/controllers/api/fasp/base_controller.rb
 
 use axum::http::HeaderMap;
 use ojak::sig::rfc9421::{SigningKey, VerifyingKey};

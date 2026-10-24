@@ -12,6 +12,9 @@
 //!     code, as Mastodon cannot.
 //!  -  `otp_backup_codes` holds bcrypt digests (`Devise::Encryptor`, ten
 //!     stretches) of ten 16-character hex codes.
+//!
+//! Mastodon: app/models/user.rb
+//! Mastodon: app/controllers/concerns/auth/two_factor_authentication_concern.rb
 
 use hmac::{Hmac, Mac};
 use rand::Rng as _;

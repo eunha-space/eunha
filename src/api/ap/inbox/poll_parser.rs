@@ -1,5 +1,7 @@
 //! `ActivityPub::Parser::PollParser`: a remote `Question`'s poll, as both
 //! `Create` (`process_poll`) and `Update` (`update_poll!`) read it.
+//!
+//! Mastodon: app/lib/activitypub/parser/poll_parser.rb
 
 use chrono::NaiveDateTime;
 use serde_json::Value;

@@ -9,6 +9,8 @@
 //! is signed over `@status` and `content-digest` with this server's key for
 //! the provider (`#sign_response`); a refusal, or an error raised before the
 //! action finishes, is not, as Rails skips `after_action` for those.
+//!
+//! Mastodon: app/controllers/api/fasp/, config/routes/fasp.rb
 
 use axum::{
     body::Bytes,

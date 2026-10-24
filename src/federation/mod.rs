@@ -1,3 +1,8 @@
+//! ActivityPub federation: building, delivering and fetching activities and
+//! the objects they carry.
+//!
+//! Mastodon: none
+
 pub mod activity;
 pub mod addressing;
 pub mod consent;

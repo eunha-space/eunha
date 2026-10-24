@@ -22,6 +22,8 @@
 //!  -  `apple`: checked against the Apple WebAuthn root webauthn-ruby ships.
 //!
 //! Any other format is refused.
+//!
+//! Mastodon: config/initializers/webauthn.rb
 
 use base64::Engine as _;
 use chrono::{DateTime, Utc};

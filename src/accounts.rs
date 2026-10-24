@@ -4,6 +4,12 @@
 //! the save comes from a confirmed sign-up or from `tootctl accounts create`.
 //! Both go through [`create_local`] here, so an account made on the command line
 //! has the same shape as one that signed up.
+//!
+//! Mastodon: lib/mastodon/cli/accounts.rb, app/models/user.rb
+//! Mastodon: app/controllers/auth/registrations_controller.rb
+//! Mastodon: app/services/app_sign_up_service.rb
+//! Mastodon: app/services/bootstrap_timeline_service.rb
+//! Mastodon: app/workers/scheduler/user_cleanup_scheduler.rb
 
 use anyhow::{anyhow, bail, Context, Result};
 use sqlx::PgPool;

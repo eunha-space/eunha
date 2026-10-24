@@ -11,6 +11,8 @@
 //! app, so it is served over REST under `/api/eunha/v1/` (the
 //! `data-portability-rest-api` divergence); the handlers are in
 //! *src/api/eunha/portability.rs*.
+//!
+//! Mastodon: none
 
 pub mod backup;
 pub mod csv;

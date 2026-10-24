@@ -4,6 +4,8 @@
 //! it within six hours sets a new password, ends every session and
 //! authorization, and mails `password_change`. The person is not signed in
 //! afterwards (`sign_in_after_reset_password = false`).
+//!
+//! Mastodon: app/controllers/auth/passwords_controller.rb
 
 use axum::{
     extract::{Form, Query},

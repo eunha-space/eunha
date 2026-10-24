@@ -4,6 +4,8 @@
 //! [`crate::formatter::extractor`] does.
 //!
 //! Generated from the gem's file; do not edit by hand.
+//!
+//! Mastodon: none
 
 /// `TLDS['country']`, joined into `valid_ccTLD`.
 pub const COUNTRY: &[&str] = &[

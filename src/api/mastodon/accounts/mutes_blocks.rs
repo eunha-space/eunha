@@ -1,6 +1,15 @@
 //! Mutes and blocks: mute/unmute (with optional notification muting and
 //! duration), block/unblock (with follow teardown + federation), and the
 //! `/blocks` and `/mutes` list endpoints.
+//!
+//! Mastodon: app/controllers/api/v1/accounts_controller.rb
+//! Mastodon: app/controllers/api/v1/blocks_controller.rb
+//! Mastodon: app/controllers/api/v1/mutes_controller.rb
+//! Mastodon: app/services/mute_service.rb, app/services/unmute_service.rb
+//! Mastodon: app/services/block_service.rb, app/services/unblock_service.rb
+//! Mastodon: app/services/after_block_service.rb, app/workers/block_worker.rb
+//! Mastodon: app/workers/mute_worker.rb, app/workers/delete_mute_worker.rb
+//! Mastodon: app/serializers/rest/muted_account_serializer.rb
 
 use super::*;
 

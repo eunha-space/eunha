@@ -1,6 +1,8 @@
 //! `Tag.find_or_create_by_names`: a hashtag found by its normalized name, or
 //! created with that name and the spelling it was written with as its
 //! `display_name`.
+//!
+//! Mastodon: app/models/tag.rb
 
 use sqlx::PgPool;
 

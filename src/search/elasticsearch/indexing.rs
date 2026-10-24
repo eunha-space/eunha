@@ -9,6 +9,9 @@
 //! later pass succeeds, and a restart loses nothing. The sets are named as
 //! Mastodon names them, under the instance's Redis key prefix, so a queue a
 //! Mastodon left behind on the same Redis is drained too.
+//!
+//! Mastodon: app/workers/scheduler/indexing_scheduler.rb
+//! Mastodon: lib/chewy/strategy/mastodon.rb
 
 use super::documents::{bulk_lines, documents};
 use super::Index;

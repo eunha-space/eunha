@@ -1,5 +1,9 @@
 //! `BlockDomainService`, `UnblockDomainService` and `ClearDomainMediaService`:
 //! what an admin domain block does to the accounts already known from it.
+//!
+//! Mastodon: app/services/block_domain_service.rb
+//! Mastodon: app/services/unblock_domain_service.rb
+//! Mastodon: app/services/clear_domain_media_service.rb
 
 use anyhow::Result;
 

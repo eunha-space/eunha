@@ -2,6 +2,8 @@
 //! with what was typed, from the instances index when Elasticsearch is on and
 //! from the `instances` rows otherwise. A search server that fails is a 500,
 //! as nothing upstream rescues it.
+//!
+//! Mastodon: app/controllers/api/v1/peers/search_controller.rb
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;

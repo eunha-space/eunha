@@ -20,6 +20,9 @@
 //! The hashes live in the coordination Redis, which is not evicted: a refresh
 //! that vanished while its work ran would let the next request start the same
 //! work again.
+//!
+//! Mastodon: app/models/async_refresh.rb
+//! Mastodon: app/controllers/concerns/async_refreshes_concern.rb
 
 use redis::AsyncCommands;
 use serde_json::{json, Value};

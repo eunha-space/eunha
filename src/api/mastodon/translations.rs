@@ -1,5 +1,11 @@
 //! `Api::V1::Statuses::TranslationsController` and
 //! `Api::V1::Instances::TranslationLanguagesController`.
+//!
+//! Mastodon: app/controllers/api/v1/statuses/translations_controller.rb
+//! Mastodon: app/controllers/api/v1/instances/translation_languages_controller.rb
+//! Mastodon: app/lib/translation_service.rb
+//! Mastodon: app/services/translate_status_service.rb
+//! Mastodon: app/serializers/rest/translation_serializer.rb
 
 use axum::{
     extract::{Extension, Path},

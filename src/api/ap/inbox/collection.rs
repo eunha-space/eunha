@@ -3,6 +3,9 @@
 //! its collections (its `featuredCollections`), and the items of one of its
 //! collections. Everything is looked up among the sender's own: no actor can
 //! pin another's post, nor touch another's collection.
+//!
+//! Mastodon: app/lib/activitypub/activity/add.rb
+//! Mastodon: app/lib/activitypub/activity/remove.rb
 
 use serde_json::Value;
 

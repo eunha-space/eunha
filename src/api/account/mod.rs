@@ -1,3 +1,12 @@
+//! The server-rendered account pages: signing in and out, registering, setup,
+//! the password, deleting the account and downloading a backup.
+//!
+//! Mastodon: app/controllers/auth/sessions_controller.rb
+//! Mastodon: app/controllers/auth/registrations_controller.rb
+//! Mastodon: app/controllers/auth/setup_controller.rb
+//! Mastodon: app/controllers/settings/deletes_controller.rb
+//! Mastodon: app/controllers/backups_controller.rb
+
 use axum::{
     extract::Query,
     http::{header, HeaderMap, HeaderName, HeaderValue},

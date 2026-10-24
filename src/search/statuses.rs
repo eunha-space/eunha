@@ -1,4 +1,6 @@
 //! Literal substring post search when Elasticsearch is disabled.
+//!
+//! Mastodon: app/services/statuses_search_service.rb
 
 use super::elasticsearch::StatusOptions;
 use crate::{error::AppResult, state::AppState};

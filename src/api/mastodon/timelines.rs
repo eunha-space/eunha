@@ -1,3 +1,9 @@
+//! Timelines: home, list, public, hashtag and link.
+//!
+//! Mastodon: app/controllers/api/v1/timelines/, app/models/home_feed.rb
+//! Mastodon: app/models/list_feed.rb, app/models/public_feed.rb
+//! Mastodon: app/models/tag_feed.rb, app/models/link_feed.rb
+
 use axum::{
     extract::{Extension, Path, Query},
     http::{header, HeaderMap, Uri},

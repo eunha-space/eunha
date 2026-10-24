@@ -3,6 +3,8 @@
 //! RSA is done by hand on top of the modular exponentiation: OpenSSL takes
 //! any key size and finds the RSA-PSS salt length itself (`salt_length:
 //! :auto`), which webauthn-ruby relies on, and the rsa crate does neither.
+//!
+//! Mastodon: none
 
 use rsa::BigUint;
 use sha1::Sha1;

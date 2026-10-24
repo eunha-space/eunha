@@ -4,6 +4,9 @@
 //! objects here so the wire representation (content, media `attachment`, and the
 //! `tag` array of mentions/hashtags/custom emoji) stays identical regardless of
 //! how a remote server discovers the post.
+//!
+//! Mastodon: app/serializers/activitypub/note_serializer.rb
+//! Mastodon: app/serializers/activitypub/emoji_serializer.rb
 
 use serde_json::{json, Value};
 

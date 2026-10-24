@@ -1,3 +1,10 @@
+//! Eunha's web frontend, and the pages served beside it.
+//!
+//! Mastodon: app/controllers/custom_css_controller.rb
+//! Mastodon: app/controllers/wrapstodon_controller.rb
+//! Mastodon: app/views/wrapstodon/show.html.haml
+//! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
+
 /// Serves eunha's own web frontend: a React Router (Vite) single-page app that
 /// is a first-party client of the Mastodon Client-to-Server (C2S) REST API.
 ///

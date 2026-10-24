@@ -1,5 +1,7 @@
 //! `ReportService`: an account reporting another, from the API or from a
 //! remote server's `Flag`.
+//!
+//! Mastodon: app/services/report_service.rb
 
 use serde_json::json;
 

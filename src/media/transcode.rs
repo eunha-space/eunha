@@ -4,6 +4,10 @@
 //! faststart, yuv420p), audio to MP3, a video's small style is its first
 //! frame as a PNG, and an audio file's cover art becomes its thumbnail.
 //! Requires `ffmpeg` and `ffprobe` on PATH (installed in the runtime image).
+//!
+//! Mastodon: lib/paperclip/transcoder.rb, lib/paperclip/image_extractor.rb
+//! Mastodon: lib/paperclip/vips_lazy_thumbnail.rb
+//! Mastodon: app/lib/video_metadata_extractor.rb
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;

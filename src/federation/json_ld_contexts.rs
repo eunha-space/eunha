@@ -15,6 +15,8 @@
 //! Only the Linked Data Signature check asks, for a relayed activity whose
 //! signer is not on a blocked server; reading an activity never fetches a
 //! context (docs/design/protocol.md).
+//!
+//! Mastodon: app/helpers/json_ld_helper.rb
 
 use crate::state::AppState;
 

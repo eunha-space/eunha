@@ -1,3 +1,7 @@
+//! Invites over REST: listing, creating and deleting them.
+//!
+//! Mastodon: app/controllers/api/v1/invites_controller.rb, app/models/invite.rb
+
 use crate::{
     error::{AppError, AppResult},
     middleware::{AuthenticatedUser, ResolvedInstance},

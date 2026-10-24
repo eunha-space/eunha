@@ -1,4 +1,8 @@
 //! `Api::V1::ReportsController`.
+//!
+//! Mastodon: app/controllers/api/v1/reports_controller.rb
+//! Mastodon: app/services/report_service.rb
+//! Mastodon: app/serializers/rest/report_serializer.rb
 
 use axum::{extract::Extension, Json};
 use serde::Deserialize;

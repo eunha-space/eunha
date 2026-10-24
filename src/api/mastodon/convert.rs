@@ -1,3 +1,11 @@
+//! Conversions from database rows to the API entities, as the REST
+//! serializers render them.
+//!
+//! Mastodon: app/serializers/rest/account_serializer.rb
+//! Mastodon: app/serializers/rest/status_serializer.rb
+//! Mastodon: app/serializers/rest/media_attachment_serializer.rb
+//! Mastodon: app/serializers/rest/custom_emoji_serializer.rb
+
 use super::types;
 use crate::db::models;
 /// Conversions from DB models → Mastodon API types.

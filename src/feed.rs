@@ -16,6 +16,8 @@
 //! by `RegenerationWorker` ([`crate::home_feed`]), which `User#regenerate_feed!`
 //! queues for a returning user. An empty feed is an empty feed: reading one
 //! never fills it.
+//!
+//! Mastodon: app/lib/feed_manager.rb, app/lib/vacuum/feeds_vacuum.rb
 
 use crate::redis_keys::RedisKeyspace;
 use redis::{aio::ConnectionManager, AsyncCommands};

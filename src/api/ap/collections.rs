@@ -9,6 +9,18 @@
 //! `/ap/users/{account_id}/collection_items/{id}`, and an account's
 //! collections at `/ap/users/{account_id}/featured_collections`. It also
 //! builds the activities that distribute collection changes to followers.
+//!
+//! Mastodon: app/controllers/collections_controller.rb
+//! Mastodon: app/controllers/collection_items_controller.rb
+//! Mastodon: app/controllers/activitypub/featured_collections_controller.rb
+//! Mastodon: app/controllers/activitypub/feature_authorizations_controller.rb
+//! Mastodon: app/serializers/activitypub/featured_collection_serializer.rb
+//! Mastodon: app/serializers/activitypub/featured_item_serializer.rb
+//! Mastodon: app/serializers/activitypub/add_featured_collection_serializer.rb
+//! Mastodon: app/serializers/activitypub/remove_featured_collection_serializer.rb
+//! Mastodon: app/serializers/activitypub/update_featured_collection_serializer.rb
+//! Mastodon: app/serializers/activitypub/add_featured_item_serializer.rb
+//! Mastodon: app/serializers/activitypub/remove_featured_item_serializer.rb
 
 use ojak::federation::CollectionDocument;
 use serde_json::{json, Value};

@@ -22,6 +22,10 @@
 //! happened*. A new path that creates a status calls [`on_status_created`] and
 //! gets the conditions for free; one that does not call it is visibly missing a
 //! line rather than silently missing a rule.
+//!
+//! Mastodon: app/models/concerns/account/counters.rb
+//! Mastodon: app/models/account_stat.rb
+//! Mastodon: app/models/status.rb, app/models/status_stat.rb
 
 use sqlx::PgPool;
 

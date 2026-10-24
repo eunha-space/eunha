@@ -14,6 +14,8 @@
 //! Attestation is not asked for, so browsers mostly send the `none` format,
 //! but whatever statement comes is verified as webauthn-ruby verifies it
 //! under Mastodon's configuration; see [`attestation`].
+//!
+//! Mastodon: app/models/webauthn_credential.rb, config/initializers/webauthn.rb
 
 mod attestation;
 mod crypto;

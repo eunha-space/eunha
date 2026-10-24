@@ -23,6 +23,9 @@
 //!
 //! A period that is not a positive number of days keeps everything, as an
 //! unset one does.
+//!
+//! Mastodon: app/workers/scheduler/vacuum_scheduler.rb, app/lib/vacuum/
+//! Mastodon: app/models/content_retention_policy.rb
 
 use crate::state::AppState;
 

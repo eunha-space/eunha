@@ -29,6 +29,10 @@
 //!     2^16 iterations.
 //!
 //! *scripts/rails_signing_vectors.rb* prints the vectors the tests below hold.
+//!
+//! Mastodon: app/models/async_refresh.rb
+//! Mastodon: app/controllers/unsubscriptions_controller.rb
+//! Mastodon: app/helpers/self_destruct_helper.rb
 
 use std::sync::{Arc, OnceLock};
 

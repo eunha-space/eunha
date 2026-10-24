@@ -8,6 +8,10 @@
 //! pending sign-in lives in Redis under a random token the form carries, and
 //! expires after an hour. As in Mastodon, a change to the user in between
 //! (`users.updated_at`) sends the person back to the password.
+//!
+//! Mastodon: app/controllers/concerns/auth/two_factor_authentication_concern.rb
+//! Mastodon: app/controllers/auth/sessions_controller.rb
+//! Mastodon: app/controllers/auth/sessions/security_key_options_controller.rb
 
 use axum::{
     extract::Form,

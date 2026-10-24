@@ -1,3 +1,14 @@
+//! The instance endpoints: `/api/v1/instance` and `/api/v2/instance`, and
+//! what is under `/api/v1/instance/`.
+//!
+//! Mastodon: app/controllers/api/v1/instances_controller.rb
+//! Mastodon: app/controllers/api/v2/instances_controller.rb
+//! Mastodon: app/controllers/api/v1/instances/
+//! Mastodon: app/controllers/api/v1/peers/search_controller.rb
+//! Mastodon: app/serializers/rest/instance_serializer.rb
+//! Mastodon: app/serializers/rest/v1/instance_serializer.rb
+//! Mastodon: app/presenters/instance_presenter.rb
+
 use super::types::*;
 use crate::{
     error::{AppError, AppResult},

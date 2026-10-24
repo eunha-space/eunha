@@ -11,6 +11,11 @@
 //! (`source[privacy]`, `source[sensitive]`, `source[language]`,
 //! `source[quote_policy]`), `discoverable`, `indexable`, `locked`, `bot` and
 //! `hide_collections` — stays with `PATCH /api/v1/accounts/update_credentials`.
+//!
+//! Mastodon: app/controllers/settings/privacy_controller.rb
+//! Mastodon: app/controllers/settings/preferences/appearance_controller.rb
+//! Mastodon: app/controllers/settings/preferences/notifications_controller.rb
+//! Mastodon: app/controllers/settings/preferences/other_controller.rb
 
 use axum::{routing::get, Extension, Json, Router};
 use serde::{Deserialize, Serialize};

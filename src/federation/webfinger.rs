@@ -3,6 +3,8 @@
 //! handle's one redirect and checks that it names the actor
 //! (`ojak::webfinger`). What is Mastodon's policy rather than WebFinger's —
 //! which usernames are valid, which domains are asked — stays here.
+//!
+//! Mastodon: app/lib/webfinger.rb, app/services/resolve_account_service.rb
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
