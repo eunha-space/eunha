@@ -33,7 +33,13 @@ fn replace_db_name(url: &str, db: &str) -> String {
 /// be cloned from rather than migrated from scratch. It is named after the
 /// migrations' contents, so a changed migration gets a template of its own and
 /// an unchanged one is reused across runs.
+///
+/// Templates from older migrations are left in place, since another checkout
+/// may be cloning one; `DROP DATABASE` whichever of
+/// `eunha_test_template_*` you no longer need.
 async fn migrated_template(admin_url: &str) -> String {
+    use sqlx::Connection;
+
     static TEMPLATE: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
     TEMPLATE
         .get_or_init(|| async {
@@ -52,42 +58,37 @@ async fn migrated_template(admin_url: &str) -> String {
             let name = format!("eunha_test_template_{:016x}", hasher.finish());
 
             let base = PgConnectOptions::from_str(admin_url).expect("invalid DATABASE_URL");
-            let admin = PgPoolOptions::new()
-                .max_connections(1)
-                .connect_with(base.clone().database("postgres"))
+            let mut admin = sqlx::PgConnection::connect_with(&base.clone().database("postgres"))
                 .await
                 .expect("connect to maintenance database");
+            // cargo-nextest runs each test in a process of its own, so the
+            // cell above only spares a process repeating itself. The lock is
+            // what keeps the processes of a fresh run from all building it.
+            sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+                .bind(&name)
+                .execute(&mut admin)
+                .await
+                .expect("lock the template database");
             let exists: bool =
                 sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)")
                     .bind(&name)
-                    .fetch_one(&admin)
+                    .fetch_one(&mut admin)
                     .await
                     .unwrap();
-            // Templates built from migrations since changed are only taking
-            // up space; one another run is cloning stays, as it is in use.
-            let stale: Vec<String> = sqlx::query_scalar(
-                "SELECT datname FROM pg_database \
-                 WHERE datname LIKE 'eunha\\_test\\_template\\_%' AND datname <> $1",
-            )
-            .bind(&name)
-            .fetch_all(&admin)
-            .await
-            .unwrap();
-            for stale in stale {
-                let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
-                    "DROP DATABASE IF EXISTS \"{stale}\""
-                )))
-                .execute(&admin)
-                .await;
-            }
             if !exists {
                 // Built under a name of its own and renamed when complete, so
                 // an interrupted run never leaves a half-migrated template.
-                let building = format!("{name}_{}", std::process::id());
+                let building = format!("{name}_building");
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "DROP DATABASE IF EXISTS \"{building}\""
+                )))
+                .execute(&mut admin)
+                .await
+                .expect("drop an interrupted template database");
                 sqlx::query(sqlx::AssertSqlSafe(format!(
                     "CREATE DATABASE \"{building}\""
                 )))
-                .execute(&admin)
+                .execute(&mut admin)
                 .await
                 .expect("create template database");
                 let db = eunha::tenants::connect(
@@ -106,11 +107,12 @@ async fn migrated_template(admin_url: &str) -> String {
                 sqlx::query(sqlx::AssertSqlSafe(format!(
                     "ALTER DATABASE \"{building}\" RENAME TO \"{name}\""
                 )))
-                .execute(&admin)
+                .execute(&mut admin)
                 .await
                 .expect("rename template database");
             }
-            admin.close().await;
+            // Closing the session releases the lock.
+            admin.close().await.ok();
             name
         })
         .await
