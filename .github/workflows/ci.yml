@@ -116,7 +116,11 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # Offline, because `eunha_test` is not migrated yet for sqlx's query
+      # macros to check against; the lint job has checked the cache they read.
       - name: Tests
+        env:
+          SQLX_OFFLINE: "true"
         run: >-
           cargo nextest run --locked --profile ci
           --partition count:${{ matrix.partition }}/4
