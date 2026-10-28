@@ -3,10 +3,10 @@ Moderation
 
 Moderation follows Mastodon's admin API: the same endpoints, the same
 permission checks, and the same rows written to the same tables. A database
-moderated from eunha reads the same in Mastodon's admin interface, and the
+moderated from Eunha reads the same in Mastodon's admin interface, and the
 other way round. Eunha's web client has a moderation section under `/admin`
 built on that API. What Mastodon offers only in its own server-rendered admin
-pages, eunha serves over REST endpoints of its own, at the paths Mastodon's
+pages, Eunha serves over REST endpoints of its own, at the paths Mastodon's
 admin API would use; see [the moderation tools](#the-moderation-tools) below.
 
 
@@ -195,7 +195,7 @@ not the scheme's own. A block on `example.com` covers
 `https://a.example.com/inbox` but not `https://example.com:8443/inbox`, and a
 block on `example.com:8443` covers only that server. Mastodon checks nothing
 at delivery, and never has these inboxes to deliver to once the block has
-suspended their accounts; eunha checks them as well, for the inboxes no
+suspended their accounts; Eunha checks them as well, for the inboxes no
 account stands for (a [recorded
 divergence](../mastodon/divergences)).
 
@@ -355,7 +355,7 @@ The moderation tools
 Mastodon has these as pages of its own web admin, with no API behind them.
 Eunha serves each over REST, asking for the permission Mastodon's policy asks
 for and writing the audit log entries Mastodon's controllers write. The web
-client's moderation section is built on them. They are eunha's own surface,
+client's moderation section is built on them. They are Eunha's own surface,
 recorded as `moderation-tools-rest-api` in *divergences.toml*; no Mastodon
 client calls them.
 
@@ -481,14 +481,14 @@ the moderator to outrank the user. Each is logged.
 Changes from earlier versions
 -----------------------------
 
-Up to and including migration 015, eunha:
+Up to and including migration 015, Eunha:
 
  -  turned a self-deletion into a suspension. It now records
     `requested_deletion_at`, as Mastodon 4.7 does;
  -  treated `/enable` as an unsuspension;
  -  let any role positioned at 100 or above use every admin endpoint.
 
-Report categories and IP block severities eunha stored in its own numbering
+Report categories and IP block severities Eunha stored in its own numbering
 are converted by migration 015. Domain block severities cannot be converted
 automatically; see
 [migrations](./migrations#domain-blocks-written-before-migration-015).

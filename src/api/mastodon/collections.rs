@@ -960,7 +960,7 @@ pub(crate) async fn distribute_collection(
 /// featured are not reached through it. Upstream also queues a
 /// `DeliveryWorker` per featured account, signed as that account and
 /// addressed to the owner's `inbox_url`, which a local owner does not have:
-/// none of those is ever delivered, so eunha does not queue them.
+/// none of those is ever delivered, so Eunha does not queue them.
 pub(crate) async fn distribute_collection_removal(
     state: &AppState,
     domain: &str,

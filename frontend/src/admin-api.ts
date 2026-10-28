@@ -404,10 +404,10 @@ export interface Cohort {
 }
 
 /**
- * A custom emoji as eunha's `/api/v1/admin/custom_emojis` serves it.
+ * A custom emoji as Eunha's `/api/v1/admin/custom_emojis` serves it.
  *
  * Not a Mastodon API: Mastodon manages custom emoji only through its web UI,
- * so this is eunha's own extension, under the path the admin API would use.
+ * so this is Eunha's own extension, under the path the admin API would use.
  */
 export interface AdminCustomEmoji {
   id: string
@@ -657,7 +657,7 @@ export function updateTag(
   return json<AdminTag>(token, 'PATCH', `/api/v1/admin/tags/${id}`, params)
 }
 
-// ── Custom emoji (eunha) ───────────────────────────────────────────────────
+// ── Custom emoji (Eunha) ───────────────────────────────────────────────────
 
 export function listCustomEmojis(token: string) {
   return json<AdminCustomEmoji[]>(token, 'GET', '/api/v1/admin/custom_emojis')
@@ -730,7 +730,7 @@ export function getRetention(
 }
 
 // ── Email subscriptions ────────────────────────────────────────────────────
-// What Mastodon's admin pages for email newsletters do, which eunha serves as
+// What Mastodon's admin pages for email newsletters do, which Eunha serves as
 // REST (Mastodon has only the web forms).
 
 /** A role that may offer email subscriptions. */
@@ -826,7 +826,7 @@ export function deleteEmailSubscriber(token: string, id: string) {
 }
 // ── Terms of service ───────────────────────────────────────────────────────
 //
-// Mastodon serves these as admin web forms; eunha serves the same actions at
+// Mastodon serves these as admin web forms; Eunha serves the same actions at
 // the same paths under `/api/v1/admin/` (the `terms-of-service-rest-api`
 // divergence), all behind `manage_settings`.
 
@@ -896,9 +896,9 @@ export function generateTermsOfService(token: string, params: TermsOfServiceGene
   )
 }
 
-// ── Moderation tools (eunha) ───────────────────────────────────────────────
+// ── Moderation tools (Eunha) ───────────────────────────────────────────────
 //
-// What Mastodon has only as server-rendered admin pages, served by eunha over
+// What Mastodon has only as server-rendered admin pages, served by Eunha over
 // REST at the paths its admin API would use (`moderation-tools-rest-api` in
 // divergences.toml).
 

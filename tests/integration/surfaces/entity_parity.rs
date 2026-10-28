@@ -1,4 +1,4 @@
-//! Do eunha's API entities carry the fields Mastodon's carry?
+//! Do Eunha's API entities carry the fields Mastodon's carry?
 //!
 //! Eunha aims for behavioural parity, and the most mechanical part of that is
 //! shape: a client written against Mastodon reads fields by name, so a missing
@@ -7,7 +7,7 @@
 //! `mastodon/entities.json` records what each of Mastodon 4.7.0's REST
 //! serializers emits, split into fields it always includes and fields it
 //! includes conditionally. These tests fetch real responses from a running
-//! eunha and compare the two.
+//! Eunha and compare the two.
 //!
 //! A missing field is a finding. An extra field is a finding. A conditional
 //! field being absent is not — Mastodon omits those too, depending on who is

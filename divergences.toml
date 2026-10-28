@@ -1,4 +1,4 @@
-# Where eunha deliberately differs from the Mastodon release it implements.
+# Where Eunha deliberately differs from the Mastodon release it implements.
 #
 # Eunha aims for behavioural parity, so a difference is either a bug or a
 # decision. This file is where the decisions live, and it exists because prose
@@ -13,11 +13,11 @@
 #
 # Adding an entry:
 #   id           kebab-case, stable; referenced by commit messages and issues
-#   kind         addition   — eunha does something Mastodon does not
-#                omission   — Mastodon does something eunha does not
+#   kind         addition   — Eunha does something Mastodon does not
+#                omission   — Mastodon does something Eunha does not
 #                behaviour  — both do it, differently
 #   mastodon     what the tracked release does, stated plainly
-#   eunha        what eunha does instead
+#   Eunha        what Eunha does instead
 #   why          the reason, not a restatement of `eunha`
 #   evidence     a test that would fail if this stopped being true
 #   since        the Mastodon release the divergence was introduced against
@@ -85,11 +85,11 @@ summary = "Update notices are asked for only when configured, and are about the 
 mastodon = "Polls its update server by default, about its own version, reporting on itself."
 eunha = """
 Asks nothing unless `software_update_url` names a server. When one is named, \
-asks that server about the Mastodon release eunha implements, and says so in \
+asks that server about the Mastodon release Eunha implements, and says so in \
 the notices it sends."""
 why = """
-Eunha's version number means nothing to that server, and eunha is not Mastodon. \
-What the question can honestly mean is 'is the schema and API eunha reproduces \
+Eunha's version number means nothing to that server, and Eunha is not Mastodon. \
+What the question can honestly mean is 'is the schema and API Eunha reproduces \
 still supported?', which is worth an administrator's attention and is what gets \
 asked when it is asked at all.
 
@@ -114,7 +114,7 @@ eunha = """
 Leaves it out of the SQL migrations and records it only once the keys have \
 actually moved, which needs ActiveRecord encryption keys configured."""
 why = """
-A ledger entry asserts the move has happened. Without encryption keys eunha \
+A ledger entry asserts the move has happened. Without encryption keys Eunha \
 cannot move them, and recording it anyway would tell a Mastodon booted on the \
 database to skip work still outstanding. Leaving it unrecorded is safe either \
 way: Mastodon runs it and moves the keys, or runs it and finds nothing to do."""
@@ -137,7 +137,7 @@ available to members receiving admin-granted invites."""
 why = """
 Eunha's client is a single-page app with no server-rendered admin to inherit, \
 so its invite page needs an API to call. The risk this entry records is the \
-namespace: every other eunha addition sits under `/api/eunha/` precisely so no \
+namespace: every other Eunha addition sits under `/api/eunha/` precisely so no \
 Mastodon client can mistake it for something upstream defines, and these do \
 not. They keep the paths upstream would use if it had them, and answer with \
 what its own UI would allow, so a client that guessed at them is not misled \
@@ -341,7 +341,7 @@ Takes a byte-order mark, then UTF-8 when the bytes are UTF-8, then the \
 `Content-Type` charset, then a `<meta charset>` in the first kilobyte, and \
 only then Mozilla's detector (chardetng)."""
 why = """
-ICU is a C++ dependency eunha does not otherwise need. The pages that decide \
+ICU is a C++ dependency Eunha does not otherwise need. The pages that decide \
 the question declare their encoding, and a declaration that decodes the bytes \
 cleanly is a better answer than a guess; the guess is still made for pages \
 that declare nothing or declare wrongly."""
@@ -415,10 +415,10 @@ subscription's confirmation token, which Mastodon keeps after confirming; it \
 does not expire, and a link Mastodon mailed is not recognised. The \
 confirmation token is read either way."""
 why = """
-Without `secret_key_base` eunha cannot sign or verify a GlobalID. The \
+Without `secret_key_base` Eunha cannot sign or verify a GlobalID. The \
 confirmation token is as secret, was only ever sent to the subscriber, and is \
 unique by index, so it names the subscription without a new column. A link \
-that keeps working is what an unsubscribe link is for, so the ones eunha \
+that keeps working is what an unsubscribe link is for, so the ones Eunha \
 mailed before the secret was configured are still honoured."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
@@ -440,9 +440,9 @@ derived for `unsubscribe` from the instance's VAPID private key, as \
 `base64url(message)--hexdigest`, with no expiry, and reads that either way. \
 It accepts `quote` as the type as well."""
 why = """
-Without `secret_key_base` eunha can neither sign nor read Mastodon's \
+Without `secret_key_base` Eunha can neither sign nor read Mastodon's \
 GlobalIDs; the async refresh ids take the same route. A link that keeps \
-working is what an unsubscribe link is for, and one in a mail eunha sent, \
+working is what an unsubscribe link is for, and one in a mail Eunha sent, \
 before or after the secret was configured, should not be refused."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "4.7.1"
@@ -487,9 +487,9 @@ private key, as `base64url(key)--hexdigest`, and reads that kind either way. \
 The hash is kept in the coordination Redis under the instance's prefix."""
 why = """
 Without `secret_key_base` there is nothing to derive Rails' key from. An id is \
-opaque to clients and lives a day at most, and eunha replaces a Mastodon \
+opaque to clients and lives a day at most, and Eunha replaces a Mastodon \
 rather than serving beside it, so no Mastodon process ever has to read an id \
-eunha handed out, or the reverse."""
+Eunha handed out, or the reverse."""
 evidence = "tests/integration/c2s/async_refreshes.rs"
 since = "4.7.1"
 reviewed_for = "4.7.3"
@@ -610,7 +610,7 @@ The link, its six hours, and what following it does are Mastodon's."""
 why = """
 Without `secret_key_base` there is nothing to derive Devise's key from. \
 Storing a digest still keeps the column from being enough to reset a \
-password; the cost is that a link Mastodon mailed does not work on eunha, \
+password; the cost is that a link Mastodon mailed does not work on Eunha, \
 which matters only for a reset in flight when an instance switches."""
 evidence = "tests/integration/surfaces/password_reset.rs"
 since = "4.7.1"
@@ -673,7 +673,7 @@ eunha = """
 Serves `GET` and `PATCH /api/eunha/v1/preferences` for `noindex` (or \
 `indexable`, its inverse), `show_application`, `chosen_languages`, `locale`, \
 `time_zone` (with the zones to choose from at `preferences/time_zones`), \
-`always_send_emails`, `aggregate_reblogs`, and the notification emails eunha sends (`follow`, \
+`always_send_emails`, `aggregate_reblogs`, and the notification emails Eunha sends (`follow`, \
 `follow_request`, `reblog`, `favourite`, `mention`, `quote`, and for staff \
 `report`, `pending_account`, `trends`, `appeal`, `end_of_support`, \
 `software_updates`), stored in \
@@ -748,7 +748,7 @@ Stores `avatar_remote_url`, `header_remote_url` and the emojis' \
 image's URL changes or goes, the copy's file columns are cleared, so that a \
 Mastodon sharing the database downloads the new one."""
 why = """
-The operator chose not to cache remote media: eunha keeps no copies of remote \
+The operator chose not to cache remote media: Eunha keeps no copies of remote \
 avatars, headers, emojis or post media, so it stores and serves none of their \
 bytes, and clients load them from the servers they came from. Writing the \
 columns as Mastodon writes them keeps a shared database correct for both."""
@@ -897,7 +897,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "earlier-collection-addresses-still-served"
 kind = "addition"
-summary = "Still answers at the collection addresses eunha named before it named them as Mastodon does"
+summary = "Still answers at the collection addresses Eunha named before it named them as Mastodon does"
 mastodon = """
 Serves an account's collections at `/ap/users/{id}/featured_collections` and \
 a consent stamp at `/ap/users/{id}/feature_authorizations/{item}`, and has no \
@@ -929,8 +929,8 @@ eunha = """
 Caches them for ten minutes at the same names, `followers_hash:<id>:<prefix>/` \
 and `followers_hash:<id>:local`, without the `cache:` namespace and holding \
 the hex digest as it is, and deletes them when a follow is made or undone. A \
-Mastodon process sharing the Redis neither reads eunha's entries nor forgets \
-them, so a follow it changes leaves eunha's digest stale for up to ten \
+Mastodon process sharing the Redis neither reads Eunha's entries nor forgets \
+them, so a follow it changes leaves Eunha's digest stale for up to ten \
 minutes."""
 why = """
 Writing Ruby's Marshal format from Rust for a 64-character string buys nothing \
@@ -1008,8 +1008,8 @@ why = """
 These are not client API: they need the CSRF token and the session cookie of \
 Mastodon's server-rendered page, and what they store is read back only through \
 that page's initial state, so no client other than Mastodon's own web UI can \
-use them, and eunha does not serve that UI. The embed modal's oEmbed is \
-`/api/oembed`'s, which eunha serves. The unsubscribe needs none of that and is \
+use them, and Eunha does not serve that UI. The embed modal's oEmbed is \
+`/api/oembed`'s, which Eunha serves. The unsubscribe needs none of that and is \
 for push services, whatever client subscribed."""
 evidence = "tests/integration/c2s/routes.rs"
 since = "4.7.2"
@@ -1018,7 +1018,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "self-destruct-in-eunha-terms"
 kind = "behaviour"
-summary = "Self-destruct mode, signed without `secret_key_base` and gated on eunha's own surfaces"
+summary = "Self-destruct mode, signed without `secret_key_base` and gated on Eunha's own surfaces"
 mastodon = """
 `SELF_DESTRUCT` verifies with `message_verifier('self-destruct')`, keyed from \
 `SECRET_KEY_BASE`. `check_self_destruct!` answers 410 to every \
@@ -1029,8 +1029,8 @@ memory."""
 eunha = """
 Configured with `secret_key_base`, verifies and prints exactly that value; \
 without it, signs the domain under a key derived from the VAPID private key, \
-and reads that kind either way. Leaves open the same things where eunha serves \
-them: its `/account` pages, `/settings/export` and the eunha API's exports, \
+and reads that kind either way. Leaves open the same things where Eunha serves \
+them: its `/account` pages, `/settings/export` and the Eunha API's exports, \
 backups, login history and two-factor methods. Waits while more than 10,000 \
 deliveries and jobs are queued, with no memory check."""
 why = """
@@ -1109,7 +1109,7 @@ and names a `collection_update`'s sender as a mention, as \
 `added_to_collection` names it."""
 why = """
 The fallback is read by clients too old to know the type, so it has to say \
-something; eunha keeps no translations of these strings, and an object's \
+something; Eunha keeps no translations of these strings, and an object's \
 inspection is plainly an upstream slip rather than a choice."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.2"
@@ -1118,7 +1118,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "instance-default-pictures"
 kind = "behaviour"
-summary = "Names eunha's own pictures for an instance that uploaded none"
+summary = "Names Eunha's own pictures for an instance that uploaded none"
 mastodon = """
 With no thumbnail uploaded, the instance API names the frontend's \
 `images/preview.png`, its mascots, described by \
@@ -1127,11 +1127,11 @@ With no thumbnail uploaded, the instance API names the frontend's \
 digested asset paths of its build."""
 eunha = """
 Names the web frontend's `/images/preview.png` and \
-`/icons/android-chrome-<size>x<size>.png`, cut from eunha's symbol, and \
+`/icons/android-chrome-<size>x<size>.png`, cut from Eunha's symbol, and \
 describes that picture instead."""
 why = """
 Mastodon's pictures are its own branding, and their description describes \
-them; eunha's frontend has neither a build that digests its paths nor the \
+them; Eunha's frontend has neither a build that digests its paths nor the \
 mascots, so it names pictures it serves and says what is in them."""
 evidence = "tests/integration/c2s/instance.rs"
 since = "4.7.2"
@@ -1151,7 +1151,7 @@ Takes seven days before now for a missing `start_at`, and now for a missing \
 `end_at`, and answers for that range."""
 why = """
 Mastodon's answer is an unhandled exception rather than a decision; the last \
-week is what eunha's own dashboard asks for, and a client that leaves the \
+week is what Eunha's own dashboard asks for, and a client that leaves the \
 range out gets numbers instead of an error page."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.2"
@@ -1160,7 +1160,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "admin-dashboard-system-dimensions"
 kind = "behaviour"
-summary = "Reports eunha's own stack, and nothing of shared Redis or search, in the system dimensions"
+summary = "Reports Eunha's own stack, and nothing of shared Redis or search, in the system dimensions"
 mastodon = """
 `software_versions` lists Mastodon, Ruby, PostgreSQL, the Redis-compatible \
 store, Elasticsearch or OpenSearch when enabled, libvips and FFmpeg; \
@@ -1184,7 +1184,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "shared-wrapstodon-page"
 kind = "behaviour"
-summary = "Draws the shared Wrapstodon page with eunha's web app, and knows its viewer by token"
+summary = "Draws the shared Wrapstodon page with Eunha's web app, and knows its viewer by token"
 mastodon = """
 `WrapstodonController#show` renders `wrapstodon/show`: Mastodon's own \
 Wrapstodon pages in a forced dark scheme, with an `og:image` preview of the \
@@ -1192,7 +1192,7 @@ archetype. A signed-in browser session is `me` and gets a private page; in \
 limited federation mode anyone else is sent to sign in."""
 eunha = """
 Serves the same route, refusals, cache headers, OpenGraph tags and \
-`#wrapstodon-data` payload, but the page is eunha's web app, which draws the \
+`#wrapstodon-data` payload, but the page is Eunha's web app, which draws the \
 report in its own design, with no archetype preview image. The server knows \
 a viewer only by a bearer token, so a browser's own visit is anonymous and \
 the web app fetches the page again with its token when the page came without \
@@ -1209,14 +1209,14 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "rate-limits-on-eunha-pages"
 kind = "behaviour"
-summary = "Throttles sign-ins and password changes at eunha's own pages, and lets an instance turn its rate limits off"
+summary = "Throttles sign-ins and password changes at Eunha's own pages, and lets an instance turn its rate limits off"
 mastodon = """
 Throttles sign-ins at `POST /auth/sign_in`, password changes at `PUT /auth` \
 and `PUT /auth/password`, and account setup at `PUT /auth/setup`, its own \
 server-rendered pages, and always applies its `Rack::Attack` throttles and \
 `RateLimiter` families."""
 eunha = """
-Counts the same throttles for eunha's pages that do those things: a sign-in \
+Counts the same throttles for Eunha's pages that do those things: a sign-in \
 at `POST /account/login`, or at `POST /oauth/authorize` with an email, a \
 password or a pending second-factor step; a password change at \
 `POST /account/password`; and account setup posted as well as put. \
@@ -1225,9 +1225,9 @@ off for an instance, and the test instances have them off."""
 why = """
 Eunha's sign-in and account pages are at other paths than Mastodon's, and \
 the throttles exist to limit what those pages do, not their paths. The \
-switch is for eunha's own tests, which come from one address and post far \
+switch is for Eunha's own tests, which come from one address and post far \
 more than a person does, and for deployments that limit requests in front of \
-eunha; unset, the limits apply as Mastodon's do."""
+Eunha; unset, the limits apply as Mastodon's do."""
 evidence = "tests/integration/c2s/rate_limits.rs"
 since = "4.7.2"
 reviewed_for = "4.7.3"
@@ -1245,7 +1245,7 @@ eunha = """
 Asks the same link the same question with a `GET`, still without \
 following redirects, and reads the `Location` the same way."""
 why = """
-Every request eunha sends to a page goes through ojak's guarded client, \
+Every request Eunha sends to a page goes through ojak's guarded client, \
 which refuses private addresses at each hop, and that client follows no \
 redirect only for a `GET`. A link shortener answers both methods with the \
 same redirect."""
@@ -1274,7 +1274,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "maintenance-commands-in-eunha-terms"
 kind = "behaviour"
-summary = "Runs tootctl's feeds, cache, statuses, media and preview_cards commands in eunha's terms"
+summary = "Runs tootctl's feeds, cache, statuses, media and preview_cards commands in Eunha's terms"
 mastodon = """
 `tootctl cache clear` deletes `Rails.cache`'s `cache:` namespace, \
 `statuses remove` keeps its working lists in `public` and builds a \
@@ -1282,7 +1282,7 @@ temporary index, `media refresh` downloads remote media again, \
 `media remove-orphans --fix-permissions` resets object ACLs, and each draws \
 a progress bar."""
 eunha = """
-`eunha cache clear` deletes `cache:*` and the entries eunha keeps outside \
+`eunha cache clear` deletes `cache:*` and the entries Eunha keeps outside \
 that namespace under names Mastodon reads from its cache, under the \
 instance's prefix only. `statuses remove` keeps its lists in the `eunha` \
 schema and builds no index. `media refresh` and `--fix-permissions` are not \
@@ -1291,8 +1291,8 @@ keeps any file sharing the stem of the one its record holds, and the \
 commands print their final line without a progress bar."""
 why = """
 Several instances share a Redis and a bucket, so nothing may reach past the \
-instance's prefix; eunha keeps no copies of remote media to download and \
-sets no per-object ACLs; tables only eunha needs belong in its schema, and \
+instance's prefix; Eunha keeps no copies of remote media to download and \
+sets no per-object ACLs; tables only Eunha needs belong in its schema, and \
 the tracked schema already indexes `statuses.conversation_id`. Keeping a \
 file it is unsure of is the safe side of deleting."""
 evidence = "tests/integration/surfaces/tootctl_commands.rs"
@@ -1302,7 +1302,7 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "mail-text-made-from-html"
 kind = "behaviour"
-summary = "Writes mail in eunha's own words, with the text part made from the HTML"
+summary = "Writes mail in Eunha's own words, with the text part made from the HTML"
 mastodon = """
 Renders each mail from its own templates in every locale it has: a \
 `.text.erb` and a `.html.haml` for `UserMailer`, `NotificationMailer` and \
@@ -1314,9 +1314,9 @@ writes each body in its own words, in English and Korean, as HTML, and makes \
 the text part from that HTML."""
 why = """
 Eunha's server-side text is written in those two locales, as its push titles \
-and rate limit message are; some of its mail says what is true of eunha \
+and rate limit message are; some of its mail says what is true of Eunha \
 rather than Mastodon (the update and end-of-support notices name the tracked \
-release, not eunha's own version). One body per mail keeps its two parts \
+release, not Eunha's own version). One body per mail keeps its two parts \
 from saying different things. A mail client shows either part, so what a \
 reader sees is the same whichever it picks."""
 evidence = "src/email.rs"
@@ -1326,21 +1326,21 @@ reviewed_for = "4.7.3"
 [[divergence]]
 id = "mail-names-eunha"
 kind = "behaviour"
-summary = "Mail calls the software eunha, not Mastodon"
+summary = "Mail calls the software Eunha, not Mastodon"
 mastodon = """
 Names itself in its mail: account and security subjects start `Mastodon:`, \
 the welcome mail is \"Welcome to Mastodon\" and describes what Mastodon does, \
 the archive mail speaks of \"your Mastodon account\", and the email \
 subscription footer says the server is \"powered by Mastodon\"."""
 eunha = """
-Says eunha in those places (`Eunha:` subjects, \"Welcome to eunha\", \
-\"powered by eunha\"), says \"your account\" and \"Create an account\" where \
+Says Eunha in those places (`Eunha:` subjects, \"Welcome to Eunha\", \
+\"powered by Eunha\"), says \"your account\" and \"Create an account\" where \
 the software's name added nothing, and the welcome mail's \"Mastodon apps\" \
-step offers the official Mastodon apps as apps that work with eunha, not as \
+step offers the official Mastodon apps as apps that work with Eunha, not as \
 its own. Mail about Mastodon itself, such as the software update and \
 end-of-support notices, still names Mastodon releases."""
 why = """
-The mail comes from a server running eunha. Saying it is Mastodon \
+The mail comes from a server running Eunha. Saying it is Mastodon \
 misrepresents what the member signed up on and whom to ask about it."""
 evidence = "tests/integration/surfaces/email_change.rs"
 since = "4.7.3"
@@ -1383,7 +1383,7 @@ eunha = """
 Acts on every local account but the instance actor, and refuses it by name \
 as an account that does not exist."""
 why = """
-A running eunha reads the instance actor's key once and signs every fetch \
+A running Eunha reads the instance actor's key once and signs every fetch \
 with it for the life of the process, so rotating it underneath would have the \
 server sign with a key nobody can find. The instance actor is not a person, and \
 following someone does not make sense for it."""
@@ -1608,7 +1608,7 @@ eunha = """
 Has no PgHero dashboard and does not run the scheduler; `pghero_space_stats` \
 is kept as the schema has it, and not written."""
 why = """
-The table only feeds PgHero's own pages, which eunha does not serve; \
+The table only feeds PgHero's own pages, which Eunha does not serve; \
 PostgreSQL's statistics views answer the same questions for an operator."""
 evidence = "src/scheduled_tasks.rs"
 since = "4.7.3"

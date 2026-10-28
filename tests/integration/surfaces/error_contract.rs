@@ -1,4 +1,4 @@
-//! The errors eunha returns, against the ones Mastodon returns.
+//! The errors Eunha returns, against the ones Mastodon returns.
 //!
 //! A client branches on the status and shows the message, so both are part of
 //! the API. Mastodon's are set in `Api::BaseController` and

@@ -1,9 +1,9 @@
-//! Importing an existing Mastodon instance into an eunha database.
+//! Importing an existing Mastodon instance into an Eunha database.
 //!
 //! Eunha builds Mastodon's schema exactly, so an instance moves here by having
-//! its data restored into a database eunha has migrated — there is nothing to
+//! its data restored into a database Eunha has migrated — there is nothing to
 //! convert. What needs care is everything around `pg_restore`: refusing a dump
-//! written for a Mastodon release this binary does not build, keeping eunha's
+//! written for a Mastodon release this binary does not build, keeping Eunha's
 //! own migration ledger instead of the dump's, and proving afterwards that what
 //! landed is the instance the caller named.
 //!
@@ -55,7 +55,7 @@ use crate::{config::MediaStorageConfig, media, migrate, migrate::pg_command, ver
 const INSTANCE_ACTOR_ID: i64 = -99;
 
 /// Table entries a Mastodon dump carries that this database keeps its own copy
-/// of. Rails' two ledgers are seeded by eunha's migrations — `schema_migrations`
+/// of. Rails' two ledgers are seeded by Eunha's migrations — `schema_migrations`
 /// is what makes the database self-describing, and restoring the dump's would
 /// overwrite it with the same rows at best and a different history at worst.
 /// PgHero's space stats belong to whatever PgHero was watching the old server.
@@ -128,11 +128,11 @@ impl Plan {
                 if found != self.expected_schema_version && !import.allow_schema_mismatch =>
             {
                 refusals.push(format!(
-                    "the dump is at Mastodon schema {found} and this eunha builds {}; data \
+                    "the dump is at Mastodon schema {found} and this Eunha builds {}; data \
                      shaped for one schema would go into another, where columns added since \
                      {found} keep their defaults instead of being backfilled and columns \
                      dropped since have nowhere to go. Upgrade the source Mastodon to {} and \
-                     dump again, or use an eunha that tracks {found}. \
+                     dump again, or use an Eunha that tracks {found}. \
                      `--allow-schema-mismatch` proceeds anyway",
                     self.expected_schema_version,
                     version::MASTODON

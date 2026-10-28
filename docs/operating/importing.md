@@ -1,8 +1,8 @@
 Importing a Mastodon instance
 =============================
 
-A Mastodon instance moves to eunha by having its data restored into a database
-eunha has migrated. There is nothing to convert: eunha builds the schema of the
+A Mastodon instance moves to Eunha by having its data restored into a database
+Eunha has migrated. There is nothing to convert: Eunha builds the schema of the
 release it tracks, so the dump's tables are the tables that are already there.
 
 ~~~~ sh
@@ -19,7 +19,7 @@ lists over from another server uses the data import instead; see
 
 The restore is data-only and loads through the schema's foreign keys, so it
 needs a superuser connection and a database with no Mastodon data in it. The
-dump's own `schema_migrations` and `ar_internal_metadata` are left out: eunha's
+dump's own `schema_migrations` and `ar_internal_metadata` are left out: Eunha's
 [migrations](./migrations) seed those, and they are what the database is
 described by.
 
@@ -30,8 +30,8 @@ Three things are checked, and each one refuses rather than guesses:
     builds. Anything else puts data shaped for one schema into another, where
     columns added since keep their defaults instead of being backfilled and
     columns dropped since have nowhere to go. Upgrade the source Mastodon to
-    the release eunha [tracks](../mastodon/tracking) and dump again, or use an
-    eunha that tracks the source's release. `--allow-schema-mismatch` proceeds
+    the release Eunha [tracks](../mastodon/tracking) and dump again, or use an
+    Eunha that tracks the source's release. `--allow-schema-mismatch` proceeds
     anyway.
 
  -  **The database.** Migrations must all be applied, and `accounts` must be

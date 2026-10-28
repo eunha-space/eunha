@@ -1,4 +1,4 @@
-//! Where eunha deliberately differs from the Mastodon release it implements.
+//! Where Eunha deliberately differs from the Mastodon release it implements.
 //!
 //! Eunha aims for behavioural parity, so a difference is either a bug or a
 //! decision. `divergences.toml` is where the decisions are recorded, and this
@@ -21,7 +21,7 @@ use serde::Deserialize;
 pub enum Kind {
     /// Eunha does something Mastodon does not.
     Addition,
-    /// Mastodon does something eunha does not.
+    /// Mastodon does something Eunha does not.
     Omission,
     /// Both do it, differently.
     Behaviour,
@@ -47,7 +47,7 @@ pub struct Divergence {
     pub summary: String,
     /// What the tracked Mastodon release does.
     pub mastodon: String,
-    /// What eunha does instead.
+    /// What Eunha does instead.
     pub eunha: String,
     /// Why — the reason, not a restatement of `eunha`.
     pub why: String,

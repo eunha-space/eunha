@@ -261,7 +261,7 @@ pub struct ApiClient {
     pub http: Client,
     pub base_url: String,
     /// Value for the `Host` header; only needed when the server is a
-    /// multi-tenant instance that routes by host (like eunha).
+    /// multi-tenant instance that routes by host (like Eunha).
     pub host: String,
 }
 
@@ -903,7 +903,7 @@ impl TestContext {
 
         // A database of its own, so a run cannot read or overwrite whatever a
         // development Redis holds. Isolation between *tests* still depends on
-        // the keys themselves: eunha derives them from actor and object URIs,
+        // the keys themselves: Eunha derives them from actor and object URIs,
         // and `TestContext` gives each test a unique domain, so a test that
         // builds its URIs from `ctx.domain` gets unique keys. One that hardcodes
         // a domain does not, and will read the key its previous run left behind

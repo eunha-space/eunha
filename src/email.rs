@@ -1,4 +1,4 @@
-//! Sending mail: the SMTP sender, the mail queue, and the mails eunha writes.
+//! Sending mail: the SMTP sender, the mail queue, and the mails Eunha writes.
 //!
 //! Mastodon: app/mailers/application_mailer.rb, app/mailers/user_mailer.rb
 //! Mastodon: app/mailers/admin_mailer.rb, app/mailers/notification_mailer.rb
@@ -58,7 +58,7 @@ pub struct MailDeliveryJob {
     pub subject: String,
     /// Empty for a mail that is text alone.
     pub html: String,
-    /// The `text/plain` part; one queued before eunha wrote it has it made
+    /// The `text/plain` part; one queued before Eunha wrote it has it made
     /// from the HTML when it is delivered.
     #[serde(default)]
     pub text: Option<String>,
@@ -365,7 +365,7 @@ impl EmailSender {
     ///
     /// Mastodon's `AdminMailer#new_software_updates` and
     /// `#new_critical_software_updates`. The wording differs because the
-    /// subject is not eunha's own version: eunha reproduces a Mastodon
+    /// subject is not Eunha's own version: Eunha reproduces a Mastodon
     /// release's schema and API, and it is that release which has been
     /// superseded.
     pub async fn send_software_updates(
@@ -396,10 +396,10 @@ impl EmailSender {
 
         let body = format!(
             "<p>Hi {name},</p>\
-             <p>{instance_domain} runs eunha, which implements Mastodon \
+             <p>{instance_domain} runs Eunha, which implements Mastodon \
              {tracked_version}. Newer Mastodon releases are available:</p>\
              <ul>{listed}</ul>{urgency}\
-             <p>Adopting one of them means a newer eunha, not a Mastodon \
+             <p>Adopting one of them means a newer Eunha, not a Mastodon \
              upgrade. Nothing here updates itself.</p>"
         );
 
@@ -440,9 +440,9 @@ impl EmailSender {
 
         let body = format!(
             "<p>Hi {name},</p>\
-             <p>{instance_domain} runs eunha, which implements Mastodon \
+             <p>{instance_domain} runs Eunha, which implements Mastodon \
              {branch}.</p>{urgency}\
-             <p>An eunha that tracks a supported Mastodon release is the way \
+             <p>An Eunha that tracks a supported Mastodon release is the way \
              out of this; see the project's release notes.</p>"
         );
 
@@ -650,7 +650,7 @@ impl EmailSender {
             (
                 false,
                 "Mastodon apps",
-                "Download the official Mastodon apps, which work with eunha.",
+                "Download the official Mastodon apps, which work with Eunha.",
                 None,
             ),
         ]
@@ -725,7 +725,7 @@ impl EmailSender {
                 "Eunha supports audio, video and picture posts, accessibility descriptions, \
                  polls, content warnings, animated avatars, custom emojis, thumbnail crop \
                  control, and more, to help you express yourself online. Whether you're \
-                 publishing your art, your music, or your podcast, eunha is there for you.",
+                 publishing your art, your music, or your podcast, Eunha is there for you.",
             ),
         ]
         .into_iter()
@@ -750,7 +750,7 @@ impl EmailSender {
             more_follows = web("explore/suggestions"),
             more_tags = web("explore/tags"),
         );
-        self.send(to, "Welcome to eunha", &body).await
+        self.send(to, "Welcome to Eunha", &body).await
     }
 
     /// `AdminMailer#new_trends`.
@@ -1198,7 +1198,7 @@ impl EmailSender {
 
     /// An `AdminMailer` mail: text alone, as its templates are, with
     /// `ApplicationMailer#set_autoreply_headers!`, and, when `important`,
-    /// `AdminMailer#set_important_headers!`. `html` is the body eunha writes,
+    /// `AdminMailer#set_important_headers!`. `html` is the body Eunha writes,
     /// which the text is made from.
     async fn send_admin(
         &self,
@@ -1459,7 +1459,7 @@ fn autoreply_headers() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The `text/plain` part of a mail eunha writes in HTML: its text, a
+/// The `text/plain` part of a mail Eunha writes in HTML: its text, a
 /// paragraph, heading, list or quotation to a block of its own, a line
 /// break kept, a list item marked `*`, an image left out, and a link that
 /// does not read as its own address followed by the address.
@@ -1607,7 +1607,7 @@ fn subscription_footer(envelope: &SubscriptionEnvelope) -> String {
         "<p><small>You're receiving this email because you opted into email updates \
          from {name}. Don't want to receive these emails? \
          <a href=\"{unsubscribe}\">Unsubscribe</a></small></p>\
-         <p><small>Emails are sent from {domain}, a server powered by eunha. To \
+         <p><small>Emails are sent from {domain}, a server powered by Eunha. To \
          understand how this server processes your personal data, refer to the \
          <a href=\"{privacy}\">Privacy Policy</a>.</small></p>",
         name = html_escape(&envelope.name),

@@ -3,7 +3,7 @@
 //! Mastodon offers it on the web privacy settings page
 //! (`Settings::PrivacyController`), to a user whose role carries
 //! `manage_email_subscriptions` while the feature is enabled, beside the
-//! count of confirmed subscribers. Mastodon has no API for it, and eunha's
+//! count of confirmed subscribers. Mastodon has no API for it, and Eunha's
 //! settings page is part of a single-page app, so it is served here.
 //!
 //! Mastodon: app/controllers/settings/privacy_controller.rb

@@ -712,7 +712,7 @@ export default function Profile() {
     }
   }
 
-  // Muting is about the timeline, not about the person: eunha keeps letting a
+  // Muting is about the timeline, not about the person: Eunha keeps letting a
   // muted account mention you and react to your posts (the
   // `mute-does-not-silence-replies-to-me` divergence), so the copy here says
   // what the mute will and will not do rather than leaving it to be discovered.

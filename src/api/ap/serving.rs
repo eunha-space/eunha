@@ -10,15 +10,15 @@
 //! actor and its collections are named by the scheme the account uses.
 //!
 //! A request to one of these paths that asks for a page rather than
-//! ActivityPub goes on to eunha's own routes (`super::router`), which send a
+//! ActivityPub goes on to Eunha's own routes (`super::router`), which send a
 //! browser to the profile or the status. A status is served at its page,
 //! `/@{username}/{id}`, too, and an account's followers and following at
 //! `/@{username}/followers` and `/@{username}/following`, as Mastodon serves
 //! them there.
 //!
 //! The inboxes are ojak's too. What arrives in them is authenticated by
-//! ojak, with the keys eunha already holds in `accounts` tried first, and
-//! handed to eunha's own dispatcher (`super::inbox::received`) reduced to
+//! ojak, with the keys Eunha already holds in `accounts` tried first, and
+//! handed to Eunha's own dispatcher (`super::inbox::received`) reduced to
 //! what its sender can vouch for.
 //!
 //! Mastodon: app/controllers/accounts_controller.rb
@@ -56,7 +56,7 @@ type Ctx = Context<AppState>;
 static URIS: std::sync::LazyLock<Uris> =
     std::sync::LazyLock::new(|| federation().uris(Url::parse("https://localhost").expect("a URL")));
 
-/// The URIs of what eunha serves, in the instance at `domain`, built from
+/// The URIs of what Eunha serves, in the instance at `domain`, built from
 /// the templates its routes are registered with: for code outside a
 /// request, which has no [`Context`] to ask. [`AppState::uris`] holds its
 /// instance's.
@@ -238,7 +238,7 @@ pub fn federation() -> Federation<AppState> {
             // Mastodon's remote follow: where to send someone who wants to
             // interact with this account from their own server.
             // Mastodon's avatar link (`show_avatar?`, which limited federation
-            // mode turns off) has no counterpart: eunha's WebFinger names no
+            // mode turns off) has no counterpart: Eunha's WebFinger names no
             // avatar in any mode.
             match actor.get("preferredUsername").and_then(Value::as_str) {
                 Some(username) if actor.get("type") != Some(&json!("Application")) => {
@@ -262,9 +262,9 @@ pub fn federation() -> Federation<AppState> {
         // Every tenant fetches with its own fetcher (`fetcher_for`) and
         // caches in its own Redis namespace (`kv_for`); the fetcher and store
         // given here are only what the builder needs to be given. The keys
-        // of accounts eunha knows come from `accounts`, where a new actor's
-        // is stored as it is fetched, so ojak caches only what eunha does not
-        // keep: the IDs of activities seen, and keys eunha did not store. In
+        // of accounts Eunha knows come from `accounts`, where a new actor's
+        // is stored as it is fetched, so ojak caches only what Eunha does not
+        // keep: the IDs of activities seen, and keys Eunha did not store. In
         // Redis, every process serving the instance shares them, so a
         // redelivery that reaches another process is still dropped
         // (docs/operating/redis.md).
@@ -644,7 +644,7 @@ pub fn federation() -> Federation<AppState> {
     }
     // A status's page, /@{username}/{id}, is where Mastodon also serves its
     // Note to whoever asks for ActivityPub (`statuses#show`). Anything else
-    // there, and any other request, goes on to eunha's pages.
+    // there, and any other request, goes on to Eunha's pages.
     builder = builder.object_alias(&Scheme::Username.kind("status"), "/@{username}/{status_id}");
     // So are an account's followers and following, at the pages Mastodon
     // serves them at too (`follower_accounts#index`, `following_accounts#index`),
@@ -655,7 +655,7 @@ pub fn federation() -> Federation<AppState> {
             &format!("/@{{username}}/{collection}"),
         );
     }
-    builder.build().expect("eunha's federation is well formed")
+    builder.build().expect("Eunha's federation is well formed")
 }
 
 /// Whether what `received` carries of its Linked Data signature is kept for
@@ -666,7 +666,7 @@ pub fn federation() -> Federation<AppState> {
 /// the signature no longer covers that. Passed on by another server, it is
 /// kept when it is what the activity was taken on, and what was signed is
 /// then the activity as it arrived rather than the JSON-LD reading of it the
-/// listener reads, kept only for the activities eunha may pass on: a `Create`
+/// listener reads, kept only for the activities Eunha may pass on: a `Create`
 /// of a reply to something here, and a `Delete` or `Update`. Taken on its
 /// proof, or as its origin serves it, Mastodon would not have kept it.
 fn forwardable(
@@ -691,7 +691,7 @@ fn forwardable(
     }
 }
 
-/// Whether eunha could pass `activity` on: a `Create` of a reply to
+/// Whether Eunha could pass `activity` on: a `Create` of a reply to
 /// something here, a `Delete` or an `Update`.
 fn may_be_passed_on(state: &AppState, activity: &Value) -> bool {
     match activity.get("type").and_then(Value::as_str) {
@@ -705,7 +705,7 @@ fn may_be_passed_on(state: &AppState, activity: &Value) -> bool {
     }
 }
 
-/// The key eunha holds for `key_id`: the public key of the remote account
+/// The key Eunha holds for `key_id`: the public key of the remote account
 /// whose actor the key ID names.
 async fn known_key(ctx: &Ctx, key_id: &str) -> AppResult<Option<ojak::federation::KnownKey>> {
     // `Keypair.from_keyid`: a usable RSA key stored under this id…
@@ -874,7 +874,7 @@ async fn of_status(ctx: &Ctx, document: AppResult<(Value, bool)>) -> AppResult<F
     }
 }
 
-/// Who signed the request, as an account eunha knows
+/// Who signed the request, as an account Eunha knows
 /// (`signed_request_account`).
 async fn reader(ctx: &Ctx) -> AppResult<Option<super::objects::Reader>> {
     let signer = signer(ctx).await;
@@ -1103,7 +1103,7 @@ enum Served {
     /// The instance actor, which is served at `/actor` rather than under
     /// either scheme. Asked for under one, it names its inbox and
     /// collections beneath `/actor`, as Mastodon's serializer does, where no
-    /// template of eunha's serves them.
+    /// template of Eunha's serves them.
     Instance,
 }
 

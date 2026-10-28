@@ -1,4 +1,4 @@
-//! Portable actors and objects (FEP-ef61), as eunha meets them: accounts and
+//! Portable actors and objects (FEP-ef61), as Eunha meets them: accounts and
 //! statuses on other servers whose ids are `ap://did:key:…` rather than
 //! `https://…`.
 //!

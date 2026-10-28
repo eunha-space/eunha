@@ -139,8 +139,8 @@ function useNavItems(
   invites: { count: number | null; hasAvailable: boolean },
 ): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
-  // custom feeds; eunha has none, and copying the shape around an absent
-  // feature leaves a rail that is mostly empty. What eunha has instead is
+  // custom feeds; Eunha has none, and copying the shape around an absent
+  // feature leaves a rail that is mostly empty. What Eunha has instead is
   // home and local timelines, which were a tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
   // is the community rather than a curiosity. So they live here. Local and
@@ -196,7 +196,7 @@ function useNavItems(
 
 // The server's name leads, not the software's. Mastodon 5.0 demotes its own
 // logo so an instance reads as itself with a "powered by" line underneath;
-// eunha has always shown the instance title here, and this gives it the weight
+// Eunha has always shown the instance title here, and this gives it the weight
 // that decision implies.
 function ServerMark({
   title,
@@ -218,7 +218,7 @@ function ServerMark({
       )}
       <span className="min-w-0">
         <span className="block truncate text-lg font-semibold">{title}</span>
-        <span className="text-muted-foreground block text-xs">powered by eunha</span>
+        <span className="text-muted-foreground block text-xs">powered by Eunha</span>
       </span>
     </Link>
   )
@@ -651,7 +651,7 @@ export function TopBar({ title }: { title?: string }) {
   const token = getToken()
   const [instance, setInstance] = useState(getCachedInstance)
   const [instanceTitle] = useState<string | null>(() =>
-    document.title === 'eunha' ? null : document.title,
+    document.title === 'Eunha' ? null : document.title,
   )
   const [account, setAccount] = useState<MeAccount | null>(() => getMeAccount())
   const registrationsOpen = instance?.registrations.enabled ?? false

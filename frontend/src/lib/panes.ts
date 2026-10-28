@@ -3,7 +3,7 @@
  *
  * Off by default, and deliberately so. Mastodon keeps its multi-column view as
  * an opt-in for the same reason — it suits people who read a lot of feeds at
- * once and is clutter for everyone else. eunha's default stays one column.
+ * once and is clutter for everyone else. Eunha's default stays one column.
  *
  * Stored per browser rather than on the server: it is a property of the screen
  * you are sitting at, not of the account. The same person on a phone wants the

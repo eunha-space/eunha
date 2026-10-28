@@ -1,4 +1,4 @@
-//! End-to-end FEP-044f quote consent handshake across two eunha instances.
+//! End-to-end FEP-044f quote consent handshake across two Eunha instances.
 //!
 //! Two real servers (separate databases + domains) talk through their actual
 //! HTTP inbox / authorization endpoints. The test plays the network, relaying

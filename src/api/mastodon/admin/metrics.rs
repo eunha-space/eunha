@@ -3,7 +3,7 @@
 //!
 //! Each measure and dimension is the query Mastodon's class runs, read the
 //! way Mastodon reads its parameters. Mastodon keeps each answer in
-//! `Rails.cache` for five minutes; eunha computes it every time.
+//! `Rails.cache` for five minutes; Eunha computes it every time.
 //!
 //! Mastodon: app/controllers/api/v1/admin/measures_controller.rb
 //! Mastodon: app/controllers/api/v1/admin/dimensions_controller.rb
@@ -40,7 +40,7 @@ pub(super) struct Window {
 }
 
 impl Window {
-    /// Mastodon cannot answer without both ends; eunha takes the last week
+    /// Mastodon cannot answer without both ends; Eunha takes the last week
     /// up to now for whichever is missing.
     fn parse(start_at: Option<&str>, end_at: Option<&str>) -> Self {
         let now = chrono::Utc::now().naive_utc();

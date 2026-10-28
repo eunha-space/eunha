@@ -1,4 +1,4 @@
-/* Shared styling for eunha's server-rendered auth/account pages (signup,
+/* Shared styling for Eunha's server-rendered auth/account pages (signup,
  * authorize, account portal). The tiny inline script in each template adds
  * `light`/`dark` to <html> from the same `eunha-theme` localStorage key the SPA
  * uses, and the palette below is the SPA's own (frontend/src/styles.css), token

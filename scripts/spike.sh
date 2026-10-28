@@ -9,7 +9,7 @@
 #                              every post, some of them slow, failing or gone.
 #
 # Every remote server is simulated by eunha-fedisim, which is also the only
-# proxy eunha is given: nothing it does reaches a real server. See
+# proxy Eunha is given: nothing it does reaches a real server. See
 # docs/design/benchmarking.md, “Spikes”.
 set -euo pipefail
 
@@ -67,7 +67,7 @@ SIM_PORT=${EUNHA_SPIKE_SIM_PORT:-18990}
 
 # Another build to measure, such as one saved from before a change.
 EUNHA=${EUNHA_SPIKE_EUNHA:-$ROOT/target/release/eunha}
-# Environment for eunha alone, such as MallocStackLogging=1 to profile its
+# Environment for Eunha alone, such as MallocStackLogging=1 to profile its
 # heap: exported to the script, it would slow psql, node and PostgreSQL too.
 EUNHA_ENV=${EUNHA_SPIKE_EUNHA_ENV:-}
 FEDISIM="$ROOT/target/release/eunha-fedisim"
@@ -78,7 +78,7 @@ for tool in inferno-collapse-sample inferno-flamegraph rustfilt; do
   command -v "$tool" >/dev/null || { echo "missing $tool: cargo install --locked inferno rustfilt" >&2; exit 1; }
 done
 
-# eunha and the simulator — the only two processes here that make outbound
+# Eunha and the simulator — the only two processes here that make outbound
 # connections of their own accord — run sandboxed with the network denied
 # except loopback and PostgreSQL's socket. That nothing leaves the machine is
 # then enforced by the kernel, not only by the proxy settings; DNS is denied
@@ -138,7 +138,7 @@ q() { psql -d "$DATABASE" -Atq -v ON_ERROR_STOP=1 -c "$1"; }
 
 account_id=$(q "SELECT id FROM accounts WHERE username = '$ACCOUNT' AND domain IS NULL")
 [ -n "$account_id" ] || { echo "no local account $ACCOUNT in $DATABASE" >&2; exit 1; }
-# eunha federates a post only if its author can sign it. The seeded users were
+# Eunha federates a post only if its author can sign it. The seeded users were
 # never given keys; a real account, or a copy of one, has its own.
 if [ -n "$CREATED_DB" ]; then
   openssl genrsa 2048 2>/dev/null > "$WORK/account.key"
@@ -207,7 +207,7 @@ sed -i '' '/vapid_private_key/,/^"""$/d' "$RESULTS/config.toml"
   > "$RESULTS/fedisim.log" 2>&1) &
 PIDS+=($!)
 
-# Every HTTP client eunha has honours these, and the simulator refuses every
+# Every HTTP client Eunha has honours these, and the simulator refuses every
 # host it does not simulate — so a leak shows up as a count, not as traffic.
 (cd "$WORK" && unset NO_PROXY no_proxy &&
   export HTTP_PROXY="http://127.0.0.1:$SIM_PORT" HTTPS_PROXY="http://127.0.0.1:$SIM_PORT" \
@@ -231,7 +231,7 @@ status=$(api -X POST -H 'Content-Type: application/json' \
   -d '{"status": "This one is going to travel. https://example.com/", "visibility": "public"}' \
   "http://127.0.0.1:$EUNHA_PORT/api/v1/statuses")
 status_id=$(node -e 'console.log(JSON.parse(process.argv[1]).id)' "$status")
-# The link is a canary: eunha fetches a preview for it, which has to be refused
+# The link is a canary: Eunha fetches a preview for it, which has to be refused
 # and counted, or the egress count cannot be trusted to mean anything.
 status_uri=$(node -e 'console.log(JSON.parse(process.argv[1]).uri)' "$status")
 author_uri="https://$DOMAIN/users/$ACCOUNT"
@@ -239,7 +239,7 @@ echo "spiking $status_uri"
 
 # The followers are seeded after that post, so that it is not sent to them.
 if [ "$SCENARIO" = fanout ]; then
-  # IDs far above any snowflake eunha mints, so that none collide.
+  # IDs far above any snowflake Eunha mints, so that none collide.
   q "SELECT setseed(0.42);
      INSERT INTO accounts (id, username, domain, display_name, note, url, uri,
                            inbox_url, outbox_url, shared_inbox_url, public_key, created_at, updated_at)
@@ -270,7 +270,7 @@ MIB_FN='function mib(s,  u, v) {
   if (u == "G") return sprintf("%.1f", v * 1024); return sprintf("%.1f", (s + 0) / 1048576)
 }'
 
-# Where memory stands at a moment: eunha's footprint, and of its malloc zones
+# Where memory stands at a moment: Eunha's footprint, and of its malloc zones
 # how much is live and how much is dirty but free — fragmentation the
 # allocator cannot hand back; PostgreSQL's backends for this database, costed
 # privately (their footprint less the shared buffer pool each one maps); Redis;
@@ -340,12 +340,12 @@ sample_loop() {
     if [ "$snap" != "$(cat "$WORK/snap")" ] || [ $((snap % 2)) = 1 ]; then phase="$phase (paused)"; fi
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' $((SECONDS - start)) "$phase" "${row:-,,,,,}" "${ps_row:-,}" \
       "$(ms "${home%,*}")" "$(ms "$ctx")" "$(ms "$notif")" "${home#*,}" "$fp" "$redis_mib" "$sockets"
-    # Every internet socket eunha holds, and whether its peer is loopback. An
+    # Every internet socket Eunha holds, and whether its peer is loopback. An
     # audit that did not run is recorded as such, so that a dead auditor cannot
     # pass for a clean one.
     if lsof -a -p "$eunha_pid" -i -n -P -F n > "$WORK/lsof" 2>/dev/null; then
       echo audit >> "$RESULTS/socket-audit.txt"
-      # Every socket eunha holds, idle connections kept for reuse included;
+      # Every socket Eunha holds, idle connections kept for reuse included;
       # recorded with the next sample.
       sockets=$(grep -c '^n' "$WORK/lsof")
       sed -n 's/^n//p' "$WORK/lsof" | awk '{

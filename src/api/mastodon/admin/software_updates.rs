@@ -67,7 +67,7 @@ pub struct SoftwareUpdate {
 
 #[derive(Debug, Serialize)]
 pub struct SoftwareUpdates {
-    /// The Mastodon release eunha implements, which the updates are newer
+    /// The Mastodon release Eunha implements, which the updates are newer
     /// than.
     pub current_version: &'static str,
     pub updates: Vec<SoftwareUpdate>,

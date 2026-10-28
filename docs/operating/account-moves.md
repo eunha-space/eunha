@@ -31,7 +31,7 @@ An alias is refused, with a 422 and upstream's message, when the handle is
 blank or its domain is not a domain name, when it cannot be found, when it is
 the account itself, or when the account already has it.
 
-Migration 018 repairs aliases eunha made before it did this: it stored the
+Migration 018 repairs aliases Eunha made before it did this: it stored the
 handle in `uri` and never wrote `also_known_as`. Such handles become `acct`,
 and aliases that held an actor id are copied into an empty `also_known_as`.
 
@@ -68,7 +68,7 @@ moved.
 A moved account is meant to be restricted the way upstream's
 `User#functional?` restricts it. These endpoints are exactly the ones upstream
 leaves open to it (`skip_before_action :require_functional!`), so whatever gate
-eunha puts in front of the API has to let them through.
+Eunha puts in front of the API has to let them through.
 
 
 Moves from other servers
@@ -120,14 +120,14 @@ Then, for every local account:
     which you had blocked.* if there is no note yet;
  -  likewise a mute, keeping whether it hid notifications.
 
-The notes are written in the author's language where eunha has it (English and
+The notes are written in the author's language where Eunha has it (English and
 Korean, from upstream's `move_handler.*` strings).
 
 
 Domain changes
 --------------
 
-Mastodon cannot change its domain once it has federated; eunha can (the
+Mastodon cannot change its domain once it has federated; Eunha can (the
 `domain-change-migration` divergence). List the old domain in
 `instance.previous_domains`, so that each local actor names its old id in
 `alsoKnownAs`, and then:

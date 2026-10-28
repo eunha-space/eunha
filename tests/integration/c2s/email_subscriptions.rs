@@ -318,7 +318,7 @@ async fn test_mail_links_to_the_privacy_policy() {
 
 /// With the Mastodon's `secret_key_base`, links carry Mastodon's signed
 /// GlobalID of the subscription, a GlobalID Mastodon signed unsubscribes, and
-/// a link eunha mailed before the secret was configured still works.
+/// a link Eunha mailed before the secret was configured still works.
 #[tokio::test]
 async fn test_unsubscribing_with_a_signed_global_id() {
     let ctx = TestContext::with_instance_config("emailsub-sgid", |instance| {
@@ -392,7 +392,7 @@ async fn test_unsubscribing_with_a_signed_global_id() {
         .unwrap();
     assert_eq!(left, 0);
 
-    // The confirmation token, which eunha's links carried before.
+    // The confirmation token, which Eunha's links carried before.
     subscribe(&ctx, alice, "other@example.com").await;
     let token = token_for(&ctx, "other@example.com").await;
     let resp = form_post(&ctx, "/unsubscribe", &format!("token={token}")).await;

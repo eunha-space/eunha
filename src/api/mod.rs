@@ -1,4 +1,4 @@
-//! The HTTP surfaces eunha serves, apart from ojak's.
+//! The HTTP surfaces Eunha serves, apart from ojak's.
 //!
 //! Mastodon: none
 

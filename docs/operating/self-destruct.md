@@ -36,7 +36,7 @@ A lone instance also reads it from `INSTANCE__SELF_DESTRUCT` or Mastodon's own
 `SELF_DESTRUCT`. The value signs the instance's domain, as Mastodon's does: with
 [`secret_key_base`](./instances#mastodon-s-secret-key-base) configured it is
 exactly what `tootctl self-destruct` prints for that Mastodon, so a Mastodon
-that was already self-destructing keeps doing so on eunha. Without it, the
+that was already self-destructing keeps doing so on Eunha. Without it, the
 value is signed under a key derived from the VAPID private key. A value that
 does not verify, or signs another domain, does nothing at all.
 
@@ -58,7 +58,7 @@ then marked deleted (`requested_deletion_at`) without a deletion request.
 Next, it does the same for up to 50 accounts awaiting deletion, removing their
 deletion requests. A pass is skipped while more than 10,000 deliveries and jobs
 are waiting; Mastodon also waits while Redis is past half its memory, which
-eunha's queues, kept in PostgreSQL, do not use.
+Eunha's queues, kept in PostgreSQL, do not use.
 
 It runs none of its other schedules (trends, cleanups, the update check), as
 Mastodon replaces its whole schedule with this one. The delivery and job queues

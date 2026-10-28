@@ -1,6 +1,6 @@
 //! A member's data export, imports and archive takeout, which Mastodon serves
 //! as settings pages (`Export`, `Form::Import`, `BulkImportService`,
-//! `BackupService`) and eunha under `/api/eunha/v1/`.
+//! `BackupService`) and Eunha under `/api/eunha/v1/`.
 
 use reqwest::StatusCode;
 use serde_json::{json, Value};

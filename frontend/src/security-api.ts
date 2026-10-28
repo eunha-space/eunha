@@ -1,6 +1,6 @@
 // Account security: what Mastodon offers only as web forms (two-factor
 // authentication, security keys, sessions, authorized apps, sign-in history),
-// served by eunha under /api/eunha/v1/.
+// served by Eunha under /api/eunha/v1/.
 
 export class SecurityError extends Error {
   constructor(

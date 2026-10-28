@@ -1,6 +1,6 @@
 //! One process, any number of instances.
 //!
-//! Every eunha process serves a registry of tenants — an instance each, with
+//! Every Eunha process serves a registry of tenants — an instance each, with
 //! its own configuration, database pool, Redis namespace and background tasks
 //! — and hands every request to one of them by its `Host` header before
 //! anything else sees it. A single instance is a registry of one, read from
@@ -153,7 +153,7 @@ pub fn find(configs: Vec<TenantConfig>, host: &str) -> Option<TenantConfig> {
         .find(|tenant| instance_hosts(&tenant.config.instance).any(|known| known == host))
 }
 
-/// Open a pool whose connections resolve unqualified names against the eunha
+/// Open a pool whose connections resolve unqualified names against the Eunha
 /// schema first, then public. Every app query is schema-qualified, so this only
 /// decides where sqlx keeps its own `_sqlx_migrations` ledger — out of `public`,
 /// which stays a pure mirror of Mastodon's schema.
@@ -760,7 +760,7 @@ async fn start_one(tenant: TenantConfig) -> Result<Running> {
 
 impl Tenants {
     /// A registry of tenants whose states are already built, served on
-    /// `bind_address` — for embedding eunha and for tests, which bring their own
+    /// `bind_address` — for embedding Eunha and for tests, which bring their own
     /// databases up. Nothing is connected, checked or spawned here.
     pub fn from_states(bind_address: &str, states: Vec<AppState>) -> Result<Self> {
         let first = states.first().context("no tenants to serve")?;
@@ -1058,7 +1058,7 @@ vapid_public_key = ""
     }
 
     /// A serving tenant with no instance behind it: these tests dispatch to a
-    /// router of their own rather than to eunha's routes.
+    /// router of their own rather than to Eunha's routes.
     fn serving(limit: Option<usize>) -> Tenant {
         Tenant {
             extensions: Extensions::new(),

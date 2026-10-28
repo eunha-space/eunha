@@ -372,7 +372,7 @@ async fn test_a_lost_feed_is_not_rebuilt_by_reading_it() {
 }
 
 /// A feed another process built under Mastodon's keys alone is read and fed
-/// as eunha's own: there is nothing else to mark it.
+/// as Eunha's own: there is nothing else to mark it.
 #[tokio::test]
 async fn test_a_feed_built_elsewhere_is_fed_and_read() {
     let ctx = TestContext::new("home-feed-shared").await;

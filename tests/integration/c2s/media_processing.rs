@@ -669,7 +669,7 @@ async fn test_deleting_media_removes_its_files() {
     }
 }
 
-/// An upload eunha stored before it named files as Paperclip does keeps its
+/// An upload Eunha stored before it named files as Paperclip does keeps its
 /// preview where it was put.
 #[tokio::test]
 async fn test_an_old_upload_keeps_its_preview() {

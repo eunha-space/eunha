@@ -1,6 +1,6 @@
 //! Account moves, redirects and aliases over REST, which Mastodon serves as
 //! settings forms (`AccountMigration`, `Form::Redirect`, `AccountAlias`) and
-//! eunha as `/api/v1/accounts/move`, `/api/v1/accounts/redirect` and
+//! Eunha as `/api/v1/accounts/move`, `/api/v1/accounts/redirect` and
 //! `/api/v1/profile/aliases`, answering with the same validation messages.
 
 use reqwest::StatusCode;

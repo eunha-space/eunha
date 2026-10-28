@@ -3,7 +3,7 @@
 -- The deliverer that sends them is feder's (`feder::deliverer`), and it keeps
 -- its queue in the table feder-postgres describes, here in the `eunha` schema.
 -- These are `feder_postgres::PostgresQueue::schema("eunha.feder_queue")`,
--- written out because eunha changes its schema only through migrations, never
+-- written out because Eunha changes its schema only through migrations, never
 -- from a server starting up; an integration test runs feder's queue checks
 -- against the table this builds, so the two cannot drift apart unnoticed.
 --

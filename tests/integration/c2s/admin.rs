@@ -1761,7 +1761,7 @@ async fn test_domain_block_severity_integers() {
 }
 
 /// `Admin::Metrics::Measure.retrieve`: keys it does not have are dropped,
-/// eunha's old `new_statuses` among them. The counted measures total the
+/// Eunha's old `new_statuses` among them. The counted measures total the
 /// dates of the range (`where(created_at: time_period)`, which reaches only
 /// midnight of the last day), date each day as Rails decodes a `date`, and
 /// have no `human_value`.
@@ -2054,7 +2054,7 @@ async fn test_admin_retention_is_mastodons() {
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 }
 
-/// `SoftwareVersionsDimension` and `SpaceUsageDimension`, as far as eunha's
+/// `SoftwareVersionsDimension` and `SpaceUsageDimension`, as far as Eunha's
 /// stack has them: its version, PostgreSQL's and the store's, FFmpeg's when
 /// `ffprobe` is installed; the database, the store (not shared here, the
 /// test Redis being prefixed), and the media, archive takeouts and site

@@ -1,7 +1,7 @@
 //! `eunha settings import-config`: copy what the instance configuration said
 //! about the site into the tables Mastodon reads it from, once.
 //!
-//! Before eunha read Mastodon's `settings` and `terms_of_services` tables it
+//! Before Eunha read Mastodon's `settings` and `terms_of_services` tables it
 //! took the site's identity, registrations, terms of service and privacy
 //! policy from the instance configuration, and served them as defaults until
 //! an administrator saved the settings. It now reads only the tables, as
@@ -76,7 +76,7 @@ pub async fn import_config(
         "registrations_mode",
         Value::from(RegistrationsMode::from_config(instance).as_str()),
     ));
-    // The contact account eunha showed while none was saved: the local
+    // The contact account Eunha showed while none was saved: the local
     // account with the highest role.
     let contact: Option<String> = sqlx::query_scalar(
         "SELECT a.username FROM accounts a
@@ -108,7 +108,7 @@ pub async fn import_config(
         report.written.push(var.to_owned());
     }
 
-    // The configured terms, as the published version eunha served them as:
+    // The configured terms, as the published version Eunha served them as:
     // effective on 2025-01-01, nobody to be told of them.
     if !instance.terms_of_service.trim().is_empty() {
         let published: bool = sqlx::query_scalar(

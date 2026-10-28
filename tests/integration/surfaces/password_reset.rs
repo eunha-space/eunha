@@ -231,8 +231,8 @@ const MASTODON_RESET_DIGEST: &str =
     "a5106b6b4dc0e29d5f7eef97ecf87a7734d60218ca010180d6cf0aea936391a7";
 
 /// With the Mastodon's `secret_key_base`, a reset link that Mastodon mailed
-/// works, so does one eunha mailed before the secret was configured, and what
-/// eunha stores for a link it mails is Devise's digest.
+/// works, so does one Eunha mailed before the secret was configured, and what
+/// Eunha stores for a link it mails is Devise's digest.
 #[tokio::test]
 async fn test_a_reset_mastodon_mailed_works_with_its_secret_key_base() {
     let ctx = TestContext::with_instance_config("password-reset-skb", |instance| {

@@ -144,7 +144,7 @@ pub async fn edit_page(
 #[derive(Debug, Deserialize)]
 pub struct ResetForm {
     pub reset_password_token: Option<String>,
-    /// The name eunha's first reset endpoint took the token under.
+    /// The name Eunha's first reset endpoint took the token under.
     pub token: Option<String>,
     pub password: Option<String>,
     pub password_confirmation: Option<String>,

@@ -826,7 +826,7 @@ const LAST_KNOWN_GOOD: &str = "remote_collection_repair:last_known_good";
 
 /// `Scheduler::RepairRemoteCollectionsScheduler#perform`: a remote
 /// collection whose `/ap/users/<id>/` differs from its owner's
-/// `collections_url`'s was stored under the wrong account (eunha once
+/// `collections_url`'s was stored under the wrong account (Eunha once
 /// stored a collection under whichever account sent it); it is fetched
 /// again and given to the account it is attributed to. Once every one has
 /// been put right, the highest collection id is remembered, and the next

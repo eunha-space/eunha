@@ -5,7 +5,7 @@
 -- `eunha-schema check`, which diffs the live database against upstream's
 -- db/schema.rb for the tracked release.
 --
--- Upstream builds its large indexes CONCURRENTLY; eunha's migrations run at
+-- Upstream builds its large indexes CONCURRENTLY; Eunha's migrations run at
 -- startup through sqlx, where an aborted non-transactional migration would
 -- leave the schema half-built, so this runs as one transaction instead. The
 -- price is that `accounts` and `follow_requests` are locked while their
@@ -303,9 +303,9 @@ ALTER TABLE ONLY public.global_follow_recommendations
 --
 -- 20260702144128 (migrate_local_account_keypairs) is deliberately absent: it
 -- moves local private keys into `keypairs` and blanks `accounts.private_key`,
--- and eunha still signs from `accounts`. Claiming it were applied would tell a
+-- and Eunha still signs from `accounts`. Claiming it were applied would tell a
 -- Mastodon booted on this database that the move had happened. It stays
--- outstanding until eunha reads its keys from `keypairs`.
+-- outstanding until Eunha reads its keys from `keypairs`.
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260618114230'),
     ('20260629124918'),

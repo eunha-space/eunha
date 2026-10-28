@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild the reference schema eunha is checked against.
+# Rebuild the reference schema Eunha is checked against.
 #
 # `mastodon/schema.rb` is upstream's own file; this executes it with the real
 # ActiveRecord schema DSL against a scratch Postgres database and dumps the

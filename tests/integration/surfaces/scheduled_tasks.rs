@@ -2,7 +2,7 @@
 //! the processes serving an instance, none at once, and a missed run made up
 //! after a restart. Each test's two "processes" are two connection pools on
 //! the instance's database, the server's and the test's own, which share
-//! nothing but that database, as two eunha processes do.
+//! nothing but that database, as two Eunha processes do.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -216,8 +216,8 @@ async fn test_a_missed_cron_slot_is_run_after_a_restart() {
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
 
-/// Every connection eunha opens to PostgreSQL works in UTC. Mastodon's
-/// `timestamp without time zone` columns hold UTC, and some of what eunha
+/// Every connection Eunha opens to PostgreSQL works in UTC. Mastodon's
+/// `timestamp without time zone` columns hold UTC, and some of what Eunha
 /// writes into them is `now()` cast by the server, which casts in the
 /// session's `TimeZone`. sqlx sends `TimeZone=UTC` in every connection's
 /// startup packet, which outranks the server's own default — production's

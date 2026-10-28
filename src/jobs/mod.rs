@@ -895,7 +895,7 @@ pub async fn queued(state: &AppState, kind: &str) -> anyhow::Result<Vec<Queued>>
 
 // ── Probes ─────────────────────────────────────────────────────────────────
 
-/// A worker of eunha's own that does nothing but count its runs, failing the
+/// A worker of Eunha's own that does nothing but count its runs, failing the
 /// first `fail_times` of them: how the tests, and an operator wondering
 /// whether the queue is moving, see the queue's retries for themselves. Its
 /// runs are counted in Redis, under `jobs:probe:<name>`.

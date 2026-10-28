@@ -523,7 +523,7 @@ pub async fn build_note(
     });
 
     // `atomUri`, `inReplyToAtomUri`, `conversation`, `context`, and the
-    // post's `replies`, `likes` and `shares`, which eunha serves.
+    // post's `replies`, `likes` and `shares`, which Eunha serves.
     for (key, value) in serializer_extras(state, domain, status_id).await? {
         note[key] = value;
     }
@@ -548,7 +548,7 @@ fn unique_tag(domain: &str, date: chrono::NaiveDateTime, id: i64, kind: &str) ->
 }
 
 /// The members of `ActivityPub::NoteSerializer` that name where the post
-/// is in its thread and the collections eunha serves of it: `atomUri`,
+/// is in its thread and the collections Eunha serves of it: `atomUri`,
 /// `inReplyToAtomUri`, `conversation`, `context`, and a local post's
 /// `replies`, `likes` and `shares`.
 pub async fn serializer_extras(

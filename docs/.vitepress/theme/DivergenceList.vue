@@ -6,8 +6,8 @@ const props = defineProps<{ divergences: Divergence[] }>();
 
 const source = "https://github.com/limeburst/eunha/blob/main/";
 const kinds: { kind: Kind; label: string; hint: string }[] = [
-  { kind: "addition", label: "Additions", hint: "eunha does something Mastodon does not" },
-  { kind: "omission", label: "Omissions", hint: "Mastodon does something eunha does not" },
+  { kind: "addition", label: "Additions", hint: "Eunha does something Mastodon does not" },
+  { kind: "omission", label: "Omissions", hint: "Mastodon does something Eunha does not" },
   { kind: "behaviour", label: "Behaviour", hint: "both do it, differently" },
 ];
 

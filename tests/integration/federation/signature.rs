@@ -127,8 +127,8 @@ async fn test_unsigned_delete_accepted_without_processing() {
 
 /// A signature built the way Mastodon builds it — covered headers in its
 /// order, `(request-target)` last and carrying the query string — is accepted.
-/// Constructed by hand rather than through eunha's signer, so that it stays a
-/// test of what the network sends rather than of what eunha happens to emit.
+/// Constructed by hand rather than through Eunha's signer, so that it stays a
+/// test of what the network sends rather than of what Eunha happens to emit.
 #[tokio::test]
 async fn test_mastodon_shaped_signature_is_accepted() {
     use base64::Engine as _;

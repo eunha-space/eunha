@@ -189,7 +189,7 @@ pub async fn get_extended_description(state: AppState) -> AppResult<Json<Extende
 
 // ── GET /api/v1/instance ──────────────────────────────────────────────────
 
-/// `Mastodon::Version.source_url`: where eunha's source is.
+/// `Mastodon::Version.source_url`: where Eunha's source is.
 const SOURCE_URL: &str = "https://github.com/eunha-space/eunha";
 
 /// The alt text of [`default_thumbnail_url`]'s picture, as Mastodon keeps
@@ -444,7 +444,7 @@ pub async fn get_instance_v2(
                 max_pinned_statuses: 5,
                 max_profile_fields: 4,
                 // Mastodon's `Account::DISPLAY_NAME_LENGTH_LIMIT`, which is 40;
-                // eunha advertised 30, so a client would have refused a name
+                // Eunha advertised 30, so a client would have refused a name
                 // this server would have accepted.
                 max_display_name_length: 40,
                 max_note_length: 500,
@@ -490,7 +490,7 @@ pub async fn get_instance_v2(
                     "video/x-ms-asf".into(),
                 ],
                 // Mastodon's `MediaAttachment::MAX_DESCRIPTION_LENGTH`, raised
-                // to 10,000 upstream; 1500 was the older limit. eunha does not
+                // to 10,000 upstream; 1500 was the older limit. Eunha does not
                 // enforce a limit of its own, so advertising the smaller number
                 // only made clients refuse alt text this server would accept.
                 description_limit: 10_000,
@@ -561,7 +561,7 @@ const WEEKS_OF_ACTIVITY: i64 = 12;
 
 /// The `Rails.cache` key `render_with_cache` keeps the body under
 /// (`"#{controller}/#{action}"`, in the cache store's `cache` namespace), raw,
-/// so a Mastodon process sharing the Redis serves what eunha cached and the
+/// so a Mastodon process sharing the Redis serves what Eunha cached and the
 /// other way round.
 const ACTIVITY_CACHE_KEY: &str = "cache:api/v1/instances/activity/show";
 

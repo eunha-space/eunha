@@ -7,7 +7,7 @@
 // reader hides all media. Unlike media attachments, showing all media does not
 // uncover a sensitive post's card: Mastodon's card starts revealed only when
 // `!sensitive && displayMedia !== 'hide_all'`. A hidden image is not fetched
-// until it is shown, as eunha does for hidden media.
+// until it is shown, as Eunha does for hidden media.
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ExternalLink, FileText, Play } from 'lucide-react'

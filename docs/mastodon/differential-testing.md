@@ -1,7 +1,7 @@
 Differential testing against a live Mastodon
 ============================================
 
-The entity check compares eunha to what upstream's serializers *say*. This one
+The entity check compares Eunha to what upstream's serializers *say*. This one
 asks upstream directly: the same request goes to both servers and the responses
 are compared.
 
@@ -10,7 +10,7 @@ scripts/differential_test.sh                              # its own eunha
 scripts/differential_test.sh http://localhost:3001 TOKEN  # one you run
 ~~~~
 
-Given no arguments it brings up an eunha of its own — scratch database,
+Given no arguments it brings up an Eunha of its own — scratch database,
 migrations, two accounts and a token — and tears it down afterwards. That form
 exists so CI and a developer run the same path: the eunha-side setup used to
 live in whoever had last run it, which is most of why this went weeks without
@@ -25,13 +25,13 @@ already solved — seeds both servers, and compares what a client actually does:
 follow, block, mute, and their undos), and about two hundred steps of
 [flows](#flows) — domain blocks, reports and moderation, moves, and the
 everyday client endpoints — each a sequence in which one request sets up what
-the next reads. It is Mastodon 4.7.3, the release eunha tracks, and the whole
+the next reads. It is Mastodon 4.7.3, the release Eunha tracks, and the whole
 comparison takes about a minute once the image is pulled.
 
 The stack runs Sidekiq as well as the web process. Without a worker nothing
 Mastodon defers ever happens, and some of that shows in the API — a home feed
 stays `regenerating?` and answers 206 forever — which reads as a difference from
-eunha when it is a missing worker. An unfaithful reference invents findings.
+Eunha when it is a missing worker. An unfaithful reference invents findings.
 
 It invented ten. Sidekiq boots as soon as Postgres answers, but the schema is
 created by the web process's `db:prepare`, so on a cold database the worker
@@ -40,7 +40,7 @@ bring it back. `unfavourite` and `unreblog` hand the removal to a worker and
 force the flag false in *their own* response, so each undo looked right while
 the row survived — and every later request read that row and reported
 `favourited: true` on a status that had just been unfavourited. Nine
-`favourited` differences and one `reblogged`, all recorded against eunha, all of
+`favourited` differences and one `reblogged`, all recorded against Eunha, all of
 them a dead worker. The worker now restarts until the schema exists, and the
 harness asks Redis whether one has registered before it compares anything,
 rather than trusting that a container was started.
@@ -94,17 +94,17 @@ it acts in, and a group naming `[fan3, fan2, fan1]` here has to name
 `[fan3, fan2, fan1]` there. It agrees, on both the count and the order.
 
 Getting there needed the fixture reset on both sides, and the second reset is
-the one worth remembering: eunha gets a scratch database every run while the
+the one worth remembering: Eunha gets a scratch database every run while the
 Mastodon container is left up between them, so clearing the notifications is not
 enough. A repeat follow produces no notification at all, so on a second run only
 the server with a fresh database reports a follow group — which reads exactly
-like eunha inventing one. The fans unfollow before they follow.
+like Eunha inventing one. The fans unfollow before they follow.
 
 The groups are also read only once every act has become a notification.
 Mastodon writes them from `LocalNotificationWorker`, after the favourite or
-follow has already answered, while eunha writes them in the request — so reading
+follow has already answered, while Eunha writes them in the request — so reading
 at once caught Mastodon with the third fan's follow still queued, a group of two
-against eunha's three, recorded as eunha's difference.
+against Eunha's three, recorded as Eunha's difference.
 
 
 Flows
@@ -152,10 +152,10 @@ codes, with `DIFFERENTIAL_ARGS="--flow=reports --verbose"`.
 
 Getting a flow to compare what it claims to took more than the flow:
 
- -  **The Mastodon container outlives the run.** eunha's database is new each
+ -  **The Mastodon container outlives the run.** Eunha's database is new each
     time; Mastodon's is not. *scripts/differential\_seed.rb* puts back what the
     flows change — blocks, reports, strikes, the troll's suspension, filters,
-    lists, the profile — or the second run compares eunha against the first.
+    lists, the profile — or the second run compares Eunha against the first.
     The profile was the one that showed it: `update_credentials` sets a note,
     and on the next run every status's `account.note` differed.
  -  **Rate limits answer 429 to both, which is agreement.** A token gets 300
@@ -163,7 +163,7 @@ Getting a flow to compare what it claims to took more than the flow:
     once over, both servers answered 429 to everything, and a run with half its
     steps throttled reported no differences. Each flow acts through a token of
     its own, and the counts an earlier run left — Mastodon's in its cache,
-    eunha's in the harness's Redis database — are cleared before comparing.
+    Eunha's in the harness's Redis database — are cleared before comparing.
     `--verbose` shows what every step was answered, which is how this was seen.
  -  **Explicit ids leave a sequence behind.** The seed gives accounts and
     tokens fixed ids, and the first follow or app made through the API then
@@ -175,16 +175,16 @@ Getting a flow to compare what it claims to took more than the flow:
     the answer stops changing.
  -  **Mastodon answers in no order.** `GET /api/v1/statuses?id[]=` and its
     account twin are not sorted, so they are compared by which ids they hold.
- -  **eunha keeps media in S3.** *scripts/differential\_fake\_s3.py* is a bucket
+ -  **Eunha keeps media in S3.** *scripts/differential\_fake\_s3.py* is a bucket
     in memory for it, so the media endpoints answer as they would.
 
 Two differences are decisions rather than bugs, and the flows leave them out:
 a report in a category that does not exist, and a push key that is the point
-at infinity, are each a 500 from Mastodon and a 422 from eunha
+at infinity, are each a 500 from Mastodon and a 422 from Eunha
 (`report-unknown-category-rejected`,
 `push-subscription-unusable-key-rejected`).
 
-What they found, fixed in eunha: a remote account's entity carried `roles`; a
+What they found, fixed in Eunha: a remote account's entity carried `roles`; a
 report's posts were serialized for nobody rather than for the moderator reading
 them; a member's domain block took a blank domain; adding an account to a list
 twice succeeded; a keyword made without `whole_word` defaulted to false, and an

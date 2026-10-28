@@ -4,7 +4,7 @@ import { defineConfig } from "vitepress";
 // site/, which the Pages workflow deploys with this build copied under it.
 export default defineConfig({
   base: "/docs/",
-  title: "eunha",
+  title: "Eunha",
   description: "Mastodon, reimplemented in Rust",
   lang: "en",
   cleanUrls: true,
@@ -17,7 +17,7 @@ export default defineConfig({
     ],
     sidebar: [
       {
-        text: "Running eunha",
+        text: "Running Eunha",
         items: [
           { text: "Container images", link: "/operating/containers" },
           { text: "The first account", link: "/operating/first-account" },

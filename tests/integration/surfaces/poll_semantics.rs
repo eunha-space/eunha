@@ -65,7 +65,7 @@ async fn test_a_poll_reads_as_voted_to_its_author() {
 /// `own_votes` accompanies `voted`, and is an empty list rather than absent.
 ///
 /// Both are `if: :current_user?` in the serializer — present together for any
-/// authenticated request. eunha omitted `own_votes` until a vote existed, so a
+/// authenticated request. Eunha omitted `own_votes` until a vote existed, so a
 /// client reading `poll.own_votes.length` found nothing to read.
 #[tokio::test]
 async fn test_own_votes_is_present_and_empty_before_voting() {
@@ -121,7 +121,7 @@ async fn test_voters_count_is_a_number_on_a_single_choice_poll() {
 ///
 /// Rails coerces `"1"` to `1` without comment, so Mastodon takes both — checked
 /// against a running 4.7.0, which answers 200 either way. A client sending
-/// form-encoded parameters has only strings to send, and eunha answered those
+/// form-encoded parameters has only strings to send, and Eunha answered those
 /// with 422: a vote Mastodon would have counted, refused.
 #[tokio::test]
 async fn test_a_vote_accepts_string_or_numeric_choices() {

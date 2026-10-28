@@ -3,7 +3,7 @@
 //!
 //! A proof authenticates the activity rather than the connection that carried
 //! it, so a relayed or forwarded copy stays attributable. Mastodon 4.7 verifies
-//! these; eunha produces them.
+//! these; Eunha produces them.
 
 use serde_json::Value;
 
@@ -113,7 +113,7 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
         ojak::sig::integrity::extract_integrity_proof(&activity, chrono::Utc::now().timestamp())
             .expect("extract proof");
     ojak::sig::integrity::verify_object_integrity_proof(&activity, &parsed, &key)
-        .expect("eunha's own proof must verify against the key it publishes");
+        .expect("Eunha's own proof must verify against the key it publishes");
 }
 
 /// An account that has never signed anything publishes no key, so a document

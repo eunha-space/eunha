@@ -1,4 +1,4 @@
-//! Applying and checking eunha's own migrations.
+//! Applying and checking Eunha's own migrations.
 //!
 //! Migrations are embedded in the binary, but running them is a separate act
 //! from serving: a migration that rewrites a large table takes as long as it
@@ -209,7 +209,7 @@ pub fn is_safe_database_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
-/// Every table in the schemas eunha owns, with its row count.
+/// Every table in the schemas Eunha owns, with its row count.
 ///
 /// One statement rather than one per table: `query_to_xml` runs the count
 /// inside the same scan of the catalogue, so a database with a thousand tables

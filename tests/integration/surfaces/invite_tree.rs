@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::helpers::TestContext;
 
-/// The eunha invite-tree endpoint requires authentication.
+/// The Eunha invite-tree endpoint requires authentication.
 #[tokio::test]
 async fn test_invite_tree_requires_auth() {
     let ctx = TestContext::new("invite-tree-auth").await;

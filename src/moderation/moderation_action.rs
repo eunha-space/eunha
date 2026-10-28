@@ -251,7 +251,7 @@ pub async fn save(
 
     // `process_strike!`, citing the report's posts, behind
     // `AccountPolicy#warn?` since Mastodon 4.7.3 (#40646). Refused, nothing
-    // done above is kept: eunha acts in one transaction, where upstream's
+    // done above is kept: Eunha acts in one transaction, where upstream's
     // marking as sensitive is not in one and stays done.
     let target_role = role::of_account(&state.db, target.id).await?;
     authorize(super::account_action::warn_policy(

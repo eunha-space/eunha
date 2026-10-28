@@ -12,7 +12,7 @@
 //! Status counters live here for a reason. Mastodon keeps them in
 //! `Status#increment_counter_caches`, a model callback that runs however the
 //! status came to exist — posted through the API, published from a schedule, or
-//! arrived in an inbox. eunha has no such callback, so every path had to
+//! arrived in an inbox. Eunha has no such callback, so every path had to
 //! remember, and the ones that arrived over ActivityPub did not: replies from
 //! other instances went uncounted, so did their authors' posts, their boosts,
 //! and their follows. Each was fixed where it was found, which is a poor way to

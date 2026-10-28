@@ -95,7 +95,7 @@ pub async fn gate(req: Request, next: Next) -> Response {
     gone(req.uri().path(), req.headers(), &domain)
 }
 
-/// What Mastodon still serves while it self-destructs, in eunha's terms.
+/// What Mastodon still serves while it self-destructs, in Eunha's terms.
 ///
 ///  -  What is not an `ApplicationController`: the health check, WebFinger,
 ///     host-meta, NodeInfo, the OAuth metadata, the manifest and the custom
@@ -109,7 +109,7 @@ pub async fn gate(req: Request, next: Next) -> Response {
 ///     password change (`registrations#edit`/`#update`), the exports and the
 ///     archive takeout, the login history, and the two-factor methods with
 ///     their security keys. Eunha's web client serves the export page at
-///     `/settings/export`, from the eunha API under `/api/eunha/v1`.
+///     `/settings/export`, from the Eunha API under `/api/eunha/v1`.
 pub fn exempt(path: &str) -> bool {
     const PATHS: &[&str] = &[
         "/health",
@@ -217,9 +217,9 @@ pub async fn perform(state: &AppState) -> Result<()> {
     Ok(())
 }
 
-/// `sidekiq_overwhelmed?`, for eunha's queues: more than `MAX_ENQUEUED`
+/// `sidekiq_overwhelmed?`, for Eunha's queues: more than `MAX_ENQUEUED`
 /// deliveries and jobs waiting. Mastodon also holds off while Redis is past
-/// half its memory; eunha's queues are in PostgreSQL, so there is no such
+/// half its memory; Eunha's queues are in PostgreSQL, so there is no such
 /// limit to watch.
 async fn overwhelmed(state: &AppState) -> Result<bool> {
     let enqueued = sqlx::query_scalar!(

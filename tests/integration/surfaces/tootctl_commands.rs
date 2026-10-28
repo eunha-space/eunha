@@ -482,7 +482,7 @@ async fn orphaned_objects_are_removed_and_media_looked_up() {
     assert_eq!(refused.to_string(), "Not a media URL");
 }
 
-/// `media refresh` downloads remote media again, and eunha keeps none.
+/// `media refresh` downloads remote media again, and Eunha keeps none.
 #[tokio::test]
 async fn media_refresh_is_not_offered() {
     let error = media::refresh().unwrap_err();

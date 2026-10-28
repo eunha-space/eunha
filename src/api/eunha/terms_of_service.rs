@@ -1,4 +1,4 @@
-//! The terms of service interstitial, for eunha's own web client.
+//! The terms of service interstitial, for Eunha's own web client.
 //!
 //! When an administrator notifies users of new terms, Mastodon mails the
 //! users active in the past year and flags the rest

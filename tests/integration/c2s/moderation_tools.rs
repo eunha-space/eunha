@@ -1,5 +1,5 @@
 //! The moderation tools Mastodon has only as server-rendered admin pages, as
-//! eunha serves them over REST: report and account notes, the audit log,
+//! Eunha serves them over REST: report and account notes, the audit log,
 //! warning presets, username blocks, strikes and appeals, an account's posts
 //! and relationships, and managing a user.
 

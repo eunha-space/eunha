@@ -29,8 +29,8 @@ pub enum Command {
     /// first, and have a backup; this takes long and may be destructive. Asks
     /// which local account to keep where two have one username.
     ///
-    /// Works on a Mastodon database at the release eunha tracks as well as on
-    /// eunha's own, so that a dump `eunha import-mastodon` refuses can be
+    /// Works on a Mastodon database at the release Eunha tracks as well as on
+    /// Eunha's own, so that a dump `eunha import-mastodon` refuses can be
     /// repaired at its source.
     FixDuplicates {
         #[command(flatten)]
@@ -46,7 +46,7 @@ impl Command {
         }
     }
 
-    /// Run against `database_url`, which need not have eunha's migrations
+    /// Run against `database_url`, which need not have Eunha's migrations
     /// applied: a Mastodon database is repaired the same way.
     pub async fn run(self, database_url: &str, console: &dyn Console) -> anyhow::Result<()> {
         match self {
@@ -124,7 +124,7 @@ pub async fn verify_nothing_running(conn: &mut PgConnection) -> anyhow::Result<(
     .await?;
     if others > 0 {
         bail!(
-            "It seems eunha or Mastodon is running: {others} other connection(s) to this \
+            "It seems Eunha or Mastodon is running: {others} other connection(s) to this \
              database. All processes need to be stopped when using this script."
         );
     }
@@ -134,7 +134,7 @@ pub async fn verify_nothing_running(conn: &mut PgConnection) -> anyhow::Result<(
 /// `verify_backup_warning!`.
 pub fn verify_backup_warning(console: &dyn Console) -> anyhow::Result<()> {
     console.say("This task will take a long time to run and is potentially destructive.");
-    console.say("Please make sure to stop eunha and have a backup.");
+    console.say("Please make sure to stop Eunha and have a backup.");
     if !console.yes("Continue? (Yes/No)") {
         bail!("Maintenance process stopped.");
     }
@@ -216,7 +216,7 @@ pub async fn deduplicate(conn: &mut PgConnection, console: &dyn Console) -> anyh
     Ok(())
 }
 
-// The unique indexes, as the schema of the release eunha tracks has them.
+// The unique indexes, as the schema of the release Eunha tracks has them.
 const INDEX_USERS_CONFIRMATION_TOKEN: (&str, &str) = (
     "index_users_on_confirmation_token",
     "CREATE UNIQUE INDEX index_users_on_confirmation_token ON public.users USING btree (confirmation_token)",

@@ -14,7 +14,7 @@ const TYPES: Record<SoftwareUpdate['type'], string> = {
 
 /**
  * Software updates: Mastodon's `Admin::SoftwareUpdatesController`, the
- * releases newer than the Mastodon release eunha implements, as the optional
+ * releases newer than the Mastodon release Eunha implements, as the optional
  * update check recorded them.
  */
 export default function SoftwareUpdates() {
@@ -48,7 +48,7 @@ export default function SoftwareUpdates() {
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">
             Eunha implements Mastodon {data.current_version}. These are the newer releases the
-            update server announced; adopting one takes a new eunha build.
+            update server announced; adopting one takes a new Eunha build.
           </p>
           {data.updates.length === 0 && (
             <p className="text-muted-foreground text-sm">There are no newer releases.</p>

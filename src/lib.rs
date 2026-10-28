@@ -1,4 +1,4 @@
-//! The eunha library: its modules, and the router every instance shares.
+//! The Eunha library: its modules, and the router every instance shares.
 //!
 //! Mastodon: config/routes.rb, config/application.rb
 
@@ -92,7 +92,7 @@ pub mod worker_batch;
 use axum::{extract::Request, middleware as axum_middleware, response::IntoResponse, Router};
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
-/// Every route eunha serves, built once for the whole process. The instance a
+/// Every route Eunha serves, built once for the whole process. The instance a
 /// request belongs to rides on the request itself, put there by the tenant
 /// dispatcher, so these routes are shared by every instance the process serves.
 pub fn build_app() -> Router {

@@ -1,6 +1,6 @@
 //! Security keys, as Mastodon registers and checks them with webauthn-ruby.
 //!
-//! Mastodon stores what webauthn-ruby hands it, and eunha stores the same:
+//! Mastodon stores what webauthn-ruby hands it, and Eunha stores the same:
 //! `webauthn_credentials.external_id` is the credential id as the browser
 //! reported it (base64url), `public_key` the credential's COSE key, base64url
 //! without padding, and `sign_count` the authenticator's counter.

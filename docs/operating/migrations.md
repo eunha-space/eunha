@@ -11,7 +11,7 @@ A migration gets one attempt against an instance's own data, which no fixture
 contains. `eunha rehearse-migration <database-url>` clones a live database,
 applies what is pending over the copy, and reports how long it took, every table
 whose row count moved, and whether the result still matches the Mastodon release
-eunha tracks — see [tracking Mastodon](../mastodon/tracking). The source is only
+Eunha tracks — see [tracking Mastodon](../mastodon/tracking). The source is only
 read from, and the clone is left in place to be looked at.
 
 Starting the server checks instead: an instance whose database is behind its
@@ -27,7 +27,7 @@ that `eunha migrate` runs, without a `cargo clean` or a touched source file.
 `public.schema_migrations` is what makes a database self-describing: it is
 seeded for everything through 4.6.0 by `007_mastodon_schema_versions.sql`, and
 [`eunha import-mastodon`](./importing) refuses a dump whose newest migration is
-not the one eunha builds. A migration whose work depends on the instance rather
+not the one Eunha builds. A migration whose work depends on the instance rather
 than the schema — so far only the move of local signing keys into `keypairs` —
 is applied from code at startup and records itself then; `mastodon:plan` lists
 those separately from ones still to write.
@@ -98,12 +98,12 @@ database migrated by the tests have none either. Whoever is dropped can sign up
 again.
 
 
-Custom emoji eunha uploaded
+Custom emoji Eunha uploaded
 ---------------------------
 
 Eunha used to store an uploaded custom emoji at `emoji/<shortcode>.<ext>` in
 the media bucket and its URL in `image_remote_url`, leaving Paperclip's file
-columns empty. Mastodon finds no image for such a row, and eunha now reads
+columns empty. Mastodon finds no image for such a row, and Eunha now reads
 only the columns too, so `eunha migrate` moves each one to where Paperclip
 keeps a local emoji, as [administration](./administration#custom-emoji)
 describes: it reads the image back from its old key, stores it and its
@@ -120,7 +120,7 @@ Migrations applied.
 ~~~~
 
 It runs on every `eunha migrate` and finds nothing once they are moved. An
-emoji whose image is not at its old key, or whose URL is not eunha's, is left
+emoji whose image is not at its old key, or whose URL is not Eunha's, is left
 as it was and named, and shows Mastodon's missing image until it is uploaded
 again. With `--tenants`, each instance's own bucket is used; a single instance
 needs its media storage in the configuration or the environment, or the
@@ -130,7 +130,7 @@ emoji wait for the next `eunha migrate` that has it.
 Annual reports generated before migration 033
 ---------------------------------------------
 
-Until migration 033, eunha labelled the annual reports it generated
+Until migration 033, Eunha labelled the annual reports it generated
 `schema_version` 1, though their data had the keys of Mastodon's schema 2
 (`archetype`, `top_statuses`, `time_series`, `top_hashtags`). Mastodon reads
 schema 1 as its 2024 reports and looks for `most_reblogged_accounts` in them,
@@ -139,7 +139,7 @@ also shows a report's share link only for schema 2.
 
 Migration 033 labels those reports schema 2 and empties their
 `top_statuses.by_favourites` and `by_replies`, which Mastodon's schema 2 leaves
-empty. The rest of their data is kept as eunha generated it, which can differ
+empty. The rest of their data is kept as Eunha generated it, which can differ
 from what Mastodon would have: posts counted by when they were made rather
 than by their ids, a pollster told by whole numbers, a hashtag used only once
 or named by its name rather than its display name, and a top post chosen
@@ -154,7 +154,7 @@ Mastodon keeps every version of an edited post in `status_edits`, the
 current one included: the first edit records the original, stamped with the
 post's `created_at`, and every edit records the version it made, stamped with
 the post's new `edited_at`. `GET /api/v1/statuses/:id/history` serves exactly
-those rows. Until migration 034, eunha recorded only the version each edit
+those rows. Until migration 034, Eunha recorded only the version each edit
 replaced, stamped with that version's own time, and added the post as it is
 when serving the history. Mastodon serving such a database would leave the
 current version out of each history.
@@ -162,7 +162,7 @@ current version out of each history.
 Migration 034 gives each local post whose last recorded version is older than
 its `edited_at` its current version as the last row, by its author, stamped
 with its `edited_at`. A history Mastodon wrote ends with that row already and
-is left as it is; so is every remote post's, which eunha never recorded.
+is left as it is; so is every remote post's, which Eunha never recorded.
 Remote posts edited before then have no history until their next edit, and
 show only their current version until then.
 
@@ -171,9 +171,9 @@ Media types written before migration 035
 ----------------------------------------
 
 `media_attachments.type` is Mastodon's enum: image 0, gifv 1, video 2,
-unknown 3, audio 4. Until migration 035, eunha wrote audio as 3 and unknown as
-4, so Mastodon serving such a database showed eunha's audio as attachments it
-could not play, and eunha showed Mastodon's audio the same way.
+unknown 3, audio 4. Until migration 035, Eunha wrote audio as 3 and unknown as
+4, so Mastodon serving such a database showed Eunha's audio as attachments it
+could not play, and Eunha showed Mastodon's audio the same way.
 
 Both numberings use the same integers, so migration 035 tells the rows apart
 by what Mastodon never writes. Its unknown attachments are remote ones it has
@@ -182,13 +182,13 @@ transcoded to MP3, or a copy of one since removed, which keeps its
 `meta.original`. So:
 
  -  a 3 whose content type is `audio/*` becomes 4, as does an upload of
-    eunha's still waiting in its transcoding queue as audio;
+    Eunha's still waiting in its transcoding queue as audio;
  -  a 4 whose content type is anything but audio becomes 3, as does a remote
     one with no file, no content type and no `meta.original`, which is how
-    eunha recorded an attachment from a domain blocked with `reject_media`.
+    Eunha recorded an attachment from a domain blocked with `reject_media`.
 
 What is left is a remote attachment that named no media type and whose
-address had no extension, which eunha recorded without a content type: a 3 if
+address had no extension, which Eunha recorded without a content type: a 3 if
 its ActivityPub type was `Audio`, a 4 if it was anything else but `Image` or
 `Video`. Neither can be told from Mastodon's own. To list them:
 
@@ -204,7 +204,7 @@ Remote accounts before migration 037
 `accounts.protocol` says whether a remote account speaks ActivityPub (1) or
 OStatus (0), and defaults to 0. Mastodon stores 1 for every actor it takes
 from ActivityPub, and sends nothing to an account that does not
-([remote actors](../mastodon/remote-actors)). Until eunha stored remote actors
+([remote actors](../mastodon/remote-actors)). Until Eunha stored remote actors
 as Mastodon does, it left the column at its default, so a remote account it
 made then and has not refetched since would read as OStatus and be sent
 nothing.
@@ -221,7 +221,7 @@ Mastodon stores a local boost's `uri` when it is made: the id of its
 `Announce`, `/statuses/{id}/activity` under the booster's actor URI, which is
 `/ap/users/{id}` for an account of the numeric scheme and `/users/{username}`
 otherwise ([posting](../mastodon/statuses#boosts-and-favourites)). Until
-migration 036, eunha left it empty, and sent the `Announce` under the
+migration 036, Eunha left it empty, and sent the `Announce` under the
 `/users/{username}` form whatever the scheme, so a server that received it
 from an account of the numeric scheme could not match the `Undo` sent later.
 
@@ -230,7 +230,7 @@ have stored. The database does not record the instance's domain, so the
 migration takes it from the local post nearest the boost by id, which is the
 domain the instance had when the boost was made if it has ever moved. On a
 database with no local post that has a `uri` the boosts are left as they are;
-eunha names them from their accounts all the same. Remote servers that took
+Eunha names them from their accounts all the same. Remote servers that took
 a boost from an account of the numeric scheme under the other form still
 know it by that form, and an `Undo` of it now does not reach it.
 
@@ -239,7 +239,7 @@ Notifications written before migration 032
 ------------------------------------------
 
 A notification points at what it is about: its `activity_type` and
-`activity_id`. Until migration 032, eunha pointed a favourite's at the post
+`activity_id`. Until migration 032, Eunha pointed a favourite's at the post
 favourited, where Mastodon points it at the `Favourite`; a boost's at the post
 boosted rather than the boost; a poll's at the poll's post rather than the
 `Poll`; and a follow's sometimes at the recipient's follow of the sender
@@ -251,7 +251,7 @@ Migration 032 points each of them where Mastodon does when that activity
 still exists: the sender's favourite of the post, the sender's boost of it
 (kept even once deleted), the post's poll, the sender's follow of the
 recipient. A notification whose activity is gone — a favourite since undone,
-say, whose notification eunha did not remove — is left as it was, and
+say, whose notification Eunha did not remove — is left as it was, and
 Mastodon shows it without its post. To list what is left:
 
 ~~~~ sql
@@ -263,14 +263,14 @@ WHERE activity_type = 'Status' AND "type" IN ('favourite', 'poll');
 Domain blocks written before migration 015
 ------------------------------------------
 
-Until migration 015, eunha stored `domain_blocks.severity` as noop 0, silence
-1, suspend 2. Mastodon stores silence 0, suspend 1, noop 2, and eunha now
-does too. Migration 015 converted the other enums eunha had numbered its own
+Until migration 015, Eunha stored `domain_blocks.severity` as noop 0, silence
+1, suspend 2. Mastodon stores silence 0, suspend 1, noop 2, and Eunha now
+does too. Migration 015 converted the other enums Eunha had numbered its own
 way (report categories, IP block severities), but it cannot convert domain
 blocks: both numberings use the same three integers, so a row does not say
 which of them wrote it.
 
-A block that eunha's admin API created before migration 015 now reads as
+A block that Eunha's admin API created before migration 015 now reads as
 follows: a suspend reads as noop, a silence reads as suspend, and a noop
 reads as silence. List every block and correct each one by hand:
 
@@ -286,14 +286,14 @@ affected.
 Quote policies written before migration 017
 -------------------------------------------
 
-Until migration 017, eunha stored a post's `quote_approval_policy` as its own
-enum: public 0, followers 1, nobody 2, manual 3. Mastodon stores, and eunha
+Until migration 017, Eunha stored a post's `quote_approval_policy` as its own
+enum: public 0, followers 1, nobody 2, manual 3. Mastodon stores, and Eunha
 now stores, a bitmap. The automatic policy sits in the high 16 bits and the
 manual one in the low 16: public is `131072`, followers `262144`, and nobody
-`0`. Migration 017 converts eunha's followers, nobody and manual values.
+`0`. Migration 017 converts Eunha's followers, nobody and manual values.
 
 Eunha's public, 0, is also Mastodon's nobody, so migration 017 cannot tell
-the two apart. Local posts eunha wrote with “anyone may quote” before the
+the two apart. Local posts Eunha wrote with “anyone may quote” before the
 migration now let no one quote them. Their authors can open them up again
 through the interaction policy endpoint.
 
@@ -301,13 +301,13 @@ through the interaction policy endpoint.
 List reply policies written before migration 020
 ------------------------------------------------
 
-Until the release that added migration 020, eunha stored a list's
+Until the release that added migration 020, Eunha stored a list's
 `replies_policy` as followed 0, list 1, none 2. Mastodon stores list 0,
-followed 1, none 2, and eunha now does too. No migration converts the
-column: lists belong to local accounts whether eunha or Mastodon created
+followed 1, none 2, and Eunha now does too. No migration converts the
+column: lists belong to local accounts whether Eunha or Mastodon created
 them, so a row does not say which numbering wrote it.
 
-On an instance that eunha has run from the start, every list whose policy was
+On an instance that Eunha has run from the start, every list whose policy was
 set to “followed” or “list” now reads as the other. Swap them back once:
 
 ~~~~ sql
@@ -315,5 +315,5 @@ UPDATE lists SET replies_policy = CASE replies_policy WHEN 0 THEN 1 WHEN 1 THEN 
 WHERE replies_policy IN (0, 1);
 ~~~~
 
-On a database that Mastodon ran before eunha, run it only for lists created
-after the switch to eunha (filter on `created_at`).
+On a database that Mastodon ran before Eunha, run it only for lists created
+after the switch to Eunha (filter on `created_at`).

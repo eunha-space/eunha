@@ -26,7 +26,7 @@ struct Args {
     #[arg(long)]
     config: Option<String>,
 
-    /// PostgreSQL connection string for the eunha database (overrides config).
+    /// PostgreSQL connection string for the Eunha database (overrides config).
     #[arg(long)]
     db: Option<String>,
 
@@ -39,7 +39,7 @@ struct Args {
     title: String,
 
     /// Notification body text.
-    #[arg(long, default_value = "This is a test push notification from eunha.")]
+    #[arg(long, default_value = "This is a test push notification from Eunha.")]
     body: String,
 }
 

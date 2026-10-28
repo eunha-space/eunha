@@ -238,10 +238,10 @@ that they are searchable sooner.
 | `--instance`           | With `--tenants`, the instance.                                                           |
 
 Chewy notices a changed specification from a digest it keeps in its own
-`chewy_specifications` index; eunha compares the cluster's mapping and
+`chewy_specifications` index; Eunha compares the cluster's mapping and
 analysis settings with its own instead, so there is no `--reset-chewy`. While
 an index is imported its refresh is turned off, and turned back on after.
-`--resume` is eunha's own: the last batch written is kept in Redis
+`--resume` is Eunha's own: the last batch written is kept in Redis
 (`search:deploy:<index>`), and a run without it starts from the first row.
 
 ### Running the tests against a cluster

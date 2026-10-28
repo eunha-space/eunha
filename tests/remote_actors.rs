@@ -1,7 +1,7 @@
 //! Remote actors stored as Mastodon's `ActivityPub::ProcessAccountService`
 //! stores them, from documents a fake remote server serves.
 //!
-//! A test binary of its own because it has to let eunha fetch from 127.0.0.1,
+//! A test binary of its own because it has to let Eunha fetch from 127.0.0.1,
 //! and ask WebFinger over plain HTTP. Both switches are process-wide, so
 //! turning them on in the main suite would turn them on for every test there.
 

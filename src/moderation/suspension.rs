@@ -5,7 +5,7 @@
 //!
 //! Neither touches media permissions. Mastodon's
 //! `UpdateMediaAttachmentsPermissionsService` only does anything when media is
-//! on S3 with `S3_PERMISSION` set or on the filesystem; eunha's bucket serves
+//! on S3 with `S3_PERMISSION` set or on the filesystem; Eunha's bucket serves
 //! objects without per-object ACLs, which is the `S3_PERMISSION=''` case it
 //! returns early for.
 //!

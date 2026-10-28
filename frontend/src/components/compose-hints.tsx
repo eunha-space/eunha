@@ -10,7 +10,7 @@ import type { mastodon } from '../masto.ts'
  * Each one names a consequence rather than a rule.
  *
  * Upstream has a fourth — a guess at the post's language disagreeing with the
- * picker. eunha's composer has no language picker to disagree with, so there
+ * picker. Eunha's composer has no language picker to disagree with, so there
  * is nothing to offer to change.
  */
 export function ComposeHints({

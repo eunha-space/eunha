@@ -327,7 +327,7 @@ async fn process_inner(
     Ok(Some(account_id))
 }
 
-/// `with_redis_lock`, as eunha takes its locks: retried briefly, then done
+/// `with_redis_lock`, as Eunha takes its locks: retried briefly, then done
 /// without, rather than holding up the inbox.
 async fn acquire_lock(state: &AppState, name: &str) -> Option<crate::redis_lock::RedisLock> {
     for attempt in 0..40 {

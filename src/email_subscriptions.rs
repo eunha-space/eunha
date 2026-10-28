@@ -17,7 +17,7 @@
 //!     [`clean_unconfirmed`].
 //!
 //! Mastodon turns the whole feature off with `DISABLE_EMAIL_SUBSCRIPTIONS`;
-//! eunha's per-instance `email_subscriptions` configuration flag is the same
+//! Eunha's per-instance `email_subscriptions` configuration flag is the same
 //! switch, and the `email_subscriptions` site setting is what an administrator
 //! turns on afterwards.
 //!
@@ -497,7 +497,7 @@ pub fn unsubscribe_url(state: &AppState, id: i64, confirmation_token: &str) -> S
 
 /// The subscription a link to unsubscribe names: by its signed GlobalID when
 /// `secret_key_base` is configured, and otherwise, or failing that, by its
-/// confirmation token, which is what eunha's links carried without it.
+/// confirmation token, which is what Eunha's links carried without it.
 async fn subscription_for_token(state: &AppState, token: &str) -> anyhow::Result<Option<i64>> {
     if let Some(secret) = &state.instance.secret_key_base {
         if let Some((model, id)) = secret.locate_signed(token, "unsubscribe", chrono::Utc::now()) {

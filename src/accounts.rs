@@ -684,7 +684,7 @@ pub async fn reset_password_user(
         return Err("Reset password token can't be blank");
     }
     // A SHA-256 is still read once `secret_key_base` is configured, so a link
-    // eunha mailed before then keeps its six hours.
+    // Eunha mailed before then keeps its six hours.
     let digests = vec![
         reset_password_digest(state, token).await,
         reset_password_sha256(token),
@@ -1259,7 +1259,7 @@ pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<
     Ok(())
 }
 
-/// `User#prepare_new_user!`, the part eunha has: `BootstrapTimelineWorker`,
+/// `User#prepare_new_user!`, the part Eunha has: `BootstrapTimelineWorker`,
 /// which follows the inviter when the invite says to and tells staff, the
 /// welcome mail an hour later, and the `account.approved` webhook.
 pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
@@ -1446,7 +1446,7 @@ pub async fn pending_signups_waiting(db: &PgPool) -> Result<u64> {
     Ok(count as u64)
 }
 
-/// Sign-ups made before eunha wrote them as Mastodon does, waiting in
+/// Sign-ups made before Eunha wrote them as Mastodon does, waiting in
 /// `eunha.pending_signups` for their link to be followed, turned into what a
 /// sign-up writes now: an account and an unconfirmed user, with the invite's
 /// use counted. Each keeps the confirmation token its mail carries, sent when

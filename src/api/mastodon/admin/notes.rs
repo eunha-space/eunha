@@ -28,7 +28,7 @@ use crate::{
 /// `ReportNote::CONTENT_SIZE_LIMIT` and `AccountModerationNote::CONTENT_SIZE_LIMIT`.
 pub const CONTENT_SIZE_LIMIT: usize = 2_000;
 
-/// A note as eunha serves it: who wrote it, when, and what it says.
+/// A note as Eunha serves it: who wrote it, when, and what it says.
 #[derive(Debug, Serialize)]
 pub struct Note {
     pub id: String,

@@ -1,4 +1,4 @@
-//! The delivery queue in `eunha.ojak_queue`, as eunha's migrations build it.
+//! The delivery queue in `eunha.ojak_queue`, as Eunha's migrations build it.
 
 use crate::helpers::TestContext;
 

@@ -1,4 +1,4 @@
-# Mastodon 4.7.3 for federating with eunha.
+# Mastodon 4.7.3 for federating with Eunha.
 #
 # The official image, so none of the native dependencies that have to be built
 # by hand on macOS — libidn, OpenSSL headers, libvips, and a `pg` gem that
@@ -6,14 +6,14 @@
 # stack: its own Postgres and Redis, nothing shared with the host.
 #
 # Both servers run inside this network, and reach each other by the aliases on
-# the two proxies. eunha used to run on the host behind a host-side Caddy, which
+# the two proxies. Eunha used to run on the host behind a host-side Caddy, which
 # cannot work: `mastodon.test` is a network alias, so a host process cannot
-# resolve it, and eunha could not fetch the actor key to verify a single inbound
+# resolve it, and Eunha could not fetch the actor key to verify a single inbound
 # activity. In here they simply resolve each other, no `/etc/hosts` entry, no
 # certificate in anyone's keychain, and CI needs nothing the laptop does not.
 #
 # `federation_test.sh` copies this into its scratch directory and generates the
-# Caddyfiles, certificates and eunha's config next to it. Those are not in the
+# Caddyfiles, certificates and Eunha's config next to it. Those are not in the
 # repository, so this file only comes up from there — which is why differential
 # testing has a compose file of its own rather than sharing this one.
 services:
@@ -63,9 +63,9 @@ services:
       SMTP_DELIVERY_METHOD: test
       RAILS_LOG_LEVEL: warn
       SSL_CERT_FILE: /certs/ca-bundle.crt
-      # Mastodon refuses to deliver to private addresses, as eunha does. This is
+      # Mastodon refuses to deliver to private addresses, as Eunha does. This is
       # its own supported exception, meant for self-hosting behind one, and it is
-      # what lets it deliver to an eunha running on the host. Without it every
+      # what lets it deliver to an Eunha running on the host. Without it every
       # federation test fails as PrivateNetworkAddressError.
       ALLOWED_PRIVATE_ADDRESSES: "0.0.0.0/0"
     ports:
@@ -79,8 +79,8 @@ services:
       - ./ca-bundle.crt:/certs/ca-bundle.crt:ro
 
   # Without a worker, anything Mastodon defers never happens — and delivery is
-  # deferred. Every activity bound for eunha stays in the queue, which looks
-  # exactly like eunha refusing them.
+  # deferred. Every activity bound for Eunha stays in the queue, which looks
+  # exactly like Eunha refusing them.
   sidekiq:
     image: ghcr.io/mastodon/mastodon:v4.7.3
     command: bundle exec sidekiq
@@ -88,7 +88,7 @@ services:
     # `web`'s `db:prepare` — so on a cold database it starts first, dies on
     # `relation "users" does not exist`, and compose does not bring it back.
     # Deliveries run here, so a worker that died at boot means Mastodon never
-    # sends eunha anything and the run reports it as unreachable. Restart until
+    # sends Eunha anything and the run reports it as unreachable. Restart until
     # the schema exists. Found in the differential harness, which shares the
     # race and had been comparing against a worker-less Mastodon for weeks.
     restart: on-failure
@@ -120,9 +120,9 @@ services:
       ALLOWED_PRIVATE_ADDRESSES: "0.0.0.0/0"
       SSL_CERT_FILE: /certs/ca-bundle.crt
 
-  # eunha's database, separate from Mastodon's and on 18 rather than 16.
+  # Eunha's database, separate from Mastodon's and on 18 rather than 16.
   # `001_initial.sql` is a `pg_dump` whose preamble sets `transaction_timeout`,
-  # a parameter Postgres 17 introduced, so eunha's first migration cannot run on
+  # a parameter Postgres 17 introduced, so Eunha's first migration cannot run on
   # the image Mastodon uses. Production and development are both on 18.
   eunha-db:
     image: postgres:18
@@ -139,7 +139,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # eunha itself, built from this repository's Dockerfile.
+  # Eunha itself, built from this repository's Dockerfile.
   #
   # Its configuration is a file rather than environment variables because
   # `allowed_private_networks` is a list, and the environment source has no
@@ -164,11 +164,11 @@ services:
       # below, on 443 under its own name.
       - "3001:3000"
 
-  # TLS for eunha, inside the network and on 443.
+  # TLS for Eunha, inside the network and on 443.
   #
   # The port matters: Mastodon webfingers an account by the *host* of its actor
   # URI and drops any port, so `alice@eunha.test:3002` is looked up as
-  # `alice@eunha.test` on 443. Serving eunha on a non-standard port makes every
+  # `alice@eunha.test` on 443. Serving Eunha on a non-standard port makes every
   # inbound delivery fail verification, which looks like a signature problem and
   # is not one. Real instances are always on 443; this matches that.
   eunha-proxy:

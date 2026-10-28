@@ -471,7 +471,7 @@ async fn test_media_from_a_reject_media_domain_is_recorded_without_its_file() {
 
 /// `MediaProxyController#show` authorizes with `MediaAttachmentPolicy
 /// #download?`, `StatusPolicy#show?` for the viewer, and sends the viewer to
-/// the file; for a remote attachment, which eunha keeps no copy of, to where
+/// the file; for a remote attachment, which Eunha keeps no copy of, to where
 /// the copy would come from, and for one of a type Mastodon does not take,
 /// whose download fails, nowhere.
 #[tokio::test]

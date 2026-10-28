@@ -1,7 +1,7 @@
 // The picker's "Frequently used" row, as Mastodon's composer keeps it: a count
 // for each emoji picked, from the picker or the `:` suggestions, the sixteen
 // most used first, topped up with Mastodon's defaults. Mastodon keeps the
-// counts in the account's web settings; eunha keeps them in this browser, per
+// counts in the account's web settings; Eunha keeps them in this browser, per
 // account.
 import { getActiveAccountId } from '../auth.ts'
 

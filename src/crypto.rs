@@ -73,7 +73,7 @@ fn hash_password_blocking(password: &str) -> AppResult<String> {
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hashing failed: {e}")))
 }
 
-/// Rails' `message_verifier(purpose)` without `SECRET_KEY_BASE`, which eunha
+/// Rails' `message_verifier(purpose)` without `SECRET_KEY_BASE`, which Eunha
 /// does not have: HMAC-SHA256 under a key derived for `purpose` from the
 /// instance's VAPID private key, as `base64url(message)--hexdigest` so it can
 /// sit in a path or a query string. `MessageVerifier#generate`.

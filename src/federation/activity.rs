@@ -1,7 +1,7 @@
 //! ActivityPub activity construction.
 //!
 //! Builders over ojak's generated vocabulary. Each takes string URIs (as the
-//! rest of eunha stores them), builds the typed value, and writes it as a
+//! rest of Eunha stores them), builds the typed value, and writes it as a
 //! [`serde_json::Value`] ready for delivery, under the plain ActivityStreams
 //! context Mastodon uses. Mastodon/Misskey-specific JSON-LD (FEP-044f quote
 //! terms) lives in `consent` rather than in the shared vocabulary crate.

@@ -3,7 +3,7 @@ Maintenance commands
 
 The `tootctl` commands that look after what an instance keeps — its feeds, its
 cache and counters, other servers' posts and media, and link preview images —
-are eunha subcommands of the same names, with the same options and output:
+are Eunha subcommands of the same names, with the same options and output:
 
 ~~~~ sh
 eunha feeds build --all
@@ -16,7 +16,7 @@ eunha preview_cards remove --days 180
 Each acts on one instance. With `--tenants`, pick it with `--instance`, which
 may come anywhere after the group's name. Like the other one-off commands, they
 refuse a database that `eunha migrate` has not brought up to date. Where
-`tootctl` draws a progress bar, eunha prints only the final line; `--verbose`
+`tootctl` draws a progress bar, Eunha prints only the final line; `--verbose`
 still prints each record as it is processed, and errors are printed with the
 id they came from while the rest carry on.
 
@@ -58,10 +58,10 @@ accepted quotes. A count is written only where it changed, so `updated_at`
 moves only on the rows that had drifted. Recounting statuses visits every post
 the instance knows and takes a long time.
 
-`eunha cache clear` is `Rails.cache.clear`: it deletes what eunha keeps where
+`eunha cache clear` is `Rails.cache.clear`: it deletes what Eunha keeps where
 Mastodon keeps its cache, under the instance's prefix. That is Mastodon's own
 `cache:*` keys (the rate limits' counts, donation campaigns, the instance
-activity), and the entries Mastodon reads from its cache by name but eunha
+activity), and the entries Mastodon reads from its cache by name but Eunha
 keeps outside the `cache:` namespace: the followers digests
 (`followers_hash:*`), the oEmbed endpoints (`oembed_endpoint:*`), whether a
 server's accounts have feature approval policies, translation languages and
@@ -90,7 +90,7 @@ tables. `--compress-database` runs `VACUUM FULL` and `REINDEX` instead, which
 locks the tables, so run it with the instance stopped. `--skip-status-remove`
 does only the clean-up.
 
-`tootctl` keeps its lists in `public`; eunha keeps them in its own schema, and
+`tootctl` keeps its lists in `public`; Eunha keeps them in its own schema, and
 builds no temporary index, because the tracked schema already indexes
 `statuses.conversation_id`.
 
@@ -117,11 +117,11 @@ sharing the database made.
 `eunha media remove-orphans` lists every object in the instance's storage and
 deletes those whose record is gone, or which are not a file the record holds:
 a superseded avatar, say. Objects not laid out as Mastodon lays out media,
-eunha's instance icon among them, are reported as unrecognized and kept. A
+Eunha's instance icon among them, are reported as unrecognized and kept. A
 file counts as the record's when it has the record's file name, or its stem
 with any extension, since a style may be kept in another format; Mastodon
 insists on one of the attachment's style formats. What earlier versions of
-eunha kept beside an attachment's file, a video's upload waiting under
+Eunha kept beside an attachment's file, a video's upload waiting under
 `source/` and a small style named after the thumbnail, is kept while the
 attachment is there. `--prefix` limits the listing, `--start-after` resumes it
 from a key (both within the instance's prefix), and `--dry-run` deletes
@@ -132,10 +132,10 @@ local accounts' share, from the sizes the database records.
 `eunha media lookup URL` prints the public page a media URL is shown on: the
 post an attachment belongs to, or the profile an avatar or header belongs to.
 
-`tootctl media refresh` downloads remote media again; eunha keeps no copies of
+`tootctl media refresh` downloads remote media again; Eunha keeps no copies of
 remote media, so there is nothing to download, and the command says so.
 `tootctl media remove-orphans --fix-permissions` resets each object's ACL;
-eunha never sets per-object ACLs, leaving it to the bucket's own policy to
+Eunha never sets per-object ACLs, leaving it to the bucket's own policy to
 serve what it stores, so it is not offered.
 
 

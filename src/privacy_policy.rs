@@ -1,6 +1,6 @@
 //! Mastodon's `PrivacyPolicy`: the `site_terms` setting an administrator
 //! writes, or the policy Mastodon ships when that is blank. The instance
-//! configuration's `privacy_policy`, where eunha kept the policy before it
+//! configuration's `privacy_policy`, where Eunha kept the policy before it
 //! read the setting, is read only by `eunha settings import-config`.
 //!
 //! Mastodon: app/models/privacy_policy.rb

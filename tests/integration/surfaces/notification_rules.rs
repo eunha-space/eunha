@@ -1,4 +1,4 @@
-//! When Mastodon does not notify, and whether eunha agrees.
+//! When Mastodon does not notify, and whether Eunha agrees.
 //!
 //! `NotifyService::DropCondition#drop?` is a list of reasons to say nothing.
 //! The ones tested here are the unconditional ones — not the account's
@@ -288,7 +288,7 @@ async fn test_an_ordinary_co_mention_still_notifies() {
 ///
 /// Mastodon's `MAXIMUM_GROUP_SPAN_HOURS` is 12: a notification joins the
 /// previous group unless that group already began more than twelve hours ago,
-/// in which case it starts a new one. eunha's key had no time in it at all, so
+/// in which case it starts a new one. Eunha's key had no time in it at all, so
 /// every favourite of a status joined one group however far apart they were —
 /// a post favourited today and again next week read as a single "2 people".
 ///
@@ -620,7 +620,7 @@ async fn test_a_follow_notification_is_about_the_senders_follow() {
     );
 }
 
-/// Migration 032 points the notifications eunha wrote before it at
+/// Migration 032 points the notifications Eunha wrote before it at
 /// Mastodon's activities, where they still exist, and leaves the rest.
 #[tokio::test]
 async fn test_migration_032_points_notifications_at_mastodons_activities() {
@@ -662,7 +662,7 @@ async fn test_migration_032_points_notifications_at_mastodons_activities() {
         .await
         .unwrap();
 
-    // As eunha wrote them: about the post, and the wrong follow.
+    // As Eunha wrote them: about the post, and the wrong follow.
     for (kind, activity_type, activity_id) in [
         ("favourite", "Status", sid),
         ("reblog", "Status", sid),

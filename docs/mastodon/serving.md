@@ -3,7 +3,7 @@ What other servers fetch
 
 Eunha serves what Mastodon's ActivityPub controllers serve, at the same
 paths, through [ojak]'s federation (*src/api/ap/serving.rs*). A request that
-asks for a page rather than ActivityPub goes on to eunha's own routes. Each
+asks for a page rather than ActivityPub goes on to Eunha's own routes. Each
 route below is served under both of Mastodon's URI schemes,
 `/users/{username}` and `/ap/users/{id}`, unless it says otherwise, and names
 what it serves by the scheme the account uses.
@@ -180,7 +180,7 @@ Deleting a collection sends its `Remove` to everyone the owner reaches
 (`AccountRawDistributionWorker`), and not, through the collection that is
 gone, to the accounts it featured. Mastodon also queues a delivery per
 featured account, signed as that account and addressed to the owner's inbox
-URL, which a local owner does not have, so none of them is delivered; eunha
+URL, which a local owner does not have, so none of them is delivered; Eunha
 does not queue them. A collection a moderator deletes sends nothing: like
 Mastodon, it is destroyed without `DeleteCollectionService`.
 
@@ -243,7 +243,7 @@ whose followers collection it names, is compared with the digest of the
 account's local followers (`local_followers_hash`). When they differ, its
 list is fetched (`FollowersSynchronizationWorker`, ten pages at most): a
 local account it lists that does not follow it here has its follow request
-accepted, or sends the `Undo` of a follow eunha never knew of; and once the
+accepted, or sends the `Undo` of a follow Eunha never knew of; and once the
 whole list is read and adds up to the digest, a local account it does not
 list stops following it. The header and the digest are ojak's
 (`ojak::synchronization`).
@@ -255,7 +255,7 @@ account's when another account is merged into it. They are kept in the
 instance's Redis under its key prefix, at Mastodon's names,
 `followers_hash:<account id>:<scheme>://<host>/` and
 `followers_hash:<account id>:local`; Mastodon's own entries are Marshal
-dumps under its `cache:` namespace, which eunha does not write, so the two do
+dumps under its `cache:` namespace, which Eunha does not write, so the two do
 not share them.
 
 Mastodon's `DISABLE_FOLLOWERS_SYNCHRONIZATION=true` is

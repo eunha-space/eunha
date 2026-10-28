@@ -60,7 +60,7 @@ impl Hash {
     }
 }
 
-/// The curves eunha can check signatures on.
+/// The curves Eunha can check signatures on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     P256,
@@ -87,7 +87,7 @@ pub enum PublicKey {
         n: BigUint,
         e: BigUint,
     },
-    /// A key eunha cannot check signatures with: another curve or type.
+    /// A key Eunha cannot check signatures with: another curve or type.
     Unsupported,
 }
 

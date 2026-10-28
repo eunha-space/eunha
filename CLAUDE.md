@@ -14,7 +14,7 @@ before changing it, and update it in the same commit when behaviour changes.
 Rules
 -----
 
- -  All Mastodon tables go in the `public` schema; tables only eunha needs go
+ -  All Mastodon tables go in the `public` schema; tables only Eunha needs go
     in the `eunha` schema.
  -  Use mise for all tasks. See *mise.toml*.
  -  Use the [shadcn/ui] CLI when adding frontend components. Don't hand-roll
@@ -23,7 +23,7 @@ Rules
  -  Start tasks with `tenants::spawn` and `tenants::spawn_blocking`, never
     `tokio::spawn` or `spawn_blocking` directly, so the task keeps its
     `tenant{domain=…}` span. *clippy.toml* enforces this.
- -  Every Redis key eunha owns goes through the configured key prefix. A new
+ -  Every Redis key Eunha owns goes through the configured key prefix. A new
     Redis command must be added to the ACL list in
     *docs/operating/redis.md*, because tenant users are granted only those.
  -  Migrations are applied by `eunha migrate`, never by starting the server.
@@ -118,13 +118,13 @@ Tracking Mastodon:
     `Delete` or `Undo` may take back.
  -  *docs/mastodon/entity-parity.md*, *docs/mastodon/differential-testing.md*
     and *docs/mastodon/federation-testing.md*: the harnesses that compare
-    eunha with upstream, and the environment traps that fake failures.
+    Eunha with upstream, and the environment traps that fake failures.
  -  *docs/mastodon/divergences.md*: how *divergences.toml* works.
  -  *docs/mastodon/4.7.3.md*: what the tracked release changed.
 
 Design records and handoff notes:
 
- -  *docs/design/protocol.md*: the ActivityPub extension eunha designs.
+ -  *docs/design/protocol.md*: the ActivityPub extension Eunha designs.
  -  *docs/design/multitenancy.md*: the hosted tenancy plan.
  -  *docs/design/benchmarking.md*: measurements.
  -  *docs/contributing/next.md*: where to pick the work up.

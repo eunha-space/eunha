@@ -2,7 +2,7 @@
 //! a remote collection asking to feature a local account, against a fake
 //! remote server.
 //!
-//! A test binary of its own because it has to let eunha fetch from 127.0.0.1.
+//! A test binary of its own because it has to let Eunha fetch from 127.0.0.1.
 //! The SSRF guard's allowlist is process-wide and set once, so granting it in
 //! the main suite would grant it to every test there.
 
@@ -204,7 +204,7 @@ async fn a_followers_only_post_asks_its_receivers_to_check_their_followers() {
     assert_eq!(listed["orderedItems"], json!([rob]));
 }
 
-/// A delivery that says rob's followers here are not who eunha thinks has
+/// A delivery that says rob's followers here are not who Eunha thinks has
 /// them fetched: a local account rob lists that does not follow him sends
 /// the `Undo` of the follow it never knew of, and one he does not list
 /// stops following him.

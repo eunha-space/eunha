@@ -1,7 +1,7 @@
 Content formatting
 ==================
 
-Posts, bios and profile fields reach a client as HTML, and eunha writes that
+Posts, bios and profile fields reach a client as HTML, and Eunha writes that
 HTML as Mastodon does, in *src/formatter/*. What is stored is what came in: a
 local account's text as it typed it, plain, and a remote account's as the HTML
 its server sent. Either is formatted every time it is served.
@@ -18,7 +18,7 @@ What is formatted where
     small set of elements and attributes and rewrites the rest.
 
 That is what a status's `content` is, in the API and in the ActivityPub `Note`
-eunha serves, and each version in its edit history; an account's `note`, in
+Eunha serves, and each version in its edit history; an account's `note`, in
 the API, in `/api/v1/profile` and as the actor's `summary`; and each profile
 field's `value`. A remote field that has been verified is shown instead as a
 link to the URL it was verified for. Announcements, and the warning and

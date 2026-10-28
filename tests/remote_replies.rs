@@ -1,7 +1,7 @@
 //! Fetching a remote thread's replies through `replies` collections, served by
 //! a fake remote server.
 //!
-//! A test binary of its own because it has to let eunha fetch from 127.0.0.1.
+//! A test binary of its own because it has to let Eunha fetch from 127.0.0.1.
 //! The SSRF guard's allowlist is process-wide and set once, so granting it in
 //! the main suite would grant it to every test there.
 

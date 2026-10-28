@@ -225,7 +225,7 @@ mod archetype_tests {
 /// `AnnualReport#eligible?`: every source is, which comes to
 /// `TopStatuses` (a public or unlisted post of the year) and `TopHashtags`
 /// (a post of the year with a hashtag). The year is `year_as_snowflake_range`,
-/// which Mastodon draws with up to a second of randomness at each end; eunha
+/// which Mastodon draws with up to a second of randomness at each end; Eunha
 /// takes the whole seconds.
 async fn is_eligible(state: &AppState, account_id: i64, year: i32) -> AppResult<bool> {
     let (first, last) = year_as_snowflake_range(year);

@@ -1,4 +1,4 @@
-//! Compares a live eunha database against upstream Mastodon's schema.
+//! Compares a live Eunha database against upstream Mastodon's schema.
 //!
 //! "Drop-in replacement on top of your existing Mastodon database" only holds
 //! if the two schemas are the same object, so this reads the database back out
@@ -16,7 +16,7 @@ use sqlx::PgPool;
 use crate::upstream::{Column, Constraint, Index, Schema, Sequence, Table, View};
 
 /// Migration ledgers, which `schema.rb` never describes: Rails' two, which
-/// eunha maintains for compatibility, and sqlx's own, which it insists on
+/// Eunha maintains for compatibility, and sqlx's own, which it insists on
 /// keeping in `public`. Never a drift finding.
 const BOOKKEEPING: [&str; 3] = [
     "schema_migrations",
@@ -382,7 +382,7 @@ pub async fn introspect(pool: &PgPool) -> Result<Schema> {
 /// The reference is built by loading `schema.rb`, which describes the schema
 /// rather than the history that produced it, so it has no such leftovers.
 /// Neither database is wrong — a Mastodon installed fresh today differs from one
-/// upgraded since 2020 in exactly this way — and eunha matches the upgraded one,
+/// upgraded since 2020 in exactly this way — and Eunha matches the upgraded one,
 /// because that is the thing it stands in for.
 ///
 /// Narrow on purpose: a sequence whose table *does* exist, or one the reference
@@ -587,7 +587,7 @@ pub fn diff(live: &Schema, upstream: &Schema) -> Vec<Finding> {
 static SCHEMA_MIGRATION_VERSION: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"'(\d{14})'").expect("valid regex"));
 
-/// The Mastodon migration versions eunha's own `migrations/` claim to cover,
+/// The Mastodon migration versions Eunha's own `migrations/` claim to cover,
 /// read out of the `public.schema_migrations` seeds they insert.
 pub fn covered_versions(migrations_dir: &std::path::Path) -> Result<BTreeSet<String>> {
     let mut covered = BTreeSet::new();

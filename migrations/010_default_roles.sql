@@ -2,7 +2,7 @@
 --
 -- Mastodon creates them from `db/seeds/03_roles.rb`, which reads
 -- `config/roles.yml` and runs `find_or_create_by(name:)` for each, so every
--- Mastodon database has them and a database eunha created fresh did not. Without
+-- Mastodon database has them and a database Eunha created fresh did not. Without
 -- them there is no role to give an instance's first account — `tootctl accounts
 -- create --role Owner` and `mastodon:setup` both look the Owner up by name.
 --

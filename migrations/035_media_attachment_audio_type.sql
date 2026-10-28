@@ -5,17 +5,17 @@
 -- by what Mastodon never writes:
 --
 --  -  Mastodon's unknown rows are remote attachments it has not downloaded,
---     with no content type; eunha recorded the remote one's, so a 3 whose
---     content type is audio is eunha's audio. So is an upload of eunha's still
+--     with no content type; Eunha recorded the remote one's, so a 3 whose
+--     content type is audio is Eunha's audio. So is an upload of Eunha's still
 --     waiting in its transcoding queue as audio, which has none yet.
 --  -  Mastodon's audio is what it transcoded to MP3, or a copy of one since
 --     removed, which has no content type but keeps its `meta.original`. A 4
---     with any other content type is eunha's unknown, as is a remote one with
---     no file, no content type and no `meta.original`, which is how eunha
+--     with any other content type is Eunha's unknown, as is a remote one with
+--     no file, no content type and no `meta.original`, which is how Eunha
 --     recorded an attachment from a domain blocked with `reject_media`.
 --
 -- What is left — a 4 with no content type that has a `meta.original`, which
--- eunha wrote only for a remote attachment that named no media type and whose
+-- Eunha wrote only for a remote attachment that named no media type and whose
 -- address had no extension — is left as it is.
 
 UPDATE media_attachments m
@@ -26,7 +26,7 @@ WHERE m."type" = 3
                   WHERE j.media_id = m.id AND j.media_type = 'audio'));
 
 -- `video/x-ms-asf` is in Mastodon's `AUDIO_MIME_TYPES`, so an audio upload
--- still waiting to be processed can carry it; eunha classified it as video.
+-- still waiting to be processed can carry it; Eunha classified it as video.
 UPDATE media_attachments
 SET "type" = 3
 WHERE "type" = 4

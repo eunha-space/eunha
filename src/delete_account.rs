@@ -18,10 +18,10 @@
 //!
 //! * Invite lineage is snapshotted into `eunha.invite_lineage` before the user
 //!   row (which carries the email and the rest of the PII) is destroyed, so
-//!   eunha's invite tree survives a deletion that removes the personal data.
+//!   Eunha's invite tree survives a deletion that removes the personal data.
 //! * Counter caches on *other* accounts' statuses (replies/reblogs/quotes) are
 //!   decremented. Mastodon's batched removal path skips its callbacks and
-//!   leaves them stale; eunha keeps them accurate, as its single-status delete
+//!   leaves them stale; Eunha keeps them accurate, as its single-status delete
 //!   already does.
 //!
 //! Mastodon: app/services/delete_account_service.rb
@@ -448,7 +448,7 @@ async fn distribute_activities(state: &AppState, account: &Account, options: &Op
 
 /// `delete_actor!` — announce the deletion to every inbox we know of. Mastodon
 /// splits this into a normal-priority push to followers and relays plus a
-/// low-priority push to everyone else; eunha's delivery queue has a single
+/// low-priority push to everyone else; Eunha's delivery queue has a single
 /// priority, so both sets are enqueued together.
 ///
 /// Only reached for local accounts, which always keep their `accounts` row
@@ -866,7 +866,7 @@ async fn purge_statuses(
 
         // Mastodon's `delete_all` skips the counter-cache callbacks, leaving
         // interaction counts on other people's statuses stale. Keep them
-        // accurate instead, mirroring eunha's single-status delete.
+        // accurate instead, mirroring Eunha's single-status delete.
         decrement_interaction_counters(state, &ids).await?;
 
         // Rebloggers lose a status each.

@@ -18,7 +18,7 @@
 //!
 //! Eunha's processes restart far more often than Mastodon's Sidekiq does —
 //! every deploy swaps a blue and a green process — and a daily task whose
-//! period starts again at each restart never ran at all. So eunha keeps the
+//! period starts again at each restart never ran at all. So Eunha keeps the
 //! schedule's kinds but remembers, in `eunha.scheduled_tasks`, which run each
 //! task last finished:
 //!
@@ -89,7 +89,7 @@ pub enum Schedule {
     Cron { minute: Field, hour: Option<Field> },
 }
 
-/// How eunha runs an entry.
+/// How Eunha runs an entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Runs {
     /// On the entry's schedule, through [`run`].
@@ -230,7 +230,7 @@ pub const SIDEKIQ_YML: [Task; 17] = [
 pub const SELF_DESTRUCT: Task = task("self_destruct_scheduler", every(minutes(1)));
 
 /// The announcements `ScheduledStatusesScheduler` publishes and unpublishes.
-/// Mastodon queues a publication for its `scheduled_at`; eunha looks every
+/// Mastodon queues a publication for its `scheduled_at`; Eunha looks every
 /// minute.
 pub const SCHEDULED_ANNOUNCEMENTS: Task = task("eunha_scheduled_announcements", every(minutes(1)));
 

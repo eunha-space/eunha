@@ -112,7 +112,7 @@ async fn test_tenants_in_one_process_are_dispatched_by_host() {
     );
 }
 
-/// A lone instance answers whatever host it is asked by, as eunha always has:
+/// A lone instance answers whatever host it is asked by, as Eunha always has:
 /// health checks and local clients do not send the instance's domain.
 #[tokio::test]
 async fn test_a_lone_tenant_answers_any_host() {

@@ -32,7 +32,7 @@ pub fn tagged_ids(note: &Value) -> Vec<String> {
         .collect()
 }
 
-/// A collection eunha knows, with the URI it is known by
+/// A collection Eunha knows, with the URI it is known by
 /// (`TagManager#uri_for`).
 struct Known {
     id: i64,

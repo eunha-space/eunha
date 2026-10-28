@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# How many eunha tenants does one host hold?
+# How many Eunha tenants does one host hold?
 #
 # Brings up a PostgreSQL cluster and a Redis server of its own, then starts
-# tenants in steps — one eunha process and one database each, configured the
+# tenants in steps — one Eunha process and one database each, configured the
 # way docs/design/benchmarking.md recommends for a small hosted instance — and
 # at every step measures what the whole population costs:
 #
@@ -22,7 +22,7 @@
 #
 # Traps:
 #
-#  -  eunha's memory is summed per process from `top`'s MEM column
+#  -  Eunha's memory is summed per process from `top`'s MEM column
 #     (phys_footprint), not from RSS. RSS counts the binary's text once per
 #     process although every process shares the same pages, and overstates the
 #     marginal cost of a tenant by more than half.
@@ -215,7 +215,7 @@ cpu_seconds() {
     awk -F: '{ s = 0; for (i = 1; i <= NF; i++) s = s * 60 + $i; t += s } END { printf "%.2f\n", t }'
 }
 
-# eunha CPU s, postgres CPU s, committed transactions, sessions opened, Redis
+# Eunha CPU s, postgres CPU s, committed transactions, sessions opened, Redis
 # commands, and pages the host has decompressed. The last is how memory
 # pressure shows up on macOS before any swap does: an idle tenant's pages are
 # compressed, and a request to it waits for them to be decompressed.

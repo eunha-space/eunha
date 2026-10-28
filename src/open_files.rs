@@ -5,7 +5,7 @@
 //! connection kept for reuse, each database and Redis connection. Delivering
 //! 128 at a time to a few hundred servers passes 256, and past it nothing
 //! opens — a database connection no more than a delivery. The hard limit is
-//! far higher, and a process may raise its own soft limit up to it, so eunha
+//! far higher, and a process may raise its own soft limit up to it, so Eunha
 //! does, rather than depend on every deployment's service definition.
 //!
 //! Mastodon: none

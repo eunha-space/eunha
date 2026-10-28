@@ -42,20 +42,20 @@ host, corrected what those figures implied:
     0.2/s per tenant.
  -  A PostgreSQL connection that has served the query mix costs 19–24 MiB
     privately. Connections are a memory budget, not only a slot budget: two warm
-    connections cost a tenant as much as its eunha process.
+    connections cost a tenant as much as its Eunha process.
  -  Idle CPU is negligible once the queues are quiet — under 6% of one core for
-    300 tenants, eunha and PostgreSQL together.
+    300 tenants, Eunha and PostgreSQL together.
  -  With the timed tasks sleeping until something is due, an idle tenant holds
     a third of a connection on average rather than one and a third.
- -  A prototype running many tenants in one process cut eunha's memory to about
+ -  A prototype running many tenants in one process cut Eunha's memory to about
     3 MiB per tenant, from 12–16 MiB as separate processes, with twelve threads
     for the whole process and no slowdown from a saturated neighbour.
 
 Resident memory, not CPU, therefore decides how many small tenants a host
 holds. One hundred tenants that have each served load and hold two warm
-connections cost roughly 4 GiB of eunha and 4 GiB of PostgreSQL backends,
+connections cost roughly 4 GiB of Eunha and 4 GiB of PostgreSQL backends,
 before shared buffers, Redis and the operating system. With the hosting profile
-the PostgreSQL share falls to about 0.2 GiB, and in one shared process eunha's
+the PostgreSQL share falls to about 0.2 GiB, and in one shared process Eunha's
 would fall to about 0.3 GiB.
 
 
@@ -254,7 +254,7 @@ Phase 4: optional multi-instance runtime shards
 
 A throwaway prototype has measured what sharing would save
 ([benchmarking](./benchmarking.md), “One process for many tenants”). With the
-same tenants and load, eunha needed about 3 MiB per tenant in one process
+same tenants and load, Eunha needed about 3 MiB per tenant in one process
 against 12–16 MiB as separate processes, twelve threads instead of four per
 tenant, a seventh of the startup time and no more CPU, and a saturated tenant
 did not slow the rest. The savings are real and large. What remains to justify
@@ -372,7 +372,7 @@ Complete these measurements before moving between phases:
 5.  Attribute PostgreSQL, Redis and worker consumption per tenant.
 6.  Run the same workload against Mastodon where performance claims are needed.
 7.  Measure a shared-runtime prototype. Done on 2026-09-11 with a throwaway
-    one: about 3 MiB of eunha per tenant against 12–16 MiB as separate
+    one: about 3 MiB of Eunha per tenant against 12–16 MiB as separate
     processes. Before production, repeat it with `Host` routing, per-tenant
     fairness, and PostgreSQL measured at the tenant counts a shard would reach.
 

@@ -172,7 +172,7 @@ class Pair:
                 deadline = time.monotonic() + timeout
                 while not wait(status, body_) and time.monotonic() < deadline:
                     # Once a second: both servers rate-limit a token's API
-                    # calls, and a tighter poll ran into eunha's.
+                    # calls, and a tighter poll ran into Eunha's.
                     time.sleep(1)
                     status, body_, _ = side.call(method, path, body, as_)
                 # And then until it stops changing. The first sign of a worker's
@@ -373,7 +373,7 @@ def reports_and_moderation(p):
     p.step("reports: about nobody", "POST", "/api/v1/reports",
            {"account_id": "0", "comment": "x"})
     # Not "an unknown category": Mastodon answers that with a 500, the enum's
-    # `ArgumentError` escaping the controller, and eunha with a 422 — the
+    # `ArgumentError` escaping the controller, and Eunha with a 422 — the
     # `report-unknown-category-rejected` divergence.
     p.step("reports: a rule that does not exist", "POST", "/api/v1/reports",
            {"account_id": "{troll}", "category": "violation", "rule_ids": ["0"]})
@@ -455,7 +455,7 @@ def reports_and_moderation(p):
 
 # ── Moves ─────────────────────────────────────────────────────────────────────
 #
-# Moving is a settings form in Mastodon and a REST call in eunha (the
+# Moving is a settings form in Mastodon and a REST call in Eunha (the
 # `account-moves-rest-api` divergence), so the fixture moves `mover` to
 # `moved_to` directly. What a client sees of it is compared: the account's
 # `moved`, and that it can no longer be followed.
@@ -748,7 +748,7 @@ def push_subscription(p):
     p.step("push: unsubscribe", "DELETE", "/api/v1/push/subscription")
     p.step("push: none left", "GET", "/api/v1/push/subscription")
     # Not "a key that is the point at infinity": Mastodon answers it with a
-    # 500, the `PKeyError` escaping `WebPushKeyValidator`, and eunha with a
+    # 500, the `PKeyError` escaping `WebPushKeyValidator`, and Eunha with a
     # 422 — the `push-subscription-unusable-key-rejected` divergence.
 
 

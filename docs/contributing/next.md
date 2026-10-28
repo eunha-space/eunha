@@ -12,14 +12,14 @@ container network.
 Three harnesses verify parity, described in
 [Mastodon compatibility](../mastodon/tracking.md) and in each script's header.
 Read those headers before believing a failure — most of what they report first
-is the harness or the reference, not eunha.
+is the harness or the reference, not Eunha.
 
 
 What is unfinished
 ------------------
 
 **Nothing the differential harness reports.** It runs clean: 56 endpoints, no
-differences. The nine `favourited` findings were the harness, not eunha and not
+differences. The nine `favourited` findings were the harness, not Eunha and not
 the fixture — its Mastodon had no Sidekiq, so the rows `unfavourite` and
 `unreblog` hand to a worker were never deleted and every later request read them
 back. See [differential testing](../mastodon/differential-testing.md); the
@@ -27,8 +27,8 @@ harness now refuses to compare without a live worker.
 
 **`/api/v1/timelines/home` answering 206 on one side and 200 on the other** is
 fixed. The first was the same dead worker — a feed with nothing to regenerate
-it stays `regenerating?` forever. The second, eunha 206 and Mastodon 200, was
-eunha's own: it regenerated any feed without an eunha-only `:populated` marker
+it stays `regenerating?` forever. The second, Eunha 206 and Mastodon 200, was
+Eunha's own: it regenerated any feed without an eunha-only `:populated` marker
 the first time it was read, so a new user's empty feed read as rebuilding. The
 feeds are now Mastodon's model throughout — no markers, nothing built on read,
 regenerated only for a returning user or held partial by a first follow — so
@@ -47,8 +47,8 @@ following one account — and both a group's `notifications_count` and the
 identity *and order* of its `sample_account_ids` match. See
 [differential testing](../mastodon/differential-testing.md).
 
-**`sharedInbox` works in both directions.** eunha delivers to
-`https://mastodon.test/inbox`, and Mastodon delivers to eunha's `/inbox` — four
+**`sharedInbox` works in both directions.** Eunha delivers to
+`https://mastodon.test/inbox`, and Mastodon delivers to Eunha's `/inbox` — four
 times in a run. The earlier note here, that Mastodon uses the per-actor inbox
 when a single recipient is on the far side, was wrong: it prefers the shared
 inbox for distributing a status whenever the peer advertises one, and keeps the
@@ -57,7 +57,7 @@ what showed that.
 
 What a single follower could not test is the point of a shared inbox — one
 delivery, addressed to nobody in particular, fanned out by the *receiving* side
-to every local account it concerns. A second eunha account now follows the same
+to every local account it concerns. A second Eunha account now follows the same
 remote actor, and both see the status.
 
 
@@ -71,7 +71,7 @@ Thirty were found in the work leading here, and they clustered:
     Unconditional logic was nearly always already right; the conditions are
     what a reimplementation drops. When reading upstream for a rule, read the
     first three lines of the method.
- -  **The ActivityPub ingest paths.** eunha's own API maintained counters that
+ -  **The ActivityPub ingest paths.** Eunha's own API maintained counters that
     its inbox handlers did not — six bugs of one shape, because Mastodon gets
     this from model callbacks that fire however a record came to exist.
     `src/counters.rs` now owns those rules; keep new paths calling it rather
@@ -102,7 +102,7 @@ Things worth doing
     grouping fixture uses three — so the sample being *capped* at eight, and
     what a group of twenty reports, is still untested.
 4.  **Decide whether the federation gate belongs on every push.** It is in CI
-    now, and it is the slowest gate by some way: a release build of eunha
+    now, and it is the slowest gate by some way: a release build of Eunha
     inside Docker before Mastodon has even booted. If it starts hurting, a
     schedule is the alternative, or caching the image layers.
 
@@ -110,7 +110,7 @@ Things worth doing
 How not to be fooled
 --------------------
 
-Nine failures in this work were the tooling rather than eunha, and each cost
+Nine failures in this work were the tooling rather than Eunha, and each cost
 real time:
 
  -  A commit shipped tests without the definitions they needed, because a
@@ -126,16 +126,16 @@ real time:
     — so `differential_test.sh`, which runs its compose file in place, could no
     longer bring the stack up at all. The two now have a compose file each. A
     harness that another harness can break by editing is one harness.
- -  Ten differences were attributed to eunha for weeks because the reference was
-    broken in a way that only ever made *eunha* look wrong. Before believing a
+ -  Ten differences were attributed to Eunha for weeks because the reference was
+    broken in a way that only ever made *Eunha* look wrong. Before believing a
     finding, check that the thing you are comparing against is actually running.
  -  A deploy reported success having shipped nothing, because the push went to a
     branch that did not have the commits. Check the deployed *behaviour*, not
     the deploy's exit code — the 0.81s build was the tell.
  -  The federation harness had never worked from a clean checkout either, and
-    for a reason no amount of re-reading would have found: eunha ran on the
+    for a reason no amount of re-reading would have found: Eunha ran on the
     host, `mastodon.test` is a container-network alias, and a host process
-    cannot resolve one. eunha could not fetch an actor's public key, so it
+    cannot resolve one. Eunha could not fetch an actor's public key, so it
     rejected every inbound activity with a 401 — which reads as a signature bug.
     A commit message said it passed every check; what passed was a laptop with
     state nobody wrote down. Both servers live in the network now.

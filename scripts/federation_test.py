@@ -298,7 +298,7 @@ def run_direction(sender, receiver, sender_acct, receiver_acct, report):
 
 # Mastodon distributes a status to a peer's *shared* inbox whenever that peer
 # advertises one — it does not wait for a second follower — and uses the personal
-# inbox for directed activities like Follow and Accept. So eunha's `/inbox` was
+# inbox for directed activities like Follow and Accept. So Eunha's `/inbox` was
 # already receiving deliveries; the earlier note here that it never had was
 # simply wrong, and measuring it is what showed that.
 #
@@ -401,7 +401,7 @@ def check_report_forwarding(sender, receiver, target_acct, receiver_admin, repor
                      f"it names {acct}")
 
 
-# A move is a settings form in Mastodon and a REST call in eunha; either way the
+# A move is a settings form in Mastodon and a REST call in Eunha; either way the
 # old account's followers on the *other* server should end up following the
 # new one — Mastodon's `MoveWorker`, re-following through
 # `UnfollowFollowWorker` — and the other server should show the old account as

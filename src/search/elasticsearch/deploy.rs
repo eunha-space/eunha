@@ -3,10 +3,10 @@
 //! row from the database and delete what the database no longer has.
 //!
 //! Chewy notices a changed specification by a digest it keeps in an index
-//! of its own; eunha compares what the cluster has — the mapping and the
+//! of its own; Eunha compares what the cluster has — the mapping and the
 //! analysis settings — with what it would create. An index created by
 //! Mastodon with the same specification is kept as it is, and Mastodon finds
-//! eunha's indexes as it would have made them.
+//! Eunha's indexes as it would have made them.
 //!
 //! Each index is imported in batches of `--batch-size`, `--concurrency` of
 //! them at a time. Beyond what tootctl does, the last batch written is kept
@@ -73,7 +73,7 @@ fn first_value(answer: &Value) -> Value {
 }
 
 /// `index.specification.changed?`: whether what the cluster has differs
-/// from what eunha would create, or there is nothing there yet.
+/// from what Eunha would create, or there is nothing there yet.
 pub async fn specification_changed(client: &Client, index: Index) -> anyhow::Result<bool> {
     let name = client.index_name(index.base_name());
     if !client.exists(&name).await? {

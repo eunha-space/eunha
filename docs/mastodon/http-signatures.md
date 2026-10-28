@@ -19,7 +19,7 @@ same covered headers in the same order, `(request-target)` last and carrying
 any query string, `Content-Type` bound to deliveries, and no `alg` parameter on
 RFC 9421 signatures. Order is not a correctness matter — a verifier rebuilds
 from the header list it is given — but emitting what the rest of the network
-emits keeps eunha clear of anything that verifies more strictly than it should.
+emits keeps Eunha clear of anything that verifies more strictly than it should.
 
 [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
 [ojak]: https://github.com/eunha-space/ojak

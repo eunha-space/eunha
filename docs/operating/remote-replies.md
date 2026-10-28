@@ -26,7 +26,7 @@ When a thread is opened
 -----------------------
 
 When a signed-in user opens a remote post's thread
-(`GET /api/v1/statuses/:id/context`), eunha walks its whole reply tree in
+(`GET /api/v1/statuses/:id/context`), Eunha walks its whole reply tree in
 the background, if the post is
 
  -  public or unlisted,
@@ -60,7 +60,7 @@ reaches it, once to read its collection and once to store it, as in Mastodon.
 How a fetched post is stored
 ----------------------------
 
-Every post eunha fetches — a reply, a pinned post, a boosted or quoted post,
+Every post Eunha fetches — a reply, a pinned post, a boosted or quoted post,
 one looked up by its URL — is stored as Mastodon's `FetchRemoteStatusService`
 stores it: as the `Create` it would have come in, through the same handler
 delivered posts go through, except that it is taken whether or not anyone
@@ -85,7 +85,7 @@ supports when it is one.
 
 A post's server may report how often it was favourited and boosted
 (`likes` and `shares` with a `totalItems`). Those counts are kept beside
-eunha's own (`status_stats.untrusted_favourites_count` and
+Eunha's own (`status_stats.untrusted_favourites_count` and
 `untrusted_reblogs_count`) and served in their place, moving with each
 favourite and boost made here.
 
@@ -132,10 +132,10 @@ of leaves the batch as it stops, so the refresh is not left running for the day.
 Mastodon's id is the key signed by Rails' message verifier, keyed from
 `SECRET_KEY_BASE`, and an instance given its Mastodon's
 [`secret_key_base`](./instances.md#mastodon-s-secret-key-base) signs exactly
-that. Without it, eunha's id has the same shape — the key in URL-safe base64,
+that. Without it, Eunha's id has the same shape — the key in URL-safe base64,
 `--`, and a hex HMAC-SHA256 — keyed from the instance's VAPID private key, and
 that kind is read either way. Clients treat the id as opaque and it lives a
-day at most, and no Mastodon process ever reads an id eunha handed out, so
+day at most, and no Mastodon process ever reads an id Eunha handed out, so
 the two need not agree. Rotating either key only makes refreshes already
 handed out under it unreadable.
 

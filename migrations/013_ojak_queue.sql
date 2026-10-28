@@ -1,5 +1,5 @@
 -- feder is now ojak, and its queue table takes the new name: ojak-postgres
--- describes eunha's queue as `ojak_postgres::PostgresQueue::schema(
+-- describes Eunha's queue as `ojak_postgres::PostgresQueue::schema(
 -- "eunha.ojak_queue")`. The rows move with the table, so nothing waiting to
 -- be sent is lost.
 ALTER TABLE IF EXISTS eunha.feder_queue RENAME TO ojak_queue;

@@ -143,7 +143,7 @@ async fn test_marker_version_increments() {
 /// Markers can be set with a JSON body, not only a form-encoded one.
 ///
 /// Rails parses either transparently, so a client that posts JSON — as several
-/// do — reaches Mastodon's controller with the same parameters. eunha read only
+/// do — reaches Mastodon's controller with the same parameters. Eunha read only
 /// the bracket notation of a form post, and answered a JSON one with an empty
 /// object and no error, so the marker silently never moved.
 #[tokio::test]

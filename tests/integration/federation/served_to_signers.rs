@@ -49,7 +49,7 @@ fn header<'a>(resp: &'a reqwest::Response, name: &str) -> Option<&'a str> {
     resp.headers().get(name).and_then(|v| v.to_str().ok())
 }
 
-/// What a response varies by, besides what eunha's compression and CORS
+/// What a response varies by, besides what Eunha's compression and CORS
 /// layers add to every response they touch, as Mastodon's Rack middleware
 /// and front proxy do.
 fn vary(resp: &reqwest::Response) -> Option<String> {

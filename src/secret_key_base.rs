@@ -4,7 +4,7 @@
 //! (`instance.secret_key_base`) mints and accepts exactly what that Mastodon
 //! does: async refresh ids, the signed GlobalIDs in unsubscribe links,
 //! Devise's digest of a password reset token, the `SELF_DESTRUCT` value, and
-//! the unsubscribe token a Web Push names in its `Unsubscribe-URL`. Without it, eunha keeps its own
+//! the unsubscribe token a Web Push names in its `Unsubscribe-URL`. Without it, Eunha keeps its own
 //! schemes, which no Mastodon reads (see the divergences that name
 //! `secret_key_base`).
 //!

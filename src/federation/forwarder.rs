@@ -114,7 +114,7 @@ async fn try_forward(
         account.id_scheme,
         &account.username,
     );
-    // As its sender signed it: without what eunha noted on it on arrival.
+    // As its sender signed it: without what Eunha noted on it on arrival.
     let activity = crate::api::ap::inbox::as_sent(activity);
     crate::federation::delivery::forward_to_inboxes(state, activity, inboxes, key_id).await?;
     Ok(())

@@ -3,9 +3,9 @@
 -- each a set of flags (public 2, followers 4, following 8). Eunha wrote its
 -- own enum to local posts instead: public 0, followers 1, nobody 2, manual 3.
 --
--- Followers (1) and manual (3) are eunha's alone, and become the automatic
+-- Followers (1) and manual (3) are Eunha's alone, and become the automatic
 -- followers policy and the manual public one. A local post holding 2 is
--- eunha's nobody too, since Mastodon writes manual policies only for remote
+-- Eunha's nobody too, since Mastodon writes manual policies only for remote
 -- posts. Eunha's public, 0, cannot be told apart from Mastodon's 0, which
 -- lets no one quote, and stays as it is: the stricter of the two readings.
 UPDATE public.statuses SET quote_approval_policy = 262144

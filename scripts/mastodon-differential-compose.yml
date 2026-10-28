@@ -1,4 +1,4 @@
-# Mastodon 4.7.3 for differential testing against eunha.
+# Mastodon 4.7.3 for differential testing against Eunha.
 #
 # The official image, so none of the native dependencies that have to be built
 # by hand on macOS — libidn, OpenSSL headers, libvips, and a `pg` gem that
@@ -67,7 +67,7 @@ services:
 
   # Without a worker, anything Mastodon defers never happens — and some of that
   # is visible in the API. A home feed stays `regenerating?` forever, so the
-  # timeline answers 206 rather than 200, which reads as a difference from eunha
+  # timeline answers 206 rather than 200, which reads as a difference from Eunha
   # when it is only a missing worker.
   sidekiq:
     image: ghcr.io/mastodon/mastodon:v4.7.3

@@ -1,5 +1,5 @@
 //! Reads the upstream Mastodon repository: releases, migration lists, and the
-//! `db/schema.rb` that defines the schema eunha must reproduce.
+//! `db/schema.rb` that defines the schema Eunha must reproduce.
 //!
 //! Eunha promises a database a real Mastodon can be pointed at, so upstream's
 //! own schema definition is the only authority worth checking against. Rather
@@ -330,7 +330,7 @@ pub async fn schema_rb_version(tag: &str) -> Result<String> {
     Ok(rest[..end].trim().replace('_', ""))
 }
 
-/// The reference schema eunha is checked against: what Mastodon's own
+/// The reference schema Eunha is checked against: what Mastodon's own
 /// ActiveRecord builds from its `db/schema.rb`, introspected once and recorded
 /// here.
 ///

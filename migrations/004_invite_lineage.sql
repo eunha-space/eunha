@@ -5,7 +5,7 @@
 -- Account deletion destroys the `users` row (that is where the email and the
 -- rest of the personal data live), which cascades away that account's `invites`
 -- and nulls `users.invite_id` for everyone it invited — so the lineage powering
--- eunha's invite tree would be lost along with the PII.
+-- Eunha's invite tree would be lost along with the PII.
 --
 -- `DeleteAccountService` therefore snapshots the lineage here immediately
 -- before destroying the user rows: one row per account, naming the account that

@@ -2,7 +2,7 @@
 //!
 //! Mastodon: none
 
-/// Initializes an eunha R2 bucket with the static assets the server requires.
+/// Initializes an Eunha R2 bucket with the static assets the server requires.
 ///
 /// Currently uploads:
 ///   avatars/original/missing.png  — placeholder shown when no avatar is set
@@ -25,7 +25,7 @@ static AVATAR_MISSING: &[u8] = include_bytes!("../../assets/avatar_missing.png")
 static HEADER_MISSING: &[u8] = include_bytes!("../../assets/header_missing.png");
 
 #[derive(Parser, Debug)]
-#[command(about = "Initialize the eunha R2 bucket with required static assets")]
+#[command(about = "Initialize the Eunha R2 bucket with required static assets")]
 struct Args {
     /// Path to the server config TOML file (media_storage section is used).
     #[arg(long)]

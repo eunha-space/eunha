@@ -90,7 +90,7 @@ const PAGES: Record<string, { title: string; preamble: string; fields: Field[] }
         items: { open: 'Anyone can sign up', approved: 'Approval required for sign up', none: 'Nobody can sign up' },
       },
       { key: 'require_invite_text', kind: 'switch', label: 'Require a reason to join', hint: 'When sign-ups require manual approval, make the “Why do you want to join?” text input mandatory rather than optional.' },
-      { key: 'captcha_enabled', kind: 'switch', label: 'Require new users to solve a CAPTCHA', hint: 'Saved for a Mastodon on the same database; eunha has no CAPTCHA to show.' },
+      { key: 'captcha_enabled', kind: 'switch', label: 'Require new users to solve a CAPTCHA', hint: 'Saved for a Mastodon on the same database; Eunha has no CAPTCHA to show.' },
       { key: 'closed_registrations_message', kind: 'textarea', label: 'Custom message when sign-ups are not available', hint: 'Displayed when sign-ups are closed.', rows: 3 },
     ],
   },

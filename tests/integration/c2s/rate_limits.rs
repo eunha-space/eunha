@@ -16,7 +16,7 @@ fn header(resp: &reqwest::Response, name: &str) -> Option<String> {
         .map(|v| v.to_str().unwrap().to_owned())
 }
 
-/// A request from `ip`, as a proxy in front of eunha says it.
+/// A request from `ip`, as a proxy in front of Eunha says it.
 fn from(
     ctx: &TestContext,
     method: reqwest::Method,

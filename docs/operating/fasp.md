@@ -4,10 +4,10 @@ Auxiliary service providers
 A Fediverse Auxiliary Service Provider (FASP) is a service a server hands work
 to that it cannot do well alone: finding accounts it has never heard of,
 recommending whom to follow, noticing what is trending. Mastodon 4.7 talks to
-them as an experimental feature, and eunha ports that implementation — its
+them as an experimental feature, and Eunha ports that implementation — its
 tables, its endpoints, its wire formats and its signatures — so that a
-provider written against Mastodon works against eunha unchanged. The protocol
-is specified in the [FASP specifications]; where the two disagree, eunha
+provider written against Mastodon works against Eunha unchanged. The protocol
+is specified in the [FASP specifications]; where the two disagree, Eunha
 follows Mastodon's code.
 
 [FASP specifications]: https://github.com/mastodon/fediverse_auxiliary_service_provider_specifications
@@ -17,7 +17,7 @@ Turning it on
 -------------
 
 Mastodon reads `EXPERIMENTAL_FEATURES=fasp` from its environment. Instances
-sharing a process share an environment, so eunha reads the list from each
+sharing a process share an environment, so Eunha reads the list from each
 instance's `[instance]` table, and a `SIGHUP` reload picks up a change:
 
 ~~~~ toml
@@ -116,7 +116,7 @@ provider's `/data_sharing/v0/announcements`:
  -  a status is announced as `trending` when a favourite, boost or reply brings
     what it has had within the subscription's timeframe to its threshold.
 
-The hooks sit where eunha creates, edits and deletes statuses — posting,
+The hooks sit where Eunha creates, edits and deletes statuses — posting,
 scheduled posts, boosts, and what arrives over federation — where it favourites
 them, and where it creates accounts, updates a profile and deletes an account.
 Eunha does not yet record the `discoverable` and `indexable` flags remote

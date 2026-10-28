@@ -1,4 +1,4 @@
-//! What eunha sends for a boost, a favourite and the undoing of either,
+//! What Eunha sends for a boost, a favourite and the undoing of either,
 //! named and addressed as Mastodon's serializers write them, so that the
 //! servers they reach can match an `Undo` to what it takes back.
 
@@ -209,7 +209,7 @@ async fn test_a_self_boost_of_a_private_post_carries_the_note() {
     assert_eq!(undo["object"]["object"], post_uri);
 }
 
-/// Migration 036 gives each local boost eunha left without a `uri` the one
+/// Migration 036 gives each local boost Eunha left without a `uri` the one
 /// Mastodon stores, in its account's scheme, on the domain of the local post
 /// nearest it; a boost that has one keeps it.
 #[tokio::test]
@@ -406,7 +406,7 @@ async fn test_an_ostatus_account_is_sent_nothing() {
     assert_eq!(inboxes, vec!["https://nina.invalid/inbox".to_owned()]);
 }
 
-/// Migration 037 marks a remote account eunha stored before it set
+/// Migration 037 marks a remote account Eunha stored before it set
 /// `protocol` as ActivityPub when it has an inbox, and leaves one from
 /// Mastodon's OStatus days, which has none, as it is.
 #[tokio::test]

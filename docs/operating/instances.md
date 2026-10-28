@@ -16,7 +16,7 @@ base_url = "https://r2.eunha.space"
 The prefix is an ownership boundary for object layout, not authorization;
 bucket credentials can still access other prefixes in the same bucket.
 
-Every eunha process serves a registry of instances and hands each request to
+Every Eunha process serves a registry of instances and hands each request to
 one of them by its `Host` header. Run without arguments, it serves the single
 instance in `config.toml` and the environment, as it always has, and answers
 whatever host it is asked by. Given a directory, it serves one instance per
@@ -66,7 +66,7 @@ instance from taking more than its share:
     limit on open files: deliveries in flight, connections kept for reuse,
     database and Redis connections. A service launchd starts has a soft
     limit of 256 unless its plist sets another, which a fan-out passes, so
-    eunha raises its own soft limit to the hard one at startup — 92,160 on
+    Eunha raises its own soft limit to the hard one at startup — 92,160 on
     macOS — and warns if that is still under 4,096.
 
 And a process refuses to start with more than it can hold, before any instance
@@ -143,7 +143,7 @@ A new instance starts with Mastodon's defaults (titled `Mastodon`,
 registrations closed) until an administrator saves the settings, or a hosting
 console writes them.
 
-Older eunha read `title`, `description`, `short_description`, `contact_email`,
+Older Eunha read `title`, `description`, `short_description`, `contact_email`,
 `registrations_open`, `approval_required`, `privacy_policy` and
 `terms_of_service` from `[instance]`. They are read no longer, and a server
 that finds them set logs a warning. `eunha migrate --tenants <dir>` copies them
@@ -161,7 +161,7 @@ Authorized fetch and limited federation
 ---------------------------------------
 
 Mastodon reads these deployment modes from its environment. Instances sharing
-a process share its environment too, so eunha reads them from each instance's
+a process share its environment too, so Eunha reads them from each instance's
 `[instance]` table instead, and a `SIGHUP` reload picks up a change to them:
 
 ~~~~ toml
@@ -204,14 +204,14 @@ when fetching a link preview.
 `force_default_locale` is Mastodon's `FORCE_DEFAULT_LOCALE`, which a lone
 instance configured from the environment also takes, forced only by the value
 `true` as Mastodon's check is. When it is on, a request's `Accept-Language` is
-not asked: eunha reads every request as asking for the default locale, so the
+not asked: Eunha reads every request as asking for the default locale, so the
 locale a web sign-up saves, the language a translation is into, trends, an
 email subscription and the server-rendered pages (which speak English or
 Korean) all take `default_locale` unless a `lang` parameter or the user's own
 locale names another, as `Localized` does.
 
 `experimental_features` turns on what Mastodon keeps behind
-`EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under
+`EXPERIMENTAL_FEATURES`; the one Eunha knows, `fasp`, is described under
 [auxiliary service providers](./fasp).
 
 Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that
@@ -382,7 +382,7 @@ secret_key_base = "…the 128 hex characters from .env.production…"
 
 In the environment of a lone instance, `INSTANCE__SECRET_KEY_BASE` or
 Mastodon's own `SECRET_KEY_BASE` sets it, so a copied *.env.production* is
-enough. With it, eunha signs and digests what Mastodon 4.7.1 does with it,
+enough. With it, Eunha signs and digests what Mastodon 4.7.1 does with it,
 byte for byte, and reads what that Mastodon handed out before the switch:
 
  -  async refresh ids, Rails' `message_verifier('async_refreshes')`;
@@ -395,9 +395,9 @@ byte for byte, and reads what that Mastodon handed out before the switch:
  -  the token in a Web Push's `Unsubscribe-URL`,
     `generate_token_for(:unsubscribe)`, good for 48 hours.
 
-Without it, each of these uses a scheme of eunha's own (the divergences that
+Without it, each of these uses a scheme of Eunha's own (the divergences that
 name `secret_key_base`), and what Mastodon issued is not recognised. What
-eunha issued under those schemes keeps working after the secret is
+Eunha issued under those schemes keeps working after the secret is
 configured, so it can be added at any time. Changing or removing it
 invalidates whatever was signed with it, as rotating `SECRET_KEY_BASE` does
 on Mastodon; it also signs Mastodon's sessions, so keep it as secret.

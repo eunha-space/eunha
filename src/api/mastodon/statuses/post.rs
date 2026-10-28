@@ -377,7 +377,7 @@ pub(crate) async fn process_status(
     // Mastodon's `valid_locale_cascade(options[:language], user's preferred
     // posting language, I18n.default_locale)` — a status always ends up with a
     // language, so a client offering a translation or filtering by one has
-    // something to read. eunha stopped at the user's setting and left it null.
+    // something to read. Eunha stopped at the user's setting and left it null.
     let language = crate::languages::valid_locale_cascade(&[
         form.language.as_deref(),
         defaults.language.as_deref(),

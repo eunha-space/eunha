@@ -47,7 +47,7 @@ test('a suspended account shows a tombstone instead of a profile', async ({
   await expect(page.getByRole('button', { name: 'Follow' })).toBeHidden()
 })
 
-// Muting from a profile. eunha's mute is narrower than Mastodon's — a muted
+// Muting from a profile. Eunha's mute is narrower than Mastodon's — a muted
 // account can still mention you and react to your posts — so the page has to
 // say so, or the button promises something it does not do.
 const account = {

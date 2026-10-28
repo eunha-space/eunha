@@ -1,5 +1,5 @@
 //! The rest of `tootctl accounts` (`Mastodon::CLI::Accounts`): `create`,
-//! `modify`, and eunha's own `update`, `move` and `batch-status` are wired in
+//! `modify`, and Eunha's own `update`, `move` and `batch-status` are wired in
 //! `main.rs`; these are the others.
 //!
 //! Mastodon: lib/mastodon/cli/accounts.rb
@@ -676,7 +676,7 @@ pub struct Scope {
     pub domain: Option<String>,
 }
 
-/// `Accounts#refresh`. Mastodon downloads the avatar and header again; eunha
+/// `Accounts#refresh`. Mastodon downloads the avatar and header again; Eunha
 /// keeps no copies of remote images, and fetches the actor again instead,
 /// which is where their URLs come from.
 pub async fn refresh(

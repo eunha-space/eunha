@@ -787,7 +787,7 @@ pub fn router() -> Router {
             post(admin::distribute_admin_terms_of_service),
         )
         // Moderation tools Mastodon has only as server-rendered admin pages
-        // (eunha's own REST surface; see `moderation-tools-rest-api` in
+        // (Eunha's own REST surface; see `moderation-tools-rest-api` in
         // divergences.toml).
         .route(
             "/api/v1/admin/report_notes",

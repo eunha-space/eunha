@@ -1,4 +1,4 @@
-//! Handing invites to other members — eunha's own action, which Mastodon has no
+//! Handing invites to other members — Eunha's own action, which Mastodon has no
 //! equivalent of.
 
 use reqwest::StatusCode;

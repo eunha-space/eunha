@@ -6,7 +6,7 @@
 //! `Account#remote_followers_hash`), and that server can list them at
 //! `/users/{username}/followers_synchronization`
 //! (`ActivityPub::FollowersSynchronizationsController`). When a remote
-//! account's delivery says its followers here are not who eunha thinks
+//! account's delivery says its followers here are not who Eunha thinks
 //! (`ActivityPub::PrepareFollowersSynchronizationService`), its list is
 //! fetched and our side brought in line with it
 //! (`ActivityPub::FollowersSynchronizationWorker`,
@@ -17,7 +17,7 @@
 //! until a follow of the account from that server comes or goes
 //! (`Follow#invalidate_hash_cache`), in Redis under the instance's key
 //! prefix. Mastodon's entries are Marshal-encoded under its `cache:`
-//! namespace, so eunha keeps its own, the hex digest as it is, at the same
+//! namespace, so Eunha keeps its own, the hex digest as it is, at the same
 //! name without the namespace: `followers_hash:<id>:<prefix>/` and
 //! `followers_hash:<id>:local`.
 //!
@@ -383,7 +383,7 @@ pub async fn document(
 
 /// `InboxesController#process_collection_synchronization` and
 /// `ActivityPub::PrepareFollowersSynchronizationService`: a delivery from
-/// `signer` that says its followers here are not who eunha thinks has them
+/// `signer` that says its followers here are not who Eunha thinks has them
 /// checked, later. A header that does not parse is passed over, and so is
 /// every header when `disable_followers_synchronization` is set.
 pub async fn prepare(state: &AppState, signer: &str, raw: &str) {
@@ -510,7 +510,7 @@ fn page_items(page: &Value) -> Vec<String> {
 /// `ActivityPub::SynchronizeFollowersService`: the remote account's
 /// followers here, as its server lists them at `url`. A local account it
 /// lists that does not follow it here has its follow request accepted, or
-/// sends the `Undo` of a follow eunha never knew of; once the whole list is
+/// sends the `Undo` of a follow Eunha never knew of; once the whole list is
 /// read, and only when it adds up to the digest, a local account it does
 /// not list stops following it.
 pub async fn synchronize(
@@ -646,7 +646,7 @@ async fn handle_unexpected_outgoing_follows(
                 .map_err(|error| anyhow::anyhow!("{error:?}"))?;
             continue;
         }
-        // A follow eunha never knew of: its `Undo`, with no ID of the
+        // A follow Eunha never knew of: its `Undo`, with no ID of the
         // `Follow` to name, as `UndoFollowSerializer` writes it for a
         // `Follow.new`.
         let Some(local) = sqlx::query!(

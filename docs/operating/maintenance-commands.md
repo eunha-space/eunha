@@ -62,7 +62,7 @@ Accounts
     silenced accounts stay.
  -  `eunha accounts refresh USERNAME@DOMAIN…`, `--domain DOMAIN` or `--all`
     fetches remote accounts' actors again. Mastodon downloads their avatars
-    and headers again instead; eunha keeps no copies of them
+    and headers again instead; Eunha keeps no copies of them
     (`accounts-refresh-fetches-the-actor`).
  -  `eunha accounts merge FROM TO`, both `username@domain`, gives TO
     everything FROM had and removes FROM: for the duplicates a server that
@@ -148,7 +148,7 @@ index again.
     webhooks, each as Mastodon's task handles them. The update check's records
     are deleted, to be fetched again.
 
-It refuses a database at an older schema than the release eunha tracks and
+It refuses a database at an older schema than the release Eunha tracks and
 asks before going on with a newer one, refuses while anything else is
 connected to the database, and asks once more before it starts. It takes long
 and may be destructive: stop every process using the database, and have a

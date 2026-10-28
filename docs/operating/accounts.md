@@ -3,7 +3,7 @@ Account security
 
 What a member can do to keep their own account safe, as Mastodon offers it on
 its web settings pages. Mastodon has these only as server-rendered forms behind
-a browser session; eunha's settings page is a single-page app holding an OAuth
+a browser session; Eunha's settings page is a single-page app holding an OAuth
 token, so each is also served under `/api/eunha/v1/`, and each of those is a
 recorded divergence (`divergences.toml`).
 
@@ -73,7 +73,7 @@ added or deleted.
 The OAuth authorization page and the account pages (`/account/login`) take the
 password, then ask for the second factor when the user has one: a code from the
 app or a recovery code, or a security key. Mastodon keeps that half-finished
-sign-in in its session; eunha keeps it in Redis under a random token the form
+sign-in in its session; Eunha keeps it in Redis under a random token the form
 carries (`sign_in_attempt:*`), for an hour. As upstream does:
 
  -  a change to the user in between (`users.updated_at`) sends the person back
@@ -170,7 +170,7 @@ moved goes to the account page; and one with an unconfirmed address to
 A request's token is read as Doorkeeper reads it: from an
 `Authorization: Bearer` header (`bearer` in any case), an `access_token`
 parameter or a `bearer_token` one, in the query or in a form or JSON body (not
-in a multipart one, which eunha does not read for it). As of Doorkeeper 5.9.7
+in a multipart one, which Eunha does not read for it). As of Doorkeeper 5.9.7
 (Mastodon 4.7.3), a request that sends a token more than one of those ways,
 the query and the body counting apart, carries none, even when the tokens
 are the same (RFC 6750 §2).
@@ -456,7 +456,7 @@ Changing the email address
 --------------------------
 
 Mastodon changes a member's address on its account settings form, Devise's
-`update_with_password` with `reconfirmable`; eunha serves the same at
+`update_with_password` with `reconfirmable`; Eunha serves the same at
 `PUT /api/eunha/v1/email` (`email`, `current_password`, a `write:accounts`
 token), and `GET` says what the address is and which one is waiting:
 
@@ -517,7 +517,7 @@ privacy section uses both.
  -  `show_application` off hides the app a post was sent from from everyone
     but its author, as `show_application?` does.
  -  `chosen_languages` limits public timelines to those languages; an empty
-    list clears it. `locale` is the language eunha writes mail in; one that is
+    list clears it. `locale` is the language Eunha writes mail in; one that is
     not among Mastodon's interface locales is cleared.
  -  `time_zone` is the zone the times in mail are written in (see
     [Time zones](#time-zones)).
@@ -531,7 +531,7 @@ privacy section uses both.
     `reading:expand:spoilers` and `reading:autoplay:gifs`. The web client
     applies them as Mastodon's does; see [How posts are
     shown](#how-posts-are-shown).
- -  `notification_emails` turns the mails eunha sends on or off: the
+ -  `notification_emails` turns the mails Eunha sends on or off: the
     notification emails `follow`, `follow_request`, `reblog`, `favourite`,
     `mention` and `quote` (see [Notification emails](#notification-emails)),
     and for staff `report`, `pending_account`, `trends`, `appeal`,
@@ -540,7 +540,7 @@ privacy section uses both.
     online.
 
 `source[sensitive]` is kept under Mastodon's `default_sensitive` key in
-`users.settings`; eunha used to write `web.default_sensitive`, and before
+`users.settings`; Eunha used to write `web.default_sensitive`, and before
 that `sensitive`, `privacy`, `language` and `quote_policy` for the other
 posting defaults, which it still reads when Mastodon's key is missing.
 `GET /api/v1/preferences` gives as the posting language the one chosen,
@@ -691,7 +691,7 @@ with it, which unmutes as above. Until that job has run the mute stands:
 nothing that reads mutes looks at `expires_at`, as nothing in Mastodon does.
 Re-muting queues a job for the new expiry, and the old one finds the mute
 unexpired and leaves it. Timed mutes that came without their job (a database
-from before eunha queued them, or one imported from Mastodon, whose jobs stayed
+from before Eunha queued them, or one imported from Mastodon, whose jobs stayed
 in its Sidekiq) are given one by migration 030 and by `eunha import-mastodon`.
 
 Unfollowing a hashtag takes its posts out of the home feed (`TagUnmergeWorker`),
@@ -716,7 +716,7 @@ as active and keeps filling a feed the vacuum then removes, as Mastodon's does.
 Each regeneration logs the entries a feed held `before` and after (`entries`),
 with the reason `RegenerationWorker` or `feeds build`.
 
-When a notification reaches a member, eunha mails it where Mastodon's
+When a notification reaches a member, Eunha mails it where Mastodon's
 `NotifyService#send_email!` would, written as `NotificationMailer` writes it:
 
  -  only a notification that was delivered, not one the member's notification
@@ -762,7 +762,7 @@ seconds go, except those the policy keeps — by default direct posts, pinned
 posts and posts the member favourited or bookmarked themselves, and as chosen
 polls, posts with media, and posts with at least `min_favs` favourites or
 `min_reblogs` boosts. Mastodon edits the policy on its web settings page
-(`/statuses_cleanup`), not through its REST API, and eunha's web client has no
+(`/statuses_cleanup`), not through its REST API, and Eunha's web client has no
 page for it yet; a policy saved by Mastodon on the same database is carried
 out all the same.
 

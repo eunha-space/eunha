@@ -1,16 +1,16 @@
 #!/bin/bash
-# Federate eunha with a real Mastodon 4.7.3, both directions, and check what lands.
+# Federate Eunha with a real Mastodon 4.7.3, both directions, and check what lands.
 #
-# eunha's other federation tests run eunha against eunha, where both sides share
-# eunha's reading of ActivityPub — so a misreading is invisible. This builds a
+# Eunha's other federation tests run Eunha against Eunha, where both sides share
+# Eunha's reading of ActivityPub — so a misreading is invisible. This builds a
 # pair that shares nothing but the specification.
 #
 # Both servers run inside one container network and reach each other by name.
-# eunha used to run on the host behind a host-side Caddy, which cannot work:
+# Eunha used to run on the host behind a host-side Caddy, which cannot work:
 # `mastodon.test` is a network alias, so a host process cannot resolve it, and
-# eunha could not fetch an actor's key to verify a single inbound activity. In
+# Eunha could not fetch an actor's key to verify a single inbound activity. In
 # the network they resolve each other, and the harness needs no `/etc/hosts`
-# entry, no trusted certificate on the host, and no eunha built for this machine.
+# entry, no trusted certificate on the host, and no Eunha built for this machine.
 #
 # Needs a container runtime, openssl and python3. Everything else is set up here
 # and torn down at the end.
@@ -80,7 +80,7 @@ openssl x509 -req -in "$WORK/leaf.csr" -days 2 \
   -extfile "$WORK/leaf.cnf" -extensions ext -out "$WORK/eunha.pem" 2>/dev/null
 
 # Both servers read `SSL_CERT_FILE`: Ruby because the image runs unprivileged and
-# cannot write its trust store, eunha because reqwest is rustls with native roots
+# cannot write its trust store, Eunha because reqwest is rustls with native roots
 # and that is where they come from. The bundle is the image's own roots with this
 # CA appended — appended, not replacing, or each would trust this CA and no
 # public one, and anything reaching the wider internet would fail obscurely.
@@ -179,8 +179,8 @@ until curl -sf -m 3 -o /dev/null \
         "http://localhost:$MASTODON_HOST_PORT/api/v1/instance"; do sleep 5; done
 
 # A worker, or nothing Mastodon defers ever happens — and delivery is deferred,
-# so every activity bound for eunha would sit in a queue and the run would report
-# eunha as unreachable. Sidekiq registers itself in Redis, so ask Redis rather
+# so every activity bound for Eunha would sit in a queue and the run would report
+# Eunha as unreachable. Sidekiq registers itself in Redis, so ask Redis rather
 # than trusting that a container was started.
 echo "==> Waiting for a worker"
 workers() {
@@ -223,9 +223,9 @@ MASTODON_TOKEN=$(compose exec -T web bin/rails runner '
   end
   # The alias the move at the end needs, made now rather than then: Mastodon
   # serves an actor from `render_with_cache` for three minutes under a key
-  # that does not change when the account does, so an alias added after eunha
-  # first fetched masto2 is missing from every fetch eunha makes for the next
-  # three minutes — including the one that checks the `Move` — and eunha
+  # that does not change when the account does, so an alias added after Eunha
+  # first fetched masto2 is missing from every fetch Eunha makes for the next
+  # three minutes — including the one that checks the `Move` — and Eunha
   # rightly refuses a move its target does not confirm.
   AccountAlias.find_or_create_by!(account: Account.find_local!("masto2"),
                                   acct: "masto@#{Rails.configuration.x.local_domain}")' | tr -d '\r' | tail -1)
@@ -233,17 +233,17 @@ MASTODON_TOKEN=$(compose exec -T web bin/rails runner '
 
 echo "==> eunha"
 compose up -d eunha-db
-# Migrations before the server, not by it: eunha refuses to serve a database
+# Migrations before the server, not by it: Eunha refuses to serve a database
 # behind its binary, so starting the container first would only crash-loop.
 compose run --rm --no-deps eunha ./eunha migrate
 
-# eunha refuses to deliver an unsigned activity, and an account seeded straight
-# into SQL has no key — so give alice one. eunha would generate this itself for
+# Eunha refuses to deliver an unsigned activity, and an account seeded straight
+# into SQL has no key — so give alice one. Eunha would generate this itself for
 # an account created through its own API.
 ALICE_KEY=$(openssl genrsa 2048 2>/dev/null)
 ALICE_PUB=$(printf '%s' "$ALICE_KEY" | openssl rsa -pubout 2>/dev/null)
 # Bob exists so that a shared-inbox delivery has more than one local recipient.
-# Mastodon posts a status to eunha's `/inbox` whether one account follows or
+# Mastodon posts a status to Eunha's `/inbox` whether one account follows or
 # two, so that path was never unexercised — but with a single follower, fanning
 # a delivery out to everyone it concerns and handing it to that one account are
 # the same act, and only one of them is being tested.
@@ -283,14 +283,14 @@ UPDATE accounts SET private_key = \$P\$$CAROL_KEY\$P\$, public_key = \$U\$$CAROL
 WHERE id = 3;
 SQL
 
-# No peer seeding. eunha resolves Mastodon's actor over the wire, webfinger and
+# No peer seeding. Eunha resolves Mastodon's actor over the wire, webfinger and
 # all, because both sides are on this network under names each can resolve.
 compose up -d eunha eunha-proxy
 until curl -sf -m 3 -o /dev/null "http://localhost:$EUNHA_HOST_PORT/api/v1/instance"; do sleep 2; done
 
 # Mastodon's circuit breaker remembers failures, and an inbox it has tripped to
 # red is one it stops attempting entirely — no request, no error, empty queues.
-# A run that begins with a red breaker from a previous run reports that eunha is
+# A run that begins with a red breaker from a previous run reports that Eunha is
 # unreachable, which is not true and takes a long time to disbelieve.
 compose exec -T redis sh -c \
   'redis-cli --scan --pattern "*stoplight*" | xargs -r redis-cli del' >/dev/null 2>&1 || true
@@ -319,7 +319,7 @@ python3 "$ROOT/scripts/federation_test.py" \
 # The checks above prove both accounts received the status; this proves it came
 # through the shared inbox rather than two personal ones. It does not prove the
 # fan-out had two recipients — Mastodon uses the shared inbox for a single
-# follower too — so it is a floor, not a ceiling: if eunha ever stops
+# follower too — so it is a floor, not a ceiling: if Eunha ever stops
 # advertising `sharedInbox`, or Mastodon stops honouring it, this says so.
 echo
 echo "==> Which inbox Mastodon used"
@@ -328,7 +328,7 @@ echo "==> Which inbox Mastodon used"
 # when the thing it looks for is found. This check called itself a failure while
 # four deliveries sat in the log.
 #
-# eunha logs each activity it accepts with the inbox it came through
+# Eunha logs each activity it accepts with the inbox it came through
 # (`inbox=shared` or `inbox=personal`); ojak serves the inbox, so the request
 # path is no longer what is logged.
 SHARED_HITS=$(compose logs eunha 2>/dev/null | grep -c "inbox=shared" || true)

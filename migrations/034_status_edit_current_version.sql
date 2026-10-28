@@ -2,12 +2,12 @@
 -- Mastodon writes it: each edit snapshots the version it made, stamped with
 -- the post's new `edited_at`. Eunha once wrote only the version each edit
 -- replaced, stamped with that version's own time, and added the current
--- version when serving the history, so the last row of a local post eunha
+-- version when serving the history, so the last row of a local post Eunha
 -- edited is the version before the current one and is older than the post's
 -- `edited_at`. Each such post gets the current version as its last row, by
 -- its author, stamped with its `edited_at`. A history Mastodon wrote ends
 -- with a row stamped with the post's `edited_at`, and is left as it is; so
--- are remote posts, whose history eunha never wrote.
+-- are remote posts, whose history Eunha never wrote.
 INSERT INTO status_edits
     (status_id, account_id, text, spoiler_text, sensitive,
      ordered_media_attachment_ids, media_descriptions, poll_options, quote_id,

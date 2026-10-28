@@ -1,4 +1,4 @@
-//! What eunha passes on of other servers' activities, and sends again of its
+//! What Eunha passes on of other servers' activities, and sends again of its
 //! own: a reply to a local post goes on to its author's followers
 //! (`Create#forward_for_reply`), who would otherwise see half of the
 //! conversation.
@@ -210,7 +210,7 @@ async fn test_a_signed_reply_to_a_local_post_reaches_its_authors_followers() {
     assert_eq!(queued_for(&ctx, &nina_inbox).await.len(), before + 1);
 
     // Unlisted, and passed on by another server on bob's signature:
-    // forwarded as bob signed it, not as eunha read it.
+    // forwarded as bob signed it, not as Eunha read it.
     let relayed = ld_sign(
         &reply(&bob, 2, &post_uri, &bob_followers, &public),
         &bob,

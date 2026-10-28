@@ -1,4 +1,4 @@
--- Where eunha keeps the work Mastodon gives Sidekiq for a member's data
+-- Where Eunha keeps the work Mastodon gives Sidekiq for a member's data
 -- import (src/portability/import.rs), so that a restart resumes it.
 --
 -- An import being carried out: whether `BulkImportService`'s first pass is

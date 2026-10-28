@@ -5,7 +5,7 @@
 //! Mastodon: app/views/wrapstodon/show.html.haml
 //! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
 
-/// Serves eunha's own web frontend: a React Router (Vite) single-page app that
+/// Serves Eunha's own web frontend: a React Router (Vite) single-page app that
 /// is a first-party client of the Mastodon Client-to-Server (C2S) REST API.
 ///
 /// The built SPA lives in `frontend/dist`. Static assets (hashed JS/CSS, fonts,
@@ -76,7 +76,7 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
     let Ok(html) = tokio::fs::read_to_string(format!("{DIST}/index.html")).await else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            "The eunha web frontend is not built yet.",
+            "The Eunha web frontend is not built yet.",
         )
             .into_response();
     };
@@ -88,7 +88,7 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
         None => site_title,
     };
     let mut html = html.replace(
-        "<title>eunha</title>",
+        "<title>Eunha</title>",
         &format!("<title>{}</title>", escape_html_text(&title)),
     );
 

@@ -46,7 +46,7 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
   # The tests, split four ways by cargo-nextest. Nearly all of the time is the
-  # integration tests, each of which starts eunha on a database of its own, and
+  # integration tests, each of which starts Eunha on a database of its own, and
   # one runner took 30 minutes to two hours over them.
   test:
     name: test (${{ matrix.partition }}/4)
@@ -125,7 +125,7 @@ jobs:
           cargo nextest run --locked --profile ci
           --partition count:${{ matrix.partition }}/4
 
-      # eunha exists to be a drop-in for a Mastodon database. This is the test
+      # Eunha exists to be a drop-in for a Mastodon database. This is the test
       # for that, and it needs neither Ruby nor the network: it compares the
       # database the migrations build against a recorded reference. The tests
       # make databases of their own, so only this needs `eunha_test` migrated,
@@ -144,7 +144,7 @@ jobs:
           SQLX_OFFLINE: "true"
         run: cargo run --locked --bin eunha-schema -- check
 
-  # The differential harness compares eunha against a real Mastodon rather than
+  # The differential harness compares Eunha against a real Mastodon rather than
   # against a reading of one, and until now nothing ran it. It spent weeks
   # reporting ten differences that were its own Mastodon booting without a
   # Sidekiq worker, and a stretch before that unable to start at all, because
@@ -189,7 +189,7 @@ jobs:
         ports: ["6379:6379"]
 
     env:
-      # `createdb`, `dropdb` and `psql` take the connection from these; eunha
+      # `createdb`, `dropdb` and `psql` take the connection from these; Eunha
       # takes it from the URL. Both have to name the same database.
       PGHOST: localhost
       PGUSER: eunha
@@ -207,24 +207,24 @@ jobs:
       # The harness wants a built binary rather than building one itself, the
       # same as `federation_test.sh`. Offline, because the compile-time database
       # this checkout points at is not the one the services provide.
-      - name: Build eunha
+      - name: Build Eunha
         env:
           SQLX_OFFLINE: "true"
         run: cargo build --release --locked --bin eunha
 
-      # No arguments: the harness brings up its own eunha, so this runs the path
+      # No arguments: the harness brings up its own Eunha, so this runs the path
       # a developer runs rather than one only CI knows how to set up.
       - name: Compare against a live Mastodon 4.7.3
         run: scripts/differential_test.sh
 
   # Federation: the two servers talking to each other, rather than each being
   # compared to a client's view of the other. This became runnable here at all
-  # by moving eunha into the container network — it used to run on the host,
+  # by moving Eunha into the container network — it used to run on the host,
   # where it could not resolve `mastodon.test` and so rejected every inbound
   # activity. Nothing below sets anything up, because the harness now needs no
-  # `/etc/hosts` entry, no trusted certificate and no eunha built for the host.
+  # `/etc/hosts` entry, no trusted certificate and no Eunha built for the host.
   #
-  # The slowest gate: a release build of eunha inside Docker, then a Mastodon
+  # The slowest gate: a release build of Eunha inside Docker, then a Mastodon
   # boot, before a single check runs.
   federation:
     runs-on: ubuntu-latest

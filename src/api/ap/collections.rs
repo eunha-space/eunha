@@ -538,7 +538,7 @@ pub async fn featured_collections(
     Ok(document)
 }
 
-/// `/users/{username}/collections`, where eunha used to say an account's
+/// `/users/{username}/collections`, where Eunha used to say an account's
 /// collections were: its discoverable collections' URIs. Mastodon serves
 /// them at `featured_collections` ([`featured_collections`]), which actors
 /// now name.
@@ -578,7 +578,7 @@ pub async fn account_collections(
 /// the local account `who` consented to being featured in a collection,
 /// served at the URI it was asked at, which is the one it was issued
 /// under: `/ap/users/{account_id}/feature_authorizations/{id}`, or
-/// `/users/{username}/feature_authorizations/{id}`, where eunha issues
+/// `/users/{username}/feature_authorizations/{id}`, where Eunha issues
 /// them. Not there for a signer the collection's owner blocks.
 pub async fn feature_authorization_document(
     state: &AppState,

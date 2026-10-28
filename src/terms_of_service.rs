@@ -1,10 +1,10 @@
 //! Mastodon's `TermsOfService`: versions of the instance's terms, each a draft
 //! until an administrator publishes it, and live from its effective date.
 //!
-//! Before the table existed eunha served one text from the instance
+//! Before the table existed Eunha served one text from the instance
 //! configuration's `terms_of_service`. It is read no longer;
 //! `eunha settings import-config` publishes it once as a version effective on
-//! 2025-01-01, the date eunha served it as effective from.
+//! 2025-01-01, the date Eunha served it as effective from.
 //!
 //! Mastodon: app/models/terms_of_service.rb
 

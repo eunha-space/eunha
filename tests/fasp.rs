@@ -1,9 +1,9 @@
 //! Fediverse Auxiliary Service Providers, against a fake provider: its
 //! registration and confirmation, capability activation, requests signed both
 //! ways, lifecycle and trend announcements, backfill, debug callbacks, and the
-//! follow recommendations and account searches eunha asks it for.
+//! follow recommendations and account searches Eunha asks it for.
 //!
-//! A test binary of its own because it has to let eunha reach 127.0.0.1,
+//! A test binary of its own because it has to let Eunha reach 127.0.0.1,
 //! where the fake provider listens. The SSRF guard's allowlist is process-wide
 //! and set once, so granting it in the main suite would grant it to every test
 //! there.
@@ -35,7 +35,7 @@ struct Received {
     path: String,
     query: String,
     body: Value,
-    /// Whether eunha's signature on it verified against eunha's key.
+    /// Whether Eunha's signature on it verified against Eunha's key.
     verified: bool,
 }
 
@@ -43,7 +43,7 @@ struct Received {
 struct FakeState {
     seed: [u8; 32],
     public: [u8; 32],
-    /// eunha's public key for this provider, learnt at registration.
+    /// Eunha's public key for this provider, learnt at registration.
     server_key: Option<[u8; 32]>,
     received: Vec<Received>,
     documents: HashMap<String, Value>,
@@ -276,7 +276,7 @@ async fn fasp_ctx(label: &str) -> TestContext {
     .await
 }
 
-/// A request the provider signs, as it signs one to eunha: over `@method`,
+/// A request the provider signs, as it signs one to Eunha: over `@method`,
 /// `@target-uri` and `content-digest`, keyed by its id there.
 async fn provider_call(
     ctx: &TestContext,
@@ -311,7 +311,7 @@ async fn provider_call(
         .unwrap()
 }
 
-/// Checks that an answer from eunha is signed with its key for the provider.
+/// Checks that an answer from Eunha is signed with its key for the provider.
 async fn assert_signed_by_eunha(fake: &Fake, response: reqwest::Response) -> Value {
     let status = response.status().as_u16();
     let headers = response.headers().clone();
@@ -322,12 +322,12 @@ async fn assert_signed_by_eunha(fake: &Fake, response: reqwest::Response) -> Val
     );
     let key = fake.state.lock().unwrap().server_key.unwrap();
     eunha::fasp::signature::verify_response(status, &headers, &key, chrono::Utc::now().timestamp())
-        .expect("eunha's answer should be signed with its key for the provider");
+        .expect("Eunha's answer should be signed with its key for the provider");
     serde_json::from_slice(&body).unwrap_or(Value::Null)
 }
 
 /// Registers the fake provider, confirms it as an administrator, and returns
-/// its id at eunha.
+/// its id at Eunha.
 async fn register_and_confirm(ctx: &TestContext, fake: &Fake) -> String {
     let response = ctx
         .api
@@ -406,7 +406,7 @@ async fn register_and_confirm(ctx: &TestContext, fake: &Fake) -> String {
     let info = fake
         .wait_for("the provider info request", |r| r.path == "/provider_info")
         .await;
-    assert!(info.verified, "eunha signs the provider info request");
+    assert!(info.verified, "Eunha signs the provider info request");
     fasp_id
 }
 

@@ -443,7 +443,7 @@ async fn test_collection_activitypub_representation() {
     );
     assert!(page.get("next").is_none(), "one page: {page}");
 
-    // Where eunha used to say they were still answers.
+    // Where Eunha used to say they were still answers.
     let oc: Value = ctx
         .api
         .ap_get("/users/alice/collections", None)

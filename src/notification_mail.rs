@@ -351,7 +351,7 @@ fn user_token(state: &AppState, user_id: i64) -> String {
 
 /// The user a [`user_token`] names, or `None` for any other token. A token
 /// signed with the VAPID key is read with or without `secret_key_base`, so the
-/// links eunha mailed before it was configured keep working.
+/// links Eunha mailed before it was configured keep working.
 pub fn user_from_token(state: &AppState, token: &str) -> Option<i64> {
     if let Some(secret) = &state.instance.secret_key_base {
         if let Some((model, id)) = secret.locate_signed(token, "unsubscribe", chrono::Utc::now()) {

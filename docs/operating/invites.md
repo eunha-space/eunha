@@ -60,7 +60,7 @@ The count is the limit; there is no allowance to keep books on, because the
 codes themselves are the allowance. `manage_invites` is what it takes to hand
 them out, and listing your own invites takes no permission at all — a member who
 cannot create one still has to be able to read what they were given, which is
-where eunha parts company with `InvitesController#index`.
+where Eunha parts company with `InvitesController#index`.
 
 
 Every invite

@@ -223,7 +223,7 @@ sha2 = "0.10"
 base64 = "0.22"
 chrono = "0.4"
 # The checks every ojak queue backend has to pass, run against the table
-# eunha's migrations build.
+# Eunha's migrations build.
 ojak = { git = "https://github.com/eunha-space/ojak.git", features = ["testing"] }
 reqwest = { version = "0.13", features = ["json", "multipart", "query", "form"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }

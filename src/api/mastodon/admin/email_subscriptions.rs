@@ -3,7 +3,7 @@
 //! `AdditionalFooterTextsController` and `AccountsController`. Every one of
 //! them authorizes with `EmailSubscriptionPolicy`, which is `manage_settings`.
 //!
-//! Mastodon serves these as web forms only; eunha's admin is a single-page
+//! Mastodon serves these as web forms only; Eunha's admin is a single-page
 //! app, so it needs an API (the `email-subscriptions-rest-api` divergence).
 //!
 //! Mastodon: app/controllers/admin/email_subscriptions_controller.rb

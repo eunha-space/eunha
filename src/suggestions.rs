@@ -6,7 +6,7 @@
 //! `Scheduler::FollowRecommendationsScheduler` refreshes).
 //! With the `fasp` feature on, the accounts a FASP recommended to the viewer
 //! (`fasp`) join them. `SimilarProfilesSource` needs Elasticsearch, which
-//! eunha does not have.
+//! Eunha does not have.
 //!
 //! Mastodon: app/models/account_suggestions.rb, app/models/account_suggestions/
 //! Mastodon: app/workers/scheduler/follow_recommendations_scheduler.rb

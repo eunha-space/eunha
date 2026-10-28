@@ -57,7 +57,7 @@ export default function About() {
           <h1 className="text-2xl font-bold">{instance.title}</h1>
           <p className="text-foreground/90">{instance.description}</p>
           <p className="text-muted-foreground text-sm">
-            {instance.domain} · running eunha {__COMMIT_HASH__} ·{' '}
+            {instance.domain} · running Eunha {__COMMIT_HASH__} ·{' '}
             {instance.version}
           </p>
         </section>
@@ -95,7 +95,7 @@ export default function About() {
           </Section>
         )}
 
-        {/* eunha serves no rules today — `get_instance_rules` returns an empty
+        {/* Eunha serves no rules today — `get_instance_rules` returns an empty
             list — so this is here for an instance that grows some, and stays
             invisible until then. */}
         {!!rules?.length && (

@@ -1,4 +1,4 @@
-//! Which Mastodon files each eunha module implements.
+//! Which Mastodon files each Eunha module implements.
 //!
 //! Eunha is laid out by feature, Mastodon by Rails layer, so one module here
 //! often stands for a service, a worker and a serializer there. Rather than
@@ -14,10 +14,10 @@
 //! file that does not exist, and adopting a release that renames or deletes
 //! one fails the suite until the header is corrected. `eunha-schema changes`
 //! reads the same headers the other way round: for each upstream file changed
-//! between two releases, the eunha modules to re-read.
+//! between two releases, the Eunha modules to re-read.
 //!
 //! Every module declares a header, `Mastodon: none` when it has no
-//! counterpart, so that a changed upstream file no module names means eunha
+//! counterpart, so that a changed upstream file no module names means Eunha
 //! does not implement it rather than that a header was forgotten.
 //!
 //! Mastodon: none
@@ -44,7 +44,7 @@ pub struct Counterpart {
     pub path: String,
 }
 
-/// Whether an upstream path is part of what eunha tracks: the server, not its
+/// Whether an upstream path is part of what Eunha tracks: the server, not its
 /// web client, translations, test suite or emoji images.
 ///
 /// `db/migrate` and `db/post_migrate` are left out because `eunha-schema plan`

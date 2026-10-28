@@ -118,7 +118,7 @@ and `preview_url` is the thumbnail when there is one, else the small style;
 audio has no small style. Deleting an attachment, or the post it belongs to,
 deletes all of them.
 
-Uploads eunha stored before it named files this way kept the small style at
+Uploads Eunha stored before it named files this way kept the small style at
 `…/small/small.<ext>` beside an `original.<ext>`, and recorded that name as
 the thumbnail. Eunha still finds those previews there; Mastodon looks for a
 thumbnail under `thumbnails/` and finds none.

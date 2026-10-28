@@ -12,7 +12,7 @@ own queues. The code is in *src/portability/*, the routes in
 `/settings/export`.
 
 This is one account's data. Moving a whole Mastodon instance's database onto
-eunha is something else: see [Importing a Mastodon instance](./importing.md).
+Eunha is something else: see [Importing a Mastodon instance](./importing.md).
 
 
 Exports
@@ -102,7 +102,7 @@ does not list — unfollows, unblocks, unmutes, removes bookmarks, deletes the
 lists not named and empties the rest, deletes every filter — and settles the
 rows naming what is already there. A domain block import is done entirely
 here: upstream's overwrite lifts every block before blocking the file's
-domains again, and so does eunha.
+domains again, and so does Eunha.
 
 Then each row is `BulkImportRowService`: the handle is resolved, over
 WebFinger when the account is not known (not on a server deliveries have
@@ -143,7 +143,7 @@ An import `BulkImportService` fails on — a domain that cannot be blocked, a
 list that cannot be made — is finished as it stands, as upstream's `rescue`
 finishes it.
 
-Migration 024 handed the imports eunha's earlier import loop was carrying
+Migration 024 handed the imports Eunha's earlier import loop was carrying
 out to the queue, and with them any that Mastodon's own workers had
 scheduled or started.
 
@@ -169,11 +169,11 @@ this order:
  -  `actor.json`, whose `outbox`, `likes`, `bookmarks`, `icon` and `image`
     name those files.
 
-The JSON is what upstream's serializers write, not what eunha federates.
+The JSON is what upstream's serializers write, not what Eunha federates.
 The outbox carries Mastodon's full JSON-LD context (every named context and
 every extension of `ContextHelper`), and its items are unsigned and carry
 none. Each note has the members of `ActivityPub::NoteSerializer`, including
-the ones eunha leaves out of the notes it federates because it does not
+the ones Eunha leaves out of the notes it federates because it does not
 serve what they point at: `atomUri`, `inReplyToAtomUri`, `conversation`,
 `context`, and the `replies`, `likes` and `shares` collections. A boost of
 one's own followers-only post carries the post inline. An attachment's

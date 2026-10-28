@@ -4,7 +4,7 @@
 //! Eunha's releases are tagged `v<semver>+mastodon.<mastodon version>`, e.g.
 //! `v0.2.0+mastodon.4.7.0`. The build metadata after `+` names the Mastodon
 //! release whose schema and API this build implements; it is not part of the
-//! semver ordering, so eunha's own version bumps freely between Mastodon
+//! semver ordering, so Eunha's own version bumps freely between Mastodon
 //! releases. Tags mirror `Cargo.toml`'s `version`, which mirrors this file's
 //! check against `mastodon.toml`.
 

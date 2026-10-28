@@ -67,7 +67,7 @@ async fn process_local_url(
         // A status: what the API serves as a status's `url`, and the actor-URI
         // form that is its `uri`.
         [handle, id] if handle.starts_with('@') => local_status(state, id, viewer).await,
-        // Both actor-URI schemes: `username_ap_id` and the numeric one eunha
+        // Both actor-URI schemes: `username_ap_id` and the numeric one Eunha
         // defaults to, whose sub-resources hang off `/ap/users/{id}`.
         ["users", _, "statuses", id] => local_status(state, id, viewer).await,
         ["ap", "users", _, "statuses", id] => local_status(state, id, viewer).await,
@@ -162,7 +162,7 @@ async fn process_url(
         };
         return authorized_status(state, id, viewer).await;
     }
-    // Mastodon also resolves a `FeaturedCollection` here. eunha learns of a
+    // Mastodon also resolves a `FeaturedCollection` here. Eunha learns of a
     // remote collection only from the `Add`/`Update` that announces one
     // (`api::ap::inbox::quote`) and has nothing that fetches one cold, so a
     // collection's URL resolves to nothing.

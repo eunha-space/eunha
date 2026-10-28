@@ -2,7 +2,7 @@
 //! `Settings::TwoFactorAuthenticationMethodsController`, the
 //! `Settings::TwoFactorAuthentication::*` controllers, and its security keys.
 //!
-//! Mastodon has these only as web forms behind a session; eunha's settings
+//! Mastodon has these only as web forms behind a session; Eunha's settings
 //! page is a single-page app holding a token, so they are served here. What
 //! Mastodon guards with `ChallengableConcern` — starting setup, new recovery
 //! codes, turning it off — asks for the password with the request, as do the

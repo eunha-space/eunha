@@ -79,7 +79,7 @@ pub async fn tags(state: &AppState, tag_ids: &[i64]) {
 /// `Account::StatusesSearch#enqueue_update_public_statuses_index`: whether an
 /// account is `indexable` changed, so its public posts join or leave the
 /// public index. Mastodon hands this to a worker that imports or
-/// deletes-by-query; eunha queues the posts, which the scheduler then indexes
+/// deletes-by-query; Eunha queues the posts, which the scheduler then indexes
 /// or deletes by the same scope check.
 pub async fn account_indexable_changed(state: &AppState, account_id: i64) {
     if state.search.is_none() {

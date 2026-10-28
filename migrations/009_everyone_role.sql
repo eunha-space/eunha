@@ -2,7 +2,7 @@
 -- another.
 --
 -- Mastodon creates it from `db/seeds`, and again on demand if it is missing, so
--- every Mastodon database has it and a database eunha created fresh did not.
+-- every Mastodon database has it and a database Eunha created fresh did not.
 -- Without it `verify_credentials` carries no `role`, and a client reading its
 -- permissions to decide what to offer sees nothing rather than the defaults.
 --

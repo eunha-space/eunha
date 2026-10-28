@@ -1,6 +1,6 @@
 // eunha-specific APIs with no Mastodon C2S equivalent. Mastodon has no
 // invite-tree endpoint nor a REST API for invite CRUD, so these are served by
-// eunha's own routes and called with a plain fetch (masto.js only models the
+// Eunha's own routes and called with a plain fetch (masto.js only models the
 // C2S surface).
 
 // Carries the HTTP status so callers can tell "you typed the wrong password"
@@ -60,7 +60,7 @@ export async function getInviteTree(token: string): Promise<InviteTree> {
 }
 
 // ── Invites ────────────────────────────────────────────────────────────────
-// Served by eunha's /api/v1/invites (a non-standard extension: Mastodon exposes
+// Served by Eunha's /api/v1/invites (a non-standard extension: Mastodon exposes
 // invite CRUD only through its web UI, never the REST API).
 
 export const INVITES_CHANGED = 'eunha:invites-changed'
@@ -191,7 +191,7 @@ export async function signUp(params: SignUpParams): Promise<void> {
 
 // ── Account deletion ───────────────────────────────────────────────────────
 // Mastodon deletes accounts through a web form (`/settings/delete`) and has no
-// REST equivalent, so `DELETE /api/v1/accounts` is eunha's own. It runs the
+// REST equivalent, so `DELETE /api/v1/accounts` is Eunha's own. It runs the
 // same challenge as that form: the current password, or — for accounts with no
 // password — the username.
 
@@ -215,7 +215,7 @@ export async function deleteAccount(
 // ── Email subscriptions ────────────────────────────────────────────────────
 // Mastodon 4.7. Subscribing is `POST /api/v1/accounts/:id/email_subscriptions`,
 // which asks for no token; an account's own switch lives on Mastodon's web
-// privacy settings page, so eunha serves it at /api/eunha/v1/email_subscriptions.
+// privacy settings page, so Eunha serves it at /api/eunha/v1/email_subscriptions.
 
 /** `ValidationErrorFormatter`'s `details`: per attribute, `ERR_*` codes. */
 export type ValidationDetails = Record<string, { error: string; description: string }[]>
@@ -279,7 +279,7 @@ export async function setOwnEmailSubscriptions(
 
 // ── Data export and import ─────────────────────────────────────────────────
 // Mastodon's "Import and export" settings pages, which have no REST API
-// upstream; eunha serves them under /api/eunha/v1/ (docs/operating/import-export.md).
+// upstream; Eunha serves them under /api/eunha/v1/ (docs/operating/import-export.md).
 
 export interface Backup {
   id: string

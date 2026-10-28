@@ -6,7 +6,7 @@
 //! A `Follow`, `FollowRequest` or `Block` row is identified by its `uri`
 //! (`uri_for`, since each says it is not `local?`), which `set_uri` gives
 //! every one made here ([`generate_uri`]). A row without one — made before
-//! eunha set it, or a `Follow.new` that was never saved — falls back to its
+//! Eunha set it, or a `Follow.new` that was never saved — falls back to its
 //! actor's id with a fragment, as the serializers' `||` does. The `Accept`,
 //! `Reject` and `Undo` around it are named after the row's database id.
 //!

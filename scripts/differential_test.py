@@ -247,7 +247,7 @@ def compare(path, left, right, findings, where=""):
 # the response entity is compared like any other, and the status code with it.
 #
 # These matter more than the reads: a GET returns what the server already holds,
-# while a POST is the server deciding what to make of a request. eunha and
+# while a POST is the server deciding what to make of a request. Eunha and
 # Mastodon can agree on every timeline and still disagree on what posting a
 # status with a poll produces.
 WRITES = [
@@ -360,7 +360,7 @@ def compare_interactions(args, findings):
     # status that was just unfavourited — so with one shared status, one pair's
     # deferred work showed up as a difference in every verb that followed it.
     # That is what nine `favourited` findings and one `reblogged` were, and
-    # eunha was blamed for all ten.
+    # Eunha was blamed for all ten.
     #
     # `unreblog` is the sharper case, because the window is one Mastodon
     # disagrees with itself in: `Status.reblogs_map` is `unscoped` and counts
@@ -475,14 +475,14 @@ def compare_notification_grouping(args, findings):
             findings.append(f"grouping: {name} would not identify itself ({status})")
             return 0
 
-        # From the same state on both sides. eunha gets a scratch database every
+        # From the same state on both sides. Eunha gets a scratch database every
         # run while the Mastodon container is left up between them, so anything
-        # a previous run left behind shows up as eunha differing.
+        # a previous run left behind shows up as Eunha differing.
         #
         # Two things have to be reset, and the second is easy to miss. Clearing
         # the notifications is not enough: a repeat follow produces no
         # notification at all, so on a second run only the server with a fresh
-        # database would report a follow group — which reads as eunha inventing
+        # database would report a follow group — which reads as Eunha inventing
         # one. Unfollowing first makes the follow new on both.
         for _, fan_token in fans:
             on(base, f"/api/v1/accounts/{me['id']}/unfollow", fan_token, "POST")
@@ -505,9 +505,9 @@ def compare_notification_grouping(args, findings):
             on(base, f"/api/v1/accounts/{me['id']}/follow", fan_token, "POST")
 
         # Mastodon writes these notifications from `LocalNotificationWorker`,
-        # after the favourite or follow has answered; eunha writes them in the
+        # after the favourite or follow has answered; Eunha writes them in the
         # request. Reading the groups straight away once caught Mastodon with
-        # fan3's follow still queued, a group of two against eunha's three.
+        # fan3's follow still queued, a group of two against Eunha's three.
         # Wait for one notification per act — a count of what was done, not of
         # how it should group — and compare whatever is there if it never comes.
         acts = 2 * len(fans)

@@ -37,7 +37,7 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Fetch remote media files. Not offered: eunha keeps no copies of
+    /// Fetch remote media files. Not offered: Eunha keeps no copies of
     /// remote media.
     Refresh {
         #[arg(long)]
@@ -155,7 +155,7 @@ pub async fn run(state: &AppState, command: Command) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `tootctl media refresh`, which eunha does not offer.
+/// `tootctl media refresh`, which Eunha does not offer.
 pub fn refresh() -> anyhow::Result<()> {
     anyhow::bail!(
         "eunha keeps no copies of remote media, so there is nothing to download again; \

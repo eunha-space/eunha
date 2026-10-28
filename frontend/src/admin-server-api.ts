@@ -1,7 +1,7 @@
 // The server administration Mastodon has only as server-rendered admin pages
 // (`Admin::SettingsController`, rules, roles, announcements, instances,
 // relays, invites, webhooks, follow recommendations, software updates and the
-// dashboard), as eunha serves it under `/api/v1/admin/`. Kept apart from
+// dashboard), as Eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
 import { json, query, request, type Account, type Measure, type Permission } from './admin-api.ts'
 import { INVITES_CHANGED } from './eunha-api.ts'

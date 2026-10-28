@@ -1,5 +1,5 @@
 // Standard Mastodon OAuth `authorization_code` flow, run client-side via
-// masto.js against eunha's existing endpoints. No backend changes required.
+// masto.js against Eunha's existing endpoints. No backend changes required.
 import { oauthClient, restClient } from './masto.ts'
 import { clearMe, loadMe, type MeAccount } from './me.ts'
 

@@ -446,7 +446,7 @@ async fn valid_webauthn_credential(
     }
 }
 
-/// `on_authentication_success`, as far as eunha's sign-in needs it: the
+/// `on_authentication_success`, as far as Eunha's sign-in needs it: the
 /// second-factor attempts forgotten, the sign-in recorded, and the user told
 /// if it looks like someone else (`SuspiciousSignInDetector`).
 async fn on_authentication_success(

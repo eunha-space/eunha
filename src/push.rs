@@ -420,7 +420,7 @@ async fn following(
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PushNotificationWorker {
     pub web_push_subscription_id: i64,
-    /// `None` for a job an earlier eunha queued with its payload already
+    /// `None` for a job an earlier Eunha queued with its payload already
     /// rendered, which is dropped.
     #[serde(default)]
     pub notification_id: Option<i64>,
@@ -932,7 +932,7 @@ pub async fn notify_collection(
 
 /// A collection notification's push title. Mastodon's
 /// `I18n.t("notification_mailer.#{type}.subject")` has no such key for
-/// either type, so it pushes `Translation missing: …`; eunha says what its
+/// either type, so it pushes `Translation missing: …`; Eunha says what its
 /// notification fallback says (divergences.toml,
 /// `collection-notification-push-titles`).
 fn collection_push_title(notification_type: &str, name: &str) -> String {

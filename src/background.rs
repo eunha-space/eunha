@@ -663,7 +663,7 @@ async fn publish_one(
         )));
     }
 
-    // The params as stored, by Mastodon (ids as numbers) or by eunha before
+    // The params as stored, by Mastodon (ids as numbers) or by Eunha before
     // it stored them so (ids as strings).
     let string = |key: &str| params[key].as_str().map(str::to_owned);
     let id = |key: &str| match &params[key] {

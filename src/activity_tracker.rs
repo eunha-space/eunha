@@ -5,7 +5,7 @@
 //! A counter is `<prefix>:<midnight UTC as a Unix timestamp>`, which an
 //! increment adds one to (`INCRBY`) and a record adds a value to as a
 //! HyperLogLog (`PFADD`), each kept six months after it last changed. What
-//! eunha counts, as Mastodon does: `activity:logins` (the users who signed
+//! Eunha counts, as Mastodon does: `activity:logins` (the users who signed
 //! in), `activity:accounts:local` (sign-ups), `activity:statuses:local` (local
 //! public and unlisted posts) and `activity:interactions` (favourites, boosts,
 //! follows, poll votes, and replies to someone else).

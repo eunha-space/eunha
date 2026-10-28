@@ -3,7 +3,7 @@ Deliberate divergences
 
 Eunha aims for behavioural parity, so a difference from Mastodon is either a bug
 or a decision. The decisions live in `divergences.toml`, one entry each, saying
-what Mastodon does, what eunha does instead, why, and which test would fail if
+what Mastodon does, what Eunha does instead, why, and which test would fail if
 that stopped being true.
 
 They are recorded as data rather than prose because prose is not checked and so

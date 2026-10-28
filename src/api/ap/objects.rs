@@ -41,7 +41,7 @@ const ACTOR_EXTENSIONS: [&str; 12] = [
 /// `Emoji` when it has custom emoji tags, `Hashtag` when it has profile
 /// hashtags, `focalPoint` when it has an avatar, a header or an emoji's
 /// image. The
-/// Multikey context, Mastodon's only by way of eunha's integrity proofs, is
+/// Multikey context, Mastodon's only by way of Eunha's integrity proofs, is
 /// there when the actor publishes an `assertionMethod`.
 fn actor_context(emoji: bool, hashtag: bool, image: bool, multikey: bool) -> Value {
     let mut extensions: Vec<&str> = ACTOR_EXTENSIONS.to_vec();
@@ -145,7 +145,7 @@ pub async fn load_local_account(
     account.ok_or(AppError::NotFound)
 }
 
-/// Who signed a request, as an account eunha knows: Mastodon's
+/// Who signed a request, as an account Eunha knows: Mastodon's
 /// `signed_request_account`, the `current_account` its policies ask about.
 #[derive(Clone, Debug)]
 pub struct Reader {
@@ -153,7 +153,7 @@ pub struct Reader {
     pub domain: Option<String>,
 }
 
-/// The account whose actor is `signer`, if eunha knows it.
+/// The account whose actor is `signer`, if Eunha knows it.
 pub(crate) async fn reader(state: &AppState, signer: Option<&str>) -> AppResult<Option<Reader>> {
     let Some(signer) = signer else {
         return Ok(None);

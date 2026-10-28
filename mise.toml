@@ -11,7 +11,7 @@ description = "Run the Rust server with hot-reload"
 run = "cargo watch -x run -w src -w migrations"
 
 [tasks.frontend]
-description = "Build the eunha web frontend (SPA) into frontend/dist"
+description = "Build the Eunha web frontend (SPA) into frontend/dist"
 run = "cd frontend && pnpm install && pnpm run build"
 
 [tasks."mastodon:status"]
@@ -23,7 +23,7 @@ description = "List the upstream migrations adopting a Mastodon release would in
 run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- plan"
 
 [tasks."mastodon:changes"]
-description = "List the upstream files a Mastodon release changed, by the eunha module naming each (needs a Mastodon checkout)"
+description = "List the upstream files a Mastodon release changed, by the Eunha module naming each (needs a Mastodon checkout)"
 run = "SQLX_OFFLINE=true cargo run --quiet --bin eunha-schema -- changes"
 
 [tasks."mastodon:files"]
@@ -54,7 +54,7 @@ description = "Build the documentation site into docs/.vitepress/dist (fails on 
 run = "cd docs && pnpm install && pnpm run build"
 
 [tasks."federation"]
-description = "Federate eunha with a real Mastodon in Docker, both directions"
+description = "Federate Eunha with a real Mastodon in Docker, both directions"
 run = "scripts/federation_test.sh"
 
 [tasks."differential"]
@@ -78,5 +78,5 @@ description = "Regenerate site/og.png, site/apple-touch-icon.png and the fronten
 run = "node scripts/build_site_images.mjs"
 
 [tasks."container:build"]
-description = "Build the eunha container image locally"
+description = "Build the Eunha container image locally"
 run = "docker build --tag eunha:local ."

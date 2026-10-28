@@ -4,7 +4,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// Short hash of the eunha commit this SPA was built from. Frontend and backend
+// Short hash of the Eunha commit this SPA was built from. Frontend and backend
 // live in the same repo, so this identifies the running server build.
 function commitHash() {
   try {
@@ -15,7 +15,7 @@ function commitHash() {
 }
 
 // The Rust server (axum) serves the built SPA from `frontend/dist`. In dev we
-// proxy the C2S API and OAuth endpoints to the running eunha server on :3000.
+// proxy the C2S API and OAuth endpoints to the running Eunha server on :3000.
 export default defineConfig({
   define: {
     __COMMIT_HASH__: JSON.stringify(commitHash()),

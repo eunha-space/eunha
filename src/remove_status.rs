@@ -19,7 +19,7 @@
 //! Its media goes with a destroyed status, unless the removal is a `redraft`,
 //! which leaves the attachments to be attached to the post that replaces it.
 //! The media of a status that is kept would be made private
-//! (`UpdateMediaAttachmentsPermissionsService`), which eunha's storage, with no
+//! (`UpdateMediaAttachmentsPermissionsService`), which Eunha's storage, with no
 //! per-object permissions, has nothing to do for.
 //!
 //! Mastodon: app/services/remove_status_service.rb

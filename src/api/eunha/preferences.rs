@@ -5,7 +5,7 @@
 //! (`show_application`), and from `Settings::Preferences::*` the interface
 //! language and time zone, the languages to show in public timelines, how
 //! media, content warnings and GIFs are shown, and the notification emails
-//! eunha sends.
+//! Eunha sends.
 //!
 //! What Mastodon offers through the REST API already — the posting defaults
 //! (`source[privacy]`, `source[sensitive]`, `source[language]`,

@@ -1,6 +1,6 @@
 //! ActivityPub activity delivery to remote inboxes.
 //!
-//! Who an activity goes to is eunha's: the recipient sets below are SQL over
+//! Who an activity goes to is Eunha's: the recipient sets below are SQL over
 //! Mastodon's tables. Sending it is ojak's: [`Deliverer`] queues each
 //! delivery in `eunha.ojak_queue` and its loops send them, retrying with
 //! backoff, draft-cavage first and RFC 9421 when an inbox refuses it, through
@@ -51,7 +51,7 @@ fn delivery_permits() -> Arc<tokio::sync::Semaphore> {
 /// How often to prune deliveries given up on.
 const DELIVERY_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
-/// The table ojak keeps eunha's queue in (migrations/011_feder_queue.sql, renamed in 013_ojak_queue.sql).
+/// The table ojak keeps Eunha's queue in (migrations/011_feder_queue.sql, renamed in 013_ojak_queue.sql).
 pub const QUEUE_TABLE: &str = "eunha.ojak_queue";
 
 /// The queue deliveries wait in, within [`QUEUE_TABLE`].
@@ -189,7 +189,7 @@ pub fn deliverer(
     let config = ojak::deliverer::DelivererConfig {
         batch: usize::try_from(workers.delivery_batch).unwrap_or(50).max(1),
         concurrency: workers.delivery_concurrency.max(1),
-        // eunha limits deliveries per process, not per host.
+        // Eunha limits deliveries per process, not per host.
         per_host: workers.delivery_concurrency.max(1),
         idle_poll: Duration::from_secs(workers.queue_idle_poll_seconds.max(1)),
         shared_limit: Some(delivery_permits()),
@@ -1197,7 +1197,7 @@ pub async fn run_delivery_cleanup(state: AppState) {
 /// Stoplight's metadata does. A breaker Redis cannot be asked about lets the
 /// delivery through. A probe's lock is released with the pooled Redis's
 /// `eunha_compare_delete` function when the keyspace is shared, as every
-/// other eunha lock is.
+/// other Eunha lock is.
 #[derive(Clone)]
 pub struct RedisBreakers(ojak_redis::RedisBreakers<redis::aio::ConnectionManager>);
 

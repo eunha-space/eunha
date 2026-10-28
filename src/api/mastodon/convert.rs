@@ -221,7 +221,7 @@ pub fn media_thumbnail_original_url(
     ))
 }
 
-/// Until it named its files as Paperclip does, eunha kept an upload's small
+/// Until it named its files as Paperclip does, Eunha kept an upload's small
 /// style as `small.<ext>` and recorded that name in `thumbnail_file_name`,
 /// beside an original named `original.<ext>`: that name, for such a row.
 fn legacy_small(m: &models::MediaAttachment) -> Option<&str> {
@@ -328,7 +328,7 @@ impl EmojiRow {
 
 /// `REST::CustomEmojiSerializer` for `row`: a local emoji's `original` and
 /// `static` styles where Paperclip keeps them, and a remote one's URL as it
-/// was stored, since eunha keeps no copy of a remote emoji's image
+/// was stored, since Eunha keeps no copy of a remote emoji's image
 /// (`remote-account-images-not-downloaded`). `category` and `featured` are
 /// there when the category was loaded and the emoji has one — the
 /// category's name and its `featured_emoji_id`.

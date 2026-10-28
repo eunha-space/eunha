@@ -1,4 +1,4 @@
-//! Which addresses eunha refuses to fetch, beyond what Mastodon refuses.
+//! Which addresses Eunha refuses to fetch, beyond what Mastodon refuses.
 
 use url::Url;
 

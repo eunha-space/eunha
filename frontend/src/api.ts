@@ -55,7 +55,7 @@ export async function getPrivacyPolicy(): Promise<PrivacyPolicy> {
 }
 
 // The terms of service interstitial: terms a notification flagged this user to
-// be shown, until they open the terms page (eunha's stand-in for the page
+// be shown, until they open the terms page (Eunha's stand-in for the page
 // Mastodon's web app renders; the `terms-of-service-interstitial-api`
 // divergence).
 const INTERSTITIAL = '/api/eunha/v1/terms_of_service/interstitial'
@@ -362,7 +362,7 @@ export async function translateStatus(
   return body as StatusTranslation
 }
 
-// An account's pinned posts. eunha also serves `/api/v1/accounts/:id/pins`, but
+// An account's pinned posts. Eunha also serves `/api/v1/accounts/:id/pins`, but
 // `?pinned=true` is the form Mastodon documents and masto types, and the one
 // every other client already asks for. It returns all of them at once — pins
 // cap at five — so there is nothing to paginate.

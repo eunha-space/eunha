@@ -1,4 +1,4 @@
-//! The locale eunha's own server-rendered pages are shown in.
+//! The locale Eunha's own server-rendered pages are shown in.
 //!
 //! Mastodon: none
 

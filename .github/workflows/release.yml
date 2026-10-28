@@ -1,4 +1,4 @@
-# The build the eunha.space runtimes run: eunha and its web client, compiled
+# The build the eunha.space runtimes run: Eunha and its web client, compiled
 # for the Apple Silicon host they share. The control plane downloads this
 # artifact for the commit it is releasing rather than compiling that commit
 # into a source checkout on the host, which used to leave a release target of
@@ -53,7 +53,7 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile && pnpm run build
 
-      - name: Build eunha
+      - name: Build Eunha
         run: cargo build --release --locked --bin eunha
 
       # Anything outside the OS would have to be installed on the host at the

@@ -2,7 +2,7 @@ use reqwest::StatusCode;
 
 use crate::helpers::TestContext;
 
-/// The server-rendered account-deletion page (eunha's `/settings/delete`).
+/// The server-rendered account-deletion page (Eunha's `/settings/delete`).
 #[tokio::test]
 async fn test_account_delete_page_and_challenge() {
     let ctx = TestContext::new("acct-delete-page").await;

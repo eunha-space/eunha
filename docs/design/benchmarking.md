@@ -108,7 +108,7 @@ what tenants cost while nobody is using them, which one process under load
 cannot show.
 
 `scripts/benchmark_density.sh` answers it. It brings up a PostgreSQL cluster
-and Redis server of its own, starts tenants in steps — one eunha process and
+and Redis server of its own, starts tenants in steps — one Eunha process and
 one database each, configured as recommended above — and at each step records
 the population's idle cost and then its latency under an open-loop request
 load spread across every tenant. At the end it restarts a burst of tenants at
@@ -144,13 +144,13 @@ What one idle tenant costs, constant from 10 to 300 tenants:
 
 | Resource                             |                  Per idle tenant |
 | ------------------------------------ | -------------------------------: |
-| eunha footprint, never served load   |                        14–18 MiB |
-| eunha footprint after serving load   |                        37–40 MiB |
+| Eunha footprint, never served load   |                        14–18 MiB |
+| Eunha footprint after serving load   |                        37–40 MiB |
 | Threads                              |                               12 |
 | PostgreSQL connections held          |                                2 |
 | PostgreSQL private memory            | 9.6 MiB (4.8 MiB per connection) |
 | Transactions while idle              |                            3.1/s |
-| CPU while idle, eunha and PostgreSQL |                0.09% of one core |
+| CPU while idle, Eunha and PostgreSQL |                0.09% of one core |
 | Empty database on disk               |                         15.3 MiB |
 
 Two of those are not what the tenancy plan assumed. A “zero minimum” pool
@@ -170,9 +170,9 @@ Latency under load, spread evenly over every tenant:
 |     200 |       10.1 ms |        9.0 ms |           75 ms |
 |     300 |       10.0 ms |      4,608 ms |        2,540 ms |
 
-A request costs about 1.95 ms of CPU across eunha and PostgreSQL together, so
+A request costs about 1.95 ms of CPU across Eunha and PostgreSQL together, so
 800 req/s occupies roughly one and a half of ten cores. The collapse at 300
-tenants is therefore not a shortage of CPU: eunha's CPU per request doubled
+tenants is therefore not a shortage of CPU: Eunha's CPU per request doubled
 while most cores stayed idle, which points at scheduling 3,600 threads, or at
 memory compression on a machine already short of memory, rather than at work.
 
@@ -192,7 +192,7 @@ With every other setting unchanged:
 | Idle                              |          Before | After |
 | --------------------------------- | --------------: | ----: |
 | Transactions per tenant           |           3.1/s | 0.2/s |
-| eunha CPU, 300 tenants            | 12.1% of a core |  0.8% |
+| Eunha CPU, 300 tenants            | 12.1% of a core |  0.8% |
 | PostgreSQL CPU, 300 tenants       | 13.6% of a core |  4.8% |
 | PostgreSQL connections per tenant |               2 |     2 |
 
@@ -201,11 +201,11 @@ timeout expire. That matters more than the baseline suggested: a connection
 costs 4.8 MiB privately when fresh, but **19–24 MiB once it has served the
 query mix**, as PostgreSQL keeps catalog caches and prepared statements for
 the life of the backend. Two warm connections cost a tenant as much memory as
-its eunha process does.
+its Eunha process does.
 
 Load behaved as before, and 300 tenants at 800 req/s held a p95 of 8.2 ms. The
 baseline's collapse at that point did not recur — nor did it when the baseline
-binary was run again (p95 14.5 ms). It was the workstation, not eunha, and the
+binary was run again (p95 14.5 ms). It was the workstation, not Eunha, and the
 400-tenant run below shows what the workstation was running out of.
 
 
@@ -306,7 +306,7 @@ What one Mac mini holds
 
 Memory decides it. Per tenant, from the runs above, for a process per tenant:
 
-| Tenant                                        |     eunha | PostgreSQL |   Total |
+| Tenant                                        |     Eunha | PostgreSQL |   Total |
 | --------------------------------------------- | --------: | ---------: | ------: |
 | Idle, never busy (hosting profile)            | 12–14 MiB |     ~2 MiB | ~16 MiB |
 | Idle after serving load (hosting profile)[^1] |   ~40 MiB |     ~2 MiB | ~42 MiB |
@@ -328,7 +328,7 @@ Those are ceilings; plan steady state at 70–80% of them. One process for many
 tenants would raise them several times over (see “One process for many
 tenants”). At these counts the other resources do not bind first:
 
- -  **CPU.** A request costs 1.5–2 ms of CPU across eunha and PostgreSQL. Ten
+ -  **CPU.** A request costs 1.5–2 ms of CPU across Eunha and PostgreSQL. Ten
     cores at half utilisation serve roughly 2,500–3,000 req/s, which for 490
     tenants is 5 req/s each at peak — far more than a small instance's clients
     make.
@@ -351,9 +351,9 @@ tenants”). At these counts the other resources do not bind first:
 Where a tenant's memory goes
 ----------------------------
 
-Profiled with macOS's own tools — `MallocStackLogging` set on the eunha
+Profiled with macOS's own tools — `MallocStackLogging` set on the Eunha
 process, then `heap`, `vmmap` and `malloc_history` — so without changing a
-line of eunha. One tenant in the hosting profile, fresh and after 30 seconds at
+line of Eunha. One tenant in the hosting profile, fresh and after 30 seconds at
 160 req/s, across 16 runs:
 
 |                                  |   Fresh | After load |
@@ -408,13 +408,13 @@ Two consequences. A process per tenant pays about 10 MiB that one shared
 process would pay once — router, certificates, the binary's dirty data pages,
 stacks and allocator metadata — before any fragmentation. And the
 fragmentation, the larger and less predictable part, is the allocator's rather
-than eunha's.
+than Eunha's.
 
 ### Allocators
 
-For comparison, eunha was built with jemalloc (`tikv-jemallocator`) and with
+For comparison, Eunha was built with jemalloc (`tikv-jemallocator`) and with
 mimalloc as its global allocator. Neither is kept; the system allocator is what
-eunha uses. Same profile, at each allocator's default settings:
+Eunha uses. Same profile, at each allocator's default settings:
 
 | Allocator               | Runs |  Fresh | After load | Two minutes later |        p95 |
 | ----------------------- | ---: | -----: | ---------: | ----------------: | ---------: |
@@ -444,16 +444,16 @@ are kept outside the repository, in `benchmark-results/modes-20260911/`.
 The same tenants, configuration (the hosting profile) and load, each run from a
 fresh start:
 
-| eunha, per tenant           | Separate ×100 |   Shared ×100 |  Separate ×300 |   Shared ×300 |    Shared ×600 |
+| Eunha, per tenant           | Separate ×100 |   Shared ×100 |  Separate ×300 |   Shared ×300 |    Shared ×600 |
 | --------------------------- | ------------: | ------------: | -------------: | ------------: | -------------: |
 | Memory, idle after 11 min   |      12.0 MiB |       3.0 MiB |       12.1 MiB |       3.2 MiB |        2.9 MiB |
 | Memory, a minute after load |      13.0 MiB |       7.0 MiB |       15.7 MiB |       3.3 MiB |        3.4 MiB |
 | Threads, whole population   |           400 |            12 |          1,200 |            12 |             12 |
 | Until every tenant answers  |        13.8 s |         1.7 s |         43.7 s |         6.2 s |         15.1 s |
 | p95 at 200 / 800 req/s      | 11.4 / 8.9 ms | 10.6 / 786 ms | 19.2 / 10.9 ms | 17.3 / 8.4 ms | 31.0 / 21.8 ms |
-| eunha CPU at 800 req/s      |          104% |           75% |            75% |           57% |            70% |
+| Eunha CPU at 800 req/s      |          104% |           75% |            75% |           57% |            70% |
 
-At 300 tenants eunha needed 4.7 GiB as separate processes and under 1 GiB as
+At 300 tenants Eunha needed 4.7 GiB as separate processes and under 1 GiB as
 one, and 600 tenants in one process needed 2 GiB. The shared process also spent
 about a quarter less CPU on the same load. Its one bad number, shared ×100 at
 800 req/s, came with CPU far from saturated and did not recur at 300 or 600
@@ -467,12 +467,12 @@ fact, than when measured alone just before, because that run found their
 connections closed and had to open them again.
 
 What limits the shared process is PostgreSQL. From 300 to 600 tenants its CPU at
-800 req/s went from 119% to 251% of a core, more than three times eunha's, and
+800 req/s went from 119% to 251% of a core, more than three times Eunha's, and
 latency rose with it: 600 databases on one server, not 600 tenants in one
 process.
 
 With the timed-task change, then, an idle tenant in a shared process costs about
-3 MiB of eunha and a third of a connection, against about 42 MiB as its own
+3 MiB of Eunha and a third of a connection, against about 42 MiB as its own
 process after serving load. On memory alone a 32 GiB Mac mini would hold
 several thousand; that is not a number to plan on until PostgreSQL has been
 measured holding that many databases.
@@ -484,7 +484,7 @@ Ways to scale further
 In order of what the measurements say they are worth:
 
 1.  **One process for many tenants.** Measured with a prototype: about 3 MiB of
-    eunha per tenant instead of 12–16, twelve threads for the whole process, a
+    Eunha per tenant instead of 12–16, twelve threads for the whole process, a
     seventh of the startup time, and no slowdown from a saturated neighbour. It
     pays for fragmentation once, where a different allocator did not recover it
     (see “Allocators”). It needs the refactor and controls in phase 4 of
@@ -501,7 +501,7 @@ In order of what the measurements say they are worth:
     mode with prepared statements verified against SQLx.
 5.  **PostgreSQL on its own machine.** On one Mac mini it competes with tenants
     for the same memory, and with tenants sharing a process it is where the CPU
-    goes: at 600 tenants it used more than three times eunha's. Separating them
+    goes: at 600 tenants it used more than three times Eunha's. Separating them
     gives both room, at the cost of a network hop on every query, which should
     be measured.
 6.  **More machines,** placing tenants by measured memory rather than by count.
@@ -528,21 +528,21 @@ scripts/spike.sh fanout
 
 The remote side is `eunha-fedisim`, one process that plays every remote
 server: `s<n>.fedisim.test`, each with its own actors. It serves their actor
-documents and notes when eunha fetches them, signs the activities they send
+documents and notes when Eunha fetches them, signs the activities they send
 with real RSA keys through ojak, and sends them along a curve that rises to
 `EUNHA_SPIKE_PEAK_RPS` at `EUNHA_SPIKE_RISE_SECONDS` and then decays. Each
-actor likes, boosts and replies at most once. The load is open-loop: when eunha
+actor likes, boosts and replies at most once. The load is open-loop: when Eunha
 falls behind, activities beyond the in-flight limit are counted as shed rather
 than delayed, so the offered load stays what the curve says.
 
 Around the spike the script records, once a second, the inbox queue, database
-connections and lock waits, eunha's CPU and phys\_footprint, Redis's memory,
+connections and lock waits, Eunha's CPU and phys\_footprint, Redis's memory,
 and the latency a local user sees on their home timeline, the post's thread and
 their notifications.
 
 Memory is also taken whole at four moments: before the spike, when it ends,
 when the queue has drained, and after `EUNHA_SPIKE_COOLDOWN_SECONDS` idle. At
-each one it records eunha's footprint and, of its malloc zones, what is live and
+each one it records Eunha's footprint and, of its malloc zones, what is live and
 what is dirty but free. It also records the private memory of this database's
 PostgreSQL backends, Redis, and the database's size on disk. That last moment
 answers whether a spike's memory is ever given back. `vmmap` suspends the
@@ -558,7 +558,7 @@ than *target/release/eunha*, such as one saved from before a change.
 
 A spike is only comparable with another if the load was delivered as offered,
 and on a shared machine it may not be: another build or test run starves the
-simulator as well as eunha, and the result looks like eunha stalling. The
+simulator as well as Eunha, and the result looks like Eunha stalling. The
 summary records the host's load average, and the simulator counts every time
 its scheduler woke more than 50 ms late. A run with more than a handful is
 flagged as contended and should not be compared. Two of four runs on
@@ -572,20 +572,20 @@ A spike is only safe to run against a copy of a real instance if nothing it
 provokes reaches the real fediverse, a push service or a mail provider. Three
 things make sure of that, and each run reports on all three:
 
- -  **eunha's only proxy is the simulator.** Every HTTP client eunha has
+ -  **Eunha's only proxy is the simulator.** Every HTTP client Eunha has
     honours `HTTP_PROXY` and `HTTPS_PROXY`, and the simulator answers only for
     its own hosts. Any other request — every `https://` `CONNECT` included — is
     refused and counted by host. Media storage points at the simulator too,
     which accepts uploads and discards them.
- -  **eunha and the simulator are sandboxed.** Both run under `sandbox-exec`
+ -  **Eunha and the simulator are sandboxed.** Both run under `sandbox-exec`
     with outbound networking denied except loopback and PostgreSQL's socket.
     Name resolution is denied too, as nothing needs it. Before starting, the
     script checks that the sandbox really does refuse a request to the internet.
- -  **Every socket is audited.** Once a second the script lists eunha's
+ -  **Every socket is audited.** Once a second the script lists Eunha's
     sockets. A peer that is not loopback fails the run, and so does an audit
     that never ran.
 
-The status that goes viral links to `https://example.com/`, as a canary: eunha
+The status that goes viral links to `https://example.com/`, as a canary: Eunha
 fetches a preview for it, so the proxy's refusal count must show exactly that
 host. A canary that is not seen means the count cannot be trusted. Set
 `EUNHA_SPIKE_OFFLINE=0` to run without the sandbox.
@@ -604,7 +604,7 @@ Each simulated server answers deliveries as its class says, fixed by its name
 for the run: by default 85% quickly, 10% in one to four seconds, 3% with a 503,
 1% never (the client gives up after 30 seconds), and 1% with 410 Gone
 (`EUNHA_SPIKE_INBOXES`). Every delivery's HTTP signature is checked against the
-key eunha publishes, as Mastodon checks it, and one that fails is answered 401.
+key Eunha publishes, as Mastodon checks it, and one that fails is answered 401.
 After the last post the account also sends a direct message to one follower
 on a fast server (`EUNHA_SPIKE_DIRECT=0` sends none), to see how long a
 delivery to one inbox waits behind a fan-out. The summary reports, for each
@@ -639,7 +639,7 @@ the real instance will feel the spike too.
 ### Driving it by hand
 
 The simulator can also be run on its own and spiked on demand, for watching an
-instance under load rather than measuring it. Start eunha with `HTTP_PROXY`
+instance under load rather than measuring it. Start Eunha with `HTTP_PROXY`
 and `HTTPS_PROXY` pointing at the simulator, as the script does, or it cannot
 reach the simulated servers:
 
@@ -664,7 +664,7 @@ an actor the instance had never seen. Every run caught the canary, refused no
 other host, and found no socket that was not loopback.
 
 At a tenth of that — 10,000 actors, peaking at 100 a second — the queue never
-held more than 16 jobs and eunha used a third of a core. The instance barely
+held more than 16 jobs and Eunha used a third of a core. The instance barely
 noticed. At 1,000 a second it did. Ranges are over two runs before the changes
 below and three after:
 
@@ -673,7 +673,7 @@ below and three after:
 | Activities accepted               |          100% |          100% |
 | Actor documents fetched per actor |           2.0 |           1.0 |
 | Inbox queue at its peak           | 18,631–20,888 | 11,002–13,356 |
-| eunha CPU p95 during the spike    |      152–156% |      132–149% |
+| Eunha CPU p95 during the spike    |      152–156% |      132–149% |
 | Jobs failed                       |             0 |             0 |
 
 The queue drained as the curve decayed, before the last activity arrived. A
@@ -683,7 +683,7 @@ thousands of replies and a signed-in viewer is sent up to 4,096 of them, as
 Mastodon does.
 
 The peak flamegraph found where the CPU went, and it was not verifying the
-activities' signatures (5%). It was eunha signing its own requests: every
+activities' signatures (5%). It was Eunha signing its own requests: every
 actor seen for the first time is fetched with a signed GET, and that was a fifth
 of all on-CPU time. Two things made it worse than it had to be, and both are
 fixed:
@@ -706,7 +706,7 @@ stored with an empty shared inbox now, as Mastodon does.
 
 |                           |  Before | Spike ended | Queue drained | Idle 120 s |
 | ------------------------- | ------: | ----------: | ------------: | ---------: |
-| eunha footprint           |  12 MiB |     325 MiB |       388 MiB |    151 MiB |
+| Eunha footprint           |  12 MiB |     325 MiB |       388 MiB |    151 MiB |
 | of which malloc allocated | 2.6 MiB |      15 MiB |        15 MiB |     10 MiB |
 | Database on disk          |  15 MiB |     116 MiB |       116 MiB |    116 MiB |
 
@@ -729,7 +729,7 @@ builds, so neither is claimed to have changed.
 
 ### 2026-09-28: JSON-LD
 
-Moving eunha's federation onto ojak brought JSON-LD normalisation with it:
+Moving Eunha's federation onto ojak brought JSON-LD normalisation with it:
 ojak's inbox expanded and compacted every activity against its own context
 before any listener saw it. The same spike, three builds, two uncontended runs
 each, interleaved:
@@ -739,7 +739,7 @@ each, interleaved:
 | Inbox p95                  | 15.9–21.6 ms |      7.8–9.0 ms |   7.5–7.8 ms |
 | Inbox p99                  | 24.9–38.1 ms |     8.9–12.4 ms |   8.5–9.5 ms |
 | Inbox queue at its peak    |  11.0k–11.4k |       7.8k–9.5k |    7.8k–7.9k |
-| eunha CPU p95              |     166–176% |        128–140% |     128–135% |
+| Eunha CPU p95              |     166–176% |        128–140% |     128–135% |
 | On-CPU samples at the peak |        4,215 |    2,283 (−46%) | 2,035 (−52%) |
 | … of them in JSON-LD       |        55.6% |            9.8% |           0% |
 
@@ -754,10 +754,10 @@ supplies, bounded in the inbox, and the same `Like` takes 25 µs; every
 document in ojak's corpus of real servers' documents normalises exactly as it
 did uncached. That is the middle column.
 
-The right column is what eunha now does. Its one listener reads the activity as
+The right column is what Eunha now does. Its one listener reads the activity as
 its sender wrote it, as Mastodon reads it, and never read the normalised form;
 [the protocol design](./protocol#json-ld-in-shape-never-in-processing) had
-already said eunha does not process JSON-LD. Ojak's inbox is told not to
+already said Eunha does not process JSON-LD. Ojak's inbox is told not to
 (`read_inbox_as_written`), which also stops it refusing an activity whose
 context cannot be processed. The cache stays in ojak for whatever does
 normalise.
@@ -771,13 +771,13 @@ What was left behind was ojak's in-memory key-value store, one for the
 process. It removed an expired entry only when that entry's own key was asked
 for again, which for an actor seen once or an activity processed once is never,
 so it grew for as long as the process ran. And most of it was remote keys held
-twice: each new actor's key was cached for an hour although eunha had already
+twice: each new actor's key was cached for an hour although Eunha had already
 stored it with the account, and hands it back from there through `known_key`.
 
 Ojak now sweeps expired entries as the store is written to, bounds it
-(`with_capacity`), and leaves a key that eunha keeps to eunha. What remains is
+(`with_capacity`), and leaves a key that Eunha keeps to Eunha. What remains is
 what ojak should remember — the IDs of activities received, for a day, so that
-a redelivery is dropped — at about 280 bytes each; eunha bounds the store at
+a redelivery is dropped — at about 280 bytes each; Eunha bounds the store at
 100,000 entries, about 28 MiB for the whole process. Same spike, 120 seconds
 after the queue drained, against the build before it in the same session:
 
@@ -788,7 +788,7 @@ after the queue drained, against the build before it in the same session:
 | Actor documents per new actor |      1.0 |            1.0 |
 
 Across the eight runs before the change the live figure was 73–76 MiB. The 13
-MiB above the 10 MiB eunha held before it moved onto ojak is those activity
+MiB above the 10 MiB Eunha held before it moved onto ojak is those activity
 IDs, and it leaves when they expire or when newer ones displace them.
 
 ### 2026-09-28: Fan-out

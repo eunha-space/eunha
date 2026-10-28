@@ -540,7 +540,7 @@ async fn dump_media_attachments(
     Ok(())
 }
 
-/// `ActivityPub::NoteSerializer` on a local post: the note eunha federates,
+/// `ActivityPub::NoteSerializer` on a local post: the note Eunha federates,
 /// with the members upstream's serializer adds besides.
 async fn archived_note(
     state: &AppState,
@@ -811,7 +811,7 @@ fn extname(path: &str) -> &str {
 
 /// `ActivityPub::ActorSerializer` through `ActivityPub::Adapter`: the
 /// members and the `@context` upstream's serializer gives a local account.
-/// What the two share is taken from the actor eunha federates.
+/// What the two share is taken from the actor Eunha federates.
 async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value> {
     use crate::api::ap::context_helper::serialized_context;
     let domain = state.instance.domain.as_str();

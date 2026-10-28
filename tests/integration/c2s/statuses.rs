@@ -1474,7 +1474,7 @@ async fn test_an_edit_silences_the_mentions_it_drops() {
     assert_eq!(mentions(&ctx).await, [("bob".to_owned(), false)]);
 }
 
-/// Migration 034: a local post's history as eunha wrote it — each edit
+/// Migration 034: a local post's history as Eunha wrote it — each edit
 /// recording the version it replaced, stamped with that version's own time —
 /// gains its current version as the last row; a history as Mastodon wrote
 /// it, ending with the current version at `edited_at`, is left alone.

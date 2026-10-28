@@ -8,7 +8,7 @@
 //!
 //!  -  `otp_secret` is a base32 secret behind `encrypts :otp_secret`, which is
 //!     Rails' `ActiveRecord::Encryption` envelope ([`crate::rails_encryption`]).
-//!     Without the encryption keys eunha can neither enable TOTP nor check a
+//!     Without the encryption keys Eunha can neither enable TOTP nor check a
 //!     code, as Mastodon cannot.
 //!  -  `otp_backup_codes` holds bcrypt digests (`Devise::Encryptor`, ten
 //!     stretches) of ten 16-character hex codes.

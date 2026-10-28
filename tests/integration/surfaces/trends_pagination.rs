@@ -2,7 +2,7 @@
 //!
 //! Mastodon's `Api::V1::Trends::*Controller` runs `insert_pagination_headers`,
 //! so a client scrolling trends follows `rel="next"` exactly as it does on a
-//! timeline. eunha accepted `offset` and `limit` but never emitted the header,
+//! timeline. Eunha accepted `offset` and `limit` but never emitted the header,
 //! so a client had no way to ask for the second page.
 //!
 //! The conditions are Mastodon's, quirks included: `next` only when the page

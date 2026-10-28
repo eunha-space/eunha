@@ -1,6 +1,6 @@
 //! Web sessions, as Mastodon keeps them in `session_activations`.
 //!
-//! A sign-in on eunha's server-rendered account pages activates a session:
+//! A sign-in on Eunha's server-rendered account pages activates a session:
 //! a row with a random `session_id`, which the `account_session` cookie
 //! carries the way Mastodon's signed `_session_id` cookie does, the browser's
 //! address and user agent, and an access token for the instance's web app

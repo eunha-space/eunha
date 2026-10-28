@@ -1,14 +1,14 @@
-//! Tracks upstream Mastodon releases and checks eunha's database against them.
+//! Tracks upstream Mastodon releases and checks Eunha's database against them.
 //!
 //! Eunha aims to be a drop-in replacement on top of an existing Mastodon
 //! database, which means two ongoing obligations: noticing when upstream ships
-//! a release, and proving that what eunha's migrations build is still the same
+//! a release, and proving that what Eunha's migrations build is still the same
 //! schema upstream builds. This tool covers both.
 //!
 //!   eunha-schema status            — is there a newer Mastodon release?
 //!   eunha-schema plan --to v4.8.0  — what would adopting it involve?
 //!   eunha-schema check             — does a live database match the target?
-//!   eunha-schema changes --to v4.8.0 — which eunha modules does it touch?
+//!   eunha-schema changes --to v4.8.0 — which Eunha modules does it touch?
 //!
 //! Mastodon: none
 
@@ -32,7 +32,7 @@ struct Args {
 enum Command {
     /// Compare the tracked Mastodon release against the newest one upstream.
     Status,
-    /// List the upstream migrations between what eunha covers and a target release.
+    /// List the upstream migrations between what Eunha covers and a target release.
     Plan {
         /// Target release tag, e.g. `v4.8.0`. Defaults to the newest stable release.
         #[arg(long)]
@@ -57,7 +57,7 @@ enum Command {
         database_url: String,
     },
     /// List the upstream files changed since the tracked release, and the
-    /// eunha modules that name each one as a counterpart.
+    /// Eunha modules that name each one as a counterpart.
     ///
     /// Reads a local Mastodon checkout, since a release's diff runs to more
     /// files than GitHub's compare API returns.
@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Upstream migrations eunha applies from code rather than from a file in
+/// Upstream migrations Eunha applies from code rather than from a file in
 /// `migrations/`, because what they do depends on the instance rather than on
 /// the schema. They are recorded in `public.schema_migrations` when they run.
 const RUNTIME_MIGRATIONS: [(&str, &str); 1] = [(
@@ -107,7 +107,7 @@ fn tracked_tag() -> String {
 }
 
 async fn status() -> Result<()> {
-    println!("eunha            {}", version::EUNHA_FULL);
+    println!("Eunha            {}", version::EUNHA_FULL);
     println!(
         "tracking         Mastodon {} (schema {})",
         version::MASTODON,
@@ -160,7 +160,7 @@ async fn status() -> Result<()> {
         .count();
 
     println!(
-        "\nMastodon {} is available, with {outstanding} migration(s) eunha does not cover yet.",
+        "\nMastodon {} is available, with {outstanding} migration(s) Eunha does not cover yet.",
         latest.version
     );
     println!(
@@ -422,7 +422,7 @@ fn record_files(repo: Option<std::path::PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// What changed upstream between the tracked release and `to`, by eunha module.
+/// What changed upstream between the tracked release and `to`, by Eunha module.
 async fn changes(to: Option<String>, repo: Option<std::path::PathBuf>) -> Result<()> {
     use std::collections::BTreeMap;
 
@@ -472,7 +472,7 @@ async fn changes(to: Option<String>, repo: Option<std::path::PathBuf>) -> Result
     }
 
     println!(
-        "{} server file(s) changed from {from} to {target}; {} eunha module(s) name one.\n",
+        "{} server file(s) changed from {from} to {target}; {} Eunha module(s) name one.\n",
         changed.len(),
         by_module.len()
     );
@@ -484,7 +484,7 @@ async fn changes(to: Option<String>, repo: Option<std::path::PathBuf>) -> Result
     }
     if !unclaimed.is_empty() {
         println!(
-            "\nNo module names these {}, so eunha does not implement them:",
+            "\nNo module names these {}, so Eunha does not implement them:",
             unclaimed.len()
         );
         for file in &unclaimed {
@@ -495,7 +495,7 @@ async fn changes(to: Option<String>, repo: Option<std::path::PathBuf>) -> Result
     Ok(())
 }
 
-/// eunha's own migrations, relative to the crate rather than the cwd.
+/// Eunha's own migrations, relative to the crate rather than the cwd.
 fn migrations_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations")
 }

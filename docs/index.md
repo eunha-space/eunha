@@ -1,4 +1,4 @@
-eunha
+Eunha
 =====
 
 Rust re-implementation of Mastodon, with drop-in database compatibility.
@@ -13,7 +13,7 @@ It's not Eunha's goal to completely mimic Mastodon's feature set or its
 implementation detail, and Eunha may contain behavioral differences.
 
 
-Running eunha
+Running Eunha
 -------------
 
  -  [Container images](./operating/containers.md): GitHub Actions builds,
@@ -42,7 +42,7 @@ Mastodon compatibility
  -  [API entity parity](./mastodon/entity-parity.md),
     [differential testing](./mastodon/differential-testing.md) and
     [federating with a live Mastodon](./mastodon/federation-testing.md): the
-    harnesses that check eunha against upstream.
+    harnesses that check Eunha against upstream.
  -  [Deliberate divergences](./mastodon/divergences.md) from Mastodon, and what
     is [outstanding from 4.7.3](./mastodon/4.7.3.md).
 
@@ -51,7 +51,7 @@ Design
 ------
 
  -  [Protocol extension](./design/protocol.md): where ActivityPub scales badly
-    and what eunha designs for it.
+    and what Eunha designs for it.
  -  [Hosted tenancy plan](./design/multitenancy.md): the plan for hosting many
     instances.
  -  [Benchmarking](./design/benchmarking.md): what a small instance costs, and

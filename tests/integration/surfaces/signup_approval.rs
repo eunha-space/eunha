@@ -67,7 +67,7 @@ async fn test_a_plain_invite_does_not_skip_approval() {
 
 /// With `invite_bypass_approval` on the everyone role — one of the two flags
 /// `UserRole::Flags::SAFE` lets that role hold — the same invite approves its
-/// holder outright. This is how an instance asks for the behaviour eunha used
+/// holder outright. This is how an instance asks for the behaviour Eunha used
 /// to give every invite.
 #[tokio::test]
 async fn test_an_invite_from_someone_who_may_bypass_skips_approval() {

@@ -54,7 +54,7 @@ pub struct Config {
     #[serde(default)]
     pub active_record_encryption: Option<ActiveRecordEncryptionConfig>,
     /// Where to ask about newer Mastodon releases and the end of support of the
-    /// one eunha implements. Unset — the default — asks nobody anything.
+    /// one Eunha implements. Unset — the default — asks nobody anything.
     ///
     /// The answer is shown on the admin software updates page, recorded for a
     /// Mastodon that may later boot on the database, and mailed to this instance's own
@@ -81,7 +81,7 @@ pub struct Config {
     /// relayed or forwarded copy can still be attributed.
     ///
     /// Off by default: Mastodon verifies these but does not produce them, and
-    /// what eunha sends should look like what Mastodon sends unless an
+    /// what Eunha sends should look like what Mastodon sends unless an
     /// administrator decides otherwise. Turning it on is additive — the HTTP
     /// Signature is unchanged, and a peer that ignores the proof is unaffected.
     #[serde(default = "default_sign_integrity_proofs")]
@@ -415,7 +415,7 @@ pub struct InstanceConfig {
     /// Nothing is served on them.
     #[serde(default)]
     pub previous_domains: Vec<String>,
-    /// The site's identity and registrations, as eunha kept them before it
+    /// The site's identity and registrations, as Eunha kept them before it
     /// read Mastodon's settings: `site_title`, `site_short_description` (or
     /// `site_extended_description`, when `short_description` is blank),
     /// `site_extended_description`, `site_contact_email` and
@@ -435,14 +435,14 @@ pub struct InstanceConfig {
     pub approval_required: bool,
     pub vapid_private_key: String,
     pub vapid_public_key: String,
-    /// The icon eunha showed for an instance before it served the uploaded
+    /// The icon Eunha showed for an instance before it served the uploaded
     /// app icon and thumbnail, or the web frontend's; not read any more.
     pub icon_url: Option<String>,
-    /// The privacy policy eunha served before it read `site_terms`, which
+    /// The privacy policy Eunha served before it read `site_terms`, which
     /// `eunha settings import-config` copies there; not read otherwise.
     #[serde(default)]
     pub privacy_policy: String,
-    /// The terms of service eunha served before it read
+    /// The terms of service Eunha served before it read
     /// `terms_of_services`, which `eunha settings import-config` publishes as
     /// a version effective on 2025-01-01; not read otherwise.
     #[serde(default)]
@@ -492,7 +492,7 @@ pub struct InstanceConfig {
     /// Mastodon's `SECRET_KEY_BASE`. With it, async refresh ids, the signed
     /// GlobalIDs in unsubscribe links and password reset digests are made and
     /// read exactly as that Mastodon makes them, so what it handed out keeps
-    /// working. Unset, eunha keeps schemes of its own (see
+    /// working. Unset, Eunha keeps schemes of its own (see
     /// [`crate::secret_key_base`]).
     #[serde(
         default,
@@ -511,7 +511,7 @@ pub struct InstanceConfig {
     #[serde(default)]
     pub translation: TranslationConfig,
     /// Mastodon's `EXPERIMENTAL_FEATURES`: the experimental features this
-    /// instance turns on, by name. The one eunha knows is `fasp`, Fediverse
+    /// instance turns on, by name. The one Eunha knows is `fasp`, Fediverse
     /// Auxiliary Service Providers (docs/operating/fasp.md); a name it does
     /// not know is ignored, as Mastodon ignores one.
     #[serde(default)]
@@ -738,7 +738,7 @@ impl Config {
 
 /// Accept Mastodon's `ES_*` variables for `[instance.elasticsearch]`, so that
 /// a Mastodon `.env.production` configures search as it did there. A value
-/// eunha's own spelling already sets is left alone.
+/// Eunha's own spelling already sets is left alone.
 fn adopt_mastodon_elasticsearch_env() {
     for (mastodon, field) in [
         ("ES_ENABLED", "ENABLED"),

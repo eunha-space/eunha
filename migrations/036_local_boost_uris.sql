@@ -6,7 +6,7 @@
 -- would have stored. The database does not name the instance's domain, so it
 -- is taken from the local post nearest the boost by id: the domain the
 -- instance had when the boost was made, if it has ever moved. A boost on an
--- instance with no local post that has a URI is left as it is; eunha names it
+-- instance with no local post that has a URI is left as it is; Eunha names it
 -- from the account all the same.
 UPDATE statuses AS s
 SET uri = boost.uri

@@ -206,7 +206,7 @@ async fn configured_terms_are_not_read_until_imported() {
     let (status, _) = get_json(&ctx, "/api/v1/instance/terms_of_service", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    // `eunha settings import-config` publishes it as the version eunha
+    // `eunha settings import-config` publishes it as the version Eunha
     // served it as, effective 2025-01-01, with nobody to tell.
     let report = eunha::settings_import::import_config(&ctx.db, &instance, true)
         .await

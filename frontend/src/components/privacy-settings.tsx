@@ -39,7 +39,7 @@ function Toggle({
 /**
  * Mastodon's privacy settings page (`Settings::PrivacyController`): reach and
  * search on the account, through `update_credentials`, and the two user
- * settings it has no API for, through eunha's preferences.
+ * settings it has no API for, through Eunha's preferences.
  */
 export function PrivacySettings({ token }: { token: string }) {
   const [account, setAccount] = useState<AccountPrivacy | null>(null)

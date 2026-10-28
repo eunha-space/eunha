@@ -1,9 +1,9 @@
 //! A fake fediverse for load spikes.
 //!
 //! One process plays thousands of remote actors spread over many servers. It
-//! serves their actor documents and notes when eunha fetches them, signs the
-//! activities they send with real keys, and — as the HTTP proxy eunha is started
-//! behind — answers every request eunha makes to the outside world, so that an
+//! serves their actor documents and notes when Eunha fetches them, signs the
+//! activities they send with real keys, and — as the HTTP proxy Eunha is started
+//! behind — answers every request Eunha makes to the outside world, so that an
 //! instance cloned from production can be hammered without a single request
 //! reaching a real server, push service or mail provider.
 //!
@@ -12,8 +12,8 @@
 //!   curl -X POST 127.0.0.1:18990/__spikes -d '{"status_uri": "…", …}'
 //!   curl 127.0.0.1:18990/__stats
 //!
-//! Deliveries eunha sends to a simulated inbox are checked the way a real
-//! server checks them — the HTTP signature against the key eunha publishes —
+//! Deliveries Eunha sends to a simulated inbox are checked the way a real
+//! server checks them — the HTTP signature against the key Eunha publishes —
 //! answered as that server's class says (quickly, slowly, with an error, not
 //! at all, or `410 Gone`; `POST /__inboxes`), and recorded by when each server
 //! first received each activity (`GET /__deliveries`).
@@ -54,7 +54,7 @@ struct Args {
     /// Where to listen: the proxy, the simulated servers and the control API.
     #[arg(long, default_value = "127.0.0.1:18990")]
     listen: SocketAddr,
-    /// The eunha instance under test, as reached from here.
+    /// The Eunha instance under test, as reached from here.
     #[arg(long)]
     eunha: String,
     /// The instance's own domain, which its signatures and `Host` must name.
@@ -67,7 +67,7 @@ struct Args {
     #[arg(long, default_value_t = 200)]
     actors_per_server: usize,
     /// Distinct signing keys, shared round-robin between actors. Generating a
-    /// key costs about 100 ms, and eunha cannot tell keys are shared.
+    /// key costs about 100 ms, and Eunha cannot tell keys are shared.
     #[arg(long, default_value_t = 16)]
     keys: usize,
 }
@@ -88,7 +88,7 @@ struct Sim {
     spike: Mutex<Option<SpikeState>>,
     running: AtomicBool,
     inboxes: Mutex<Vec<InboxClass>>,
-    /// Public keys eunha publishes, by key ID, fetched once each.
+    /// Public keys Eunha publishes, by key ID, fetched once each.
     eunha_keys: Mutex<HashMap<String, String>>,
     /// Activity ID → server → milliseconds since start it first arrived, and
     /// whether that server has accepted it.
@@ -430,7 +430,7 @@ impl Sim {
             .cloned()
     }
 
-    /// The public key eunha publishes under `key_id`, fetched from eunha as a
+    /// The public key Eunha publishes under `key_id`, fetched from Eunha as a
     /// remote server would fetch it, and kept.
     async fn eunha_key(&self, key_id: &str) -> Option<String> {
         if let Some(pem) = self.eunha_keys.lock().unwrap().get(key_id) {
@@ -490,7 +490,7 @@ async fn inbox(sim: &Sim, host: &str, req: Request) -> Response {
 
     // Checked as Mastodon checks it: against the key the sender publishes.
     // RFC 9421 is only sent after a draft signature is refused, so a run with
-    // any is a run where eunha's first signature failed.
+    // any is a run where Eunha's first signature failed.
     let signature = headers
         .iter()
         .find(|(name, _)| name == "signature")
@@ -666,7 +666,7 @@ async fn control(sim: &Arc<Sim>, req: Request) -> Response {
                 .unwrap_or(0);
             Json(stats(sim, since)).into_response()
         }
-        // Anything else addressed to us is the media store: eunha is started
+        // Anything else addressed to us is the media store: Eunha is started
         // with its S3 endpoint pointing here, so uploads succeed and go nowhere.
         _ => {
             let _ = axum::body::to_bytes(req.into_body(), usize::MAX).await;

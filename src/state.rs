@@ -34,7 +34,7 @@ pub struct AppState {
     /// and a document is trusted only from its own origin.
     pub fetcher: Arc<ojak::fetch::Fetcher>,
     /// What ojak caches for this instance — activities seen and forwarded,
-    /// keys eunha does not store, JSON-LD contexts — in Redis behind the
+    /// keys Eunha does not store, JSON-LD contexts — in Redis behind the
     /// instance's key prefix, on the evictable `redis` pool: losing an entry
     /// costs a refetch, or a redelivery processed again.
     pub federation_kv: Arc<ojak_redis::RedisKvStore<redis::aio::ConnectionManager>>,
@@ -47,7 +47,7 @@ pub struct AppState {
     pub encryptor: Option<crate::rails_encryption::Encryptor>,
     /// The instance actor's signing key, parsed on first use. Every signed GET
     /// uses it, and loading, decrypting and parsing an RSA key costs more than
-    /// signing with it — a post going viral had that at a tenth of eunha's CPU.
+    /// signing with it — a post going viral had that at a tenth of Eunha's CPU.
     pub instance_actor_key: Arc<tokio::sync::OnceCell<Arc<ojak::sig::signature::PrivateKey>>>,
     /// Raised on enqueue so the durable queue loops need not poll for work.
     pub queues: Arc<crate::background::QueueWakes>,

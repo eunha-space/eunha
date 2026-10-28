@@ -1,4 +1,4 @@
-//! What eunha's counters count, against what Mastodon's count.
+//! What Eunha's counters count, against what Mastodon's count.
 //!
 //! A count is read by everyone who sees the status or account, so counting the
 //! wrong things is not only wrong but can say something the viewer should not
@@ -151,7 +151,7 @@ async fn test_deleting_an_uncounted_reply_leaves_the_count_alone() {
 /// Mastodon's counter callbacks live on the `Status` model, so they run
 /// whenever a status is created — whether a local client posted it or it
 /// arrived in the inbox. A local post replied to from across the network should
-/// show those replies, and eunha counted only the ones posted through its own
+/// show those replies, and Eunha counted only the ones posted through its own
 /// API, so a widely federated post read as having none.
 #[tokio::test]
 async fn test_a_federated_reply_is_counted() {
@@ -515,7 +515,7 @@ async fn test_a_federated_status_counts_for_its_author() {
 /// A follow from another instance raises the local account's follower count.
 ///
 /// `Follow`'s counter callbacks are unconditional, so this should hold however
-/// the follow arrived. Kept as coverage rather than as a fix: eunha routes both
+/// the follow arrived. Kept as coverage rather than as a fix: Eunha routes both
 /// paths through one `counters` module, and this is what says so.
 #[tokio::test]
 async fn test_a_federated_follow_counts() {
@@ -630,7 +630,7 @@ async fn test_a_federated_follow_counts() {
 /// A boost from another instance counts as one of the booster's posts.
 ///
 /// A reblog is a Status in Mastodon, so the same callback that counts an
-/// original counts a boost, and undoing it takes the count back down. eunha
+/// original counts a boost, and undoing it takes the count back down. Eunha
 /// counted the boost against the boosted post but not against the booster.
 #[tokio::test]
 async fn test_a_federated_boost_counts_for_the_booster() {

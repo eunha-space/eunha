@@ -521,7 +521,7 @@ pub fn template(action: &str, target_type: Option<&str>) -> String {
         .unwrap_or_else(|| format!("%{{name}} {action} %{{target}}"))
 }
 
-/// An audit log entry as eunha serves it.
+/// An audit log entry as Eunha serves it.
 #[derive(Debug, Serialize)]
 pub struct ActionLog {
     pub id: String,
@@ -903,7 +903,7 @@ mod tests {
     fn every_action_type_has_a_label_and_a_sentence() {
         for (key, kind, action) in ACTION_TYPE_MAP {
             // Upstream's locale has no `action_types.update_tag`; its filter
-            // shows the missing translation, and eunha the key.
+            // shows the missing translation, and Eunha the key.
             if *key != "update_tag" {
                 assert!(ACTION_TYPE_LABELS.iter().any(|(k, _)| k == key), "{key}");
             }

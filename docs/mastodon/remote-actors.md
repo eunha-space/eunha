@@ -2,7 +2,7 @@ Remote actors
 =============
 
 A remote account's row is written the way Mastodon's
-`ActivityPub::ProcessAccountService` writes it, so that a database eunha has
+`ActivityPub::ProcessAccountService` writes it, so that a database Eunha has
 federated on looks to Mastodon as if Mastodon had. Every path that learns about
 a remote actor ends in *src/federation/process\_account.rs*:
 
@@ -138,7 +138,7 @@ handle now names another `id` moves to it. An account whose handle was taken
 from it is fetched by its `id` instead. A `410 Gone` from WebFinger suspends
 the account as its server's doing and queues its deletion, as a `410` to the
 actor's own fetch does; any other failure is dropped, except a server that
-cannot be reached, which retries the job. The first refresh of an account eunha
+cannot be reached, which retries the job. The first refresh of an account Eunha
 stored before this was written fills in everything above.
 
 

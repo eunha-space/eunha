@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use eunha::divergence;
 
-/// Every divergence has been weighed against the release eunha now tracks.
+/// Every divergence has been weighed against the release Eunha now tracks.
 ///
 /// This is the test that makes the registry worth keeping. Adopting a new
 /// Mastodon release fails here until each entry is looked at again: upstream may
@@ -58,7 +58,7 @@ async fn test_entries_are_distinct_and_filled_in() {
     let divergences = divergence::all();
     assert!(
         !divergences.is_empty(),
-        "the registry is empty; if eunha has stopped diverging, say so here \
+        "the registry is empty; if Eunha has stopped diverging, say so here \
          rather than deleting the file"
     );
 

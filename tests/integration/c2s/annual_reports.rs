@@ -576,7 +576,7 @@ async fn test_annual_report_leaves_out_a_single_use_and_unboosted_posts() {
     assert!(data["top_statuses"]["by_reblogs"].is_null());
 }
 
-/// Migration 033: a report eunha labelled schema 1 becomes schema 2, as its
+/// Migration 033: a report Eunha labelled schema 1 becomes schema 2, as its
 /// data is, and one Mastodon made in 2024 is left as it is.
 #[tokio::test]
 async fn test_migration_033_labels_eunhas_reports_schema_2() {

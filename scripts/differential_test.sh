@@ -1,7 +1,7 @@
 #!/bin/bash
-# Compare eunha against a live Mastodon, rather than against a reading of it.
+# Compare Eunha against a live Mastodon, rather than against a reading of it.
 #
-# Every other check in this repo compares eunha to what upstream's source says.
+# Every other check in this repo compares Eunha to what upstream's source says.
 # This one asks upstream: the same request goes to both servers and the two
 # responses are compared. Nothing here encodes what the answer should be, so a
 # rule misread while writing a test cannot pass here too.
@@ -11,20 +11,20 @@
 # gem that segfaults against Postgres 18 — all of it already solved in the image.
 #
 # Needs a container runtime (OrbStack, Docker Desktop, colima). Either point it
-# at an eunha you are already running, or give it no arguments and it will bring
+# at an Eunha you are already running, or give it no arguments and it will bring
 # up one of its own against a scratch database:
 #
-#   scripts/differential_test.sh                              # its own eunha
+#   scripts/differential_test.sh                              # its own Eunha
 #   scripts/differential_test.sh http://localhost:3001 TOKEN  # one you run
 #
-# The first form exists so that CI and a developer run the same path. The eunha
+# The first form exists so that CI and a developer run the same path. The Eunha
 # side needs a migrated database, two accounts and a token, and while that lived
 # in nobody's script it lived in nobody's memory either — which is how this
 # harness went weeks without being run at all.
 #
-# Set EUNHA_OTHER_ID to a second account on the eunha side to include the
+# Set EUNHA_OTHER_ID to a second account on the Eunha side to include the
 # interaction verbs — follow, block, mute — which otherwise compare nothing.
-# It is set for you when this script brings up its own eunha.
+# It is set for you when this script brings up its own Eunha.
 #
 # For that form: EUNHA_PORT (3001), EUNHA_DB (eunha_differential),
 # EUNHA_DATABASE_URL (a local socket to EUNHA_DB), EUNHA_REDIS_URL, and
@@ -44,7 +44,7 @@ fi
 
 command -v docker >/dev/null || { echo "!! no docker on PATH" >&2; exit 1; }
 
-# ── An eunha of our own, when none was given ──────────────────────────────────
+# ── An Eunha of our own, when none was given ──────────────────────────────────
 #
 # Torn down at the end; the Mastodon side is left up, because bringing it back
 # costs a minute and rerunning against it costs seconds.
@@ -82,14 +82,14 @@ start_own_eunha() {
   rm -rf "$WORK"; mkdir -p "$WORK"
 
   # `PGDATABASE` and friends carry the connection; a URL would have to be
-  # reassembled for `createdb`, `psql` and eunha separately and they would drift.
+  # reassembled for `createdb`, `psql` and Eunha separately and they would drift.
   echo "==> Preparing $EUNHA_DB"
   dropdb --if-exists "$EUNHA_DB"
   createdb "$EUNHA_DB"
   local url
   url="${EUNHA_DATABASE_URL:-postgres:///$EUNHA_DB}"
 
-  # Migration 001 creates the `eunha` schema, and the search path eunha connects
+  # Migration 001 creates the `eunha` schema, and the search path Eunha connects
   # with puts sqlx's own ledger in it — so `public` stays a pure mirror of
   # Mastodon's schema, which is what the schema check depends on.
   #
@@ -244,9 +244,9 @@ EOF
   fi
 
   echo "==> Starting eunha on :$EUNHA_PORT"
-  # `exec`, so that `$!` is eunha's own pid. Backgrounding the `cd && eunha`
+  # `exec`, so that `$!` is Eunha's own pid. Backgrounding the `cd && eunha`
   # list instead gives the pid of the shell wrapping it, and cleanup then kills
-  # something that has already gone while eunha keeps the port.
+  # something that has already gone while Eunha keeps the port.
   ( cd "$WORK"; exec "$ROOT/target/release/eunha" > "$WORK/eunha.log" 2>&1 ) &
   EUNHA_PID=$!
   for _ in $(seq 60); do
@@ -296,7 +296,7 @@ done
 # `UnfavouriteWorker` and `RemovalWorker` and force the flag false in their own
 # response, so the undo itself looks right while the row survives; every later
 # request then reads it and reports `favourited: true` on a status that was
-# unfavourited. That is what nine of these findings were, blamed on eunha for
+# unfavourited. That is what nine of these findings were, blamed on Eunha for
 # weeks. Sidekiq registers itself in Redis, so ask Redis rather than trusting
 # that a container was started.
 echo "==> Waiting for a worker"
@@ -325,8 +325,8 @@ fi
 
 echo "==> Seeding"
 # Accounts, tokens and the state each flow starts from, reset every run: this
-# container outlives the run and eunha's database does not, so whatever a flow
-# leaves here would otherwise be compared against a fresh eunha next time.
+# container outlives the run and Eunha's database does not, so whatever a flow
+# leaves here would otherwise be compared against a fresh Eunha next time.
 # The script prints one `FIXTURE {json}` line naming what it made.
 SEED=$(docker compose -f "$COMPOSE" exec -T web bin/rails runner \
   "$(cat "$ROOT/scripts/differential_seed.rb")" | tr -d '\r')

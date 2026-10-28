@@ -7,7 +7,7 @@
 //! polls, posts with media, posts the author favourited or bookmarked, and
 //! posts with at least `min_favs` favourites or `min_reblogs` boosts. Mastodon
 //! edits the policy in its web settings (`/statuses_cleanup`), not through its
-//! REST API, and eunha has no page for it yet; a policy saved by Mastodon
+//! REST API, and Eunha has no page for it yet; a policy saved by Mastodon
 //! against the same database is carried out all the same.
 //!
 //! Every minute the scheduler deletes up to a budget of posts across the

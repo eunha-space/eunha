@@ -31,7 +31,7 @@ import { Separator } from '@/components/ui/separator.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 
 // Mastodon's admin pages for terms of service, at its own paths, on the REST
-// endpoints eunha serves for its forms. All of them are `manage_settings`'.
+// endpoints Eunha serves for its forms. All of them are `manage_settings`'.
 
 const TABS = [
   { to: '/admin/terms_of_service', label: 'Current', end: true },

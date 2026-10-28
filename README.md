@@ -17,7 +17,7 @@ Documentation
 -------------
 
 The documentation lives in [*docs/*](./docs/index.md) and is published at
-<https://eunha.social/docs/>: running an instance, how eunha tracks Mastodon
+<https://eunha.social/docs/>: running an instance, how Eunha tracks Mastodon
 and checks itself against it, and the design records for what comes next.
 
 ~~~~ sh

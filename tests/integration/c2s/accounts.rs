@@ -4085,7 +4085,7 @@ async fn test_delete_account_preserves_chained_invite_lineage() {
 }
 
 /// Destroying the user record takes its `invites` with it, which would orphan
-/// everyone it invited. eunha snapshots the lineage into `eunha.invite_lineage`
+/// everyone it invited. Eunha snapshots the lineage into `eunha.invite_lineage`
 /// first, so the invite tree survives a deletion that removes the PII.
 #[tokio::test]
 async fn test_delete_account_preserves_invite_lineage() {

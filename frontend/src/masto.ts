@@ -1,5 +1,5 @@
 // masto.js is our Mastodon C2S API SDK. The SPA is served same-origin by the
-// eunha server, so the API base URL is just the current origin.
+// Eunha server, so the API base URL is just the current origin.
 import {
   createOAuthAPIClient,
   createRestAPIClient,

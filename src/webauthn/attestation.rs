@@ -1001,7 +1001,7 @@ mod tpm {
                     let curve = match curve {
                         ECC_NIST_P256 => Some(Curve::P256),
                         ECC_NIST_P384 => Some(Curve::P384),
-                        // A P-521 key can never be a credential eunha
+                        // A P-521 key can never be a credential Eunha
                         // accepts, so it does not match one.
                         ECC_NIST_P521 => None,
                         _ => return Err(Error::Invalid("unknown tpm curve")),
@@ -1326,7 +1326,7 @@ mod tests {
         for der in [TPM_ROOTS, SAFETYNET_ROOTS, ANDROID_KEY_ROOTS, APPLE_ROOTS].concat() {
             // One of the TPM "roots", Infineon's EK root, is issued by
             // VeriSign, which the gem does not ship; OpenSSL trusts no
-            // chain that ends there, and neither does eunha.
+            // chain that ends there, and neither does Eunha.
             let root = Certificate::from_der(der).unwrap();
             assert!(!matches!(root.public_key, PublicKey::Unsupported));
         }

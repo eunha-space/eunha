@@ -9,7 +9,7 @@
 //!  -  IP blocks past their expiry are deleted.
 //!
 //! Mastodon reads both periods from `IP_RETENTION_PERIOD` and
-//! `SESSION_RETENTION_PERIOD`, a year unless set; eunha keeps the default.
+//! `SESSION_RETENTION_PERIOD`, a year unless set; Eunha keeps the default.
 //!
 //! Mastodon: app/workers/scheduler/ip_cleanup_scheduler.rb
 
@@ -91,7 +91,7 @@ async fn clean_ip_columns(state: &AppState) -> anyhow::Result<()> {
 }
 
 /// `IpBlock.expired.in_batches.destroy_all`. Its `reset_cache` needs nothing
-/// here: eunha's `no_access` cache reads only unexpired blocks, and lapses
+/// here: Eunha's `no_access` cache reads only unexpired blocks, and lapses
 /// within seconds.
 async fn clean_expired_ip_blocks(db: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query!(

@@ -97,7 +97,7 @@ async fn test_async_refresh_lifecycle() {
 /// With the Mastodon's `secret_key_base`, ids are what its
 /// `message_verifier('async_refreshes')` makes (the vector from
 /// *scripts/rails_signing_vectors.rb*), and one signed from the VAPID key, as
-/// eunha's were without it, is still read.
+/// Eunha's were without it, is still read.
 #[tokio::test]
 async fn test_async_refresh_ids_with_a_secret_key_base() {
     let ctx = TestContext::with_instance_config("async-refresh-skb", |instance| {

@@ -168,7 +168,7 @@ pub async fn received(state: &AppState, activity: Value) -> AppResult<()> {
     received_from(state, activity, None).await
 }
 
-/// Set on an activity by eunha, and never taken from its sender, when it came
+/// Set on an activity by Eunha, and never taken from its sender, when it came
 /// through an enabled relay: Mastodon's `requested_through_relay?`, which
 /// lets a public post from an account nobody here follows in.
 pub(crate) const THROUGH_RELAY: &str = "eunha:requestedThroughRelay";
@@ -187,17 +187,17 @@ pub async fn received_from(
     received_at(state, activity, forwarder, None, Forwardable::AsGiven).await
 }
 
-/// Set on an activity by eunha, and never taken from its sender, when it
+/// Set on an activity by Eunha, and never taken from its sender, when it
 /// arrived at a local account's own inbox: the account's id, Mastodon's
 /// `delivered_to_account_id`, which `ActivityPub::ProcessingWorker` carries.
 pub(crate) const DELIVERED_TO: &str = "eunha:deliveredToAccountId";
 
-/// Set on an activity by eunha, and never taken from its sender, when an
+/// Set on an activity by Eunha, and never taken from its sender, when an
 /// actor other than its own passed it on: that actor's URI, Mastodon's
 /// `relayed_through_actor`.
 pub(crate) const RELAYED_THROUGH: &str = "eunha:relayedThroughActor";
 
-/// Set on an activity by eunha, and never taken from its sender, when it was
+/// Set on an activity by Eunha, and never taken from its sender, when it was
 /// taken on its Linked Data signature and may be passed on: the activity as
 /// it arrived, which is what the signature covers. The listener reads it as
 /// JSON-LD gave it, which no longer verifies.
@@ -220,7 +220,7 @@ pub enum Forwardable {
 }
 
 /// `activity` as it is passed on: as its sender signed it, when it was
-/// taken on its Linked Data signature, and otherwise without what eunha
+/// taken on its Linked Data signature, and otherwise without what Eunha
 /// noted on it on arrival.
 pub(crate) fn as_sent(activity: &Value) -> Value {
     if let Some(sent) = activity.get(SIGNED_AS_SENT) {

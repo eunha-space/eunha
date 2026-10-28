@@ -105,7 +105,7 @@ function EmojiRow({
 
 /**
  * The server's own custom emoji. Mastodon manages these only from its web UI;
- * eunha serves `/api/v1/admin/custom_emojis` so this page can, and it lists
+ * Eunha serves `/api/v1/admin/custom_emojis` so this page can, and it lists
  * local emoji only — copying a remote one is not something it offers.
  */
 export default function CustomEmojis() {

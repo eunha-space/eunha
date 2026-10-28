@@ -312,7 +312,7 @@ async fn a_mastodon_emoji_is_shown_from_its_files() {
     assert_eq!(document["@context"][1]["Emoji"], "toot:Emoji", "{document}");
 }
 
-/// What eunha uploaded before it stored emoji as Mastodon does is moved by
+/// What Eunha uploaded before it stored emoji as Mastodon does is moved by
 /// `eunha migrate` into Paperclip's layout.
 #[tokio::test]
 async fn emoji_eunha_uploaded_before_are_moved() {

@@ -1,7 +1,7 @@
 Tracking Mastodon
 =================
 
-The Mastodon release eunha implements is recorded in `mastodon.toml` and
+The Mastodon release Eunha implements is recorded in `mastodon.toml` and
 repeated as build metadata in `Cargo.toml`'s version, which `build.rs` checks
 the two agree on. Releases are tagged the same way:
 
@@ -63,7 +63,7 @@ thousand-gem bundle.
 Counterparts
 ------------
 
-Eunha is laid out by feature and Mastodon by Rails layer, so one eunha module
+Eunha is laid out by feature and Mastodon by Rails layer, so one Eunha module
 often stands for a controller, a service, a worker and a serializer upstream.
 Rather than mirror Mastodon's directories, every Rust file under *src/* names
 its counterparts at the end of its module documentation:
@@ -92,8 +92,8 @@ mise run mastodon:changes --to v4.8.0
 ~~~~
 
 lists every server file changed between the tracked release and the target,
-under each eunha module that names it, followed by the changed files no module
-names, which eunha does not implement. A rename is listed under its old path,
+under each Eunha module that names it, followed by the changed files no module
+names, which Eunha does not implement. A rename is listed under its old path,
 the one headers name. Both this and `mise run mastodon:files` read a local
 Mastodon checkout (`$MASTODON_REPO`, or *~/Git/mastodon*; `--repo` for
 another), fetching its tags if it lacks one, because a release's diff runs to
@@ -106,12 +106,12 @@ Adopting a release
 1.  `mise run mastodon:plan --to vX.Y.Z` lists the Rails migrations upstream
     added since the tracked release, and the deliberate divergences that now
     need re-examining against it. `mise run mastodon:changes --to vX.Y.Z`
-    lists the eunha modules whose counterparts changed, which is the
+    lists the Eunha modules whose counterparts changed, which is the
     behavioural side of the same question.
 
-2.  Write one eunha migration reproducing them, ending with an
+2.  Write one Eunha migration reproducing them, ending with an
     `INSERT INTO public.schema_migrations` of the versions it covers — a
-    migration eunha deliberately does not implement is left out of that list, so
+    migration Eunha deliberately does not implement is left out of that list, so
     that a Mastodon booted on the database still runs it. `--sql` prints the
     insert.
 

@@ -603,7 +603,7 @@ async fn test_the_web_sign_up_waits_on_the_setup_page() {
     assert_eq!(done.headers().get("location").unwrap(), "/");
 }
 
-/// Sign-ups waiting in the table eunha used to keep them in become
+/// Sign-ups waiting in the table Eunha used to keep them in become
 /// unconfirmed users when `eunha migrate` runs, and the link already mailed
 /// still confirms them.
 #[tokio::test]

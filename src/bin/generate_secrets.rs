@@ -1,6 +1,6 @@
 //! Generates the secrets Mastodon calls `ACTIVE_RECORD_ENCRYPTION_*`.
 //!
-//! Mastodon generates these with `bin/rails db:encryption:init`; eunha needs
+//! Mastodon generates these with `bin/rails db:encryption:init`; Eunha needs
 //! the same values to read and write `keypairs.private_key`, and an instance
 //! that was never a Mastodon has no Rails to run that task in.
 //!
@@ -41,7 +41,7 @@ fn main() {
         println!("key_derivation_salt = \"{key_derivation_salt}\"");
         println!();
         println!("# Mastodon refuses to boot without a deterministic key, though");
-        println!("# nothing in its schema is encrypted deterministically and eunha");
+        println!("# nothing in its schema is encrypted deterministically and Eunha");
         println!("# never reads it. Keep it with the others.");
         println!("# deterministic_key = \"{deterministic_key}\"");
     } else {

@@ -15,7 +15,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 struct Args {
     /// Serve every instance configured in this directory — one `*.toml` per
     /// instance, each answering to its `instance.domain` — from this one
-    /// process. Without it, eunha serves the single instance in `config.toml`
+    /// process. Without it, Eunha serves the single instance in `config.toml`
     /// and the environment.
     #[arg(long, value_name = "DIR", global = true)]
     tenants: Option<PathBuf>,
@@ -42,7 +42,7 @@ enum Command {
     /// before the new binary starts, means a failure is found with the old
     /// version still serving rather than with nothing serving at all.
     ///
-    /// A database that was serving before eunha read the site settings from
+    /// A database that was serving before Eunha read the site settings from
     /// the database alone then gets `eunha settings import-config`, once: what
     /// its instance configuration says about the site is copied into the
     /// settings nobody has saved yet, so that the upgrade keeps serving it.
@@ -57,7 +57,7 @@ enum Command {
     /// A migration gets one attempt against data nobody has tested it on. This
     /// clones a database, applies what is pending the way the server would,
     /// and reports every table whose row count moved plus whether the result
-    /// still matches the Mastodon release eunha tracks. The source is only
+    /// still matches the Mastodon release Eunha tracks. The source is only
     /// read from. Run it on the database host, where cloning does not cross a
     /// network.
     RehearseMigration {
@@ -899,7 +899,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
                 println!("{label}Migrations applied.");
                 move_custom_emojis(&label, &db, media_storage.as_ref()).await?;
                 // The one-time `eunha settings import-config` an instance that
-                // was serving before eunha read the settings alone is owed, so
+                // was serving before Eunha read the settings alone is owed, so
                 // that no deploy has to remember it.
                 if eunha::settings_import::owed(&db).await? {
                     match instance {
@@ -927,7 +927,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
     Ok(())
 }
 
-/// Move the local custom emojis eunha uploaded before it stored them as
+/// Move the local custom emojis Eunha uploaded before it stored them as
 /// Mastodon does into Paperclip's layout, when the media storage is known.
 async fn move_custom_emojis(
     label: &str,
@@ -940,7 +940,7 @@ async fn move_custom_emojis(
     }
     let Some(media_storage) = media_storage else {
         println!(
-            "{label}{waiting} custom emoji(s) left where eunha uploaded them, for want of a \
+            "{label}{waiting} custom emoji(s) left where Eunha uploaded them, for want of a \
              media storage configuration; the next `eunha migrate` that can read it moves them."
         );
         return Ok(());
@@ -1075,7 +1075,7 @@ async fn import_mastodon(import: import::Import, check: bool) -> anyhow::Result<
             plan.dump_schema_version.as_deref().unwrap_or("unrecorded")
         );
         println!(
-            "this eunha    Mastodon schema {}",
+            "this Eunha    Mastodon schema {}",
             plan.expected_schema_version
         );
         for warning in plan.warnings() {

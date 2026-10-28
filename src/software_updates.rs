@@ -1,15 +1,15 @@
-//! Notices about the Mastodon release eunha implements.
+//! Notices about the Mastodon release Eunha implements.
 //!
 //! Mastodon polls an update server for newer releases and for the end of
 //! support of the branch it is running, and records both in `software_updates`
 //! and `software_deprecations`. Eunha asks the same server the same question,
-//! about the Mastodon release *it implements* rather than about itself: eunha
+//! about the Mastodon release *it implements* rather than about itself: Eunha
 //! builds Mastodon 4.7.0's schema and serves its API, so when that branch stops
-//! receiving fixes, the schema and API eunha reproduces are the ones going out
+//! receiving fixes, the schema and API Eunha reproduces are the ones going out
 //! of support, and the answer is the admin's to act on.
 //!
-//! What eunha does not do is claim to be Mastodon. The query carries the
-//! Mastodon version being asked about, the request carries eunha's own
+//! What Eunha does not do is claim to be Mastodon. The query carries the
+//! Mastodon version being asked about, the request carries Eunha's own
 //! `User-Agent`, and the notices are recorded as being about that release. An
 //! instance that would rather not talk to a third party at all can set
 //! `software_update_url` to an empty string, which turns the check off.
@@ -191,7 +191,7 @@ async fn record(state: &AppState, check: &UpdateCheck) -> Result<()> {
 /// Replace the recorded updates with the ones the server still lists, and
 /// report the ones that were not already recorded.
 ///
-/// A release that has come and gone — because eunha has since adopted it, or
+/// A release that has come and gone — because Eunha has since adopted it, or
 /// because upstream withdrew it — should not keep being advertised. Only
 /// genuinely new ones are worth mailing about; the check runs every six hours
 /// and nobody wants that in their inbox.
@@ -397,7 +397,7 @@ async fn notify_of_end_of_support(
     }
 }
 
-/// Record when the branch eunha implements stops being supported.
+/// Record when the branch Eunha implements stops being supported.
 ///
 /// `warning_issued` tracks how loudly this has been said already, so that
 /// crossing a threshold is noted once rather than every six hours.
@@ -406,7 +406,7 @@ async fn record_deprecation(state: &AppState, end_of_support: &str) -> Result<()
         .with_context(|| format!("unparseable endOfSupport {end_of_support:?}"))?;
     let branch = tracked_branch();
 
-    // Only the branch eunha implements is of interest; anything else is a
+    // Only the branch Eunha implements is of interest; anything else is a
     // leftover from a build that targeted a different release.
     sqlx::query!(
         "DELETE FROM public.software_deprecations WHERE branch <> $1",
@@ -449,7 +449,7 @@ async fn record_deprecation(state: &AppState, end_of_support: &str) -> Result<()
             warning::OUT_OF_SUPPORT => tracing::error!(
                 branch,
                 %end_of_support,
-                "Mastodon {branch} is out of support; the schema and API eunha implements \
+                "Mastodon {branch} is out of support; the schema and API Eunha implements \
                  no longer receive fixes"
             ),
             warning::TWO_WEEKS => tracing::warn!(

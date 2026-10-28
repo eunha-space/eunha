@@ -1,4 +1,4 @@
-//! Notices about the Mastodon release eunha implements.
+//! Notices about the Mastodon release Eunha implements.
 
 use axum::{extract::State, routing::any, Router};
 use std::sync::Arc;
@@ -86,7 +86,7 @@ async fn test_withdrawn_updates_are_dropped() {
     assert_eq!(versions, vec!["4.8.0".to_string()]);
 }
 
-/// An end-of-support date for the branch eunha implements is recorded against
+/// An end-of-support date for the branch Eunha implements is recorded against
 /// that branch, with the warning its nearness has earned.
 #[tokio::test]
 async fn test_end_of_support_is_recorded_for_the_tracked_branch() {
@@ -122,7 +122,7 @@ async fn test_end_of_support_is_recorded_for_the_tracked_branch() {
     );
 }
 
-/// A branch eunha no longer implements is cleared out, so the table describes
+/// A branch Eunha no longer implements is cleared out, so the table describes
 /// this build rather than whatever came before it.
 #[tokio::test]
 async fn test_stale_branches_are_cleared() {

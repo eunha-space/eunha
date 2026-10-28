@@ -1,6 +1,6 @@
 //! `GET /api/v1/donation_campaigns` asking a fake campaign API.
 //!
-//! A test binary of its own because it has to let eunha reach 127.0.0.1,
+//! A test binary of its own because it has to let Eunha reach 127.0.0.1,
 //! which the SSRF guard allows process-wide once granted.
 
 // Test servers have no tenant span to keep.

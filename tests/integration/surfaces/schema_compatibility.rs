@@ -1,4 +1,4 @@
-//! The claim eunha is built on: that its database is one a Mastodon could be
+//! The claim Eunha is built on: that its database is one a Mastodon could be
 //! pointed at.
 //!
 //! Every test context runs the migrations against a fresh database, so one of
@@ -93,7 +93,7 @@ async fn test_the_database_reports_the_schema_version_it_is_at() {
     assert_eq!(
         max.as_deref(),
         Some(eunha::version::MASTODON_SCHEMA),
-        "the ledger should end at the release eunha tracks"
+        "the ledger should end at the release Eunha tracks"
     );
 
     let environment: Option<String> = sqlx::query_scalar(

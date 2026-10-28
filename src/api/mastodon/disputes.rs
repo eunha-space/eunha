@@ -2,7 +2,7 @@
 //! reading the strikes against it and appealing one, and staff reading any
 //! strike (`Admin::Disputes::StrikesController` is the same controller).
 //!
-//! Mastodon has these as server-rendered pages; eunha serves them over REST
+//! Mastodon has these as server-rendered pages; Eunha serves them over REST
 //! for its web client.
 //!
 //! Mastodon: app/controllers/disputes/strikes_controller.rb

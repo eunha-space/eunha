@@ -143,7 +143,7 @@ pub(crate) async fn require_permission(
 mod metrics;
 pub use metrics::*;
 
-/// `SoftwareVersionsDimension`: eunha's version as the instance API gives
+/// `SoftwareVersionsDimension`: Eunha's version as the instance API gives
 /// it, PostgreSQL's, the Redis-compatible store's, the search cluster's when
 /// search is on and answers, and FFmpeg's when `ffprobe` runs. Eunha has no
 /// Ruby and no libvips to report.

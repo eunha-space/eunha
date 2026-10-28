@@ -1767,7 +1767,7 @@ async fn check_password(
 /// `ApplicationController#require_functional!`, which the authorization
 /// page's every action runs for a signed-in user: nothing for a functional
 /// one; the two-factor setup the role requires (`mfa_setup_path(oauth:
-/// true)`, eunha's sign-in setup step, which comes back to the page); the
+/// true)`, Eunha's sign-in setup step, which comes back to the page); the
 /// account page (`edit_user_registration_path`) for one confirmed but
 /// otherwise not functional — pending approval, a memorial or moved; and
 /// `auth/setup` for an unconfirmed address, the page kept to come back to.

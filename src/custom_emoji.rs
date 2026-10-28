@@ -9,7 +9,7 @@
 //! `original` as uploaded, and `static`, a PNG of its first frame.
 //!
 //! A remote emoji is shown from `image_remote_url`, the server it came from:
-//! eunha keeps no copy of it (`remote-account-images-not-downloaded`).
+//! Eunha keeps no copy of it (`remote-account-images-not-downloaded`).
 //!
 //! Mastodon: app/models/custom_emoji.rb
 
@@ -290,7 +290,7 @@ pub async fn delete_files(storage: &Storage, image: ImageRef<'_>) {
 #[derive(Debug, Default)]
 pub struct MoveReport {
     pub moved: u64,
-    /// Rows whose image could not be read where eunha had put it.
+    /// Rows whose image could not be read where Eunha had put it.
     pub missing: Vec<(i64, String)>,
 }
 
@@ -305,7 +305,7 @@ pub async fn eunha_uploads_waiting(db: &sqlx::PgPool) -> AppResult<i64> {
     .await?)
 }
 
-/// Move the local emojis eunha uploaded before it stored them as Mastodon
+/// Move the local emojis Eunha uploaded before it stored them as Mastodon
 /// does — at `emoji/<shortcode>.<ext>`, with the URL in `image_remote_url`
 /// and no file columns — to Paperclip's layout, with a `static` style, and
 /// write the columns Mastodon reads. Running it again changes nothing.
@@ -357,7 +357,7 @@ pub async fn move_eunha_uploads(db: &sqlx::PgPool, storage: &Storage) -> AppResu
     Ok(report)
 }
 
-/// The key eunha uploaded an emoji under, read off the URL it stored:
+/// The key Eunha uploaded an emoji under, read off the URL it stored:
 /// `emoji/<file>` at the end of its path.
 fn eunha_upload_key(url: &str) -> Option<String> {
     let path = url.split(['?', '#']).next()?;

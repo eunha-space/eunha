@@ -5,12 +5,12 @@
 //! the key inside the actor document (`#main-key`), and the private half
 //! encrypted at rest. The old columns stay readable — upstream's
 //! `Keypair.from_legacy_account` still falls back to them — so a database can
-//! be in either state, and eunha reads both.
+//! be in either state, and Eunha reads both.
 //!
 //! Writing the new form needs the encryption keys Mastodon requires
 //! (`ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY` and `_KEY_DERIVATION_SALT`), because
-//! a private key eunha wrote in the clear is one a Mastodon pointed at the same
-//! database could not read. Without them configured, eunha keeps using the
+//! a private key Eunha wrote in the clear is one a Mastodon pointed at the same
+//! database could not read. Without them configured, Eunha keeps using the
 //! legacy columns, which both implementations still understand.
 //!
 //! Mastodon: app/models/keypair.rb
@@ -26,7 +26,7 @@ pub const MAIN_KEY_FRAGMENT: &str = "#main-key";
 const TYPE_RSA: i32 = 0;
 const TYPE_ED25519: i32 = 1;
 
-/// The fragment eunha gives an account's Ed25519 assertion key.
+/// The fragment Eunha gives an account's Ed25519 assertion key.
 ///
 /// Distinct from `#main-key`, which is the RSA key that signs HTTP requests:
 /// the two live side by side, and a Multikey published under this fragment is
@@ -316,7 +316,7 @@ pub async fn rsa_public_key<'e>(db: impl sqlx::PgExecutor<'e>, account_id: i64) 
 pub async fn migrate_local_keypairs(state: &AppState) -> Result<usize> {
     let Some(encryptor) = state.encryptor.as_ref() else {
         // Loud only if the move has already happened elsewhere, since then the
-        // keys eunha needs are encrypted and it cannot sign for anyone.
+        // keys Eunha needs are encrypted and it cannot sign for anyone.
         let moved: bool = sqlx::query_scalar!(
             r#"SELECT EXISTS (SELECT 1 FROM keypairs WHERE local_fragment IS NOT NULL) AS "exists!""#,
         )
