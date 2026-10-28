@@ -186,11 +186,11 @@ impl EmailSender {
              <p>Confirm the new address to change your email.</p>\
              <p><a href=\"{url}\">Verify email address</a></p>\
              <p>If this change wasn't initiated by you, please ignore this email. The email \
-             address for the Mastodon account won't change until you access the link above.</p>"
+             address for your account won't change until you access the link above.</p>"
         );
         self.send(
             to,
-            &format!("Mastodon: Confirm email for {instance_domain}"),
+            &format!("Eunha: Confirm email for {instance_domain}"),
             &body,
         )
         .await
@@ -207,7 +207,7 @@ impl EmailSender {
         let name = html_escape(name);
         let (subject, body) = if locale == "ko" {
             (
-                "Mastodon: 비밀번호 재설정 안내".to_string(),
+                "Eunha: 비밀번호 재설정 안내".to_string(),
                 format!(
                     "<h1>비밀번호 재설정</h1>\
                      <p>안녕하세요 {name},</p>\
@@ -219,7 +219,7 @@ impl EmailSender {
             )
         } else {
             (
-                "Mastodon: Reset password instructions".to_string(),
+                "Eunha: Reset password instructions".to_string(),
                 format!(
                     "<h1>Password reset</h1>\
                      <p>Hi {name},</p>\
@@ -638,7 +638,7 @@ impl EmailSender {
             (
                 mail.has_follows,
                 "Personalize your home feed",
-                "Following interesting people is what Mastodon is all about.",
+                "Following interesting people is what the fediverse is all about.",
                 Some(("Follow", web("start/follows"))),
             ),
             (
@@ -647,7 +647,12 @@ impl EmailSender {
                 "Say hello to the world with text, photos, videos, or polls.",
                 Some(("Compose", web(""))),
             ),
-            (false, "Mastodon apps", "Download our official apps.", None),
+            (
+                false,
+                "Mastodon apps",
+                "Download the official Mastodon apps, which work with eunha.",
+                None,
+            ),
         ]
         .into_iter()
         .map(|(done, title, step, action)| {
@@ -696,20 +701,20 @@ impl EmailSender {
             (
                 "Stay in control of your own timeline",
                 "You know best what you want to see on your home feed. No algorithms or ads to \
-                 waste your time. Follow anyone across any Mastodon server from a single account \
+                 waste your time. Follow anyone across any server in the fediverse from a single account \
                  and receive their posts in chronological order, and make your corner of the \
                  internet a little more like you.",
             ),
             (
                 "Build your audience in confidence",
-                "Mastodon provides you with a unique possibility of managing your audience \
-                 without middlemen. Mastodon deployed on your own infrastructure allows you to \
-                 follow and be followed from any other Mastodon server online and is under no \
+                "Eunha provides you with a unique possibility of managing your audience \
+                 without middlemen. Eunha deployed on your own infrastructure allows you to \
+                 follow and be followed from any other server in the fediverse and is under no \
                  one's control but yours.",
             ),
             (
                 "Moderating the way it should be",
-                "Mastodon puts decision making back in your hands. Each server creates their own \
+                "Eunha puts decision making back in your hands. Each server creates their own \
                  rules and regulations, which are enforced locally and not top-down like \
                  corporate social media, making it the most flexible in responding to the needs \
                  of different groups of people. Join a server with the rules you agree with, or \
@@ -717,10 +722,10 @@ impl EmailSender {
             ),
             (
                 "Unparalleled creativity",
-                "Mastodon supports audio, video and picture posts, accessibility descriptions, \
+                "Eunha supports audio, video and picture posts, accessibility descriptions, \
                  polls, content warnings, animated avatars, custom emojis, thumbnail crop \
                  control, and more, to help you express yourself online. Whether you're \
-                 publishing your art, your music, or your podcast, Mastodon is there for you.",
+                 publishing your art, your music, or your podcast, eunha is there for you.",
             ),
         ]
         .into_iter()
@@ -745,7 +750,7 @@ impl EmailSender {
             more_follows = web("explore/suggestions"),
             more_tags = web("explore/tags"),
         );
-        self.send(to, "Welcome to Mastodon", &body).await
+        self.send(to, "Welcome to eunha", &body).await
     }
 
     /// `AdminMailer#new_trends`.
@@ -865,9 +870,9 @@ impl EmailSender {
             "Interact with these posts and discover more."
         };
         let create_account = if ko {
-            "마스토돈 계정 생성"
+            "계정 생성"
         } else {
-            "Create a Mastodon account"
+            "Create an account"
         };
         body.push_str(&format!(
             "<p>{interact}</p><p><a href=\"{}\">{create_account}</a></p>{}",
@@ -1018,7 +1023,7 @@ impl EmailSender {
             "<h1>2FA disabled</h1><p>Login is now possible using only e-mail address and \
              password.</p><p><a href=\"{url}\">{url}</a></p>"
         );
-        self.send(to, "Mastodon: Two-factor authentication disabled", &body)
+        self.send(to, "Eunha: Two-factor authentication disabled", &body)
             .await
     }
 
@@ -1033,7 +1038,7 @@ impl EmailSender {
     ) -> anyhow::Result<()> {
         let url = format!("https://{instance_domain}/backups/{backup_id}/download");
         let body = format!(
-            "<h1>Archive takeout</h1><p>You requested a full backup of your Mastodon account.</p>\
+            "<h1>Archive takeout</h1><p>You requested a full backup of your account.</p>\
              <p>It's now ready for download!</p>\
              <p><a href=\"{url}\">Download your archive</a></p>"
         );
@@ -1053,7 +1058,7 @@ impl EmailSender {
         let (subject, title, explanation, extra): (String, &str, &str, Option<String>) =
             match notice {
                 SecurityNotice::TwoFactorEnabled => (
-                    "Mastodon: Two-factor authentication enabled".into(),
+                    "Eunha: Two-factor authentication enabled".into(),
                     "2FA enabled",
                     "Two-factor authentication has been enabled for your account.",
                     Some(
@@ -1062,19 +1067,19 @@ impl EmailSender {
                     ),
                 ),
                 SecurityNotice::TwoFactorRecoveryCodesChanged => (
-                    "Mastodon: Two-factor recovery codes re-generated".into(),
+                    "Eunha: Two-factor recovery codes re-generated".into(),
                     "2FA recovery codes changed",
                     "The previous recovery codes have been invalidated and new ones generated.",
                     None,
                 ),
                 SecurityNotice::WebauthnEnabled => (
-                    "Mastodon: Security key authentication enabled".into(),
+                    "Eunha: Security key authentication enabled".into(),
                     "Security keys enabled",
                     "Security key authentication has been enabled for your account.",
                     Some("Your security key can now be used for login.".into()),
                 ),
                 SecurityNotice::WebauthnDisabled => (
-                    "Mastodon: Authentication with security keys disabled".into(),
+                    "Eunha: Authentication with security keys disabled".into(),
                     "Security keys disabled",
                     "Authentication with security keys has been disabled for your account.",
                     Some(
@@ -1084,19 +1089,19 @@ impl EmailSender {
                     ),
                 ),
                 SecurityNotice::WebauthnCredentialAdded(nickname) => (
-                    "Mastodon: New security key".into(),
+                    "Eunha: New security key".into(),
                     "A new security key has been added",
                     "The following security key has been added to your account",
                     Some(format!("<strong>{}</strong>", html_escape(nickname))),
                 ),
                 SecurityNotice::WebauthnCredentialDeleted(nickname) => (
-                    "Mastodon: Security key deleted".into(),
+                    "Eunha: Security key deleted".into(),
                     "One of your security keys has been deleted",
                     "The following security key has been deleted from your account",
                     Some(format!("<strong>{}</strong>", html_escape(nickname))),
                 ),
                 SecurityNotice::EmailChanged(new_email) => (
-                    "Mastodon: Email changed".into(),
+                    "Eunha: Email changed".into(),
                     "New email address",
                     "The email address for your account is being changed to:",
                     Some(format!(
@@ -1108,7 +1113,7 @@ impl EmailSender {
                     )),
                 ),
                 SecurityNotice::PasswordChange => (
-                    "Mastodon: Password changed".into(),
+                    "Eunha: Password changed".into(),
                     "Password changed",
                     "The password for your account has been changed.",
                     Some(
@@ -1602,7 +1607,7 @@ fn subscription_footer(envelope: &SubscriptionEnvelope) -> String {
         "<p><small>You're receiving this email because you opted into email updates \
          from {name}. Don't want to receive these emails? \
          <a href=\"{unsubscribe}\">Unsubscribe</a></small></p>\
-         <p><small>Emails are sent from {domain}, a server powered by Mastodon. To \
+         <p><small>Emails are sent from {domain}, a server powered by eunha. To \
          understand how this server processes your personal data, refer to the \
          <a href=\"{privacy}\">Privacy Policy</a>.</small></p>",
         name = html_escape(&envelope.name),

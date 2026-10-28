@@ -1324,6 +1324,29 @@ since = "4.7.2"
 reviewed_for = "4.7.3"
 
 [[divergence]]
+id = "mail-names-eunha"
+kind = "behaviour"
+summary = "Mail calls the software eunha, not Mastodon"
+mastodon = """
+Names itself in its mail: account and security subjects start `Mastodon:`, \
+the welcome mail is \"Welcome to Mastodon\" and describes what Mastodon does, \
+the archive mail speaks of \"your Mastodon account\", and the email \
+subscription footer says the server is \"powered by Mastodon\"."""
+eunha = """
+Says eunha in those places (`Eunha:` subjects, \"Welcome to eunha\", \
+\"powered by eunha\"), says \"your account\" and \"Create an account\" where \
+the software's name added nothing, and the welcome mail's \"Mastodon apps\" \
+step offers the official Mastodon apps as apps that work with eunha, not as \
+its own. Mail about Mastodon itself, such as the software update and \
+end-of-support notices, still names Mastodon releases."""
+why = """
+The mail comes from a server running eunha. Saying it is Mastodon \
+misrepresents what the member signed up on and whom to ask about it."""
+evidence = "tests/integration/surfaces/email_change.rs"
+since = "4.7.3"
+reviewed_for = "4.7.3"
+
+[[divergence]]
 id = "key-rotation-replaces-the-rsa-keys"
 kind = "behaviour"
 summary = "`eunha accounts rotate` replaces an account's RSA keys and keeps its others"

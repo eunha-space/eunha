@@ -41,14 +41,14 @@ async fn test_a_new_address_waits_for_its_link() {
     assert_eq!(body["unconfirmed_email"], "alice.new@example.com");
 
     let reconfirmation = ctx
-        .mail_to("alice.new@example.com", "Mastodon: Confirm email for")
+        .mail_to("alice.new@example.com", "Eunha: Confirm email for")
         .await
         .expect("the reconfirmation mail");
     assert!(reconfirmation
         .html
         .contains("Confirm the new address to change your email."));
     let notice = ctx
-        .mail_to("alice@test.invalid", "Mastodon: Email changed")
+        .mail_to("alice@test.invalid", "Eunha: Email changed")
         .await
         .expect("the email changed notice");
     assert!(notice.html.contains("alice.new@example.com"));

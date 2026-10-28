@@ -389,7 +389,7 @@ async fn test_without_confirmed_the_account_waits_for_its_link() {
         .await
         .is_some());
     assert!(ctx
-        .mail_to("sprout@example.com", "Welcome to Mastodon")
+        .mail_to("sprout@example.com", "Welcome to eunha")
         .await
         .is_some());
 }
@@ -406,7 +406,7 @@ async fn test_a_confirmed_account_is_welcomed_and_announced_to_staff() {
     let gardener = account_id(&ctx, "gardener").await.unwrap();
 
     let mail = ctx
-        .mail_to("gardener@example.com", "Welcome to Mastodon")
+        .mail_to("gardener@example.com", "Welcome to eunha")
         .await
         .expect("the welcome mail");
     assert!(mail.html.contains("Welcome aboard, gardener!"));
