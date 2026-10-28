@@ -647,19 +647,24 @@ function TopBarInner({
   )
 }
 
+// The site title the server put in `<title>`, read when the app loads: once a
+// page has set its own title, `document.title` no longer says it.
+const serverTitle = document.title === 'Eunha' ? null : document.title
+
+// `title` is the page's, for the browser tab only; the rail and the mobile
+// header always name the server.
 export function TopBar({ title }: { title?: string }) {
   const token = getToken()
   const [instance, setInstance] = useState(getCachedInstance)
-  const [instanceTitle] = useState<string | null>(() =>
-    document.title === 'Eunha' ? null : document.title,
-  )
   const [account, setAccount] = useState<MeAccount | null>(() => getMeAccount())
   const registrationsOpen = instance?.registrations.enabled ?? false
   const domain = instance?.domain ?? ''
   // `icon` is a list of sizes; the largest still fits the 36px box.
   const icons = instance?.icon as { src?: string }[] | undefined
   const icon = icons?.at(-1)?.src ?? null
-  const displayTitle = title ?? instance?.title ?? instanceTitle ?? ''
+  const siteTitle = instance?.title ?? serverTitle ?? ''
+  // As the server writes it: the page's title before the site's.
+  const documentTitle = title && siteTitle ? `${title} - ${siteTitle}` : (title ?? siteTitle)
 
   useEffect(() => {
     let cancelled = false
@@ -694,15 +699,15 @@ export function TopBar({ title }: { title?: string }) {
   }, [token])
 
   useEffect(() => {
-    if (!displayTitle) return
-    document.title = displayTitle
-  }, [displayTitle])
+    if (!documentTitle) return
+    document.title = documentTitle
+  }, [documentTitle])
 
   return (
     <SidebarProvider className="block min-h-0 w-full">
       <TopBarInner
         token={token}
-        title={displayTitle}
+        title={siteTitle}
         domain={domain}
         icon={icon}
         account={account}
