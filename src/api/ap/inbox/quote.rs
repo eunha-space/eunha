@@ -15,7 +15,7 @@ use crate::quotes::Quote;
 use crate::{error::AppResult, state::AppState};
 
 use super::{fetch_remote_status_prefetched, resolve_or_fetch_remote_account, same_host};
-use ojak_vocab::json_ld_helper::{first_of_value, value_or_id};
+use crate::federation::json_ld_helper::{first_of_value, value_or_id};
 
 /// `value_or_id(value)`, or `""` when there is none.
 fn uri_of(value: Option<&Value>) -> &str {

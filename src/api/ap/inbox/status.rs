@@ -17,7 +17,7 @@ use super::{
     acquire_create_lock, delete_arrived_first, delete_later, fetch_remote_status,
     resolve_or_fetch_remote_account, same_host, sync_remote_poll,
 };
-use ojak_vocab::json_ld_helper::{ids, type_is};
+use crate::federation::json_ld_helper::{ids, type_is};
 
 /// `ActivityPub::Activity::Delete#perform`: the sender itself
 /// (`delete_person`), an authorization to feature it that it gave

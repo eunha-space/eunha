@@ -19,6 +19,7 @@ use ojak::fetch::FetchError;
 use ojak::sig::SenderKey;
 use serde_json::Value;
 
+use crate::federation::json_ld_helper::as_array;
 use crate::state::AppState;
 
 /// `raise_on_error`: which statuses other than success raise.
@@ -135,9 +136,8 @@ pub async fn fetch_resource(
     Ok(json.filter(|json| json.get("id").and_then(Value::as_str) == Some(uri)))
 }
 
-/// `JsonLdHelper`'s accessors for a document as it arrived, which ojak
-/// ports.
-pub use ojak_vocab::json_ld_helper::{supported_context, value_or_id};
+/// `JsonLdHelper`'s accessors for a document as it arrived.
+pub use crate::federation::json_ld_helper::{supported_context, value_or_id};
 
 /// `JsonLdHelper#non_matching_uri_hosts?`.
 pub fn non_matching_uri_hosts(base: &str, comparison: &str) -> bool {
@@ -164,12 +164,10 @@ pub fn is_present(value: &Value) -> bool {
 /// the collection runs out, or a page cannot be had, first. `None` when not
 /// even the first page can be read.
 ///
-/// The pages are walked by ojak, read as Mastodon reads them
-/// ([`ojak::fetch::Walk::mastodon_compatible`]): from the collection as it
-/// is given, a page fetched by its IRI only from `reference_uri`'s host,
-/// each fetched as `fetch_collection_page` fetches it, with
-/// `raise_on_error: :temporary` — so a temporary failure is an `Err`. Every
-/// caller Mastodon has gives a reference.
+/// A page given by its IRI is fetched only from `reference_uri`'s host, as
+/// `fetch_collection_page` fetches it, with `raise_on_error: :temporary` —
+/// so a temporary failure is an `Err`; a page embedded in the one before is
+/// taken as it is. Every caller Mastodon has gives a reference.
 pub async fn collection_items(
     state: &AppState,
     collection_or_uri: &Value,
@@ -179,31 +177,80 @@ pub async fn collection_items(
     on_behalf_of: Option<i64>,
 ) -> anyhow::Result<Option<(Vec<Value>, usize)>> {
     let key = signing_key(state, on_behalf_of).await?;
-    let limits = ojak::fetch::WalkLimits {
-        // The collection may be fetched as well as each page read.
-        pages: max_pages.map_or(usize::MAX, |pages| pages.saturating_add(1)),
-        items: usize::MAX,
+    let Some(mut collection) =
+        fetch_collection_page(state, collection_or_uri, reference_uri, &key).await?
+    else {
+        return Ok(None);
     };
-    let mut walk = state
-        .fetcher
-        .walk_embedded(collection_or_uri, reference_uri, Some(&key), limits)
-        .mastodon_compatible();
+    if let Some(first) = collection.get("first").filter(|first| is_present(first)) {
+        let Some(page) = fetch_collection_page(state, first, reference_uri, &key).await? else {
+            return Ok(None);
+        };
+        collection = page;
+    }
     let mut items = Vec::new();
-    let mut n_pages = 0;
+    let mut n_pages = 1;
     loop {
-        match walk.next_page().await {
-            Ok(Some(page)) => {
-                n_pages += 1;
-                items.extend(page);
-                if max_items.is_some_and(|max| items.len() >= max)
-                    || max_pages.is_some_and(|max| n_pages >= max)
-                {
-                    return Ok(Some((items, n_pages)));
-                }
-            }
-            Err(error) if raises(&error, RaiseOn::Temporary) => return Err(error.into()),
-            Ok(None) | Err(_) if n_pages == 0 => return Ok(None),
-            Ok(None) | Err(_) => return Ok(Some((items, n_pages + 1))),
+        items.extend(
+            as_array(collection_page_items(&collection))
+                .into_iter()
+                .cloned(),
+        );
+        if max_items.is_some_and(|max| items.len() >= max)
+            || max_pages.is_some_and(|max| n_pages >= max)
+        {
+            break;
+        }
+        let next = match collection.get("next").filter(|next| is_present(next)) {
+            Some(next) => fetch_collection_page(state, next, reference_uri, &key).await?,
+            None => None,
+        };
+        n_pages += 1;
+        match next {
+            Some(page) => collection = page,
+            None => break,
+        }
+    }
+    Ok(Some((items, n_pages)))
+}
+
+/// `JsonLdHelper#collection_page_items`: a `Collection`'s or
+/// `CollectionPage`'s `items`, an `OrderedCollection`'s or
+/// `OrderedCollectionPage`'s `orderedItems`, and nothing for any other type.
+fn collection_page_items(collection: &Value) -> Option<&Value> {
+    match collection.get("type").and_then(Value::as_str) {
+        Some("Collection" | "CollectionPage") => collection.get("items"),
+        Some("OrderedCollection" | "OrderedCollectionPage") => collection.get("orderedItems"),
+        _ => None,
+    }
+}
+
+/// `JsonLdHelper#fetch_collection_page`: a page in hand as it is, or the
+/// JSON object served at its IRI when that is on `reference_uri`'s host,
+/// whatever its `id` and type say.
+async fn fetch_collection_page(
+    state: &AppState,
+    collection_or_uri: &Value,
+    reference_uri: &str,
+    key: &SenderKey,
+) -> anyhow::Result<Option<Value>> {
+    let uri = match collection_or_uri {
+        Value::Object(_) => return Ok(Some(collection_or_uri.clone())),
+        Value::String(uri) => uri,
+        _ => return Ok(None),
+    };
+    if non_matching_uri_hosts(reference_uri, uri) {
+        return Ok(None);
+    }
+    let Ok(url) = url::Url::parse(uri) else {
+        return Ok(None);
+    };
+    match state.fetcher.unverified_json(&url, Some(key)).await {
+        Ok(json) => Ok(json.filter(Value::is_object)),
+        Err(error) if raises(&error, RaiseOn::Temporary) => Err(error.into()),
+        Err(error) => {
+            tracing::debug!(uri, %error, "could not fetch a collection page");
+            Ok(None)
         }
     }
 }

@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{error::AppResult, state::AppState};
 
 use crate::federation::featured_collections as featured;
-use ojak_vocab::json_ld_helper::{first_of_value, value_or_id};
+use crate::federation::json_ld_helper::{first_of_value, value_or_id};
 
 /// The sender, with the collections an `Add` or `Remove` may target.
 struct Sender {

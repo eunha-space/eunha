@@ -6,9 +6,9 @@
 //! Mastodon: app/lib/activitypub/activity/flag.rb
 //! Mastodon: app/lib/activitypub/activity/move.rb
 
-use ojak_vocab::json_ld_helper::value_or_id;
 use serde_json::Value;
 
+use crate::federation::json_ld_helper::value_or_id;
 use crate::{error::AppResult, state::AppState};
 
 use super::{delete_arrived_first, resolve_or_fetch_remote_account};
@@ -145,7 +145,7 @@ pub(super) async fn handle_flag(state: &AppState, activity: &Value) -> AppResult
     }
 
     // `object_uris`: a string, an object with an id, or an array of either.
-    let object_uris: Vec<String> = ojak_vocab::json_ld_helper::ids(activity.get("object"))
+    let object_uris: Vec<String> = crate::federation::json_ld_helper::ids(activity.get("object"))
         .into_iter()
         .map(str::to_owned)
         .collect();

@@ -98,7 +98,7 @@ pub fn url(object: &Value) -> Option<String> {
     let value = object
         .get("url")
         .filter(|v| crate::federation::json_ld::is_present(v))?;
-    ojak_vocab::json_ld_helper::url_to_href(value, Some("text/html"))
+    crate::federation::json_ld_helper::url_to_href(value, Some("text/html"))
         .map(str::to_owned)
         .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
 }

@@ -18,6 +18,7 @@ pub mod handle;
 pub mod instance_actor;
 pub mod json_ld;
 pub mod json_ld_contexts;
+pub mod json_ld_helper;
 pub mod keypair;
 pub mod local_uri;
 pub mod moderation;

@@ -12,7 +12,7 @@ use super::attachment::preview_card_link;
 use super::{
     acquire_create_lock, delete_arrived_first, fetch_remote_status, resolve_or_fetch_remote_account,
 };
-use ojak_vocab::json_ld_helper::{ids, type_is};
+use crate::federation::json_ld_helper::{ids, type_is};
 
 /// How a `Create` reached us: the options `ActivityPub::Activity` is given.
 #[derive(Debug, Default, Clone)]

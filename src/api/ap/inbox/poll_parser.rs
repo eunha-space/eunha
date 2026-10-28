@@ -32,7 +32,7 @@ impl PollParser {
     /// items, `anyOf` first and then `oneOf`, in an array.
     #[must_use]
     pub fn parse(json: &Value) -> Option<Self> {
-        if !ojak_vocab::json_ld_helper::type_is(json, "Question") {
+        if !crate::federation::json_ld_helper::type_is(json, "Question") {
             return None;
         }
         // `@json['anyOf'] || @json['oneOf']`: an `anyOf` that is there at all

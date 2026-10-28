@@ -186,9 +186,9 @@ impl Attributes {
         // `url`: the page it links to, else its id.
         let url = json
             .get("url")
-            .and_then(|url| ojak_vocab::json_ld_helper::url_to_href(url, Some("text/html")))
+            .and_then(|url| crate::federation::json_ld_helper::url_to_href(url, Some("text/html")))
             .filter(|url| !url.trim().is_empty())
-            .filter(|url| !ojak_vocab::json_ld_helper::unsupported_uri_scheme(Some(url)))
+            .filter(|url| !crate::federation::json_ld_helper::unsupported_uri_scheme(Some(url)))
             .unwrap_or(id)
             .to_owned();
         Ok(Some(Self {
@@ -703,7 +703,7 @@ pub async fn verify_featured_item(
         return Ok(());
     }
     let matching_type = json_ld::supported_context(&authorization)
-        && ojak_vocab::json_ld_helper::equals_or_includes(
+        && crate::federation::json_ld_helper::equals_or_includes(
             authorization.get("type"),
             "FeatureAuthorization",
         );

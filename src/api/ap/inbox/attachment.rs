@@ -97,7 +97,7 @@ const MAX_DESCRIPTION_HARD_LENGTH_LIMIT: usize = 10_000;
 /// its `name`, the first that is not blank, stripped and cut to
 /// `MAX_DESCRIPTION_HARD_LENGTH_LIMIT` characters.
 fn description(att: &Value) -> Option<String> {
-    use ojak_vocab::json_ld_helper::first_lang_string;
+    use crate::federation::json_ld_helper::first_lang_string;
     let text = first_lang_string(att, "summary")
         .filter(|text| !text.trim().is_empty())
         .or_else(|| first_lang_string(att, "name").filter(|text| !text.trim().is_empty()))?;

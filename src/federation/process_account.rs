@@ -19,15 +19,15 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use futures::future::BoxFuture;
-use ojak_vocab::json_ld_helper::{
-    as_array, equals_or_includes, first_lang_string, first_of_value, truthy,
-    unsupported_uri_scheme, url_to_href, value_or_id,
-};
 use serde_json::{Map, Value};
 
 use crate::db::models::Account;
 use crate::delete_account::suspension_origin;
 use crate::federation::json_ld::is_present;
+use crate::federation::json_ld_helper::{
+    as_array, equals_or_includes, first_lang_string, first_of_value, truthy,
+    unsupported_uri_scheme, url_to_href, value_or_id,
+};
 use crate::state::AppState;
 
 /// `MAX_PUBLIC_KEYS`.
@@ -119,7 +119,7 @@ async fn process_inner(
 
     // `extract_username_and_domain!`.
     let (mut username, mut domain) = match json.get("webfinger").and_then(Value::as_str) {
-        Some(acct) if !acct.trim().is_empty() => ojak::webfinger::split_acct(acct),
+        Some(acct) if !acct.trim().is_empty() => split_acct(acct),
         _ => (String::new(), String::new()),
     };
     if username.trim().is_empty() || domain.trim().is_empty() {
@@ -325,6 +325,21 @@ async fn process_inner(
     }
 
     Ok(Some(account_id))
+}
+
+/// `split_acct`: an `acct:` URI or a bare handle split at its `@`s as
+/// Ruby's `split('@')` splits it, keeping the first two parts, which is how
+/// an actor's [FEP-2c59] `webfinger` property is read. A part that is
+/// missing is empty.
+///
+/// [FEP-2c59]: https://codeberg.org/fediverse/fep/src/branch/main/fep/2c59/fep-2c59.md
+fn split_acct(acct: &str) -> (String, String) {
+    let acct = acct.strip_prefix("acct:").unwrap_or(acct);
+    let mut parts = acct.split('@');
+    (
+        parts.next().unwrap_or_default().to_owned(),
+        parts.next().unwrap_or_default().to_owned(),
+    )
 }
 
 /// `with_redis_lock`, as Eunha takes its locks: retried briefly, then done
@@ -1979,6 +1994,20 @@ fn key_from_multikey(value: Option<&Value>) -> Option<(i32, String)> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_acct_is_split_like_ruby_splits_it() {
+        assert_eq!(
+            split_acct("acct:alice@example.com"),
+            ("alice".into(), "example.com".into())
+        );
+        assert_eq!(split_acct("alice"), ("alice".into(), String::new()));
+        assert_eq!(
+            split_acct("a@b@c"),
+            ("a".into(), "b".into()),
+            "only the first two parts count"
+        );
+    }
 
     #[test]
     fn collection_uris_are_validated_like_mastodon() {

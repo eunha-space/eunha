@@ -13,7 +13,7 @@ use crate::{error::AppResult, state::AppState};
 
 use crate::federation::featured_collections as featured;
 use crate::federation::json_ld::non_matching_uri_hosts;
-use ojak_vocab::json_ld_helper::{first_of_value, unsupported_uri_scheme, value_or_id};
+use crate::federation::json_ld_helper::{first_of_value, unsupported_uri_scheme, value_or_id};
 
 /// `CollectionItem` states.
 const ACCEPTED: i32 = 1;
