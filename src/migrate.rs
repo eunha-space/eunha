@@ -485,3 +485,43 @@ mod rehearsal_tests {
         assert!(!is_safe_database_name("a/b"));
     }
 }
+
+#[cfg(test)]
+mod checksum_tests {
+    use super::MIGRATOR;
+
+    /// sqlx refuses to migrate a database whose applied migrations no longer
+    /// match their files, so an edit to one, even to a comment, stops every
+    /// instance's next `eunha migrate`.
+    #[test]
+    fn applied_migrations_are_never_edited() {
+        let recorded: Vec<(i64, &str)> = include_str!("migration_checksums.txt")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .map(|line| {
+                let (version, checksum) = line.split_once(' ').unwrap();
+                (version.parse().unwrap(), checksum)
+            })
+            .collect();
+        let built: Vec<(i64, String)> = MIGRATOR
+            .iter()
+            .map(|migration| (migration.version, hex::encode(&*migration.checksum)))
+            .collect();
+        for (version, checksum) in &built {
+            match recorded.iter().find(|(recorded, _)| recorded == version) {
+                Some((_, recorded)) => assert_eq!(
+                    checksum, recorded,
+                    "migration {version} was edited; restore it and write a new migration instead"
+                ),
+                None => panic!(
+                    "migration {version} is not in src/migration_checksums.txt; add its `shasum -a 384`"
+                ),
+            }
+        }
+        assert_eq!(
+            recorded.len(),
+            built.len(),
+            "a recorded migration is missing"
+        );
+    }
+}
