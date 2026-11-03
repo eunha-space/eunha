@@ -45,11 +45,48 @@ jobs:
       - name: Lints, built against the committed query cache
         run: cargo clippy --locked --all-targets -- -D warnings
 
+  # The tests compiled once, for all four runners below, which spent four to five
+  # minutes each compiling the same thing. They unpack the archive where this
+  # job built it: the runners check out to the same path, and tests read files
+  # through the `CARGO_MANIFEST_DIR` they were compiled with.
+  build-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      SQLX_OFFLINE: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: Build the tests
+        run: cargo nextest archive --locked --archive-file tests.tar.zst
+
+      # The schema check below is built along with them, and is not a test, so
+      # it goes beside the archive rather than in it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tests
+          path: |
+            tests.tar.zst
+            target/debug/eunha-schema
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
   # The tests, split four ways by cargo-nextest. Nearly all of the time is the
   # integration tests, each of which starts Eunha on a database of its own, and
   # one runner took 30 minutes to two hours over them.
   test:
     name: test (${{ matrix.partition }}/4)
+    needs: build-tests
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -96,10 +133,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: test
-
       # A database thrown away with the runner needs no durability, and every
       # test creates one: what that costs is mostly waiting on the disk.
       - name: Turn off Postgres durability
@@ -116,14 +149,14 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      # Offline, because `eunha_test` is not migrated yet for sqlx's query
-      # macros to check against; the lint job has checked the cache they read.
+      - uses: actions/download-artifact@v4
+        with:
+          name: tests
+
       - name: Tests
-        env:
-          SQLX_OFFLINE: "true"
         run: >-
-          cargo nextest run --locked --profile ci
-          --partition count:${{ matrix.partition }}/4
+          cargo nextest run --archive-file tests.tar.zst --workspace-remap .
+          --profile ci --partition count:${{ matrix.partition }}/4
 
       # Eunha exists to be a drop-in for a Mastodon database. This is the test
       # for that, and it needs neither Ruby nor the network: it compares the
@@ -138,11 +171,12 @@ jobs:
           DATABASE_URL="$DATABASE_URL?options=-c%20search_path%3Deunha,public" \
             cargo sqlx migrate run
 
+      # `chmod`, because the artifact's zip drops the executable bit.
       - name: Schema matches the tracked Mastodon release
         if: matrix.partition == 1
-        env:
-          SQLX_OFFLINE: "true"
-        run: cargo run --locked --bin eunha-schema -- check
+        run: |
+          chmod +x target/debug/eunha-schema
+          target/debug/eunha-schema check
 
   # The differential harness compares Eunha against a real Mastodon rather than
   # against a reading of one, and until now nothing ran it. It spent weeks
