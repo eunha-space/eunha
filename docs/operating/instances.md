@@ -110,8 +110,16 @@ were, when the directory could not have been started as it stands — a domain
 served twice, too many tenants, pools past their budget, no tenants at all — or
 when it would change what the process set up when it started: `bind_address`
 and `process_delivery_concurrency` take a restart. A
-tenant that fails to start does not fail the reload; its host answers 503, and
-the next `SIGHUP` tries it again.
+tenant that fails to start does not fail the reload; its host answers 503.
+
+A tenant that could not start, at a reload or when the process started, is tried
+again every 15 seconds, so a host that comes up before its PostgreSQL recovers
+on its own, as does a tenant waiting on `eunha migrate`. Each kind of failure is
+logged once, and the tenant's coming back is logged as
+`tenants that could not start have now started`. A retry uses the configuration
+of the last start or `SIGHUP`, and never rereads the directory: a file changed
+since then, such as one fixing a mistake in the tenant's configuration, still
+takes a `SIGHUP`.
 
 This is the start of the shared-process work planned in
 the [multitenancy plan](../design/multitenancy.md); what sharing a process

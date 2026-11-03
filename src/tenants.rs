@@ -39,6 +39,10 @@
 //! [`Tenants::reload`] — `eunha` does so on `SIGHUP` — which starts, restarts
 //! and stops only the tenants that changed, while the rest serve on.
 //!
+//! A tenant that could not start waits, answering 503, and
+//! [`Tenants::retry_unavailable`] keeps trying it, so that a database that was
+//! down or behind when the process started needs no signal once it is back.
+//!
 //! Mastodon: none
 
 use crate::{config, migrate, state::AppState};
@@ -60,7 +64,7 @@ use std::{
     hash::{Hash as _, Hasher as _},
     path::Path,
     str::FromStr as _,
-    sync::{Arc, PoisonError, RwLock},
+    sync::{Arc, Mutex, PoisonError, RwLock},
 };
 use tokio::sync::Semaphore;
 use tower::ServiceExt as _;
@@ -111,7 +115,12 @@ const STARTUP_CONCURRENCY: usize = 8;
 const SERVER_PROBE_ATTEMPTS: usize = 3;
 const SERVER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// How long a process waits between attempts at the tenants that could not
+/// start.
+const RETRY_UNAVAILABLE_EVERY: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// A tenant's configuration, and where it was read from for error messages.
+#[derive(Clone)]
 pub struct TenantConfig {
     pub source: String,
     pub config: config::Config,
@@ -520,7 +529,7 @@ pub struct Reloaded {
     pub restarted: Vec<String>,
     /// Stopped, being no longer configured.
     pub stopped: Vec<String>,
-    /// Could not be started; their hosts answer 503.
+    /// Could not be started; their hosts answer 503 until a retry starts them.
     pub unavailable: Vec<String>,
     /// Left running as they were.
     pub kept: Vec<String>,
@@ -630,6 +639,18 @@ impl Running {
     }
 }
 
+/// A tenant that could not start, which [`Tenants::retry_unavailable`] tries
+/// again.
+struct Waiting {
+    /// As of the last start or reload: a retry serves what the process was
+    /// told to serve, never a file it has not been signalled about, which may
+    /// be waiting on a migration of its own.
+    tenant: TenantConfig,
+    /// Why the last attempt failed, so that an attempt failing the same way
+    /// is not logged again.
+    error: String,
+}
+
 /// Every tenant a process serves, by host.
 pub struct Tenants {
     /// Every route the process serves, built once and shared by every tenant.
@@ -642,6 +663,10 @@ pub struct Tenants {
     /// What each started tenant runs, by host. A reload holds it throughout,
     /// so that reloads happen one at a time.
     running: tokio::sync::Mutex<HashMap<String, Running>>,
+    /// The tenants that could not start, by host. Written only with `running`
+    /// held, and readable without it, so that an attempt that has to wait for
+    /// a database does not hold up whatever needs `running` meanwhile.
+    waiting: Mutex<HashMap<String, Waiting>>,
 }
 
 enum Lookup<'a> {
@@ -656,9 +681,9 @@ enum Lookup<'a> {
 /// Nothing starts unless the process can hold all of them — see [`admit`] and
 /// [`check_database_servers`]. Past that, a lone tenant whose database is
 /// behind this binary, or that cannot start, stops the process, as a single
-/// instance always has. Among several it is left out — its host answers 503 —
-/// and the others serve: one tenant's pending migration should not take its
-/// neighbours down with it.
+/// instance always has. Among several it is left out — its host answers 503
+/// until [`Tenants::retry_unavailable`] starts it — and the others serve: one
+/// tenant's pending migration should not take its neighbours down with it.
 pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
     let alias_map = aliases(&configs);
     let settings = process_settings(&configs)?;
@@ -668,20 +693,22 @@ pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
     let lone = configs.len() == 1;
     let mut by_host = HashMap::new();
     let mut running = HashMap::new();
+    let mut waiting = HashMap::new();
 
-    for (host, source, result) in start_all(configs).await {
+    for (host, tenant, result) in start_all(configs).await {
         match result {
-            Ok(tenant) => {
+            Ok(started) => {
                 by_host.insert(
                     host.clone(),
-                    Slot::Serving(Tenant::new(&tenant.state, !lone)),
+                    Slot::Serving(Tenant::new(&started.state, !lone)),
                 );
-                running.insert(host, tenant);
+                running.insert(host, started);
             }
             Err(e) if lone => return Err(e),
             Err(e) => {
-                not_started(&host, &source, &e);
-                by_host.insert(host, Slot::Unavailable);
+                not_started(&host, &tenant.source, &e);
+                by_host.insert(host.clone(), Slot::Unavailable);
+                waiting.insert(host, Waiting::new(tenant, &e));
             }
         }
     }
@@ -691,17 +718,18 @@ pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
         registry: RwLock::new(Arc::new(Registry::with_aliases(by_host, alias_map))),
         settings,
         running: tokio::sync::Mutex::new(running),
+        waiting: Mutex::new(waiting),
     })
 }
 
-/// Start these tenants, a few at a time, each with its host, where its
-/// configuration came from, and what came of it.
-async fn start_all(configs: Vec<TenantConfig>) -> Vec<(String, String, Result<Running>)> {
+/// Start these tenants, a few at a time, each with its host, its configuration,
+/// and what came of it.
+async fn start_all(configs: Vec<TenantConfig>) -> Vec<(String, TenantConfig, Result<Running>)> {
     futures::stream::iter(configs)
         .map(|tenant| async move {
             let host = normalize_host(&tenant.config.instance.domain);
-            let source = tenant.source.clone();
-            (host, source, start_one(tenant).await)
+            let result = start_one(&tenant).await;
+            (host, tenant, result)
         })
         .buffered(STARTUP_CONCURRENCY)
         .collect()
@@ -717,9 +745,14 @@ fn not_started(host: &str, source: &str, error: &anyhow::Error) {
     );
 }
 
-async fn start_one(tenant: TenantConfig) -> Result<Running> {
+async fn start_one(tenant: &TenantConfig) -> Result<Running> {
+    start_on(tenant, reach(tenant).await?).await
+}
+
+/// A pool on a tenant's database, once it answers and has the schema this
+/// binary expects.
+async fn reach(tenant: &TenantConfig) -> Result<sqlx::PgPool> {
     let TenantConfig { source, config } = tenant;
-    let fingerprint = fingerprint(&config);
     let db = connect(
         config
             .pooled_database_url
@@ -736,8 +769,13 @@ async fn start_one(tenant: TenantConfig) -> Result<Running> {
     if let Some(pending) = migrate::pending(&db).await? {
         anyhow::bail!("{pending}. Run `eunha migrate` before starting the server.");
     }
+    Ok(db)
+}
 
-    let state = AppState::new(db, config)
+/// Bring a tenant up on a database [`reach`] has found ready.
+async fn start_on(tenant: &TenantConfig, db: sqlx::PgPool) -> Result<Running> {
+    let TenantConfig { source, config } = tenant;
+    let state = AppState::new(db, config.clone())
         .await
         .with_context(|| format!("{source}: starting"))?;
 
@@ -753,9 +791,18 @@ async fn start_one(tenant: TenantConfig) -> Result<Running> {
     let tasks = crate::background::spawn(state.clone());
     Ok(Running {
         state,
-        fingerprint,
+        fingerprint: fingerprint(config),
         tasks,
     })
+}
+
+impl Waiting {
+    fn new(tenant: TenantConfig, error: &anyhow::Error) -> Self {
+        Self {
+            tenant,
+            error: format!("{error:#}"),
+        }
+    }
 }
 
 impl Tenants {
@@ -807,6 +854,7 @@ impl Tenants {
             registry: RwLock::new(Arc::new(Registry::with_aliases(by_host, alias_map))),
             settings,
             running: tokio::sync::Mutex::new(running),
+            waiting: Mutex::new(HashMap::new()),
         })
     }
 
@@ -833,7 +881,8 @@ impl Tenants {
     /// agreement, ceiling and database checks as [`start`] — and it leaves the
     /// listener, the private networks and the delivery budget as the process
     /// started with. A tenant that then fails to start does not fail the
-    /// reload: its host answers 503, and the next reload tries it again.
+    /// reload: its host answers 503 until [`Tenants::retry_unavailable`] or the
+    /// next reload starts it.
     pub async fn reload(&self, configs: Vec<TenantConfig>) -> Result<Reloaded> {
         let alias_map = aliases(&configs);
         let mut running = self.running.lock().await;
@@ -870,6 +919,7 @@ impl Tenants {
             .collect::<Vec<_>>();
         futures::future::join_all(stopping.into_iter().map(Running::stop)).await;
 
+        let mut waiting = HashMap::new();
         let mut reloaded = Reloaded {
             stopped: plan.stop.clone(),
             kept: plan.keep.clone(),
@@ -883,14 +933,14 @@ impl Tenants {
                     .contains(&normalize_host(&tenant.config.instance.domain))
             })
             .collect();
-        for (host, source, result) in start_all(starting).await {
+        for (host, tenant, result) in start_all(starting).await {
             match result {
-                Ok(tenant) => {
+                Ok(started) => {
                     by_host.insert(
                         host.clone(),
-                        Slot::Serving(Tenant::new(&tenant.state, shared)),
+                        Slot::Serving(Tenant::new(&started.state, shared)),
                     );
-                    running.insert(host.clone(), tenant);
+                    running.insert(host.clone(), started);
                     if plan.restart.contains(&host) {
                         reloaded.restarted.push(host);
                     } else {
@@ -898,8 +948,9 @@ impl Tenants {
                     }
                 }
                 Err(e) => {
-                    not_started(&host, &source, &e);
+                    not_started(&host, &tenant.source, &e);
                     by_host.insert(host.clone(), Slot::Unavailable);
+                    waiting.insert(host.clone(), Waiting::new(tenant, &e));
                     reloaded.unavailable.push(host);
                 }
             }
@@ -918,7 +969,85 @@ impl Tenants {
             }
         }
         self.publish(Registry::with_aliases(by_host, alias_map));
+        *self.waiting() = waiting;
         Ok(reloaded)
+    }
+
+    /// Try again the tenants that could not start, as they were last configured,
+    /// and return the hosts that have now started. The rest go on answering 503.
+    ///
+    /// A tenant's database is reached before anything else is held, however
+    /// long that takes. A reload that has changed the tenant in the meantime
+    /// wins, and this attempt is dropped.
+    pub async fn retry_unavailable(&self) -> Vec<String> {
+        let waiting = self
+            .waiting()
+            .iter()
+            .map(|(host, waiting)| (host.clone(), waiting.tenant.clone()))
+            .collect::<Vec<_>>();
+        let attempts = futures::stream::iter(waiting)
+            .map(|(host, tenant)| async move {
+                let db = reach(&tenant).await;
+                (host, tenant, db)
+            })
+            .buffered(STARTUP_CONCURRENCY)
+            .collect::<Vec<_>>()
+            .await;
+
+        let mut started = Vec::new();
+        for (host, tenant, db) in attempts {
+            let mut running = self.running.lock().await;
+            let still_waiting = self.waiting().get(&host).is_some_and(|waiting| {
+                fingerprint(&waiting.tenant.config) == fingerprint(&tenant.config)
+            });
+            if !still_waiting {
+                continue;
+            }
+            let result = match db {
+                Ok(db) => start_on(&tenant, db).await,
+                Err(e) => Err(e),
+            };
+            match result {
+                Ok(tenant) => {
+                    let current = self.current();
+                    let mut by_host = current.by_host.clone();
+                    let shared = by_host.len() > 1;
+                    by_host.insert(
+                        host.clone(),
+                        Slot::Serving(Tenant::new(&tenant.state, shared)),
+                    );
+                    self.publish(Registry::with_aliases(by_host, current.aliases.clone()));
+                    running.insert(host.clone(), tenant);
+                    self.waiting().remove(&host);
+                    started.push(host);
+                }
+                Err(e) => {
+                    let error = format!("{e:#}");
+                    if let Some(waiting) = self.waiting().get_mut(&host) {
+                        if waiting.error != error {
+                            not_started(&host, &tenant.source, &e);
+                            waiting.error = error;
+                        }
+                    }
+                }
+            }
+        }
+        started
+    }
+
+    /// [`Tenants::retry_unavailable`], for as long as the process runs.
+    pub async fn keep_retrying_unavailable(self: Arc<Self>) {
+        loop {
+            tokio::time::sleep(RETRY_UNAVAILABLE_EVERY).await;
+            let started = self.retry_unavailable().await;
+            if !started.is_empty() {
+                tracing::info!(?started, "tenants that could not start have now started");
+            }
+        }
+    }
+
+    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<String, Waiting>> {
+        self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn current(&self) -> Arc<Registry> {
@@ -1092,6 +1221,7 @@ vapid_public_key = ""
             settings: process_settings(&[tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "")])
                 .unwrap(),
             running: tokio::sync::Mutex::new(HashMap::new()),
+            waiting: Mutex::new(HashMap::new()),
         }
     }
 

@@ -749,6 +749,7 @@ async fn main() -> anyhow::Result<()> {
     let serving = tenants.states().await.len();
     if let Some(dir) = args.tenants {
         reload_on_hangup(tenants.clone(), dir)?;
+        tenants::spawn(tenants.clone().keep_retrying_unavailable());
     }
     // One check for the process, however many instances it serves.
     tenants::spawn(software_updates::run_for_process(tenants.clone()));

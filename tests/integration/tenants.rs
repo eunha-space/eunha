@@ -529,6 +529,93 @@ async fn limited_federation(base_url: &str, host: &str) -> (StatusCode, Option<b
     (status, limited)
 }
 
+/// A tenant that could not start answers 503 beside a neighbour that did, and
+/// starts once what stopped it is fixed, with no signal. A tenant a reload has
+/// removed in the meantime is not brought back.
+#[tokio::test]
+async fn test_a_tenant_that_could_not_start_recovers_on_its_own() {
+    let a = TestContext::new("recover-a").await;
+    let b = TestContext::new("recover-b").await;
+    let behind = |migrated: bool| {
+        sqlx::query(
+            "UPDATE eunha._sqlx_migrations SET success = $1 \
+             WHERE version = (SELECT max(version) FROM eunha._sqlx_migrations)",
+        )
+        .bind(migrated)
+    };
+    behind(false).execute(&b.db).await.unwrap();
+
+    let tenants = Arc::new(
+        eunha::tenants::start(vec![tenant_config(&a), tenant_config(&b)])
+            .await
+            .expect("one tenant failing does not stop the other"),
+    );
+    let base_url = serve_tenants(tenants.clone()).await;
+    assert_eq!(instance_title(&base_url, &a.domain).await.0, StatusCode::OK);
+    assert_eq!(
+        instance_title(&base_url, &b.domain).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    assert!(
+        tenants.retry_unavailable().await.is_empty(),
+        "still behind, it stays out"
+    );
+    assert_eq!(
+        instance_title(&base_url, &b.domain).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    behind(true).execute(&b.db).await.unwrap();
+    assert_eq!(
+        tenants.retry_unavailable().await,
+        std::slice::from_ref(&b.domain)
+    );
+    assert_eq!(instance_title(&base_url, &b.domain).await.0, StatusCode::OK);
+    assert_eq!(instance_title(&base_url, &a.domain).await.0, StatusCode::OK);
+    assert!(
+        tenants.retry_unavailable().await.is_empty(),
+        "nothing is left waiting"
+    );
+
+    // A retry serves what the last reload said, not what the process started
+    // with.
+    let limited = || {
+        let mut changed = tenant_config(&b);
+        changed.config.instance.limited_federation_mode = true;
+        changed
+    };
+    behind(false).execute(&b.db).await.unwrap();
+    let reloaded = tenants
+        .reload(vec![tenant_config(&a), limited()])
+        .await
+        .expect("a tenant failing does not fail the reload");
+    assert_eq!(reloaded.unavailable, std::slice::from_ref(&b.domain));
+    behind(true).execute(&b.db).await.unwrap();
+    assert_eq!(
+        tenants.retry_unavailable().await,
+        std::slice::from_ref(&b.domain)
+    );
+    assert_eq!(
+        limited_federation(&base_url, &b.domain).await,
+        (StatusCode::OK, Some(true))
+    );
+
+    // Nor does it bring back what a later reload has removed.
+    behind(false).execute(&b.db).await.unwrap();
+    let reloaded = tenants
+        .reload(vec![tenant_config(&a), tenant_config(&b)])
+        .await
+        .expect("a tenant failing does not fail the reload");
+    assert_eq!(reloaded.unavailable, std::slice::from_ref(&b.domain));
+    tenants
+        .reload(vec![tenant_config(&a)])
+        .await
+        .expect("removing a tenant reloads");
+    behind(true).execute(&b.db).await.unwrap();
+    assert!(tenants.retry_unavailable().await.is_empty());
+}
+
 /// Tenants are added, changed and removed while the process goes on serving the
 /// rest: a new one answers, a changed one comes back with its new
 /// configuration, and a removed one's host is refused and its background work
