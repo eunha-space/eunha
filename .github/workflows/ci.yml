@@ -49,11 +49,16 @@ jobs:
   # minutes each compiling the same thing. They unpack the archive where this
   # job built it: the runners check out to the same path, and tests read files
   # through the `CARGO_MANIFEST_DIR` they were compiled with.
+  #
+  # Line tables only, which keep a backtrace's files and lines: with full debug
+  # info in all 25 binaries the archive was 3.3 GB, and unpacking it ran one
+  # runner out of disk.
   build-tests:
     runs-on: ubuntu-latest
 
     env:
       SQLX_OFFLINE: "true"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
     steps:
       - uses: actions/checkout@v4
