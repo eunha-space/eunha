@@ -440,6 +440,89 @@ async fn test_sign_in_asks_for_the_second_factor() {
     assert_eq!(grant.status(), StatusCode::BAD_REQUEST);
 }
 
+/// `User::SignInToken`: back after a long time, the password alone asks for
+/// a security code sent by mail, unless an admin spared the user it.
+#[tokio::test]
+async fn test_a_long_inactive_sign_in_asks_for_a_security_code() {
+    let ctx = TestContext::new("2fa-sign-in-token").await;
+    let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    sqlx::query("UPDATE users SET current_sign_in_at = now() - interval '91 days' WHERE id = $1")
+        .bind(alice_user)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let client_id = register_app(&ctx).await;
+    let page = authorize(
+        &ctx,
+        &client_id,
+        &[("email", "alice@test.invalid"), ("password", PASSWORD)],
+    )
+    .await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let body = page.text().await.unwrap();
+    assert!(body.contains("name=\"sign_in_token_attempt\""), "{body}");
+    let attempt = attempt_token(&body);
+
+    let mail = ctx
+        .mail_to("alice@test.invalid", "Please confirm attempted sign in")
+        .await
+        .expect("a security code mail");
+    let code: String = sqlx::query_scalar("SELECT sign_in_token FROM users WHERE id = $1")
+        .bind(alice_user)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(code.len(), 6);
+    assert!(mail.html.contains(&code));
+
+    // A wrong code is refused and recorded, and sends no failed 2FA mail.
+    let wrong = authorize(
+        &ctx,
+        &client_id,
+        &[("attempt", &attempt), ("sign_in_token_attempt", "nope")],
+    )
+    .await;
+    assert_eq!(wrong.status(), StatusCode::OK);
+    assert!(wrong.text().await.unwrap().contains("Invalid security code"));
+    assert!(ctx
+        .mail_to("alice@test.invalid", "Second factor authentication failure")
+        .await
+        .is_none());
+
+    // The right one signs in, and is used up.
+    let granted = authorize(
+        &ctx,
+        &client_id,
+        &[("attempt", &attempt), ("sign_in_token_attempt", &code)],
+    )
+    .await;
+    assert_eq!(granted.status(), StatusCode::FOUND);
+    assert!(crate::helpers::session_cookie_of(&granted).is_some());
+    let left: Option<String> = sqlx::query_scalar("SELECT sign_in_token FROM users WHERE id = $1")
+        .bind(alice_user)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(left, None);
+
+    // Disabled by an admin, the password is enough again.
+    sqlx::query("UPDATE users SET current_sign_in_at = now() - interval '91 days' WHERE id = $1")
+        .bind(alice_user)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    eunha::sign_in_token::disable(&ctx.state, alice_user)
+        .await
+        .unwrap();
+    let spared = authorize(
+        &ctx,
+        &client_id,
+        &[("email", "alice@test.invalid"), ("password", PASSWORD)],
+    )
+    .await;
+    assert_eq!(spared.status(), StatusCode::FOUND);
+}
+
 #[tokio::test]
 async fn test_second_factor_attempts_are_rate_limited() {
     let ctx = TestContext::new("2fa-rate-limit").await;

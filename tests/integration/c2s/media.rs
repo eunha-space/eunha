@@ -97,14 +97,28 @@ fn ftyp(brand: &[u8; 4]) -> Vec<u8> {
 /// with `processing_error`'s 500 on both versions of the endpoint. The types
 /// stay advertised, as upstream still lists them.
 #[tokio::test]
-async fn test_media_upload_refuses_heif_as_mastodon_4_7_2_does() {
+async fn test_media_upload_refuses_heif() {
     let ctx = TestContext::new("media-heif").await;
+    // Since 4.7.4 the types are not taken at all.
     for (path, name, content_type, data) in [
         ("/api/v1/media", "photo.heic", "image/heic", ftyp(b"heic")),
         ("/api/v2/media", "photo.heif", "image/heif", ftyp(b"mif1")),
         ("/api/v2/media", "photo.avif", "image/avif", ftyp(b"avif")),
-        ("/api/v1/media", "photo.jpg", "image/jpeg", ftyp(b"avif")),
     ] {
+        let resp = ctx
+            .api
+            .post_multipart_file(path, &ctx.alice_token, name, content_type, data, &[])
+            .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path} {content_type}"
+        );
+    }
+    // Declared as something else, it fails in processing.
+    for (path, name, content_type, data) in
+        [("/api/v1/media", "photo.jpg", "image/jpeg", ftyp(b"avif"))]
+    {
         let resp = ctx
             .api
             .post_multipart_file(path, &ctx.alice_token, name, content_type, data, &[])
@@ -137,7 +151,7 @@ async fn test_media_upload_refuses_heif_as_mastodon_4_7_2_does() {
         .as_array()
         .unwrap();
     for advertised in ["image/heic", "image/heif", "image/avif"] {
-        assert!(types.iter().any(|t| t == advertised), "{advertised}");
+        assert!(!types.iter().any(|t| t == advertised), "{advertised}");
     }
 }
 

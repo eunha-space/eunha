@@ -263,8 +263,7 @@ pub async fn get_instance_v1(
             },
             "media_attachments": {
                 "supported_mime_types": [
-                    "image/jpeg","image/png","image/gif","image/heic","image/heif",
-                    "image/webp","image/avif","video/webm","video/mp4","video/quicktime",
+                    "image/jpeg","image/png","image/gif","image/webp","video/webm","video/mp4","video/quicktime",
                     "video/ogg","audio/wave","audio/wav","audio/x-wav","audio/x-pn-wave",
                     "audio/vnd.wave","audio/ogg","audio/vorbis","audio/mpeg","audio/mp3",
                     "audio/webm","audio/flac","audio/aac","audio/m4a","audio/x-m4a",
@@ -463,10 +462,7 @@ pub async fn get_instance_v2(
                     "image/jpeg".into(),
                     "image/png".into(),
                     "image/gif".into(),
-                    "image/heic".into(),
-                    "image/heif".into(),
                     "image/webp".into(),
-                    "image/avif".into(),
                     "video/webm".into(),
                     "video/mp4".into(),
                     "video/quicktime".into(),

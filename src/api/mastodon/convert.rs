@@ -241,7 +241,6 @@ pub fn small_style_name(file_name: &str, content_type: Option<&str>) -> Option<S
         .map_or(file_name, |(stem, _)| stem);
     let format = match content_type.unwrap_or_default() {
         "image/gif" | "video/webm" | "video/quicktime" => "png",
-        "image/heic" | "image/heif" | "image/avif" => "jpeg",
         image if IMAGE_MIME_TYPES.contains(&image) => return Some(file_name.to_owned()),
         video if VIDEO_MIME_TYPES.contains(&video) => "png",
         _ => return None,

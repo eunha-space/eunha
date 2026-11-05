@@ -1178,6 +1178,39 @@ impl EmailSender {
         self.send(to, subject, &body).await
     }
 
+    /// `UserMailer.sign_in_token`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_sign_in_token(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        code: &str,
+        remote_ip: &str,
+        browser: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        time_zone: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let url = format!("https://{instance_domain}/account/password");
+        let body = format!(
+            "<h1>Sign in attempt</h1>\
+             <p>We detected an attempt to sign in to your account after a long time of \
+             inactivity. If this is you, please enter the security code below on the sign in \
+             challenge page:</p>\
+             <p><strong>{}</strong></p>\
+             <p>Here are details of the attempt:</p>\
+             <p><strong>IP:</strong> {}<br><strong>Browser:</strong> {}<br>\
+             <strong>Date:</strong> {}</p>\
+             <p>If this wasn't you, we recommend that you \
+             <a href=\"{url}\">change your password</a> immediately and enable two-factor \
+             authentication to keep your account secure.</p>",
+            html_escape(code),
+            html_escape(remote_ip),
+            html_escape(browser),
+            crate::time_zones::format_with_time_zone(timestamp, time_zone, "en"),
+        );
+        self.send(to, "Please confirm attempted sign in", &body).await
+    }
+
     /// A `UserMailer` mail: `Devise::Mailer`'s, which does not take
     /// `ApplicationMailer`'s auto-reply headers, in HTML and text.
     async fn send(&self, to: &str, subject: &str, html: &str) -> anyhow::Result<()> {

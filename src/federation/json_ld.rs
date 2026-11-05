@@ -116,8 +116,8 @@ pub async fn fetch_resource_without_id_validation(
     }
 }
 
-/// `JsonLdHelper#fetch_resource(uri, true, …)`: the document only if its
-/// `id` is `uri`. A portable `ap:` URI is fetched from its gateways, and
+/// `JsonLdHelper#fetch_resource(uri, …)`: the document only if `uri` serves
+/// it itself, no redirect followed, and its `id` is `uri`. A portable `ap:` URI is fetched from its gateways, and
 /// taken only when its proof holds.
 pub async fn fetch_resource(
     state: &AppState,
@@ -130,10 +130,21 @@ pub async fn fetch_resource(
             .await
             .ok());
     }
-    let json = fetch_resource_without_id_validation(state, uri, on_behalf_of, raise_on_error)
-        .await?
-        .filter(is_present);
-    Ok(json.filter(|json| json.get("id").and_then(Value::as_str) == Some(uri)))
+    let key = signing_key(state, on_behalf_of).await?;
+    let Ok(url) = url::Url::parse(uri) else {
+        anyhow::bail!("invalid URL {uri:?}");
+    };
+    let json = match state.fetcher.unverified_json_at(&url, Some(&key)).await {
+        Ok(json) => json,
+        Err(error) if raises(&error, raise_on_error) => return Err(error.into()),
+        Err(error) => {
+            tracing::debug!(uri, %error, "could not fetch");
+            None
+        }
+    };
+    Ok(json
+        .filter(is_present)
+        .filter(|json| json.get("id").and_then(Value::as_str) == Some(uri)))
 }
 
 /// `JsonLdHelper`'s accessors for a document as it arrived.

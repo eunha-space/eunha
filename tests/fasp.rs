@@ -428,22 +428,23 @@ async fn test_fasp_registration_capabilities_and_signatures() {
     let fake = spawn_fake().await;
     let fasp_id = register_and_confirm(&ctx, &fake).await;
 
-    // Enabling three capabilities and disabling the fourth tells the provider
-    // of each.
+    // Enabling three capabilities tells the provider of each; leaving the fourth
+    // off changes nothing to tell it.
     let updated = ctx
         .api
         .put_json(
             &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
             Some(&ctx.alice_token),
             &json!({"capabilities": [
-                {"id": "account_search", "version": "0.1", "enabled": true},
-                {"id": "follow_recommendation", "version": "0.1", "enabled": true},
-                {"id": "data_sharing", "version": "0.1", "enabled": true},
-                {"id": "callback", "version": "0.1", "enabled": false},
+                {"name": "account_search", "enabled": true},
+                {"name": "follow_recommendation", "enabled": true},
+                {"name": "data_sharing", "enabled": true},
+                {"name": "callback", "enabled": false},
             ]}),
         )
         .await;
     assert_eq!(updated.status(), StatusCode::OK);
+    let updated: Value = updated.json().await.unwrap();
     for capability in ["account_search", "follow_recommendation", "data_sharing"] {
         let path = format!("/capabilities/{capability}/0/activation");
         let call = fake
@@ -451,6 +452,51 @@ async fn test_fasp_registration_capabilities_and_signatures() {
             .await;
         assert!(call.verified);
     }
+    assert!(!fake
+        .received()
+        .iter()
+        .any(|r| r.path == "/capabilities/callback/0/activation"));
+
+    // The activation endpoint turns one capability on and off.
+    let callback = updated["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "callback")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let activated = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/admin/fasp/capabilities/{callback}/activation"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(activated.status(), StatusCode::OK);
+    fake.wait_for("the callback activation", |r| {
+        r.method == "POST" && r.path == "/capabilities/callback/0/activation"
+    })
+    .await;
+    let deactivated = ctx
+        .api
+        .http
+        .delete(ctx.api.url(&format!(
+            "/api/v1/admin/fasp/capabilities/{callback}/activation"
+        )))
+        .bearer_auth(&ctx.alice_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deactivated.status(), StatusCode::OK);
+    let deactivated: Value = deactivated.json().await.unwrap();
+    assert!(deactivated["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "callback" && c["enabled"] == false));
     let deactivated = fake
         .wait_for("the callback deactivation", |r| {
             r.method == "DELETE" && r.path == "/capabilities/callback/0/activation"
@@ -464,10 +510,10 @@ async fn test_fasp_registration_capabilities_and_signatures() {
             &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
             Some(&ctx.alice_token),
             &json!({"capabilities": [
-                {"id": "account_search", "version": "0.1", "enabled": true},
-                {"id": "follow_recommendation", "version": "0.1", "enabled": true},
-                {"id": "data_sharing", "version": "0.1", "enabled": true},
-                {"id": "callback", "version": "0.1", "enabled": false},
+                {"name": "account_search", "enabled": true},
+                {"name": "follow_recommendation", "enabled": true},
+                {"name": "data_sharing", "enabled": true},
+                {"name": "callback", "enabled": false},
             ]}),
         )
         .await;
@@ -623,6 +669,7 @@ async fn test_fasp_announces_lifecycle_events_and_trends() {
     let ctx = fasp_ctx("fasp-events").await;
     let fake = spawn_fake().await;
     let fasp_id = register_and_confirm(&ctx, &fake).await;
+    enable_data_sharing(&ctx, &fasp_id).await;
     sqlx::query("UPDATE accounts SET indexable = true, discoverable = true WHERE id = $1")
         .bind(ctx.alice_id.parse::<i64>().unwrap())
         .execute(&ctx.db)
@@ -891,7 +938,7 @@ async fn test_fasp_follow_recommendations() {
             &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
             Some(&ctx.alice_token),
             &json!({"capabilities": [
-                {"id": "follow_recommendation", "version": "0.1", "enabled": true},
+                {"name": "follow_recommendation", "enabled": true},
             ]}),
         )
         .await;
@@ -1051,13 +1098,26 @@ async fn test_fasp_account_search_refresh_keys() {
     assert!(async_refresh_header(&response).is_none());
 }
 
+/// `Fasp::Subscription.active`: a provider has data sharing on to be told.
+async fn enable_data_sharing(ctx: &TestContext, fasp_id: &str) {
+    let updated = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
+            Some(&ctx.alice_token),
+            &json!({"capabilities": [{"name": "data_sharing", "enabled": true}]}),
+        )
+        .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+}
+
 async fn enable_account_search(ctx: &TestContext, fasp_id: &str) {
     ctx.api
         .put_json(
             &format!("/api/v1/admin/fasp/providers/{fasp_id}"),
             Some(&ctx.alice_token),
             &json!({"capabilities": [
-                {"id": "account_search", "version": "0.1", "enabled": true},
+                {"name": "account_search", "enabled": true},
             ]}),
         )
         .await;
@@ -1105,6 +1165,7 @@ async fn test_fasp_announcements_wait_on_the_fasp_queue() {
     let ctx = fasp_ctx("fasp-queue").await;
     let fake = spawn_fake().await;
     let fasp_id = register_and_confirm(&ctx, &fake).await;
+    enable_data_sharing(&ctx, &fasp_id).await;
     sqlx::query("UPDATE accounts SET indexable = true WHERE id = $1")
         .bind(ctx.alice_id.parse::<i64>().unwrap())
         .execute(&ctx.db)

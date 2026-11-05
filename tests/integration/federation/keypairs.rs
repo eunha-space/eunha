@@ -8,49 +8,44 @@ use eunha::federation::keypair;
 
 use crate::helpers::TestContext;
 
-/// Give an account a signing key the old way, as a database that has not run
-/// the move still has.
+/// A database from before Mastodon 5.0: the column back, and a key in it.
 async fn seed_legacy_key(ctx: &TestContext, account_id: i64) -> String {
     let (private_key, public_key) = ojak::sig::signature::generate_rsa_keypair(
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query!(
-        "UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1",
-        account_id,
-        private_key,
-        public_key,
-    )
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    sqlx::query("ALTER TABLE public.accounts ADD COLUMN private_key text")
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM keypairs WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE public.accounts SET private_key = $2, public_key = $3 WHERE id = $1")
+        .bind(account_id)
+        .bind(&private_key)
+        .bind(&public_key)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
     private_key
 }
 
-/// An account whose key never moved still signs, so a 4.6-shaped database
-/// keeps working.
-#[tokio::test]
-async fn test_legacy_account_key_is_still_readable() {
-    let ctx = TestContext::new("kp-legacy").await;
-    let account_id: i64 = ctx.alice_id.parse().unwrap();
-    let private_key = seed_legacy_key(&ctx, account_id).await;
-
-    assert!(keypair::has_signing_key(&ctx.state, account_id)
-        .await
-        .unwrap());
-    let loaded = keypair::signing_key(&ctx.state, account_id).await.unwrap();
-    assert_eq!(loaded.private_key, private_key);
-}
-
-/// Upstream's `migrate_local_account_keypairs`: the key moves, the old columns
-/// are emptied, and what lands in `keypairs` is encrypted rather than a PEM.
+/// Upstream's `migrate_local_account_keypairs`, which `eunha migrate` runs before
+/// the column goes: the key moves, the old columns are emptied, and what lands
+/// in `keypairs` is encrypted rather than a PEM.
 #[tokio::test]
 async fn test_migrate_moves_local_keys_and_encrypts_them() {
     let ctx = TestContext::new("kp-migrate").await;
     let account_id: i64 = ctx.alice_id.parse().unwrap();
     let private_key = seed_legacy_key(&ctx, account_id).await;
 
-    keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
+    let moved = keypair::move_legacy_keys(&ctx.db, ctx.state.encryptor.as_ref())
+        .await
+        .unwrap();
+    assert_eq!(moved, 1);
 
     let stored = sqlx::query!(
         "SELECT private_key, public_key, local_fragment, type FROM keypairs WHERE account_id = $1",
@@ -71,44 +66,51 @@ async fn test_migrate_moves_local_keys_and_encrypts_them() {
     assert_eq!(stored.local_fragment.as_deref(), Some("#main-key"));
     assert_eq!(stored.r#type, 0, "RSA");
 
-    let legacy = sqlx::query!(
-        "SELECT private_key, public_key FROM accounts WHERE id = $1",
-        account_id,
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
-    assert_eq!(legacy.private_key, None);
-    assert_eq!(legacy.public_key, "");
+    let legacy: (Option<String>, String) =
+        sqlx::query_as("SELECT private_key, public_key FROM public.accounts WHERE id = $1")
+            .bind(account_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(legacy, (None, String::new()));
 
     // The key still comes back, and it is the same one.
     let loaded = keypair::signing_key(&ctx.state, account_id).await.unwrap();
     assert_eq!(loaded.private_key, private_key);
 
     // Running twice moves nothing the second time.
-    let moved = keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
+    let moved = keypair::move_legacy_keys(&ctx.db, ctx.state.encryptor.as_ref())
+        .await
+        .unwrap();
     assert_eq!(moved, 0);
 }
 
-/// Once every local key has moved, the database says so, so that a Mastodon
-/// booted on it does not try to move them again.
+/// Dropping the column loses whatever key is still in it, and a private key
+/// cannot be got back. Without secrets to encrypt it with, the move refuses and
+/// leaves it alone.
 #[tokio::test]
-async fn test_migrate_records_the_upstream_migration() {
-    let ctx = TestContext::new("kp-record").await;
+async fn test_a_key_with_nothing_to_encrypt_it_is_not_given_up() {
+    let ctx = TestContext::new("kp-no-secrets").await;
     let account_id: i64 = ctx.alice_id.parse().unwrap();
-    seed_legacy_key(&ctx, account_id).await;
+    let private_key = seed_legacy_key(&ctx, account_id).await;
 
-    keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
+    let error = keypair::move_legacy_keys(&ctx.db, None).await.unwrap_err();
+    assert!(error.to_string().contains("active_record_encryption"));
 
-    let recorded: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS (
-             SELECT 1 FROM public.schema_migrations WHERE version = '20260702144128'
-           ) AS "exists!""#,
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap();
-    assert!(recorded);
+    let kept: Option<String> =
+        sqlx::query_scalar("SELECT private_key FROM public.accounts WHERE id = $1")
+            .bind(account_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(kept.as_deref(), Some(private_key.as_str()));
+}
+
+/// With the column gone, as on any migrated database, there is nothing to do.
+#[tokio::test]
+async fn test_move_does_nothing_once_the_column_is_gone() {
+    let ctx = TestContext::new("kp-no-column").await;
+    assert_eq!(keypair::move_legacy_keys(&ctx.db, None).await.unwrap(), 0);
 }
 
 /// A revoked key is not offered for signing, matching the model's `usable`
@@ -118,7 +120,9 @@ async fn test_revoked_keypair_is_not_used() {
     let ctx = TestContext::new("kp-revoked").await;
     let account_id: i64 = ctx.alice_id.parse().unwrap();
     seed_legacy_key(&ctx, account_id).await;
-    keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
+    keypair::move_legacy_keys(&ctx.db, ctx.state.encryptor.as_ref())
+        .await
+        .unwrap();
 
     sqlx::query!(
         "UPDATE keypairs SET revoked = true WHERE account_id = $1",
@@ -146,7 +150,9 @@ async fn test_actor_document_serves_the_moved_public_key() {
         .unwrap()
         .unwrap();
 
-    keypair::migrate_local_keypairs(&ctx.state).await.unwrap();
+    keypair::move_legacy_keys(&ctx.db, ctx.state.encryptor.as_ref())
+        .await
+        .unwrap();
 
     let resp = ctx
         .api

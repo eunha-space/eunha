@@ -186,12 +186,12 @@ async fn test_quote_consent_handshake_between_instances() {
 
     // Bob signs on B with the key A knows him by, so that what B sends for
     // him verifies on A.
-    sqlx::query!(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
-        bob_priv,
-        bob_pub,
+    eunha::federation::keypair::replace_local(
+        &b.state,
+        b.alice_id.parse::<i64>().unwrap(),
+        &bob_priv,
+        &bob_pub,
     )
-    .execute(&b.db)
     .await
     .unwrap();
 
@@ -496,11 +496,7 @@ async fn give_key(ctx: &TestContext, account_id: i64) -> String {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
-        .bind(account_id)
-        .bind(&priv_pem)
-        .bind(&pub_pem)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, account_id, &priv_pem, &pub_pem)
         .await
         .unwrap();
     pub_pem

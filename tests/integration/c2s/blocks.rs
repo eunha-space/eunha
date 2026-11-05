@@ -149,12 +149,12 @@ async fn test_blocking_takes_both_accounts_out_of_each_others_collections() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &priv_pem,
+        &pub_pem,
     )
-    .bind(&priv_pem)
-    .bind(&pub_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
     let (alices, bob_in_alices) = collection_featuring(&ctx, &ctx.alice_token, &ctx.bob_id).await;

@@ -85,9 +85,14 @@ async fn process(
     terminal: bool,
     code: &mut Option<u16>,
 ) -> Option<FetchedResource> {
-    let resp = crate::federation::fetch::signed_get(state, url, ACCEPT)
-        .await
-        .ok()?;
+    // A terminal request already knows where the object is: since 4.7.4 it
+    // follows no redirect.
+    let resp = if terminal {
+        crate::federation::fetch::signed_get_exact(state, url, ACCEPT).await
+    } else {
+        crate::federation::fetch::signed_get(state, url, ACCEPT).await
+    }
+    .ok()?;
     *code = Some(resp.status);
     if resp.status != 200 {
         return None;
@@ -104,7 +109,7 @@ async fn process(
     let served = resp.url.as_str();
 
     if ojak::fetch::is_activity_content_type(&content_type) {
-        return match read_activitypub(served, &resp.body) {
+        return match read_activitypub(url, served, &resp.body) {
             ApBody::Resource(json) => Some(FetchedResource {
                 url: served.to_owned(),
                 json,
@@ -143,8 +148,10 @@ enum ApBody {
     Unusable,
 }
 
-/// `FetchResourceService#process_response`'s reading of an ActivityPub body.
-fn read_activitypub(url: &str, body: &[u8]) -> ApBody {
+/// `FetchResourceService#process_response`'s reading of an ActivityPub body
+/// asked for at `url` and served from `served`: `json['id'] != @url ||
+/// json['id'] != response.uri.to_s` asks again.
+fn read_activitypub(url: &str, served: &str, body: &[u8]) -> ApBody {
     let Ok(json) = serde_json::from_slice::<Value>(body) else {
         return ApBody::Unusable;
     };
@@ -153,7 +160,7 @@ fn read_activitypub(url: &str, body: &[u8]) -> ApBody {
     }
     match json.get("id").and_then(Value::as_str).unwrap_or_default() {
         "" => ApBody::Unusable,
-        id if id == url => ApBody::Resource(json),
+        id if id == url && id == served => ApBody::Resource(json),
         id => ApBody::Elsewhere(id.to_owned()),
     }
 }
@@ -247,6 +254,23 @@ mod tests {
         assert!(!supported_context(&json!({})));
     }
 
+    /// A redirect to the object's `id` is not the object's `id` answering:
+    /// asked by a URL the `id` differs from, or served from elsewhere, the
+    /// `id` is asked again.
+    #[test]
+    fn an_object_counts_only_when_asked_for_and_served_at_its_id() {
+        let body = serde_json::to_vec(&oeee_note()).unwrap();
+        let id = "https://oeee.cafe/ap/posts/75fbf20d";
+        assert_eq!(
+            read_activitypub("https://evil.test/redirect", id, &body),
+            ApBody::Elsewhere(id.to_owned())
+        );
+        assert_eq!(
+            read_activitypub(id, "https://evil.test/copy", &body),
+            ApBody::Elsewhere(id.to_owned())
+        );
+    }
+
     /// The object oeee.cafe serves at the end of the alternate link.
     fn oeee_note() -> Value {
         json!({
@@ -263,7 +287,11 @@ mod tests {
     fn an_object_served_from_its_own_id_is_the_resource() {
         let body = serde_json::to_vec(&oeee_note()).unwrap();
         assert_eq!(
-            read_activitypub("https://oeee.cafe/ap/posts/75fbf20d", &body),
+            read_activitypub(
+                "https://oeee.cafe/ap/posts/75fbf20d",
+                "https://oeee.cafe/ap/posts/75fbf20d",
+                &body
+            ),
             ApBody::Resource(oeee_note())
         );
     }
@@ -273,7 +301,11 @@ mod tests {
         let body = serde_json::to_vec(&oeee_note()).unwrap();
         // What a `/@author/{id}` page would have answered had it served JSON.
         assert_eq!(
-            read_activitypub("https://oeee.cafe/@miro/75fbf20d", &body),
+            read_activitypub(
+                "https://oeee.cafe/@miro/75fbf20d",
+                "https://oeee.cafe/@miro/75fbf20d",
+                &body
+            ),
             ApBody::Elsewhere("https://oeee.cafe/ap/posts/75fbf20d".into())
         );
     }
@@ -286,12 +318,16 @@ mod tests {
         let no_id = json!({"@context": AS_CONTEXT, "type": "Note"});
         for body in [no_context, wrong_type, no_id] {
             assert_eq!(
-                read_activitypub("https://a.test/1", &serde_json::to_vec(&body).unwrap()),
+                read_activitypub(
+                    "https://a.test/1",
+                    "https://a.test/1",
+                    &serde_json::to_vec(&body).unwrap()
+                ),
                 ApBody::Unusable
             );
         }
         assert_eq!(
-            read_activitypub("https://a.test/1", b"<html>not json</html>"),
+            read_activitypub("https://a.test/1", "https://a.test/1", b"<html>not json</html>"),
             ApBody::Unusable
         );
     }

@@ -36,7 +36,20 @@
     {% endif %}
   {% endmacro %}
 
-  {% if mode == "challenge" %}
+  {% if mode == "sign_in_token" %}
+    <form method="POST" action="{{ action }}" id="sign-in-token-form">
+      {{ continuation(attempt, oauth) }}
+      <p class="hint"><strong>{{ t_sign_in_token_title }}</strong></p>
+      <p class="hint">{{ t_sign_in_token_hint }}</p>
+      <label for="sign_in_token_attempt">{{ t_sign_in_token_attempt }}</label>
+      <input type="text" id="sign_in_token_attempt" name="sign_in_token_attempt" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus required>
+      <button type="submit">{{ t_sign_in }}</button>
+    </form>
+    <form method="POST" action="{{ action }}">
+      {{ continuation(attempt, oauth) }}
+      <button type="submit" class="link" name="sign_in_token_resend" value="1">{{ t_sign_in_token_resend }}</button>
+    </form>
+  {% elif mode == "challenge" %}
     <form method="POST" action="{{ action }}" id="otp-authentication-form"{% if webauthn_enabled %} class="hidden"{% endif %}>
       {{ continuation(attempt, oauth) }}
       <p class="hint">{{ t_otp_hint }}</p>

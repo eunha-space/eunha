@@ -137,9 +137,7 @@ async fn a_followers_only_post_asks_its_receivers_to_check_their_followers() {
     let (base, rob_id, rob, rob_pem) = remote(&ctx, &store).await;
     let alice: i64 = ctx.alice_id.parse().unwrap();
     follow(&ctx, rob_id, alice).await;
-    sqlx::query("UPDATE accounts SET private_key = 'test-private-key' WHERE id = $1")
-        .bind(alice)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice, "test-private-key", "")
         .await
         .unwrap();
 
@@ -216,9 +214,7 @@ async fn a_remote_account_s_followers_here_are_brought_in_line() {
     let alice: i64 = ctx.alice_id.parse().unwrap();
     let bob: i64 = ctx.bob_id.parse().unwrap();
     follow(&ctx, alice, rob_id).await;
-    sqlx::query("UPDATE accounts SET private_key = 'test-private-key' WHERE id = $1")
-        .bind(bob)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, bob, "test-private-key", "")
         .await
         .unwrap();
     let bob_uri = format!("https://{}/users/bob", ctx.domain);

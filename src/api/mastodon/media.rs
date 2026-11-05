@@ -41,10 +41,7 @@ pub const IMAGE_MIME_TYPES: &[&str] = &[
     "image/jpeg",
     "image/png",
     "image/gif",
-    "image/heic",
-    "image/heif",
     "image/webp",
-    "image/avif",
 ];
 /// `MediaAttachment::VIDEO_MIME_TYPES`.
 pub const VIDEO_MIME_TYPES: &[&str] = &["video/webm", "video/mp4", "video/quicktime", "video/ogg"];
@@ -505,10 +502,10 @@ async fn create(
         unreachable!("validated as present");
     };
 
-    // Mastodon 4.7.2 no longer lets libvips load HEIF ("Temporarily disable
-    // HEIF support"), so processing a HEIC, HEIF or AVIF image fails,
-    // whatever type it was declared as, and `rescue Paperclip::Error`
-    // answers it. The types are still advertised.
+    // Mastodon no longer lets libvips load HEIF, and since 4.7.4 no longer
+    // takes the types either ("temporarily disabled for security reasons"),
+    // so a HEIC, HEIF or AVIF image declared as something else fails in
+    // processing, and `rescue Paperclip::Error` answers it.
     if kind == TYPE_IMAGE && is_heif(&file.data) {
         tracing::warn!("refusing a HEIF upload, as Mastodon 4.7.2 does");
         return Err(MediaError::Processing);

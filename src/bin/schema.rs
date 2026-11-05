@@ -95,11 +95,7 @@ async fn main() -> Result<()> {
 /// Upstream migrations Eunha applies from code rather than from a file in
 /// `migrations/`, because what they do depends on the instance rather than on
 /// the schema. They are recorded in `public.schema_migrations` when they run.
-const RUNTIME_MIGRATIONS: [(&str, &str); 1] = [(
-    "20260702144128",
-    "moves local signing keys into `keypairs`, encrypted; runs at startup once \
-     ActiveRecord encryption keys are configured",
-)];
+const RUNTIME_MIGRATIONS: [(&str, &str); 0] = [];
 
 /// The tag for the release this build targets.
 fn tracked_tag() -> String {

@@ -775,19 +775,15 @@ async fn reach(tenant: &TenantConfig) -> Result<sqlx::PgPool> {
 /// Bring a tenant up on a database [`reach`] has found ready.
 async fn start_on(tenant: &TenantConfig, db: sqlx::PgPool) -> Result<Running> {
     let TenantConfig { source, config } = tenant;
+    // Every signing key is encrypted since Mastodon 5.0: an instance without
+    // the secrets could sign nothing it sends, and make no new account.
+    if config.active_record_encryption.is_none() {
+        anyhow::bail!("{source}: no [active_record_encryption] keys configured");
+    }
     let state = AppState::new(db, config.clone())
         .await
         .with_context(|| format!("{source}: starting"))?;
 
-    // Mastodon 4.7's post-deploy migration, which cannot be SQL: the keys it
-    // moves have to be encrypted with this instance's configured secrets.
-    if let Err(e) = crate::federation::keypair::migrate_local_keypairs(&state).await {
-        tracing::error!(
-            tenant = %state.instance.domain,
-            error = %e,
-            "could not move local signing keys into `keypairs`"
-        );
-    }
     let tasks = crate::background::spawn(state.clone());
     Ok(Running {
         state,

@@ -103,12 +103,12 @@ async fn test_a_signed_reply_to_a_local_post_reaches_its_authors_followers() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &priv_pem,
+        &pub_pem,
     )
-    .bind(&priv_pem)
-    .bind(&pub_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
     let alice_id: i64 =
@@ -426,17 +426,19 @@ async fn test_profiles_are_updated_in_batch_with_their_avatar() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2,
-             avatar_file_name = 'face.png', avatar_content_type = 'image/png',
-             avatar_storage_schema_version = 1
-         WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &priv_pem,
+        &pub_pem,
     )
-    .bind(&priv_pem)
-    .bind(&pub_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
+    sqlx::query("UPDATE accounts SET avatar_file_name = 'face.png', avatar_content_type = 'image/png', avatar_storage_schema_version = 1 WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
     let alice_id: i64 =
         sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'alice' AND domain IS NULL")
             .fetch_one(&ctx.db)
@@ -524,12 +526,12 @@ async fn test_followers_are_moved_from_a_previous_domain() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &priv_pem,
+        &pub_pem,
     )
-    .bind(&priv_pem)
-    .bind(&pub_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
     let alice_id: i64 =

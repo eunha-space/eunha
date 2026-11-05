@@ -36,15 +36,15 @@ async fn give_signing_key(ctx: &TestContext, username: &str) {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = $3 AND domain IS NULL",
-    )
-    .bind(private)
-    .bind(public)
-    .bind(username)
-    .execute(&ctx.db)
-    .await
-    .unwrap();
+    let id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE username = $1 AND domain IS NULL")
+            .bind(username)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    eunha::federation::keypair::replace_local(&ctx.state, id, &private, &public)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

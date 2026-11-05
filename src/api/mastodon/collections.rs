@@ -1012,10 +1012,11 @@ pub(crate) async fn distribute_collection_removal(
 
 /// `RevokeCollectionItemService`: the featured account takes its item back.
 /// From a remote collection, its `Delete` of the `FeatureAuthorization` it
-/// gave goes to the collection's owner (`DeliveryWorker`). Upstream also
-/// hands it to `CollectionRawDistributionWorker`, which signs as the
-/// collection's owner and so cannot send for a remote one; that leg is left
-/// out.
+/// gave goes to the collection's owner (`DeliveryWorker`); from a local one,
+/// signed by the account, to the collection's reach
+/// (`CollectionRawDistributionWorker`). Upstream hands a remote collection's
+/// to that worker too, which signs as the collection's owner and so cannot
+/// send for it; that leg is left out.
 pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()> {
     let Some(item) = sqlx::query!(
         r#"UPDATE collection_items ci SET state = 3, updated_at = now()
@@ -1030,10 +1031,6 @@ pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()>
     else {
         return Ok(());
     };
-    // `distribute_stamp_deletion! if @collection_item.remote?`.
-    if item.local {
-        return Ok(());
-    }
     let Some(account_id) = item.account_id else {
         return Ok(());
     };
@@ -1047,6 +1044,9 @@ pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()>
     else {
         return Ok(());
     };
+    if item.local {
+        return revoke_from_local_collection(state, &signer, item_id, item.collection_id).await;
+    }
     let owner_inbox = sqlx::query_scalar!(
         "SELECT inbox_url FROM accounts WHERE id = $1",
         item.owner_id
@@ -1082,6 +1082,40 @@ pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()>
         tracing::warn!(error = %e, "failed to enqueue a feature authorization's deletion");
     }
     Ok(())
+}
+
+/// `distribute_stamp_deletion!` for an item of a local collection: the
+/// account's own `Delete` goes out to the collection's reach, as the Linked
+/// Data signature lets the collection's owner pass it on.
+async fn revoke_from_local_collection(
+    state: &AppState,
+    signer: &Account,
+    item_id: i64,
+    collection_id: i64,
+) -> AppResult<()> {
+    let Ok(key) = crate::federation::keypair::signing_key(state, signer.id).await else {
+        return Ok(());
+    };
+    let domain = &state.instance.domain;
+    let actor = crate::federation::tag::account_uri_of(domain, signer);
+    let stamp = ap_coll::feature_authorization_uri(domain, signer.id, item_id);
+    let Some(collection) = ap_coll::load_ap_collection(state, collection_id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Ok(());
+    };
+    let collection_uri = collection.uri(domain);
+    let activity =
+        crate::federation::consent::delete_feature_authorization(&stamp, &actor, &collection_uri)
+            .map_err(AppError::Internal)?;
+    let signed = crate::federation::delivery::sign_linked_data_with(
+        activity,
+        &format!("{actor}#main-key"),
+        &key.private_key,
+    );
+    distribute_collection_raw(state, collection_id, signed).await
 }
 
 /// `DeleteCollectionItemService`: an item taken out of its collection, or

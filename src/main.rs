@@ -412,6 +412,13 @@ enum AccountsCommand {
         /// Turn the user's two-factor authentication off.
         #[arg(long = "disable-2fa")]
         disable_2fa: bool,
+        /// Spare the account the security code asked of one inactive for a
+        /// long time, for up to 96 hours.
+        #[arg(long)]
+        disable_sign_in_token: bool,
+        /// Ask an account inactive for a long time for the security code again.
+        #[arg(long)]
+        enable_sign_in_token: bool,
         /// Give the account a new random password, print it, and sign the
         /// account out of every session and app.
         #[arg(long)]
@@ -506,6 +513,8 @@ async fn main() -> anyhow::Result<()> {
                     disable,
                     approve,
                     disable_2fa,
+                    disable_sign_in_token,
+                    enable_sign_in_token,
                     reset_password,
                     instance,
                 },
@@ -524,6 +533,8 @@ async fn main() -> anyhow::Result<()> {
                     disable,
                     approve,
                     disable_2fa,
+                    disable_sign_in_token,
+                    enable_sign_in_token,
                     reset_password,
                 },
             )
@@ -895,6 +906,12 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
                             );
                         }
                     }
+                }
+                // Before the migration that drops the column they are in.
+                let moved =
+                    eunha::federation::keypair::move_legacy_keys(&db, encryptor.as_ref()).await?;
+                if moved > 0 {
+                    println!("{label}{moved} signing key(s) moved into `keypairs`.");
                 }
                 migrate::run(&db).await?;
                 println!("{label}Migrations applied.");

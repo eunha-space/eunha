@@ -5,7 +5,7 @@
 //! A URL's top-level domain is checked against twitter-text 3.1.0's lists
 //! ([`super::tlds`]), so one under a newer domain stays text, as upstream.
 //!
-//! Mastodon: app/lib/extractor.rb, config/initializers/twitter_regex.rb
+//! Mastodon: app/lib/extractor.rb
 
 use std::sync::LazyLock;
 

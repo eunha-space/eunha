@@ -878,6 +878,10 @@ pub fn router() -> Router {
             delete(admin::disable_user_two_factor),
         )
         .route(
+            "/api/v1/admin/accounts/{id}/sign_in_token_authentication",
+            post(admin::enable_user_sign_in_token).delete(admin::disable_user_sign_in_token),
+        )
+        .route(
             "/api/v1/admin/accounts/{id}/change_email",
             post(admin::change_user_email),
         )
@@ -1028,6 +1032,11 @@ pub fn router() -> Router {
                 .put(admin::update_admin_fasp_provider)
                 .patch(admin::update_admin_fasp_provider)
                 .delete(admin::delete_admin_fasp_provider),
+        )
+        .route(
+            "/api/v1/admin/fasp/capabilities/{id}/activation",
+            post(admin::activate_admin_fasp_capability)
+                .delete(admin::deactivate_admin_fasp_capability),
         )
         .route(
             "/api/v1/admin/fasp/providers/{id}/registration",

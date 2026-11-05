@@ -331,6 +331,20 @@ impl Locale {
             (Self::Ko, "link_to_otp") => "휴대전화의 2단계 인증 코드나 복구 코드 입력",
             (Self::En, "webauthn_not_supported") => "This browser doesn't support security keys",
             (Self::Ko, "webauthn_not_supported") => "이 브라우저는 보안 키를 지원하지 않습니다",
+            (Self::En, "sign_in_token_title") => "Please confirm attempted sign in",
+            (Self::Ko, "sign_in_token_title") => "로그인 시도를 확인해 주세요",
+            (Self::En, "sign_in_token_hint") => {
+                "To keep your account secure, enter the security code sent to your email address."
+            }
+            (Self::Ko, "sign_in_token_hint") => {
+                "계정을 안전하게 지키기 위해 이메일로 보낸 보안 코드를 입력해 주세요."
+            }
+            (Self::En, "sign_in_token_attempt") => "Security code",
+            (Self::Ko, "sign_in_token_attempt") => "보안 코드",
+            (Self::En, "sign_in_token_resend") => "Send a new security code",
+            (Self::Ko, "sign_in_token_resend") => "보안 코드 다시 보내기",
+            (Self::En, "invalid_sign_in_token") => "Invalid security code",
+            (Self::Ko, "invalid_sign_in_token") => "보안 코드가 올바르지 않습니다",
             (Self::En, "invalid_otp_token") => "Invalid two-factor code",
             (Self::Ko, "invalid_otp_token") => "2단계 인증 코드가 올바르지 않습니다",
             (Self::En, "invalid_security_key") => "Invalid security key",

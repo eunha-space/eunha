@@ -74,6 +74,9 @@ async fn subscriptions(
                   threshold_likes, threshold_replies
              FROM fasp_subscriptions
             WHERE category = $1 AND subscription_type = $2
+              AND EXISTS (SELECT 1 FROM fasp_capabilities c
+                           WHERE c.fasp_provider_id = fasp_subscriptions.fasp_provider_id
+                             AND c.name = 'data_sharing' AND c.enabled)
             ORDER BY id"#,
         category,
         subscription_type,

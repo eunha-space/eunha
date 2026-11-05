@@ -3,8 +3,8 @@
 --
 
 
--- Dumped from database version 18.4 (Homebrew)
--- Dumped by pg_dump version 18.4 (Homebrew)
+-- Dumped from database version 18.6 (Homebrew)
+-- Dumped by pg_dump version 18.6 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -337,6 +337,40 @@ ALTER SEQUENCE public.account_pins_id_seq OWNED BY public.account_pins.id;
 
 
 --
+-- Name: account_reach_filters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_reach_filters (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    bloom_filter bytea,
+    created_at timestamp(6) without time zone NOT NULL,
+    salt character varying NOT NULL,
+    saturated boolean DEFAULT false NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: account_reach_filters_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.account_reach_filters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: account_reach_filters_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.account_reach_filters_id_seq OWNED BY public.account_reach_filters.id;
+
+
+--
 -- Name: account_relationship_severance_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -485,7 +519,8 @@ CREATE TABLE public.account_warning_presets (
     created_at timestamp without time zone NOT NULL,
     text text DEFAULT ''::text NOT NULL,
     title character varying DEFAULT ''::character varying NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    updated_at timestamp without time zone NOT NULL,
+    action_category character varying DEFAULT 'all_actions'::character varying NOT NULL
 );
 
 
@@ -588,7 +623,6 @@ CREATE TABLE public.accounts (
     moved_to_account_id bigint,
     note text DEFAULT ''::text NOT NULL,
     outbox_url character varying DEFAULT ''::character varying NOT NULL,
-    private_key text,
     protocol integer DEFAULT 0 NOT NULL,
     public_key text DEFAULT ''::text NOT NULL,
     requested_deletion_at timestamp(6) without time zone,
@@ -642,6 +676,7 @@ CREATE TABLE public.admin_action_logs (
     action character varying DEFAULT ''::character varying NOT NULL,
     created_at timestamp without time zone NOT NULL,
     human_identifier character varying,
+    moderation_subscription_id bigint,
     permalink character varying,
     recorded_changes jsonb,
     recorded_changes_format character varying,
@@ -669,6 +704,42 @@ CREATE SEQUENCE public.admin_action_logs_id_seq
 --
 
 ALTER SEQUENCE public.admin_action_logs_id_seq OWNED BY public.admin_action_logs.id;
+
+
+--
+-- Name: admin_server_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_server_checks (
+    id bigint NOT NULL,
+    key character varying NOT NULL,
+    status smallint DEFAULT 0 NOT NULL,
+    severity smallint DEFAULT 0 NOT NULL,
+    ignored boolean DEFAULT false NOT NULL,
+    data jsonb,
+    checked_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: admin_server_checks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.admin_server_checks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: admin_server_checks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.admin_server_checks_id_seq OWNED BY public.admin_server_checks.id;
 
 
 --
@@ -1407,6 +1478,7 @@ CREATE TABLE public.domain_allows (
     id bigint NOT NULL,
     created_at timestamp without time zone NOT NULL,
     domain character varying DEFAULT ''::character varying NOT NULL,
+    moderation_subscription_id bigint,
     updated_at timestamp without time zone NOT NULL
 );
 
@@ -1438,6 +1510,7 @@ CREATE TABLE public.domain_blocks (
     id bigint NOT NULL,
     created_at timestamp without time zone NOT NULL,
     domain character varying DEFAULT ''::character varying NOT NULL,
+    moderation_subscription_id bigint,
     obfuscate boolean DEFAULT false NOT NULL,
     private_comment text,
     public_comment text,
@@ -1571,6 +1644,40 @@ ALTER SEQUENCE public.fasp_backfill_requests_id_seq OWNED BY public.fasp_backfil
 
 
 --
+-- Name: fasp_capabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fasp_capabilities (
+    id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    fasp_provider_id bigint NOT NULL,
+    name character varying NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    version character varying NOT NULL
+);
+
+
+--
+-- Name: fasp_capabilities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fasp_capabilities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fasp_capabilities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fasp_capabilities_id_seq OWNED BY public.fasp_capabilities.id;
+
+
+--
 -- Name: fasp_debug_callbacks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1642,7 +1749,6 @@ ALTER SEQUENCE public.fasp_follow_recommendations_id_seq OWNED BY public.fasp_fo
 CREATE TABLE public.fasp_providers (
     id bigint NOT NULL,
     base_url character varying NOT NULL,
-    capabilities jsonb DEFAULT '[]'::jsonb NOT NULL,
     confirmed boolean DEFAULT false NOT NULL,
     contact_email character varying,
     created_at timestamp(6) without time zone NOT NULL,
@@ -2398,6 +2504,115 @@ CREATE SEQUENCE public.mentions_id_seq
 --
 
 ALTER SEQUENCE public.mentions_id_seq OWNED BY public.mentions.id;
+
+
+--
+-- Name: moderation_subscription_advisories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.moderation_subscription_advisories (
+    id bigint NOT NULL,
+    action integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    moderation_subscription_id bigint CONSTRAINT moderation_subscription_adv_moderation_subscription_id_not_null NOT NULL,
+    target_key character varying NOT NULL,
+    target_type integer NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: moderation_subscription_advisories_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.moderation_subscription_advisories_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: moderation_subscription_advisories_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.moderation_subscription_advisories_id_seq OWNED BY public.moderation_subscription_advisories.id;
+
+
+--
+-- Name: moderation_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.moderation_subscriptions (
+    id bigint NOT NULL,
+    apply_automatically boolean DEFAULT false NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    last_synced_at timestamp(6) without time zone,
+    list_action integer,
+    name character varying,
+    override_unattributed boolean DEFAULT false NOT NULL,
+    preserve_relationships boolean DEFAULT true NOT NULL,
+    priority integer,
+    retract_automatically boolean DEFAULT true NOT NULL,
+    type integer NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    url character varying NOT NULL
+);
+
+
+--
+-- Name: moderation_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.moderation_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: moderation_subscriptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.moderation_subscriptions_id_seq OWNED BY public.moderation_subscriptions.id;
+
+
+--
+-- Name: moderation_suggestions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.moderation_suggestions (
+    id bigint NOT NULL,
+    moderation_subscription_id bigint,
+    state integer DEFAULT 0 NOT NULL,
+    action integer NOT NULL,
+    target_type integer NOT NULL,
+    target_key character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: moderation_suggestions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.moderation_suggestions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: moderation_suggestions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.moderation_suggestions_id_seq OWNED BY public.moderation_suggestions.id;
 
 
 --
@@ -4245,6 +4460,13 @@ ALTER TABLE ONLY public.account_pins ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: account_reach_filters id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_reach_filters ALTER COLUMN id SET DEFAULT nextval('public.account_reach_filters_id_seq'::regclass);
+
+
+--
 -- Name: account_relationship_severance_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4291,6 +4513,13 @@ ALTER TABLE ONLY public.account_warnings ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.admin_action_logs ALTER COLUMN id SET DEFAULT nextval('public.admin_action_logs_id_seq'::regclass);
+
+
+--
+-- Name: admin_server_checks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_server_checks ALTER COLUMN id SET DEFAULT nextval('public.admin_server_checks_id_seq'::regclass);
 
 
 --
@@ -4462,6 +4691,13 @@ ALTER TABLE ONLY public.fasp_backfill_requests ALTER COLUMN id SET DEFAULT nextv
 
 
 --
+-- Name: fasp_capabilities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fasp_capabilities ALTER COLUMN id SET DEFAULT nextval('public.fasp_capabilities_id_seq'::regclass);
+
+
+--
 -- Name: fasp_debug_callbacks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4613,6 +4849,27 @@ ALTER TABLE ONLY public.markers ALTER COLUMN id SET DEFAULT nextval('public.mark
 --
 
 ALTER TABLE ONLY public.mentions ALTER COLUMN id SET DEFAULT nextval('public.mentions_id_seq'::regclass);
+
+
+--
+-- Name: moderation_subscription_advisories id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_subscription_advisories ALTER COLUMN id SET DEFAULT nextval('public.moderation_subscription_advisories_id_seq'::regclass);
+
+
+--
+-- Name: moderation_subscriptions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.moderation_subscriptions_id_seq'::regclass);
+
+
+--
+-- Name: moderation_suggestions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_suggestions ALTER COLUMN id SET DEFAULT nextval('public.moderation_suggestions_id_seq'::regclass);
 
 
 --
@@ -4995,6 +5252,14 @@ ALTER TABLE ONLY public.account_pins
 
 
 --
+-- Name: account_reach_filters account_reach_filters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_reach_filters
+    ADD CONSTRAINT account_reach_filters_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: account_relationship_severance_events account_relationship_severance_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5064,6 +5329,14 @@ ALTER TABLE ONLY public.accounts_tags
 
 ALTER TABLE ONLY public.admin_action_logs
     ADD CONSTRAINT admin_action_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_server_checks admin_server_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_server_checks
+    ADD CONSTRAINT admin_server_checks_pkey PRIMARY KEY (id);
 
 
 --
@@ -5283,6 +5556,14 @@ ALTER TABLE ONLY public.fasp_backfill_requests
 
 
 --
+-- Name: fasp_capabilities fasp_capabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fasp_capabilities
+    ADD CONSTRAINT fasp_capabilities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fasp_debug_callbacks fasp_debug_callbacks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5464,6 +5745,30 @@ ALTER TABLE ONLY public.media_attachments
 
 ALTER TABLE ONLY public.mentions
     ADD CONSTRAINT mentions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: moderation_subscription_advisories moderation_subscription_advisories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_subscription_advisories
+    ADD CONSTRAINT moderation_subscription_advisories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: moderation_subscriptions moderation_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_subscriptions
+    ADD CONSTRAINT moderation_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: moderation_suggestions moderation_suggestions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_suggestions
+    ADD CONSTRAINT moderation_suggestions_pkey PRIMARY KEY (id);
 
 
 --
@@ -5896,6 +6201,13 @@ CREATE UNIQUE INDEX idx_on_account_id_target_account_id_a8c8ddf44e ON public.fol
 
 
 --
+-- Name: idx_on_fasp_provider_id_name_version_68e2668987; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_fasp_provider_id_name_version_68e2668987 ON public.fasp_capabilities USING btree (fasp_provider_id, name, version);
+
+
+--
 -- Name: idx_on_relationship_severance_event_id_403f53e707; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5907,6 +6219,20 @@ CREATE INDEX idx_on_relationship_severance_event_id_403f53e707 ON public.account
 --
 
 CREATE UNIQUE INDEX idx_on_status_id_object_type_object_id_d6ebe374bd ON public.tagged_objects USING btree (status_id, object_type, object_id) WHERE ((object_type IS NOT NULL) AND (object_id IS NOT NULL));
+
+
+--
+-- Name: idx_on_target_type_target_key_action_4f6ab01ebc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_target_type_target_key_action_4f6ab01ebc ON public.moderation_suggestions USING btree (target_type, target_key, action);
+
+
+--
+-- Name: idx_on_target_type_target_key_moderation_subscripti_a3f09c29b9; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_target_type_target_key_moderation_subscripti_a3f09c29b9 ON public.moderation_subscription_advisories USING btree (target_type, target_key, moderation_subscription_id);
 
 
 --
@@ -6001,6 +6327,13 @@ CREATE INDEX index_account_pins_on_target_account_id ON public.account_pins USIN
 
 
 --
+-- Name: index_account_reach_filters_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_reach_filters_on_account_id ON public.account_reach_filters USING btree (account_id);
+
+
+--
 -- Name: index_account_stats_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6085,10 +6418,24 @@ CREATE INDEX index_admin_action_logs_on_account_id ON public.admin_action_logs U
 
 
 --
+-- Name: index_admin_action_logs_on_moderation_subscription_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_admin_action_logs_on_moderation_subscription_id ON public.admin_action_logs USING btree (moderation_subscription_id) WHERE (moderation_subscription_id IS NOT NULL);
+
+
+--
 -- Name: index_admin_action_logs_on_target_type_and_target_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_admin_action_logs_on_target_type_and_target_id ON public.admin_action_logs USING btree (target_type, target_id);
+
+
+--
+-- Name: index_admin_server_checks_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_admin_server_checks_on_key ON public.admin_server_checks USING btree (key);
 
 
 --
@@ -6365,10 +6712,24 @@ CREATE UNIQUE INDEX index_domain_allows_on_domain ON public.domain_allows USING 
 
 
 --
+-- Name: index_domain_allows_on_moderation_subscription_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_domain_allows_on_moderation_subscription_id ON public.domain_allows USING btree (moderation_subscription_id);
+
+
+--
 -- Name: index_domain_blocks_on_domain; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_domain_blocks_on_domain ON public.domain_blocks USING btree (domain);
+
+
+--
+-- Name: index_domain_blocks_on_moderation_subscription_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_domain_blocks_on_moderation_subscription_id ON public.domain_blocks USING btree (moderation_subscription_id);
 
 
 --
@@ -6397,6 +6758,13 @@ CREATE UNIQUE INDEX index_email_subscriptions_on_confirmation_token ON public.em
 --
 
 CREATE INDEX index_fasp_backfill_requests_on_fasp_provider_id ON public.fasp_backfill_requests USING btree (fasp_provider_id);
+
+
+--
+-- Name: index_fasp_capabilities_on_fasp_provider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_fasp_capabilities_on_fasp_provider_id ON public.fasp_capabilities USING btree (fasp_provider_id);
 
 
 --
@@ -6684,6 +7052,20 @@ CREATE UNIQUE INDEX index_mentions_on_account_id_and_status_id ON public.mention
 --
 
 CREATE INDEX index_mentions_on_status_id ON public.mentions USING btree (status_id);
+
+
+--
+-- Name: index_moderation_advisories_on_moderation_subscription_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moderation_advisories_on_moderation_subscription_id ON public.moderation_subscription_advisories USING btree (moderation_subscription_id);
+
+
+--
+-- Name: index_moderation_suggestions_on_moderation_subscription_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moderation_suggestions_on_moderation_subscription_id ON public.moderation_suggestions USING btree (moderation_subscription_id);
 
 
 --
@@ -7712,6 +8094,14 @@ ALTER TABLE ONLY public.backups
 
 
 --
+-- Name: domain_blocks fk_rails_0d4a303c6d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_blocks
+    ADD CONSTRAINT fk_rails_0d4a303c6d FOREIGN KEY (moderation_subscription_id) REFERENCES public.moderation_subscriptions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: tag_follows fk_rails_0deefe597f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7741,6 +8131,22 @@ ALTER TABLE ONLY public.account_conversations
 
 ALTER TABLE ONLY public.featured_tags
     ADD CONSTRAINT fk_rails_174efcf15f FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: moderation_suggestions fk_rails_189e624c8b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_suggestions
+    ADD CONSTRAINT fk_rails_189e624c8b FOREIGN KEY (moderation_subscription_id) REFERENCES public.moderation_subscriptions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: domain_allows fk_rails_1be18c8bad; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_allows
+    ADD CONSTRAINT fk_rails_1be18c8bad FOREIGN KEY (moderation_subscription_id) REFERENCES public.moderation_subscriptions(id) ON DELETE SET NULL;
 
 
 --
@@ -7869,6 +8275,14 @@ ALTER TABLE ONLY public.quotes
 
 ALTER TABLE ONLY public.preview_card_trends
     ADD CONSTRAINT fk_rails_371593db34 FOREIGN KEY (preview_card_id) REFERENCES public.preview_cards(id) ON DELETE CASCADE;
+
+
+--
+-- Name: moderation_subscription_advisories fk_rails_373d44cfb0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moderation_subscription_advisories
+    ADD CONSTRAINT fk_rails_373d44cfb0 FOREIGN KEY (moderation_subscription_id) REFERENCES public.moderation_subscriptions(id);
 
 
 --
@@ -8328,6 +8742,14 @@ ALTER TABLE ONLY public.status_trends
 
 
 --
+-- Name: fasp_capabilities fk_rails_a6c03d8c46; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fasp_capabilities
+    ADD CONSTRAINT fk_rails_a6c03d8c46 FOREIGN KEY (fasp_provider_id) REFERENCES public.fasp_providers(id);
+
+
+--
 -- Name: poll_votes fk_rails_a6e6974b7e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8613,6 +9035,14 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.list_accounts
     ADD CONSTRAINT fk_rails_f11f9d1fcc FOREIGN KEY (follow_request_id) REFERENCES public.follow_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_reach_filters fk_rails_f1ab63c96b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_reach_filters
+    ADD CONSTRAINT fk_rails_f1ab63c96b FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --

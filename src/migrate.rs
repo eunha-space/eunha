@@ -342,6 +342,15 @@ pub async fn rehearse(source: &str, clone_name: &str, replace: bool) -> Result<R
         .map(|pending| pending.versions)
         .unwrap_or_default();
     let before = row_counts(&db).await?;
+    // `eunha migrate` moves signing keys out of `accounts.private_key` first,
+    // or the migration dropping that column refuses. A rehearsal has only a
+    // database URL and none of the instance's secrets; it seals the clone's
+    // copies with throwaway ones, since what it is rehearsing is the shape.
+    let throwaway = crate::rails_encryption::Encryptor::new(
+        &crate::rails_encryption::generate_secret(),
+        &crate::rails_encryption::generate_secret(),
+    );
+    crate::federation::keypair::move_legacy_keys(&db, Some(&throwaway)).await?;
     tracing::info!("applying {} pending migration(s)", applied.len());
     let started = Instant::now();
     run(&db).await?;

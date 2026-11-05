@@ -39,11 +39,7 @@ async fn alice_with_a_follower(ctx: &TestContext) -> (i64, String) {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
-        .bind(alice_id)
-        .bind(&priv_pem)
-        .bind(&pub_pem)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, &priv_pem, &pub_pem)
         .await
         .unwrap();
     let (nina_id, _, _) = seed_remote(ctx, "nina", "nina.invalid").await;

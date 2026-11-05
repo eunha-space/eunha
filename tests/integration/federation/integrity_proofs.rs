@@ -23,11 +23,7 @@ async fn test_delivered_activities_carry_a_verifiable_proof() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
-        .bind(alice_id)
-        .bind(&priv_pem)
-        .bind(&pub_pem)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, &priv_pem, &pub_pem)
         .await
         .unwrap();
 
@@ -154,11 +150,7 @@ async fn test_proofs_are_not_attached_unless_asked_for() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
-        .bind(alice_id)
-        .bind(&priv_pem)
-        .bind(&pub_pem)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, &priv_pem, &pub_pem)
         .await
         .unwrap();
 

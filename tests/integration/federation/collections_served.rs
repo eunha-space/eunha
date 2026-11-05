@@ -391,9 +391,7 @@ async fn listing_an_attribution_domain_credits_its_cards() {
 async fn featuring_a_hashtag_is_announced_to_followers() {
     let ctx = TestContext::new("ap-featured-tag-add").await;
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
-    sqlx::query("UPDATE accounts SET private_key = 'test-private-key' WHERE id = $1")
-        .bind(alice_id)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, "test-private-key", "")
         .await
         .unwrap();
     let remote_inbox = "https://remote.invalid/users/rob/inbox";

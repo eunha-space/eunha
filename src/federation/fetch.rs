@@ -39,13 +39,25 @@ pub async fn signed_get(
     Ok(state.fetcher.get(&url, accept, Some(&key)).await?)
 }
 
+/// [`signed_get`] with no redirect followed: Mastodon's `follow: false`.
+pub async fn signed_get_exact(
+    state: &AppState,
+    url: &str,
+    accept: &str,
+) -> anyhow::Result<ojak::client::Response> {
+    let url = parse(url)?;
+    let key = instance_key(state).await?;
+    Ok(state.fetcher.get_exact(&url, accept, Some(&key)).await?)
+}
+
 /// Fetch a remote ActivityPub object as JSON, signing the GET with the instance
 /// actor's key.
 ///
-/// The document is trusted only as ojak establishes it: served as
-/// ActivityPub, with an `id` on the origin it was finally served from. One
-/// that names an `id` on another origin is refused, as Mastodon refuses it;
-/// a caller that has to follow such an `id` asks for it by that `id`.
+/// `JsonLdHelper#fetch_resource`: the document at the `id` the caller knows.
+/// No redirect is followed, and the document has to name `url` as its `id`,
+/// as Mastodon has asked since 4.7.4: a server cannot pass off another
+/// object from wherever it is able to redirect. A caller that has to follow
+/// another `id` asks for it by that `id`.
 pub async fn signed_get_json(state: &AppState, url: &str) -> anyhow::Result<Value> {
     let key = instance_key(state).await?;
     // A portable id names a key, not a host: ojak asks the gateways it
@@ -58,5 +70,5 @@ pub async fn signed_get_json(state: &AppState, url: &str) -> anyhow::Result<Valu
             .json);
     }
     let url = parse(url)?;
-    Ok(state.fetcher.document(&url, Some(&key)).await?.json)
+    Ok(state.fetcher.document_at(&url, Some(&key)).await?.json)
 }

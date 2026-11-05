@@ -23,7 +23,7 @@ use serde_json::{Map, Value};
 
 use crate::db::models::Account;
 use crate::delete_account::suspension_origin;
-use crate::federation::json_ld::is_present;
+use crate::federation::json_ld::{self, is_present};
 use crate::federation::json_ld_helper::{
     as_array, equals_or_includes, first_lang_string, first_of_value, truthy,
     unsupported_uri_scheme, url_to_href, value_or_id,
@@ -224,6 +224,10 @@ async fn process_inner(
                     "Attempting to create an account without having verified its webfinger handle"
                 );
             }
+            // `validates :inbox_url, presence: true`, since 4.7.4.
+            if portable.is_none() && valid_collection_uri(json.get("inbox"), false).is_empty() {
+                bail!("Validation failed: Inbox url can't be blank ({uri})");
+            }
             let id = create_account(state, &username, &domain, &uri).await?;
             // `after_commit :announce_new_account_to_subscribed_fasp, on: :create`.
             crate::fasp::events::account_created(state, id).await;
@@ -409,6 +413,10 @@ impl Processor<'_> {
                 ),
             ),
         };
+        // `validates :inbox_url, presence: true`, when it changes.
+        if inbox_url.is_empty() && !account.inbox_url.is_empty() {
+            bail!("Validation failed: Inbox url can't be blank ({})", self.uri);
+        }
         let followers_url = valid_collection_uri(self.json.get("followers"), allow_ap);
         let following_url = valid_collection_uri(self.json.get("following"), allow_ap);
         let url = self.url().unwrap_or_else(|| self.uri.to_owned());
@@ -649,9 +657,18 @@ impl Processor<'_> {
                 Value::String(id) => id.clone(),
                 _ => continue,
             };
+            if json_ld::non_matching_uri_hosts(self.uri, &key_id) {
+                continue;
+            }
             // Fetched without checking its id, for GoToSocial, which serves
             // the whole actor at the key's id.
-            let Ok(document) = crate::federation::fetch::signed_get_json(self.state, &key_id).await
+            let Ok(Some(document)) = json_ld::fetch_resource_without_id_validation(
+                self.state,
+                &key_id,
+                None,
+                json_ld::RaiseOn::None,
+            )
+            .await
             else {
                 continue;
             };
@@ -706,6 +723,9 @@ impl Processor<'_> {
                 Value::String(id) => id.clone(),
                 _ => continue,
             };
+            if json_ld::non_matching_uri_hosts(self.uri, &key_id) {
+                continue;
+            }
             let Ok(key) = crate::federation::fetch::signed_get_json(self.state, &key_id).await
             else {
                 continue;
@@ -831,9 +851,16 @@ impl Processor<'_> {
             return (None, None);
         };
         if let Value::String(url) = &value {
-            match crate::federation::fetch::signed_get_json(self.state, url).await {
-                Ok(fetched) => value = fetched,
-                Err(_) => return (None, None),
+            match json_ld::fetch_resource_without_id_validation(
+                self.state,
+                url,
+                None,
+                json_ld::RaiseOn::None,
+            )
+            .await
+            {
+                Ok(Some(fetched)) => value = fetched,
+                _ => return (None, None),
             }
         }
         let mut description = None;
@@ -871,8 +898,15 @@ impl Processor<'_> {
         if let Some(info) = self.collections.get(kind) {
             return *info;
         }
-        let info = match crate::federation::fetch::signed_get_json(self.state, &uri).await {
-            Ok(collection) => {
+        let info = match json_ld::fetch_resource_without_id_validation(
+            self.state,
+            &uri,
+            None,
+            json_ld::RaiseOn::None,
+        )
+        .await
+        {
+            Ok(Some(collection)) => {
                 let total = collection.get("totalItems").and_then(|total| {
                     total
                         .as_i64()
@@ -881,7 +915,7 @@ impl Processor<'_> {
                 let first_page = collection.get("first").is_some_and(is_present);
                 (total, first_page)
             }
-            Err(_) => (None, false),
+            _ => (None, false),
         };
         self.collections.insert(kind, info);
         info
@@ -1451,8 +1485,8 @@ async fn create_account(state: &AppState, username: &str, domain: &str, uri: &st
     .fetch_one(&state.db)
     .await?;
     let id = sqlx::query_scalar!(
-        r#"INSERT INTO accounts (id, username, domain, uri, protocol, private_key, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, NULL, now(), now())
+        r#"INSERT INTO accounts (id, username, domain, uri, protocol, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, now(), now())
            RETURNING id"#,
         crate::snowflake::next_id(),
         username,

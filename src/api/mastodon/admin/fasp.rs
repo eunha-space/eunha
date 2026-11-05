@@ -1,6 +1,6 @@
 //! Mastodon's FASP admin pages over REST: `Admin::Fasp::ProvidersController`,
-//! `RegistrationsController`, `DebugCallsController` and
-//! `Debug::CallbacksController`. Every action is `Admin::Fasp::ProviderPolicy`,
+//! `CapabilityActivationsController`, `RegistrationsController`,
+//! `DebugCallsController` and `Debug::CallbacksController`. Every action is `Admin::Fasp::ProviderPolicy`,
 //! which is `manage_federation`, and writes no audit log entry, as upstream's
 //! do not. While the `fasp` feature is off, they answer 404.
 //!
@@ -43,17 +43,17 @@ pub struct AdminFaspProvider {
     pub updated_at: String,
 }
 
-impl From<&Provider> for AdminFaspProvider {
-    fn from(p: &Provider) -> Self {
+impl AdminFaspProvider {
+    async fn load(state: &AppState, p: &Provider) -> AppResult<Self> {
         use super::super::convert::mastodon_date;
-        Self {
+        Ok(Self {
             id: p.id.to_string(),
             name: p.name.clone(),
             base_url: p.base_url.clone(),
             confirmed: p.confirmed,
             sign_in_url: p.sign_in_url.clone(),
             remote_identifier: p.remote_identifier.clone(),
-            capabilities: p.capabilities(),
+            capabilities: p.capabilities(state).await?,
             privacy_policy: p.privacy_policy.clone(),
             contact_email: p.contact_email.clone(),
             fediverse_account: p.fediverse_account.clone(),
@@ -61,7 +61,7 @@ impl From<&Provider> for AdminFaspProvider {
             delivery_last_failed_at: p.delivery_last_failed_at.map(mastodon_date),
             created_at: mastodon_date(p.created_at),
             updated_at: mastodon_date(p.updated_at),
-        }
+        })
     }
 }
 
@@ -94,7 +94,11 @@ pub async fn list_admin_fasp_providers(
     )
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(providers.iter().map(Into::into).collect()))
+    let mut list = Vec::with_capacity(providers.len());
+    for provider in &providers {
+        list.push(AdminFaspProvider::load(&state, provider).await?);
+    }
+    Ok(Json(list))
 }
 
 /// `GET /api/v1/admin/fasp/providers/:id`.
@@ -104,21 +108,27 @@ pub async fn get_admin_fasp_provider(
     Path(id): Path<i64>,
 ) -> AppResult<Json<AdminFaspProvider>> {
     authorize(&state, &auth, false).await?;
-    Ok(Json((&find(&state, id).await?).into()))
+    Ok(Json(
+        AdminFaspProvider::load(&state, &find(&state, id).await?).await?,
+    ))
+}
+
+/// One `fasp_capabilities_attributes` entry, naming a capability the provider
+/// has.
+#[derive(Debug, Deserialize)]
+pub struct CapabilityAttributes {
+    pub name: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CapabilitiesForm {
     #[serde(default)]
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<CapabilityAttributes>,
 }
 
 /// `PUT`/`PATCH /api/v1/admin/fasp/providers/:id`: `#update` with
-/// `capabilities_attributes`, which replaces the provider's capabilities with
-/// those given. Each that changed tells the provider: an enabled one is
-/// activated (`POST /capabilities/:id/:major/activation`), a disabled one
-/// deactivated (`DELETE`), as `Fasp::Provider#update_remote_capabilities`
-/// does after the save.
+/// `fasp_capabilities_attributes`. Each that changes tells the provider first.
 pub async fn update_admin_fasp_provider(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -127,66 +137,80 @@ pub async fn update_admin_fasp_provider(
 ) -> AppResult<Json<AdminFaspProvider>> {
     authorize(&state, &auth, true).await?;
     let provider = find(&state, id).await?;
-    let current: Vec<Value> = form
-        .capabilities
-        .iter()
-        .map(|c| json!({ "id": c.id, "version": c.version, "enabled": c.enabled }))
-        .collect();
-    save_capabilities(&state, &provider, Value::Array(current)).await?;
-    Ok(Json((&find(&state, id).await?).into()))
+    let capabilities = provider.capabilities(&state).await?;
+    for attributes in &form.capabilities {
+        let capability = capabilities
+            .iter()
+            .find(|c| c.name == attributes.name)
+            .ok_or(AppError::NotFound)?;
+        set_capability_enabled(&state, &provider, capability, attributes.enabled).await?;
+    }
+    Ok(Json(AdminFaspProvider::load(&state, &provider).await?))
 }
 
-/// Save `capabilities`, then `#update_remote_capabilities`: each one with an
-/// `enabled` key that was not there before is activated or deactivated.
-async fn save_capabilities(
+/// `POST /api/v1/admin/fasp/capabilities/:id/activation`.
+pub async fn activate_admin_fasp_capability(
+    state: AppState,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AdminFaspProvider>> {
+    change_activation(state, auth, id, true).await
+}
+
+/// `DELETE /api/v1/admin/fasp/capabilities/:id/activation`.
+pub async fn deactivate_admin_fasp_capability(
+    state: AppState,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AdminFaspProvider>> {
+    change_activation(state, auth, id, false).await
+}
+
+async fn change_activation(
+    state: AppState,
+    auth: AuthenticatedUser,
+    id: i64,
+    enabled: bool,
+) -> AppResult<Json<AdminFaspProvider>> {
+    authorize(&state, &auth, true).await?;
+    let capability = Capability::find(&state, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let provider = find(&state, capability.fasp_provider_id).await?;
+    set_capability_enabled(&state, &provider, &capability, enabled).await?;
+    Ok(Json(AdminFaspProvider::load(&state, &provider).await?))
+}
+
+/// `Fasp::Capability#update_remote_capability`, a `before_update`: the provider
+/// hears of the change first, and a provider that cannot be told leaves it
+/// unsaved. One that did not change tells nobody.
+async fn set_capability_enabled(
     state: &AppState,
     provider: &Provider,
-    capabilities: Value,
+    capability: &Capability,
+    enabled: bool,
 ) -> AppResult<()> {
+    if capability.enabled == enabled {
+        return Ok(());
+    }
+    let path = format!(
+        "/capabilities/{}/{}/activation",
+        capability.name,
+        capability.major_version()
+    );
+    if enabled {
+        fasp::request::post(state, provider, &path, None).await
+    } else {
+        fasp::request::delete(state, provider, &path).await
+    }
+    .map_err(provider_error)?;
     sqlx::query!(
-        "UPDATE fasp_providers SET capabilities = $2, updated_at = now() WHERE id = $1",
-        provider.id,
-        capabilities,
+        "UPDATE fasp_capabilities SET enabled = $2, updated_at = now() WHERE id = $1",
+        capability.id,
+        enabled,
     )
     .execute(&state.db)
     .await?;
-    let old = match &provider.capabilities {
-        Value::Array(items) => items.clone(),
-        _ => vec![],
-    };
-    let Value::Array(current) = &capabilities else {
-        return Ok(());
-    };
-    if current == &old {
-        return Ok(());
-    }
-    let mut saved = provider.clone();
-    saved.capabilities = capabilities.clone();
-    for capability in current {
-        let Some(enabled) = capability.get("enabled").and_then(Value::as_bool) else {
-            continue;
-        };
-        if old.contains(capability) {
-            continue;
-        }
-        let id = capability
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let version = match capability.get("version") {
-            Some(Value::String(v)) => v.clone(),
-            Some(other) if !other.is_null() => other.to_string(),
-            _ => String::new(),
-        };
-        let major = version.split('.').next().unwrap_or_default();
-        let path = format!("/capabilities/{id}/{major}/activation");
-        if enabled {
-            fasp::request::post(state, &saved, &path, None).await
-        } else {
-            fasp::request::delete(state, &saved, &path).await
-        }
-        .map_err(provider_error)?;
-    }
     Ok(())
 }
 
@@ -218,6 +242,12 @@ pub async fn delete_admin_fasp_provider(
     )
     .execute(&mut *tx)
     .await?;
+    sqlx::query!(
+        "DELETE FROM fasp_capabilities WHERE fasp_provider_id = $1",
+        provider.id
+    )
+    .execute(&mut *tx)
+    .await?;
     sqlx::query!("DELETE FROM fasp_providers WHERE id = $1", provider.id)
         .execute(&mut *tx)
         .await?;
@@ -228,7 +258,8 @@ pub async fn delete_admin_fasp_provider(
 /// `POST /api/v1/admin/fasp/providers/:id/registration`:
 /// `Admin::Fasp::RegistrationsController#create`, `update_info!(confirm:
 /// true)` — confirm the provider, and record what its `/provider_info` says
-/// about itself. Nothing is saved if the provider cannot be asked.
+/// about itself. Nothing is saved if the provider cannot be asked. Capabilities
+/// it no longer lists go; those it still does keep whether they are enabled.
 pub async fn confirm_admin_fasp_registration(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -244,10 +275,44 @@ pub async fn confirm_admin_fasp_registration(
         .unwrap_or(Value::Null);
     let string = |name: &str| info.get(name).and_then(Value::as_str).map(str::to_owned);
     let privacy_policy = info.get("privacyPolicy").filter(|v| !v.is_null()).cloned();
-    let capabilities = match info.get("capabilities") {
-        Some(Value::Array(items)) => Value::Array(items.clone()),
-        _ => json!([]),
-    };
+    let capabilities: Vec<(String, String)> = info
+        .get("capabilities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            let name = c.get("id")?.as_str()?.to_owned();
+            // `find_or_create_by!` on a string column casts a number to one.
+            let version = match c.get("version") {
+                Some(Value::String(v)) => v.clone(),
+                Some(Value::Null) | None => String::new(),
+                Some(other) => other.to_string(),
+            };
+            Some((name, version))
+        })
+        .collect();
+    let names: Vec<String> = capabilities.iter().map(|(n, _)| n.clone()).collect();
+    let mut tx = state.db.begin().await?;
+    sqlx::query!(
+        "DELETE FROM fasp_capabilities WHERE fasp_provider_id = $1 AND NOT (name = ANY($2))",
+        provider.id,
+        &names,
+    )
+    .execute(&mut *tx)
+    .await?;
+    for (name, version) in &capabilities {
+        sqlx::query!(
+            r#"INSERT INTO fasp_capabilities
+                 (fasp_provider_id, name, version, created_at, updated_at)
+               VALUES ($1, $2, $3, now(), now())
+               ON CONFLICT (fasp_provider_id, name, version) DO NOTHING"#,
+            provider.id,
+            name,
+            version,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
     sqlx::query!(
         r#"UPDATE fasp_providers
               SET confirmed = true, privacy_policy = $2, sign_in_url = $3,
@@ -259,10 +324,12 @@ pub async fn confirm_admin_fasp_registration(
         string("contactEmail"),
         string("fediverseAccount"),
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
-    save_capabilities(&state, &confirmed, capabilities).await?;
-    Ok(Json((&find(&state, id).await?).into()))
+    tx.commit().await?;
+    Ok(Json(
+        AdminFaspProvider::load(&state, &find(&state, id).await?).await?,
+    ))
 }
 
 /// `POST /api/v1/admin/fasp/providers/:id/debug_calls`:

@@ -21,7 +21,6 @@ pub struct Account {
     /// for a local account means one whose actor id is derived rather than
     /// stored. Was the empty string before.
     pub uri: Option<String>,
-    pub private_key: Option<String>,
     pub public_key: String,
     pub locked: bool,
     pub discoverable: Option<bool>,

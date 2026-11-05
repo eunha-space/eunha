@@ -92,11 +92,7 @@ async fn test_an_inbound_move_moves_local_followers_and_relationships() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
-        .bind(&carol_private)
-        .bind(&carol_public)
-        .bind(carol_id)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, carol_id, &carol_private, &carol_public)
         .await
         .unwrap();
     sqlx::query(
@@ -353,11 +349,7 @@ async fn test_a_follower_moved_to_a_remote_account_leaves_once_the_follow_is_del
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
-        .bind(&carol_private)
-        .bind(&carol_public)
-        .bind(carol_id)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, carol_id, &carol_private, &carol_public)
         .await
         .unwrap();
     sqlx::query(

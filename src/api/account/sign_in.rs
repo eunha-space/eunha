@@ -10,6 +10,7 @@
 //! (`users.updated_at`) sends the person back to the password.
 //!
 //! Mastodon: app/controllers/concerns/auth/two_factor_authentication_concern.rb
+//! Mastodon: app/controllers/concerns/auth/sign_in_token_authentication_concern.rb
 //! Mastodon: app/controllers/auth/sessions_controller.rb
 //! Mastodon: app/controllers/auth/sessions/security_key_options_controller.rb
 
@@ -54,6 +55,8 @@ pub enum Continuation {
 enum Stage {
     /// Waiting for a second factor.
     Challenge,
+    /// Waiting for the security code mailed to a user back after a long time.
+    SignInToken,
     /// Waiting for the first code from a new authenticator, the setup the
     /// user's role requires; `secret` is Mastodon's `session[:new_otp_secret]`.
     Setup { secret: String },
@@ -186,11 +189,92 @@ pub async fn after_password(
             recovery_codes: Vec::new(),
         }));
     }
+    if crate::sign_in_token::suspicious_inactive_sign_in(state, user_id).await {
+        return prompt_for_sign_in_token(state, user, None, continuation, None, false, ip, user_agent)
+            .await;
+    }
     on_authentication_success(state, &user, "password", ip, user_agent).await;
     if user.missing() {
         return begin_setup(state, &user, continuation).await;
     }
     Step::SignedIn(user_id, continuation)
+}
+
+/// `prompt_for_sign_in_token`: a new code in the mail if the last has gone
+/// stale or another was asked for, and the page to enter it on.
+#[allow(clippy::too_many_arguments)]
+async fn prompt_for_sign_in_token(
+    state: &AppState,
+    user: UserTwoFactor,
+    token: Option<String>,
+    continuation: Continuation,
+    error: Option<&'static str>,
+    resend: bool,
+    ip: Option<std::net::IpAddr>,
+    user_agent: Option<&str>,
+) -> Step {
+    let expired = crate::sign_in_token::is_expired(state, user.user_id)
+        .await
+        .unwrap_or(true);
+    let mut user = user;
+    if resend || expired {
+        let code = match crate::sign_in_token::generate(state, user.user_id).await {
+            Ok(code) => code,
+            Err(error) => {
+                tracing::warn!(%error, "could not generate a sign-in token");
+                return Step::Failed(continuation);
+            }
+        };
+        // What was saved moved `updated_at`, which the attempt is held to.
+        match two_factor::load(&state.db, user.user_id).await {
+            Ok(Some(reloaded)) => user = reloaded,
+            _ => return Step::Failed(continuation),
+        }
+        let email = state.mailer();
+        let to = user.email.clone();
+        let domain = state.instance.domain.clone();
+        let remote_ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
+        let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
+        let time_zone = user.time_zone.clone();
+        crate::tenants::spawn(async move {
+            if let Err(error) = email
+                .send_sign_in_token(
+                    &to,
+                    &domain,
+                    &code,
+                    &remote_ip,
+                    &browser,
+                    chrono::Utc::now(),
+                    time_zone.as_deref(),
+                )
+                .await
+            {
+                tracing::warn!(%error, "could not send a sign-in token email");
+            }
+        });
+    }
+    let token = token.unwrap_or_else(|| crate::crypto::generate_token(32));
+    let attempt = Attempt {
+        user_id: user.user_id,
+        updated_at: stamp(&user),
+        stage: Stage::SignInToken,
+        webauthn_challenge: None,
+        continuation: continuation.clone(),
+    };
+    if !store(state, &token, &attempt).await {
+        return Step::Failed(continuation);
+    }
+    Step::Render(Box::new(Page {
+        token,
+        mode: "sign_in_token",
+        continuation,
+        error,
+        notice: None,
+        webauthn_enabled: false,
+        secret: None,
+        account: String::new(),
+        recovery_codes: Vec::new(),
+    }))
 }
 
 /// `require_functional!` for a user already signed in whose role requires
@@ -250,6 +334,8 @@ pub struct Submitted {
     pub credential: Option<String>,
     pub setup_otp_attempt: Option<String>,
     pub resume: Option<String>,
+    pub sign_in_token_attempt: Option<String>,
+    pub sign_in_token_resend: Option<String>,
 }
 
 impl Submitted {
@@ -278,6 +364,64 @@ pub async fn continue_attempt(
     };
 
     match attempt.stage.clone() {
+        // `authenticate_with_sign_in_token`.
+        Stage::SignInToken => {
+            if attempt.updated_at != stamp(&user) {
+                discard(state, &token).await;
+                return Step::Restart(continuation);
+            }
+            let prompt = |user, error, resend| {
+                prompt_for_sign_in_token(
+                    state,
+                    user,
+                    Some(token.clone()),
+                    continuation.clone(),
+                    error,
+                    resend,
+                    ip,
+                    user_agent,
+                )
+            };
+            if submitted.sign_in_token_resend.is_some() {
+                return prompt(user, None, true).await;
+            }
+            let code = submitted
+                .sign_in_token_attempt
+                .as_deref()
+                .filter(|code| !code.trim().is_empty());
+            let Some(code) = code else {
+                return prompt(user, None, false).await;
+            };
+            // `authenticate_with_sign_in_token_attempt`.
+            if two_factor::second_factor_rate_limited(state, user.user_id).await {
+                return prompt(user, Some("rate_limited"), false).await;
+            }
+            if crate::sign_in_token::valid(state, user.user_id, code)
+                .await
+                .unwrap_or(false)
+            {
+                if let Err(error) = crate::sign_in_token::clear(state, user.user_id).await {
+                    tracing::warn!(%error, "could not clear a sign-in token");
+                    return Step::Failed(continuation);
+                }
+                discard(state, &token).await;
+                on_authentication_success(state, &user, "sign_in_token", ip, user_agent).await;
+                if user.missing() {
+                    return begin_setup(state, &user, continuation).await;
+                }
+                return Step::SignedIn(user.user_id, continuation);
+            }
+            on_authentication_failure(
+                state,
+                &user,
+                "sign_in_token",
+                "invalid_sign_in_token",
+                ip,
+                user_agent,
+            )
+            .await;
+            prompt(user, Some("invalid_sign_in_token"), false).await
+        }
         Stage::RecoveryCodes => {
             if submitted.resume.is_some() {
                 discard(state, &token).await;
@@ -506,7 +650,11 @@ async fn on_authentication_failure(
         Some(reason),
     )
     .await;
-    two_factor::notify_failed_second_factor(state, user, ip, user_agent).await;
+    // A security code is no second factor, so getting it wrong is not one
+    // failing.
+    if method != "sign_in_token" {
+        two_factor::notify_failed_second_factor(state, user, ip, user_agent).await;
+    }
 }
 
 /// `SuspiciousSignInDetector#suspicious?`: no TOTP, not the first sign-in,
@@ -598,6 +746,10 @@ pub fn render(state: &AppState, locale: Locale, page: &Page) -> Response {
             t_recovery_instructions => locale.t("recovery_instructions"),
             t_resume_app_authorization => locale.t("resume_app_authorization"),
             t_continue => locale.t("continue"),
+            t_sign_in_token_title => locale.t("sign_in_token_title"),
+            t_sign_in_token_hint => locale.t("sign_in_token_hint"),
+            t_sign_in_token_attempt => locale.t("sign_in_token_attempt"),
+            t_sign_in_token_resend => locale.t("sign_in_token_resend"),
         },
     );
     Html(html).into_response()

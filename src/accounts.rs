@@ -216,15 +216,14 @@ async fn insert_local_account(
 
     let account_id = sqlx::query_scalar!(
         r#"INSERT INTO accounts
-             (id, username, url, uri, private_key, public_key,
+             (id, username, url, uri, public_key,
               inbox_url, outbox_url, shared_inbox_url, id_scheme, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, 1, now(), now())
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, 1, now(), now())
            RETURNING id"#,
         new_account_id,
         username,
         url,
         uri,
-        private_key,
         public_key,
         inbox_url.as_str(),
         outbox_url.as_str(),
@@ -233,18 +232,14 @@ async fn insert_local_account(
     .fetch_one(&mut **tx)
     .await?;
 
-    // Written to `accounts` above so that the account is never keyless; move it
-    // to `keypairs` when this instance keeps signing keys there.
-    if let Some(encryptor) = encryptor {
-        crate::federation::keypair::store_sealed(
-            tx,
-            encryptor,
-            account_id,
-            private_key,
-            public_key,
-        )
-        .await?;
-    }
+    crate::federation::keypair::store_sealed(
+        tx,
+        crate::federation::keypair::required_encryptor(encryptor)?,
+        account_id,
+        private_key,
+        public_key,
+    )
+    .await?;
     Ok(account_id)
 }
 
@@ -446,6 +441,8 @@ pub struct ModifyOptions {
     pub disable: bool,
     pub approve: bool,
     pub disable_2fa: bool,
+    pub disable_sign_in_token: bool,
+    pub enable_sign_in_token: bool,
     pub reset_password: bool,
 }
 
@@ -544,6 +541,12 @@ pub async fn modify_from_command(
         crate::two_factor::disable(&mut tx, user.id).await?;
     }
     tx.commit().await?;
+    if options.disable_sign_in_token {
+        crate::sign_in_token::disable(state, user.id).await?;
+    }
+    if options.enable_sign_in_token {
+        crate::sign_in_token::enable(state, user.id).await?;
+    }
     if email.is_some() {
         // `send_reconfirmation_instructions`, after the save.
         send_confirmation_instructions(state, user.id).await?;

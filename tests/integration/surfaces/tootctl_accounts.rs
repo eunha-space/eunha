@@ -87,11 +87,7 @@ async fn test_rotate_replaces_the_key_and_signs_with_the_old_one() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $2, public_key = $3 WHERE id = $1")
-        .bind(alice)
-        .bind(&old_private)
-        .bind(&old_public)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice, &old_private, &old_public)
         .await
         .unwrap();
     let nina = remote(&ctx, "nina", "nina.invalid", "").await;
@@ -111,17 +107,12 @@ async fn test_rotate_replaces_the_key_and_signs_with_the_old_one() {
     .await
     .unwrap();
     assert_ne!(new_public, old_public);
-    let legacy: (Option<String>, String) =
-        sqlx::query_as("SELECT private_key, public_key FROM accounts WHERE id = $1")
-            .bind(alice)
-            .fetch_one(&ctx.db)
-            .await
-            .unwrap();
-    assert_eq!(
-        legacy,
-        (None, String::new()),
-        "no second copy is left behind"
-    );
+    let legacy: String = sqlx::query_scalar("SELECT public_key FROM accounts WHERE id = $1")
+        .bind(alice)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(legacy, "", "no second copy is left behind");
 
     let update: Value = eventually(async || {
         sqlx::query_scalar(

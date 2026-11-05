@@ -40,9 +40,9 @@ async fn test_software_updates() {
         config.software_update_url = Some("http://127.0.0.1:9/update-check".into());
     })
     .await;
-    record(&ctx, "4.9.0", 1, false).await;
-    record(&ctx, "4.7.0", 0, false).await;
-    record(&ctx, "4.7.9", 0, true).await;
+    record(&ctx, "5.2.0", 1, false).await;
+    record(&ctx, "4.7.9", 0, false).await;
+    record(&ctx, "5.0.9", 0, true).await;
     crate::helpers::grant_admin_scopes(&ctx.db, id(&ctx.bob_id)).await;
     assert_eq!(
         ctx.api
@@ -65,7 +65,7 @@ async fn test_software_updates() {
         .iter()
         .map(|u| u["version"].as_str().unwrap())
         .collect();
-    assert_eq!(versions, ["4.7.9", "4.9.0"]);
+    assert_eq!(versions, ["5.0.9", "5.2.0"]);
     assert_eq!(updates["updates"][0]["urgent"], true);
     assert_eq!(updates["updates"][1]["type"], "minor");
 }

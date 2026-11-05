@@ -27,12 +27,12 @@ async fn test_a_suspended_domain_is_not_delivered_to_port_and_all() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &priv_pem,
+        &pub_pem,
     )
-    .bind(&priv_pem)
-    .bind(&pub_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
     for domain in ["blocked.test", "ported.test:8443"] {

@@ -80,6 +80,7 @@ pub mod time_zones;
 pub mod tootctl;
 pub mod translation;
 pub mod trends;
+pub mod sign_in_token;
 pub mod two_factor;
 pub mod upstream;
 pub mod user_standing;

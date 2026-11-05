@@ -11,8 +11,8 @@
 //! to providers, and what is asked of them, runs in the background
 //! ([`workers`]).
 //!
-//! The tables are Mastodon's: `fasp_providers`, `fasp_subscriptions`,
-//! `fasp_backfill_requests`, `fasp_debug_callbacks` and
+//! The tables are Mastodon's: `fasp_providers`, `fasp_capabilities`,
+//! `fasp_subscriptions`, `fasp_backfill_requests`, `fasp_debug_callbacks` and
 //! `fasp_follow_recommendations`.
 //!
 //! Mastodon: app/models/fasp.rb, app/models/fasp/
@@ -24,7 +24,7 @@ pub mod request;
 pub mod signature;
 pub mod workers;
 
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 
 use crate::state::AppState;
@@ -55,7 +55,6 @@ pub struct Provider {
     pub remote_identifier: String,
     pub provider_public_key_pem: String,
     pub server_private_key_pem: String,
-    pub capabilities: Value,
     pub privacy_policy: Option<Value>,
     pub contact_email: Option<String>,
     pub fediverse_account: Option<String>,
@@ -64,23 +63,37 @@ pub struct Provider {
     pub delivery_last_failed_at: Option<chrono::NaiveDateTime>,
 }
 
-/// `Fasp::Capability`: one entry of a provider's `capabilities`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A `fasp_capabilities` row: `Fasp::Capability`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Capability {
-    pub id: String,
-    #[serde(default, deserialize_with = "string_or_number")]
+    #[serde(serialize_with = "id_as_string")]
+    pub id: i64,
+    pub fasp_provider_id: i64,
+    pub name: String,
     pub version: String,
-    #[serde(default)]
     pub enabled: bool,
 }
 
-/// `attribute :version, :string`, which casts a number to its string.
-fn string_or_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    Ok(match Value::deserialize(d)? {
-        Value::String(s) => s,
-        Value::Null => String::new(),
-        other => other.to_string(),
-    })
+fn id_as_string<S: Serializer>(id: &i64, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&id.to_string())
+}
+
+impl Capability {
+    /// `#major_version`.
+    pub fn major_version(&self) -> &str {
+        self.version.split('.').next().unwrap_or_default()
+    }
+
+    pub async fn find(state: &AppState, id: i64) -> sqlx::Result<Option<Self>> {
+        sqlx::query_as!(
+            Capability,
+            r#"SELECT id, fasp_provider_id, name, version, enabled
+                 FROM fasp_capabilities WHERE id = $1"#,
+            id
+        )
+        .fetch_optional(&state.db)
+        .await
+    }
 }
 
 impl Provider {
@@ -90,37 +103,47 @@ impl Provider {
             .await
     }
 
-    /// `Fasp::Provider.with_capability(name)`: providers that list `name`
-    /// as enabled, confirmed or not.
+    /// `Fasp::Provider.with_capability(name)`: providers that have `name`
+    /// enabled, confirmed or not.
     pub async fn with_capability(state: &AppState, name: &str) -> sqlx::Result<Vec<Self>> {
-        let wanted = serde_json::json!([{ "id": name, "enabled": true }]);
         sqlx::query_as!(
             Provider,
-            "SELECT * FROM fasp_providers WHERE capabilities @> $1::jsonb ORDER BY id",
-            wanted
+            r#"SELECT p.* FROM fasp_providers p
+                WHERE EXISTS (SELECT 1 FROM fasp_capabilities c
+                               WHERE c.fasp_provider_id = p.id
+                                 AND c.name = $1 AND c.enabled)
+                ORDER BY p.id"#,
+            name
         )
         .fetch_all(&state.db)
         .await
     }
 
-    /// `#capabilities`.
-    pub fn capabilities(&self) -> Vec<Capability> {
-        match &self.capabilities {
-            Value::Array(items) => items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect(),
-            _ => vec![],
-        }
+    /// `#fasp_capabilities`.
+    pub async fn capabilities(&self, state: &AppState) -> sqlx::Result<Vec<Capability>> {
+        sqlx::query_as!(
+            Capability,
+            r#"SELECT id, fasp_provider_id, name, version, enabled
+                 FROM fasp_capabilities WHERE fasp_provider_id = $1 ORDER BY id"#,
+            self.id
+        )
+        .fetch_all(&state.db)
+        .await
     }
 
     /// `#capability_enabled?`.
-    pub fn capability_enabled(&self, name: &str) -> bool {
-        self.confirmed
-            && self
-                .capabilities()
-                .iter()
-                .any(|c| c.id == name && c.enabled)
+    pub async fn capability_enabled(&self, state: &AppState, name: &str) -> sqlx::Result<bool> {
+        if !self.confirmed {
+            return Ok(false);
+        }
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM fasp_capabilities
+                               WHERE fasp_provider_id = $1 AND name = $2 AND enabled) AS "e!""#,
+            self.id,
+            name
+        )
+        .fetch_one(&state.db)
+        .await
     }
 
     /// `#url(path)`: the provider's base URL with `path` after it.

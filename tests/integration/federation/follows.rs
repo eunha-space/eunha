@@ -30,11 +30,7 @@ async fn give_key(ctx: &TestContext, id: i64) {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query("UPDATE accounts SET private_key = $1, public_key = $2 WHERE id = $3")
-        .bind(&private)
-        .bind(&public)
-        .bind(id)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, id, &private, &public)
         .await
         .unwrap();
 }

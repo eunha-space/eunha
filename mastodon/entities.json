@@ -76,6 +76,7 @@
    "mentions",
    "published_at",
    "reactions",
+   "reactions_allowed",
    "starts_at",
    "statuses",
    "tags",
@@ -189,6 +190,7 @@
    "show_media",
    "show_media_replies",
    "source",
+   "state",
    "statuses_count",
    "uri",
    "username"
@@ -392,10 +394,13 @@
  },
  "preferences": {
   "always": [
+   "displaying_own_boosts",
+   "displaying_own_posts",
    "posting_default_language",
    "posting_default_privacy",
    "posting_default_quote_policy",
    "posting_default_sensitive",
+   "posting_default_spoiler_field",
    "reading_autoplay_gifs",
    "reading_default_sensitive_media",
    "reading_default_sensitive_text"

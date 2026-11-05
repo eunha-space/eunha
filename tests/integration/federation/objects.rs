@@ -387,9 +387,7 @@ async fn test_profile_update_reaches_recently_followed() {
     let alice_id: i64 = ctx.alice_id.parse().unwrap();
 
     // The fanout only runs for accounts that can sign (have a private key).
-    sqlx::query("UPDATE accounts SET private_key = 'test-private-key' WHERE id = $1")
-        .bind(alice_id)
-        .execute(&ctx.db)
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, "test-private-key", "")
         .await
         .unwrap();
 

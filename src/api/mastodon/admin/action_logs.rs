@@ -67,6 +67,16 @@ pub const ACTION_TYPE_MAP: &[(&str, &str, &str)] = &[
         "destroy",
     ),
     ("disable_2fa_user", "User", "disable_2fa"),
+    (
+        "disable_sign_in_token_auth_user",
+        "User",
+        "disable_sign_in_token",
+    ),
+    (
+        "enable_sign_in_token_auth_user",
+        "User",
+        "enable_sign_in_token",
+    ),
     ("disable_custom_emoji", "CustomEmoji", "disable"),
     ("disable_user", "User", "disable"),
     ("disable_relay", "Relay", "disable"),

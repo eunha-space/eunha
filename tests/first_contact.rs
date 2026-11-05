@@ -213,12 +213,12 @@ async fn test_a_portable_actor_follows() {
         &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
     )
     .unwrap();
-    sqlx::query(
-        "UPDATE accounts SET private_key = $1, public_key = $2 WHERE username = 'alice' AND domain IS NULL",
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        &private_pem,
+        &public_pem,
     )
-    .bind(&private_pem)
-    .bind(&public_pem)
-    .execute(&ctx.db)
     .await
     .unwrap();
     let signer = Ed25519Signer::generate();

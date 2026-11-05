@@ -36,11 +36,14 @@ async fn test_self_deletion_federates_delete_actor() {
     let ctx = TestContext::new("del-federate").await;
     seed_remote(&ctx, "carol", "remote.invalid").await;
     // Only an account with a signing key federates.
-    sqlx::query("UPDATE accounts SET private_key = 'test-private-key' WHERE id = $1")
-        .bind(ctx.alice_id.parse::<i64>().unwrap())
-        .execute(&ctx.db)
-        .await
-        .unwrap();
+    eunha::federation::keypair::replace_local(
+        &ctx.state,
+        ctx.alice_id.parse::<i64>().unwrap(),
+        "test-private-key",
+        "",
+    )
+    .await
+    .unwrap();
 
     let resp = ctx
         .api

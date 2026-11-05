@@ -63,10 +63,10 @@ Before anything is processed, as Mastodon's callbacks raise:
 
 Bytes that are no image the build can read are refused (“File
 Paperclip::Errors::NotIdentifiedByImageMagickError”) rather than stored
-under the type the client claimed. A HEIC, HEIF or AVIF image fails
-processing, as it does on Mastodon 4.7.2, answered with a 500 and “Error
-processing thumbnail for uploaded media”, as is a video or audio file ffmpeg
-cannot read.
+under the type the client claimed. HEIC, HEIF and AVIF are not accepted, as
+Mastodon has refused them since 4.7.4; one declared as another image type
+fails processing, answered with a 500 and “Error processing thumbnail for
+uploaded media”, as is a video or audio file ffmpeg cannot read.
 
 ### How it is processed
 

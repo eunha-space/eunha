@@ -201,6 +201,40 @@ pub async fn disable_user_two_factor(
     render(&state, id).await
 }
 
+// ── /api/v1/admin/accounts/:id/sign_in_token_authentication ─────────────
+
+/// `Admin::Users::SignInTokenAuthenticationsController#create`: the security
+/// code challenge back on.
+pub async fn enable_user_sign_in_token(
+    state: AppState,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AdminAccount>> {
+    require_scope(&auth)?;
+    let s = subject(&state, &auth, id).await?;
+    // `UserPolicy#enable_sign_in_token?`
+    authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
+    crate::sign_in_token::enable(&state, s.user.id).await?;
+    action_log::log(&state.db, auth.account_id, "enable_sign_in_token", &s.target).await?;
+    render(&state, id).await
+}
+
+/// `Admin::Users::SignInTokenAuthenticationsController#destroy`: no security
+/// code challenge for a while.
+pub async fn disable_user_sign_in_token(
+    state: AppState,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AdminAccount>> {
+    require_scope(&auth)?;
+    let s = subject(&state, &auth, id).await?;
+    // `UserPolicy#disable_sign_in_token?`
+    authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
+    crate::sign_in_token::disable(&state, s.user.id).await?;
+    action_log::log(&state.db, auth.account_id, "disable_sign_in_token", &s.target).await?;
+    render(&state, id).await
+}
+
 // ── POST /api/v1/admin/accounts/:id/change_email ──────────────────────────
 
 #[derive(Debug, Deserialize)]

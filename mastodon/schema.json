@@ -1,5 +1,5 @@
 {
-  "version": "20260812154114",
+  "version": "20261016161747",
   "tables": {
     "account_aliases": {
       "columns": {
@@ -396,6 +396,59 @@
         }
       }
     },
+    "account_reach_filters": {
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "bloom_filter": {
+          "name": "bloom_filter",
+          "sql_type": "bytea",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('account_reach_filters_id_seq'::regclass)"
+        },
+        "salt": {
+          "name": "salt",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        "saturated": {
+          "name": "saturated",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "index_account_reach_filters_on_account_id": {
+          "name": "index_account_reach_filters_on_account_id",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX index_account_reach_filters_on_account_id ON <table> USING btree (account_id)"
+        }
+      }
+    },
     "account_relationship_severance_events": {
       "columns": {
         "account_id": {
@@ -644,6 +697,12 @@
     },
     "account_warning_presets": {
       "columns": {
+        "action_category": {
+          "name": "action_category",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": "'all_actions'::character varying"
+        },
         "created_at": {
           "name": "created_at",
           "sql_type": "timestamp without time zone",
@@ -983,12 +1042,6 @@
           "nullable": false,
           "default": "''::character varying"
         },
-        "private_key": {
-          "name": "private_key",
-          "sql_type": "text",
-          "nullable": true,
-          "default": null
-        },
         "protocol": {
           "name": "protocol",
           "sql_type": "integer",
@@ -1186,6 +1239,12 @@
           "nullable": false,
           "default": "nextval('admin_action_logs_id_seq'::regclass)"
         },
+        "moderation_subscription_id": {
+          "name": "moderation_subscription_id",
+          "sql_type": "bigint",
+          "nullable": true,
+          "default": null
+        },
         "permalink": {
           "name": "permalink",
           "sql_type": "character varying",
@@ -1235,10 +1294,80 @@
           "unique": false,
           "definition": "CREATE INDEX index_admin_action_logs_on_account_id ON <table> USING btree (account_id)"
         },
+        "index_admin_action_logs_on_moderation_subscription_id": {
+          "name": "index_admin_action_logs_on_moderation_subscription_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_admin_action_logs_on_moderation_subscription_id ON <table> USING btree (moderation_subscription_id) WHERE (moderation_subscription_id IS NOT NULL)"
+        },
         "index_admin_action_logs_on_target_type_and_target_id": {
           "name": "index_admin_action_logs_on_target_type_and_target_id",
           "unique": false,
           "definition": "CREATE INDEX index_admin_action_logs_on_target_type_and_target_id ON <table> USING btree (target_type, target_id)"
+        }
+      }
+    },
+    "admin_server_checks": {
+      "columns": {
+        "checked_at": {
+          "name": "checked_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "data": {
+          "name": "data",
+          "sql_type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('admin_server_checks_id_seq'::regclass)"
+        },
+        "ignored": {
+          "name": "ignored",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "key": {
+          "name": "key",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        "severity": {
+          "name": "severity",
+          "sql_type": "smallint",
+          "nullable": false,
+          "default": "0"
+        },
+        "status": {
+          "name": "status",
+          "sql_type": "smallint",
+          "nullable": false,
+          "default": "0"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "index_admin_server_checks_on_key": {
+          "name": "index_admin_server_checks_on_key",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX index_admin_server_checks_on_key ON <table> USING btree (key)"
         }
       }
     },
@@ -2589,6 +2718,12 @@
           "nullable": false,
           "default": "nextval('domain_allows_id_seq'::regclass)"
         },
+        "moderation_subscription_id": {
+          "name": "moderation_subscription_id",
+          "sql_type": "bigint",
+          "nullable": true,
+          "default": null
+        },
         "updated_at": {
           "name": "updated_at",
           "sql_type": "timestamp without time zone",
@@ -2601,6 +2736,11 @@
           "name": "index_domain_allows_on_domain",
           "unique": true,
           "definition": "CREATE UNIQUE INDEX index_domain_allows_on_domain ON <table> USING btree (domain)"
+        },
+        "index_domain_allows_on_moderation_subscription_id": {
+          "name": "index_domain_allows_on_moderation_subscription_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_domain_allows_on_moderation_subscription_id ON <table> USING btree (moderation_subscription_id)"
         }
       }
     },
@@ -2623,6 +2763,12 @@
           "sql_type": "bigint",
           "nullable": false,
           "default": "nextval('domain_blocks_id_seq'::regclass)"
+        },
+        "moderation_subscription_id": {
+          "name": "moderation_subscription_id",
+          "sql_type": "bigint",
+          "nullable": true,
+          "default": null
         },
         "obfuscate": {
           "name": "obfuscate",
@@ -2672,6 +2818,11 @@
           "name": "index_domain_blocks_on_domain",
           "unique": true,
           "definition": "CREATE UNIQUE INDEX index_domain_blocks_on_domain ON <table> USING btree (domain)"
+        },
+        "index_domain_blocks_on_moderation_subscription_id": {
+          "name": "index_domain_blocks_on_moderation_subscription_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_domain_blocks_on_moderation_subscription_id ON <table> USING btree (moderation_subscription_id)"
         }
       }
     },
@@ -2845,6 +2996,64 @@
         }
       }
     },
+    "fasp_capabilities": {
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "enabled": {
+          "name": "enabled",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "fasp_provider_id": {
+          "name": "fasp_provider_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('fasp_capabilities_id_seq'::regclass)"
+        },
+        "name": {
+          "name": "name",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "name": "version",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "idx_on_fasp_provider_id_name_version_68e2668987": {
+          "name": "idx_on_fasp_provider_id_name_version_68e2668987",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX idx_on_fasp_provider_id_name_version_68e2668987 ON <table> USING btree (fasp_provider_id, name, version)"
+        },
+        "index_fasp_capabilities_on_fasp_provider_id": {
+          "name": "index_fasp_capabilities_on_fasp_provider_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_fasp_capabilities_on_fasp_provider_id ON <table> USING btree (fasp_provider_id)"
+        }
+      }
+    },
     "fasp_debug_callbacks": {
       "columns": {
         "created_at": {
@@ -2945,12 +3154,6 @@
           "sql_type": "character varying",
           "nullable": false,
           "default": null
-        },
-        "capabilities": {
-          "name": "capabilities",
-          "sql_type": "jsonb",
-          "nullable": false,
-          "default": "'[]'::jsonb"
         },
         "confirmed": {
           "name": "confirmed",
@@ -4308,6 +4511,211 @@
           "name": "index_mentions_on_status_id",
           "unique": false,
           "definition": "CREATE INDEX index_mentions_on_status_id ON <table> USING btree (status_id)"
+        }
+      }
+    },
+    "moderation_subscription_advisories": {
+      "columns": {
+        "action": {
+          "name": "action",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('moderation_subscription_advisories_id_seq'::regclass)"
+        },
+        "moderation_subscription_id": {
+          "name": "moderation_subscription_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "target_key": {
+          "name": "target_key",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        "target_type": {
+          "name": "target_type",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "idx_on_target_type_target_key_moderation_subscripti_a3f09c29b9": {
+          "name": "idx_on_target_type_target_key_moderation_subscripti_a3f09c29b9",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX idx_on_target_type_target_key_moderation_subscripti_a3f09c29b9 ON <table> USING btree (target_type, target_key, moderation_subscription_id)"
+        },
+        "index_moderation_advisories_on_moderation_subscription_id": {
+          "name": "index_moderation_advisories_on_moderation_subscription_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_moderation_advisories_on_moderation_subscription_id ON <table> USING btree (moderation_subscription_id)"
+        }
+      }
+    },
+    "moderation_subscriptions": {
+      "columns": {
+        "apply_automatically": {
+          "name": "apply_automatically",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('moderation_subscriptions_id_seq'::regclass)"
+        },
+        "last_synced_at": {
+          "name": "last_synced_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": true,
+          "default": null
+        },
+        "list_action": {
+          "name": "list_action",
+          "sql_type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "name": {
+          "name": "name",
+          "sql_type": "character varying",
+          "nullable": true,
+          "default": null
+        },
+        "override_unattributed": {
+          "name": "override_unattributed",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "preserve_relationships": {
+          "name": "preserve_relationships",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        "priority": {
+          "name": "priority",
+          "sql_type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "retract_automatically": {
+          "name": "retract_automatically",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        "type": {
+          "name": "type",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "url": {
+          "name": "url",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {}
+    },
+    "moderation_suggestions": {
+      "columns": {
+        "action": {
+          "name": "action",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('moderation_suggestions_id_seq'::regclass)"
+        },
+        "moderation_subscription_id": {
+          "name": "moderation_subscription_id",
+          "sql_type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "state": {
+          "name": "state",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "target_key": {
+          "name": "target_key",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        "target_type": {
+          "name": "target_type",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "idx_on_target_type_target_key_action_4f6ab01ebc": {
+          "name": "idx_on_target_type_target_key_action_4f6ab01ebc",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX idx_on_target_type_target_key_action_4f6ab01ebc ON <table> USING btree (target_type, target_key, action)"
+        },
+        "index_moderation_suggestions_on_moderation_subscription_id": {
+          "name": "index_moderation_suggestions_on_moderation_subscription_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_moderation_suggestions_on_moderation_subscription_id ON <table> USING btree (moderation_subscription_id)"
         }
       }
     },
@@ -8287,6 +8695,54 @@
       "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
     },
     {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_account_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL account_id"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_salt_not_null",
+      "kind": "n",
+      "definition": "NOT NULL salt"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_saturated_not_null",
+      "kind": "n",
+      "definition": "NOT NULL saturated"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "account_reach_filters_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "account_reach_filters",
+      "name": "fk_rails_f1ab63c96b",
+      "kind": "f",
+      "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
+    },
+    {
       "table": "account_relationship_severance_events",
       "name": "account_relationship_severa_relationship_severance_eve_not_null",
       "kind": "n",
@@ -8507,6 +8963,12 @@
       "name": "fk_rails_4ea43ef304",
       "kind": "f",
       "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "account_warning_presets",
+      "name": "account_warning_presets_action_category_not_null",
+      "kind": "n",
+      "definition": "NOT NULL action_category"
     },
     {
       "table": "account_warning_presets",
@@ -8807,6 +9269,54 @@
       "name": "fk_rails_a7667297fa",
       "kind": "f",
       "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_ignored_not_null",
+      "kind": "n",
+      "definition": "NOT NULL ignored"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_key_not_null",
+      "kind": "n",
+      "definition": "NOT NULL key"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_severity_not_null",
+      "kind": "n",
+      "definition": "NOT NULL severity"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_status_not_null",
+      "kind": "n",
+      "definition": "NOT NULL status"
+    },
+    {
+      "table": "admin_server_checks",
+      "name": "admin_server_checks_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
     },
     {
       "table": "announcement_mutes",
@@ -9859,6 +10369,12 @@
       "definition": "NOT NULL updated_at"
     },
     {
+      "table": "domain_allows",
+      "name": "fk_rails_1be18c8bad",
+      "kind": "f",
+      "definition": "FOREIGN KEY (moderation_subscription_id) REFERENCES moderation_subscriptions(id) ON DELETE SET NULL"
+    },
+    {
       "table": "domain_blocks",
       "name": "domain_blocks_created_at_not_null",
       "kind": "n",
@@ -9905,6 +10421,12 @@
       "name": "domain_blocks_updated_at_not_null",
       "kind": "n",
       "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "domain_blocks",
+      "name": "fk_rails_0d4a303c6d",
+      "kind": "f",
+      "definition": "FOREIGN KEY (moderation_subscription_id) REFERENCES moderation_subscriptions(id) ON DELETE SET NULL"
     },
     {
       "table": "email_domain_blocks",
@@ -10051,6 +10573,60 @@
       "definition": "FOREIGN KEY (fasp_provider_id) REFERENCES fasp_providers(id)"
     },
     {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_enabled_not_null",
+      "kind": "n",
+      "definition": "NOT NULL enabled"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_fasp_provider_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL fasp_provider_id"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_name_not_null",
+      "kind": "n",
+      "definition": "NOT NULL name"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fasp_capabilities_version_not_null",
+      "kind": "n",
+      "definition": "NOT NULL version"
+    },
+    {
+      "table": "fasp_capabilities",
+      "name": "fk_rails_a6c03d8c46",
+      "kind": "f",
+      "definition": "FOREIGN KEY (fasp_provider_id) REFERENCES fasp_providers(id)"
+    },
+    {
       "table": "fasp_debug_callbacks",
       "name": "fasp_debug_callbacks_created_at_not_null",
       "kind": "n",
@@ -10151,12 +10727,6 @@
       "name": "fasp_providers_base_url_not_null",
       "kind": "n",
       "definition": "NOT NULL base_url"
-    },
-    {
-      "table": "fasp_providers",
-      "name": "fasp_providers_capabilities_not_null",
-      "kind": "n",
-      "definition": "NOT NULL capabilities"
     },
     {
       "table": "fasp_providers",
@@ -11181,6 +11751,174 @@
     {
       "table": "mentions",
       "name": "mentions_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "fk_rails_373d44cfb0",
+      "kind": "f",
+      "definition": "FOREIGN KEY (moderation_subscription_id) REFERENCES moderation_subscriptions(id)"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_adv_moderation_subscription_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL moderation_subscription_id"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_action_not_null",
+      "kind": "n",
+      "definition": "NOT NULL action"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_target_key_not_null",
+      "kind": "n",
+      "definition": "NOT NULL target_key"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_target_type_not_null",
+      "kind": "n",
+      "definition": "NOT NULL target_type"
+    },
+    {
+      "table": "moderation_subscription_advisories",
+      "name": "moderation_subscription_advisories_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_apply_automatically_not_null",
+      "kind": "n",
+      "definition": "NOT NULL apply_automatically"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_override_unattributed_not_null",
+      "kind": "n",
+      "definition": "NOT NULL override_unattributed"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_preserve_relationships_not_null",
+      "kind": "n",
+      "definition": "NOT NULL preserve_relationships"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_retract_automatically_not_null",
+      "kind": "n",
+      "definition": "NOT NULL retract_automatically"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_type_not_null",
+      "kind": "n",
+      "definition": "NOT NULL type"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "moderation_subscriptions",
+      "name": "moderation_subscriptions_url_not_null",
+      "kind": "n",
+      "definition": "NOT NULL url"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "fk_rails_189e624c8b",
+      "kind": "f",
+      "definition": "FOREIGN KEY (moderation_subscription_id) REFERENCES moderation_subscriptions(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_action_not_null",
+      "kind": "n",
+      "definition": "NOT NULL action"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_state_not_null",
+      "kind": "n",
+      "definition": "NOT NULL state"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_target_key_not_null",
+      "kind": "n",
+      "definition": "NOT NULL target_key"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_target_type_not_null",
+      "kind": "n",
+      "definition": "NOT NULL target_type"
+    },
+    {
+      "table": "moderation_suggestions",
+      "name": "moderation_suggestions_updated_at_not_null",
       "kind": "n",
       "definition": "NOT NULL updated_at"
     },
@@ -13782,6 +14520,11 @@
       "data_type": "bigint",
       "increment": 1
     },
+    "account_reach_filters_id_seq": {
+      "name": "account_reach_filters_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
     "account_relationship_severance_events_id_seq": {
       "name": "account_relationship_severance_events_id_seq",
       "data_type": "bigint",
@@ -13819,6 +14562,11 @@
     },
     "admin_action_logs_id_seq": {
       "name": "admin_action_logs_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
+    "admin_server_checks_id_seq": {
+      "name": "admin_server_checks_id_seq",
       "data_type": "bigint",
       "increment": 1
     },
@@ -13952,6 +14700,11 @@
       "data_type": "bigint",
       "increment": 1
     },
+    "fasp_capabilities_id_seq": {
+      "name": "fasp_capabilities_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
     "fasp_debug_callbacks_id_seq": {
       "name": "fasp_debug_callbacks_id_seq",
       "data_type": "bigint",
@@ -14064,6 +14817,21 @@
     },
     "mentions_id_seq": {
       "name": "mentions_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
+    "moderation_subscription_advisories_id_seq": {
+      "name": "moderation_subscription_advisories_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
+    "moderation_subscriptions_id_seq": {
+      "name": "moderation_subscriptions_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
+    "moderation_suggestions_id_seq": {
+      "name": "moderation_suggestions_id_seq",
       "data_type": "bigint",
       "increment": 1
     },
