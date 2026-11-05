@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain FROM domain_allows WHERE domain = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "domain_allows",
+            "name": "domain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5abea9de0aec4229a542edb312f2c80d20553f136fd079a800de0a80a76e4e21"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT a.domain AS \"domain!\" FROM accounts a\n                   WHERE a.domain = ANY($1) AND (\n                     EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id)\n                     OR EXISTS (SELECT 1 FROM follows f WHERE f.target_account_id = a.id)\n                   )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain!",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2d6e2a9aa1dbe2f8944956c121cf1f45e64bac5f94e61e3ba9d13c277ed22f1f"
+}

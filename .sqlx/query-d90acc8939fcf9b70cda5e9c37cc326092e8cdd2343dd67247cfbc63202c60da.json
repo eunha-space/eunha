@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE moderation_suggestions SET state = $2, updated_at = now() WHERE state = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d90acc8939fcf9b70cda5e9c37cc326092e8cdd2343dd67247cfbc63202c60da"
+}

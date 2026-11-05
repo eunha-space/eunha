@@ -106,7 +106,8 @@ async fn test_settings_need_manage_settings() {
     assert_eq!(settings["trends"], true);
     assert_eq!(settings["backups_retention_period"], 7);
     assert_eq!(settings["thumbnail"], Value::Null);
-    assert_eq!(settings["overridden"], json!([]));
+    // The test configuration turns authorized fetch off, whose default is now on.
+    assert_eq!(settings["overridden"], json!(["authorized_fetch"]));
     // Saving settings is not logged, as `Admin::SettingsController` logs
     // nothing.
     json_ok(

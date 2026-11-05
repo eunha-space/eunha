@@ -1090,6 +1090,40 @@ pub fn router() -> Router {
             post(admin::unsuppress_follow_recommendations),
         )
         .route(
+            "/api/v1/admin/moderation_subscriptions",
+            get(admin::list_moderation_subscriptions).post(admin::create_moderation_subscription),
+        )
+        .route(
+            "/api/v1/admin/moderation_subscriptions/logs",
+            get(admin::list_moderation_subscription_logs),
+        )
+        .route(
+            "/api/v1/admin/moderation_subscriptions/{id}",
+            get(admin::get_moderation_subscription)
+                .patch(admin::update_moderation_subscription)
+                .delete(admin::delete_moderation_subscription),
+        )
+        .route(
+            "/api/v1/admin/moderation_suggestions",
+            get(admin::list_moderation_suggestions),
+        )
+        .route(
+            "/api/v1/admin/moderation_suggestions/{id}",
+            delete(admin::dismiss_moderation_suggestion),
+        )
+        .route(
+            "/api/v1/admin/moderation_suggestions/{id}/apply",
+            post(admin::apply_moderation_suggestion),
+        )
+        .route(
+            "/api/v1/admin/server_checks",
+            get(admin::list_server_checks),
+        )
+        .route(
+            "/api/v1/admin/server_checks/{key}/ignore",
+            post(admin::ignore_server_check).delete(admin::restore_server_check),
+        )
+        .route(
             "/api/v1/admin/software_updates",
             get(admin::list_software_updates),
         )

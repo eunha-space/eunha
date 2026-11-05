@@ -106,8 +106,8 @@ A security code after a long absence
 
 A sign-in with the right password, to an account with no second factor that has
 not been used for a long time, is asked for a code sent by mail
-(`Auth::SignInTokenAuthenticationConcern`). An administrator can waive this for a
-limited time, with `POST` and `DELETE` on
+(`Auth::SignInTokenAuthenticationConcern`). An administrator can waive this for
+a limited time, with `POST` and `DELETE` on
 `/api/v1/admin/accounts/:id/sign_in_token_authentication`, or with
 `eunha accounts modify --disable-sign-in-token` and `--enable-sign-in-token`.
 
@@ -171,13 +171,13 @@ sign-up page and comes straight back: the new account gets its code without a
 consent page, without having to be confirmed or approved first, and redeeming
 the code records the application in `users.created_by_application_id`.
 
-The code, and a denial, come back with a 302, as Rails redirects. **Deny** posts `_method=delete`, which is
-`DELETE /oauth/authorize`: from a signed-in browser it turns the client away,
-sending `access_denied`, with its `state`, to a redirect URI it registered.
-As Doorkeeper 5.9.9 (Mastodon 4.7.3) does, the client is checked first, and
-a refusal is shown rather than sent anywhere: 400 when `client_id` is
-missing, 401 when no app has it, and 400 for a redirect URI it did not
-register.
+The code, and a denial, come back with a 302, as Rails redirects. **Deny**
+posts `_method=delete`, which is `DELETE /oauth/authorize`: from a signed-in
+browser it turns the client away, sending `access_denied`, with its `state`, to
+a redirect URI it registered. As Doorkeeper 5.9.9 (Mastodon 4.7.3) does, the
+client is checked first, and a refusal is shown rather than sent anywhere: 400
+when `client_id` is missing, 401 when no app has it, and 400 for a redirect URI
+it did not register.
 
 Before any of that, the page, the authorize button and deny each run
 Mastodon's `require_functional!` for a signed-in user who is not functional:
@@ -345,9 +345,9 @@ When the `postpone_confirmation_emails` setting is on, someone who has to wait
 for approval is created disabled and mailed nothing. `/auth/setup` tells them
 to wait, and lets them correct the address. Approving them, or enabling them,
 sends the confirmation link at last. Every hour, staff who take the
-`pending_account` mail hear about the people waiting this way, resuming after the
-last one they were told about
-(`PendingAccountsNotificationScheduler`, `pending_accounts_notification_scheduler:resume_at_user_id` in Redis).
+`pending_account` mail hear about the people waiting this way, resuming after
+the last one they were told about (`PendingAccountsNotificationScheduler`,
+`pending_accounts_notification_scheduler:resume_at_user_id` in Redis).
 
 The sign-up and sign-in forms mark the email field with
 `autocomplete="username"`, because the email address is the login identifier

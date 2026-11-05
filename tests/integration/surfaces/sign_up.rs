@@ -267,8 +267,12 @@ async fn test_confirming_returns_to_the_app() {
         .mail_to("carol@example.com", "Confirm your email address")
         .await
         .unwrap();
-    let link = format!("/auth/confirm?token={confirmation}&redirect_to_app=true");
-    assert!(mail.html.contains(&link), "{}", mail.html);
+    // The mail no longer asks to go back to the app; a link from before still
+    // does, until upstream removes it after 5.0.
+    let sent = format!("/auth/confirm?token={confirmation}");
+    assert!(mail.html.contains(&sent), "{}", mail.html);
+    assert!(!mail.html.contains("redirect_to_app"), "{}", mail.html);
+    let link = format!("{sent}&redirect_to_app=true");
 
     let confirmed = ctx.api.get(&link, None).await;
     assert_eq!(confirmed.status(), StatusCode::SEE_OTHER);

@@ -58,14 +58,15 @@ Running an instance:
     locks and the dead set.
  -  *docs/operating/invites.md*: the everyone role and handing out invites.
  -  *docs/operating/moderation.md*: permissions, account actions and strikes,
-    the audit log, and reports.
+    the audit log, reports, and moderation subscriptions.
  -  *docs/operating/rate-limits.md*: the `Rack::Attack` throttles and the
     `RateLimiter` families, their Redis keys and headers, and turning them
     off.
  -  *docs/operating/search.md*: search with and without Elasticsearch, the
     `[instance.elasticsearch]` settings, indexing, and `eunha search deploy`.
  -  *docs/operating/administration.md*: the server settings and what they
-    drive, content retention, and the rest of the server administration.
+    drive, content retention, server health, and the rest of the server
+    administration.
  -  *docs/operating/maintenance.md*: `eunha feeds`, `cache`, `statuses remove`,
     `media` and `preview_cards remove`, `tootctl`'s clean-ups.
  -  *docs/operating/maintenance-commands.md*: the rest of `tootctl` —

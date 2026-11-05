@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE moderation_subscriptions\n           SET name = $2, url = $3, priority = $4, list_action = $5, apply_automatically = $6,\n               preserve_relationships = $7, retract_automatically = $8,\n               override_unattributed = $9, updated_at = now()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0b250a76c4e6852ab29d4f1fa4a0ca9351fe5c86206e795a9024e6482e2e35c"
+}

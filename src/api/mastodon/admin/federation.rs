@@ -185,7 +185,7 @@ pub struct DomainBlockForm {
 }
 
 /// `DomainBlock#stricter_than?`.
-fn stricter_than(
+pub(crate) fn stricter_than(
     severity: i32,
     reject_media: bool,
     reject_reports: bool,
@@ -291,7 +291,7 @@ pub async fn create_domain_block(
 
 /// `DomainBlockWorker.perform_async`; run in place under the tests'
 /// synchronous switch, so they see the block take effect.
-async fn spawn_block(state: &AppState, id: i64, update: bool) {
+pub(crate) async fn spawn_block(state: &AppState, id: i64, update: bool) {
     if crate::feed::sync_fanout() {
         if let Err(error) = crate::moderation::domain_block::block(state, id, update).await {
             tracing::warn!(domain_block = id, %error, "BlockDomainService failed");
@@ -532,6 +532,20 @@ pub async fn create_domain_allow(
 /// `UnallowDomainService`: in limited federation mode the domain's accounts
 /// are suspended, and deleted afterwards (`AfterUnallowDomainWorker`);
 /// otherwise the allow just goes.
+pub(crate) async fn unallow_domain(state: &AppState, id: i64, domain: &str) -> anyhow::Result<()> {
+    let limited = state.instance.limited_federation_mode;
+    if limited {
+        crate::moderation::domain_block::suspend_unallowed(state, domain).await?;
+    }
+    sqlx::query!("DELETE FROM domain_allows WHERE id = $1", id)
+        .execute(&state.db)
+        .await?;
+    if limited {
+        spawn_after_unallow(state, domain.to_owned()).await;
+    }
+    Ok(())
+}
+
 pub async fn delete_domain_allow(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -540,18 +554,9 @@ pub async fn delete_domain_allow(
     auth.require_scope("admin:write:domain_allows")?;
     let row = find_allow(&state, id).await?;
     require_permission(&state, auth.account_id, perm::MANAGE_FEDERATION).await?;
-    let limited = state.instance.limited_federation_mode;
-    if limited {
-        crate::moderation::domain_block::suspend_unallowed(&state, &row.domain)
-            .await
-            .map_err(AppError::Internal)?;
-    }
-    sqlx::query!("DELETE FROM domain_allows WHERE id = $1", id)
-        .execute(&state.db)
-        .await?;
-    if limited {
-        spawn_after_unallow(&state, row.domain.clone()).await;
-    }
+    unallow_domain(&state, id, &row.domain)
+        .await
+        .map_err(AppError::Internal)?;
     action_log::log(
         &state.db,
         auth.account_id,

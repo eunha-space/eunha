@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users u SET\n             confirmation_token = CASE\n                 WHEN u.confirmation_token IS NOT NULL\n                      AND u.confirmation_sent_at > now() - make_interval(days => $3)\n                 THEN u.confirmation_token ELSE $2 END,\n             confirmation_sent_at = CASE\n                 WHEN u.confirmation_token IS NOT NULL\n                      AND u.confirmation_sent_at > now() - make_interval(days => $3)\n                 THEN u.confirmation_sent_at ELSE now() END\n           FROM accounts a\n           WHERE u.id = $1 AND a.id = u.account_id\n             AND NOT (u.disabled AND u.confirmed_at IS NULL\n                      AND u.confirmation_sent_at IS NULL)\n           RETURNING u.confirmation_token AS \"token!\",\n                     COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS \"to!\", u.locale,\n                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS \"reconfirming!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token!",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "confirmation_token"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "to!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "locale",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "reconfirming!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "fc45d04ab2b32bd9924224f642cca2924b51a9fd4dff45802acf7e46ccabfb55"
+}

@@ -87,44 +87,20 @@ async fn media_privacy_check(state: &AppState, role: &Role) -> Option<SystemChec
     if !role.can(&[flag::VIEW_DEVOPS]) {
         return None;
     }
-    let storage = &state.config.media_storage;
-    let mut urls = vec![format!("{}/", storage.base_url.trim_end_matches('/'))];
-    if let Some(endpoint) = storage.endpoint.as_deref() {
-        urls.push(format!(
-            "{}/{}/",
-            endpoint.trim_end_matches('/'),
-            storage.bucket
-        ));
+    if !matches!(
+        crate::server_checks::media_listing_exposed(state).await,
+        Ok(true)
+    ) {
+        return None;
     }
-    urls.dedup();
-    for url in urls {
-        let random = uuid::Uuid::new_v4().simple().to_string();
-        let response = state
-            .http
-            .get(&url)
-            .query(&[("max-keys", "1"), ("x-random", &random[..20])])
-            .timeout(std::time::Duration::from_secs(5))
-            .send()
-            .await;
-        let Ok(response) = response else { continue };
-        let Ok(body) = response.text().await else {
-            continue;
-        };
-        if body.contains("ListBucketResult") {
-            return Some(SystemCheckMessage {
-                key: "upload_check_privacy_error_object_storage",
-                value: None,
-                action: Some(
-                    "https://docs.joinmastodon.org/admin/optional/object-storage/#S3".into(),
-                ),
-                action_label: Some("Check here for more information"),
-                critical: true,
-                message:
-                    "Your object storage is misconfigured. The privacy of your users is at risk.",
-            });
-        }
-    }
-    None
+    Some(SystemCheckMessage {
+        key: "upload_check_privacy_error_object_storage",
+        value: None,
+        action: Some("https://docs.joinmastodon.org/admin/optional/object-storage/#S3".into()),
+        action_label: Some("Check here for more information"),
+        critical: true,
+        message: "Your object storage is misconfigured. The privacy of your users is at risk.",
+    })
 }
 
 /// `Admin::SystemCheck::DatabaseSchemaCheck`: migrations waiting, which

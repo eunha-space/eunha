@@ -196,16 +196,24 @@ pub const FASP_FOLLOW_RECOMMENDATION_CLEANUP: Task = task(
 );
 pub const COLLECTION_ITEM_CLEANUP: Task =
     task("collection_item_cleanup_scheduler", every(minutes(60)));
+/// `every: ['6h', first_in: '<%= Random.rand(5..60) %> minutes']`: the middle
+/// of Mastodon's range, since nothing here reads *sidekiq.yml* at boot, and a
+/// run overdue after restarts is made up anyway.
+pub const MODERATION_LIST_SYNCHRONIZATION: Task = task(
+    "moderation_list_synchronization_scheduler",
+    Schedule::Every {
+        every: minutes(6 * 60),
+        first_in: minutes(30),
+    },
+);
+pub const SERVER_CHECKS: Task = task("server_checks_scheduler", every(minutes(15)));
 pub const PENDING_ACCOUNTS_NOTIFICATION: Task = task(
     "pending_accounts_notification_scheduler",
     every(minutes(60)),
 );
 
-/// Mastodon's *config/sidekiq.yml*, in its order, but for
-/// `moderation_list_synchronization_scheduler` and `server_checks_scheduler`
-/// (`moderation-lists-not-implemented` and `server-checks-not-implemented` in
-/// divergences.toml).
-pub const SIDEKIQ_YML: [Task; 17] = [
+/// Mastodon's *config/sidekiq.yml*, in its order.
+pub const SIDEKIQ_YML: [Task; 19] = [
     SCHEDULED_STATUSES,
     TRENDS_REFRESH,
     TRENDS_REVIEW_NOTIFICATIONS,
@@ -222,7 +230,9 @@ pub const SIDEKIQ_YML: [Task; 17] = [
     AUTO_CLOSE_REGISTRATIONS,
     FASP_FOLLOW_RECOMMENDATION_CLEANUP,
     COLLECTION_ITEM_CLEANUP,
+    MODERATION_LIST_SYNCHRONIZATION,
     PENDING_ACCOUNTS_NOTIFICATION,
+    SERVER_CHECKS,
 ];
 
 /// What *config/initializers/sidekiq.rb* schedules instead of all of the above
@@ -707,7 +717,7 @@ mod tests {
         assert_eq!(slack(minutes(24 * 60)), minutes(1));
     }
 
-    /// Every entry of Mastodon 4.7.3's *config/sidekiq.yml*, in its order,
+    /// Every entry of Mastodon 5.0.0-beta.1's *config/sidekiq.yml*, in its order,
     /// with its schedule as written there.
     #[test]
     fn timed_tasks_keep_sidekiq_yml_schedules() {
@@ -790,20 +800,25 @@ mod tests {
             ),
             // interval: 1 hour
             ("collection_item_cleanup_scheduler", every(minutes(60))),
+            // every: ['6h', first_in: '<%= Random.rand(5..60) %> minutes']
+            (
+                "moderation_list_synchronization_scheduler",
+                Schedule::Every {
+                    every: minutes(6 * 60),
+                    first_in: minutes(30),
+                },
+            ),
             // every: '1h'
             (
                 "pending_accounts_notification_scheduler",
                 every(minutes(60)),
             ),
+            // every: '15 minutes'
+            ("server_checks_scheduler", every(minutes(15))),
         ];
         for ((name, schedule), task) in yml.into_iter().zip(SIDEKIQ_YML) {
             assert_eq!(task.name, name);
             assert_eq!(task.schedule, schedule, "{name}");
-        }
-        // What divergences.toml says is not run.
-        for task in SIDEKIQ_YML {
-            assert_ne!(task.name, "moderation_list_synchronization_scheduler");
-            assert_ne!(task.name, "server_checks_scheduler");
         }
         // config/initializers/sidekiq.rb: interval: ['1m']
         assert_eq!(SELF_DESTRUCT.schedule, every(minutes(1)));

@@ -284,7 +284,7 @@ async fn test_login_activities_are_listed() {
             &[("email", "alice@test.invalid"), ("password", "wrong")],
         )
         .await;
-    assert_eq!(wrong.status(), StatusCode::OK);
+    assert_eq!(wrong.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let activities: Vec<Value> = ctx
         .api

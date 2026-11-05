@@ -5,7 +5,7 @@ export interface AdminSection {
   label: string
   permission: Permission
   /** The experimental feature the section needs on, as Mastodon's navigation hides FASP. */
-  feature?: 'fasp'
+  feature?: 'fasp' | 'moderation_subscriptions'
 }
 
 /**
@@ -39,6 +39,12 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { to: '/admin/relays', label: 'Relays', permission: 'manage_federation' },
   { to: '/admin/invites', label: 'Invites', permission: 'manage_invites' },
   { to: '/admin/webhooks', label: 'Webhooks', permission: 'manage_webhooks' },
+  {
+    to: '/admin/moderation_subscriptions',
+    label: 'Moderation subscriptions',
+    permission: 'manage_federation',
+    feature: 'moderation_subscriptions',
+  },
   { to: '/admin/fasp/providers', label: 'FASP', permission: 'manage_federation', feature: 'fasp' },
   {
     to: '/admin/follow_recommendations',
@@ -46,6 +52,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     permission: 'manage_taxonomies',
   },
   { to: '/admin/software_updates', label: 'Software updates', permission: 'view_devops' },
+  { to: '/admin/server_checks', label: 'Server health', permission: 'view_dashboard' },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

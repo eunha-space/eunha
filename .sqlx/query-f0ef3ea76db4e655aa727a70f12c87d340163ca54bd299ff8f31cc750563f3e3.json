@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM moderation_subscription_advisories WHERE moderation_subscription_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0ef3ea76db4e655aa727a70f12c87d340163ca54bd299ff8f31cc750563f3e3"
+}

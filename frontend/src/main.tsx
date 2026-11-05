@@ -74,6 +74,13 @@ import AdminInvites from './pages/admin/AdminInvites.tsx'
 import AdminWebhooks from './pages/admin/Webhooks.tsx'
 import AdminFollowRecommendations from './pages/admin/FollowRecommendations.tsx'
 import AdminSoftwareUpdates from './pages/admin/SoftwareUpdates.tsx'
+import AdminServerChecks from './pages/admin/ServerChecks.tsx'
+import {
+  ModerationSubscriptionDetail as AdminModerationSubscriptionDetail,
+  ModerationSubscriptionLogs as AdminModerationSubscriptionLogs,
+  ModerationSubscriptions as AdminModerationSubscriptions,
+  ModerationSuggestions as AdminModerationSuggestions,
+} from './pages/admin/ModerationSubscriptions.tsx'
 import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
 import Wrapstodon from './pages/Wrapstodon.tsx'
@@ -188,6 +195,11 @@ const routes = [
   { path: '/admin/webhooks', element: <AdminWebhooks /> },
   { path: '/admin/follow_recommendations', element: <AdminFollowRecommendations /> },
   { path: '/admin/software_updates', element: <AdminSoftwareUpdates /> },
+  { path: '/admin/server_checks', element: <AdminServerChecks /> },
+  { path: '/admin/moderation_subscriptions', element: <AdminModerationSubscriptions /> },
+  { path: '/admin/moderation_subscriptions/logs', element: <AdminModerationSubscriptionLogs /> },
+  { path: '/admin/moderation_subscriptions/:id', element: <AdminModerationSubscriptionDetail /> },
+  { path: '/admin/moderation_suggestions', element: <AdminModerationSuggestions /> },
   // Strikes and appeals, at Mastodon's paths, which its moderation warning
   // notifications and emails link to.
   { path: '/disputes/strikes', element: <Strikes /> },

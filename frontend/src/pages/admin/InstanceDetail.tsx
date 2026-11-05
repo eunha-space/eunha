@@ -21,6 +21,7 @@ import {
 } from '../../admin-server-api.ts'
 import { getToken } from '../../auth.ts'
 import { errorMessage } from '@/lib/utils.ts'
+import { SuggestionCard } from './ModerationSubscriptions.tsx'
 import { AdminError, AdminLayout, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import { AdminAccountLink, ConfirmButton, formatDate } from '@/components/admin/admin-common.tsx'
 import { ActionLogEntry } from '@/components/admin/action-log-entry.tsx'
@@ -141,6 +142,13 @@ export default function InstanceDetail() {
             </p>
           )}
 
+          {instance.moderation && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold">Advisories</h2>
+              <SuggestionCard target={instance.moderation} onChanged={load} />
+            </section>
+          )}
+
           <section className="space-y-2">
             <h2 className="text-sm font-semibold">Content policies</h2>
             {instance.domain_block ? (
@@ -154,6 +162,14 @@ export default function InstanceDetail() {
                 {instance.domain_block.public_comment && (
                   <p className="text-muted-foreground">
                     Reason: {instance.domain_block.public_comment}
+                  </p>
+                )}
+                {instance.moderation_subscription && (
+                  <p className="text-muted-foreground">
+                    Moderation subscription:{' '}
+                    <Link to={`/admin/moderation_subscriptions/${instance.moderation_subscription.id}`}>
+                      {instance.moderation_subscription.name}
+                    </Link>
                   </p>
                 )}
                 <Link to="/admin/domain_blocks" className="text-sm">

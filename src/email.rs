@@ -622,6 +622,21 @@ impl EmailSender {
         self.send_admin(to, &subject, &body, false).await
     }
 
+    /// Mastodon's `AdminMailer#new_moderation_suggestions`.
+    pub async fn send_new_moderation_suggestions(
+        &self,
+        to: &str,
+        instance_domain: &str,
+    ) -> anyhow::Result<()> {
+        let subject = format!("New moderation suggestions available on {instance_domain}!");
+        let url = format!("https://{instance_domain}/admin/moderation_suggestions");
+        let body = format!(
+            "<p>The moderation lists your server is subscribed to have published new \
+             suggestions.</p><p><a href=\"{url}\">{url}</a></p>"
+        );
+        self.send_admin(to, &subject, &body, false).await
+    }
+
     /// Mastodon's `AdminMailer#new_pending_accounts`.
     pub async fn send_new_pending_accounts(
         &self,

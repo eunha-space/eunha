@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO moderation_subscription_advisories\n             (target_type, target_key, moderation_subscription_id, action, created_at, updated_at)\n           SELECT $1, key, $2, action, now(), now()\n           FROM unnest($3::text[], $4::int[]) AS list(key, action)\n           ON CONFLICT (target_type, target_key, moderation_subscription_id)\n           DO UPDATE SET action = EXCLUDED.action, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "TextArray",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50fb6de63abaa33dd34cd9fa7faeb478d7f685a7b631b3a4858a17b862ac192b"
+}

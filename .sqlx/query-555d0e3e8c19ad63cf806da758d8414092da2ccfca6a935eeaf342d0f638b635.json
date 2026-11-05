@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM statuses s JOIN accounts a ON a.id = s.account_id\n                 WHERE s.id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)\n                   AND s.local IS NOT TRUE AND a.domain IS NOT NULL\n                   AND a.suspended_at IS NULL) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "555d0e3e8c19ad63cf806da758d8414092da2ccfca6a935eeaf342d0f638b635"
+}

@@ -8,6 +8,7 @@ pub mod action_log;
 pub mod appeal;
 pub mod domain_block;
 pub mod history;
+pub mod lists;
 pub mod moderation_action;
 pub mod notification_policy;
 pub mod remote;

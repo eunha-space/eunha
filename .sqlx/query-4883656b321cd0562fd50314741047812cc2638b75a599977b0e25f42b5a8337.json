@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fasp_capabilities WHERE fasp_provider_id = $1 AND NOT (name = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4883656b321cd0562fd50314741047812cc2638b75a599977b0e25f42b5a8337"
+}

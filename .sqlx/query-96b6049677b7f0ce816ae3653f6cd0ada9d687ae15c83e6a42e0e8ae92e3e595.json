@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.target_key, a.action,\n             EXISTS (\n               SELECT 1 FROM moderation_subscription_advisories o\n               JOIN moderation_subscriptions s ON s.id = o.moderation_subscription_id\n               WHERE o.target_type = a.target_type AND o.target_key = a.target_key\n                 AND o.action <> a.action AND s.priority <= $3\n                 AND o.moderation_subscription_id <> a.moderation_subscription_id\n             ) AS \"conflicting!\"\n           FROM moderation_subscription_advisories a\n           WHERE a.moderation_subscription_id = $1 AND a.action = ANY($2)\n             AND NOT EXISTS (\n               SELECT 1 FROM moderation_subscription_advisories o\n               JOIN moderation_subscriptions s ON s.id = o.moderation_subscription_id\n               WHERE o.target_type = a.target_type AND o.target_key = a.target_key\n                 AND o.action = a.action AND s.priority < $3\n             )\n           ORDER BY a.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_key",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscription_advisories",
+            "name": "target_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscription_advisories",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "conflicting!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4Array",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "96b6049677b7f0ce816ae3653f6cd0ada9d687ae15c83e6a42e0e8ae92e3e595"
+}

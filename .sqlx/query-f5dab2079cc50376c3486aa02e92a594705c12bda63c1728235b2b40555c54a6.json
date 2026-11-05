@@ -38,17 +38,6 @@
       },
       {
         "ordinal": 3,
-        "name": "private_key",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "accounts",
-            "name": "private_key"
-          }
-        }
-      },
-      {
-        "ordinal": 4,
         "name": "public_key",
         "type_info": "Text",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamp",
         "origin": {
@@ -70,7 +59,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamp",
         "origin": {
@@ -81,7 +70,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "note",
         "type_info": "Text",
         "origin": {
@@ -92,7 +81,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "display_name",
         "type_info": "Varchar",
         "origin": {
@@ -103,7 +92,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "uri",
         "type_info": "Varchar",
         "origin": {
@@ -114,7 +103,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "url",
         "type_info": "Varchar",
         "origin": {
@@ -125,7 +114,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "avatar_file_name",
         "type_info": "Varchar",
         "origin": {
@@ -136,7 +125,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "avatar_content_type",
         "type_info": "Varchar",
         "origin": {
@@ -147,7 +136,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "avatar_file_size",
         "type_info": "Int4",
         "origin": {
@@ -158,7 +147,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "avatar_updated_at",
         "type_info": "Timestamp",
         "origin": {
@@ -169,7 +158,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "header_file_name",
         "type_info": "Varchar",
         "origin": {
@@ -180,7 +169,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "header_content_type",
         "type_info": "Varchar",
         "origin": {
@@ -191,7 +180,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "header_file_size",
         "type_info": "Int4",
         "origin": {
@@ -202,7 +191,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 17,
         "name": "header_updated_at",
         "type_info": "Timestamp",
         "origin": {
@@ -213,7 +202,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 18,
         "name": "avatar_remote_url",
         "type_info": "Varchar",
         "origin": {
@@ -224,7 +213,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 19,
         "name": "locked",
         "type_info": "Bool",
         "origin": {
@@ -235,7 +224,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 20,
         "name": "header_remote_url",
         "type_info": "Varchar",
         "origin": {
@@ -246,7 +235,7 @@
         }
       },
       {
-        "ordinal": 22,
+        "ordinal": 21,
         "name": "last_webfingered_at",
         "type_info": "Timestamp",
         "origin": {
@@ -257,7 +246,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 22,
         "name": "inbox_url",
         "type_info": "Varchar",
         "origin": {
@@ -268,7 +257,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 23,
         "name": "outbox_url",
         "type_info": "Varchar",
         "origin": {
@@ -279,7 +268,7 @@
         }
       },
       {
-        "ordinal": 25,
+        "ordinal": 24,
         "name": "shared_inbox_url",
         "type_info": "Varchar",
         "origin": {
@@ -290,7 +279,7 @@
         }
       },
       {
-        "ordinal": 26,
+        "ordinal": 25,
         "name": "followers_url",
         "type_info": "Varchar",
         "origin": {
@@ -301,7 +290,7 @@
         }
       },
       {
-        "ordinal": 27,
+        "ordinal": 26,
         "name": "protocol",
         "type_info": "Int4",
         "origin": {
@@ -312,7 +301,7 @@
         }
       },
       {
-        "ordinal": 28,
+        "ordinal": 27,
         "name": "memorial",
         "type_info": "Bool",
         "origin": {
@@ -323,7 +312,7 @@
         }
       },
       {
-        "ordinal": 29,
+        "ordinal": 28,
         "name": "moved_to_account_id",
         "type_info": "Int8",
         "origin": {
@@ -334,7 +323,7 @@
         }
       },
       {
-        "ordinal": 30,
+        "ordinal": 29,
         "name": "featured_collection_url",
         "type_info": "Varchar",
         "origin": {
@@ -345,7 +334,7 @@
         }
       },
       {
-        "ordinal": 31,
+        "ordinal": 30,
         "name": "fields",
         "type_info": "Jsonb",
         "origin": {
@@ -356,7 +345,7 @@
         }
       },
       {
-        "ordinal": 32,
+        "ordinal": 31,
         "name": "actor_type",
         "type_info": "Varchar",
         "origin": {
@@ -367,7 +356,7 @@
         }
       },
       {
-        "ordinal": 33,
+        "ordinal": 32,
         "name": "discoverable",
         "type_info": "Bool",
         "origin": {
@@ -378,7 +367,7 @@
         }
       },
       {
-        "ordinal": 34,
+        "ordinal": 33,
         "name": "also_known_as",
         "type_info": "VarcharArray",
         "origin": {
@@ -389,7 +378,7 @@
         }
       },
       {
-        "ordinal": 35,
+        "ordinal": 34,
         "name": "silenced_at",
         "type_info": "Timestamp",
         "origin": {
@@ -400,7 +389,7 @@
         }
       },
       {
-        "ordinal": 36,
+        "ordinal": 35,
         "name": "suspended_at",
         "type_info": "Timestamp",
         "origin": {
@@ -411,7 +400,7 @@
         }
       },
       {
-        "ordinal": 37,
+        "ordinal": 36,
         "name": "hide_collections",
         "type_info": "Bool",
         "origin": {
@@ -422,7 +411,7 @@
         }
       },
       {
-        "ordinal": 38,
+        "ordinal": 37,
         "name": "avatar_storage_schema_version",
         "type_info": "Int4",
         "origin": {
@@ -433,7 +422,7 @@
         }
       },
       {
-        "ordinal": 39,
+        "ordinal": 38,
         "name": "header_storage_schema_version",
         "type_info": "Int4",
         "origin": {
@@ -444,7 +433,7 @@
         }
       },
       {
-        "ordinal": 40,
+        "ordinal": 39,
         "name": "suspension_origin",
         "type_info": "Int4",
         "origin": {
@@ -455,7 +444,7 @@
         }
       },
       {
-        "ordinal": 41,
+        "ordinal": 40,
         "name": "sensitized_at",
         "type_info": "Timestamp",
         "origin": {
@@ -466,7 +455,7 @@
         }
       },
       {
-        "ordinal": 42,
+        "ordinal": 41,
         "name": "trendable",
         "type_info": "Bool",
         "origin": {
@@ -477,7 +466,7 @@
         }
       },
       {
-        "ordinal": 43,
+        "ordinal": 42,
         "name": "reviewed_at",
         "type_info": "Timestamp",
         "origin": {
@@ -488,7 +477,7 @@
         }
       },
       {
-        "ordinal": 44,
+        "ordinal": 43,
         "name": "requested_review_at",
         "type_info": "Timestamp",
         "origin": {
@@ -499,7 +488,7 @@
         }
       },
       {
-        "ordinal": 45,
+        "ordinal": 44,
         "name": "indexable",
         "type_info": "Bool",
         "origin": {
@@ -510,7 +499,7 @@
         }
       },
       {
-        "ordinal": 46,
+        "ordinal": 45,
         "name": "attribution_domains",
         "type_info": "VarcharArray",
         "origin": {
@@ -521,7 +510,7 @@
         }
       },
       {
-        "ordinal": 47,
+        "ordinal": 46,
         "name": "following_url",
         "type_info": "Varchar",
         "origin": {
@@ -532,7 +521,7 @@
         }
       },
       {
-        "ordinal": 48,
+        "ordinal": 47,
         "name": "id_scheme",
         "type_info": "Int4",
         "origin": {
@@ -543,7 +532,7 @@
         }
       },
       {
-        "ordinal": 49,
+        "ordinal": 48,
         "name": "feature_approval_policy",
         "type_info": "Int4",
         "origin": {
@@ -554,7 +543,7 @@
         }
       },
       {
-        "ordinal": 50,
+        "ordinal": 49,
         "name": "avatar_description",
         "type_info": "Varchar",
         "origin": {
@@ -565,7 +554,7 @@
         }
       },
       {
-        "ordinal": 51,
+        "ordinal": 50,
         "name": "header_description",
         "type_info": "Varchar",
         "origin": {
@@ -576,7 +565,7 @@
         }
       },
       {
-        "ordinal": 52,
+        "ordinal": 51,
         "name": "show_media",
         "type_info": "Bool",
         "origin": {
@@ -587,7 +576,7 @@
         }
       },
       {
-        "ordinal": 53,
+        "ordinal": 52,
         "name": "show_media_replies",
         "type_info": "Bool",
         "origin": {
@@ -598,7 +587,7 @@
         }
       },
       {
-        "ordinal": 54,
+        "ordinal": 53,
         "name": "show_featured",
         "type_info": "Bool",
         "origin": {
@@ -609,7 +598,7 @@
         }
       },
       {
-        "ordinal": 55,
+        "ordinal": 54,
         "name": "collections_url",
         "type_info": "Varchar",
         "origin": {
@@ -620,7 +609,7 @@
         }
       },
       {
-        "ordinal": 56,
+        "ordinal": 55,
         "name": "requested_deletion_at",
         "type_info": "Timestamp",
         "origin": {
@@ -639,7 +628,6 @@
     "nullable": [
       false,
       false,
-      true,
       true,
       false,
       false,

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fasp_capabilities\n                 (fasp_provider_id, name, version, created_at, updated_at)\n               VALUES ($1, $2, $3, now(), now())\n               ON CONFLICT (fasp_provider_id, name, version) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa45a96122d1086549ab78193f91bf126bc1a02c4c01eaae122ec9aa975d7a31"
+}

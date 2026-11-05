@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, moderation_subscription_id FROM moderation_suggestions\n           WHERE target_type = $1 AND target_key = $2 AND action = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_suggestions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "moderation_subscription_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_suggestions",
+            "name": "moderation_subscription_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "45cefd09f1412fab7e0d6663851e1ff711e4c99d00b35593c497b547178b957b"
+}

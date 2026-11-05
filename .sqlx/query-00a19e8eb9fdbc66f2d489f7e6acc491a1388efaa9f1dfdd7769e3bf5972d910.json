@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE domain_allows SET moderation_subscription_id = $2, updated_at = now() WHERE domain = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00a19e8eb9fdbc66f2d489f7e6acc491a1388efaa9f1dfdd7769e3bf5972d910"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET sign_in_token = NULL, sign_in_token_sent_at = NULL, updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1fddf11649df451c9a551d90e0cdab8c3fbc3fc2dd1d7f1c82b910894cbf1e7"
+}

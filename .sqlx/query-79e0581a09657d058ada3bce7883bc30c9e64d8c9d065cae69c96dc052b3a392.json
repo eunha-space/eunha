@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO moderation_suggestions\n                 (target_type, target_key, action, moderation_subscription_id, created_at, updated_at)\n               VALUES ($1, $2, $3, $4, now(), now())\n               ON CONFLICT (target_type, target_key, action)\n               DO UPDATE SET moderation_subscription_id = EXCLUDED.moderation_subscription_id,\n                             updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Varchar",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79e0581a09657d058ada3bce7883bc30c9e64d8c9d065cae69c96dc052b3a392"
+}

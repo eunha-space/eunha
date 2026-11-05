@@ -1,0 +1,158 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, url, priority, type AS kind, list_action, apply_automatically,\n                  preserve_relationships, retract_automatically, override_unattributed,\n                  last_synced_at, created_at\n           FROM moderation_subscriptions ORDER BY priority ASC NULLS LAST, id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "priority",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "priority"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "list_action",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "list_action"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "apply_automatically",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "apply_automatically"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "preserve_relationships",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "preserve_relationships"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "retract_automatically",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "retract_automatically"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "override_unattributed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "override_unattributed"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_synced_at",
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "last_synced_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscriptions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "25839a41f540714ff7d646d7c208aa395decf034ca654df34c0c96253bf53bab"
+}

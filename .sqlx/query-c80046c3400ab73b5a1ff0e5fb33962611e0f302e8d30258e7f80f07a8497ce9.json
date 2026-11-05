@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain, severity AS \"severity!\" FROM domain_blocks\n           WHERE moderation_subscription_id = $1 AND severity <> $2 AND domain NOT IN (\n             SELECT target_key FROM moderation_subscription_advisories\n             WHERE moderation_subscription_id = $1 AND action = ANY($3)\n           )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "severity!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "severity"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "c80046c3400ab73b5a1ff0e5fb33962611e0f302e8d30258e7f80f07a8497ce9"
+}

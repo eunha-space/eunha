@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain, severity AS \"severity!\" FROM domain_blocks WHERE domain = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "severity!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "severity"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "8fd10bb208583d8b401866ba6e047b0168eb1a2c6ebb1a15ff4a5035ba2f0623"
+}

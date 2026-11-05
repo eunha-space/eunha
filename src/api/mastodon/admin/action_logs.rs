@@ -67,16 +67,6 @@ pub const ACTION_TYPE_MAP: &[(&str, &str, &str)] = &[
         "destroy",
     ),
     ("disable_2fa_user", "User", "disable_2fa"),
-    (
-        "disable_sign_in_token_auth_user",
-        "User",
-        "disable_sign_in_token",
-    ),
-    (
-        "enable_sign_in_token_auth_user",
-        "User",
-        "enable_sign_in_token",
-    ),
     ("disable_custom_emoji", "CustomEmoji", "disable"),
     ("disable_user", "User", "disable"),
     ("disable_relay", "Relay", "disable"),
@@ -149,17 +139,9 @@ const ACTION_TYPE_LABELS: &[(&str, &str)] = &[
     ("disable_2fa_user", "Disable 2FA"),
     ("disable_custom_emoji", "Disable Custom Emoji"),
     ("disable_relay", "Disable Relay"),
-    (
-        "disable_sign_in_token_auth_user",
-        "Disable Email Token Authentication for User",
-    ),
     ("disable_user", "Disable User"),
     ("enable_custom_emoji", "Enable Custom Emoji"),
     ("enable_relay", "Enable Relay"),
-    (
-        "enable_sign_in_token_auth_user",
-        "Enable Email Token Authentication for User",
-    ),
     ("enable_user", "Enable User"),
     ("memorialize_account", "Memorialize Account"),
     ("promote_user", "Promote User"),
@@ -190,6 +172,11 @@ const ACTION_TYPE_LABELS: &[(&str, &str)] = &[
 ];
 
 /// `admin.action_logs.actions`, keyed by `"#{action}_#{target_type.underscore}"`.
+///
+/// Mastodon logs `enable_sign_in_token` and `disable_sign_in_token`, while its
+/// locale words `*_sign_in_token_auth_user`, so its log shows a missing
+/// translation for them, and its filter does not list them. Here they have
+/// the sentence the locale evidently means.
 const ACTIONS: &[(&str, &str)] = &[
     (
         "approve_appeal",
@@ -230,6 +217,18 @@ const ACTIONS: &[(&str, &str)] = &[
         "%{name} allowed federation with domain %{target}",
     ),
     ("create_domain_block", "%{name} blocked domain %{target}"),
+    (
+        "create_moderation_subscription",
+        "%{name} created moderation subscription %{target}",
+    ),
+    (
+        "destroy_moderation_subscription",
+        "%{name} deleted moderation subscription %{target}",
+    ),
+    (
+        "update_moderation_subscription",
+        "%{name} updated moderation subscription %{target}",
+    ),
     (
         "create_email_domain_block",
         "%{name} blocked email domain %{target}",
@@ -292,14 +291,14 @@ const ACTIONS: &[(&str, &str)] = &[
     ("disable_custom_emoji", "%{name} disabled emoji %{target}"),
     ("disable_relay", "%{name} disabled the relay %{target}"),
     (
-        "disable_sign_in_token_auth_user",
+        "disable_sign_in_token_user",
         "%{name} disabled email token authentication for %{target}",
     ),
     ("disable_user", "%{name} disabled login for user %{target}"),
     ("enable_custom_emoji", "%{name} enabled emoji %{target}"),
     ("enable_relay", "%{name} enabled the relay %{target}"),
     (
-        "enable_sign_in_token_auth_user",
+        "enable_sign_in_token_user",
         "%{name} enabled email token authentication for %{target}",
     ),
     ("enable_user", "%{name} enabled login for user %{target}"),
@@ -434,6 +433,7 @@ pub struct LogRow {
     pub route_param: Option<String>,
     pub permalink: Option<String>,
     pub recorded_changes: Option<serde_json::Value>,
+    pub moderation_subscription_id: Option<i64>,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -465,6 +465,10 @@ pub fn log_target(row: &LogRow) -> Option<LogTarget> {
             None => plain(DELETED_ACCOUNT.into()),
         },
         "UsernameBlock" => link(human, "/admin/username_blocks".into()),
+        "ModerationSubscription" => link(
+            human,
+            format!("/admin/moderation_subscriptions/{target_id}"),
+        ),
         "Report" => link(
             format!("#{}", present(&row.human_identifier).unwrap_or(&target_id)),
             format!("/admin/reports/{target_id}"),
@@ -520,6 +524,30 @@ fn recorded_changes_text(row: &LogRow) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("; "))
 }
 
+/// `admin.action_logs.automated_actions`: what `account_id` -99 did.
+const AUTOMATED_ACTIONS: &[(&str, &str)] = &[
+    (
+        "create_domain_allow",
+        "Automatically allowed federation with domain %{target}",
+    ),
+    (
+        "create_domain_block",
+        "Automatically blocked domain %{target}",
+    ),
+    (
+        "destroy_domain_allow",
+        "Automatically disallowed federation with domain %{target}",
+    ),
+    (
+        "destroy_domain_block",
+        "Automatically unblocked domain %{target}",
+    ),
+    (
+        "update_domain_block",
+        "Automatically updated domain block for %{target}",
+    ),
+];
+
 /// The `admin.action_logs.actions.*_html` template for an entry, with
 /// `%{name}` and `%{target}` still in it.
 pub fn template(action: &str, target_type: Option<&str>) -> String {
@@ -554,11 +582,32 @@ pub struct ActionLog {
     pub changes: Option<String>,
     /// The whole sentence as plain text.
     pub text: String,
+    /// `action_log_subscription`: the moderation subscription behind this.
+    pub moderation_subscription: Option<LogSubscription>,
+}
+
+/// A subscription as a log entry names it; a deleted one has no name.
+#[derive(Debug, Serialize)]
+pub struct LogSubscription {
+    pub id: String,
+    pub name: Option<String>,
 }
 
 /// One entry, rendered for `account`, the one who acted.
 pub fn render(row: LogRow, account: Option<ApiAccount>) -> ActionLog {
-    let template = template(&row.action, row.target_type.as_deref());
+    let key = format!(
+        "{}_{}",
+        row.action,
+        underscore(row.target_type.as_deref().unwrap_or_default())
+    );
+    // `action_log_title`.
+    let automated = (row.account_id == crate::moderation::lists::REPRESENTATIVE_ID)
+        .then(|| AUTOMATED_ACTIONS.iter().find(|(k, _)| *k == key))
+        .flatten();
+    let template = match automated {
+        Some((_, template)) => (*template).to_owned(),
+        None => template(&row.action, row.target_type.as_deref()),
+    };
     let target = log_target(&row);
     let changes = recorded_changes_text(&row);
     let name = account
@@ -596,10 +645,14 @@ pub fn render(row: LogRow, account: Option<ApiAccount>) -> ActionLog {
         target,
         changes,
         text: text.trim().to_owned(),
+        moderation_subscription: row.moderation_subscription_id.map(|id| LogSubscription {
+            id: id.to_string(),
+            name: None,
+        }),
     }
 }
 
-async fn render_all(state: &AppState, rows: Vec<LogRow>) -> AppResult<Vec<ActionLog>> {
+pub(super) async fn render_all(state: &AppState, rows: Vec<LogRow>) -> AppResult<Vec<ActionLog>> {
     let mut accounts: std::collections::HashMap<i64, Option<ApiAccount>> = Default::default();
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -612,6 +665,28 @@ async fn render_all(state: &AppState, rows: Vec<LogRow>) -> AppResult<Vec<Action
             }
         };
         out.push(render(row, account));
+    }
+    let subscriptions: Vec<i64> = out
+        .iter()
+        .filter_map(|log: &ActionLog| log.moderation_subscription.as_ref())
+        .filter_map(|subscription| subscription.id.parse().ok())
+        .collect();
+    if !subscriptions.is_empty() {
+        let names: std::collections::HashMap<String, Option<String>> = sqlx::query!(
+            "SELECT id, name FROM moderation_subscriptions WHERE id = ANY($1)",
+            &subscriptions,
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|row| (row.id.to_string(), row.name))
+        .collect();
+        for subscription in out
+            .iter_mut()
+            .filter_map(|log| log.moderation_subscription.as_mut())
+        {
+            subscription.name = names.get(&subscription.id).cloned().flatten();
+        }
     }
     Ok(out)
 }
@@ -653,7 +728,7 @@ pub async fn list_action_logs(
 
     let mut q = sqlx::QueryBuilder::<sqlx::Postgres>::new(
         r#"SELECT id, account_id, action, target_type, target_id, human_identifier,
-                  route_param, permalink, recorded_changes, created_at
+                  route_param, permalink, recorded_changes, moderation_subscription_id, created_at
            FROM admin_action_logs WHERE true"#,
     );
     if let Some(account_id) = given(&params.account_id) {
@@ -740,6 +815,7 @@ pub async fn list_action_logs(
 fn from_pg_row(r: &sqlx::postgres::PgRow) -> Result<LogRow, sqlx::Error> {
     use sqlx::Row;
     Ok(LogRow {
+        moderation_subscription_id: r.try_get("moderation_subscription_id")?,
         id: r.try_get("id")?,
         account_id: r.try_get("account_id")?,
         action: r.try_get("action")?,
@@ -830,7 +906,7 @@ pub async fn report_history(
     let rows = sqlx::query_as!(
         LogRow,
         r#"SELECT id, account_id, action, target_type, target_id, human_identifier,
-                  route_param, permalink, recorded_changes, created_at
+                  route_param, permalink, recorded_changes, moderation_subscription_id, created_at
            FROM admin_action_logs
            WHERE (target_type = 'Report' AND target_id = $1)
               OR (target_type = 'Account' AND target_id = $2)
@@ -853,6 +929,7 @@ mod tests {
 
     fn row(action: &str, target_type: &str, human: Option<&str>, route: Option<&str>) -> LogRow {
         LogRow {
+            moderation_subscription_id: None,
             id: 1,
             account_id: 1,
             action: action.into(),

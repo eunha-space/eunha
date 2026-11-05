@@ -72,6 +72,22 @@ fn first_value(answer: &Value) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Whether the mapping the cluster has for an index differs from Eunha's, or
+/// there is nothing there yet.
+pub async fn mapping_changed(client: &Client, index: Index) -> anyhow::Result<bool> {
+    let name = client.index_name(index.base_name());
+    if !client.exists(&name).await? {
+        return Ok(true);
+    }
+    let mapping = first_value(
+        &client
+            .send(reqwest::Method::GET, &format!("{name}/_mapping"), None)
+            .await?,
+    );
+    Ok(super::indexes::stringify(&mapping["mappings"])
+        != super::indexes::stringify(&index.mappings()))
+}
+
 /// `index.specification.changed?`: whether what the cluster has differs
 /// from what Eunha would create, or there is nothing there yet.
 pub async fn specification_changed(client: &Client, index: Index) -> anyhow::Result<bool> {

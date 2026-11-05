@@ -270,6 +270,11 @@ pub struct AdminInstanceDetail {
     pub availability: Vec<Value>,
     pub exhausted_deliveries_days: Vec<String>,
     pub moderation_notes: Vec<InstanceNote>,
+    /// `@advisories` and `@suggestions`, while there are any and the
+    /// `moderation_subscriptions` feature is on.
+    pub moderation: Option<super::moderation_subscriptions::SuggestionTarget>,
+    /// `@instance.domain_block.moderation_subscription`, likewise.
+    pub moderation_subscription: Option<super::moderation_subscriptions::SubscriptionRef>,
 }
 
 /// `set_instance`: `Instance.find_or_initialize_by(domain: normalized_domain)`.
@@ -328,6 +333,30 @@ async fn detail(state: &AppState, domain: &str) -> AppResult<AdminInstanceDetail
             created_at: super::super::convert::mastodon_date(note.created_at),
         });
     }
+    let (moderation, moderation_subscription) = if state
+        .instance
+        .feature_enabled(crate::moderation::lists::FEATURE)
+    {
+        let target = super::moderation_subscriptions::targets(state, vec![domain.to_owned()])
+            .await?
+            .pop()
+            .filter(|target| !target.advisories.is_empty());
+        let subscription = sqlx::query!(
+            r#"SELECT s.id, s.name FROM domain_blocks b
+                   JOIN moderation_subscriptions s ON s.id = b.moderation_subscription_id
+                   WHERE b.domain = $1"#,
+            domain,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .map(|row| super::moderation_subscriptions::SubscriptionRef {
+            id: row.id.to_string(),
+            name: row.name,
+        });
+        (target, subscription)
+    } else {
+        (None, None)
+    };
     Ok(AdminInstanceDetail {
         instance: row.entity(failure_days),
         persisted,
@@ -335,6 +364,8 @@ async fn detail(state: &AppState, domain: &str) -> AppResult<AdminInstanceDetail
         availability,
         exhausted_deliveries_days: days.iter().map(|d| d.to_string()).collect(),
         moderation_notes,
+        moderation,
+        moderation_subscription,
     })
 }
 

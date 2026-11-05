@@ -61,6 +61,7 @@ pub mod schema_check;
 pub mod search;
 pub mod secret_key_base;
 pub mod self_destruct;
+pub mod server_checks;
 pub mod sessions;
 pub mod settings;
 pub mod settings_import;

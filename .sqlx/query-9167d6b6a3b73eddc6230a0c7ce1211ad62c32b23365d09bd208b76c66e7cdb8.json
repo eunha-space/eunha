@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT encrypted_password <> ''\n                  AND current_sign_in_at IS NOT NULL\n                  AND current_sign_in_at < $2\n           AS \"inactive!\"\n           FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inactive!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9167d6b6a3b73eddc6230a0c7ce1211ad62c32b23365d09bd208b76c66e7cdb8"
+}

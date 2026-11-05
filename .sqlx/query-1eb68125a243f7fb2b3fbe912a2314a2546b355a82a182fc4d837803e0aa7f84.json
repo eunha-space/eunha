@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM keypairs\n             WHERE account_id = $1\n               AND local_fragment = $2\n               AND private_key IS NOT NULL AND private_key <> ''\n               AND NOT revoked\n               AND (expires_at IS NULL OR expires_at > now())\n           ) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1eb68125a243f7fb2b3fbe912a2314a2546b355a82a182fc4d837803e0aa7f84"
+}

@@ -177,25 +177,27 @@ task, named by its *sidekiq.yml* key:
 
 The tasks:
 
-| *sidekiq.yml* entry                            | Mastodon's schedule             | Eunha                                                           |
-| ---------------------------------------------- | ------------------------------- | --------------------------------------------------------------- |
-| `scheduled_statuses_scheduler`                 | every 5 minutes                 | when the next scheduled post falls due; one process at a time   |
-| `trends_refresh_scheduler`                     | every 5 minutes, first after 4  | the same                                                        |
-| `trends_review_notifications_scheduler`        | every 6 hours                   | the same, or soon after start if 6 hours have passed            |
-| `indexing_scheduler`                           | every minute                    | the same, with Elasticsearch only                               |
-| `vacuum_scheduler`                             | daily, at a random 03:00–05:59  | daily, at the instance's own time in 03:00–05:59 UTC            |
-| `follow_recommendations_scheduler`             | daily, at a random 06:00–09:59  | daily, at the instance's own time in 06:00–09:59 UTC            |
-| `user_cleanup_scheduler`                       | daily, at a random 04:00–06:59  | daily, at the instance's own time in 04:00–06:59 UTC            |
-| `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59  | daily, at the instance's own time in 03:00–05:59 UTC            |
-| `pghero_scheduler`                             | daily at 00:00                  | not run: Eunha has no PgHero                                    |
-| `instance_refresh_scheduler`                   | on the hour                     | on the hour, UTC                                                |
-| `accounts_statuses_cleanup_scheduler`          | every minute                    | the same                                                        |
-| `suspended_user_cleanup_scheduler`             | every minute                    | when the next deletion request falls due; one process at a time |
-| `software_update_check_scheduler`              | every 30 minutes                | at start, then every 30 minutes, once for the whole process     |
-| `auto_close_registrations_scheduler`           | every hour                      | the same                                                        |
-| `fasp_follow_recommendation_cleanup_scheduler` | every day                       | the same, or soon after start if a day has passed               |
-| `collection_item_cleanup_scheduler`            | every hour                      | the same                                                        |
-| `pending_accounts_notification_scheduler`      | every hour                      | the same                                     |
+| *sidekiq.yml* entry                            | Mastodon's schedule                   | Eunha                                                           |
+| ---------------------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| `scheduled_statuses_scheduler`                 | every 5 minutes                       | when the next scheduled post falls due; one process at a time   |
+| `trends_refresh_scheduler`                     | every 5 minutes, first after 4        | the same                                                        |
+| `trends_review_notifications_scheduler`        | every 6 hours                         | the same, or soon after start if 6 hours have passed            |
+| `indexing_scheduler`                           | every minute                          | the same, with Elasticsearch only                               |
+| `vacuum_scheduler`                             | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
+| `follow_recommendations_scheduler`             | daily, at a random 06:00–09:59        | daily, at the instance's own time in 06:00–09:59 UTC            |
+| `user_cleanup_scheduler`                       | daily, at a random 04:00–06:59        | daily, at the instance's own time in 04:00–06:59 UTC            |
+| `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
+| `pghero_scheduler`                             | daily at 00:00                        | not run: Eunha has no PgHero                                    |
+| `instance_refresh_scheduler`                   | on the hour                           | on the hour, UTC                                                |
+| `accounts_statuses_cleanup_scheduler`          | every minute                          | the same                                                        |
+| `suspended_user_cleanup_scheduler`             | every minute                          | when the next deletion request falls due; one process at a time |
+| `software_update_check_scheduler`              | every 30 minutes                      | at start, then every 30 minutes, once for the whole process     |
+| `auto_close_registrations_scheduler`           | every hour                            | the same                                                        |
+| `fasp_follow_recommendation_cleanup_scheduler` | every day                             | the same, or soon after start if a day has passed               |
+| `collection_item_cleanup_scheduler`            | every hour                            | the same                                                        |
+| `moderation_list_synchronization_scheduler`    | every 6 hours, first after 30 minutes | the same, if the feature is on                                  |
+| `pending_accounts_notification_scheduler`      | every hour                            | the same                                                        |
+| `server_checks_scheduler`                      | every 15 minutes                      | the same                                                        |
 
 A self-destructing instance runs `self_destruct_scheduler`, every minute, and
 nothing else, as Mastodon replaces its schedule with it. The announcements

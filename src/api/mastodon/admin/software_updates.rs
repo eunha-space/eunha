@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// `SoftwareUpdate.check_enabled?`: an update server is configured.
-pub(super) fn check_enabled(state: &AppState) -> bool {
+pub(crate) fn check_enabled(state: &AppState) -> bool {
     state
         .config
         .software_update_url
@@ -29,7 +29,7 @@ pub(super) fn check_enabled(state: &AppState) -> bool {
 
 /// `Gem::Version#<=>`, near enough for release numbers: numeric segments by
 /// value, and a pre-release segment (`beta`) before any number.
-pub(super) fn compare_versions(a: &str, b: &str) -> Ordering {
+pub(crate) fn compare_versions(a: &str, b: &str) -> Ordering {
     fn segments(v: &str) -> Vec<Result<u64, String>> {
         v.split(['.', '-'])
             .filter(|s| !s.is_empty())
@@ -74,7 +74,7 @@ pub struct SoftwareUpdates {
 }
 
 /// `SoftwareUpdate.pending_to_a`, by version.
-pub(super) async fn pending(state: &AppState) -> AppResult<Vec<SoftwareUpdate>> {
+pub(crate) async fn pending(state: &AppState) -> AppResult<Vec<SoftwareUpdate>> {
     if !check_enabled(state) {
         return Ok(vec![]);
     }

@@ -48,6 +48,7 @@ const NOTIFICATION_EMAILS: &[(&str, bool)] = &[
     ("trends", true),
     ("appeal", true),
     ("end_of_support", true),
+    ("moderation_suggestions", true),
 ];
 
 #[derive(Debug, Serialize)]
@@ -102,6 +103,7 @@ pub struct NotificationEmails {
     pub trends: Option<bool>,
     pub appeal: Option<bool>,
     pub end_of_support: Option<bool>,
+    pub moderation_suggestions: Option<bool>,
     /// `none`, `critical`, `patch` or `all`.
     pub software_updates: Option<String>,
 }
@@ -155,6 +157,7 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
             trends: bool_of("notification_emails.trends", true),
             appeal: bool_of("notification_emails.appeal", true),
             end_of_support: bool_of("notification_emails.end_of_support", true),
+            moderation_suggestions: bool_of("notification_emails.moderation_suggestions", true),
             software_updates: Some(software_updates),
         },
     })
@@ -271,6 +274,7 @@ pub async fn update(
         emails.trends,
         emails.appeal,
         emails.end_of_support,
+        emails.moderation_suggestions,
     ]) {
         if let Some(value) = value {
             set(&format!("notification_emails.{key}"), value.into());

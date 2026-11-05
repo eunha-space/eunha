@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain FROM domain_allows\n           WHERE moderation_subscription_id = $1 AND domain NOT IN (\n             SELECT target_key FROM moderation_subscription_advisories\n             WHERE moderation_subscription_id = $1 AND action = $2\n           )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "domain_allows",
+            "name": "domain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8dab22fc7c536cadc99a14f86459027887ab8bfc3c4ed02fa0454ffbac0ad342"
+}

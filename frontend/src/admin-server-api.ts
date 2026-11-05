@@ -3,7 +3,7 @@
 // relays, invites, webhooks, follow recommendations, software updates and the
 // dashboard), as Eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
-import { json, query, request, type Account, type Measure, type Permission } from './admin-api.ts'
+import { json, query, request, type ActionLog, type Account, type Measure, type Permission } from './admin-api.ts'
 import { INVITES_CHANGED } from './eunha-api.ts'
 
 // ── Server settings ─────────────────────────────────────────────────────────
@@ -303,6 +303,8 @@ export interface AdminInstanceDetail extends AdminInstance {
   availability: { date: string; failing: boolean }[]
   exhausted_deliveries_days: string[]
   moderation_notes: InstanceNote[]
+  moderation?: SuggestionTarget | null
+  moderation_subscription?: SubscriptionRef | null
 }
 
 export interface InstanceFilters {
@@ -481,6 +483,162 @@ export interface AdminFaspDebugCallback {
   ip: string
   request_body: string
   created_at: string
+}
+
+// ── Server health ────────────────────────────────────────────────────────
+
+export type ServerCheckCategory =
+  | 'critical'
+  | 'warning'
+  | 'suggestion'
+  | 'error'
+  | 'unprocessed'
+  | 'completed'
+  | 'ignored'
+
+export interface ServerCheck {
+  key: string
+  category: ServerCheckCategory
+  ignored: boolean
+  title: string
+  lead: string | null
+  setup_url: string | null
+  checked_at: string | null
+}
+
+export function listServerChecks(token: string) {
+  return json<ServerCheck[]>(token, 'GET', '/api/v1/admin/server_checks')
+}
+
+export function setServerCheckIgnored(token: string, key: string, ignored: boolean) {
+  return json<object>(
+    token,
+    ignored ? 'POST' : 'DELETE',
+    `/api/v1/admin/server_checks/${encodeURIComponent(key)}/ignore`,
+  )
+}
+
+// ── Moderation subscriptions ─────────────────────────────────────────────
+
+export type ApplyConditions = 'never' | 'safely' | 'always'
+export type ListAction = 'accept' | 'reject'
+export type AdvisoryAction = 'accept' | 'reject' | 'limit'
+export type SuggestionAction = AdvisoryAction | 'retract'
+
+export interface ModerationSubscription {
+  id: string
+  name: string | null
+  url: string
+  priority: number | null
+  type: 'csv_list' | 'json'
+  list_action: ListAction | null
+  apply_conditions: ApplyConditions
+  retract_automatically: boolean
+  override_unattributed: boolean
+  last_synced_at: string | null
+  created_at: string
+}
+
+export interface ModerationSubscriptionForm {
+  name: string
+  url: string
+  priority: number
+  list_action: ListAction | ''
+  apply_conditions: ApplyConditions
+  retract_automatically: boolean
+  override_unattributed: boolean
+}
+
+export interface SubscriptionRef {
+  id: string
+  name: string | null
+}
+
+export interface SuggestionTarget {
+  target_type: 'domain'
+  target_key: string
+  current_state: AdvisoryAction
+  suggestions: {
+    id: string
+    action: SuggestionAction
+    state: 'new' | 'mailed' | 'applied' | 'dismissed'
+    subscription: SubscriptionRef | null
+  }[]
+  advisories: { action: AdvisoryAction; subscription: SubscriptionRef }[]
+}
+
+export type ApplyResult =
+  | 'applied'
+  | 'retracted'
+  | 'unable_to_apply'
+  | 'downgrade_confirmation_required'
+  | 'reject_confirmation_required'
+
+let listsProbe: Promise<boolean> | null = null
+
+/** Whether the `moderation_subscriptions` feature is on: 404 while it is off. */
+export function moderationSubscriptionsEnabled(token: string): Promise<boolean> {
+  listsProbe ??= request(token, 'GET', '/api/v1/admin/moderation_subscriptions').then(
+    () => true,
+    () => false,
+  )
+  return listsProbe
+}
+
+const SUBSCRIPTIONS = '/api/v1/admin/moderation_subscriptions'
+
+export function listModerationSubscriptions(token: string) {
+  return json<ModerationSubscription[]>(token, 'GET', SUBSCRIPTIONS)
+}
+
+export function getModerationSubscription(token: string, id: string, page = 1) {
+  return json<{
+    subscription: ModerationSubscription
+    advisories: { id: string; target_key: string; action: AdvisoryAction }[]
+    advisories_count: number
+    page_size: number
+  }>(token, 'GET', `${SUBSCRIPTIONS}/${id}?page=${page}`)
+}
+
+export function createModerationSubscription(token: string, form: ModerationSubscriptionForm) {
+  return json<ModerationSubscription>(token, 'POST', SUBSCRIPTIONS, form)
+}
+
+export function updateModerationSubscription(
+  token: string,
+  id: string,
+  form: ModerationSubscriptionForm,
+) {
+  return json<ModerationSubscription>(token, 'PATCH', `${SUBSCRIPTIONS}/${id}`, form)
+}
+
+export function deleteModerationSubscription(token: string, id: string) {
+  return json<object>(token, 'DELETE', `${SUBSCRIPTIONS}/${id}`)
+}
+
+export function listModerationSubscriptionLogs(token: string, page = 1) {
+  return json<ActionLog[]>(token, 'GET', `${SUBSCRIPTIONS}/logs?page=${page}`)
+}
+
+export function listModerationSuggestions(token: string) {
+  return json<SuggestionTarget[]>(token, 'GET', '/api/v1/admin/moderation_suggestions')
+}
+
+export function dismissModerationSuggestion(token: string, id: string) {
+  return json<object>(token, 'DELETE', `/api/v1/admin/moderation_suggestions/${id}`)
+}
+
+export function applyModerationSuggestion(
+  token: string,
+  id: string,
+  confirmations: { confirm?: boolean; confirm_downgrade?: boolean } = {},
+) {
+  return json<{ result: ApplyResult; target_key: string }>(
+    token,
+    'POST',
+    `/api/v1/admin/moderation_suggestions/${id}/apply`,
+    confirmations,
+  )
 }
 
 let faspProbe: Promise<boolean> | null = null

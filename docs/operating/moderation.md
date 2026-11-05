@@ -497,3 +497,58 @@ Earlier versions also ranked trends by recent use rather than by score,
 and counted hashtag histories from posts. Histories now come from Redis,
 so after an upgrade they start empty, and trends build up again only
 from the uses that follow.
+
+
+Moderation subscriptions
+------------------------
+
+A moderation subscription is a list of domains, published by someone you trust,
+that the instance reads every six hours. It is experimental, as it is in
+Mastodon, and off unless the instance's configuration says
+
+~~~~ toml
+[instance]
+experimental_features = ["moderation_subscriptions"]
+~~~~
+
+While it is off, its API answers 404 and nothing is fetched. Whoever can manage
+federation manages subscriptions and suggestions in the admin pages, or through
+`/api/v1/admin/moderation_subscriptions` and
+`/api/v1/admin/moderation_suggestions`.
+
+A list is a CSV file of up to 20,000 rows: either domains alone, or a header row
+starting with `#domain`, of which `#severity` is read as well. A subscription
+created now is first read when the scheduler next runs, and a list that cannot
+be read, or does not answer 200, is left as it was. It is fetched through the
+client that refuses private networks, and can be at most a mebibyte.
+
+ -  **Subscription type** decides what a row with no severity means: a mixed
+    list and a block-list treat it as a block, an allow-list as an allow. A
+    block-list ignores allows, and an allow-list ignores blocks.
+ -  **Priority**: a lower number wins. A list's advisory that another with a
+    lower number also gives is dropped, and one that a list with a lower or
+    equal number contradicts is never applied automatically, only suggested.
+ -  **Apply advisories automatically**: never, always, or only if it does not
+    break relationships, which suggests a suspension of a domain with follows
+    instead of applying it.
+ -  **Retract advisories automatically**: whether a block or allow the list
+    no longer has is lifted, and whether it may be downgraded. Otherwise a
+    retraction is suggested.
+ -  **Override manual blocks**: whether it may upgrade or take over a block
+    nobody's subscription made. It is left alone otherwise, and suggested.
+
+Outside limited federation mode only blocks and limits are acted on; in limited
+federation mode, only allows. What is applied automatically is logged in the
+audit log as automatic, with the subscription; logs of all of it have their own
+tab. New suggestions are mailed to whoever can manage federation, unless they
+turned off `notification_emails.moderation_suggestions`.
+
+Applying a suggestion asks for confirmation before suspending or downgrading,
+and leaves other suggestions for the domain dismissed. Dismissing one dismisses
+them all, and a dismissed suggestion stays so when the list is read again.
+Applying over an existing block resets its other settings and comments, as
+Mastodon does. Deleting a subscription retracts what it applied, unless it does
+not retract automatically; then those blocks stay, belonging to nobody.
+
+Mastodon's 5.0.0-beta.1 cannot apply block suggestions, because of bugs recorded
+as `moderation-lists-fixes-beta-bugs`.

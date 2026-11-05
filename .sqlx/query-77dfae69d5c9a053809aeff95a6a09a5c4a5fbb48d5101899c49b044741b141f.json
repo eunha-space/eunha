@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id as user_id, a.username\n           FROM users u\n           JOIN accounts a ON a.id = u.account_id\n           WHERE u.id = $1\n             AND (u.disabled = false\n                  -- `mails_disabled?`: waiting to be reviewed, not frozen.\n                  OR (u.confirmed_at IS NULL AND u.confirmation_sent_at IS NULL))\n             AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n             AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "77dfae69d5c9a053809aeff95a6a09a5c4a5fbb48d5101899c49b044741b141f"
+}

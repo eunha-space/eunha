@@ -969,6 +969,8 @@ export interface ActionLog {
   target: { text: string; href: string | null } | null
   changes: string | null
   text: string
+  /** The moderation subscription behind it; a deleted one has no name. */
+  moderation_subscription?: { id: string; name: string | null } | null
 }
 
 export interface ActionLogFilters {

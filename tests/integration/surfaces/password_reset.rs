@@ -169,7 +169,7 @@ async fn test_a_reset_sets_the_password_and_ends_every_session() {
             ],
         )
         .await;
-    assert_eq!(old.status(), StatusCode::OK);
+    assert_eq!(old.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     // Every session and token from before is gone, and the token is spent.
     let page = ctx

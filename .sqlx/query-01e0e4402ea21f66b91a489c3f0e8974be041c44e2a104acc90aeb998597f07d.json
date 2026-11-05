@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE domain_blocks\n                   SET severity = $2, moderation_subscription_id = $3, reject_media = false,\n                       reject_reports = false, private_comment = NULL, public_comment = NULL,\n                       obfuscate = false, updated_at = now()\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01e0e4402ea21f66b91a489c3f0e8974be041c44e2a104acc90aeb998597f07d"
+}

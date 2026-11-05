@@ -79,7 +79,7 @@ async fn test_instance_v2() {
 
     assert_eq!(body["domain"], json!(ctx.domain));
     assert!(body["version"].as_str().is_some(), "version field missing");
-    assert_eq!(body["api_versions"], json!({"mastodon": 11}));
+    assert_eq!(body["api_versions"], json!({"mastodon": 12}));
     assert_eq!(body["languages"], json!(["en"]));
     assert_eq!(
         body["configuration"]["urls"]["streaming"],

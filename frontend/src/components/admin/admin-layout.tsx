@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 
 import { can, type Permission } from '../../admin-api.ts'
-import { faspEnabled } from '../../admin-server-api.ts'
+import { faspEnabled, moderationSubscriptionsEnabled } from '../../admin-server-api.ts'
 import { ADMIN_SECTIONS, type AdminSection } from '../../lib/admin-sections.ts'
 import { beginLogin, getToken } from '../../auth.ts'
 import { getMeAccount, loadMe } from '../../me.ts'
@@ -38,24 +38,26 @@ export function useRolePermissions(): number | null {
 }
 
 /**
- * Whether the instance has the `fasp` feature on, asked only of a role that
- * may manage federation, which is who the FASP section is for.
+ * Whether the instance has each experimental feature on, asked only of a role
+ * that may manage federation, which is who their sections are for.
  */
-function useFaspEnabled(permissions: number | null): boolean {
+function useFeatures(permissions: number | null): { fasp: boolean; lists: boolean } {
   const token = getToken()
-  const [enabled, setEnabled] = useState(false)
+  const [features, setFeatures] = useState({ fasp: false, lists: false })
   const allowed = permissions !== null && can(permissions, 'manage_federation')
   useEffect(() => {
     if (!token || !allowed) return
     let cancelled = false
-    faspEnabled(token).then((on) => {
-      if (!cancelled) setEnabled(on)
-    })
+    Promise.all([faspEnabled(token), moderationSubscriptionsEnabled(token)]).then(
+      ([fasp, lists]) => {
+        if (!cancelled) setFeatures({ fasp, lists })
+      },
+    )
     return () => {
       cancelled = true
     }
   }, [token, allowed])
-  return enabled
+  return features
 }
 
 const tab =
@@ -119,12 +121,15 @@ export function AdminLayout({
     body = children
   }
 
-  const fasp = useFaspEnabled(permissions)
+  const features = useFeatures(permissions)
   const sections =
     permissions === null
       ? []
       : ADMIN_SECTIONS.filter(
-          (s) => can(permissions, s.permission) && (s.feature !== 'fasp' || fasp),
+          (s) =>
+            can(permissions, s.permission) &&
+            (s.feature !== 'fasp' || features.fasp) &&
+            (s.feature !== 'moderation_subscriptions' || features.lists),
         )
 
   return (

@@ -65,6 +65,8 @@ and hashtags and mentions with Mastodon's expressions:
 Text is split into paragraphs at blank lines, and a single line break becomes
 `<br />`; a profile field stays on one line.
 
+[UTS #58]: https://www.unicode.org/reports/tr58/
+
 
 Remote HTML
 -----------
@@ -103,5 +105,3 @@ Differences from Mastodon
     Announcements in the admin API are likewise linked without looking their
     mentions up.
  -  The quote fallback is not added to versions in a post's edit history.
-
-[UTS #58]: https://www.unicode.org/reports/tr58/

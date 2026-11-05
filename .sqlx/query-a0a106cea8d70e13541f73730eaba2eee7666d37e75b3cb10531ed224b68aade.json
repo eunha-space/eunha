@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT waiting.queue AS \"queue!\"\n           FROM eunha.jobs waiting\n           WHERE waiting.dead_at IS NULL\n             AND waiting.locked_at IS NULL\n             AND waiting.run_at < now() - interval '10 minutes'\n             AND NOT EXISTS (\n               SELECT 1 FROM eunha.jobs running\n               WHERE running.queue = waiting.queue AND running.locked_at IS NOT NULL\n             )\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "queue!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "eunha.jobs",
+            "name": "queue"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0a106cea8d70e13541f73730eaba2eee7666d37e75b3cb10531ed224b68aade"
+}

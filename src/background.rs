@@ -191,6 +191,28 @@ fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             state,
+            "moderation list synchronization",
+            run(
+                state.clone(),
+                &tasks::MODERATION_LIST_SYNCHRONIZATION,
+                |state| async move {
+                    if let Err(error) = crate::moderation::lists::run_scheduled(&state).await {
+                        tracing::error!(%error, "moderation list synchronization failed");
+                    }
+                },
+            ),
+        ),
+        until_stopped(
+            state,
+            "server checks",
+            run(state.clone(), &tasks::SERVER_CHECKS, |state| async move {
+                if let Err(error) = crate::server_checks::run_scheduled(&state).await {
+                    tracing::error!(%error, "server checks failed");
+                }
+            }),
+        ),
+        until_stopped(
+            state,
             "pending accounts notification",
             run(
                 state.clone(),

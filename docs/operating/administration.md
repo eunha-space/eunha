@@ -61,35 +61,35 @@ it is `authenticated`, and otherwise only a role whose permissions carry the
 so a role with only `administrator`, which the server lets read the feeds, is
 not shown the rows.
 
-| Setting                                                          | What reads it                                                                          |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title             |
-| `site_short_description`                                         | `/api/v2/instance`'s `description`, `/api/v1/instance`'s `short_description`, NodeInfo |
-| `site_extended_description`                                      | `/api/v1/instance/extended_description`, rendered as Markdown                          |
-| `site_contact_email`, `site_contact_username`                    | the instance's contact address and account                                             |
-| `site_terms`                                                     | the privacy policy (see [terms of service](./terms-of-service))                        |
-| `registrations_mode`                                             | sign-ups, approval of new accounts, the instance API, NodeInfo                         |
-| `closed_registrations_message`                                   | `/api/v2/instance`'s `registrations.message` while sign-ups are closed                 |
-| `require_invite_text`                                            | a sign-up waiting for approval must give a reason                                      |
-| `min_age`                                                        | the sign-up age check (see [account security](./accounts)) and the instance API        |
-| `status_page_url`                                                | `/api/v2/instance`'s `configuration.urls.status`                                       |
-| `thumbnail`, `thumbnail_description`                             | the instance thumbnail                                                                 |
-| `app_icon`, `favicon`                                            | the instance's icons, and the web client's favicon                                     |
-| `custom_css`                                                     | `/custom.css`, linked from every page of the web client                                |
-| `allow_referrer_origin`                                          | the web client's `Referrer-Policy`                                                     |
-| `profile_directory`                                              | `/api/v1/directory`, a 404 when off                                                    |
-| `trends`, `trendable_by_default`                                 | trends (see [moderation](./moderation#trends))                                         |
-| `*_feed_access`                                                  | the public, hashtag and link timelines                                                 |
-| `show_domain_blocks`, `show_domain_blocks_rationale`             | `/api/v1/instance/domain_blocks`                                                       |
-| `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                               |
+| Setting                                                          | What reads it                                                                                                    |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title                                       |
+| `site_short_description`                                         | `/api/v2/instance`'s `description`, `/api/v1/instance`'s `short_description`, NodeInfo                           |
+| `site_extended_description`                                      | `/api/v1/instance/extended_description`, rendered as Markdown                                                    |
+| `site_contact_email`, `site_contact_username`                    | the instance's contact address and account                                                                       |
+| `site_terms`                                                     | the privacy policy (see [terms of service](./terms-of-service))                                                  |
+| `registrations_mode`                                             | sign-ups, approval of new accounts, the instance API, NodeInfo                                                   |
+| `closed_registrations_message`                                   | `/api/v2/instance`'s `registrations.message` while sign-ups are closed                                           |
+| `require_invite_text`                                            | a sign-up waiting for approval must give a reason                                                                |
+| `min_age`                                                        | the sign-up age check (see [account security](./accounts)) and the instance API                                  |
+| `status_page_url`                                                | `/api/v2/instance`'s `configuration.urls.status`                                                                 |
+| `thumbnail`, `thumbnail_description`                             | the instance thumbnail                                                                                           |
+| `app_icon`, `favicon`                                            | the instance's icons, and the web client's favicon                                                               |
+| `custom_css`                                                     | `/custom.css`, linked from every page of the web client                                                          |
+| `allow_referrer_origin`                                          | the web client's `Referrer-Policy`                                                                               |
+| `profile_directory`                                              | `/api/v1/directory`, a 404 when off                                                                              |
+| `trends`, `trendable_by_default`                                 | trends (see [moderation](./moderation#trends))                                                                   |
+| `*_feed_access`                                                  | the public, hashtag and link timelines                                                                           |
+| `show_domain_blocks`, `show_domain_blocks_rationale`             | `/api/v1/instance/domain_blocks`                                                                                 |
+| `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                                                         |
 | `authorized_fetch`                                               | `none`, `actors` (the default) or `all`: which fetches must be signed, unless the instance configuration decides |
-| `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up) |
-| `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo |
-| `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                |
-| `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December           |
-| `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                              |
-| `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))            |
-| `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))       |
+| `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up)                                  |
+| `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo                                                                                |
+| `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                                          |
+| `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December                                     |
+| `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                                                        |
+| `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                                      |
+| `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                                 |
 
 The rest are saved for a Mastodon on the same database and read by nothing in
 Eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
@@ -718,3 +718,28 @@ Every mail but those to an account about itself (`UserMailer`, a
 back. The mail about a critical software update, and the one saying the tracked
 release is out of support, carry `Importance: high`, `Priority: urgent` and
 `X-Priority: 1` besides; the earlier end-of-support warnings do not.
+
+
+Server health
+-------------
+
+*Server health* in the admin pages lists `Admin::ServerCheck`'s checks, by what
+they found: critical, warnings, suggestions, errors, unprocessed, completed and
+ignored. Each can be ignored, and restored; it keeps running either way. Someone
+sees the page with `view_dashboard`, and only the checks they may act on:
+`rules` with `manage_rules`, the others with `view_devops`.
+
+| Check              | Pending when                                                     |
+| ------------------ | ---------------------------------------------------------------- |
+| `database_schema`  | a migration waits for `eunha migrate`                            |
+| `elastic_search`   | search is on, and the cluster is down, old, unhealthy or differs |
+| `media_privacy`    | the media bucket lists its contents to anyone                    |
+| `rules`            | the server has no rules (a warning)                              |
+| `sidekiq_process`  | a job has been due for ten minutes in a queue with none running  |
+| `software_version` | the update check reports a newer release                         |
+
+A scheduler runs them every 15 minutes and keeps the results in
+`admin_server_checks`, except `sidekiq_process`, which is run for each reading
+of the page. The dashboard's own older checks are still shown there, as
+Mastodon still shows them. See also `server-checks-for-eunha` in
+[the divergences](../mastodon/divergences.md).

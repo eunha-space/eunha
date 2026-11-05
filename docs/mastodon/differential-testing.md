@@ -25,8 +25,8 @@ already solved — seeds both servers, and compares what a client actually does:
 follow, block, mute, and their undos), and about two hundred steps of
 [flows](#flows) — domain blocks, reports and moderation, moves, and the
 everyday client endpoints — each a sequence in which one request sets up what
-the next reads. It is Mastodon 5.0.0-beta.1, the release Eunha tracks, and the whole
-comparison takes about a minute once the image is pulled.
+the next reads. It is Mastodon 5.0.0-beta.1, the release Eunha tracks, and the
+whole comparison takes about a minute once the image is pulled.
 
 The stack runs Sidekiq as well as the web process. Without a worker nothing
 Mastodon defers ever happens, and some of that shows in the API — a home feed

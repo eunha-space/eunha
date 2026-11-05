@@ -78,6 +78,11 @@ impl Target {
         Self::new("DomainAllow", id, domain)
     }
 
+    /// `ModerationSubscription#to_log_human_identifier` is its name.
+    pub fn moderation_subscription(id: i64, name: impl Into<String>) -> Self {
+        Self::new("ModerationSubscription", id, name)
+    }
+
     pub fn email_domain_block(id: i64, domain: impl Into<String>) -> Self {
         Self::new("EmailDomainBlock", id, domain)
     }
@@ -164,11 +169,22 @@ pub async fn log<'e>(
     action: &str,
     target: &Target,
 ) -> AppResult<()> {
+    log_for_subscription(db, account_id, action, target, None).await
+}
+
+/// [`log`], of what a moderation subscription suggested or did.
+pub async fn log_for_subscription<'e>(
+    db: impl PgExecutor<'e>,
+    account_id: i64,
+    action: &str,
+    target: &Target,
+    moderation_subscription_id: Option<i64>,
+) -> AppResult<()> {
     sqlx::query!(
         r#"INSERT INTO admin_action_logs
              (account_id, action, target_type, target_id, human_identifier,
-              route_param, permalink, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())"#,
+              route_param, permalink, moderation_subscription_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())"#,
         account_id,
         action,
         target.kind,
@@ -176,6 +192,7 @@ pub async fn log<'e>(
         target.human_identifier,
         target.route_param,
         target.permalink,
+        moderation_subscription_id,
     )
     .execute(db)
     .await?;

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE admin_server_checks\n               SET status = $2, data = $3, severity = $4,\n                   checked_at = now(), updated_at = now()\n               WHERE key = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Jsonb",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e85694c39b126cd9c75d79fb13334c3ba95e4a2d6678ec42655b90c36a1ba6a7"
+}

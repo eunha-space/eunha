@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fasp_capabilities SET enabled = $2, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43acd19eeb4d11e7b5d034f2a6ffe8beb09c79c0812d8dc32b26e856cf7097a3"
+}

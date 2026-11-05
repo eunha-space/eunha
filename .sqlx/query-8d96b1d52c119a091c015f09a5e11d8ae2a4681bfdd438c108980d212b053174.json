@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, target_key, action FROM moderation_subscription_advisories\n           WHERE moderation_subscription_id = $1 ORDER BY id ASC LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscription_advisories",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_key",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscription_advisories",
+            "name": "target_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "action",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "moderation_subscription_advisories",
+            "name": "action"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8d96b1d52c119a091c015f09a5e11d8ae2a4681bfdd438c108980d212b053174"
+}

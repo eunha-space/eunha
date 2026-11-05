@@ -49,6 +49,18 @@ export function ActionLogEntry({ log }: { log: ActionLog }) {
           {parts}
           {log.changes && <> {log.changes}</>}
         </p>
+        {log.moderation_subscription && (
+          <p className="text-muted-foreground text-xs">
+            Action suggested by{' '}
+            {log.moderation_subscription.name ? (
+              <Link to={`/admin/moderation_subscriptions/${log.moderation_subscription.id}`}>
+                {log.moderation_subscription.name}
+              </Link>
+            ) : (
+              'a deleted moderation subscription'
+            )}
+          </p>
+        )}
         <time className="text-muted-foreground text-xs" dateTime={log.created_at}>
           {formatDate(log.created_at)}
         </time>

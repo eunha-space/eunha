@@ -4,9 +4,9 @@ Update notices
 Mastodon polls an update server for newer releases and for the end of support
 of the branch it runs, and records both in `software_updates` and
 `software_deprecations`. Eunha asks the same server the same question about the
-Mastodon release *it implements*: Eunha builds 5.0.0-beta.1's schema and serves its
-API, so when that branch stops receiving fixes, what Eunha reproduces is what
-is going out of support.
+Mastodon release *it implements*: Eunha builds 5.0.0-beta.1's schema and serves
+its API, so when that branch stops receiving fixes, what Eunha reproduces is
+what is going out of support.
 
 Eunha asks nobody anything unless `software_update_url` names a server, which
 nothing does by default. The notices are shown to the administrators on the

@@ -134,8 +134,10 @@ async fn test_public_posts_go_signed_and_private_ones_do_not() {
 /// (`always_sign`): a post goes unsigned, its deletion signed.
 #[tokio::test]
 async fn test_authorized_fetch_signs_only_deletions() {
-    let ctx = TestContext::new("ldsig-secure").await;
-    crate::helpers::set_setting(&ctx.db, "authorized_fetch", "true").await;
+    let ctx = TestContext::with_config("ldsig-secure", |config| {
+        config.instance.authorized_fetch = Some(serde_json::json!(true));
+    })
+    .await;
     let (_, public_key) = alice_with_a_follower(&ctx).await;
 
     let status = ctx

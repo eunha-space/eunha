@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, moderation_subscription_id FROM domain_blocks WHERE domain = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "moderation_subscription_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "moderation_subscription_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "6847180651ec80c077c56cb8e38212427dcb268ad41f851159574016ba9b00b2"
+}

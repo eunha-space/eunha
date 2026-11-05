@@ -1511,7 +1511,7 @@ const CREATED_BY_APP_TTL_SECONDS: i64 = 600;
 async fn remember_creating_application(state: &AppState, user_id: i64, app_id: i64) {
     let key = state
         .redis_keys
-        .key(&format!("track_created_by_application_id:{user_id}"));
+        .key(format!("track_created_by_application_id:{user_id}"));
     let mut redis = state.redis.clone();
     let result: Result<(), _> = redis::cmd("SET")
         .arg(&key)
@@ -1529,7 +1529,7 @@ async fn remember_creating_application(state: &AppState, user_id: i64, app_id: i
 async fn record_creating_application(state: &AppState, user_id: i64, app_id: i64) {
     let key = state
         .redis_keys
-        .key(&format!("track_created_by_application_id:{user_id}"));
+        .key(format!("track_created_by_application_id:{user_id}"));
     let mut redis = state.redis.clone();
     let remembered: Option<i64> = redis::cmd("GET")
         .arg(&key)
