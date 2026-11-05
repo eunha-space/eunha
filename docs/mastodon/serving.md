@@ -264,3 +264,38 @@ table, since instances sharing a process share its environment: no delivery
 carries the header, and one that arrives is not acted on. Like the other
 deployment modes ([instances](../operating/instances)), the environment
 variable itself is not read.
+
+
+Pages, feeds and embeds
+-----------------------
+
+These are for people and crawlers rather than other servers. They live in
+*src/web.rs* and *src/web/*.
+
+ -  **`/@user`, `/@user/:id`, and `/tags/:name`** are the web app, with the
+    title, OpenGraph tags, `rel="alternate"` links and `Link` header Mastodon's
+    pages carry, and a post's JSON-LD unless its author asked not to be indexed.
+    The server cannot see the web app's token, so each answers as to a visitor:
+    `404`, `403` or `410` where a visitor would get that, with the app still
+    loading for a member who may see more. A boost's page redirects to the
+    original.
+ -  **Feeds** are at `/@user.rss`, `/@user/with_replies.rss`,
+    `/@user/media.rss`, `/@user/tagged/:tag.rss` and `/tags/:name.rss`
+    (`?local=true`). `?limit=` goes up to 200. An account's carries public and
+    unlisted posts, without boosts, and a tag's only public ones, unless the
+    feed settings keep that tag's posts from visitors.
+ -  **`/@user/:id/embed`** draws a public or unlisted post without the web app,
+    for any site to frame. `/api/oembed` names it, with `/embed.js`, which sets
+    the frame's height.
+ -  **`/authorize_interaction?uri=`** is where WebFinger's `subscribe` template
+    sends someone following from another server: the web app asks them to sign
+    in, looks up what was named, and shows it. **`/share?text=`** opens the
+    composer. **`/intent?uri=web+mastodon://…`** sends either link to them, and
+    `/authorize_follow` and `/.well-known/proxy` redirect to the first.
+ -  **`/health`** answers `OK` once the process is serving, and asks nothing of
+    the database. **`/manifest`** and **`/manifest.json`** describe the
+    installable app.
+
+In limited federation mode the pages say nothing about what they name, and the
+feeds and embeds answer `404`. See
+[the divergences](./divergences.md) for where these differ from Mastodon's.

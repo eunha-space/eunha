@@ -72,9 +72,8 @@ pub async fn get_oembed(
     };
 
     let width = params.maxwidth.unwrap_or(400).min(400);
-    let html = format!(
-        r#"<iframe src="{status_url}/embed" class="mastodon-embed" style="max-width: 100%; border: 0" width="{width}" allowfullscreen="allowfullscreen"></iframe><script src="{base_url}/embed.js" async="async"></script>"#,
-    );
+    let handle = format!("@{}@{}", row.username, instance.domain);
+    let html = embed_html(&base_url, &status_url, &handle);
 
     Ok(Json(OEmbedResponse {
         oembed_type: "rich".to_string(),
@@ -89,6 +88,29 @@ pub async fn get_oembed(
         width: Some(width),
         height: None,
     }))
+}
+
+/// `OEmbedSerializer#html`: a link to the post, which `embed.js` replaces with
+/// the embed page where scripts run. It says Eunha where Mastodon says Mastodon.
+fn embed_html(base_url: &str, status_url: &str, handle: &str) -> String {
+    format!(
+        concat!(
+            r#"<blockquote class="mastodon-embed" data-embed-url="{status_url}/embed" "#,
+            r#"style="background: #FCF8FF; border-radius: 8px; border: 1px solid #C9C4DA; margin: 0; "#,
+            r#"max-width: 540px; min-width: 270px; overflow: hidden; padding: 0;">"#,
+            r#"<a href="{status_url}" target="_blank" style="align-items: center; color: #1C1A25; "#,
+            r#"display: flex; flex-direction: column; font-family: system-ui, -apple-system, "#,
+            r#"BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Roboto, "#,
+            r#"sans-serif; font-size: 14px; justify-content: center; letter-spacing: 0.25px; "#,
+            r#"line-height: 20px; padding: 24px; text-decoration: none;">"#,
+            r#"<div style="color: #787588; margin-top: 16px;">Post by {handle}</div>"#,
+            r#"<div style="font-weight: bold;">View on Eunha</div></a></blockquote> "#,
+            r#"<script data-allowed-prefixes="{base_url}/" async src="{base_url}/embed.js"></script>"#,
+        ),
+        status_url = status_url,
+        handle = handle,
+        base_url = base_url,
+    )
 }
 
 /// Parse a status ID from a URL of the form `https://domain/@username/123456`.

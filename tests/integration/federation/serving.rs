@@ -206,9 +206,26 @@ async fn test_discovery_covers_the_instance_actor_and_nodeinfo() {
         .await
         .unwrap();
     let links = alice["links"].as_array().unwrap();
-    assert!(links
-        .iter()
-        .any(|link| link["rel"] == "http://ostatus.org/schema/1.0/subscribe"));
+    // `WebfingerSerializer#links`: where another server sends someone who wants
+    // to follow this account or answer one of its posts from their account here.
+    for (rel, template) in [
+        (
+            "http://ostatus.org/schema/1.0/subscribe",
+            "/authorize_interaction?uri={uri}",
+        ),
+        ("https://w3id.org/fep/3b86/Create", "/share?text={content}"),
+        (
+            "https://w3id.org/fep/3b86/Object",
+            "/authorize_interaction?uri={object}",
+        ),
+    ] {
+        let link = links.iter().find(|link| link["rel"] == rel).unwrap();
+        assert_eq!(
+            link["template"],
+            format!("https://{}{template}", ctx.domain),
+            "{rel}"
+        );
+    }
 
     let links: Value = ctx
         .api

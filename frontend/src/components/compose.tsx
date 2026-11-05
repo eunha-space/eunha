@@ -113,6 +113,7 @@ export function Compose({
   replyTo,
   quoteOf,
   messageTo,
+  initialText = '',
   onCancelReply,
   onPosted,
   onTypeChange,
@@ -125,6 +126,8 @@ export function Compose({
   // handle already typed if one was named. `undefined` means "not a message";
   // `null` means "a message to nobody in particular yet".
   messageTo?: mastodon.v1.Account | null
+  // What the composer opens with, for a link that shares something here.
+  initialText?: string
   onCancelReply?: () => void
   onPosted: (status: mastodon.v1.Status) => void
   // The frame draws the title and the tint, but the mode is decided in here
@@ -132,8 +135,8 @@ export function Compose({
   onTypeChange?: (type: 'post' | 'reply' | 'message') => void
   framed?: boolean
 }) {
-  const [text, setText] = useState('')
-  const [caret, setCaret] = useState(0)
+  const [text, setText] = useState(initialText)
+  const [caret, setCaret] = useState(initialText.length)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [visibility, setVisibility] = useState<mastodon.v1.StatusVisibility>(() =>
     messageTo !== undefined

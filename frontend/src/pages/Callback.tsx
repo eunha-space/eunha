@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { completeLogin } from '../auth.ts'
+import { completeLogin, takeReturnPath } from '../auth.ts'
 
 const logins = new Map<string, Promise<void>>()
 
@@ -24,7 +24,7 @@ export default function Callback() {
       return
     }
     loginOnce(code)
-      .then(() => window.location.replace('/'))
+      .then(() => window.location.replace(takeReturnPath()))
       .catch((e) => setError(String(e)))
   }, [params])
 

@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, file_content_type, file_file_size, thumbnail_file_name\n         FROM media_attachments WHERE status_id = ANY($1::bigint[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_content_type",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_file_size",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "thumbnail_file_name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "thumbnail_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c039b01b3da37f349c8015d41e2991ad643057c87dd9b28b3f2f94b674a734aa"
+}

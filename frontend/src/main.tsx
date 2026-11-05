@@ -2,7 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import Home from './pages/Home.tsx'
+import AuthorizeInteraction from './pages/AuthorizeInteraction.tsx'
 import Callback from './pages/Callback.tsx'
+import Share from './pages/Share.tsx'
 import Profile from './pages/Profile.tsx'
 import StatusThread from './pages/StatusThread.tsx'
 import PublicTimeline from './pages/PublicTimeline.tsx'
@@ -110,6 +112,8 @@ if (token) {
 const routes = [
   { path: '/', element: <Home /> },
   { path: '/auth/callback', element: <Callback /> },
+  { path: '/authorize_interaction', element: <AuthorizeInteraction /> },
+  { path: '/share', element: <Share /> },
   { path: '/local', element: <PublicTimeline /> },
   { path: '/public', element: <PublicTimeline /> },
   { path: '/notifications', element: <Notifications /> },

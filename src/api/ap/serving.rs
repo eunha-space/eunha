@@ -241,14 +241,23 @@ pub fn federation() -> Federation<AppState> {
             // mode turns off) has no counterpart: Eunha's WebFinger names no
             // avatar in any mode.
             match actor.get("preferredUsername").and_then(Value::as_str) {
-                Some(username) if actor.get("type") != Some(&json!("Application")) => {
-                    vec![json!({
-                        "rel": "http://ostatus.org/schema/1.0/subscribe",
-                        "template": format!(
-                            "https://{}/@{username}/authorize_interaction?uri={{uri}}",
-                            domain(ctx)
-                        ),
-                    })]
+                Some(_) if actor.get("type") != Some(&json!("Application")) => {
+                    // `WebfingerSerializer#links`.
+                    let domain = domain(ctx);
+                    vec![
+                        json!({
+                            "rel": "http://ostatus.org/schema/1.0/subscribe",
+                            "template": format!("https://{domain}/authorize_interaction?uri={{uri}}"),
+                        }),
+                        json!({
+                            "rel": "https://w3id.org/fep/3b86/Create",
+                            "template": format!("https://{domain}/share?text={{content}}"),
+                        }),
+                        json!({
+                            "rel": "https://w3id.org/fep/3b86/Object",
+                            "template": format!("https://{domain}/authorize_interaction?uri={{object}}"),
+                        }),
+                    ]
                 }
                 _ => Vec::new(),
             }

@@ -108,8 +108,8 @@ Tracking Mastodon:
     its account row (`ProcessAccountService`).
  -  *docs/mastodon/serving.md*: what other servers fetch: the actor, a
     post's replies, likes, shares and thread, an account's featured posts,
-    hashtags and collections, featured hashtag federation, caching, and
-    followers synchronization (FEP-8fcf).
+    hashtags and collections, featured hashtag federation, caching, followers
+    synchronization (FEP-8fcf), and the public pages, RSS feeds and embeds.
  -  *docs/mastodon/quotes.md*: a quote's states, the consent handshake,
     verifying stamps, and revoking.
  -  *docs/mastodon/statuses.md*: posting and editing, a post's edit history

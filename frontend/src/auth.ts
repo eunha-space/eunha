@@ -11,6 +11,7 @@ const SCOPES = 'read write follow push admin:read admin:write'
 const CLIENT_KEY = 'eunha:client'
 const ACTIVE_ACCOUNT_KEY = 'eunha:active-account'
 const ACCOUNTS_KEY = 'eunha:accounts'
+const RETURN_PATH_KEY = 'eunha:return-path'
 
 export interface SavedAccount {
   token: string
@@ -113,8 +114,9 @@ async function ensureClient(): Promise<ClientCreds> {
 
 // Kick off login: register (or reuse) the app, then send the browser to the
 // server-rendered authorize page. (masto.js doesn't navigate the browser.)
-export async function beginLogin(addAccount = false) {
+export async function beginLogin(addAccount = false, returnPath?: string) {
   const { client_id } = await ensureClient()
+  if (returnPath) sessionStorage.setItem(RETURN_PATH_KEY, returnPath)
   const params = new URLSearchParams({
     client_id,
     redirect_uri: redirectUri(),
@@ -123,6 +125,14 @@ export async function beginLogin(addAccount = false) {
   })
   if (addAccount) params.set('force_login', 'true')
   window.location.assign(`/oauth/authorize?${params}`)
+}
+
+// Where to go once signed in: the page that asked for it, which is always one
+// of this site's own paths, or home.
+export function takeReturnPath(): string {
+  const path = sessionStorage.getItem(RETURN_PATH_KEY)
+  sessionStorage.removeItem(RETURN_PATH_KEY)
+  return path && path.startsWith('/') && !path.startsWith('//') ? path : '/'
 }
 
 // Exchange the authorization code for a bearer token.

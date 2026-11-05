@@ -1789,3 +1789,222 @@ evidence = "frontend/src/main.tsx"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 
+[[divergence]]
+id = "public-pages-answer-as-to-a-visitor"
+kind = "behaviour"
+summary = "Answers a post's and an account's pages as to a visitor, with the web app underneath"
+mastodon = """
+Knows the reader from the session cookie, so a post a signed-in follower may \
+read answers `200`, and in limited federation mode a visitor is redirected to \
+`/auth/sign_in`, feeds and embeds included."""
+eunha = """
+Its web app signs in with a token the server never sees on a page load, so \
+every page's status, metadata and cache headers are those a visitor would get. \
+A post or an account a visitor may not see answers `404`, `403` or `410`, with \
+the web app as the body, which then shows a signed-in member what they may \
+read. In limited federation mode a page says nothing about what it names, and \
+a feed or an embed answers `404`."""
+why = """
+Saying what the reader may see needs a session the page load does not carry. \
+Answering as to a visitor shows crawlers and link previews what Mastodon shows \
+them, and hides from them what it hides."""
+evidence = "tests/integration/surfaces/public_pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "public-pages-text-in-english-and-korean"
+kind = "omission"
+summary = "Writes page descriptions and feed text in the default locale, English or Korean only"
+mastodon = """
+Writes `og:description`, `<title>` and the like in the locale of the request, \
+and feed text in the default locale, in whichever of its locales those are."""
+eunha = """
+Writes both in the instance's default locale, Korean when that is Korean and \
+otherwise English, without reading `Accept-Language`."""
+why = """
+Eunha's server-side text is in those two locales (`push-titles-in-english-and-korean`), \
+and these strings are mostly read by crawlers, which ask for no locale."""
+evidence = "src/web/pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "embed-page-drawn-by-the-server"
+kind = "behaviour"
+summary = "Draws a post's embed on the server, with no web app, and says Eunha in its link"
+mastodon = """
+`/@user/:id/embed` loads a React bundle that draws the post and can act on it, \
+and the oEmbed `html` ends \u201cView on Mastodon\u201d under Mastodon's logo."""
+eunha = """
+`/@user/:id/embed` is a self-contained page: the author, the post, its poll \
+options and media, and a link to it. It answers `embed.js`'s `setHeight` as \
+Mastodon's does, and takes the same `embed.js`. The oEmbed `html` ends \
+\u201cView on Eunha\u201d, without a logo."""
+why = """
+A page embedded on someone else's site should not load a whole client to show \
+one post, and Eunha's web app is not built to run in a small frame."""
+evidence = "tests/integration/surfaces/public_pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "no-media-player-pages"
+kind = "omission"
+summary = "Has no `/media/:id` or `/media/:id/player` pages"
+mastodon = """
+Serves `/media/:id` and `/media/:id/player`, names the player in \
+`twitter:player` and `embedUrl`, and gives a video or audio post a `player` \
+Twitter card."""
+eunha = """
+Serves neither, so those two tags are left out and such a post's card is \
+`summary_large_image`. `og:video` and `og:audio` still name the files."""
+why = """
+They would be used only by the few services that still read Twitter's player \
+cards; the OpenGraph tags name the same files. Not ported yet."""
+evidence = "src/web/pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "manifest-offers-no-mastodon-apps"
+kind = "behaviour"
+summary = "The web app manifest offers no native apps, and composes at `/share`"
+mastodon = """
+`ManifestSerializer` sets `prefer_related_applications` and lists Mastodon's \
+own iOS and Android apps, and its compose shortcut is `/publish`."""
+eunha = """
+Sets `prefer_related_applications` to false and lists no applications, and its \
+compose shortcut is `/share`, its only page that opens a composer by address."""
+why = """
+A browser would otherwise offer an Eunha's visitors another project's app in \
+place of installing the site they are on."""
+evidence = "tests/integration/surfaces/public_pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "tag-page-links-its-feed"
+kind = "behaviour"
+summary = "A hashtag page's RSS link names the feed"
+mastodon = """
+`tags/show` gives its `application/rss+xml` link the `href` of `tag_url`, the \
+page, without `.rss`, so a reader that follows it finds no feed."""
+eunha = """
+Gives it `/tags/:name.rss`, which is what Mastodon answers with the feed. An \
+item's `category` is the tag's normalized name, not its `display_name`."""
+why = """
+The link is there to be followed by feed readers. The categories come from the \
+same entities the API serves, and differ only in capitalisation."""
+evidence = "tests/integration/surfaces/public_pages.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "remote-interaction-helper-not-served"
+kind = "omission"
+summary = "Does not serve `/remote_interaction_helper`"
+mastodon = """
+Serves a page that its own web UI frames, same-origin only, to look up a \
+visitor's home server when they follow or boost from a page here while signed \
+out."""
+eunha = """
+Does not serve it, and its web client has no such step: a visitor signs in \
+here, or searches for the post from their own server. The route other servers \
+use, `/authorize_interaction`, is served."""
+why = """
+`frame_ancestors :self` keeps it private to Mastodon's web UI, which Eunha does \
+not serve. Not having the flow is a gap in the web client, not in federation."""
+evidence = "src/api/ap/serving.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "no-single-sign-on"
+kind = "omission"
+summary = "Signs in with a password only: no OIDC, SAML, CAS, LDAP or PAM"
+mastodon = """
+Can sign members in through OmniAuth's OIDC, SAML and CAS strategies, and \
+through LDAP and PAM, and can be limited to them (`OMNIAUTH_ONLY`)."""
+eunha = """
+Has only email and password, with its second factors. `users.provider`, \
+`users.uid` and `identities` are kept as the schema has them and not read, so \
+a member who has only ever signed in through one of these has to reset a \
+password before Eunha can sign them in."""
+why = """
+Not ported yet. **An instance that depends on one cannot drop Eunha in.**"""
+evidence = "src/api/account/mod.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "no-captcha"
+kind = "omission"
+summary = "Has no CAPTCHA at sign-up"
+mastodon = """
+With `captcha_enabled` and hCaptcha keys, `Auth::ConfirmationsController` asks \
+a new member to solve a CAPTCHA before confirming."""
+eunha = """
+Saves `captcha_enabled` for a Mastodon on the same database, and reads nothing \
+of it. Its sign-up is limited by the rate limits, the registration mode and \
+email blocks."""
+why = """
+Not ported yet. It would send every new member's browser to a third party, so \
+it should be chosen deliberately rather than carried over."""
+evidence = "src/settings.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "statuses-cleanup-policy-has-no-settings"
+kind = "omission"
+summary = "Carries out automatic post deletion, but has no way to set it up"
+mastodon = """
+`/statuses_cleanup` lets a member set their `account_statuses_cleanup_policies` \
+row, which `AccountStatusesCleanupScheduler` carries out."""
+eunha = """
+Carries out a policy already in the table, as Mastodon does, but serves neither \
+that page nor an API for it, so a member can neither start, change nor stop \
+one. A policy brought from Mastodon keeps deleting."""
+why = """
+Not ported yet: the deleting came with parity for the schedulers, and the \
+setting belongs in the web client's settings. It is worth doing, because a \
+member with an imported policy cannot turn it off."""
+evidence = "src/statuses_cleanup.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "command-line-without-block-commands"
+kind = "omission"
+summary = "Has no `ip_blocks`, `email_domain_blocks`, `canonical_email_blocks` or `upgrade` commands"
+mastodon = """
+`tootctl` manages IP, email domain and canonical email blocks in bulk, and \
+`tootctl upgrade storage-schema` moves old media to the current paths."""
+eunha = """
+Manages the three blocks through the admin API and its web pages, and has no \
+storage schema upgrade."""
+why = """
+Bulk changes to the blocks are a loop over the admin API. Not ported yet."""
+evidence = "src/tootctl/mod.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "web-client-covers-less-than-the-api"
+kind = "omission"
+summary = "The web client has no pages for several features the API serves"
+mastodon = """
+Its web UI has lists, filters and their settings, followed hashtags, scheduled \
+posts, collections, per-account domain blocks, the notification policy and \
+filtered requests, private notes, Web Push and the profile's media, replies \
+and featured tabs."""
+eunha = """
+Serves the API for all of them, for third-party clients, but its web client has \
+no pages for them."""
+why = """
+Eunha's first promise is the database and the API; its web client is its own \
+and grows separately. Not ported yet."""
+evidence = "frontend/src/main.tsx"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
