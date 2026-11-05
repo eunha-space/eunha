@@ -1956,21 +1956,20 @@ since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
-id = "statuses-cleanup-policy-has-no-settings"
-kind = "omission"
-summary = "Carries out automatic post deletion, but has no way to set it up"
+id = "statuses-cleanup-rest-api"
+kind = "addition"
+summary = "Serves automated post deletion's settings over a REST API"
 mastodon = """
-`/statuses_cleanup` lets a member set their `account_statuses_cleanup_policies` \
-row, which `AccountStatusesCleanupScheduler` carries out."""
+Lets a member set their `account_statuses_cleanup_policies` row at \
+`/statuses_cleanup`, a web form behind a session."""
 eunha = """
-Carries out a policy already in the table, as Mastodon does, but serves neither \
-that page nor an API for it, so a member can neither start, change nor stop \
-one. A policy brought from Mastodon keeps deleting."""
+Serves `GET`, `PUT` and `PATCH /api/eunha/v1/statuses_cleanup`, with the form's \
+fields and the model's validations, for its settings page. A `PATCH` leaves \
+what it does not name as it was."""
 why = """
-Not ported yet: the deleting came with parity for the schedulers, and the \
-setting belongs in the web client's settings. It is worth doing, because a \
-member with an imported policy cannot turn it off."""
-evidence = "src/statuses_cleanup.rs"
+Eunha's settings page is a single-page app holding a token, so the form needs \
+an API to call."""
+evidence = "tests/integration/surfaces/statuses_cleanup_settings.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 

@@ -30,6 +30,7 @@ mod sign_up;
 mod signup_approval;
 mod signup_requirements;
 mod software_updates;
+mod statuses_cleanup_settings;
 mod streaming;
 mod timeline_exclusions;
 mod tootctl_accounts;

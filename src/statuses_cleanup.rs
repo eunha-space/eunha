@@ -7,8 +7,7 @@
 //! polls, posts with media, posts the author favourited or bookmarked, and
 //! posts with at least `min_favs` favourites or `min_reblogs` boosts. Mastodon
 //! edits the policy in its web settings (`/statuses_cleanup`), not through its
-//! REST API, and Eunha has no page for it yet; a policy saved by Mastodon
-//! against the same database is carried out all the same.
+//! REST API; Eunha's settings page uses `/api/eunha/v1/statuses_cleanup`.
 //!
 //! Every minute the scheduler deletes up to a budget of posts across the
 //! accounts, a few per account at a time, starting after the policy it stopped
@@ -185,6 +184,13 @@ impl Policy {
         .fetch_all(&state.db)
         .await?)
     }
+}
+
+/// `redis.del("account_cleanup:…")`: the next run looks at the account's posts
+/// from the start again.
+pub async fn forget_last_inspected(state: &AppState, account_id: i64) {
+    let mut redis = state.redis.clone();
+    let _: redis::RedisResult<()> = redis.del(last_inspected_key(state, account_id)).await;
 }
 
 /// The policy of `account_id`, if it has one.

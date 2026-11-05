@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_statuses_cleanup_policies\n             SET enabled = $2, min_status_age = $3, keep_direct = $4, keep_pinned = $5,\n                 keep_polls = $6, keep_media = $7, keep_self_fav = $8,\n                 keep_self_bookmark = $9, min_favs = $10, min_reblogs = $11,\n                 updated_at = now()\n             WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5553e1b2c2e9e85ccb462f03753ac94f255e0658332160b964b46bdaf68b827"
+}

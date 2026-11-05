@@ -526,6 +526,21 @@ case does not matter, and the full `username@domain` will do. Eunha's
 divergence.
 
 
+Automated post deletion
+-----------------------
+
+A member can have their own posts deleted once they reach an age, from a week
+to two years, on the settings page or at `/api/eunha/v1/statuses_cleanup`. They
+can keep pinned posts, direct messages, polls, posts with media, posts they
+favourited or bookmarked themselves, and posts with at least a number of
+favourites or boosts. It is off until a member turns it on. A policy saved on
+Mastodon is carried out too, and its owner can change it or turn it off here.
+
+Deleted posts do not come back. Posts go at low priority, a few per account
+each minute, so one may stay a while past the age. If a member makes a policy
+delete more than it did, the next run looks through their posts from the start.
+
+
 Privacy and preferences
 -----------------------
 

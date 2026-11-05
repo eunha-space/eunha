@@ -17,6 +17,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { EmailSettings } from '@/components/email-settings.tsx'
 import { MailPreferences } from '@/components/mail-preferences.tsx'
 import { PrivacySettings } from '@/components/privacy-settings.tsx'
+import { StatusesCleanupSettings } from '@/components/statuses-cleanup-settings.tsx'
 import { SessionsSettings } from '@/components/sessions-settings.tsx'
 import { TimelinePreferences } from '@/components/timeline-preferences.tsx'
 import { TwoFactorSettings } from '@/components/two-factor-settings.tsx'
@@ -248,6 +249,8 @@ export default function Settings() {
           <SessionsSettings token={token} />
 
           <PrivacySettings token={token} />
+
+          <StatusesCleanupSettings token={token} />
 
           <MailPreferences token={token} />
 

@@ -84,3 +84,46 @@ test('deleting an account takes the username, a password and a confirmation', as
   await expect(page).toHaveURL(/\/$/)
   expect(await page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBeNull()
 })
+
+test('automated post deletion saves as one form, and can be turned off', async ({
+  page,
+}) => {
+  await signedIn(page)
+
+  let policy = {
+    enabled: true,
+    min_status_age: 604800,
+    keep_direct: true,
+    keep_pinned: true,
+    keep_polls: false,
+    keep_media: false,
+    keep_self_fav: true,
+    keep_self_bookmark: true,
+    min_favs: 3,
+    min_reblogs: null as number | null,
+  }
+  const saves: (typeof policy)[] = []
+  await page.route('**/api/eunha/v1/statuses_cleanup', async (route) => {
+    if (route.request().method() === 'PUT') {
+      policy = route.request().postDataJSON()
+      saves.push(policy)
+    }
+    await route.fulfill({ json: policy })
+  })
+
+  await page.goto('/settings')
+  const section = page.locator('section', {
+    has: page.getByRole('heading', { name: 'Automated post deletion' }),
+  })
+  await expect(section.getByLabel('Keep posts favorited at least')).toHaveValue('3')
+
+  // Nothing is saved until the form is.
+  await section.getByRole('switch', { name: 'Automatically delete old posts' }).click()
+  await expect(section.getByLabel('Keep posts favorited at least')).toBeDisabled()
+  expect(saves).toHaveLength(0)
+
+  await section.getByRole('button', { name: 'Save changes' }).click()
+  await expect.poll(() => saves.length).toBe(1)
+  expect(saves[0].enabled).toBe(false)
+  expect(saves[0].min_favs).toBe(3)
+})

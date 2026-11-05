@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_statuses_cleanup_policies\n               (account_id, enabled, min_status_age, keep_direct, keep_pinned, keep_polls,\n                keep_media, keep_self_fav, keep_self_bookmark, min_favs, min_reblogs,\n                created_at, updated_at)\n             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "934759fe108380edb7b365572ab9f4ca8d94d4a8fe70ccdf0b2ac1b44758ba9d"
+}

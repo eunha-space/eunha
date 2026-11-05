@@ -212,6 +212,27 @@ export const getLoginActivities = (token: string, maxId?: string) =>
     token,
   )
 
+// ── Automated post deletion ─────────────────────────────────────────────────
+
+export interface StatusesCleanupPolicy {
+  enabled: boolean
+  min_status_age: number
+  keep_direct: boolean
+  keep_pinned: boolean
+  keep_polls: boolean
+  keep_media: boolean
+  keep_self_fav: boolean
+  keep_self_bookmark: boolean
+  min_favs: number | null
+  min_reblogs: number | null
+}
+
+export const getStatusesCleanup = (token: string) =>
+  call<StatusesCleanupPolicy>('/api/eunha/v1/statuses_cleanup', token)
+
+export const updateStatusesCleanup = (token: string, policy: StatusesCleanupPolicy) =>
+  call<StatusesCleanupPolicy>('/api/eunha/v1/statuses_cleanup', token, 'PUT', policy)
+
 // ── Preferences Mastodon keeps on its web settings pages ───────────────────
 
 export interface Preferences {
