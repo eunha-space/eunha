@@ -109,7 +109,9 @@ async fn get_session(
            FROM users u
            JOIN accounts a ON a.id = u.account_id
            WHERE u.id = $1
-             AND u.disabled = false
+             AND (u.disabled = false
+                  -- `mails_disabled?`: waiting to be reviewed, not frozen.
+                  OR (u.confirmed_at IS NULL AND u.confirmation_sent_at IS NULL))
              AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
              AND a.domain IS NULL"#,
         session.user_id,
@@ -286,7 +288,8 @@ pub async fn login_post(
                 t_forgot_password => locale.t("forgot_password"),
             },
         );
-        Html(html).into_response()
+        // Devise's `config.responder.error_status`, since 5.0.
+        (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Html(html)).into_response()
     };
 
     let step = if form.step.is_attempt() {
@@ -305,7 +308,9 @@ pub async fn login_post(
                FROM users u
                JOIN accounts a ON a.id = u.account_id
                WHERE lower(u.email) = lower($1)
-                 AND u.disabled = false
+                 AND (u.disabled = false
+                  -- `mails_disabled?`: waiting to be reviewed, not frozen.
+                  OR (u.confirmed_at IS NULL AND u.confirmation_sent_at IS NULL))
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
                  AND a.domain IS NULL"#,
             email,
@@ -412,6 +417,20 @@ const RETURN_TO_COOKIE: &str = "account_return_to";
 const CLEAR_RETURN_TO: &str = "account_return_to=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
 
 /// The stored location, if it is a path on this site.
+/// A cookie the browser sent.
+pub(crate) fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    cookie_header
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix(name)?.strip_prefix('='))
+        .map(str::to_owned)
+}
+
+/// This browser's session cookie.
+pub(crate) fn session_id(headers: &HeaderMap) -> Option<String> {
+    extract_session_token(headers)
+}
+
 /// `current_user` for the OAuth pages: the user signed in on this browser.
 pub(crate) async fn signed_in_user(headers: &HeaderMap, state: &AppState) -> Option<i64> {
     get_session(headers, state, None).await.map(|s| s.user_id)
@@ -1028,14 +1047,33 @@ pub async fn registration_post(
         };
     let mut h = HeaderMap::new();
     h.append(header::SET_COOKIE, set_cookie(&session_id).parse().unwrap());
+    // `session[:created_by_app_id] = session.delete(:registration_app_id)`.
+    use crate::api::mastodon::oauth::{CREATED_BY_APP_COOKIE, REGISTRATION_APP_COOKIE};
+    if let Some(app_id) = cookie(&headers, REGISTRATION_APP_COOKIE) {
+        for value in [
+            format!("{CREATED_BY_APP_COOKIE}={app_id}; HttpOnly; SameSite=Lax; Path=/"),
+            format!("{REGISTRATION_APP_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"),
+        ] {
+            if let Ok(value) = value.parse() {
+                h.append(header::SET_COOKIE, value);
+            }
+        }
+    }
+    // `after_sign_up_path_for`: back to the authorization page that sent
+    // them, otherwise `auth/setup`.
+    let authorizing =
+        stored_location(&headers).filter(|path| path.starts_with("/oauth/authorize?"));
+    if authorizing.is_some() {
+        h.append(header::SET_COOKIE, CLEAR_RETURN_TO.parse().unwrap());
+    }
+    let target = authorizing.as_deref().unwrap_or("/auth/setup");
     if is_htmx(&headers) {
-        h.insert(
-            HeaderName::from_static("hx-redirect"),
-            HeaderValue::from_static("/auth/setup"),
-        );
+        if let Ok(target) = HeaderValue::from_str(target) {
+            h.insert(HeaderName::from_static("hx-redirect"), target);
+        }
         return (h, "").into_response();
     }
-    (h, Redirect::to("/auth/setup")).into_response()
+    (h, Redirect::to(target)).into_response()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1080,7 +1118,9 @@ async fn render_setup(
         return redirect_to_sign_in("/auth/setup");
     };
     let Some(user) = sqlx::query!(
-        r#"SELECT email, confirmed_at IS NOT NULL AS "confirmed!", approved
+        r#"SELECT email, confirmed_at IS NOT NULL AS "confirmed!", approved,
+                  (disabled AND confirmed_at IS NULL AND confirmation_sent_at IS NULL)
+                  AS "mails_disabled!"
            FROM users WHERE id = $1"#,
         session.user_id
     )
@@ -1102,13 +1142,15 @@ async fn render_setup(
             email => user.email.clone(),
             sent,
             error,
-            email_hint => locale.t("setup_email_hint").replace("%{email}", &user.email),
-            t_setup_title => locale.t("setup_title"),
+            // `mails_disabled?`: no link has gone out, and none will until
+            // the application has been reviewed.
+            email_hint => locale.t(if user.mails_disabled { "setup_email_hint_wait" } else { "setup_email_hint" }).replace("%{email}", &user.email),
+            t_setup_title => locale.t(if user.mails_disabled { "setup_title_wait" } else { "setup_title" }),
             t_setup_sent => locale.t("setup_sent"),
-            t_link_not_received => locale.t("setup_link_not_received"),
-            t_below_hint => locale.t("setup_below_hint"),
+            t_link_not_received => locale.t(if user.mails_disabled { "setup_wrong_email" } else { "setup_link_not_received" }),
+            t_below_hint => locale.t(if user.mails_disabled { "setup_wrong_email_below_hint" } else { "setup_below_hint" }),
             t_email => locale.t("email"),
-            t_resend_confirmation => locale.t("resend_confirmation"),
+            t_resend_confirmation => locale.t(if user.mails_disabled { "setup_correct_email" } else { "resend_confirmation" }),
             t_sign_out => locale.t("sign_out"),
         },
     );

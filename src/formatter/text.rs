@@ -460,17 +460,15 @@ mod tests {
 
     #[test]
     fn escapes_unsafe_code() {
-        includes(
-            "http://example.com/b<del>b</del>",
-            r#""http://example.com/b""#,
+        // A URL with a `<` in it is no link at all.
+        assert!(!to_s("http://example.com/b<del>b</del>").contains("<a "));
+        assert!(
+            !to_s(r#"http://example.com/blahblahblahblah/a<script>alert("Hello")</script>"#)
+                .contains("<a ")
         );
         includes(
             "http://example.com/b<del>b</del>",
             "&lt;del&gt;b&lt;/del&gt;",
-        );
-        includes(
-            r#"http://example.com/blahblahblahblah/a<script>alert("Hello")</script>"#,
-            r#""http://example.com/blahblahblahblah/a""#,
         );
         includes(
             r#"http://example.com/blahblahblahblah/a<script>alert("Hello")</script>"#,

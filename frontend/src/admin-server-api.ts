@@ -55,7 +55,11 @@ export interface AdminSettings {
   backups_retention_period: number | null
   status_page_url: string
   captcha_enabled: boolean
-  authorized_fetch: boolean
+  authorized_fetch: 'none' | 'actors' | 'all'
+  opt_in_server_directory: boolean
+  opt_in_server_recommendation: boolean
+  postpone_confirmation_emails: boolean
+  theme_color: string
   app_icon: SiteUpload | null
   favicon: SiteUpload | null
   min_age: number | null

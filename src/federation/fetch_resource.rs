@@ -327,7 +327,11 @@ mod tests {
             );
         }
         assert_eq!(
-            read_activitypub("https://a.test/1", "https://a.test/1", b"<html>not json</html>"),
+            read_activitypub(
+                "https://a.test/1",
+                "https://a.test/1",
+                b"<html>not json</html>"
+            ),
             ApBody::Unusable
         );
     }

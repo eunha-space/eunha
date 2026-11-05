@@ -195,7 +195,7 @@ The tasks:
 | `auto_close_registrations_scheduler`           | every hour                      | the same                                                        |
 | `fasp_follow_recommendation_cleanup_scheduler` | every day                       | the same, or soon after start if a day has passed               |
 | `collection_item_cleanup_scheduler`            | every hour                      | the same                                                        |
-| `repair_remote_collections_scheduler`          | every 24 hours, first after 1 s | the same, but once a day across restarts                        |
+| `pending_accounts_notification_scheduler`      | every hour                      | the same                                     |
 
 A self-destructing instance runs `self_destruct_scheduler`, every minute, and
 nothing else, as Mastodon replaces its schedule with it. The announcements

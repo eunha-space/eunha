@@ -69,8 +69,6 @@ Accounts
     changed its domain leaves behind. It refuses two accounts whose keys
     differ, unless `--force`. The keys compared are the ones each account is
     verified with (`remote-duplicates-told-apart-by-their-keypairs`).
- -  `eunha accounts fix-duplicates` only says it is deprecated, as it does in
-    Mastodon 4.7, whose schema keeps an actor's id unique.
 
 
 Domains

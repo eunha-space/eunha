@@ -191,16 +191,15 @@ fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
         ),
         until_stopped(
             state,
-            "remote collection repair",
+            "pending accounts notification",
             run(
                 state.clone(),
-                &tasks::REPAIR_REMOTE_COLLECTIONS,
+                &tasks::PENDING_ACCOUNTS_NOTIFICATION,
                 |state| async move {
                     if let Err(error) =
-                        crate::federation::featured_collections::repair_remote_collections(&state)
-                            .await
+                        crate::accounts::notify_staff_about_postponed_accounts(&state).await
                     {
-                        tracing::error!(%error, "remote collection repair failed");
+                        tracing::error!(%error, "pending accounts notification failed");
                     }
                 },
             ),

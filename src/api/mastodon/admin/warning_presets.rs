@@ -25,6 +25,7 @@ pub struct WarningPreset {
     pub id: String,
     pub title: String,
     pub text: String,
+    pub action_category: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -33,6 +34,7 @@ struct Row {
     id: i64,
     title: String,
     text: String,
+    action_category: String,
     created_at: chrono::NaiveDateTime,
     updated_at: chrono::NaiveDateTime,
 }
@@ -43,6 +45,7 @@ impl From<Row> for WarningPreset {
             id: r.id.to_string(),
             title: r.title,
             text: r.text,
+            action_category: r.action_category,
             created_at: super::super::convert::mastodon_date(r.created_at),
             updated_at: super::super::convert::mastodon_date(r.updated_at),
         }
@@ -57,7 +60,7 @@ async fn require_manage_settings(state: &AppState, auth: &AuthenticatedUser) -> 
 async fn find(state: &AppState, id: i64) -> AppResult<Row> {
     sqlx::query_as!(
         Row,
-        "SELECT id, title, text, created_at, updated_at FROM account_warning_presets WHERE id = $1",
+        "SELECT id, title, text, action_category, created_at, updated_at FROM account_warning_presets WHERE id = $1",
         id
     )
     .fetch_optional(&state.db)
@@ -65,11 +68,28 @@ async fn find(state: &AppState, id: i64) -> AppResult<Row> {
     .ok_or(AppError::NotFound)
 }
 
-/// `validates :text, presence: true`.
-fn validate(text: &str) -> AppResult<()> {
+/// `AccountWarningPreset::ACTIONS`: `Admin::AccountAction::TYPES` and
+/// `all_actions`, which the column defaults to.
+const ACTIONS: [&str; 6] = [
+    "none",
+    "disable",
+    "sensitive",
+    "silence",
+    "suspend",
+    "all_actions",
+];
+
+/// `validates :text, presence: true` and
+/// `validates :action_category, inclusion: { in: ACTIONS }`.
+fn validate(text: &str, action_category: &str) -> AppResult<()> {
     if text.trim().is_empty() {
         return Err(AppError::Unprocessable(
             "Validation failed: Text can't be blank".into(),
+        ));
+    }
+    if !ACTIONS.contains(&action_category) {
+        return Err(AppError::Unprocessable(
+            "Validation failed: Action category is not included in the list".into(),
         ));
     }
     Ok(())
@@ -95,7 +115,7 @@ pub async fn list_warning_presets(
     ]))?;
     let rows = sqlx::query_as!(
         Row,
-        r#"SELECT id, title, text, created_at, updated_at FROM account_warning_presets
+        r#"SELECT id, title, text, action_category, created_at, updated_at FROM account_warning_presets
            ORDER BY title ASC, text ASC"#
     )
     .fetch_all(&state.db)
@@ -119,6 +139,7 @@ pub async fn get_warning_preset(
 pub struct WarningPresetForm {
     pub title: Option<String>,
     pub text: Option<String>,
+    pub action_category: Option<String>,
 }
 
 /// `POST /api/v1/admin/warning_presets`.
@@ -130,14 +151,18 @@ pub async fn create_warning_preset(
     auth.require_scope("admin:write")?;
     require_manage_settings(&state, &auth).await?;
     let text = form.text.unwrap_or_default();
-    validate(&text)?;
+    let action_category = form
+        .action_category
+        .unwrap_or_else(|| "all_actions".to_owned());
+    validate(&text, &action_category)?;
     let row = sqlx::query_as!(
         Row,
-        r#"INSERT INTO account_warning_presets (title, text, created_at, updated_at)
-           VALUES ($1, $2, now(), now())
-           RETURNING id, title, text, created_at, updated_at"#,
+        r#"INSERT INTO account_warning_presets (title, text, action_category, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())
+           RETURNING id, title, text, action_category, created_at, updated_at"#,
         form.title.unwrap_or_default(),
         text,
+        action_category,
     )
     .fetch_one(&state.db)
     .await?;
@@ -155,15 +180,17 @@ pub async fn update_warning_preset(
     let current = find(&state, id).await?;
     require_manage_settings(&state, &auth).await?;
     let text = form.text.unwrap_or(current.text);
-    validate(&text)?;
+    let action_category = form.action_category.unwrap_or(current.action_category);
+    validate(&text, &action_category)?;
     let row = sqlx::query_as!(
         Row,
-        r#"UPDATE account_warning_presets SET title = $2, text = $3, updated_at = now()
+        r#"UPDATE account_warning_presets SET title = $2, text = $3, action_category = $4, updated_at = now()
            WHERE id = $1
-           RETURNING id, title, text, created_at, updated_at"#,
+           RETURNING id, title, text, action_category, created_at, updated_at"#,
         id,
         form.title.unwrap_or(current.title),
         text,
+        action_category,
     )
     .fetch_one(&state.db)
     .await?;

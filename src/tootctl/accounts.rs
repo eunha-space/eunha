@@ -71,16 +71,6 @@ pub enum Command {
         #[command(flatten)]
         on: Instance,
     },
-    /// Find duplicate remote accounts and merge them: deprecated.
-    ///
-    /// Mastodon 4.7.0's schema keeps an actor's id unique, so this only says
-    /// so.
-    FixDuplicates {
-        #[arg(long)]
-        dry_run: bool,
-        #[command(flatten)]
-        on: Instance,
-    },
     /// Request a backup for a user, as `tootctl accounts backup` does.
     ///
     /// The running server builds it and mails its owner the link.
@@ -204,7 +194,6 @@ impl Command {
             Self::Rotate { on, .. }
             | Self::Delete { on, .. }
             | Self::Merge { on, .. }
-            | Self::FixDuplicates { on, .. }
             | Self::Backup { on, .. }
             | Self::Cull { on, .. }
             | Self::Refresh { on, .. }
@@ -240,10 +229,6 @@ impl Command {
             Self::Merge {
                 from, to, force, ..
             } => merge(state, console, &from, &to, force).await,
-            Self::FixDuplicates { .. } => {
-                fix_duplicates(console);
-                Ok(())
-            }
             Self::Backup { username, .. } => backup(state, console, &username).await,
             Self::Cull {
                 domains,
@@ -512,7 +497,7 @@ pub async fn delete(
     Ok(())
 }
 
-// ── merge and fix-duplicates ──────────────────────────────────────────────
+// ── merge ──────────────────────────────────────────────
 
 /// `Accounts#merge`: `to_account.merge_with!(from_account)` and
 /// `from_account.destroy`.
@@ -543,14 +528,6 @@ pub async fn merge(
     crate::search::elasticsearch::indexing::account(state, from.id).await;
     console.say("OK");
     Ok(())
-}
-
-/// `Accounts#fix_duplicates`, which Mastodon 4.7.0 made a notice.
-pub fn fix_duplicates(console: &dyn Console) {
-    console.say(
-        "This command is deprecated as Mastodon v4.7.0 migrations enforce ActivityPub actor \
-         identifier uniqueness",
-    );
 }
 
 // ── backup ────────────────────────────────────────────────────────────────

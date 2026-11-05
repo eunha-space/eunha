@@ -11,7 +11,7 @@ mod html;
 pub mod plain_text;
 pub mod sanitize;
 pub mod text;
-pub mod tlds;
+pub mod uts58_tables;
 
 pub use html::html_escape;
 pub use text::{MentionTarget, Options};

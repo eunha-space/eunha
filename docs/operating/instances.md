@@ -175,8 +175,9 @@ a process share its environment too, so Eunha reads them from each instance's
 ~~~~ toml
 [instance]
 domain = "garden.eunha.space"
-# Mastodon's AUTHORIZED_FETCH. Unset, the `authorized_fetch` site setting
-# decides, and it is off until an administrator turns it on.
+# Mastodon's AUTHORIZED_FETCH: "none", "actors", "all", or true for "all" and
+# false for "none". Unset, the `authorized_fetch` site setting decides, and it
+# is `actors` until an administrator changes it.
 authorized_fetch = true
 # Mastodon's LIMITED_FEDERATION_MODE.
 limited_federation_mode = false

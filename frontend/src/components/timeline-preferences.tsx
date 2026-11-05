@@ -70,6 +70,20 @@ export function TimelinePreferences({ token }: { token: string }) {
       </div>
       <Label className="text-sm font-normal">
         <Switch
+          checked={prefs.display_own_posts}
+          onCheckedChange={(on) => void save({ display_own_posts: on })}
+        />
+        Show my posts in my home feed
+      </Label>
+      <Label className="text-sm font-normal">
+        <Switch
+          checked={prefs.display_own_boosts}
+          onCheckedChange={(on) => void save({ display_own_boosts: on })}
+        />
+        Show my boosts in my home feed
+      </Label>
+      <Label className="text-sm font-normal">
+        <Switch
           checked={prefs.expand_content_warnings}
           onCheckedChange={(on) => void save({ expand_content_warnings: on })}
         />

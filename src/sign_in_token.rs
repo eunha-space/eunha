@@ -59,7 +59,8 @@ pub async fn suspicious_inactive_sign_in(state: &AppState, user_id: i64) -> bool
 
 /// `sign_in_token_expired?`.
 fn expired(sent_at: Option<NaiveDateTime>) -> bool {
-    sent_at.is_none_or(|sent_at| sent_at < (Utc::now() - Duration::minutes(VALID_MINUTES)).naive_utc())
+    sent_at
+        .is_none_or(|sent_at| sent_at < (Utc::now() - Duration::minutes(VALID_MINUTES)).naive_utc())
 }
 
 /// `sign_in_token_expired?` for a user.

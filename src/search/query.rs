@@ -40,6 +40,9 @@ pub enum QueryError {
     /// `Parslet::ParseFailed`: the grammar did not consume the query. The
     /// search returns nothing, as Mastodon's rescue does.
     ParseFailed,
+    /// `SearchQueryTransformer::QueryError`: nothing to search for. Mastodon
+    /// answers 400.
+    NoKeyword,
     /// `Date::Error` from a `before:`, `after:` or `during:` that is not a
     /// date. Mastodon answers 422, "Invalid date supplied".
     InvalidDate,
@@ -502,6 +505,28 @@ impl Query {
             filter,
         });
         Ok(())
+    }
+
+    /// `Query#validate_clauses!`: at least one keyword or phrase, unless
+    /// searching the library, or `from:` the user themself, which is the same
+    /// thing. `from_self` says whether a `from:` term names the user.
+    pub fn validate_clauses(&self, from_self: impl Fn(&str) -> bool) -> Result<(), QueryError> {
+        if self.scope.as_deref() == Some("library") {
+            return Ok(());
+        }
+        let own_posts = self.filters.iter().any(|clause| {
+            !clause.negated && matches!(&clause.filter, Filter::From(term) if from_self(term))
+        });
+        if own_posts
+            || self.must_terms.iter().any(|t| !t.term.trim().is_empty())
+            || self
+                .must_phrases
+                .iter()
+                .any(|p| !p.phrase.trim().is_empty())
+        {
+            return Ok(());
+        }
+        Err(QueryError::NoKeyword)
     }
 
     /// The `from:` handles that need an account id.

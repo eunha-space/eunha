@@ -204,7 +204,7 @@ async fn documents_say_how_long_they_may_be_cached() {
     assert_eq!(header(&missing, "cache-control"), Some("private, no-store"));
 
     let ctx = TestContext::with_instance("ap-cache-headers-af", |instance| {
-        instance.authorized_fetch = Some(true)
+        instance.authorized_fetch = Some(serde_json::json!(true))
     })
     .await;
     let (_, key, pem) = remote_account(&ctx, "peer.invalid", "eve").await;

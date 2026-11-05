@@ -44,7 +44,7 @@ Mastodon compatibility
     [federating with a live Mastodon](./mastodon/federation-testing.md): the
     harnesses that check Eunha against upstream.
  -  [Deliberate divergences](./mastodon/divergences.md) from Mastodon, and what
-    is [outstanding from 4.7.3](./mastodon/4.7.3.md).
+    is [outstanding from 5.0.0-beta.1](./mastodon/5.0.0-beta.1.md).
 
 
 Design

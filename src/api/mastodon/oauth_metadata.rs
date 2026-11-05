@@ -84,6 +84,7 @@ pub struct OAuthMetadata {
     code_challenge_methods_supported: &'static [&'static str],
     service_documentation: &'static str,
     app_registration_endpoint: String,
+    prompt_values_supported: &'static [&'static str],
 }
 
 /// `GET /.well-known/oauth-authorization-server`: RFC 8414 metadata, as
@@ -109,6 +110,7 @@ pub async fn oauth_metadata(
         code_challenge_methods_supported: &["S256"],
         service_documentation: "https://docs.joinmastodon.org/",
         app_registration_endpoint: format!("{root}/api/v1/apps"),
+        prompt_values_supported: &["login", "create"],
     })
 }
 

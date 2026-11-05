@@ -27,10 +27,11 @@ that `eunha migrate` runs, without a `cargo clean` or a touched source file.
 `public.schema_migrations` is what makes a database self-describing: it is
 seeded for everything through 4.6.0 by `007_mastodon_schema_versions.sql`, and
 [`eunha import-mastodon`](./importing) refuses a dump whose newest migration is
-not the one Eunha builds. A migration whose work depends on the instance rather
-than the schema — so far only the move of local signing keys into `keypairs` —
-is applied from code at startup and records itself then; `mastodon:plan` lists
-those separately from ones still to write.
+not the one Eunha builds. Work SQL cannot do runs from code: `eunha migrate`
+moves local signing keys into `keypairs` before the migration that drops
+`accounts.private_key`, because moving them means encrypting them, with the
+instance's `[active_record_encryption]` secrets. That migration refuses to drop
+the column while any key is left in it.
 
 
 Site settings

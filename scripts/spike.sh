@@ -140,14 +140,6 @@ account_id=$(q "SELECT id FROM accounts WHERE username = '$ACCOUNT' AND domain I
 [ -n "$account_id" ] || { echo "no local account $ACCOUNT in $DATABASE" >&2; exit 1; }
 # Eunha federates a post only if its author can sign it. The seeded users were
 # never given keys; a real account, or a copy of one, has its own.
-if [ -n "$CREATED_DB" ]; then
-  openssl genrsa 2048 2>/dev/null > "$WORK/account.key"
-  openssl rsa -in "$WORK/account.key" -pubout 2>/dev/null > "$WORK/account.pub"
-  # On stdin, not -c: psql substitutes variables only in what it reads.
-  echo "UPDATE accounts SET private_key = :'private_key', public_key = :'public_key' WHERE id = $account_id" |
-    psql -q -d "$DATABASE" -v ON_ERROR_STOP=1 \
-      -v private_key="$(cat "$WORK/account.key")" -v public_key="$(cat "$WORK/account.pub")" >/dev/null
-fi
 token="eunha-spike-$$-$RANDOM"
 q "WITH app AS (
      INSERT INTO oauth_applications (id, name, uid, secret, redirect_uri, scopes, created_at, updated_at)
@@ -199,6 +191,10 @@ base_url = "http://127.0.0.1:$SIM_PORT/spike"
 
 EOF
 [ -n "$CONFIG_APPEND" ] && { printf '\n'; cat "$CONFIG_APPEND"; } >> "$WORK/config.toml"
+if [ -n "$CREATED_DB" ]; then
+  printf '\n[active_record_encryption]\nprimary_key = "spike-primary-key-not-a-secret"\nkey_derivation_salt = "spike-salt-not-a-secret"\n' >> "$WORK/config.toml"
+  (cd "$WORK" && "$EUNHA" accounts rotate "$ACCOUNT" >/dev/null)
+fi
 cp "$WORK/config.toml" "$RESULTS/config.toml"
 sed -i '' '/vapid_private_key/,/^"""$/d' "$RESULTS/config.toml"
 

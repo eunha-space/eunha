@@ -26,6 +26,7 @@
 //! Mastodon: app/services/precompute_feed_service.rb
 //! Mastodon: app/workers/merge_worker.rb
 //! Mastodon: app/workers/unmerge_worker.rb
+//! Mastodon: app/workers/multi_merge_into_own_home_worker.rb
 
 use crate::async_refresh::{self, AsyncRefresh};
 use crate::state::AppState;
@@ -262,6 +263,74 @@ pub async fn merge(state: &AppState, from_account_id: i64, into_id: i64, feed: F
             )
             .await;
         }
+    }
+}
+
+/// `MultiMergeIntoOwnHomeWorker`: after `User#reload_home_feed`, the user's
+/// own posts and boosts in or out of their home feed, as the settings changed.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MultiMergeIntoOwnHomeWorker {
+    pub account_id: i64,
+    pub old_post_setting: bool,
+    pub old_reblog_setting: bool,
+}
+
+impl crate::jobs::Job for MultiMergeIntoOwnHomeWorker {
+    const KIND: &'static str = "MultiMergeIntoOwnHomeWorker";
+    const OPTIONS: crate::jobs::Options = crate::jobs::Options::DEFAULT;
+
+    async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        merge_own(
+            state,
+            self.account_id,
+            self.old_post_setting,
+            self.old_reblog_setting,
+        )
+        .await;
+        Ok(())
+    }
+}
+
+/// `MultiMergeIntoOwnHomeWorker#perform`: `changed_setting_to` false then true.
+pub async fn merge_own(state: &AppState, account_id: i64, old_posts: bool, old_boosts: bool) {
+    let posts = crate::feed::displays_own_status(&state.db, account_id, false).await;
+    let boosts = crate::feed::displays_own_status(&state.db, account_id, true).await;
+    let mut redis = state.redis.clone();
+    crate::feed::unmerge_from_own_home(
+        &mut redis,
+        &state.redis_keys,
+        &state.db,
+        account_id,
+        !posts && old_posts,
+        !boosts && old_boosts,
+    )
+    .await;
+    crate::feed::merge_into_own_home(
+        &mut redis,
+        &state.redis_keys,
+        &state.db,
+        account_id,
+        posts && !old_posts,
+        boosts && !old_boosts,
+    )
+    .await;
+}
+
+/// `User#reload_home_feed`: queue [`MultiMergeIntoOwnHomeWorker`], or do it at
+/// once when the tests ask for background work inline.
+pub async fn reload_own(state: &AppState, account_id: i64, old_posts: bool, old_boosts: bool) {
+    if crate::feed::sync_fanout() {
+        merge_own(state, account_id, old_posts, old_boosts).await;
+    } else {
+        crate::jobs::push(
+            state,
+            MultiMergeIntoOwnHomeWorker {
+                account_id,
+                old_post_setting: old_posts,
+                old_reblog_setting: old_boosts,
+            },
+        )
+        .await;
     }
 }
 

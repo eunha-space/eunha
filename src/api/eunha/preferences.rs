@@ -71,6 +71,12 @@ pub struct Preferences {
     /// Leave out of the home timeline and lists a boost of a post recently
     /// boosted or posted there (`aggregate_reblogs`).
     pub aggregate_reblogs: bool,
+    /// Whether the user's own posts appear in their home feed.
+    pub display_own_posts: bool,
+    /// Whether the user's own boosts appear in their home feed.
+    pub display_own_boosts: bool,
+    /// Whether the composer shows the content warning field from the start.
+    pub default_spoiler_field: bool,
     /// Media marked sensitive hidden (`default`), or all media shown
     /// (`show_all`) or hidden (`hide_all`): `web.display_media`, which
     /// clients read as `reading:expand:media`.
@@ -117,6 +123,9 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
             .unwrap_or_else(|| default.into())
     };
     let software_updates = string_of("notification_emails.software_updates", "critical");
+    let parsed: serde_json::Value = settings
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
     Ok(Preferences {
         noindex: user_setting_bool(settings, "noindex", site_noindex),
         show_application: user_setting_bool(settings, "show_application", true),
@@ -125,6 +134,12 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         time_zone: row.time_zone,
         always_send_emails: user_setting_bool(settings, "always_send_emails", false),
         aggregate_reblogs: crate::feed::aggregates_reblogs(settings),
+        display_own_posts: crate::feed::displays_own(&parsed, false),
+        display_own_boosts: crate::feed::displays_own(&parsed, true),
+        default_spoiler_field: parsed
+            .get("default_spoiler_field")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
         display_media: string_of("web.display_media", "default"),
         expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
         auto_play: user_setting_bool(settings, "web.auto_play", false),
@@ -162,6 +177,9 @@ pub struct Update {
     pub show_application: Option<bool>,
     pub always_send_emails: Option<bool>,
     pub aggregate_reblogs: Option<bool>,
+    pub display_own_posts: Option<bool>,
+    pub display_own_boosts: Option<bool>,
+    pub default_spoiler_field: Option<bool>,
     pub display_media: Option<String>,
     pub expand_content_warnings: Option<bool>,
     pub auto_play: Option<bool>,
@@ -184,7 +202,7 @@ pub async fn update(
     auth: Option<Extension<AuthenticatedUser>>,
     Params(form): Params<Update>,
 ) -> AppResult<Json<Preferences>> {
-    let (_, user_id) = signed_in(auth, "write:accounts")?;
+    let (account_id, user_id) = signed_in(auth, "write:accounts")?;
 
     let raw = sqlx::query_scalar!("SELECT settings FROM users WHERE id = $1", user_id)
         .fetch_one(&state.db)
@@ -194,6 +212,8 @@ pub async fn update(
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .filter(serde_json::Value::is_object)
         .unwrap_or_else(|| serde_json::json!({}));
+    let old_own_posts = crate::feed::displays_own(&settings, false);
+    let old_own_boosts = crate::feed::displays_own(&settings, true);
     let object = settings.as_object_mut().expect("an object");
     let mut changed = false;
     let mut set = |key: &str, value: serde_json::Value| {
@@ -213,6 +233,15 @@ pub async fn update(
     }
     if let Some(aggregate) = form.aggregate_reblogs {
         set("aggregate_reblogs", aggregate.into());
+    }
+    if let Some(display) = form.display_own_posts {
+        set("display_own_posts", display.into());
+    }
+    if let Some(display) = form.display_own_boosts {
+        set("display_own_boosts", display.into());
+    }
+    if let Some(spoiler_field) = form.default_spoiler_field {
+        set("default_spoiler_field", spoiler_field.into());
     }
     if let Some(display) = &form.display_media {
         // `in: %w(hide_all default show_all)`.
@@ -264,6 +293,12 @@ pub async fn update(
         )
         .execute(&state.db)
         .await?;
+        // `after_commit :reload_home_feed, if: :saved_change_to_settings`.
+        if crate::feed::displays_own(&settings, false) != old_own_posts
+            || crate::feed::displays_own(&settings, true) != old_own_boosts
+        {
+            crate::home_feed::reload_own(&state, account_id, old_own_posts, old_own_boosts).await;
+        }
     }
 
     if let Some(languages) = form.chosen_languages {

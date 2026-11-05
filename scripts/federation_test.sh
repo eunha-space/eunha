@@ -1,5 +1,5 @@
 #!/bin/bash
-# Federate Eunha with a real Mastodon 4.7.3, both directions, and check what lands.
+# Federate Eunha with a real Mastodon 5.0.0-beta.1, both directions, and check what lands.
 #
 # Eunha's other federation tests run Eunha against Eunha, where both sides share
 # Eunha's reading of ActivityPub — so a misreading is invisible. This builds a
@@ -84,7 +84,7 @@ openssl x509 -req -in "$WORK/leaf.csr" -days 2 \
 # and that is where they come from. The bundle is the image's own roots with this
 # CA appended — appended, not replacing, or each would trust this CA and no
 # public one, and anything reaching the wider internet would fail obscurely.
-docker run --rm ghcr.io/mastodon/mastodon:v4.7.3 \
+docker run --rm ghcr.io/mastodon/mastodon:v5.0.0-beta.1 \
   cat /etc/ssl/certs/ca-certificates.crt > "$WORK/ca-bundle.crt"
 cat "$WORK/ca.pem" >> "$WORK/ca-bundle.crt"
 
@@ -135,6 +135,10 @@ database_url = "postgres://eunha:eunha@eunha-db/eunha"
 allowed_private_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"]
 redis_url = "redis://redis:6379/13"
 bind_address = "0.0.0.0:3000"
+
+[active_record_encryption]
+primary_key = "federation-test-primary-key-not-a-secret"
+key_derivation_salt = "federation-test-salt-not-a-secret"
 
 [instance]
 domain = "$EUNHA_DOMAIN"
@@ -237,22 +241,13 @@ compose up -d eunha-db
 # behind its binary, so starting the container first would only crash-loop.
 compose run --rm --no-deps eunha ./eunha migrate
 
-# Eunha refuses to deliver an unsigned activity, and an account seeded straight
-# into SQL has no key — so give alice one. Eunha would generate this itself for
-# an account created through its own API.
-ALICE_KEY=$(openssl genrsa 2048 2>/dev/null)
-ALICE_PUB=$(printf '%s' "$ALICE_KEY" | openssl rsa -pubout 2>/dev/null)
 # Bob exists so that a shared-inbox delivery has more than one local recipient.
 # Mastodon posts a status to Eunha's `/inbox` whether one account follows or
 # two, so that path was never unexercised — but with a single follower, fanning
 # a delivery out to everyone it concerns and handing it to that one account are
 # the same act, and only one of them is being tested.
-BOB_KEY=$(openssl genrsa 2048 2>/dev/null)
-BOB_PUB=$(printf '%s' "$BOB_KEY" | openssl rsa -pubout 2>/dev/null)
 # Carol is where alice moves to at the end, so she has to be able to sign the
 # `Accept` of the follows that move with her.
-CAROL_KEY=$(openssl genrsa 2048 2>/dev/null)
-CAROL_PUB=$(printf '%s' "$CAROL_KEY" | openssl rsa -pubout 2>/dev/null)
 compose exec -T eunha-db psql -q -U eunha -d eunha -v ON_ERROR_STOP=1 >/dev/null <<SQL
 INSERT INTO accounts (id, username, domain, display_name, note, created_at, updated_at)
 VALUES (1, 'alice', NULL, 'Alice', '', now(), now()),
@@ -275,13 +270,11 @@ VALUES (1, 'eunha-federation-token', 1, 1, 'read write follow push admin:read ad
        (3, 'eunha-federation-carol-token', 3, 1, 'read write follow push', now()) ON CONFLICT DO NOTHING;
 SELECT setval('users_id_seq', (SELECT max(id) FROM users));
 SELECT setval('oauth_access_tokens_id_seq', (SELECT max(id) FROM oauth_access_tokens));
-UPDATE accounts SET private_key = \$P\$$ALICE_KEY\$P\$, public_key = \$U\$$ALICE_PUB\$U\$
-WHERE id = 1;
-UPDATE accounts SET private_key = \$P\$$BOB_KEY\$P\$, public_key = \$U\$$BOB_PUB\$U\$
-WHERE id = 2;
-UPDATE accounts SET private_key = \$P\$$CAROL_KEY\$P\$, public_key = \$U\$$CAROL_PUB\$U\$
-WHERE id = 3;
 SQL
+
+# Eunha refuses to deliver an unsigned activity, and an account seeded straight
+# into SQL has no key, so rotate gives each one its first.
+compose run --rm --no-deps eunha ./eunha accounts rotate --all
 
 # No peer seeding. Eunha resolves Mastodon's actor over the wire, webfinger and
 # all, because both sides are on this network under names each can resolve.

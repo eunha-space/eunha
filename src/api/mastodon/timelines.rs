@@ -281,11 +281,37 @@ pub async fn public_timeline(
 
 // ── GET /api/v1/timelines/home ────────────────────────────────────────────
 
+/// `HomeFeed`'s `options`: what `Feed#from_redis` then leaves out.
+#[derive(Debug, Default, Deserialize)]
+pub struct HomeFeedFilters {
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
+    exclude_direct: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
+    exclude_reblogs: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
+    exclude_quotes: Option<bool>,
+    #[serde(default, deserialize_with = "super::extractors::rails::opt_bool")]
+    exclude_replies: Option<bool>,
+}
+
+impl HomeFeedFilters {
+    fn any(&self) -> bool {
+        [
+            self.exclude_direct,
+            self.exclude_reblogs,
+            self.exclude_quotes,
+            self.exclude_replies,
+        ]
+        .contains(&Some(true))
+    }
+}
+
 pub async fn home_timeline(
     state: AppState,
     uri: Uri,
     req_headers: HeaderMap,
     Query(q): Query<PaginationParams>,
+    Query(filters): Query<HomeFeedFilters>,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("read:statuses")?;
@@ -303,10 +329,27 @@ pub async fn home_timeline(
         max_id,
         since_id,
         min_id,
-        limit as isize,
+        // With a filter, the limit is what is left of what the range holds.
+        if filters.any() {
+            isize::MAX
+        } else {
+            limit as isize
+        },
     )
     .await;
-    let statuses = feed_statuses(&state, &ids).await?;
+    let statuses = if filters.any() {
+        filtered_feed_statuses(
+            &state,
+            &ids,
+            &filters,
+            auth.account_id,
+            limit,
+            min_id.is_some(),
+        )
+        .await?
+    } else {
+        feed_statuses(&state, &ids).await?
+    };
 
     let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
     let mut resp = with_pagination_link(&req_headers, &uri, result).into_response();
@@ -337,6 +380,46 @@ async fn feed_statuses(state: &AppState, ids: &[i64]) -> AppResult<Vec<DbStatus>
         DbStatus,
         "SELECT * FROM statuses WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY id DESC",
         ids,
+    )
+    .fetch_all(&state.db)
+    .await?)
+}
+
+/// `Feed#from_redis` with a filter: of the feed's `ids`, those left, as many
+/// as asked for from the newest down, or with `min_id` from the oldest up.
+/// `in_reply_to_id: @id` compares a status with the feed's account id, as
+/// upstream does, whose comment says to beware of it.
+async fn filtered_feed_statuses(
+    state: &AppState,
+    ids: &[i64],
+    filters: &HomeFeedFilters,
+    account_id: i64,
+    limit: i64,
+    from_oldest: bool,
+) -> AppResult<Vec<DbStatus>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(sqlx::query_as!(
+        DbStatus,
+        r#"SELECT * FROM (
+             SELECT * FROM statuses s
+             WHERE s.id = ANY($1) AND s.deleted_at IS NULL
+               AND (NOT $2 OR s.visibility <> 3)
+               AND (NOT $3 OR s.reblog_of_id IS NULL)
+               AND (NOT $4 OR NOT EXISTS (SELECT 1 FROM quotes q WHERE q.status_id = s.id))
+               AND (NOT $5 OR s.in_reply_to_id IS NULL OR s.in_reply_to_id = $6)
+             ORDER BY CASE WHEN $8 THEN s.id END ASC, s.id DESC
+             LIMIT $7
+           ) left_over ORDER BY id DESC"#,
+        ids,
+        filters.exclude_direct.unwrap_or(false),
+        filters.exclude_reblogs.unwrap_or(false),
+        filters.exclude_quotes.unwrap_or(false),
+        filters.exclude_replies.unwrap_or(false),
+        account_id,
+        limit,
+        from_oldest,
     )
     .fetch_all(&state.db)
     .await?)

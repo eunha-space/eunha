@@ -15,6 +15,8 @@ pub struct UserStanding {
     pub disabled: bool,
     /// `Account#unavailable?`: suspended, or deletion requested.
     pub unavailable: bool,
+    /// `Account#deleted?`: deletion requested.
+    pub deleted: bool,
     pub memorial: bool,
     pub moved: bool,
     /// `User#missing_2fa?`: the role (the everyone role when it has none)
@@ -24,14 +26,31 @@ pub struct UserStanding {
 }
 
 impl UserStanding {
+    /// `User#nonfunctional_reason`: the first thing that keeps the user from
+    /// the account, as `Account#state` names it.
+    pub fn nonfunctional_reason(&self) -> Option<&'static str> {
+        if !self.confirmed {
+            Some("pending_confirmation")
+        } else if !self.approved {
+            Some("pending_approval")
+        } else if self.deleted {
+            Some("account_deleted")
+        } else if self.unavailable {
+            Some("account_suspended")
+        } else if self.memorial {
+            Some("memorial")
+        } else if self.disabled {
+            Some("login_disabled")
+        } else if self.missing_2fa {
+            Some("2fa_required")
+        } else {
+            None
+        }
+    }
+
     /// `User#functional_or_moved?`.
     pub fn functional_or_moved(&self) -> bool {
-        self.confirmed
-            && self.approved
-            && !self.disabled
-            && !self.unavailable
-            && !self.memorial
-            && !self.missing_2fa
+        self.nonfunctional_reason().is_none()
     }
 
     /// `User#functional?`.
@@ -58,6 +77,7 @@ impl UserStanding {
             r#"SELECT u.confirmed_at IS NOT NULL AS "confirmed!", u.approved, u.disabled,
                       (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)
                         AS "unavailable!",
+                      a.requested_deletion_at IS NOT NULL AS "deleted!",
                       a.memorial, a.moved_to_account_id IS NOT NULL AS "moved!",
                       (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login
                        AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w
@@ -77,6 +97,7 @@ impl UserStanding {
             approved: row.approved,
             disabled: row.disabled,
             unavailable: row.unavailable,
+            deleted: row.deleted,
             memorial: row.memorial,
             moved: row.moved,
             missing_2fa: row.missing_2fa,
@@ -95,6 +116,7 @@ mod tests {
             approved: true,
             disabled: false,
             unavailable: false,
+            deleted: false,
             memorial: false,
             moved: false,
             missing_2fa: false,
@@ -117,6 +139,7 @@ mod tests {
             },
             UserStanding {
                 unavailable: true,
+                deleted: false,
                 ..ok
             },
             UserStanding {

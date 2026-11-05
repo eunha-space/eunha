@@ -221,15 +221,6 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
     let mut tx = state.db.begin().await?;
     // `undo_strike_action!`.
     match strike.action {
-        // `target_account.user.enable!`
-        action::DISABLE => {
-            sqlx::query!(
-                "UPDATE users SET disabled = false, updated_at = now() WHERE account_id = $1",
-                target_id
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
         // `unsensitize!` and `unsilence!`.
         action::SENSITIVE => {
             sqlx::query!(
@@ -247,7 +238,7 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
             .execute(&mut *tx)
             .await?;
         }
-        // `delete_statuses` cannot be undone; `suspend` and
+        // `delete_statuses` cannot be undone; `disable`, `suspend` and
         // `mark_statuses_as_sensitive` are undone below, outside the
         // transaction, as they reach beyond the database.
         _ => {}
@@ -270,6 +261,16 @@ pub async fn approve(state: &AppState, id: i64, actor_id: i64) -> AppResult<()> 
     tx.commit().await?;
 
     match strike.action {
+        // `target_account.user.enable!`
+        action::DISABLE => {
+            let user_id =
+                sqlx::query_scalar!("SELECT id FROM users WHERE account_id = $1", target_id)
+                    .fetch_optional(&state.db)
+                    .await?;
+            if let Some(user_id) = user_id {
+                crate::accounts::enable(state, user_id).await?;
+            }
+        }
         action::SUSPEND => {
             // `target_account.unsuspend!`, then `Admin::UnsuspensionWorker`.
             crate::delete_account::unsuspend(state, target_id).await?;

@@ -414,11 +414,13 @@ pub fn federation() -> Federation<AppState> {
                             }
                         }
                         let actor = super::objects::actor_json(ctx.data(), domain(&ctx), &account).await?;
-                        // `expires_in 3.minutes, public: !(authorized_fetch_mode? &&
+                        // `expires_in 3.minutes, public: !(actors_require_signature? &&
                         // signed_request_account.present?)`.
                         let signed = ctx.signer().await.is_some();
-                        let public = !(!public_fetch_mode(&ctx).await && signed);
-                        expires_in(&ctx, Vary::Page, 180, public).await;
+                        let public =
+                            !(crate::settings::actors_require_signature(ctx.data()).await
+                                && signed);
+                        expires_in(&ctx, Vary::Actor, 180, public).await;
                         Ok(Found::Found(actor))
                     },
                 )
@@ -579,8 +581,16 @@ pub fn federation() -> Federation<AppState> {
         // Every ActivityPub controller of Mastodon's runs
         // `require_account_signature!` in authorized fetch mode, and says
         // what its response varies by (`vary_by`) before anything else.
+        // `AccountsController` asks it of an actor by `actors_require_signature?`.
+        builder = builder.guard(&scheme.kind("actor"), move |ctx: Ctx, _| async move {
+            vary_by(&ctx, Vary::Actor).await;
+            require_signature_when(
+                &ctx,
+                crate::settings::actors_require_signature(ctx.data()).await,
+            )
+            .await
+        });
         for (kind, vary) in [
-            ("actor", Vary::Page),
             ("account_collections", Vary::Page),
             ("outbox", Vary::Outbox),
             ("featured", Vary::Signature),
@@ -772,7 +782,16 @@ fn found(result: AppResult<Value>) -> AppResult<Found<Value>> {
 /// with is 403, its key never fetched. Outside authorized fetch mode nothing
 /// is verified here.
 async fn require_signature(ctx: &Ctx) -> AppResult<Access> {
-    if !crate::settings::authorized_fetch_mode(ctx.data()).await {
+    require_signature_when(
+        ctx,
+        crate::settings::authorized_fetch_mode(ctx.data()).await,
+    )
+    .await
+}
+
+/// `require_account_signature!`, when asked for.
+async fn require_signature_when(ctx: &Ctx, required: bool) -> AppResult<Access> {
+    if !required {
         return Ok(Access::Allow);
     }
     Ok(match ctx.signing().await {
@@ -793,6 +812,9 @@ enum Vary {
     /// `'Accept, Accept-Language, Cookie'`, and `Signature` outside public
     /// fetch mode: the controllers that also serve a page.
     Page,
+    /// `Page`, with `Signature` as `actors_require_signature?` has it
+    /// (`AccountsController`).
+    Actor,
     /// `'Signature' if authorized_fetch_mode? || page_requested?`
     /// (`OutboxesController`).
     Outbox,
@@ -809,6 +831,13 @@ impl Vary {
             } else {
                 "Accept, Accept-Language, Cookie"
             }),
+            Self::Actor => Some(
+                if crate::settings::actors_require_signature(ctx.data()).await {
+                    "Accept, Accept-Language, Cookie, Signature"
+                } else {
+                    "Accept, Accept-Language, Cookie"
+                },
+            ),
             Self::Outbox => (authorized || outbox_page_requested(ctx)).then_some("Signature"),
         }
     }
@@ -1861,6 +1890,8 @@ async fn nodeinfo(ctx: Ctx) -> AppResult<NodeInfo> {
     nodeinfo.metadata = json!({
         "nodeName": settings.site_title(instance),
         "nodeDescription": settings.site_short_description(instance),
+        "optInServerDirectory": settings.boolean("opt_in_server_directory"),
+        "optInServerRecommendation": settings.boolean("opt_in_server_recommendation"),
     });
     Ok(nodeinfo)
 }

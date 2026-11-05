@@ -49,8 +49,8 @@ pub struct Config {
     pub smtp: Option<SmtpConfig>,
     pub instance: InstanceConfig,
     /// Mastodon's ActiveRecord encryption keys, needed to read or write the
-    /// encrypted `keypairs.private_key` column a Mastodon 4.7 database uses.
-    /// Absent on instances whose keys still live in `accounts`.
+    /// encrypted `keypairs.private_key` column, the only place signing keys
+    /// live since Mastodon 5.0.
     #[serde(default)]
     pub active_record_encryption: Option<ActiveRecordEncryptionConfig>,
     /// Where to ask about newer Mastodon releases and the end of support of the
@@ -452,12 +452,12 @@ pub struct InstanceConfig {
     /// as by default, an administrator still has to enable the feature.
     #[serde(default = "default_true")]
     pub email_subscriptions: bool,
-    /// Mastodon's `AUTHORIZED_FETCH`: when set, whether ActivityPub fetches
-    /// must be signed, whatever the `authorized_fetch` site setting says.
-    /// Unset, the setting decides. Limited federation mode turns it on
-    /// regardless.
+    /// Mastodon's `AUTHORIZED_FETCH`: when set, which ActivityPub fetches must
+    /// be signed, whatever the `authorized_fetch` site setting says: `true` or
+    /// `"all"`, `false` or `"none"`, and otherwise `"actors"`. Unset, the
+    /// setting decides. Limited federation mode turns it on regardless.
     #[serde(default)]
-    pub authorized_fetch: Option<bool>,
+    pub authorized_fetch: Option<serde_json::Value>,
     /// Mastodon's `DEFAULT_LOCALE`: the locale the instance speaks when nobody
     /// has said which they want (`I18n.default_locale`). One of Mastodon's
     /// available locales, or else `en`.
@@ -510,6 +510,10 @@ pub struct InstanceConfig {
     /// service, if any (`[instance.translation]`).
     #[serde(default)]
     pub translation: TranslationConfig,
+    /// Mastodon's `DISABLE_ANNOUNCEMENT_REACTIONS`: announcements take no
+    /// emoji reactions.
+    #[serde(default)]
+    pub disable_announcement_reactions: bool,
     /// Mastodon's `EXPERIMENTAL_FEATURES`: the experimental features this
     /// instance turns on, by name. The one Eunha knows is `fasp`, Fediverse
     /// Auxiliary Service Providers (docs/operating/fasp.md); a name it does
@@ -657,6 +661,11 @@ impl InstanceConfig {
             .as_deref()
             .and_then(crate::languages::available_locale)
             .unwrap_or("en")
+    }
+
+    /// `Announcement#reactions_allowed`.
+    pub fn announcement_reactions_allowed(&self) -> bool {
+        !self.disable_announcement_reactions
     }
 
     /// `Mastodon::Feature.<name>_enabled?`.

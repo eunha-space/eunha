@@ -89,6 +89,7 @@ fn workers() -> Vec<Entry> {
         entry::<crate::api::mastodon::accounts::DeleteMuteWorker>(),
         entry::<crate::home_feed::MergeWorker>(),
         entry::<crate::home_feed::UnmergeWorker>(),
+        entry::<crate::home_feed::MultiMergeIntoOwnHomeWorker>(),
         entry::<crate::api::mastodon::tags::TagUnmergeWorker>(),
         entry::<crate::moves::MoveWorker>(),
         entry::<crate::moves::UnfollowMigratedWorker>(),

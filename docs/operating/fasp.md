@@ -3,7 +3,7 @@ Auxiliary service providers
 
 A Fediverse Auxiliary Service Provider (FASP) is a service a server hands work
 to that it cannot do well alone: finding accounts it has never heard of,
-recommending whom to follow, noticing what is trending. Mastodon 4.7 talks to
+recommending whom to follow, noticing what is trending. Mastodon talks to
 them as an experimental feature, and Eunha ports that implementation — its
 tables, its endpoints, its wire formats and its signatures — so that a
 provider written against Mastodon works against Eunha unchanged. The protocol

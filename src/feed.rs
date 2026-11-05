@@ -1037,6 +1037,11 @@ pub async fn insert_into_home(state: &crate::state::AppState, status_id: i64, ac
     if filter_result(status, account_id, c, Receiver::Home).is_some() {
         return;
     }
+    if status.account_id == account_id
+        && !displays_own_status(db, account_id, status.reblog_of_id.is_some()).await
+    {
+        return;
+    }
     let aggregate = status.reblog_of_id.is_none()
         || !not_aggregating(db, &[account_id])
             .await
@@ -1357,6 +1362,9 @@ async fn fan_out_home(
     // `deliver_to_self!` (`if @account.local?`; only a local account has a
     // user to have signed in).
     let mut deliveries: Vec<i64> = signed_in_recently(db, &[author]).await;
+    if !displays_own_status(db, author, status.reblog_of_id.is_some()).await {
+        deliveries.clear();
+    }
 
     let followers: Vec<i64> = match d.visibility {
         crate::db::models::vis::PUBLIC
@@ -1952,6 +1960,135 @@ async fn merge(
     let statuses = unfiltered(db, receiver_id, statuses, receiver).await;
     if let Err(error) = add_all(redis, timeline, &statuses, aggregate).await {
         tracing::warn!(%error, key = %timeline.key, "could not merge statuses into a feed");
+    }
+}
+
+/// `FeedManager#push_to_home`'s `own_post?` and `own_boost?`: whether the
+/// user's home feed takes their own post (`display_own_posts`, on by default)
+/// or boost (`display_own_boosts`, off by default). One with no user has no
+/// home feed to take it.
+pub async fn displays_own_status(db: &PgPool, account_id: i64, boost: bool) -> bool {
+    let settings = sqlx::query_scalar!(
+        "SELECT settings FROM users WHERE account_id = $1",
+        account_id
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    let settings: serde_json::Value = settings
+        .as_deref()
+        .and_then(|settings| serde_json::from_str(settings).ok())
+        .unwrap_or_default();
+    displays_own(&settings, boost)
+}
+
+/// `setting_display_own_posts` or `setting_display_own_boosts`.
+pub fn displays_own(settings: &serde_json::Value, boost: bool) -> bool {
+    if boost {
+        settings
+            .get("display_own_boosts")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    } else {
+        settings
+            .get("display_own_posts")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    }
+}
+
+/// `FeedManager#merge_into_own_home`: fill the user's home feed with what
+/// they just chose to see of their own, of `FeedManager::MAX_ITEMS` / 4 at
+/// most, newer than the oldest entry when it is full enough.
+pub async fn merge_into_own_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    account_id: i64,
+    posts: bool,
+    boosts: bool,
+) {
+    if !posts && !boosts {
+        return;
+    }
+    let timeline = Timeline::home(keys, account_id);
+    let limit = (FEED_MAX_ITEMS / 4) as i64;
+    let after = if timeline_size(redis, &timeline).await >= limit {
+        oldest_score(redis, &timeline).await
+    } else {
+        None
+    };
+    let aggregate = aggregates(db, account_id).await;
+    let ids = sqlx::query!(
+        r#"SELECT id, reblog_of_id FROM statuses
+           WHERE account_id = $1 AND deleted_at IS NULL
+             AND ($2::bigint IS NULL OR id > $2)
+             AND (reblog_of_id IS NULL AND $3 OR reblog_of_id IS NOT NULL AND $4)
+           ORDER BY id DESC LIMIT $5"#,
+        account_id,
+        after,
+        posts,
+        boosts,
+        limit,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    for row in ids {
+        if let Err(error) = add_to_feed(redis, &timeline, row.id, row.reblog_of_id, aggregate).await
+        {
+            tracing::warn!(%error, "could not merge a user's own status into their feed");
+            return;
+        }
+    }
+    if let Err(error) = trim(redis, &timeline).await {
+        tracing::warn!(%error, "could not trim a feed");
+    }
+}
+
+/// `FeedManager#unmerge_from_own_home`: take out of the user's home feed what
+/// they just chose not to see of their own.
+pub async fn unmerge_from_own_home(
+    redis: &mut ConnectionManager,
+    keys: &RedisKeyspace,
+    db: &PgPool,
+    account_id: i64,
+    posts: bool,
+    boosts: bool,
+) {
+    if !posts && !boosts {
+        return;
+    }
+    let timeline = Timeline::home(keys, account_id);
+    let held: Vec<i64> = match redis.zrange(&timeline.key, 0, -1).await {
+        Ok(held) => held,
+        Err(error) => {
+            tracing::warn!(%error, "could not read a feed");
+            return;
+        }
+    };
+    let aggregate = aggregates(db, account_id).await;
+    let rows = sqlx::query!(
+        r#"SELECT id, reblog_of_id FROM statuses
+           WHERE account_id = $1 AND id = ANY($2)
+             AND (reblog_of_id IS NULL AND $3 OR reblog_of_id IS NOT NULL AND $4)"#,
+        account_id,
+        &held,
+        posts,
+        boosts,
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    for row in rows {
+        if let Err(error) =
+            remove_from_feed(redis, &timeline, row.id, row.reblog_of_id, aggregate).await
+        {
+            tracing::warn!(%error, "could not take a user's own status out of their feed");
+            return;
+        }
     }
 }
 

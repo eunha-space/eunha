@@ -29,6 +29,9 @@ pub struct NewLocalUser<'a> {
     pub password_hash: &'a str,
     pub role_id: Option<i64>,
     pub approved: bool,
+    /// `users.disabled` from the start: what `User#set_approved` writes for
+    /// someone awaiting approval under `postpone_confirmation_emails`.
+    pub disabled: bool,
     pub invite_id: Option<i64>,
     pub locale: Option<&'a str>,
     pub app_id: Option<i64>,
@@ -145,12 +148,12 @@ pub async fn insert_local(
              (account_id, email, encrypted_password, role_id,
               confirmed_at, invite_id, approved,
               locale, created_by_application_id, sign_up_ip, age_verified_at,
-              time_zone, confirmation_token, confirmation_sent_at,
+              time_zone, confirmation_token, confirmation_sent_at, disabled,
               created_at, updated_at)
            VALUES ($1,$2,$3,$4,
                    CASE WHEN $12 THEN now() END, $5, $6,
                    $7, $8, $9::text::inet, CASE WHEN $10 THEN now() END,
-                   $11, $13::varchar, CASE WHEN $13::varchar IS NOT NULL THEN now() END,
+                   $11, $13::varchar, CASE WHEN $13::varchar IS NOT NULL THEN now() END, $14,
                    now(), now())
            RETURNING id"#,
         account_id,
@@ -167,6 +170,7 @@ pub async fn insert_local(
         user.time_zone,
         user.confirmed,
         user.confirmation_token,
+        user.disabled,
     )
     .fetch_one(&mut **tx)
     .await?;
@@ -373,6 +377,7 @@ pub async fn create_from_command(
             approved: crate::settings::registrations_mode(state).await.open()
                 && !crate::moderation::signup::requires_approval(state, username, &email, None)
                     .await,
+            disabled: false,
             invite_id: None,
             locale: None,
             app_id: None,
@@ -765,7 +770,8 @@ pub async fn reset_password_by_token(
 /// `send_confirmation_instructions`: a fresh confirmation token, mailed to the
 /// address awaiting confirmation (`unconfirmed_email` when there is one, in
 /// the `reconfirmation_instructions` template, as `pending_reconfirmation?`
-/// picks it).
+/// picks it). Nothing for a user `mails_disabled?` holds back: created disabled
+/// and never yet sent a link.
 pub async fn send_confirmation_instructions(
     state: &crate::state::AppState,
     user_id: i64,
@@ -785,10 +791,11 @@ pub async fn send_confirmation_instructions(
                  THEN u.confirmation_sent_at ELSE now() END
            FROM accounts a
            WHERE u.id = $1 AND a.id = u.account_id
+             AND NOT (u.disabled AND u.confirmed_at IS NULL
+                      AND u.confirmation_sent_at IS NULL)
            RETURNING u.confirmation_token AS "token!",
                      COALESCE(NULLIF(u.unconfirmed_email, ''), u.email) AS "to!", u.locale,
-                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!",
-                     (u.created_by_application_id IS NOT NULL) AS "from_app!""#,
+                     a.username, (COALESCE(u.unconfirmed_email, '') <> '') AS "reconfirming!""#,
         user_id,
         fresh,
         CONFIRM_WITHIN_DAYS,
@@ -798,15 +805,9 @@ pub async fn send_confirmation_instructions(
     else {
         return Ok(());
     };
-    // `confirmation_url`: with `redirect_to_app: 'true'` on the confirmation
-    // of a user who signed up through an app, as its button carries it.
-    let back_to_app = if user.from_app && !user.reconfirming {
-        "&redirect_to_app=true"
-    } else {
-        ""
-    };
+    // `confirmation_url`.
     let url = format!(
-        "https://{}/auth/confirm?token={}{back_to_app}",
+        "https://{}/auth/confirm?token={}",
         state.instance.domain, user.token
     );
     // `@resource.locale.presence || I18n.default_locale`.
@@ -1248,6 +1249,17 @@ pub fn user_setting_bool(settings: Option<&str>, key: &str, default: bool) -> bo
 /// `User#approve!`: approve a pending user, and once it is also confirmed, do
 /// what a new user's arrival sets off.
 pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<()> {
+    // `enable! if disabled?`, for someone not yet approved: approving someone
+    // who already is changes nothing.
+    let waiting = sqlx::query!(
+        "SELECT id, disabled FROM users WHERE account_id = $1 AND NOT approved",
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(user) = waiting.filter(|user| user.disabled) {
+        enable(state, user.id).await?;
+    }
     let approved = sqlx::query_scalar!(
         r#"UPDATE users SET approved = true, updated_at = now()
            WHERE account_id = $1 AND NOT approved
@@ -1258,6 +1270,22 @@ pub async fn approve(state: &crate::state::AppState, account_id: i64) -> Result<
     .await?;
     if approved == Some(true) {
         prepare_new_user(state, account_id).await;
+    }
+    Ok(())
+}
+
+/// `User#enable!`. A user created disabled was never sent a confirmation link,
+/// so one goes out now.
+pub async fn enable(state: &crate::state::AppState, user_id: i64) -> Result<()> {
+    let never_mailed = sqlx::query_scalar!(
+        r#"UPDATE users SET disabled = false, updated_at = now() WHERE id = $1
+           RETURNING (confirmation_sent_at IS NULL AND confirmed_at IS NULL) AS "never_mailed!""#,
+        user_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if never_mailed == Some(true) {
+        send_confirmation_instructions(state, user_id).await?;
     }
     Ok(())
 }
@@ -1561,6 +1589,7 @@ pub async fn convert_pending_signups(
                 password_hash: &password_hash,
                 role_id: None,
                 approved: open || bypass,
+                disabled: false,
                 invite_id,
                 locale: Some(&locale),
                 app_id,
@@ -1704,6 +1733,89 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
     if let Err(error) = result {
         tracing::warn!(%error, "could not notify staff about a pending account");
     }
+}
+
+/// `Scheduler::PendingAccountsNotificationScheduler`: every hour, tell staff
+/// about the people awaiting approval who were sent no confirmation link, and
+/// so never reached [`notify_staff_about_pending_account`], which comes with
+/// confirming. It remembers where it got to for a week.
+pub async fn notify_staff_about_postponed_accounts(state: &crate::state::AppState) -> Result<()> {
+    let key = state
+        .redis_keys
+        .key("pending_accounts_notification_scheduler:resume_at_user_id");
+    let mut redis = state.redis.clone();
+    let resume_at: Option<String> = redis::cmd("GET").arg(&key).query_async(&mut redis).await?;
+    let resume_at = resume_at.and_then(|id| id.parse::<i64>().ok());
+    // `User.pending.where(confirmation_sent_at: nil)`.
+    let users = sqlx::query!(
+        r#"SELECT u.id, u.email, u.sign_up_ip::text AS "sign_up_ip?", a.id AS account_id,
+                  a.username,
+                  (SELECT r.text FROM user_invite_requests r WHERE r.user_id = u.id
+                   ORDER BY r.id LIMIT 1) AS "invite_request?"
+           FROM users u JOIN accounts a ON a.id = u.account_id
+           WHERE NOT u.approved AND u.confirmation_sent_at IS NULL
+             AND u.id >= COALESCE($1::bigint, 0)
+           ORDER BY u.id"#,
+        resume_at,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let next = match users.last() {
+        Some(last) => Some(last.id + 1),
+        None => resume_at,
+    };
+    if !users.is_empty() {
+        let accounts: Vec<crate::email::PendingAccount> = users
+            .into_iter()
+            .map(|user| crate::email::PendingAccount {
+                account_id: user.account_id,
+                username: user.username,
+                email: user.email,
+                sign_up_ip: user.sign_up_ip,
+                invite_request: user.invite_request,
+            })
+            .collect();
+        let staff =
+            crate::push::accounts_who_can(state, &[crate::moderation::role::flag::MANAGE_USERS])
+                .await?;
+        for staff_id in staff {
+            let Some(recipient) = sqlx::query!(
+                "SELECT email, settings FROM users WHERE account_id = $1",
+                staff_id
+            )
+            .fetch_optional(&state.db)
+            .await?
+            else {
+                continue;
+            };
+            // `allows_pending_account_emails?`
+            if !user_setting_bool(
+                recipient.settings.as_deref(),
+                "notification_emails.pending_account",
+                true,
+            ) {
+                continue;
+            }
+            if let Err(error) = state
+                .mailer()
+                .send_new_pending_accounts(&recipient.email, &state.instance.domain, &accounts)
+                .await
+            {
+                tracing::warn!(%error, "could not mail staff about pending accounts");
+            }
+        }
+    }
+    if let Some(next) = next {
+        // `ex: 1.week`.
+        let _: () = redis::cmd("SET")
+            .arg(&key)
+            .arg(next)
+            .arg("EX")
+            .arg(7 * 24 * 60 * 60)
+            .query_async(&mut redis)
+            .await?;
+    }
+    Ok(())
 }
 
 /// Devise's `send_password_change_notification`: `UserMailer#password_change`.

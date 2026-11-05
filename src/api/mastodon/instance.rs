@@ -529,6 +529,7 @@ pub async fn get_instance_v2(
             reason_required: registrations.approval_required()
                 && settings.boolean("require_invite_text"),
             min_age: crate::settings::min_age(&state.db).await,
+            oauth: true,
             // `registrations_message`, only while registrations are closed.
             message: if registrations.enabled() {
                 None
@@ -545,7 +546,7 @@ pub async fn get_instance_v2(
         },
         rules: crate::moderation::rules::serialize(&state, None).await?,
         // `Mastodon::Version.api_versions`.
-        api_versions: serde_json::json!({ "mastodon": 11 }),
+        api_versions: serde_json::json!({ "mastodon": 12 }),
         wrapstodon: super::annual_reports::current_campaign(&state).await,
     }))
 }

@@ -467,6 +467,8 @@ pub enum StatusSearchError {
     AccountNotFound,
     /// `Date::Error`, a 422.
     InvalidDate,
+    /// `SearchQueryTransformer::QueryError`, a 400.
+    NoKeyword,
     App(crate::error::AppError),
 }
 
@@ -533,6 +535,7 @@ pub async fn statuses(
         Ok(parsed) => parsed,
         Err(QueryError::InvalidDate) => return Err(StatusSearchError::InvalidDate),
         Err(QueryError::ParseFailed) => return Ok(vec![]),
+        Err(QueryError::NoKeyword) => return Err(StatusSearchError::NoKeyword),
         Err(QueryError::Unsupported(e)) => {
             return Err(StatusSearchError::App(crate::error::AppError::Unrescued(e)))
         }
@@ -555,6 +558,12 @@ pub async fn statuses(
                 .map_or(-1, |a| a.id)
         };
         from_ids.insert(term, id);
+    }
+    if parsed
+        .validate_clauses(|term| from_ids.get(term) == Some(&viewer))
+        .is_err()
+    {
+        return Err(StatusSearchError::NoKeyword);
     }
     let time_zone: Option<String> =
         sqlx::query_scalar("SELECT time_zone FROM users WHERE account_id = $1")

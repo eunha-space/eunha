@@ -82,7 +82,9 @@ not shown the rows.
 | `*_feed_access`                                                  | the public, hashtag and link timelines                                                 |
 | `show_domain_blocks`, `show_domain_blocks_rationale`             | `/api/v1/instance/domain_blocks`                                                       |
 | `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                               |
-| `authorized_fetch`                                               | signed fetches, unless the instance configuration decides                              |
+| `authorized_fetch`                                               | `none`, `actors` (the default) or `all`: which fetches must be signed, unless the instance configuration decides |
+| `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up) |
+| `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo |
 | `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                |
 | `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December           |
 | `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                              |
@@ -138,8 +140,9 @@ was served as (see
 The server never does this. A server whose configuration still sets any of
 these keys logs a warning naming them; remove them once imported.
 
-`authorized_fetch` set in the instance configuration, or forced by limited
-federation mode, decides whatever is saved; the settings then list it under
+`authorized_fetch` set in the instance configuration (`true` is `all`, `false`
+is `none`, or one of those names), or forced by limited federation mode, decides
+whatever is saved; the settings then list it under
 `overridden`, and the web client shows it disabled, as Mastodon's form does
 when its environment variable is set.
 
@@ -316,12 +319,10 @@ either.
  -  Every hour, collection items that were rejected or revoked more than a day
     ago are deleted (`CollectionItemCleanupScheduler`), and their collections'
     item counts recounted.
- -  A second after the instance starts, and then daily (no more than once a
-    day across restarts), remote collections
-    stored under an account other than the one they are attributed to are
-    fetched again and given to that account
-    (`RepairRemoteCollectionsScheduler`); see
-    [inbound statuses](../mastodon/inbound-statuses.md#pins-featured-hashtags-and-collections).
+ -  Every hour, staff who take the mail hear about new accounts awaiting
+    approval under `postpone_confirmation_emails`
+    (`PendingAccountsNotificationScheduler`); see
+    [Server settings](#server-settings).
  -  Every minute, the posts that members' automated deletion policies say
     should go are deleted; see
     [accounts](./accounts.md#automated-post-deletion).

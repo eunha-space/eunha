@@ -1,9 +1,8 @@
-//! Mastodon's `Extractor`: twitter-text's entity extraction as Mastodon
-//! amends it, in *config/initializers/twitter_regex.rb* and
-//! *app/lib/extractor.rb*. Offsets are byte offsets into the text where
-//! twitter-text counts codepoints; the entities they delimit are the same.
-//! A URL's top-level domain is checked against twitter-text 3.1.0's lists
-//! ([`super::tlds`]), so one under a newer domain stays text, as upstream.
+//! Mastodon's `Extractor`, *app/lib/extractor.rb*. URLs are found as UTS #58
+//! says, by the uts58 gem Mastodon uses: this file is a port of its
+//! `Uts58::Extractor`, for links with a scheme. A host counts when the Public
+//! Suffix List knows its top-level domain. Offsets are byte offsets into the
+//! text where Ruby counts codepoints; the entities they delimit are the same.
 //!
 //! Mastodon: app/lib/extractor.rb
 
@@ -11,16 +10,19 @@ use std::sync::LazyLock;
 
 use fancy_regex::Regex;
 
+use super::uts58_tables::{LinkTerm, LINK_TERM, OPENERS};
+
 /// `[[:word:]]` as Onigmo reads it on a Unicode string.
 const WORD: &str = r"\p{Alphabetic}\p{M}\p{Nd}\p{Pc}";
 /// `Tag::HASHTAG_SEPARATORS`.
 const HASHTAG_SEPARATORS: &str = r"_\x{00B7}\x{30FB}\x{200C}";
 /// `Extractor::MAX_DOMAIN_LENGTH`.
 const MAX_DOMAIN_LENGTH: usize = 253;
-/// twitter-text's `MAX_URL_LENGTH`.
+/// `Extractor::UTS58`'s `max_length`, in codepoints of the text.
 const MAX_URL_LENGTH: usize = 4096;
-/// twitter-text's `MAX_TCO_SLUG_LENGTH`.
-const MAX_TCO_SLUG_LENGTH: usize = 40;
+/// `Account::HOST_LABEL_CHAR`, inside its brackets: `[[:word:]]` and the
+/// letters IDNA allows that it leaves out.
+const HOST_LABEL_CHAR: &str = "\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}ßς۽۾་〇";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
@@ -40,7 +42,7 @@ pub struct Entity {
 /// `Account::MENTION_RE`.
 pub static MENTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"(?<![=/{WORD}])@((?i:[a-z0-9_]+(?:[.-]+[a-z0-9_]+)*)(?:@[{WORD}]+(?:[.-]+[{WORD}]+)*)?)"
+        r"(?<![=/{WORD}])@((?i:[a-z0-9_]+(?:[.-]+[a-z0-9_]+)*)(?:@[{HOST_LABEL_CHAR}]+(?:[.-]+[{HOST_LABEL_CHAR}]+)*)?)"
     ))
     .expect("valid mention pattern")
 });
@@ -64,7 +66,7 @@ pub static HASHTAG_NAME_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
         .expect("valid hashtag name pattern")
 });
 
-/// twitter-text's `end_mention_match`.
+/// `Extractor::END_MENTION_MATCH`.
 static END_MENTION_MATCH: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(
         r"\A(?:[@＠]|[\x{C0}-\x{D6}\x{D8}-\x{F6}\x{F8}-\x{FF}\x{100}-\x{24F}\x{253}-\x{254}\x{256}-\x{257}\x{259}\x{25B}\x{263}\x{268}\x{26F}\x{272}\x{289}\x{28B}\x{2BB}\x{300}-\x{36F}\x{1E00}-\x{1EFF}]|://)",
@@ -72,97 +74,28 @@ static END_MENTION_MATCH: LazyLock<regex::Regex> = LazyLock::new(|| {
     .expect("valid pattern")
 });
 
-/// twitter-text's `valid_gTLD | valid_ccTLD | valid_punycode`: a top-level
-/// domain on one of its lists, not followed by a letter, digit, `@`, `+` or
-/// `-`, or a punycode one. Read case-insensitively, as twitter-text's
-/// expressions are.
-pub(crate) fn tld_pattern() -> String {
-    let generic = super::tlds::GENERIC.join("|");
-    let country = super::tlds::COUNTRY.join("|");
-    format!(
-        r"(?:(?:(?:{generic})(?=[^0-9a-z@+\-]|$))|(?:(?:{country})(?=[^0-9a-z@+\-]|$))|(?:xn--[0-9a-z]+))"
+/// Where a link may start: `Uts58::Extractor`'s scan. A UTS #58 link has no
+/// userinfo, so a host right after an `@` is no link.
+static LINK_TRIGGER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?<![-\p{L}\p{M}\p{Nd}./@])(?=[\p{L}\p{M}\p{Nd}][-\p{L}\p{N}\p{M}ßς۽۾་〇]*[.:。])")
+        .expect("valid pattern")
+});
+
+/// The scheme, after any letters of the scripts written without spaces:
+/// `テストhttp://example.com` is a link from its `h`.
+static LINK_SCHEME: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?i)\A([\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}\p{Thai}\p{Lao}\p{Khmer}\p{Myanmar}]*?)(https?://)",
     )
-}
-
-/// The pieces twitter-text builds its URL expressions from.
-struct UrlParts {
-    before: String,
-    domain: String,
-    path: String,
-    query: String,
-    query_ending: String,
-}
-
-fn url_parts() -> UrlParts {
-    // `valid_url_preceding_chars`.
-    let before = r"(?:[^A-Z0-9@＠$#＃\x{FFFE}\x{FEFF}\x{FFFF}]|[\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]|^)".to_owned();
-    // `DOMAIN_VALID_CHARS`.
-    let dvc = r"[^\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{85}\x{A0}\x{1680}\x{180E}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FFFE}\x{FEFF}\x{FFFF}]";
-    let subdomain = format!(r"(?:(?:{dvc}(?:[_-]|{dvc})*)?{dvc}\.)");
-    let domain_name = format!(r"(?:(?:{dvc}(?:-|{dvc})*)?{dvc}\.)");
-    let tld = tld_pattern();
-    let domain = format!("(?:{subdomain}*{domain_name}{tld})");
-    let general = r"[^\s<>()?]";
-    let balanced = format!(r"\((?:{general}+|(?:{general}*\({general}+\){general}*))\)");
-    let ending = format!(r#"(?:[^\s()?!*"'「」<>;:=,.$%\[\]~&|]|{balanced})"#);
-    let path = format!(r"(?:(?:{general}*(?:{balanced}{general}*)*{ending})|(?:{general}+/))");
-    let uchars = r"\x{A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}\x{10000}-\x{1FFFD}\x{20000}-\x{2FFFD}\x{30000}-\x{3FFFD}\x{40000}-\x{4FFFD}\x{50000}-\x{5FFFD}\x{60000}-\x{6FFFD}\x{70000}-\x{7FFFD}\x{80000}-\x{8FFFD}\x{90000}-\x{9FFFD}\x{A0000}-\x{AFFFD}\x{B0000}-\x{BFFFD}\x{C0000}-\x{CFFFD}\x{D0000}-\x{DFFFD}\x{E1000}-\x{EFFFD}\x{E000}-\x{F8FF}\x{F0000}-\x{FFFFD}\x{100000}-\x{10FFFD}";
-    let query = format!(r"[a-z0-9!?*'();:&=+$/%#\[\]\-_.,~|@\^{uchars}]");
-    let query_ending = format!(r"[a-z0-9_&=#/\-{uchars}]");
-    UrlParts {
-        before,
-        domain,
-        path,
-        query,
-        query_ending,
-    }
-}
-
-/// `Twitter::TwitterText::Regex[:valid_url]`, as Mastodon redefines it.
-static VALID_URL: LazyLock<Regex> = LazyLock::new(|| {
-    let UrlParts {
-        before,
-        domain,
-        path,
-        query,
-        query_ending,
-    } = url_parts();
-    Regex::new(&format!(
-        r"(?im){before}(?P<url>(?P<protocol>(?:https?|dat|dweb|ipfs|ipns|ssb|gopher|gemini)://)?(?P<domain>{domain})(?::[0-9]+)?(?:/{path}*)?(?:\?{query}*{query_ending})?)"
-    ))
-    .expect("valid URL pattern")
+    .expect("valid pattern")
 });
 
-/// `Twitter::TwitterText::Regex[:valid_extended_uri]`, Mastodon's addition.
-static VALID_EXTENDED_URI: LazyLock<Regex> = LazyLock::new(|| {
-    let UrlParts {
-        before,
-        domain,
-        query,
-        query_ending,
-        ..
-    } = url_parts();
-    let unreserved = r"[a-z\p{Cyrillic}0-9\-._~]";
-    let pct_encoded = r"(?:%[0-9a-f]{2})";
-    let nodeid = format!(r"(?:{unreserved}|{pct_encoded}|[!$()*+,;=])");
-    let resid = format!(r"(?:{unreserved}|{pct_encoded}|[!$&'()*+,;=])");
-    Regex::new(&format!(
-        r"(?im){before}(?P<url>(?:xmpp:(?://{nodeid}+@{domain}/)?(?:{nodeid}+@)?{domain}(?:/{resid}+)?(?:\?{query}*{query_ending})?)|(?:magnet:\?{query}*{query_ending}))"
-    ))
-    .expect("valid extended URI pattern")
-});
-
-/// twitter-text's `valid_tco_url`.
-static VALID_TCO_URL: LazyLock<Regex> = LazyLock::new(|| {
-    let UrlParts {
-        query,
-        query_ending,
-        ..
-    } = url_parts();
-    Regex::new(&format!(
-        r"(?i)^https?://t\.co/([a-z0-9]+)(?:\?{query}*{query_ending})?"
-    ))
-    .expect("valid t.co pattern")
+/// What might be a hostname or an IDN.
+static LINK_HOST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\A(?:[-\p{L}\p{N}\p{M}ßς۽۾་〇]+[.。]){1,4}[-\p{L}\p{N}\p{M}]+(?![-\p{L}\p{N}\p{M}])",
+    )
+    .expect("valid pattern")
 });
 
 /// Every match of `re` in `text`, the way Ruby's `String#scan` walks them.
@@ -193,11 +126,14 @@ pub fn extract_entities(text: &str) -> Vec<Entity> {
     let mut entities = extract_urls(text);
     entities.extend(extract_hashtags(text));
     entities.extend(extract_mentions(text));
-    entities.extend(extract_extra_uris(text));
+    entities.extend(extract_xmpp_uris(text));
+    entities.extend(extract_magnet_uris(text));
+    // A `<` is reserved by RFC 3986, and has been used for XSS.
+    entities.retain(|entity| !matches!(&entity.kind, Kind::Url(url) if url.contains('<')));
     remove_overlapping_entities(entities)
 }
 
-/// twitter-text's `remove_overlapping_entities`.
+/// `Uts58::Extractor#remove_overlapping_entities`.
 pub fn remove_overlapping_entities(mut entities: Vec<Entity>) -> Vec<Entity> {
     entities.sort_by_key(|e| e.start);
     let mut kept: Vec<Entity> = Vec::with_capacity(entities.len());
@@ -210,60 +146,190 @@ pub fn remove_overlapping_entities(mut entities: Vec<Entity>) -> Vec<Entity> {
     kept
 }
 
-/// `extract_urls_with_indices(text, extract_url_without_protocol: false)`.
+/// `Uts58::Extractor#extract_urls_with_indices(text,
+/// extract_url_without_protocol: false)`, with `max_length` set.
 pub fn extract_urls(text: &str) -> Vec<Entity> {
     if !text.contains(':') {
         return Vec::new();
     }
     let mut urls = Vec::new();
-    for captures in scan(&VALID_URL, text) {
-        let url = captures.name("url").expect("url group");
-        // Without a protocol, nothing is extracted, but the match is still
-        // consumed.
-        if captures.name("protocol").is_none() {
-            continue;
+    for trigger in scan(&LINK_TRIGGER, text) {
+        let trigger = trigger.get(0).expect("group 0").start();
+        if let Some(url) = link_at(text, trigger) {
+            urls.push(url);
         }
-        let domain = captures.name("domain").expect("domain group").as_str();
-        let mut url_text = url.as_str();
-        let mut end = url.end();
-        if let Ok(Some(tco)) = VALID_TCO_URL.captures(url_text) {
-            if tco
-                .get(1)
-                .is_some_and(|slug| slug.as_str().len() > MAX_TCO_SLUG_LENGTH)
-            {
-                continue;
-            }
-            let whole = tco.get(0).expect("group 0");
-            url_text = &url_text[..whole.end()];
-            end = url.start() + whole.end();
-        }
-        if !is_valid_domain(url_text.chars().count(), domain) {
-            continue;
-        }
-        urls.push(Entity {
-            start: url.start(),
-            end,
-            kind: Kind::Url(url_text.to_owned()),
-        });
     }
     urls
 }
 
-/// twitter-text's `is_valid_domain`, for a URL that has a protocol:
-/// `IDN::Idna.toASCII` has to accept the domain, and the URL, with the domain
-/// in that form, must be no longer than `MAX_URL_LENGTH`.
-fn is_valid_domain(url_length: usize, domain: &str) -> bool {
-    let Ok(encoded) = idna::domain_to_ascii(domain) else {
+/// The link starting where the trigger fired, if there is one.
+fn link_at(text: &str, trigger: usize) -> Option<Entity> {
+    let after = &text[trigger..];
+    let scheme = LINK_SCHEME.captures(after)?;
+    let start = trigger + scheme.get(1)?.end();
+    let protocol = scheme.get(2)?.as_str();
+    let from_host = &after[scheme.get(0)?.end()..];
+
+    let host = LINK_HOST.find(from_host).ok()??;
+    if host.as_str().chars().count() >= 254 {
+        return None;
+    }
+    let host_raw = host.as_str().replace('。', ".");
+    // A label may not start or end with a hyphen.
+    if host_raw
+        .split('.')
+        .any(|label| label.starts_with('-') || label.ends_with('-'))
+    {
+        return None;
+    }
+    let (hostname, result) = idna::domain_to_unicode(&host_raw);
+    result.ok()?;
+    if !public_suffix_allows(&hostname) {
+        return None;
+    }
+
+    let after_host = &from_host[host.end()..];
+    let mut rest = after_host;
+    // "example.com." keeps its trailing dot only when a path, query or
+    // fragment follows; at the end of a sentence it is prose.
+    if let Some(dotless) = rest.strip_prefix('.') {
+        if dotless.starts_with(['/', '?', '#']) {
+            rest = dotless;
+        }
+    }
+    if let Some(digits) = rest.strip_prefix(':') {
+        let length = digits.bytes().take_while(u8::is_ascii_digit).count();
+        if length > 0 {
+            // A port is 1..65535.
+            let port = digits[..length].parse::<u32>().ok()?;
+            if !(1..=65535).contains(&port) {
+                return None;
+            }
+            rest = &digits[length..];
+        }
+    }
+    while rest.starts_with('/') {
+        rest = skip_component(rest, &['#', '/', '?'], &[], None);
+    }
+    if rest.starts_with('?') {
+        rest = skip_component(rest, &['#'], &['=', '&'], None);
+    }
+    if rest.starts_with('#') {
+        rest = skip_component(rest, &[], &[], Some(&[',', '=', '&']));
+    }
+
+    let end = text.len() - rest.len();
+    if text[start..end].chars().count() > MAX_URL_LENGTH {
+        return None;
+    }
+    let tail = &after_host[..after_host.len() - rest.len()];
+    Some(Entity {
+        start,
+        end,
+        kind: Kind::Url(format!("{protocol}{hostname}{tail}")),
+    })
+}
+
+/// `PublicSuffix.parse(hostname, ignore_private: true, default_rule: nil)`:
+/// the top-level domain has to be on the list, and there has to be something
+/// in front of the suffix. A private entry counts as the ICANN one above it,
+/// so a name that is only a private suffix is an ordinary domain.
+fn public_suffix_allows(hostname: &str) -> bool {
+    let Ok(ascii) = idna::domain_to_ascii(hostname) else {
         return false;
     };
-    // libidn refuses a label longer than 63 octets.
-    if encoded.split('.').any(|label| label.len() > 63) {
+    let Some(suffix) = psl::suffix(ascii.as_bytes()) else {
+        return false;
+    };
+    if !suffix.is_known() {
         return false;
     }
-    let original = domain.chars().count();
-    let updated = encoded.chars().count();
-    let length = url_length + updated.saturating_sub(original);
-    length <= MAX_URL_LENGTH
+    suffix.typ() == Some(psl::Type::Private) || suffix.as_bytes().len() < ascii.len()
+}
+
+/// `Link_Term` for a code point; `None` is `Hard`, UTS #58's default.
+fn link_term(c: char) -> Option<LinkTerm> {
+    let c = u32::from(c);
+    let index = LINK_TERM
+        .binary_search_by(|&(start, end, _)| {
+            if c < start {
+                std::cmp::Ordering::Greater
+            } else if c > end {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .ok()?;
+    Some(LINK_TERM[index].2)
+}
+
+fn opener_of(closer: char) -> Option<u32> {
+    let closer = u32::from(closer);
+    let index = OPENERS.binary_search_by_key(&closer, |&(c, _)| c).ok()?;
+    Some(OPENERS[index].1)
+}
+
+/// `Uts58::Extractor#skip_component`: what is left after the path segment,
+/// query or fragment `string` starts with. Brackets are paired per part, which
+/// `separators` end; a `:~:` starts a fragment directive, with its own.
+fn skip_component<'t>(
+    string: &'t str,
+    closers: &[char],
+    separators: &[char],
+    directive_separators: Option<&[char]>,
+) -> &'t str {
+    let chars: Vec<(usize, char)> = string.char_indices().collect();
+    let mut openers: Vec<u32> = Vec::new();
+    let mut separators = separators;
+    // The first character is the lead-in.
+    let mut i = 1;
+    while i < chars.len() {
+        let (at, c) = chars[i];
+        if closers.contains(&c) {
+            return &string[at..];
+        }
+        if let Some(directive) = directive_separators {
+            if c == ':'
+                && chars.get(i + 1).map(|&(_, c)| c) == Some('~')
+                && chars.get(i + 2).map(|&(_, c)| c) == Some(':')
+            {
+                openers.clear();
+                separators = directive;
+                i += 3;
+                continue;
+            }
+        }
+        if separators.contains(&c) {
+            openers.clear();
+            i += 1;
+            continue;
+        }
+        match link_term(c) {
+            Some(LinkTerm::Include) => {}
+            Some(LinkTerm::Soft) => {
+                // A soft terminator ends the link only before a hard one.
+                let next = chars[i..]
+                    .iter()
+                    .map(|&(_, c)| link_term(c))
+                    .find(|term| *term != Some(LinkTerm::Soft));
+                if matches!(next, None | Some(None)) {
+                    return &string[at..];
+                }
+            }
+            Some(LinkTerm::Close) => {
+                if opener_of(c).is_some() && opener_of(c) == openers.last().copied() {
+                    openers.pop();
+                } else {
+                    return &string[at..];
+                }
+            }
+            Some(LinkTerm::Open) => openers.push(u32::from(c)),
+            None => return &string[at..],
+        }
+        i += 1;
+    }
+    ""
 }
 
 /// `Extractor.extract_hashtags_with_indices`.
@@ -321,22 +387,52 @@ pub fn extract_mentions(text: &str) -> Vec<Entity> {
     mentions
 }
 
-/// `Extractor.extract_extra_uris_with_indices`: `xmpp:` and `magnet:` URIs.
-pub fn extract_extra_uris(text: &str) -> Vec<Entity> {
-    if !text.contains(':') {
-        return Vec::new();
-    }
-    scan(&VALID_EXTENDED_URI, text)
+/// `Extractor::TRAILING_URI_PUNCT`.
+const TRAILING_URI_PUNCT: &[char] = &['.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"', '`'];
+
+/// A URI of a scheme found by a `pattern` that takes anything up to
+/// whitespace, less trailing punctuation, when `keep` accepts it.
+fn liberal_uris(text: &str, pattern: &Regex, keep: impl Fn(&str) -> bool) -> Vec<Entity> {
+    scan(pattern, text)
         .into_iter()
-        .map(|captures| {
-            let url = captures.name("url").expect("url group");
-            Entity {
-                start: url.start(),
-                end: url.end(),
-                kind: Kind::Url(url.as_str().to_owned()),
-            }
+        .filter_map(|captures| {
+            let found = captures.get(0)?;
+            let url = found.as_str().trim_end_matches(TRAILING_URI_PUNCT);
+            keep(url).then(|| Entity {
+                start: found.start(),
+                end: found.start() + url.len(),
+                kind: Kind::Url(url.to_owned()),
+            })
         })
         .collect()
+}
+
+/// `Extractor.extract_xmpp_uris_with_indices`: an `@` or `.` has to follow
+/// the scheme. Ruby's `\S` is everything but ASCII whitespace.
+pub fn extract_xmpp_uris(text: &str) -> Vec<Entity> {
+    static XMPP: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?<![\p{L}\p{N}_])xmpp:[^ \t\r\n\x0C\x0B]+").expect("valid pattern")
+    });
+    if !text.contains("xmpp:") {
+        return Vec::new();
+    }
+    liberal_uris(text, &XMPP, |url| {
+        url["xmpp:".len().min(url.len())..].contains(['.', '@'])
+    })
+}
+
+/// `Extractor.extract_magnet_uris_with_indices`: a magnet URI is meaningless
+/// without its `xt=`.
+pub fn extract_magnet_uris(text: &str) -> Vec<Entity> {
+    static MAGNET: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?<![\p{L}\p{N}_])magnet:\?[^ \t\r\n\x0C\x0B]+").expect("valid pattern")
+    });
+    if !text.contains("magnet:?") {
+        return Vec::new();
+    }
+    liberal_uris(text, &MAGNET, |url| {
+        url.contains("?xt=") || url.contains("&xt=")
+    })
 }
 
 /// `text.scan(Account::MENTION_RE)` as `ProcessMentionsService` and
@@ -458,20 +554,158 @@ mod tests {
         assert_eq!(extract_urls("https://example.com-x.org").len(), 1);
     }
 
-    /// twitter-text 3.1.0's lists, as `Twitter::TwitterText::Regex` joins
-    /// them: a domain under a top-level domain it does not know is no link.
+    /// The Public Suffix List decides, in either form of a name.
     #[test]
-    fn top_level_domains_are_twitter_texts() {
+    fn top_level_domains_are_the_public_suffix_lists() {
         for linked in [
             "https://eunha.social/docs",
             "https://EXAMPLE.COM",
             "https://example.한국",
             "https://example.xn--3e0b707e",
+            "https://универсальное-принятие-тест.москва",
+            "https://どこでもつかえる.みんな",
         ] {
             assert_eq!(extract_urls(linked).len(), 1, "{linked}");
         }
-        for text in ["https://example.zzz", "https://example.notatld/path"] {
+        for text in [
+            "https://example.zzz",
+            "https://example.notatld/path",
+            "https://co.uk",
+        ] {
             assert!(extract_urls(text).is_empty(), "{text}");
+        }
+    }
+
+    fn urls(text: &str) -> Vec<(String, usize, usize)> {
+        extract_entities(text)
+            .into_iter()
+            .filter_map(|e| match e.kind {
+                Kind::Url(u) => Some((u, e.start, e.end)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn url_of(text: &str) -> String {
+        urls(text)
+            .into_iter()
+            .next()
+            .map_or(String::new(), |(u, _, _)| u)
+    }
+
+    /// `spec/lib/extractor_spec.rb` and `spec/lib/text_formatter_spec.rb`.
+    #[test]
+    fn urls_end_where_uts58_says() {
+        assert_eq!(
+            url_of("https://example.com/foo= Content"),
+            "https://example.com/foo="
+        );
+        assert_eq!(
+            url_of("https://example.com/foo."),
+            "https://example.com/foo"
+        );
+        assert_eq!(
+            url_of("(https://example.com/a(b))"),
+            "https://example.com/a(b)"
+        );
+        assert_eq!(url_of("https://example.com."), "https://example.com");
+        assert_eq!(url_of("https://example.com./a"), "https://example.com./a");
+        assert_eq!(
+            url_of("https://example.com:8443/a"),
+            "https://example.com:8443/a"
+        );
+        assert_eq!(
+            url_of("https://example.com/a?b=c&d=(e)#f"),
+            "https://example.com/a?b=c&d=(e)#f"
+        );
+        assert_eq!(url_of("テストhttps://example.com"), "https://example.com");
+        assert_eq!(urls("テストhttps://example.com")[0].1, "テスト".len(),);
+        assert_eq!(
+            url_of("https://xn--3e0b707e.xn--3e0b707e"),
+            "https://한국.한국"
+        );
+        assert_eq!(url_of("https://example.com:0"), "");
+        assert_eq!(url_of("https://example.com:65536"), "");
+        assert_eq!(url_of("https://-foo.example.com"), "");
+    }
+
+    #[test]
+    fn only_http_and_https_are_links() {
+        assert_eq!(url_of("gemini://example.com"), "");
+        assert_eq!(url_of("dat://example.com"), "");
+        assert_eq!(url_of("ipfs://example.com"), "");
+    }
+
+    #[test]
+    fn a_url_is_kept_to_its_length() {
+        let long = format!("https://example.com/{}", "a".repeat(MAX_URL_LENGTH));
+        assert_eq!(url_of(&long), "");
+    }
+
+    #[test]
+    fn a_url_with_an_angle_bracket_is_no_link() {
+        assert!(!url_of("https://example.com/<del>a").contains('<'));
+        assert_eq!(url_of("xmpp:a@example.com<script>"), "");
+    }
+
+    #[test]
+    fn a_mention_is_not_taken_for_a_url() {
+        assert!(urls("@bob@example.com").is_empty());
+        assert_eq!(
+            url_of("https://example.com/@bob@example.org"),
+            "https://example.com/@bob@example.org"
+        );
+    }
+
+    #[test]
+    fn a_mention_host_may_have_idna_letters() {
+        assert_eq!(
+            mention_handles("@alice@fußball.example"),
+            vec![("alice".to_owned(), Some("fußball.example".to_owned()))]
+        );
+        assert_eq!(
+            mention_handles("@alice@ས་གནས.example"),
+            vec![("alice".to_owned(), Some("ས་གནས.example".to_owned()))]
+        );
+    }
+
+    #[test]
+    fn xmpp_uris() {
+        assert!(extract_xmpp_uris("no xmpp here").is_empty());
+        for (text, url) in [
+            ("xmpp:user@example.com", "xmpp:user@example.com"),
+            ("xmpp:grå@grå.org/grønn/blå", "xmpp:grå@grå.org/grønn/blå"),
+            (
+                "please join xmpp:muc@example.com?join right now",
+                "xmpp:muc@example.com?join",
+            ),
+            ("see xmpp:user@example.com.", "xmpp:user@example.com"),
+            ("(xmpp:user@example.com),", "xmpp:user@example.com"),
+        ] {
+            assert_eq!(url_of(text), url, "{text}");
+        }
+        for text in [
+            "xmpp:foo bar",
+            "plain xmpp: nothing here",
+            "fooxmpp:user@example.com",
+        ] {
+            assert!(extract_xmpp_uris(text).is_empty(), "{text}");
+        }
+    }
+
+    #[test]
+    fn magnet_uris() {
+        assert!(extract_magnet_uris("no magnet here").is_empty());
+        assert_eq!(url_of("magnet:?xt=urn:btih:abc"), "magnet:?xt=urn:btih:abc");
+        assert_eq!(
+            url_of("see magnet:?dn=a&xt=urn:btih:abc."),
+            "magnet:?dn=a&xt=urn:btih:abc"
+        );
+        for text in [
+            "magnet:?as=http%3A%2F%2Fexample.com%2Ffile",
+            "plain magnet: nothing here",
+        ] {
+            assert!(extract_magnet_uris(text).is_empty(), "{text}");
         }
     }
 }

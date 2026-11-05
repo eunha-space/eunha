@@ -622,6 +622,41 @@ impl EmailSender {
         self.send_admin(to, &subject, &body, false).await
     }
 
+    /// Mastodon's `AdminMailer#new_pending_accounts`.
+    pub async fn send_new_pending_accounts(
+        &self,
+        to: &str,
+        instance_domain: &str,
+        accounts: &[PendingAccount],
+    ) -> anyhow::Result<()> {
+        let subject = format!("New accounts up for review on {instance_domain}");
+        let mut body = format!(
+            "<p>New accounts have been created on {instance_domain}. As your server is \
+             configured to postpone confirmation emails after moderation approval, those \
+             accounts did not have a chance to verify their email address yet. The details of \
+             the new accounts are below. You can approve or reject these applications.</p>"
+        );
+        for account in accounts {
+            let url = format!(
+                "https://{instance_domain}/admin/accounts/{}",
+                account.account_id
+            );
+            let reason = account
+                .invite_request
+                .as_deref()
+                .filter(|reason| !reason.is_empty())
+                .map(|reason| format!("<blockquote>{}</blockquote>", html_escape(reason)))
+                .unwrap_or_default();
+            body.push_str(&format!(
+                "<p><strong>{} (@{})</strong><br>{}</p>{reason}<p><a href=\"{url}\">{url}</a></p>",
+                html_escape(&account.email),
+                html_escape(&account.username),
+                html_escape(account.sign_up_ip.as_deref().unwrap_or("")),
+            ));
+        }
+        self.send_admin(to, &subject, &body, false).await
+    }
+
     /// `UserMailer#welcome`, in `user_mailer.welcome`'s words: the welcome
     /// checklist, accounts to follow, trending hashtags, and what Mastodon is
     /// for.
@@ -1208,7 +1243,8 @@ impl EmailSender {
             html_escape(browser),
             crate::time_zones::format_with_time_zone(timestamp, time_zone, "en"),
         );
-        self.send(to, "Please confirm attempted sign in", &body).await
+        self.send(to, "Please confirm attempted sign in", &body)
+            .await
     }
 
     /// A `UserMailer` mail: `Devise::Mailer`'s, which does not take
@@ -1367,6 +1403,15 @@ const APP_STORE_URL_IOS: &str =
 /// `ApplicationHelper#app_store_url_android`.
 const APP_STORE_URL_ANDROID: &str =
     "https://play.google.com/store/apps/details?id=org.joinmastodon.android";
+
+/// One account in `AdminMailer#new_pending_accounts`.
+pub struct PendingAccount {
+    pub account_id: i64,
+    pub username: String,
+    pub email: String,
+    pub sign_up_ip: Option<String>,
+    pub invite_request: Option<String>,
+}
 
 /// What [`EmailSender::send_welcome`] says, as `UserMailer#welcome` finds it
 /// when it is sent.

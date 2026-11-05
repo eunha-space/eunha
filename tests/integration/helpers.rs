@@ -955,7 +955,10 @@ impl TestContext {
                 privacy_policy: String::new(),
                 terms_of_service: String::new(),
                 email_subscriptions: true,
-                authorized_fetch: None,
+                // Mastodon's default is `actors`. Most tests read actors with a
+                // plain GET; those about signatures set what they need.
+                authorized_fetch: Some(serde_json::json!(false)),
+                disable_announcement_reactions: false,
                 default_locale: None,
                 force_default_locale: false,
                 limited_federation_mode: false,

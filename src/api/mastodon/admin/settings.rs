@@ -66,7 +66,11 @@ const KEYS: &[(&str, Kind)] = &[
     ("backups_retention_period", Kind::Integer),
     ("status_page_url", Kind::Text),
     ("captcha_enabled", Kind::Boolean),
-    ("authorized_fetch", Kind::Boolean),
+    ("authorized_fetch", Kind::Text),
+    ("opt_in_server_directory", Kind::Boolean),
+    ("opt_in_server_recommendation", Kind::Boolean),
+    ("postpone_confirmation_emails", Kind::Boolean),
+    ("theme_color", Kind::Text),
     ("app_icon", Kind::Upload),
     ("favicon", Kind::Upload),
     ("min_age", Kind::Integer),
@@ -113,8 +117,11 @@ async fn current(state: &AppState) -> AppResult<Value> {
             ("site_contact_email", _) => json!(snapshot.site_contact_email(instance)),
             ("registrations_mode", _) => json!(snapshot.registrations_mode(instance).as_str()),
             // `OVERRIDEN_SETTINGS`: what is in force, not what was saved.
-            ("authorized_fetch", _) => json!(crate::settings::authorized_fetch_override(instance)
-                .unwrap_or_else(|| snapshot.boolean("authorized_fetch"))),
+            ("authorized_fetch", _) => json!(crate::settings::authorized_fetch_setting(
+                instance,
+                &snapshot.get("authorized_fetch")
+            )
+            .as_str()),
             (_, Kind::Text) => json!(snapshot.string(key)),
             (_, Kind::Boolean) => json!(snapshot.boolean(key)),
             (_, Kind::Integer) => snapshot.integer(key).map_or(Value::Null, |n| json!(n)),
@@ -126,8 +133,8 @@ async fn current(state: &AppState) -> AppResult<Value> {
     }
     // The keys the instance configuration decides whatever is saved, which
     // Mastodon's form shows disabled.
-    let overridden: Vec<&str> = crate::settings::authorized_fetch_override(instance)
-        .map(|_| "authorized_fetch")
+    let overridden: Vec<&str> = crate::settings::authorized_fetch_overridden(instance)
+        .then_some("authorized_fetch")
         .into_iter()
         .collect();
     out.insert("overridden".into(), json!(overridden));

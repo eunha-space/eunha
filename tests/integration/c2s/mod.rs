@@ -28,6 +28,7 @@ mod invites;
 mod limited_federation;
 mod lists;
 mod markers;
+mod mastodon_5;
 mod media;
 mod media_order;
 mod media_processing;

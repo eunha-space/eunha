@@ -7,15 +7,27 @@ import {
   listWarningPresets,
   updateWarningPreset,
   type WarningPreset,
+  type WarningPresetCategory,
 } from '../../admin-api.ts'
 import { getToken } from '../../auth.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
-import { ConfirmButton } from '@/components/admin/admin-common.tsx'
+import { ChoiceSelect, ConfirmButton } from '@/components/admin/admin-common.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { Badge } from '@/components/ui/badge.tsx'
+
+/** `admin.warning_presets.dropdown`. */
+const CATEGORIES: Record<WarningPresetCategory, string> = {
+  all_actions: 'All actions',
+  none: 'Warning',
+  disable: 'Freeze',
+  sensitive: 'Sensitive',
+  silence: 'Limit',
+  suspend: 'Suspend',
+}
 
 function PresetForm({
   initial,
@@ -25,20 +37,24 @@ function PresetForm({
 }: {
   initial?: WarningPreset
   submitLabel: string
-  onSubmit: (title: string, text: string) => Promise<void>
+  onSubmit: (title: string, text: string, category: WarningPresetCategory) => Promise<void>
   onCancel?: () => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [text, setText] = useState(initial?.text ?? '')
+  const [category, setCategory] = useState<WarningPresetCategory>(
+    initial?.action_category ?? 'all_actions',
+  )
   const [saving, setSaving] = useState(false)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await onSubmit(title, text)
+      await onSubmit(title, text, category)
       if (!initial) {
         setTitle('')
         setText('')
+        setCategory('all_actions')
       }
     } catch (err) {
       toast.error(errorMessage(err))
@@ -65,6 +81,15 @@ function PresetForm({
           rows={3}
           className="resize-y"
           onChange={(e) => setText(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>Action</Label>
+        <ChoiceSelect
+          label="Action"
+          value={category}
+          items={CATEGORIES}
+          onChange={setCategory}
         />
       </div>
       <div className="flex gap-2">
@@ -108,8 +133,8 @@ export default function WarningPresets() {
       <div className="mb-4">
         <PresetForm
           submitLabel="Add new preset"
-          onSubmit={async (title, text) => {
-            await createWarningPreset(token ?? '', { title, text })
+          onSubmit={async (title, text, action_category) => {
+            await createWarningPreset(token ?? '', { title, text, action_category })
             toast.success('Preset added.')
             load()
           }}
@@ -128,8 +153,8 @@ export default function WarningPresets() {
               initial={p}
               submitLabel="Save changes"
               onCancel={() => setEditing(null)}
-              onSubmit={async (title, text) => {
-                await updateWarningPreset(token ?? '', p.id, { title, text })
+              onSubmit={async (title, text, action_category) => {
+                await updateWarningPreset(token ?? '', p.id, { title, text, action_category })
                 toast.success('Preset saved.')
                 setEditing(null)
                 load()
@@ -138,7 +163,10 @@ export default function WarningPresets() {
           ) : (
             <div key={p.id} className="flex items-start gap-2 rounded-lg border p-3">
               <div className="min-w-0 flex-1 space-y-1">
-                <div className="text-sm font-medium">{p.title || '(untitled)'}</div>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  {p.title || '(untitled)'}
+                  <Badge variant="secondary">{CATEGORIES[p.action_category]}</Badge>
+                </div>
                 <p className="text-muted-foreground text-sm whitespace-pre-wrap">{p.text}</p>
               </div>
               <Button size="xs" variant="outline" onClick={() => setEditing(p.id)}>

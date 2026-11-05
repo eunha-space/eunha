@@ -142,12 +142,18 @@ pub async fn render(
                 .map(super::convert::mastodon_date)
                 .unwrap_or_default(),
             updated_at: super::convert::mastodon_date(r.updated_at),
+            reactions_allowed: state.instance.announcement_reactions_allowed(),
             read: if viewer_id.is_some() {
                 Some(dismissed_set.contains(&r.id))
             } else {
                 None
             },
-            reactions: reactions_by_ann.remove(&r.id).unwrap_or_default(),
+            // `Announcement#reactions`: `[] unless reactions_allowed`.
+            reactions: if state.instance.announcement_reactions_allowed() {
+                reactions_by_ann.remove(&r.id).unwrap_or_default()
+            } else {
+                vec![]
+            },
             statuses,
             tags: vec![],
             emojis: vec![],
@@ -209,6 +215,16 @@ pub async fn dismiss_announcement(
     Ok(Json(serde_json::json!({})))
 }
 
+/// `Api::V1::Announcements::ReactionsController#require_feature_enabled!`.
+fn require_feature_enabled(state: &AppState) -> crate::error::AppResult<()> {
+    if state.instance.announcement_reactions_allowed() {
+        return Ok(());
+    }
+    Err(crate::error::AppError::BadRequest(
+        "Emoji reactions are currently not supported on this server".into(),
+    ))
+}
+
 // ── PUT /api/v1/announcements/:id/reactions/:name ─────────────────────────
 
 pub async fn add_reaction(
@@ -217,6 +233,7 @@ pub async fn add_reaction(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:favourites")?;
+    require_feature_enabled(&state)?;
 
     // Mastodon's set_announcement only finds published announcements (404 otherwise).
     let published = sqlx::query_scalar!(
@@ -299,6 +316,7 @@ pub async fn remove_reaction(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require_scope("write:favourites")?;
+    require_feature_enabled(&state)?;
     let deleted = sqlx::query!(
         "DELETE FROM announcement_reactions WHERE announcement_id = $1 AND account_id = $2 AND name = $3",
         id, auth.account_id, name,

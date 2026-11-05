@@ -1,6 +1,6 @@
 //! Reads and writes the format Rails' `ActiveRecord::Encryption` stores.
 //!
-//! Mastodon 4.7.0 keeps local accounts' private keys in `keypairs.private_key`,
+//! Mastodon keeps local accounts' private keys in `keypairs.private_key`,
 //! declared `encrypts :private_key`, so the column holds a Rails message
 //! envelope rather than a PEM. Eunha has to speak that format in both
 //! directions: to sign with keys written by a Mastodon it replaced, and to

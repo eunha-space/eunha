@@ -608,12 +608,9 @@ pub async fn enable_account(
     // `UserPolicy#enable?`
     authorize(s.acting.can(&[flag::MANAGE_USERS]))?;
     // `User#enable!`
-    sqlx::query!(
-        "UPDATE users SET disabled = false, updated_at = now() WHERE id = $1",
-        user.id
-    )
-    .execute(&state.db)
-    .await?;
+    crate::accounts::enable(&state, user.id)
+        .await
+        .map_err(AppError::Internal)?;
     action_log::log(&state.db, auth.account_id, "enable", &s.user_target(user)).await?;
     render(&state, id).await
 }

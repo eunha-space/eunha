@@ -1,16 +1,16 @@
 Signing keys
 ============
 
-Mastodon 4.7.0 keeps local accounts' signing keys in `keypairs`, with the
-private half encrypted the way Rails encrypts columns. Give Eunha the same
-secrets that Mastodon requires and it reads and writes that form, moving any
-keys still in the old `accounts` columns on startup:
+Mastodon keeps local accounts' signing keys in `keypairs`, with the private half
+encrypted the way Rails encrypts columns. Since 5.0 there is nowhere else: the
+old `accounts.private_key` column is gone. Eunha needs the same secrets that
+Mastodon requires, and reads and writes that form:
 
 ~~~~
 ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY=...
 ACTIVE_RECORD_ENCRYPTION__KEY_DERIVATION_SALT=...
 ~~~~
 
-Without them, keys stay in `accounts.private_key`, which upstream still reads
-(`Keypair.from_legacy_account`) — but a database whose keys have already moved
-cannot be signed with, and Eunha says so loudly at startup.
+Without them an instance cannot sign, so it refuses to start. `eunha migrate`
+moves any local keys still in `accounts.private_key` before the migration that
+drops the column, which refuses to run while any are left.

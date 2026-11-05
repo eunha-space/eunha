@@ -196,15 +196,15 @@ pub const FASP_FOLLOW_RECOMMENDATION_CLEANUP: Task = task(
 );
 pub const COLLECTION_ITEM_CLEANUP: Task =
     task("collection_item_cleanup_scheduler", every(minutes(60)));
-pub const REPAIR_REMOTE_COLLECTIONS: Task = task(
-    "repair_remote_collections_scheduler",
-    Schedule::Every {
-        every: minutes(24 * 60),
-        first_in: Duration::from_secs(1),
-    },
+pub const PENDING_ACCOUNTS_NOTIFICATION: Task = task(
+    "pending_accounts_notification_scheduler",
+    every(minutes(60)),
 );
 
-/// Every entry of Mastodon's *config/sidekiq.yml*, in its order.
+/// Mastodon's *config/sidekiq.yml*, in its order, but for
+/// `moderation_list_synchronization_scheduler` and `server_checks_scheduler`
+/// (`moderation-lists-not-implemented` and `server-checks-not-implemented` in
+/// divergences.toml).
 pub const SIDEKIQ_YML: [Task; 17] = [
     SCHEDULED_STATUSES,
     TRENDS_REFRESH,
@@ -222,7 +222,7 @@ pub const SIDEKIQ_YML: [Task; 17] = [
     AUTO_CLOSE_REGISTRATIONS,
     FASP_FOLLOW_RECOMMENDATION_CLEANUP,
     COLLECTION_ITEM_CLEANUP,
-    REPAIR_REMOTE_COLLECTIONS,
+    PENDING_ACCOUNTS_NOTIFICATION,
 ];
 
 /// What *config/initializers/sidekiq.rb* schedules instead of all of the above
@@ -790,18 +790,20 @@ mod tests {
             ),
             // interval: 1 hour
             ("collection_item_cleanup_scheduler", every(minutes(60))),
-            // every: ['24h', first_in: '1s']
+            // every: '1h'
             (
-                "repair_remote_collections_scheduler",
-                Schedule::Every {
-                    every: minutes(24 * 60),
-                    first_in: Duration::from_secs(1),
-                },
+                "pending_accounts_notification_scheduler",
+                every(minutes(60)),
             ),
         ];
         for ((name, schedule), task) in yml.into_iter().zip(SIDEKIQ_YML) {
             assert_eq!(task.name, name);
             assert_eq!(task.schedule, schedule, "{name}");
+        }
+        // What divergences.toml says is not run.
+        for task in SIDEKIQ_YML {
+            assert_ne!(task.name, "moderation_list_synchronization_scheduler");
+            assert_ne!(task.name, "server_checks_scheduler");
         }
         // config/initializers/sidekiq.rb: interval: ['1m']
         assert_eq!(SELF_DESTRUCT.schedule, every(minutes(1)));

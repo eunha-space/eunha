@@ -253,7 +253,7 @@ jobs:
 
       # No arguments: the harness brings up its own Eunha, so this runs the path
       # a developer runs rather than one only CI knows how to set up.
-      - name: Compare against a live Mastodon 4.7.3
+      - name: Compare against a live Mastodon 5.0.0-beta.1
         run: scripts/differential_test.sh
 
   # Federation: the two servers talking to each other, rather than each being
@@ -272,7 +272,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Federate with a live Mastodon 4.7.3
+      - name: Federate with a live Mastodon 5.0.0-beta.1
         run: scripts/federation_test.sh
 
   # The web client's typecheck and its browser tests. Nothing ran them, and

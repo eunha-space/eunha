@@ -78,6 +78,9 @@ pub struct FollowParams {
         deserialize_with = "crate::api::mastodon::extractors::rails::opt_strings"
     )]
     pub languages: Option<Vec<String>>,
+    /// Where the follow was made from, for `FeatureUsageTracker`.
+    #[serde(default, rename = "ref")]
+    pub reference: Option<String>,
 }
 
 pub async fn follow_account(
@@ -106,6 +109,7 @@ pub async fn follow_account(
         },
     )
     .await?;
+    crate::feature_usage::increment_follow(&state, params.reference.as_deref()).await;
     build_relationship(&state, auth.account_id, target_id)
         .await
         .map(Json)

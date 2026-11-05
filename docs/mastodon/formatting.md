@@ -33,18 +33,20 @@ text that keyword filters match against.
 Local text
 ----------
 
-URLs, hashtags and mentions are found with twitter-text's expressions, as
-Mastodon amends them:
+URLs are found as [UTS #58] says, by a port of the uts58 gem Mastodon uses,
+and hashtags and mentions with Mastodon's expressions:
 
- -  A URL needs one of `http`, `https`, `dat`, `dweb`, `ipfs`, `ipns`, `ssb`,
-    `gopher` or `gemini` before `://`; `xmpp:` and `magnet:` URIs are found
-    too. A bare `example.com` is not linked.
- -  A URL's top-level domain must be on twitter-text 3.1.0's lists, the
-    version Mastodon bundles (*src/formatter/tlds.rs* holds them), or be a
-    punycode one, and be followed by none of a letter, digit, `@`, `+` or
-    `-`. A URL under a domain newer than the lists, or under `.example`, stays
-    text, as upstream. Picking a local post's preview card link reads URLs the
-    same way.
+ -  A URL needs `http://` or `https://`; `xmpp:` URIs with an `@` or `.`, and
+    `magnet:` URIs with an `xt=`, are found too. A bare `example.com` is not
+    linked, and neither are the other schemes Mastodon 4.7 linked (`gemini`,
+    `ipfs` and the like). A URL may be up to 4096 characters long.
+ -  A URL's top-level domain must be on the Public Suffix List, the `psl`
+    crate's copy. A name that is only a public suffix, such as `co.uk`, is no
+    link, and neither is one under `.example`. The link goes to the host in its
+    Unicode form, whichever form was written. Picking a local post's preview
+    card link reads URLs the same way, after overlaps are settled, so
+    `@bob@example.com` is a mention and no URL.
+ -  A URL with a `<` in it is no link at all.
  -  A link shows at most 30 characters of the URL after its scheme and a
     leading `www.`, the rest hidden in a span with the class `invisible` and
     the cut marked with the class `ellipsis`, so copying the link copies all
@@ -101,3 +103,5 @@ Differences from Mastodon
     Announcements in the admin API are likewise linked without looking their
     mentions up.
  -  The quote fallback is not added to versions in a post's edit history.
+
+[UTS #58]: https://www.unicode.org/reports/tr58/

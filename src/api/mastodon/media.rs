@@ -37,12 +37,7 @@ const ORIGINAL_PIXELS: u64 = 8_294_400;
 const SMALL_PIXELS: u64 = 230_400;
 
 /// `MediaAttachment::IMAGE_MIME_TYPES`.
-pub const IMAGE_MIME_TYPES: &[&str] = &[
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-];
+pub const IMAGE_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
 /// `MediaAttachment::VIDEO_MIME_TYPES`.
 pub const VIDEO_MIME_TYPES: &[&str] = &["video/webm", "video/mp4", "video/quicktime", "video/ogg"];
 /// `MediaAttachment::AUDIO_MIME_TYPES`.
@@ -1566,10 +1561,21 @@ async fn proxy(
         }
         None => None,
     };
-    // `discarded?`: its status discarded, or gone.
-    let discarded =
-        media.status_id.is_some() && status.as_ref().is_none_or(|s| s.deleted_at.is_some());
-    // `download?`: `(discarded? && role.can?(:manage_reports)) ||
+    // `on_hold?`: its status discarded or gone, or its account suspended.
+    let suspended = match media.account_id {
+        Some(account_id) => sqlx::query_scalar!(
+            "SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1",
+            account_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .flatten()
+        .unwrap_or(false),
+        None => false,
+    };
+    let discarded = suspended
+        || (media.status_id.is_some() && status.as_ref().is_none_or(|s| s.deleted_at.is_some()));
+    // `download?`: `(on_hold? && role.can?(:manage_reports)) ||
     // show_status?`. A refusal (`NotPermittedError`) is a 404.
     let shown = match status.as_ref().filter(|s| s.deleted_at.is_none()) {
         Some(status) => match viewer {

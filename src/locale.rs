@@ -134,6 +134,34 @@ impl Locale {
                 "이메일을 확인하여 인증 링크를 클릭해 계정을 활성화하세요."
             }
             // ── auth.setup ───────────────────────────────────────────────────
+            (Self::En, "setup_title_wait") => "Keep an eye on your inbox",
+            (Self::Ko, "setup_title_wait") => "수신함을 지켜봐 주세요",
+            (Self::En, "setup_email_hint_wait") => {
+                "Your application is being reviewed. You should soon receive a mail on %{email}. Once you do, click the link to begin using Mastodon. We'll wait right here."
+            }
+            (Self::Ko, "setup_email_hint_wait") => {
+                "가입 신청을 검토하고 있습니다. 곧 %{email} 주소로 메일을 받게 됩니다. 메일을 받으면 링크를 눌러 시작하세요. 여기서 기다리겠습니다."
+            }
+            (Self::En, "setup_wrong_email") => "Wrong email address?",
+            (Self::Ko, "setup_wrong_email") => "이메일 주소가 잘못되었나요?",
+            (Self::En, "setup_wrong_email_below_hint") => {
+                "Don't panic! You can correct your email address below."
+            }
+            (Self::Ko, "setup_wrong_email_below_hint") => {
+                "걱정하지 마세요! 아래에서 이메일 주소를 고칠 수 있습니다."
+            }
+            (Self::En, "setup_correct_email") => "Correct address",
+            (Self::Ko, "setup_correct_email") => "주소 고치기",
+            (Self::En, "require_reauth_title") => "Re-authentication required",
+            (Self::Ko, "require_reauth_title") => "다시 인증해야 합니다",
+            (Self::En, "require_reauth_prompt_html") => {
+                "You are currently logged in as <strong>%{handle}</strong>, but to continue, you will have to log out."
+            }
+            (Self::Ko, "require_reauth_prompt_html") => {
+                "현재 <strong>%{handle}</strong>(으)로 로그인되어 있지만, 계속하려면 로그아웃해야 합니다."
+            }
+            (Self::En, "require_reauth_log_out_and_continue") => "Log out and continue",
+            (Self::Ko, "require_reauth_log_out_and_continue") => "로그아웃하고 계속하기",
             (Self::En, "setup_title") => "Check your inbox",
             (Self::Ko, "setup_title") => "수신함 확인하기",
             (Self::En, "setup_email_hint") => {

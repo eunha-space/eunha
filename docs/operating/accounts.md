@@ -101,6 +101,17 @@ authorization, as Mastodon's `require_functional!` sends the person to the setup
 first. The settings page says so too, and its setup works for such a member.
 
 
+A security code after a long absence
+------------------------------------
+
+A sign-in with the right password, to an account with no second factor that has
+not been used for a long time, is asked for a code sent by mail
+(`Auth::SignInTokenAuthenticationConcern`). An administrator can waive this for a
+limited time, with `POST` and `DELETE` on
+`/api/v1/admin/accounts/:id/sign_in_token_authentication`, or with
+`eunha accounts modify --disable-sign-in-token` and `--enable-sign-in-token`.
+
+
 The OAuth server
 ----------------
 
@@ -151,8 +162,16 @@ groups them, and **Authorize** and **Deny**, with who is signed in and a
 logout that comes back to the page. The page answers at once, without asking,
 for the instance's own app (`superapp`), and for a confidential client the
 user already holds an unrevoked token of with the same scopes, unless the
-request says `force_login=true`. The code, and a denial, come back with a
-302, as Rails redirects. **Deny** posts `_method=delete`, which is
+request says `force_login=true`.
+
+`prompt=login` asks for a fresh sign-in: a browser already signed in is asked to
+log out and continue, and the page goes on once a session has begun since it
+asked. `prompt=create` does the same, and a signed-out browser goes to the
+sign-up page and comes straight back: the new account gets its code without a
+consent page, without having to be confirmed or approved first, and redeeming
+the code records the application in `users.created_by_application_id`.
+
+The code, and a denial, come back with a 302, as Rails redirects. **Deny** posts `_method=delete`, which is
 `DELETE /oauth/authorize`: from a signed-in browser it turns the client away,
 sending `access_denied`, with its `state`, to a redirect URI it registered.
 As Doorkeeper 5.9.9 (Mastodon 4.7.3) does, the client is checked first, and
@@ -321,6 +340,14 @@ with `max_id` and `limit`: each attempt's method (`password`, `otp`,
 
 Signing up
 ----------
+
+When the `postpone_confirmation_emails` setting is on, someone who has to wait
+for approval is created disabled and mailed nothing. `/auth/setup` tells them
+to wait, and lets them correct the address. Approving them, or enabling them,
+sends the confirmation link at last. Every hour, staff who take the
+`pending_account` mail hear about the people waiting this way, resuming after the
+last one they were told about
+(`PendingAccountsNotificationScheduler`, `pending_accounts_notification_scheduler:resume_at_user_id` in Redis).
 
 The sign-up and sign-in forms mark the email field with
 `autocomplete="username"`, because the email address is the login identifier
@@ -628,6 +655,12 @@ are the reader's), `announcement.reaction` sets a reaction's count, and
 
 Boosts in timelines
 -------------------
+
+A member's own posts join their home feed, and their own boosts do not, unless
+`display_own_posts` and `display_own_boosts` say otherwise; changing either
+rebuilds what the feed holds of their own (`MultiMergeIntoOwnHomeWorker`).
+`GET /api/v1/timelines/home` takes `exclude_direct`, `exclude_reblogs`,
+`exclude_quotes` and `exclude_replies`.
 
 With `aggregate_reblogs` on, the home feed and each list's feed keep a post
 from showing up again and again as people boost it, the way Mastodon's

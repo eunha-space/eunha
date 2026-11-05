@@ -199,6 +199,10 @@ database_url = "$url"
 redis_url = "${EUNHA_REDIS_URL:-redis://127.0.0.1:6379/14}"
 bind_address = "127.0.0.1:$EUNHA_PORT"
 
+[active_record_encryption]
+primary_key = "differential-test-primary-key-not-a-secret"
+key_derivation_salt = "differential-test-salt-not-a-secret"
+
 [instance]
 domain = "localhost:$EUNHA_PORT"
 title = "eunha"

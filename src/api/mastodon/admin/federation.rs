@@ -344,6 +344,10 @@ pub async fn update_admin_domain_block(
                private_comment = CASE WHEN $8 THEN $5 ELSE private_comment END,
                public_comment  = CASE WHEN $9 THEN $6 ELSE public_comment END,
                obfuscate       = COALESCE($7, obfuscate),
+               -- `moderation_subscription_id = nil if severity_changed?`
+               moderation_subscription_id = CASE
+                   WHEN $2 IS DISTINCT FROM severity AND $2 IS NOT NULL THEN NULL
+                   ELSE moderation_subscription_id END,
                updated_at      = now()
            WHERE id = $1"#,
         id,

@@ -37,7 +37,7 @@ async fn remote_account(ctx: &TestContext, domain: &str, username: &str) -> (i64
 #[tokio::test]
 async fn authorized_fetch_refuses_unsigned_fetches() {
     let ctx = TestContext::with_instance("af-config", |instance| {
-        instance.authorized_fetch = Some(true)
+        instance.authorized_fetch = Some(serde_json::json!(true))
     })
     .await;
     let (_, key_id, pem) = remote_account(&ctx, "peer.invalid", "eve").await;
@@ -93,21 +93,40 @@ async fn authorized_fetch_refuses_unsigned_fetches() {
 /// and the configuration overrides it either way.
 #[tokio::test]
 async fn authorized_fetch_follows_the_setting_unless_configured() {
-    let ctx = TestContext::new("af-setting").await;
+    let ctx = TestContext::with_instance("af-setting", |instance| {
+        instance.authorized_fetch = None;
+    })
+    .await;
+    // With nothing saved, Mastodon's `actors`: an actor needs a signature, and
+    // nothing else does.
     assert_eq!(
         ctx.api.ap_get("/users/alice", None).await.status(),
+        StatusCode::UNAUTHORIZED,
+        "actors by default"
+    );
+    assert_eq!(
+        ctx.api.ap_get("/users/alice/outbox", None).await.status(),
         StatusCode::OK,
-        "off by default"
+    );
+    crate::helpers::set_setting(&ctx.db, "authorized_fetch", "none").await;
+    assert_eq!(
+        ctx.api.ap_get("/users/alice", None).await.status(),
+        StatusCode::OK
     );
     crate::helpers::set_setting(&ctx.db, "authorized_fetch", "true").await;
     assert_eq!(
         ctx.api.ap_get("/users/alice", None).await.status(),
         StatusCode::UNAUTHORIZED
     );
+    assert_eq!(
+        ctx.api.ap_get("/users/alice/outbox", None).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
 
-    let overridden =
-        TestContext::with_instance("af-off", |instance| instance.authorized_fetch = Some(false))
-            .await;
+    let overridden = TestContext::with_instance("af-off", |instance| {
+        instance.authorized_fetch = Some(serde_json::json!(false))
+    })
+    .await;
     crate::helpers::set_setting(&overridden.db, "authorized_fetch", "true").await;
     assert_eq!(
         overridden.api.ap_get("/users/alice", None).await.status(),
@@ -120,7 +139,7 @@ async fn authorized_fetch_follows_the_setting_unless_configured() {
 #[tokio::test]
 async fn authorized_fetch_refuses_blocked_signers() {
     let ctx = TestContext::with_instance("af-blocked", |instance| {
-        instance.authorized_fetch = Some(true)
+        instance.authorized_fetch = Some(serde_json::json!(true))
     })
     .await;
     let (_, banned_key, banned_pem) = remote_account(&ctx, "banned.invalid", "mallory").await;
@@ -211,7 +230,7 @@ async fn authorized_fetch_refuses_blocked_signers() {
 async fn limited_federation_forces_authorized_fetch() {
     let ctx = TestContext::with_instance("lf-fetch", |instance| {
         instance.limited_federation_mode = true;
-        instance.authorized_fetch = Some(false);
+        instance.authorized_fetch = Some(serde_json::json!(false));
     })
     .await;
     assert_eq!(

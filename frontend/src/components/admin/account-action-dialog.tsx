@@ -124,6 +124,17 @@ export function AccountActionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  // The presets for the action picked (`admin.tsx`'s `presets_dropdown`).
+  const offered = presets.filter(
+    (p) => p.action_category === 'all_actions' || p.action_category === type,
+  )
+  useEffect(() => {
+    if (presetId !== NO_PRESET && !offered.some((p) => p.id === presetId)) {
+      setPresetId(NO_PRESET)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type])
+
   const acct = publicAccount(account).acct
 
   const submit = async () => {
@@ -188,7 +199,7 @@ export function AccountActionDialog({
               <Checkbox checked={notify} onCheckedChange={(v) => setNotify(v === true)} />
               Notify the user by email
             </Label>
-            {presets.length > 0 && (
+            {offered.length > 0 && (
               <div className="space-y-1">
                 <Label>Use a warning preset</Label>
                 <ChoiceSelect
@@ -196,13 +207,13 @@ export function AccountActionDialog({
                   value={presetId}
                   items={{
                     [NO_PRESET]: 'None',
-                    ...Object.fromEntries(presets.map((p) => [p.id, p.title || p.text.slice(0, 40)])),
+                    ...Object.fromEntries(offered.map((p) => [p.id, p.title || p.text.slice(0, 40)])),
                   }}
                   onChange={setPresetId}
                 />
                 {presetId !== NO_PRESET && (
                   <p className="text-muted-foreground text-xs whitespace-pre-wrap">
-                    {presets.find((p) => p.id === presetId)?.text}
+                    {offered.find((p) => p.id === presetId)?.text}
                   </p>
                 )}
               </div>

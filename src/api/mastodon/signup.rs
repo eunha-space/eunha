@@ -601,6 +601,11 @@ pub async fn register(
                 None => false,
             });
 
+    // `self.disabled ||= !approved && Setting.postpone_confirmation_emails`:
+    // someone waiting for approval hears nothing until they are approved.
+    let disabled =
+        !approved && crate::settings::boolean(state, "postpone_confirmation_emails").await;
+
     let password_hash = crypto::hash_password(&form.password)
         .await
         .map_err(|_| AppError::Internal(anyhow::anyhow!("password hashing failed")))?;
@@ -626,6 +631,7 @@ pub async fn register(
             password_hash: &password_hash,
             role_id: None,
             approved,
+            disabled,
             invite_id,
             locale: locale.as_deref(),
             app_id: app.as_ref().map(|a| a.id),
@@ -633,7 +639,8 @@ pub async fn register(
             invite_request: reason,
             time_zone: time_zone.as_deref(),
             confirmed: false,
-            confirmation_token: Some(&confirmation_token),
+            // `mails_disabled?`: no link, and so no `confirmation_sent_at`.
+            confirmation_token: (!disabled).then_some(confirmation_token.as_str()),
             account_id: None,
         },
         prepared,
@@ -747,7 +754,13 @@ pub async fn api_create_account(
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
     bearer: Option<Extension<crate::middleware::BearerToken>>,
     super::extractors::Params(form): super::extractors::Params<ApiCreateAccountForm>,
-) -> Result<Json<super::types::Token>, SignupError> {
+) -> Result<
+    (
+        [(axum::http::HeaderName, &'static str); 1],
+        Json<super::types::Token>,
+    ),
+    SignupError,
+> {
     // `doorkeeper_authorize!` and `require_client_credentials!`.
     let token = bearer.as_ref().map(|Extension(t)| t.0.as_str());
     let Some((owner, scopes, app_id)) = app_token(&state, token).await else {
@@ -785,10 +798,17 @@ pub async fn api_create_account(
         }),
     )
     .await?;
-    registered
+    let token = registered
         .token
-        .map(Json)
-        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("no token was issued")).into())
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("no token was issued")))?;
+    // `deprecate_api '2026-10-01', only: :create`.
+    Ok((
+        [(
+            axum::http::HeaderName::from_static("deprecation"),
+            "@1790812800",
+        )],
+        Json(token),
+    ))
 }
 
 // ── GET /auth/confirm ──────────────────────────────────────────────────────

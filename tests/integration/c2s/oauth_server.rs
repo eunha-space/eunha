@@ -50,7 +50,7 @@ async fn the_authorization_server_metadata_describes_doorkeeper() {
         .map(String::as_str)
         .collect();
     assert_eq!(keys[0], "issuer");
-    assert_eq!(keys.last(), Some(&"app_registration_endpoint"));
+    assert_eq!(keys.last(), Some(&"prompt_values_supported"));
 }
 
 #[tokio::test]

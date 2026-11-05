@@ -33,6 +33,10 @@ pub fn default(var: &str) -> Value {
         | "bootstrap_timeline_accounts" => Value::from(""),
         "registrations_mode" => Value::from("none"),
         "theme" => Value::from("default"),
+        "theme_color" => Value::from("indigo"),
+        "postpone_confirmation_emails"
+        | "opt_in_server_directory"
+        | "opt_in_server_recommendation" => Value::from(false),
         "show_domain_blocks" | "show_domain_blocks_rationale" => Value::from("disabled"),
         "trends"
         | "peers_api_enabled"
@@ -133,28 +137,83 @@ pub async fn set_in<'e>(
     Ok(())
 }
 
-/// `AuthorizedFetchHelper#authorized_fetch_mode?`: whether ActivityPub
-/// fetches must be signed. The instance configuration's `authorized_fetch`
-/// stands where Mastodon reads `AUTHORIZED_FETCH` from its environment, and
-/// limited federation mode forces it on. `Setting.authorized_fetch` has no
-/// default in `config/settings.yml`, so it is off until an administrator
-/// turns it on.
-pub async fn authorized_fetch_mode(state: &AppState) -> bool {
-    match authorized_fetch_override(&state.instance) {
-        Some(forced) => forced,
-        None => boolean(state, "authorized_fetch").await,
+/// `AuthorizedFetchHelper#authorized_fetch_mode`: which ActivityPub fetches
+/// must be signed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthorizedFetch {
+    /// None of them.
+    None,
+    /// Those of an actor. What `Setting.authorized_fetch` having no default
+    /// comes to, since 5.0.
+    Actors,
+    /// All of them.
+    All,
+}
+
+impl AuthorizedFetch {
+    /// The `case` over `AUTHORIZED_FETCH` or `Setting.authorized_fetch`.
+    pub fn parse(value: &Value) -> Self {
+        match value {
+            Value::Bool(value) => Self::parse_text(&value.to_string()),
+            Value::String(value) => Self::parse_text(value),
+            _ => Self::Actors,
+        }
+    }
+
+    /// As the instance configuration gives it.
+    fn parse_configured(value: &serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Bool(value) => Self::parse_text(&value.to_string()),
+            serde_json::Value::String(value) => Self::parse_text(value),
+            _ => Self::Actors,
+        }
+    }
+
+    fn parse_text(value: &str) -> Self {
+        match value {
+            "true" | "all" => Self::All,
+            "false" | "none" => Self::None,
+            _ => Self::Actors,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Actors => "actors",
+            Self::All => "all",
+        }
     }
 }
 
-/// What the instance configuration decides about authorized fetch whatever
-/// the setting says, if anything: Mastodon's form shows the setting disabled
-/// in that case.
-pub fn authorized_fetch_override(instance: &InstanceConfig) -> Option<bool> {
-    if instance.limited_federation_mode {
-        Some(true)
-    } else {
-        instance.authorized_fetch
+/// `authorized_fetch_mode`: the instance configuration's `authorized_fetch`
+/// stands where Mastodon reads `AUTHORIZED_FETCH` from its environment.
+pub fn authorized_fetch_setting(instance: &InstanceConfig, saved: &Value) -> AuthorizedFetch {
+    match &instance.authorized_fetch {
+        Some(forced) => AuthorizedFetch::parse_configured(forced),
+        None => AuthorizedFetch::parse(saved),
     }
+}
+
+/// `AuthorizedFetchHelper#authorized_fetch_mode?`: whether ActivityPub fetches
+/// other than an actor's must be signed. Limited federation mode forces it.
+pub async fn authorized_fetch_mode(state: &AppState) -> bool {
+    state.instance.limited_federation_mode
+        || authorized_fetch_setting(&state.instance, &get(state, "authorized_fetch").await)
+            == AuthorizedFetch::All
+}
+
+/// `AuthorizedFetchHelper#actors_require_signature?`.
+pub async fn actors_require_signature(state: &AppState) -> bool {
+    state.instance.limited_federation_mode
+        || authorized_fetch_setting(&state.instance, &get(state, "authorized_fetch").await)
+            != AuthorizedFetch::None
+}
+
+/// `authorized_fetch_overridden?`: the instance configuration decides whatever
+/// the setting says, and Mastodon's form shows the setting disabled.
+pub fn authorized_fetch_overridden(instance: &InstanceConfig) -> bool {
+    instance.limited_federation_mode || instance.authorized_fetch.is_some()
 }
 
 /// [`get`] as a boolean, Ruby-truthy: nil and false are false.

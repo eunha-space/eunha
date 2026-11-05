@@ -67,6 +67,9 @@ pub struct Account {
     /// email, present only while the instance has the feature enabled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_subscriptions: Option<bool>,
+    /// `REST::CredentialAccountSerializer#state`, on the user's own account.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<CredentialAccountState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mute_expires_at: Option<String>, // only on MutedAccount (GET /api/v1/mutes)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,6 +115,42 @@ pub struct AccountSource {
     pub hide_collections: Option<bool>,
     pub attribution_domains: Vec<String>,
     pub quote_policy: String,
+    pub spoiler_field: bool,
+}
+
+/// `REST::CredentialAccountSerializer#state`: whether the user can use the
+/// account, and if not why.
+#[derive(Debug, Clone, Serialize)]
+pub struct CredentialAccountState {
+    pub functional: bool,
+    pub confirmed: bool,
+    pub approved: bool,
+    pub error_code: Option<&'static str>,
+    pub error: Option<&'static str>,
+}
+
+impl CredentialAccountState {
+    pub fn of(standing: &crate::user_standing::UserStanding) -> Self {
+        let error_code = standing.nonfunctional_reason();
+        Self {
+            functional: standing.functional(),
+            confirmed: standing.confirmed,
+            approved: standing.approved,
+            error_code,
+            // `accounts.api_errors`; the API has no locale but the default.
+            error: error_code.map(|code| match code {
+                "2fa_required" => {
+                    "Your account cannot be used without a second authentification factor set up"
+                }
+                "account_deleted" => "Your account has been deleted",
+                "account_suspended" => "Your account has been suspended",
+                "login_disabled" => "Your account is currently disabled",
+                "memorial" => "Your account has been turned into a memorial",
+                "pending_approval" => "Your account is currently pending moderation approval",
+                _ => "Your account is missing a confirmed e-mail address",
+            }),
+        }
+    }
 }
 
 /// Simplified role used in the Account.roles array (REST::AccountSerializer::RoleSerializer).
@@ -375,6 +414,7 @@ pub struct InstanceRegistrations {
     pub approval_required: bool,
     pub reason_required: bool,
     pub min_age: Option<u32>,
+    pub oauth: bool,
     pub message: Option<String>,
     /// Serialized even when absent: Mastodon sends `null`, and a client testing
     /// for the key finds it either way.
@@ -608,6 +648,12 @@ pub struct Preferences {
     pub posting_default_language: Option<String>,
     #[serde(rename = "posting:default:quote_policy")]
     pub posting_default_quote_policy: String,
+    #[serde(rename = "posting:default:spoiler_field")]
+    pub posting_default_spoiler_field: bool,
+    #[serde(rename = "displaying:own:boosts")]
+    pub displaying_own_boosts: bool,
+    #[serde(rename = "displaying:own:posts")]
+    pub displaying_own_posts: bool,
     #[serde(rename = "reading:expand:media")]
     pub reading_expand_media: String,
     #[serde(rename = "reading:expand:spoilers")]
@@ -784,6 +830,7 @@ pub struct Announcement {
     pub ends_at: Option<String>,
     pub published_at: String,
     pub updated_at: String,
+    pub reactions_allowed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read: Option<bool>,
     pub reactions: Vec<AnnouncementReaction>,

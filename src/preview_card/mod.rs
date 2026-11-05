@@ -587,31 +587,16 @@ fn remote_links(html: &str, mention_urls: &HashSet<String>) -> Vec<String> {
         .collect()
 }
 
-/// `FetchLinkCardService::URL_PATTERN`: the URLs in a local post's text,
-/// found with twitter-text's URL expression as Mastodon amends it, its
-/// top-level domains twitter-text 3.1.0's lists.
+/// The URLs in a local post's text, as `FetchLinkCardService#parse_urls` finds
+/// them: `Extractor.extract_entities_with_indices`, which settles overlaps, so
+/// `@bob@example.com` is a mention and no URL.
 fn local_urls(text: &str) -> Vec<String> {
-    static URL_PATTERN: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
-        let dvc = r"[^\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{85}\x{A0}\x{1680}\x{180E}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FFFE}\x{FEFF}\x{FFFF}]";
-        let subdomain = format!(r"(?:(?:{dvc}(?:[_-]|{dvc})*)?{dvc}\.)");
-        let domain_name = format!(r"(?:(?:{dvc}(?:-|{dvc})*)?{dvc}\.)");
-        let tld = crate::formatter::extractor::tld_pattern();
-        let domain = format!("(?:{subdomain}*{domain_name}{tld})");
-        let general = r"[^\s<>()?]";
-        let balanced = format!(r"\((?:{general}+|(?:{general}*\({general}+\){general}*))\)");
-        let ending = format!(r#"(?:[^\s()?!*"'「」<>;:=,.$%\[\]~&|]|{balanced})"#);
-        let path = format!(r"(?:(?:{general}*(?:{balanced}{general}*)*{ending})|(?:{general}+/))");
-        let uchars = r"\x{A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}\x{10000}-\x{1FFFD}\x{20000}-\x{2FFFD}\x{30000}-\x{3FFFD}\x{40000}-\x{4FFFD}\x{50000}-\x{5FFFD}\x{60000}-\x{6FFFD}\x{70000}-\x{7FFFD}\x{80000}-\x{8FFFD}\x{90000}-\x{9FFFD}\x{A0000}-\x{AFFFD}\x{B0000}-\x{BFFFD}\x{C0000}-\x{CFFFD}\x{D0000}-\x{DFFFD}\x{E1000}-\x{EFFFD}\x{E000}-\x{F8FF}\x{F0000}-\x{FFFFD}\x{100000}-\x{10FFFD}";
-        let query = format!(r"[a-z0-9!?*'();:&=+$/%#\[\]\-_.,~|@\^{uchars}]");
-        let query_ending = format!(r"[a-z0-9_&=#/\-{uchars}]");
-        fancy_regex::Regex::new(&format!(
-            r"(?i)(?:^|[^A-Z0-9@＠$#＃\x{{FFFE}}\x{{FEFF}}\x{{FFFF}}]|[\x{{202A}}-\x{{202E}}\x{{061C}}\x{{200E}}\x{{200F}}\x{{2066}}-\x{{2069}}])(https?://{domain}(?::[0-9]+)?(?:/{path}*)?(?:\?{query}*{query_ending})?)"
-        ))
-        .expect("valid URL pattern")
-    });
-    URL_PATTERN
-        .captures_iter(text)
-        .filter_map(|c| c.ok()?.get(1).map(|m| m.as_str().to_owned()))
+    crate::formatter::extractor::extract_entities(text)
+        .into_iter()
+        .filter_map(|entity| match entity.kind {
+            crate::formatter::extractor::Kind::Url(url) => Some(url),
+            _ => None,
+        })
         .collect()
 }
 
@@ -1007,22 +992,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn local_urls_follow_twitter_text() {
+    fn local_urls_follow_the_extractor() {
         assert_eq!(
             local_urls("look https://example.com/a/b?x=1, and (https://ex.org/wiki/A_(b)) then."),
             vec!["https://example.com/a/b?x=1", "https://ex.org/wiki/A_(b)"]
         );
         assert_eq!(
-            local_urls("https://example.com/path. https://example.comと"),
+            local_urls("https://example.com/path. https://example.com"),
             vec!["https://example.com/path", "https://example.com"]
         );
-        assert!(local_urls("@https://example.com x#https://example.com").is_empty());
+        assert!(local_urls("@bob@example.com @https://example.com").is_empty());
         assert!(local_urls("http://localhost:3000/ http://10.0.0.1/").is_empty());
         assert_eq!(
             local_urls("https://한국.kr/경로"),
             vec!["https://한국.kr/경로"]
         );
-        // twitter-text 3.1.0 knows no `.example` and no `.zzz`.
+        // The Public Suffix List has no `.example` and no `.zzz`.
         assert!(local_urls("https://한국.example/경로 https://site.zzz/").is_empty());
     }
 

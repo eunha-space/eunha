@@ -483,7 +483,11 @@ async fn test_a_long_inactive_sign_in_asks_for_a_security_code() {
     )
     .await;
     assert_eq!(wrong.status(), StatusCode::OK);
-    assert!(wrong.text().await.unwrap().contains("Invalid security code"));
+    assert!(wrong
+        .text()
+        .await
+        .unwrap()
+        .contains("Invalid security code"));
     assert!(ctx
         .mail_to("alice@test.invalid", "Second factor authentication failure")
         .await

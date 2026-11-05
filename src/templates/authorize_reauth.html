@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ t_title }} - {{ domain }}</title>
+<script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body class="centered">
+<div class="card">
+  <div class="oauth-prompt">
+    <h1>{{ t_title }}</h1>
+    <p class="sub">{{ prompt }}</p>
+    <div class="actions">
+      <form method="POST" action="/account/logout">
+        <input type="hidden" name="continue" value="{{ continue_to }}">
+        <button type="submit" class="btn">{{ t_log_out_and_continue }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

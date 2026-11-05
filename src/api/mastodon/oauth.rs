@@ -568,6 +568,7 @@ pub async fn issue_token(
     )
     .await?;
     tx.commit().await?;
+    record_creating_application(&state, locked.resource_owner_id, app.id).await;
     Ok(token_response(token, scopes, created_at))
 }
 
@@ -1029,6 +1030,10 @@ pub struct AuthorizationExtras {
     /// token would let it answer at once (`can_authorize_response?`).
     #[serde(default)]
     pub force_login: Option<String>,
+    /// `login` or `create`: sign in afresh, or sign up, whoever is signed in
+    /// (`OAuth::AuthorizationsController#require_reauth!`).
+    #[serde(default)]
+    pub prompt: Option<String>,
 }
 
 impl AuthorizationExtras {
@@ -1075,6 +1080,7 @@ impl AuthorizationExtras {
             ("code_challenge_method", &self.code_challenge_method),
             ("response_mode", &self.response_mode),
             ("force_login", &self.force_login),
+            ("prompt", &self.prompt),
         ] {
             if let Some(value) = Self::present(value) {
                 query.append_pair(key, value);
@@ -1255,8 +1261,37 @@ pub async fn authorize_form(
         )
             .into_response();
     }
+    let prompt = AuthorizationExtras::present(&params.extras.prompt);
+    let reauthenticates = matches!(prompt, Some("login" | "create"));
+    let here = format!(
+        "/oauth/authorize?{}",
+        params
+            .extras
+            .query(&params.client_id, &params.redirect_uri, scope)
+    );
+    let reauth_key = format!(
+        "{}:{}",
+        params.client_id,
+        params.extras.state.as_deref().unwrap_or_default()
+    );
+    let session = crate::api::account::session_id(&headers);
     let Some(user_id) = crate::api::account::signed_in_user(&headers, &state).await else {
-        return render_authorize(
+        // `authenticate_resource_owner!`: an application asking to sign up
+        // goes to the registration page, and is recorded for it.
+        if prompt == Some("create") {
+            let mut response = crate::api::account::redirect_storing_location(
+                &format!("/auth/signup?lang={}", locale.as_str()),
+                &here,
+            );
+            set_cookie(&mut response, REGISTRATION_APP_COOKIE, &app.id.to_string());
+            set_cookie(
+                &mut response,
+                REQUIRE_REAUTH_COOKIE,
+                &reauth_cookie(&reauth_key, None),
+            );
+            return response;
+        }
+        let mut response = render_authorize(
             &instance,
             &app.name,
             &params.client_id,
@@ -1266,13 +1301,155 @@ pub async fn authorize_form(
             locale,
             "",
         );
+        if reauthenticates {
+            set_cookie(
+                &mut response,
+                REQUIRE_REAUTH_COOKIE,
+                &reauth_cookie(&reauth_key, None),
+            );
+        }
+        return response;
     };
-    let here = format!(
-        "/oauth/authorize?{}",
-        params
-            .extras
-            .query(&params.client_id, &params.redirect_uri, scope)
+    // `require_reauth!`: whoever is signed in has to have signed in since this
+    // authorization asked. A session that began after the request was noted
+    // answers it; the note goes with the answer.
+    if reauthenticates {
+        let noted = crate::api::account::cookie(&headers, REQUIRE_REAUTH_COOKIE);
+        let answered = noted.as_deref().is_some_and(|noted| {
+            noted.split_once('|').is_some_and(|(key, session_then)| {
+                key == urlencoding::encode(&reauth_key) && Some(session_then) != session.as_deref()
+            })
+        });
+        if !answered {
+            let mut response = render_require_reauth(&state, locale, user_id, &here).await;
+            set_cookie(
+                &mut response,
+                REQUIRE_REAUTH_COOKIE,
+                &reauth_cookie(&reauth_key, session.as_deref()),
+            );
+            return response;
+        }
+    }
+    // `user_created_through_app?`, for the session that has just signed up.
+    let created_by_app = crate::api::account::cookie(&headers, CREATED_BY_APP_COOKIE)
+        .is_some_and(|id| id == app.id.to_string());
+    let created_through_app = prompt == Some("create")
+        && created_by_app
+        && sqlx::query_scalar!(
+            r#"SELECT created_by_application_id IS NULL AS "unset!" FROM users WHERE id = $1"#,
+            user_id
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    let mut response = authorize_signed_in(
+        &state,
+        &app,
+        &params,
+        scope,
+        locale,
+        user_id,
+        &here,
+        created_by_app,
+        created_through_app,
+    )
+    .await;
+    if reauthenticates {
+        clear_cookie(&mut response, REQUIRE_REAUTH_COOKIE);
+    }
+    if created_through_app {
+        clear_cookie(&mut response, CREATED_BY_APP_COOKIE);
+    }
+    response
+}
+
+/// `session[:require_reauth_for]`, `session[:registration_app_id]` and
+/// `session[:created_by_app_id]`, which Eunha, having no session store, keeps
+/// in cookies. Only the browser's own sign-in steps are at stake in them.
+const REQUIRE_REAUTH_COOKIE: &str = "oauth_require_reauth_for";
+pub(crate) const REGISTRATION_APP_COOKIE: &str = "oauth_registration_app";
+pub(crate) const CREATED_BY_APP_COOKIE: &str = "oauth_created_by_app";
+
+/// What authorization asked for reauthentication, and from which session.
+fn reauth_cookie(key: &str, session: Option<&str>) -> String {
+    format!(
+        "{}|{}",
+        urlencoding::encode(key),
+        session.unwrap_or_default()
+    )
+}
+
+fn set_cookie(response: &mut Response, name: &str, value: &str) {
+    if let Ok(cookie) = axum::http::HeaderValue::from_str(&format!(
+        "{name}={value}; HttpOnly; SameSite=Lax; Path=/"
+    )) {
+        response
+            .headers_mut()
+            .append(axum::http::header::SET_COOKIE, cookie);
+    }
+}
+
+fn clear_cookie(response: &mut Response, name: &str) {
+    if let Ok(cookie) = axum::http::HeaderValue::from_str(&format!(
+        "{name}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+    )) {
+        response
+            .headers_mut()
+            .append(axum::http::header::SET_COOKIE, cookie);
+    }
+}
+
+/// `oauth/authorizations/require_reauth`.
+async fn render_require_reauth(
+    state: &AppState,
+    locale: crate::locale::Locale,
+    user_id: i64,
+    here: &str,
+) -> Response {
+    let username = sqlx::query_scalar!(
+        "SELECT a.username FROM users u JOIN accounts a ON a.id = u.account_id WHERE u.id = $1",
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_default();
+    let handle = format!("{username}@{}", state.instance.domain);
+    let prompt = minijinja::Value::from_safe_string(
+        locale
+            .t("require_reauth_prompt_html")
+            .replace("%{handle}", &escape_html(&handle)),
     );
+    Html(crate::templates::render(
+        "authorize_reauth.html",
+        minijinja::context! {
+            lang => locale.as_str(),
+            domain => state.instance.domain,
+            prompt => prompt,
+            continue_to => here,
+            t_title => locale.t("require_reauth_title"),
+            t_log_out_and_continue => locale.t("require_reauth_log_out_and_continue"),
+        },
+    ))
+    .into_response()
+}
+
+/// The rest of `GET /oauth/authorize`, for a signed-in user.
+#[allow(clippy::too_many_arguments)]
+async fn authorize_signed_in(
+    state: &AppState,
+    app: &OauthApplication,
+    params: &AuthorizeParams,
+    scope: &str,
+    locale: crate::locale::Locale,
+    user_id: i64,
+    here: &str,
+    created_by_app: bool,
+    created_through_app: bool,
+) -> Response {
     // `require_functional!`, the page kept to come back to
     // (`store_current_location`).
     let continuation = crate::api::account::sign_in::Continuation::Oauth {
@@ -1282,16 +1459,26 @@ pub async fn authorize_form(
         lang: locale.as_str().to_owned(),
         extras: params.extras.clone(),
     };
-    if let Some(response) = require_functional(&state, user_id, &here, continuation, locale).await {
-        return response;
+    // Neither confirmation nor approval is asked for during an app's sign-up.
+    if !created_by_app {
+        if let Some(response) = require_functional(state, user_id, here, continuation, locale).await
+        {
+            return response;
+        }
     }
     let answer_at_once = app.superapp
+        || created_through_app
         || (!params.extras.force_login()
             && app.confidential
-            && matching_token(&state, app.id, user_id, scope).await);
+            && matching_token(state, app.id, user_id, scope).await);
     if answer_at_once {
+        // `after_successful_authorization`: the token exchange, which the
+        // grant has to be used in, is what records the application.
+        if created_through_app {
+            remember_creating_application(state, user_id, app.id).await;
+        }
         return match issue_grant(
-            &state,
+            state,
             &params.client_id,
             &params.redirect_uri,
             Some(scope.to_owned()),
@@ -1305,7 +1492,7 @@ pub async fn authorize_form(
         };
     }
     render_consent(
-        &state,
+        state,
         &app.name,
         &params.client_id,
         &params.redirect_uri,
@@ -1313,9 +1500,55 @@ pub async fn authorize_form(
         &params.extras,
         locale,
         user_id,
-        &here,
+        here,
     )
     .await
+}
+
+/// `track_created_by_application_id:<user>`, for as long as the grant lasts.
+const CREATED_BY_APP_TTL_SECONDS: i64 = 600;
+
+async fn remember_creating_application(state: &AppState, user_id: i64, app_id: i64) {
+    let key = state
+        .redis_keys
+        .key(&format!("track_created_by_application_id:{user_id}"));
+    let mut redis = state.redis.clone();
+    let result: Result<(), _> = redis::cmd("SET")
+        .arg(&key)
+        .arg(app_id)
+        .arg("EX")
+        .arg(CREATED_BY_APP_TTL_SECONDS)
+        .query_async(&mut redis)
+        .await;
+    if let Err(error) = result {
+        tracing::warn!(%error, "could not remember the application a user signed up with");
+    }
+}
+
+/// `OAuth::TokensController#update_user_created_by_application_id`.
+async fn record_creating_application(state: &AppState, user_id: i64, app_id: i64) {
+    let key = state
+        .redis_keys
+        .key(&format!("track_created_by_application_id:{user_id}"));
+    let mut redis = state.redis.clone();
+    let remembered: Option<i64> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut redis)
+        .await
+        .unwrap_or(None);
+    if remembered != Some(app_id) {
+        return;
+    }
+    if let Err(error) = sqlx::query!(
+        "UPDATE users SET created_by_application_id = $2, updated_at = now() WHERE id = $1",
+        user_id,
+        app_id,
+    )
+    .execute(&state.db)
+    .await
+    {
+        tracing::warn!(%error, "could not record the application a user signed up with");
+    }
 }
 
 /// `AccessTokenMixin.matching_token_for`: an unrevoked token the user holds
@@ -1734,7 +1967,9 @@ async fn check_password(
            FROM users u
            JOIN accounts a ON a.id = u.account_id
            WHERE lower(u.email) = lower($1)
-             AND u.disabled = false
+             AND (u.disabled = false
+                  -- `mails_disabled?`: waiting to be reviewed, not frozen.
+                  OR (u.confirmed_at IS NULL AND u.confirmation_sent_at IS NULL))
              AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL"#,
         email.trim(),
     )

@@ -215,7 +215,13 @@ pub async fn enable_user_sign_in_token(
     // `UserPolicy#enable_sign_in_token?`
     authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
     crate::sign_in_token::enable(&state, s.user.id).await?;
-    action_log::log(&state.db, auth.account_id, "enable_sign_in_token", &s.target).await?;
+    action_log::log(
+        &state.db,
+        auth.account_id,
+        "enable_sign_in_token",
+        &s.target,
+    )
+    .await?;
     render(&state, id).await
 }
 
@@ -231,7 +237,13 @@ pub async fn disable_user_sign_in_token(
     // `UserPolicy#disable_sign_in_token?`
     authorize(s.acting.can(&[flag::MANAGE_USER_ACCESS]) && s.acting.overrides(s.role.as_ref()))?;
     crate::sign_in_token::disable(&state, s.user.id).await?;
-    action_log::log(&state.db, auth.account_id, "disable_sign_in_token", &s.target).await?;
+    action_log::log(
+        &state.db,
+        auth.account_id,
+        "disable_sign_in_token",
+        &s.target,
+    )
+    .await?;
     render(&state, id).await
 }
 

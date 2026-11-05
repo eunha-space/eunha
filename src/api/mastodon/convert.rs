@@ -699,6 +699,7 @@ pub fn account_from_db_for_viewer(
         memorial: if a.memorial { Some(true) } else { None },
         invalid_handle: a.has_invalid_handle().then_some(true),
         email_subscriptions: None,
+        state: None,
         mute_expires_at: None,
         source: None,
         role: None,

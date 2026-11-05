@@ -30,6 +30,7 @@ pub async fn verify_credentials(
     apply_account_stats(&state, &mut api_account, account.id).await;
 
     let d = user_defaults(&state, account.id).await;
+    let d_spoiler_field = d.spoiler_field;
     let (default_privacy, default_sensitive, default_language, default_quote_policy) =
         (d.privacy, d.sensitive, d.language, d.quote_policy);
 
@@ -62,12 +63,16 @@ pub async fn verify_credentials(
         hide_collections: account.hide_collections,
         attribution_domains: account.attribution_domains.clone().unwrap_or_default(),
         quote_policy: default_quote_policy,
+        spoiler_field: d_spoiler_field,
     });
 
     api_account.set_roles(fetch_account_roles(&state, account.id).await);
     api_account.role = fetch_account_role(&state, account.id).await;
     api_account.email_subscriptions =
         crate::email_subscriptions::serialized(&state, &account).await;
+    api_account.state = crate::user_standing::UserStanding::of_account(&state.db, account.id)
+        .await?
+        .map(|standing| crate::api::mastodon::types::CredentialAccountState::of(&standing));
 
     Ok(Json(api_account))
 }
@@ -153,6 +158,7 @@ async fn do_update_credentials(
     let mut source_language: Option<Option<String>> = None;
     let mut source_hide_collections: Option<Option<bool>> = None;
     let mut source_quote_policy: Option<String> = None;
+    let mut source_spoiler_field: Option<bool> = None;
     let mut indexable: Option<Option<bool>> = None;
     // A `source[privacy]` or `source[quote_policy]` that `UserSettings#[]=`
     // refuses, with its message.
@@ -234,6 +240,9 @@ async fn do_update_credentials(
                         "Invalid value for setting default_quote_policy: {v}"
                     ));
                 }
+            }
+            "source[spoiler_field]" => {
+                source_spoiler_field = cast_bool(&part.text());
             }
             "indexable" | "source[indexable]" => {
                 indexable = Some(cast_bool(&part.text()));
@@ -399,7 +408,8 @@ async fn do_update_credentials(
         && (source_privacy.is_some()
             || source_sensitive.is_some()
             || source_language.is_some()
-            || source_quote_policy.is_some())
+            || source_quote_policy.is_some()
+            || source_spoiler_field.is_some())
     {
         let mut settings = user_settings_json(state, auth.account_id).await;
         let obj = settings.as_object_mut().expect("settings json object");
@@ -423,6 +433,12 @@ async fn do_update_credentials(
         }
         if let Some(q) = &source_quote_policy {
             obj.insert("default_quote_policy".into(), serde_json::json!(q));
+        }
+        if let Some(spoiler_field) = source_spoiler_field {
+            obj.insert(
+                "default_spoiler_field".into(),
+                serde_json::json!(spoiler_field),
+            );
         }
         let s = settings.to_string();
         sqlx::query!(
@@ -814,7 +830,11 @@ async fn build_credential_account_response(
         hide_collections: account.hide_collections,
         attribution_domains: account.attribution_domains.clone().unwrap_or_default(),
         quote_policy: defaults.quote_policy,
+        spoiler_field: defaults.spoiler_field,
     });
+    api_account.state = crate::user_standing::UserStanding::of_account(&state.db, auth.account_id)
+        .await?
+        .map(|standing| crate::api::mastodon::types::CredentialAccountState::of(&standing));
     api_account.set_roles(fetch_account_roles(state, auth.account_id).await);
     api_account.role = fetch_account_role(state, auth.account_id).await;
     api_account.email_subscriptions = crate::email_subscriptions::serialized(state, &account).await;
@@ -867,6 +887,15 @@ pub async fn get_preferences(
         posting_default_sensitive: d.sensitive,
         posting_default_language: language,
         posting_default_quote_policy: d.quote_policy,
+        posting_default_spoiler_field: d.spoiler_field,
+        displaying_own_boosts: settings
+            .get("display_own_boosts")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        displaying_own_posts: settings
+            .get("display_own_posts")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true),
         // `setting_display_media`, `setting_expand_spoilers` and
         // `setting_auto_play_gif`: the `web.*` settings, with `UserSettings`'
         // defaults.

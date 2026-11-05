@@ -190,8 +190,17 @@ pub async fn after_password(
         }));
     }
     if crate::sign_in_token::suspicious_inactive_sign_in(state, user_id).await {
-        return prompt_for_sign_in_token(state, user, None, continuation, None, false, ip, user_agent)
-            .await;
+        return prompt_for_sign_in_token(
+            state,
+            user,
+            None,
+            continuation,
+            None,
+            false,
+            ip,
+            user_agent,
+        )
+        .await;
     }
     on_authentication_success(state, &user, "password", ip, user_agent).await;
     if user.missing() {

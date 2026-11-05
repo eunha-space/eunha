@@ -1020,21 +1020,24 @@ export interface WarningPreset {
   id: string
   title: string
   text: string
+  action_category: WarningPresetCategory
   created_at: string
 }
+
+export type WarningPresetCategory = AccountActionType | 'all_actions'
 
 export function listWarningPresets(token: string) {
   return json<WarningPreset[]>(token, 'GET', '/api/v1/admin/warning_presets')
 }
 
-export function createWarningPreset(token: string, params: { title: string; text: string }) {
+export function createWarningPreset(token: string, params: { title: string; text: string; action_category: WarningPresetCategory }) {
   return json<WarningPreset>(token, 'POST', '/api/v1/admin/warning_presets', params)
 }
 
 export function updateWarningPreset(
   token: string,
   id: string,
-  params: { title?: string; text?: string },
+  params: { title?: string; text?: string; action_category?: WarningPresetCategory },
 ) {
   return json<WarningPreset>(token, 'PATCH', `/api/v1/admin/warning_presets/${id}`, params)
 }

@@ -168,6 +168,11 @@ pub async fn search(
                 {
                     Ok(ids) => ids,
                     Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
+                    Err(StatusSearchError::NoKeyword) => {
+                        return Err(AppError::BadRequest(
+                            "At least one keyword or phrase is required".into(),
+                        ))
+                    }
                     Err(StatusSearchError::InvalidDate) => {
                         return Err(AppError::Unprocessable("Invalid date supplied".into()))
                     }

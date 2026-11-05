@@ -557,13 +557,6 @@ async fn test_merge_joins_two_rows_for_one_actor() {
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), "No such account (alice)");
-
-    let console = Recorder::default();
-    accounts::fix_duplicates(&console);
-    assert_eq!(
-        console.lines(),
-        ["This command is deprecated as Mastodon v4.7.0 migrations enforce ActivityPub actor identifier uniqueness"]
-    );
 }
 
 /// A remote server: what each path answers.

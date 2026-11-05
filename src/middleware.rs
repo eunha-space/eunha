@@ -856,6 +856,11 @@ pub async fn api_gates(req: Request, next: Next) -> Response {
         .extensions()
         .get::<AuthenticatedUser>()
         .filter(|a| a.user_id.is_some());
+    // `Api::V1::Accounts::CredentialsController#require_potential_user!`:
+    // an app may ask after a user who cannot use the account yet.
+    if auth.is_some() && allows_nonfunctional(req.method(), &path, req.uri().query()) {
+        return next.run(req).await;
+    }
     // `ApplicationController#require_functional!`, which `Api::BaseController`
     // skips unless in limited federation mode: a signed-in user who cannot
     // use the account is refused everywhere, as `require_user!` refuses them.
@@ -919,6 +924,21 @@ pub fn open_without_user(method: &axum::http::Method, path: &str, limited: bool)
         _ if path.starts_with("/api/v1/instance/") => !limited,
         _ => false,
     }
+}
+
+/// Whether this is `verify_credentials?allow_nonfunctional=true`.
+fn allows_nonfunctional(method: &axum::http::Method, path: &str, query: Option<&str>) -> bool {
+    method == axum::http::Method::GET
+        && path == "/api/v1/accounts/verify_credentials"
+        && query.is_some_and(|query| {
+            url::form_urlencoded::parse(query.as_bytes()).any(|(key, value)| {
+                key == "allow_nonfunctional"
+                    && !matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "" | "0" | "f" | "false" | "off"
+                    )
+            })
+        })
 }
 
 /// `Api::BaseController#require_user!`.

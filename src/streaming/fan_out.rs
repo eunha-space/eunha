@@ -227,7 +227,15 @@ async fn try_distribute(
     for receiver in receivers {
         for kind in home_deliveries(state, &s, receiver, broadcastable).await? {
             let pushed = match kind {
-                Delivery::Self_ => true,
+                // `push_to_home`'s `own_post?` and `own_boost?`.
+                Delivery::Self_ => {
+                    crate::feed::displays_own_status(
+                        &state.db,
+                        receiver,
+                        s.status.reblog_of_id.is_some(),
+                    )
+                    .await
+                }
                 Delivery::Follower => filter_from_home(state, &s, receiver, None).await?.is_none(),
                 Delivery::Tags => !filter_from_tags(state, &s, receiver).await?,
             };

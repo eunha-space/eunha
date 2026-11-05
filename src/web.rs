@@ -4,6 +4,7 @@
 //! Mastodon: app/controllers/wrapstodon_controller.rb
 //! Mastodon: app/views/wrapstodon/show.html.haml
 //! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
+//! Mastodon: app/controllers/remote_accounts_controller.rb
 
 /// Serves Eunha's own web frontend: a React Router (Vite) single-page app that
 /// is a first-party client of the Mastodon Client-to-Server (C2S) REST API.
@@ -43,7 +44,55 @@ pub async fn serve(state: AppState, uri: Uri, viewer: Option<AuthenticatedUser>)
         }
     }
 
-    serve_index(&state).await
+    let index = serve_index(&state).await;
+    if remote_path_missing(&state, path).await {
+        // `RemoteAccountsController`: the page renders, under a 404.
+        let (mut parts, body) = index.into_parts();
+        parts.status = axum::http::StatusCode::NOT_FOUND;
+        return Response::from_parts(parts, body);
+    }
+    index
+}
+
+/// `RemoteAccountsController#require_resource_exists!`, for
+/// `/@username@domain/(*any)`: whether `PermalinkRedirector` finds nothing.
+async fn remote_path_missing(state: &AppState, path: &str) -> bool {
+    let Some(rest) = path.strip_prefix('@') else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let first = segments.next().unwrap_or_default();
+    let Some((username, domain)) = first.split_once('@') else {
+        return false;
+    };
+    let domain = domain.split('@').next().unwrap_or_default();
+    let second = segments.next().filter(|segment| !segment.is_empty());
+    if let Some(id) = second.filter(|segment| segment.bytes().all(|b| b.is_ascii_digit())) {
+        // `at_username_status_request?`.
+        let found = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM statuses s JOIN accounts a ON a.id = s.account_id
+                 WHERE s.id = $1 AND s.deleted_at IS NULL AND s.visibility IN (0, 1)
+                   AND s.local IS NOT TRUE AND a.domain IS NOT NULL
+                   AND a.suspended_at IS NULL) AS "e!""#,
+            id.parse::<i64>().unwrap_or(-1),
+        )
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(true);
+        return !found;
+    }
+    // `Account.find_remote`, ignoring case; a local account is no answer.
+    let found = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM accounts
+             WHERE lower(username) = lower($1) AND lower(domain) = lower($2)
+               AND suspended_at IS NULL) AS "e!""#,
+        username,
+        domain,
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(true);
+    !found
 }
 
 /// `CustomCssController#show`: the `custom_css` setting, cached for a month.
