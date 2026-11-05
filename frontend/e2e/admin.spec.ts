@@ -319,7 +319,15 @@ test('the moderation form offers warning presets', async ({ page }) => {
   await page.route('**/api/v1/admin/roles', (r) => r.fulfill({ json: [] }))
   await page.route('**/api/v1/admin/warning_presets', (r) =>
     r.fulfill({
-      json: [{ id: '8', title: 'Spam', text: 'Stop spamming.', created_at: '2026-09-01T00:00:00Z' }],
+      json: [
+        {
+          id: '8',
+          title: 'Spam',
+          text: 'Stop spamming.',
+          action_category: 'all_actions',
+          created_at: '2026-09-01T00:00:00Z',
+        },
+      ],
     }),
   )
   let action: Record<string, unknown> | null = null
