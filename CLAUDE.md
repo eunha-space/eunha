@@ -52,8 +52,8 @@ Running an instance:
     `eunha import-media`, and what each of them refuses.
  -  *docs/operating/redis.md*: key prefixes, ACLs, the coordination pool.
  -  *docs/operating/instances.md*: several instances in one process, the
-    tenants directory, admission limits, `SIGHUP` reload, host aliases, and
-    shared media buckets.
+    tenants directory, admission limits, `SIGHUP` reload, handles on another
+    domain (`web_domain`), host aliases, and shared media buckets.
  -  *docs/operating/jobs.md*: the job queue, its workers, retries, unique
     locks and the dead set.
  -  *docs/operating/invites.md*: the everyone role and handing out invites.

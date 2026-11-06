@@ -252,7 +252,7 @@ pub async fn account_uri(state: &AppState, account_id: i64) -> sqlx::Result<Opti
             a.uri.unwrap_or_default()
         } else {
             crate::federation::tag::account_uri(
-                &state.instance.domain,
+                state.instance.web_domain(),
                 a.id,
                 a.id_scheme,
                 &a.username,
@@ -302,7 +302,7 @@ fn local_status_uri(
         Some(uri) => uri.to_owned(),
         None if local => {
             let uri = crate::federation::tag::status_uri(
-                &state.instance.domain,
+                state.instance.web_domain(),
                 account_id,
                 id_scheme,
                 username,

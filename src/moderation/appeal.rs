@@ -147,7 +147,7 @@ async fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &
                 .mailer()
                 .send_new_appeal(
                     &recipient.email,
-                    &state.instance.domain,
+                    &state.instance,
                     &target,
                     &issuer,
                     strike_created_at,
@@ -421,7 +421,7 @@ async fn mail_decision(
     let to = user.email;
     let time_zone = user.time_zone;
     let email = state.mailer();
-    let domain = state.instance.domain.clone();
+    let domain = state.instance.clone();
     {
         if let Err(error) = email
             .send_appeal_decided(

@@ -76,16 +76,17 @@ pub fn uris(domain: &str) -> Result<Uris, url::ParseError> {
 #[must_use]
 pub fn federation() -> Federation<AppState> {
     let mut builder = Federation::builder()
+        // Every URI is on the web domain, whichever of the instance's hosts
+        // (`config.hosts`) the request came to.
         .origin_with(|host, state: &AppState| {
             let instance = &state.instance;
-            let ours = host.eq_ignore_ascii_case(&instance.domain)
-                || instance
-                    .aliases
-                    .iter()
-                    .any(|alias| host.eq_ignore_ascii_case(alias));
-            ours.then(|| Url::parse(&format!("https://{}", instance.domain)).ok())
+            instance
+                .is_our_host(host)
+                .then(|| Url::parse(&format!("https://{}", instance.web_domain())).ok())
                 .flatten()
         })
+        // `acct:alice@{LOCAL_DOMAIN}`, wherever WebFinger is served.
+        .handle_host(|ctx: &Ctx| Some(ctx.data().instance.local_domain.clone()))
         .actor("instance", "/actor", |ctx: Ctx, _: String| async move {
             let actor = super::objects::instance_actor_json(ctx.data()).await?;
             expires_in(&ctx, Vary::Nothing, 600, true).await;
@@ -768,7 +769,7 @@ async fn signer(ctx: &Ctx) -> Option<String> {
 }
 
 fn domain(ctx: &Ctx) -> &str {
-    &ctx.data().instance.domain
+    ctx.data().instance.web_domain()
 }
 
 fn number(value: &str) -> Option<i64> {
@@ -1843,7 +1844,10 @@ fn featured_tags(scheme: Scheme) -> Collection<AppState> {
 /// The actor a WebFinger username names: a local account, under the scheme
 /// it uses, or the instance actor, whose username is the domain.
 async fn by_username(ctx: &Ctx, username: &str) -> AppResult<Option<ActorRef>> {
-    if username.eq_ignore_ascii_case(domain(ctx)) {
+    // `WebfingerResource#account_from_acct`: the local or the web domain
+    // as a username names the instance actor.
+    let instance = &ctx.data().instance;
+    if instance.is_local_domain(username) || instance.is_web_domain(username) {
         return Ok(Some(ActorRef::new("instance", "")));
     }
     let account = sqlx::query!(

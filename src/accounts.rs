@@ -367,7 +367,7 @@ pub async fn create_from_command(
     } = create_local(
         db,
         state.encryptor.as_ref(),
-        &state.instance.domain,
+        state.instance.web_domain(),
         NewLocalUser {
             username,
             email: &email,
@@ -665,7 +665,7 @@ pub async fn send_reset_password_instructions(
     // `edit_password_url(reset_password_token:)`.
     let url = format!(
         "https://{}/auth/password/edit?reset_password_token={token}",
-        state.instance.domain
+        state.instance.web_domain()
     );
     // `@resource.locale.presence || I18n.default_locale`.
     let locale = user
@@ -808,14 +808,15 @@ pub async fn send_confirmation_instructions(
     // `confirmation_url`.
     let url = format!(
         "https://{}/auth/confirm?token={}",
-        state.instance.domain, user.token
+        state.instance.web_domain(),
+        user.token
     );
     // `@resource.locale.presence || I18n.default_locale`.
     let locale = user
         .locale
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| state.instance.default_locale().into());
-    let domain = &state.instance.domain;
+    let domain = &state.instance;
     let email = state.mailer();
     let sent = if user.reconfirming {
         email
@@ -1045,7 +1046,7 @@ pub async fn update_profiles(
     dry_run: bool,
 ) -> anyhow::Result<BatchReport> {
     let (accounts, unknown) = select(&state.db, selection).await?;
-    let domain = state.instance.domain.clone();
+    let domain = state.instance.web_domain().to_owned();
     let mut report = BatchReport {
         unknown,
         ..BatchReport::default()
@@ -1135,7 +1136,7 @@ pub async fn move_followers(
                 // `set_uri`'s id, as the `Follow` of a request made
                 // through `FollowService` carries.
                 let follow_id =
-                    crate::federation::relationships::generate_uri(&state.instance.domain);
+                    crate::federation::relationships::generate_uri(state.instance.web_domain());
                 let activity = crate::federation::activity::follow(&follow_id, &new, target)?;
                 refollowed += crate::federation::delivery::deliver_to_inboxes_in_batch(
                     state,
@@ -1441,7 +1442,8 @@ pub async fn send_welcome(state: &crate::state::AppState, user_id: i64) -> Resul
         tags.push((tag.name, people));
     }
     let mail = crate::email::WelcomeMail {
-        domain: state.instance.domain.clone(),
+        domain: state.instance.local_domain.clone(),
+        web_domain: state.instance.web_domain().to_owned(),
         username: user.username,
         has_profile: user.has_profile,
         has_follows: user.has_follows,
@@ -1582,7 +1584,7 @@ pub async fn convert_pending_signups(
         let created = create_local(
             db,
             encryptor,
-            &instance.domain,
+            instance.web_domain(),
             NewLocalUser {
                 username: &username,
                 email: &email,
@@ -1717,7 +1719,7 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
                 .mailer()
                 .send_new_pending_account(
                     &recipient.email,
-                    &state.instance.domain,
+                    &state.instance,
                     account_id,
                     &account.username,
                     account.invite_request.as_deref(),
@@ -1798,7 +1800,7 @@ pub async fn notify_staff_about_postponed_accounts(state: &crate::state::AppStat
             }
             if let Err(error) = state
                 .mailer()
-                .send_new_pending_accounts(&recipient.email, &state.instance.domain, &accounts)
+                .send_new_pending_accounts(&recipient.email, &state.instance, &accounts)
                 .await
             {
                 tracing::warn!(%error, "could not mail staff about pending accounts");

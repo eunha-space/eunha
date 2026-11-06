@@ -467,14 +467,8 @@ pub async fn resolve_or_fetch_remote_account(state: &AppState, actor_uri: &str) 
 /// that what is read off it (a Move's `alsoKnownAs`) is current. A URI on
 /// this instance is the local account, without a fetch.
 pub async fn fetch_remote_account(state: &AppState, actor_uri: &str) -> AppResult<i64> {
-    let ours = ojak::origin::host_of(actor_uri).is_some_and(|host| {
-        host.eq_ignore_ascii_case(&state.instance.domain)
-            || state
-                .instance
-                .aliases
-                .iter()
-                .any(|alias| host.eq_ignore_ascii_case(alias))
-    });
+    let ours =
+        ojak::origin::host_of(actor_uri).is_some_and(|host| state.instance.is_our_host(&host));
     if ours {
         return crate::federation::local_uri::account(state, actor_uri)
             .await
@@ -558,7 +552,7 @@ async fn resolve_or_fetch_remote_account_inner(
     if let Ok(parsed) = url::Url::parse(actor_uri) {
         if parsed
             .host_str()
-            .is_some_and(|h| h.eq_ignore_ascii_case(&state.instance.domain))
+            .is_some_and(|h| state.instance.is_our_host(h))
         {
             let segments: Vec<&str> = parsed
                 .path_segments()

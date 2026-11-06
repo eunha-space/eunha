@@ -120,7 +120,7 @@ pub async fn edit_status(
         return Err(AppError::Unprocessable("Reblogs cannot be edited".into()));
     }
 
-    let instance_domain = state.instance.domain.clone();
+    let instance_domain = state.instance.web_domain().to_owned();
 
     // The controller always gives `UpdateStatusService` the text, content
     // warning, sensitivity, language, attachments and poll, each `nil` when
@@ -568,9 +568,9 @@ pub(crate) async fn status_edits(
     // A `StatusEdit` does not respond to `active_mentions`, so the only
     // account preloaded for its mentions is the author's, and a mention of
     // anyone else stays text.
-    let local_domain = state.urls.local_domain.clone();
+    let urls = state.urls.clone();
     let render = |text: &str| -> String {
-        crate::api::mastodon::formatting::status_content(&local_domain, text, &author, &[])
+        crate::api::mastodon::formatting::status_content(&urls, text, &author, &[])
     };
 
     // `has_one :account`: whoever made each version — the author, or the

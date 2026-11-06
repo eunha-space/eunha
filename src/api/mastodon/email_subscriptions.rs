@@ -128,7 +128,7 @@ fn render(state: &AppState, locale: Locale, page: Page<'_>) -> Response {
         "email_subscription.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => &state.instance.domain,
+            domain => &state.instance.local_domain,
             title => page.title,
             paragraphs => page.paragraphs,
             form_token => page.form_token,
@@ -369,7 +369,7 @@ async fn user_page(
         ("reblog", true) => "부스트 알림 이메일",
         _ => "인용 알림 이메일",
     };
-    let domain = crate::email::html_escape(&state.instance.domain);
+    let domain = crate::email::html_escape(&state.instance.local_domain);
     if !create {
         let exists = sqlx::query_scalar!(
             r#"SELECT EXISTS (SELECT 1 FROM users WHERE id = $1) AS "e!""#,

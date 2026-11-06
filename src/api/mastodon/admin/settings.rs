@@ -188,7 +188,7 @@ async fn usernames_with_no_accounts(
         count += 1;
         // `TagManager#local_domain?`.
         let domain = domain.filter(|d| {
-            !d.eq_ignore_ascii_case(&state.instance.domain)
+            !d.eq_ignore_ascii_case(&state.instance.local_domain)
                 && !state
                     .instance
                     .aliases

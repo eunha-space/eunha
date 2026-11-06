@@ -260,7 +260,7 @@ pub async fn approval_uri_for(
         return Ok(None);
     }
     Ok(Some(local_approval_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         quoted.id,
         quoted.id_scheme,
         &quoted.username,
@@ -282,7 +282,7 @@ pub async fn status_uri(state: &AppState, status_id: i64) -> sqlx::Result<Option
     Ok(row.map(|r| match r.uri.filter(|u| !u.is_empty()) {
         Some(uri) => uri,
         None => crate::federation::tag::status_uri(
-            &state.instance.domain,
+            state.instance.web_domain(),
             r.account_id,
             r.id_scheme,
             &r.username,
@@ -302,7 +302,7 @@ pub async fn account_uri(state: &AppState, account_id: i64) -> sqlx::Result<Opti
     Ok(row.map(|r| {
         if r.domain.is_none() {
             crate::federation::tag::account_uri(
-                &state.instance.domain,
+                state.instance.web_domain(),
                 r.id,
                 r.id_scheme,
                 &r.username,
@@ -417,7 +417,7 @@ pub async fn revoke(
         return Ok(());
     };
     let actor = crate::federation::tag::account_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         author.id,
         author.id_scheme,
         &author.username,

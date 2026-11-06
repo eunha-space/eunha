@@ -40,9 +40,11 @@ impl MentionTarget {
 /// `TextFormatter`'s options.
 #[derive(Debug, Clone)]
 pub struct Options<'a> {
-    /// `Rails.configuration.x.local_domain`, which hashtag links and
-    /// `TagManager#local_domain?` read.
+    /// `Rails.configuration.x.local_domain`, which `TagManager#local_domain?`
+    /// reads: a mention of `@alice@{local_domain}` is a local account's.
     pub local_domain: &'a str,
+    /// `Rails.configuration.x.web_domain`, which hashtag links are on.
+    pub web_domain: &'a str,
     pub multiline: bool,
     pub with_domains: bool,
     pub with_rel_me: bool,
@@ -58,10 +60,23 @@ pub struct Options<'a> {
 }
 
 impl<'a> Options<'a> {
-    /// `TextFormatter::DEFAULT_OPTIONS`.
-    pub fn new(local_domain: &'a str) -> Self {
+    /// `TextFormatter::DEFAULT_OPTIONS`, for an instance whose local and web
+    /// domains are the same.
+    pub fn new(domain: &'a str) -> Self {
+        Self::with_domains(domain, domain)
+    }
+
+    /// `TextFormatter::DEFAULT_OPTIONS` for `instance`'s local and web
+    /// domains.
+    pub fn for_instance(instance: &'a crate::config::InstanceConfig) -> Self {
+        Self::with_domains(&instance.local_domain, instance.web_domain())
+    }
+
+    /// `TextFormatter::DEFAULT_OPTIONS` with both domains.
+    pub fn with_domains(local_domain: &'a str, web_domain: &'a str) -> Self {
         Self {
             local_domain,
+            web_domain,
             multiline: true,
             with_domains: false,
             with_rel_me: false,
@@ -148,17 +163,17 @@ pub fn escape_segment(segment: &str) -> String {
 }
 
 /// `tag_url(hashtag)`.
-pub fn tag_url(local_domain: &str, hashtag: &str) -> String {
-    format!("https://{local_domain}/tags/{}", escape_segment(hashtag))
+pub fn tag_url(web_domain: &str, hashtag: &str) -> String {
+    format!("https://{web_domain}/tags/{}", escape_segment(hashtag))
 }
 
 /// `short_account_tag_url(account, tag)`, `/@:username/tagged/:tag`, by the
 /// account's `to_param`, its username, and the tag's, its name. The REST
 /// featured tag's `account_with_domain_url(account, "tagged/…")` writes the
 /// same, the domain of a remote account left out with it.
-pub fn short_account_tag_url(local_domain: &str, username: &str, hashtag: &str) -> String {
+pub fn short_account_tag_url(web_domain: &str, username: &str, hashtag: &str) -> String {
     format!(
-        "https://{local_domain}/@{}/tagged/{}",
+        "https://{web_domain}/@{}/tagged/{}",
         escape_segment(username),
         escape_segment(hashtag)
     )
@@ -168,7 +183,7 @@ pub fn short_account_tag_url(local_domain: &str, username: &str, hashtag: &str) 
 fn link_to_hashtag(hashtag: &str, options: &Options<'_>) -> String {
     format!(
         r#"<a href="{}" class="mention hashtag" rel="tag">#<span>{}</span></a>"#,
-        h(&tag_url(options.local_domain, hashtag)),
+        h(&tag_url(options.web_domain, hashtag)),
         h(hashtag),
     )
 }

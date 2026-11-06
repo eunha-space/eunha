@@ -230,7 +230,7 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
                ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
             follower_account_id,
             target_id,
-            crate::federation::relationships::generate_uri(&state.instance.domain),
+            crate::federation::relationships::generate_uri(&state.instance.web_domain()),
         )
         .execute(&state.db)
         .await;
@@ -256,7 +256,7 @@ pub(crate) async fn autofollow_inviter(state: &AppState, follower_account_id: i6
            ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
         follower_account_id,
         target_id,
-        crate::federation::relationships::generate_uri(&state.instance.domain),
+        crate::federation::relationships::generate_uri(&state.instance.web_domain()),
     )
     .execute(&state.db)
     .await;
@@ -624,7 +624,7 @@ pub async fn register(
     let created = crate::accounts::insert_local(
         &mut tx,
         state.encryptor.as_ref(),
-        &state.instance.domain,
+        state.instance.web_domain(),
         crate::accounts::NewLocalUser {
             username: &username,
             email: &email,
@@ -1035,7 +1035,7 @@ fn render(
         "signup.html",
         minijinja::context! {
             instance_title => &instance.title,
-            instance_domain => &instance.domain,
+            instance_domain => &instance.local_domain,
             show_form,
             pending,
             approval_required => instance.approval_required,

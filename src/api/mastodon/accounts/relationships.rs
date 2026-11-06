@@ -294,7 +294,8 @@ pub async fn follow(
     if target.domain.is_some() {
         // `set_uri`: the request's id, which the `Follow` carries
         // (`FollowSerializer#id`).
-        let follow_uri = crate::federation::relationships::generate_uri(&state.instance.domain);
+        let follow_uri =
+            crate::federation::relationships::generate_uri(state.instance.web_domain());
         sqlx::query!(
             r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, now(), now())
@@ -317,7 +318,7 @@ pub async fn follow(
         }
         if has_signing_key {
             let actor_url =
-                crate::federation::tag::account_uri_of(&state.instance.domain, requester);
+                crate::federation::tag::account_uri_of(state.instance.web_domain(), requester);
             let key_id = format!("{}#main-key", actor_url);
             // The target is remote, so it has an actor id to address.
             let target_uri = target.uri.clone().unwrap_or_default();
@@ -404,7 +405,7 @@ pub async fn follow(
             r#"INSERT INTO follow_requests (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6, now(), now())"#,
             source.id, target_id, show_reblogs, notify, &languages,
-            crate::federation::relationships::generate_uri(&state.instance.domain),
+            crate::federation::relationships::generate_uri(&state.instance.web_domain()),
         )
         .execute(&state.db)
         .await?;
@@ -416,7 +417,7 @@ pub async fn follow(
         r#"INSERT INTO follows (account_id, target_account_id, show_reblogs, notify, languages, uri, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, now(), now())"#,
         source.id, target_id, show_reblogs, notify, &languages,
-        crate::federation::relationships::generate_uri(&state.instance.domain),
+        crate::federation::relationships::generate_uri(&state.instance.web_domain()),
     )
     .execute(&state.db)
     .await?;
@@ -632,7 +633,7 @@ async fn send_undo_follow(
     {
         return;
     }
-    let actor_url = crate::federation::tag::account_uri_of(&state.instance.domain, follower);
+    let actor_url = crate::federation::tag::account_uri_of(state.instance.web_domain(), follower);
     let Ok(undo) =
         crate::federation::relationships::undo_follow(&actor_url, target_uri, Some(id), uri)
     else {
@@ -665,7 +666,7 @@ pub async fn send_reject_follow(
         followee,
         follower,
         crate::federation::relationships::reject_follow(
-            &crate::federation::tag::account_uri_of(&state.instance.domain, followee),
+            &crate::federation::tag::account_uri_of(state.instance.web_domain(), followee),
             follower.stored_uri().unwrap_or_default(),
             id,
             uri,
@@ -689,7 +690,7 @@ pub async fn send_accept_follow(
         followee,
         follower,
         crate::federation::relationships::accept_follow(
-            &crate::federation::tag::account_uri_of(&state.instance.domain, followee),
+            &crate::federation::tag::account_uri_of(state.instance.web_domain(), followee),
             follower.stored_uri().unwrap_or_default(),
             id,
             uri,
@@ -716,7 +717,7 @@ async fn send_follow_answer(
     {
         return;
     }
-    let key_id = crate::federation::tag::key_id_of(&state.instance.domain, followee);
+    let key_id = crate::federation::tag::key_id_of(state.instance.web_domain(), followee);
     if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
         state,
         answer,

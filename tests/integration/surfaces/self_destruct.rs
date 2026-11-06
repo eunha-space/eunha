@@ -90,7 +90,7 @@ async fn a_closing_instance_answers_gone_but_lets_members_take_their_data() {
 async fn a_value_for_another_domain_changes_nothing() {
     let ctx = TestContext::with_instance_config("self-destruct-wrong", |instance| {
         let mut other = instance.clone();
-        other.domain = format!("other-{}", instance.domain);
+        other.local_domain = format!("other-{}", instance.local_domain);
         instance.self_destruct = Some(eunha::self_destruct::value(&other));
     })
     .await;

@@ -143,7 +143,7 @@ async fn distribute_update_actor(state: &AppState, account: &Account) -> Result<
     if !account.is_local() {
         return Ok(());
     }
-    crate::accounts::distribute_profile(state, &state.instance.domain, account, None).await?;
+    crate::accounts::distribute_profile(state, state.instance.web_domain(), account, None).await?;
     Ok(())
 }
 

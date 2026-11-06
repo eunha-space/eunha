@@ -1041,7 +1041,7 @@ pub async fn get_account_featured_tags(
     if find_account(&state, id).await?.is_unavailable() {
         return Ok(Json(vec![]));
     }
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
     let rows = sqlx::query!(
         r#"SELECT ft.id, t.name, ft.statuses_count, ft.last_status_at,
                   -- `FeaturedTag#display_name`
@@ -1638,7 +1638,7 @@ pub async fn delete_account(
     // that has one.
     if !crate::delete_account::challenge_passed(
         &user.username,
-        &state.instance.domain,
+        &state.instance.local_domain,
         &user.encrypted_password,
         &field("username"),
         &field("password"),

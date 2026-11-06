@@ -265,7 +265,7 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
            ON CONFLICT (account_id, target_account_id) DO NOTHING"#,
         account_id,
         target_id,
-        crate::federation::relationships::generate_uri(&state.instance.domain),
+        crate::federation::relationships::generate_uri(&state.instance.web_domain()),
     )
     .execute(&state.db)
     .await?;
@@ -288,7 +288,7 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
         let blocker = fetch_account(state, account_id).await?;
         if let Some(target_uri) = target.stored_uri() {
             let actor_url =
-                crate::federation::tag::account_uri_of(&state.instance.domain, &blocker);
+                crate::federation::tag::account_uri_of(state.instance.web_domain(), &blocker);
             if let Ok(activity) = crate::federation::relationships::block(
                 &actor_url,
                 target_uri,
@@ -323,7 +323,7 @@ async fn deliver_as(
         state,
         activity,
         vec![target.inbox_url.clone()],
-        crate::federation::tag::key_id_of(&state.instance.domain, actor),
+        crate::federation::tag::key_id_of(state.instance.web_domain(), actor),
     )
     .await
     {
@@ -367,7 +367,7 @@ pub async fn unblock(state: &AppState, account_id: i64, target_id: i64) -> AppRe
         let blocker = fetch_account(state, account_id).await?;
         if let Some(target_uri) = target.stored_uri() {
             let actor_url =
-                crate::federation::tag::account_uri_of(&state.instance.domain, &blocker);
+                crate::federation::tag::account_uri_of(state.instance.web_domain(), &blocker);
             if let Ok(undo) = crate::federation::relationships::undo_block(
                 &actor_url,
                 target_uri,

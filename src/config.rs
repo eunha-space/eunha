@@ -403,9 +403,19 @@ impl LimitsConfig {
 /// Single-tenant instance settings (formerly stored in the `instances` DB table).
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstanceConfig {
-    pub domain: String,
+    /// Mastodon's `LOCAL_DOMAIN`: the domain in local accounts' handles,
+    /// `alice@{local_domain}`, and the instance's name for itself. The
+    /// configuration calls it `domain`.
+    #[serde(rename = "domain")]
+    pub local_domain: String,
+    /// Mastodon's `WEB_DOMAIN`: where the instance is served, which every URL
+    /// and ActivityPub id it gives out is on. Unset, it is the local domain;
+    /// read it through [`InstanceConfig::web_domain`].
+    #[serde(default)]
+    pub web_domain: Option<String>,
     /// Additional HTTP hostnames that serve this instance without changing
-    /// its canonical ActivityPub identity or emitted URLs.
+    /// its canonical ActivityPub identity or emitted URLs: Mastodon's
+    /// `ALTERNATE_DOMAINS`, whose handles WebFinger answers for too.
     #[serde(default)]
     pub aliases: Vec<String>,
     /// Domains this instance's accounts had before `domain`, whose actors
@@ -622,6 +632,56 @@ impl ElasticsearchConfig {
 }
 
 impl InstanceConfig {
+    /// `Rails.configuration.x.web_domain`: `web_domain`, or the local domain
+    /// when it is unset.
+    pub fn web_domain(&self) -> &str {
+        self.web_domain
+            .as_deref()
+            .filter(|domain| !domain.is_empty())
+            .unwrap_or(&self.local_domain)
+    }
+
+    /// `TagManager#local_domain?`: whether `domain` is the local domain.
+    pub fn is_local_domain(&self, domain: &str) -> bool {
+        domain
+            .trim_end_matches('/')
+            .eq_ignore_ascii_case(&self.local_domain)
+    }
+
+    /// `TagManager#web_domain?`: whether `domain` is the web domain.
+    pub fn is_web_domain(&self, domain: &str) -> bool {
+        domain
+            .trim_end_matches('/')
+            .eq_ignore_ascii_case(self.web_domain())
+    }
+
+    /// The hosts besides the local domain this instance answers on: the web
+    /// domain, when it differs, and the aliases. The tenant registry keys an
+    /// instance by its local domain and sends these to it.
+    pub fn other_hosts(&self) -> impl Iterator<Item = &str> {
+        self.hosts()
+            .filter(|host| !host.eq_ignore_ascii_case(&self.local_domain))
+    }
+
+    /// `ActivityPub::TagManager#local_uri?` for a URI's host: the local or
+    /// the web domain, or an alias.
+    pub fn is_our_host(&self, host: &str) -> bool {
+        self.hosts().any(|ours| ours.eq_ignore_ascii_case(host))
+    }
+
+    /// Every host this instance answers HTTP requests on: the web domain, the
+    /// local domain, which usually only redirects WebFinger to it, and the
+    /// aliases (Mastodon's `config.hosts`).
+    pub fn hosts(&self) -> impl Iterator<Item = &str> {
+        let web = self.web_domain();
+        std::iter::once(web)
+            .chain(
+                (!self.local_domain.eq_ignore_ascii_case(web))
+                    .then_some(self.local_domain.as_str()),
+            )
+            .chain(self.aliases.iter().map(String::as_str))
+    }
+
     /// The keys `eunha settings import-config` reads that this configuration
     /// sets, which nothing else reads any more.
     pub fn deprecated_site_keys(&self) -> Vec<&'static str> {
@@ -782,8 +842,8 @@ fn adopt_mastodon_elasticsearch_env() {
     }
 }
 
-/// Accept Mastodon's own spelling of its secrets, the translation service,
-/// the donation campaigns and self-destruct mode.
+/// Accept Mastodon's own spelling of its domains, its secrets, the
+/// translation service, the donation campaigns and self-destruct mode.
 ///
 /// Eunha's environment keys nest with `__`, so its name for the primary key is
 /// `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY` — but the values themselves come
@@ -810,6 +870,8 @@ fn adopt_mastodon_env() {
             "LIBRE_TRANSLATE_API_KEY",
             "INSTANCE__TRANSLATION__LIBRE_TRANSLATE_API_KEY",
         ),
+        ("LOCAL_DOMAIN", "INSTANCE__DOMAIN"),
+        ("WEB_DOMAIN", "INSTANCE__WEB_DOMAIN"),
         ("SECRET_KEY_BASE", "INSTANCE__SECRET_KEY_BASE"),
         ("DEFAULT_LOCALE", "INSTANCE__DEFAULT_LOCALE"),
         ("SELF_DESTRUCT", "INSTANCE__SELF_DESTRUCT"),
@@ -860,5 +922,55 @@ mod force_default_locale_tests {
         for value in ["TRUE", "1", "yes", "false", ""] {
             assert_eq!(forced(value), "false", "{value}");
         }
+    }
+}
+
+#[cfg(test)]
+mod domain_tests {
+    use super::InstanceConfig;
+
+    fn instance(toml: &str) -> InstanceConfig {
+        toml::from_str(&format!(
+            "{toml}\nvapid_private_key = \"\"\nvapid_public_key = \"\"\n"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_web_domain_is_the_local_one_unless_set() {
+        let one = instance(r#"domain = "example.com""#);
+        assert_eq!(one.web_domain(), "example.com");
+        assert_eq!(one.hosts().collect::<Vec<_>>(), ["example.com"]);
+        assert_eq!(one.other_hosts().count(), 0);
+        let blank = instance("domain = \"example.com\"\nweb_domain = \"\"");
+        assert_eq!(blank.web_domain(), "example.com");
+    }
+
+    /// Mastodon's `LOCAL_DOMAIN=example.com` with
+    /// `WEB_DOMAIN=social.example.com`: handles on the one, everything served
+    /// from the other, and both answered on.
+    #[test]
+    fn a_web_domain_is_served_beside_the_local_one() {
+        let split = instance(
+            "domain = \"example.com\"\nweb_domain = \"social.example.com\"\n\
+             aliases = [\"example.net\"]",
+        );
+        assert_eq!(split.local_domain, "example.com");
+        assert_eq!(split.web_domain(), "social.example.com");
+        assert_eq!(
+            split.hosts().collect::<Vec<_>>(),
+            ["social.example.com", "example.com", "example.net"]
+        );
+        assert_eq!(
+            split.other_hosts().collect::<Vec<_>>(),
+            ["social.example.com", "example.net"]
+        );
+        for host in ["social.example.com", "EXAMPLE.com", "example.net"] {
+            assert!(split.is_our_host(host), "{host}");
+        }
+        assert!(!split.is_our_host("elsewhere.example"));
+        assert!(split.is_local_domain("example.com/"));
+        assert!(!split.is_local_domain("social.example.com"));
+        assert!(split.is_web_domain("Social.Example.com"));
     }
 }

@@ -102,7 +102,7 @@ async fn servable(
     let distributable = servable.distributable();
     let account = servable.account;
     let uri = crate::federation::tag::status_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         account.id,
         account.id_scheme,
         &account.username,
@@ -122,7 +122,7 @@ async fn local_status_uri(state: &AppState, id: i64) -> AppResult<Option<String>
     .await?;
     Ok(author.map(|a| {
         crate::federation::tag::status_uri(
-            &state.instance.domain,
+            state.instance.web_domain(),
             a.id,
             a.id_scheme,
             &a.username,
@@ -139,7 +139,7 @@ async fn embedded_or_uri(
     rows: &[(i64, bool, Option<String>)],
     embed: bool,
 ) -> AppResult<(Vec<Value>, bool)> {
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let mut items = Vec::with_capacity(rows.len());
     let mut embedded = false;
     for (id, local, uri) in rows {
@@ -244,7 +244,8 @@ pub async fn replies(
         // username route, whichever scheme the account uses.
         part_of: Some(parse(&format!(
             "https://{}/users/{}/statuses/{status_id}/replies",
-            state.instance.domain, account.username
+            state.instance.web_domain(),
+            account.username
         ))?),
         next,
         items: Some(items),
@@ -372,7 +373,7 @@ async fn conversation_page(
 /// `context` its posts name, with its first page of posts embedded.
 pub async fn context(state: &AppState, id: &str, query: &Query) -> AppResult<Value> {
     let (conversation, account_id, status_id) = local_conversation(state, id).await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let context_uri = parse(&format!(
         "https://{domain}/contexts/{account_id}-{status_id}"
     ))?;
@@ -414,7 +415,7 @@ pub async fn context(state: &AppState, id: &str, query: &Query) -> AppResult<Val
 /// page.
 pub async fn context_items(state: &AppState, id: &str, query: &Query) -> AppResult<Value> {
     let (conversation, account_id, status_id) = local_conversation(state, id).await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let context_uri = parse(&format!(
         "https://{domain}/contexts/{account_id}-{status_id}"
     ))?;

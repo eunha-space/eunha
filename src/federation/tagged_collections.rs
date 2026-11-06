@@ -51,7 +51,7 @@ async fn known(state: &AppState, id: i64) -> sqlx::Result<Option<Known>> {
         uri: match c.uri.filter(|uri| !uri.is_empty() && !c.local) {
             Some(uri) => uri,
             None => crate::api::ap::collections::collection_uri(
-                &state.instance.domain,
+                state.instance.web_domain(),
                 c.account_id,
                 c.id,
             ),

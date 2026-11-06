@@ -27,7 +27,7 @@ pub const STOP_GRACE: Duration = Duration::from_secs(20);
 /// that what they log names the instance, and returns them so that stopping the
 /// instance can wait for them.
 pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
-    let _tenant = crate::tenants::span(&state.instance.domain).entered();
+    let _tenant = crate::tenants::span(&state.instance.local_domain).entered();
     // The schedules. A self-destructing instance runs its own alone, as
     // Mastodon replaces `Sidekiq.schedule` with `SelfDestructScheduler`.
     let mut tasks = if crate::self_destruct::enabled(&state.instance) {

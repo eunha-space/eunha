@@ -225,7 +225,7 @@ async fn distribute_featured_tag(
         {
             return Ok(());
         }
-        let domain = &state.instance.domain;
+        let domain = &state.instance.web_domain();
         let own = crate::api::ap::serving::AccountUris::of(&state.uris, &account);
         let actor = own.actor()?;
         let hashtag = crate::api::ap::featured_tags::hashtag(
@@ -277,7 +277,7 @@ pub async fn list_featured_tags(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Vec<FeaturedTag>>> {
     auth.require_scope("read:accounts")?;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
 
     let username = sqlx::query_scalar!(
         "SELECT username FROM accounts WHERE id = $1",
@@ -326,7 +326,7 @@ pub async fn feature_tag(
     let featured =
         create_featured_tag(&state, auth.account_id, Featuring::Name(&form.name)).await?;
     Ok(Json(featured_tag_entity(
-        &instance.domain,
+        instance.web_domain(),
         &username,
         &featured,
     )))
@@ -368,7 +368,7 @@ pub async fn feature_tag_by_name(
 
     create_featured_tag(&state, auth.account_id, Featuring::Tag(tag_id)).await?;
 
-    super::tags::render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+    super::tags::render_tag(&state, instance.web_domain(), &tag, Some(auth.account_id))
         .await
         .map(Json)
 }
@@ -401,7 +401,7 @@ pub async fn unfeature_tag_by_name(
         }
     }
 
-    super::tags::render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+    super::tags::render_tag(&state, instance.web_domain(), &tag, Some(auth.account_id))
         .await
         .map(Json)
 }
@@ -418,7 +418,7 @@ pub async fn featured_tag_suggestions(
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Vec<super::types::Tag>>> {
     auth.require_scope("read:accounts")?;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
 
     let rows = sqlx::query!(
         r#"SELECT t.id, t.name, COALESCE(t.display_name, t.name) AS "display_name!",

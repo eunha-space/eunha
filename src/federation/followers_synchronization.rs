@@ -298,7 +298,7 @@ pub async fn remote_followers_hash(
 pub async fn local_followers_hash(state: &AppState, account_id: i64) -> sqlx::Result<String> {
     DigestCache::of(state)
         .fetch(&format!("followers_hash:{account_id}:local"), async {
-            let domain = &state.instance.domain;
+            let domain = &state.instance.web_domain();
             let followers = sqlx::query!(
                 r#"SELECT a.id, a.id_scheme, a.username FROM follows f JOIN accounts a ON a.id = f.account_id
                    WHERE f.target_account_id = $1 AND a.domain IS NULL"#,
@@ -374,7 +374,7 @@ pub async fn document(
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!(
             "https://{}/users/{}/followers_synchronization",
-            state.instance.domain, account.username
+            state.instance.web_domain(), account.username
         ),
         "type": "OrderedCollection",
         "orderedItems": items,
@@ -661,7 +661,7 @@ async fn handle_unexpected_outgoing_follows(
         if inbox_url.is_empty() {
             continue;
         }
-        let domain = &state.instance.domain;
+        let domain = &state.instance.web_domain();
         let actor =
             crate::federation::tag::account_uri(domain, local.id, local.id_scheme, &local.username);
         let undo = json!({

@@ -64,7 +64,7 @@ pub async fn admin_trending_tags(
     let offset = params.offset();
     let rows = super::super::trends::tags_query(
         &state,
-        &instance.domain,
+        instance.web_domain(),
         limit,
         offset,
         Some(auth.account_id),
@@ -153,7 +153,7 @@ pub async fn admin_approve_trending_tag(
     Extension(auth): Extension<AuthenticatedUser>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    review_tag(&state, &instance.domain, &auth, id, true).await
+    review_tag(&state, instance.web_domain(), &auth, id, true).await
 }
 
 pub async fn admin_reject_trending_tag(
@@ -162,7 +162,7 @@ pub async fn admin_reject_trending_tag(
     Extension(auth): Extension<AuthenticatedUser>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    review_tag(&state, &instance.domain, &auth, id, false).await
+    review_tag(&state, instance.web_domain(), &auth, id, false).await
 }
 
 // ── GET /api/v1/admin/trends/statuses ─────────────────────────────────────

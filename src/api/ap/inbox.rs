@@ -360,7 +360,7 @@ async fn received_now(state: &AppState, activity: Value) -> AppResult<()> {
         .unwrap_or("")
         .to_owned();
     tracing::debug!(
-        instance = %state.instance.domain,
+        instance = %state.instance.local_domain,
         activity_type,
         body = %activity,
         "received ActivityPub activity"

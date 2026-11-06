@@ -241,7 +241,7 @@ async fn prompt_for_sign_in_token(
         }
         let email = state.mailer();
         let to = user.email.clone();
-        let domain = state.instance.domain.clone();
+        let domain = state.instance.clone();
         let remote_ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
         let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
         let time_zone = user.time_zone.clone();
@@ -579,7 +579,7 @@ async fn valid_webauthn_credential(
     else {
         return false;
     };
-    let rp = crate::webauthn::RelyingParty::for_domain(&state.instance.domain);
+    let rp = crate::webauthn::RelyingParty::for_domain(state.instance.web_domain());
     match crate::webauthn::verify_assertion(
         &credential,
         challenge,
@@ -617,7 +617,7 @@ async fn on_authentication_success(
     if suspicious {
         let email = state.mailer();
         let to = user.email.clone();
-        let domain = state.instance.domain.clone();
+        let domain = state.instance.clone();
         let ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
         let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
         let time_zone = user.time_zone.clone();
@@ -716,10 +716,11 @@ pub fn render(state: &AppState, locale: Locale, page: &Page) -> Response {
         ),
         Continuation::Account => ("/account/login", None),
     };
-    let domain = state.instance.domain.as_str();
-    let rp = crate::webauthn::RelyingParty::for_domain(domain);
+    // `site_hostname`, the local domain, names the server, and is the
+    // authenticator's issuer as in `ConfirmationsController`.
+    let domain = state.instance.local_domain.as_str();
     let qr_code = page.secret.as_deref().map(|secret| {
-        two_factor::qr_code_svg(&two_factor::provisioning_uri(secret, &page.account, &rp.id))
+        two_factor::qr_code_svg(&two_factor::provisioning_uri(secret, &page.account, domain))
     });
     let html = crate::templates::render(
         "two_factor.html",

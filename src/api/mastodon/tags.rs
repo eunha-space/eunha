@@ -131,7 +131,7 @@ pub async fn get_tag(
 ) -> AppResult<Json<Tag>> {
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
     let tag = set_or_create_tag(&state, &name).await?;
-    render_tag(&state, &instance.domain, &tag, viewer_id)
+    render_tag(&state, instance.web_domain(), &tag, viewer_id)
         .await
         .map(Json)
 }
@@ -157,7 +157,7 @@ pub async fn list_followed_tags(
     req_headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("read:follows")?;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
     let limit = params.limit.unwrap_or(100).clamp(1, 200);
     let max_id = params.max_id.as_deref().and_then(|s| s.parse::<i64>().ok());
     let since_id = params
@@ -253,7 +253,7 @@ pub async fn follow_tag(
     .execute(&state.db)
     .await?;
 
-    render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+    render_tag(&state, instance.web_domain(), &tag, Some(auth.account_id))
         .await
         .map(Json)
 }
@@ -288,7 +288,7 @@ pub async fn unfollow_tag(
         }
     }
 
-    render_tag(&state, &instance.domain, &tag, Some(auth.account_id))
+    render_tag(&state, instance.web_domain(), &tag, Some(auth.account_id))
         .await
         .map(Json)
 }

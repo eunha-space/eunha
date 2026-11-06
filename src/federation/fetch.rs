@@ -16,7 +16,7 @@ use crate::state::AppState;
 /// The instance actor's signing key, as ojak takes it.
 pub(crate) async fn instance_key(state: &AppState) -> anyhow::Result<ojak::sig::SenderKey> {
     Ok(ojak::sig::SenderKey {
-        key_id: crate::federation::instance_actor::key_id(&state.instance.domain),
+        key_id: crate::federation::instance_actor::key_id(state.instance.web_domain()),
         private_key: crate::federation::instance_actor::signing_key(state).await?,
     })
 }

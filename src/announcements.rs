@@ -18,7 +18,7 @@ async fn statuses_from_text(state: &AppState, text: &str) -> anyhow::Result<Vec<
     static URL: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
         regex::Regex::new(r#"https?://[^\s<>"']+"#).expect("valid regex")
     });
-    let local = format!("https://{}/", state.instance.domain);
+    let local = format!("https://{}/", state.instance.web_domain());
     let mut ids = vec![];
     for found in URL.find_iter(text) {
         let url = found.as_str().trim_end_matches(['.', ',', ')', '!', '?']);
@@ -181,7 +181,7 @@ pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::
                 image_remote_url: emoji.image_remote_url.as_deref(),
                 image_storage_schema_version: emoji.image_storage_schema_version,
             };
-            let domain = &state.instance.domain;
+            let domain = &state.instance.web_domain();
             payload["url"] = image.url(&state.storage, domain, "original").into();
             payload["static_url"] = image.url(&state.storage, domain, "static").into();
         }

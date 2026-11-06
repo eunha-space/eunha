@@ -253,7 +253,7 @@ pub async fn admin_terms_of_service_generator(
 ) -> AppResult<Json<Generator>> {
     authorize(&state, &auth, "admin:read").await?;
     Ok(Json(Generator {
-        domain: Some(state.instance.domain.clone()),
+        domain: Some(state.instance.local_domain.to_owned()),
         admin_email: Some(crate::settings::site_contact_email(&state).await)
             .filter(|e| !e.is_empty()),
         ..Default::default()

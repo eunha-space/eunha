@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use sqlx::Row;
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::convert::InstanceUrls;
 use super::types;
 use crate::db::models;
 use crate::formatter::{self, extractor, MentionTarget, Options};
@@ -108,27 +109,28 @@ pub fn mention_target_for_mention(
 /// `TextFormatter`, its author and mentioned accounts preloaded, a remote
 /// one's HTML sanitized.
 pub fn status_content(
-    local_domain: &str,
+    urls: &InstanceUrls,
     text: &str,
     account: &models::Account,
     mentions: &[types::StatusMention],
 ) -> String {
     let local = account.domain.is_none();
     if !local {
-        return formatter::html_aware(text, false, &Options::new(local_domain));
+        return formatter::html_aware(text, false, &urls.formatter_options());
     }
-    let mut preloaded = vec![mention_target_for_account(local_domain, account)];
+    let web_domain = &urls.web_domain;
+    let mut preloaded = vec![mention_target_for_account(web_domain, account)];
     preloaded.extend(
         mentions
             .iter()
-            .map(|m| mention_target_for_mention(local_domain, m)),
+            .map(|m| mention_target_for_mention(web_domain, m)),
     );
     formatter::html_aware(
         text,
         true,
         &Options {
             preloaded_accounts: &preloaded,
-            ..Options::new(local_domain)
+            ..urls.formatter_options()
         },
     )
 }
@@ -136,11 +138,13 @@ pub fn status_content(
 /// `EntityCache#mention` for every mention `TextFormatter` would look up in
 /// `texts`: the accounts it would link to.
 pub async fn mention_lookup(state: &AppState, texts: &[&str]) -> Vec<MentionTarget> {
-    let local_domain = &state.urls.local_domain;
+    let web_domain = &state.urls.web_domain;
     let mut usernames: Vec<String> = Vec::new();
     let mut domains: Vec<String> = Vec::new();
     for text in texts {
-        for (username, domain) in formatter::text::mention_lookups(text, local_domain) {
+        for (username, domain) in
+            formatter::text::mention_lookups(text, &state.instance.local_domain)
+        {
             // `Account.find_remote` refuses this one.
             if domain.as_deref() == Some("handle.invalid") {
                 continue;
@@ -172,7 +176,7 @@ pub async fn mention_lookup(state: &AppState, texts: &[&str]) -> Vec<MentionTarg
             let domain: Option<String> = row.get("domain");
             let url: Option<String> = row.get("url");
             MentionTarget {
-                url: account_url(local_domain, &username, domain.as_deref(), url.as_deref()),
+                url: account_url(web_domain, &username, domain.as_deref(), url.as_deref()),
                 username,
                 domain,
             }
@@ -183,10 +187,10 @@ pub async fn mention_lookup(state: &AppState, texts: &[&str]) -> Vec<MentionTarg
 /// `FormattingHelper#account_bio_format`, mentions looked up.
 pub async fn account_bio(state: &AppState, note: &str, local: bool) -> String {
     if !local {
-        return formatter::html_aware(note, false, &Options::new(&state.urls.local_domain));
+        return formatter::html_aware(note, false, &state.urls.formatter_options());
     }
     let lookup = mention_lookup(state, &[note]).await;
-    formatter::local_bio(note, &state.urls.local_domain, &lookup)
+    formatter::local_bio(note, &state.urls.formatter_options(), &lookup)
 }
 
 /// `linkify(text)`: announcements, warnings, strikes, report notes.
@@ -196,14 +200,14 @@ pub async fn linkify(state: &AppState, text: &str) -> String {
         text,
         &Options {
             lookup: &lookup,
-            ..Options::new(&state.urls.local_domain)
+            ..state.urls.formatter_options()
         },
     )
 }
 
 /// `FormattingHelper#account_field_value_format` for each of `fields`.
 pub fn field_values(
-    local_domain: &str,
+    urls: &InstanceUrls,
     fields: Vec<types::Field>,
     local: bool,
     lookup: &[MentionTarget],
@@ -212,7 +216,7 @@ pub fn field_values(
         .into_iter()
         .map(|f| types::Field {
             value: if local {
-                formatter::local_field_value(&f.value, local_domain, lookup)
+                formatter::local_field_value(&f.value, &urls.formatter_options(), lookup)
             } else {
                 formatter::remote_field_value(&f.value, f.verified_at.is_some())
             },
@@ -268,21 +272,22 @@ pub async fn link_profile_mentions<'a>(
     if lookup.is_empty() {
         return;
     }
-    let local_domain = &state.urls.local_domain;
+    let urls = &state.urls;
+    let options = urls.formatter_options();
     for account in accounts.iter_mut() {
         let Some((note, fields)) = profiles.get(&account.id) else {
             continue;
         };
         // An unavailable account's profile is blanked; leave it so.
         if !account.note.is_empty() {
-            account.note = formatter::local_bio(note, local_domain, &lookup);
+            account.note = formatter::local_bio(note, &options, &lookup);
         }
         if !account.fields.is_empty() {
             let raw = super::convert::fields_from_db(
                 fields.as_ref().unwrap_or(&serde_json::json!([])),
                 true,
             );
-            account.fields = field_values(local_domain, raw, true, &lookup);
+            account.fields = field_values(urls, raw, true, &lookup);
         }
     }
 }
@@ -314,7 +319,7 @@ pub async fn quote_fallback_urls(state: &AppState, status_ids: &[i64]) -> HashMa
         let url = if row.get::<bool, _>("local") {
             format!(
                 "https://{}/@{}/{}",
-                state.urls.local_domain,
+                state.urls.web_domain,
                 row.get::<String, _>("username"),
                 row.get::<i64, _>("quoted_id")
             )

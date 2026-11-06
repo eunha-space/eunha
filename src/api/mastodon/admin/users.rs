@@ -191,7 +191,7 @@ pub async fn disable_user_two_factor(
     if s.user.confirmed && s.user.approved && !s.user.disabled {
         let email = state.mailer();
         let to = s.user.email.clone();
-        let domain = state.instance.domain.clone();
+        let domain = state.instance.clone();
         {
             if let Err(error) = email.send_two_factor_disabled(&to, &domain).await {
                 tracing::warn!(%error, "could not send a two-factor disabled email");

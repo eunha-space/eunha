@@ -102,7 +102,7 @@ fn public_url(state: &AppState, uri: &Uri) -> String {
     let path = uri
         .path_and_query()
         .map_or(uri.path(), |path_and_query| path_and_query.as_str());
-    format!("https://{}{path}", state.urls.local_domain)
+    format!("https://{}{path}", state.urls.web_domain)
 }
 
 fn redirect(status: StatusCode, location: String) -> Response {
@@ -170,7 +170,7 @@ async fn manifest(state: &AppState) -> Response {
                 .unwrap_or_else(|| {
                     format!(
                         "https://{}/icons/android-chrome-{size}x{size}.png",
-                        state.urls.local_domain
+                        state.urls.web_domain
                     )
                 });
             serde_json::json!({
@@ -629,7 +629,7 @@ fn wrapstodon_page(
     head.push_str(&meta(
         "property",
         "profile:username",
-        &format!("{}@{}", account.username, state.urls.local_domain),
+        &format!("{}@{}", account.username, state.instance.local_domain),
     ));
     head.push_str(&meta("name", "description", &description));
     head.push_str(&meta("property", "og:description", &description));

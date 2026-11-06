@@ -4216,7 +4216,10 @@ async fn test_delete_account_asks_for_the_username() {
             .unwrap();
     assert!(live);
 
-    let acct = format!(" @ALICE@{} ", ctx.state.instance.domain.to_uppercase());
+    let acct = format!(
+        " @ALICE@{} ",
+        ctx.state.instance.local_domain.to_uppercase()
+    );
     let resp = delete(json!({"username": acct, "password": "testpassword123"}))
         .await
         .unwrap();

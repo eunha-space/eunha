@@ -136,7 +136,7 @@ pub async fn authorize(
         request
             .uri
             .clone()
-            .unwrap_or_else(|| crate::federation::relationships::generate_uri(&state.instance.domain)),
+            .unwrap_or_else(|| crate::federation::relationships::generate_uri(&state.instance.web_domain())),
     )
     .fetch_one(&state.db)
     .await?;

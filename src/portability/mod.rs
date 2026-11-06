@@ -27,7 +27,7 @@ use crate::state::AppState;
 pub fn export_acct(state: &AppState, username: &str, domain: Option<&str>) -> String {
     format!(
         "{username}@{}",
-        domain.unwrap_or(state.instance.domain.as_str())
+        domain.unwrap_or(&state.instance.local_domain)
     )
 }
 
@@ -48,7 +48,7 @@ pub fn status_uri(state: &AppState, parts: StatusUriParts<'_>) -> String {
         return parts.uri.unwrap_or_default().to_owned();
     }
     let uri = crate::federation::tag::status_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         parts.account_id,
         parts.account_id_scheme,
         parts.account_username,

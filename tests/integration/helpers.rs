@@ -940,7 +940,8 @@ impl TestContext {
             },
             smtp: None,
             instance: eunha::config::InstanceConfig {
-                domain: domain.clone(),
+                local_domain: domain.clone(),
+                web_domain: None,
                 aliases: Vec::new(),
                 previous_domains: vec![format!("old-{domain}")],
                 title: "c2s test".into(),

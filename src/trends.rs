@@ -616,7 +616,7 @@ pub async fn request_review(state: &AppState) -> anyhow::Result<Requested> {
         }
         if let Err(error) = state
             .mailer()
-            .send_new_trends(&recipient.email, &state.instance.domain, &requested)
+            .send_new_trends(&recipient.email, &state.instance, &requested)
             .await
         {
             tracing::warn!(%error, "could not mail staff about trends to review");
@@ -723,7 +723,7 @@ async fn request_status_reviews(state: &AppState) -> anyhow::Result<Vec<ReviewIt
             let url = if status.local.unwrap_or(false) {
                 format!(
                     "https://{}/@{}/{}",
-                    state.urls.local_domain, status.username, status.id
+                    state.urls.web_domain, status.username, status.id
                 )
             } else {
                 status.url.or(status.uri).unwrap_or_default()

@@ -990,7 +990,7 @@ async fn mail_suggestions(state: &AppState) -> Result<()> {
         }
         if let Err(error) = state
             .mailer()
-            .send_new_moderation_suggestions(&recipient.email, &state.instance.domain)
+            .send_new_moderation_suggestions(&recipient.email, &state.instance)
             .await
         {
             tracing::error!(%error, "could not mail moderation suggestions");

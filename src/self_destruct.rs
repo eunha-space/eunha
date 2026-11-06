@@ -41,11 +41,11 @@ const MAX_ACCOUNT_DELETIONS_PER_PASS: i64 = 50;
 /// key instead, as async refresh ids are.
 pub fn value(instance: &InstanceConfig) -> String {
     match &instance.secret_key_base {
-        Some(secret) => secret.self_destruct_value(&instance.domain),
+        Some(secret) => secret.self_destruct_value(&instance.local_domain),
         None => crate::crypto::sign_message(
             &instance.vapid_private_key,
             VERIFY_PURPOSE.as_bytes(),
-            &instance.domain,
+            &instance.local_domain,
         ),
     }
 }
@@ -72,7 +72,7 @@ pub fn enabled(instance: &InstanceConfig) -> bool {
                 value,
             )
         });
-    signed.as_deref() == Some(instance.domain.as_str())
+    signed.as_deref() == Some(instance.local_domain.as_str())
 }
 
 // ── check_self_destruct! ─────────────────────────────────────────────────
@@ -90,7 +90,7 @@ pub async fn gate(req: Request, next: Next) -> Response {
     let domain = req
         .extensions()
         .get::<AppState>()
-        .map(|state| state.instance.domain.clone())
+        .map(|state| state.instance.local_domain.to_owned())
         .unwrap_or_default();
     gone(req.uri().path(), req.headers(), &domain)
 }
@@ -248,7 +248,7 @@ async fn delete_account(state: &AppState, account_id: i64) -> Result<()> {
         return Ok(());
     };
     if crate::federation::keypair::has_signing_key(state, account.id).await? {
-        let domain = &state.instance.domain;
+        let domain = &state.instance.web_domain();
         let actor = crate::federation::tag::account_uri_of(domain, &account);
         let key_id = crate::federation::tag::key_id_of(domain, &account);
         let inboxes = inboxes(state).await?;

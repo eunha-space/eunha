@@ -93,7 +93,7 @@ pub struct OAuthMetadata {
 pub async fn oauth_metadata(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
 ) -> Json<OAuthMetadata> {
-    let root = format!("https://{}", instance.domain);
+    let root = format!("https://{}", instance.web_domain());
     Json(OAuthMetadata {
         issuer: format!("{root}/"),
         authorization_endpoint: format!("{root}/oauth/authorize"),
@@ -141,7 +141,7 @@ pub async fn userinfo(
     let account = super::accounts::fetch_account(&state, auth.account_id).await?;
     let api = super::convert::account_from_db(&state.urls, &account);
     Ok(Json(Userinfo {
-        iss: format!("https://{}/", instance.domain),
+        iss: format!("https://{}/", instance.web_domain()),
         sub: api.uri,
         name: account.display_name.clone(),
         preferred_username: account.username.clone(),

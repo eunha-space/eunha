@@ -1016,7 +1016,7 @@ fn undefined_method(method: &str) -> AppError {
 /// one without its domain. A repeated handle keeps the place of its first
 /// row and the last row itself, so the rows before it are never queued.
 fn rows_by_acct(state: &AppState, rows: Vec<Row>) -> AppResult<IndexMap<String, Row>> {
-    let suffix = format!("@{}", state.instance.domain);
+    let suffix = format!("@{}", state.instance.local_domain);
     let mut map = IndexMap::new();
     for row in rows {
         let acct = data_str(&row.data, "acct").ok_or_else(|| undefined_method("delete_suffix"))?;
@@ -1438,7 +1438,7 @@ async fn resolve_target(state: &AppState, acct: &str) -> AppResult<Option<Accoun
     let acct = crate::moves::normalize_acct(acct);
     if let Some((username, domain)) = acct.split_once('@') {
         let domain = domain.to_lowercase();
-        let local = domain.eq_ignore_ascii_case(&state.instance.domain)
+        let local = domain.eq_ignore_ascii_case(&state.instance.local_domain)
             || state
                 .instance
                 .aliases
@@ -1519,7 +1519,7 @@ async fn import_row(
             let uri = data_str(data, "uri").ok_or_else(|| undefined_method("normalized_host"))?;
             let local = url::Url::parse(uri).ok().is_some_and(|url| {
                 url.host_str()
-                    .is_some_and(|host| host.eq_ignore_ascii_case(&state.instance.domain))
+                    .is_some_and(|host| state.instance.is_our_host(host))
             });
             let mut status_id = crate::federation::local_uri::status(state, uri).await;
             if status_id.is_none() && local {

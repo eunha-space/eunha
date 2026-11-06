@@ -20,7 +20,8 @@ Every Eunha process serves a registry of instances and hands each request to
 one of them by its `Host` header. Run without arguments, it serves the single
 instance in `config.toml` and the environment, as it always has, and answers
 whatever host it is asked by. Given a directory, it serves one instance per
-`*.toml` in it, each answering to its `instance.domain`:
+`*.toml` in it, each answering to its `instance.domain`, and to its
+`web_domain` and aliases when it has them:
 
 ~~~~
 eunha --tenants /srv/eunha/tenants migrate
@@ -126,13 +127,64 @@ the [multitenancy plan](../design/multitenancy.md); what sharing a process
 saves is measured in [benchmarking](../design/benchmarking.md).
 
 
+Handles on another domain
+-------------------------
+
+An instance's accounts may have handles on one domain while it is served from
+another: `@alice@example.com`, with the server at `social.example.com`. These
+are Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN`, and Eunha's `domain` and
+`web_domain`:
+
+~~~~ toml
+[instance]
+domain = "example.com"
+web_domain = "social.example.com"
+~~~~
+
+A Mastodon `.env.production` sets them as `LOCAL_DOMAIN` and `WEB_DOMAIN`,
+which Eunha reads too. Without `web_domain` the instance is served from
+`domain`, as it always was.
+
+What each one is used for follows Mastodon:
+
+ -  `domain` is in every handle, WebFinger's `subject`, the actor's
+    `webfinger`, and the instance API's `domain` (`uri` in version 1). It is
+    the name the server goes by on its pages, in emails, in the terms and
+    privacy policy (`%{domain}`) and in an authenticator app, and it is in
+    mail `Message-ID`s and `List-ID`s and in OStatus `tag:` ids. A mention of
+    `@bob@example.com` is of the local bob.
+ -  `web_domain` is in every URL: ActivityPub ids, profile and post links,
+    hashtag links, the streaming API, OAuth, and the links in emails.
+    Passkeys are registered for it.
+
+Eunha answers on both, and on any aliases, so WebFinger for
+`acct:alice@example.com` works whichever host it reaches. Most operators serve
+something else at `example.com` and send its WebFinger to the instance instead:
+
+~~~~ nginx
+location /.well-known/webfinger {
+  return 301 https://social.example.com$request_uri;
+}
+~~~~
+
+As in Mastodon, the pair cannot be changed safely once accounts have
+federated: other servers keep the ids they were given, which are on the web
+domain, and the handles they found them by. `eunha rename-domain` and
+`previous_domains` carry the ids across a change of web domain; see
+[account moves](./account-moves.md).
+
+In the tenants directory, a tenant is still known by its `domain`: the web
+domain is one more host it answers on, like an alias.
+
+
 Answering more than one hostname
 --------------------------------
 
 An instance may answer additional HTTP hostnames without changing its canonical
-ActivityPub identity by listing `aliases` under `[instance]`. Handlers continue
-to emit URLs and account identities using `instance.domain`; aliases only affect
-the shared runtime's initial Host dispatch.
+ActivityPub identity by listing `aliases` under `[instance]`, as Mastodon's
+`ALTERNATE_DOMAINS` does. Handlers continue to emit URLs on the web domain and
+handles on `domain`; aliases only affect the shared runtime's Host dispatch,
+and which handles WebFinger answers for.
 
 ~~~~ toml
 [instance]

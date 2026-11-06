@@ -194,7 +194,7 @@ pub async fn search(
             },
         )
         .await?;
-        results.hashtags = render_tags(&state, &instance.domain, &found, viewer_id).await?;
+        results.hashtags = render_tags(&state, instance.web_domain(), &found, viewer_id).await?;
     }
 
     Ok(Json(results))

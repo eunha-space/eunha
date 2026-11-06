@@ -39,7 +39,7 @@ pub async fn resolve_url(
     };
     if parsed
         .host_str()
-        .is_some_and(|host| host.eq_ignore_ascii_case(&state.instance.domain))
+        .is_some_and(|host| host.eq_ignore_ascii_case(state.instance.web_domain()))
     {
         return process_local_url(state, &parsed, viewer).await;
     }
@@ -114,7 +114,7 @@ async fn local_account(state: &AppState, handle: &str) -> AppResult<Option<Resol
     if username.is_empty() {
         return Ok(None);
     }
-    let domain = domain.filter(|d| !d.eq_ignore_ascii_case(&state.instance.domain));
+    let domain = domain.filter(|d| !d.eq_ignore_ascii_case(&state.instance.local_domain));
 
     // `Account.find_local` / `find_remote` are `unscoped` and do not exclude a
     // suspended account: nothing authorizes an account the way `show?`

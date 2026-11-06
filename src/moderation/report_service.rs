@@ -96,7 +96,7 @@ pub async fn call(
     let uri = options.uri.clone().or_else(|| {
         source
             .is_local()
-            .then(|| crate::federation::relationships::generate_uri(&state.instance.domain))
+            .then(|| crate::federation::relationships::generate_uri(state.instance.web_domain()))
     });
 
     let mut tx = state.db.begin().await?;
@@ -345,7 +345,7 @@ pub async fn notify_staff(state: &AppState, report_id: i64, target_id: i64) {
                 .mailer()
                 .send_new_report(
                     &recipient.email,
-                    &state.instance.domain,
+                    &state.instance,
                     report_id,
                     reporter.as_deref(),
                     reporter_domain.as_deref(),
@@ -374,7 +374,7 @@ async fn forward_report(
     let report = sqlx::query!("SELECT uri, comment FROM reports WHERE id = $1", report_id)
         .fetch_one(&state.db)
         .await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let mut object = vec![json!(target.stored_uri().unwrap_or_default())];
     let statuses = sqlx::query!(
         r#"SELECT s.id, s.uri, a.domain, a.id AS account_id, a.id_scheme, a.username

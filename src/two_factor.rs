@@ -404,7 +404,7 @@ pub async fn notify_now(state: &AppState, user: &UserTwoFactor, notice: NoticeKi
         return;
     }
     let email = state.mailer();
-    let domain = &state.instance.domain;
+    let domain = &state.instance;
     let result = match &notice {
         NoticeKind::TwoFactorDisabled => email.send_two_factor_disabled(&user.email, domain).await,
         NoticeKind::Security(kind) => {
@@ -524,7 +524,7 @@ pub async fn notify_failed_second_factor(
     }
     let email = state.mailer();
     let to = user.email.clone();
-    let domain = state.instance.domain.clone();
+    let domain = state.instance.clone();
     let ip = ip.map(|ip| ip.to_string()).unwrap_or_default();
     let browser = crate::browser_detection::describe(user_agent.unwrap_or(""));
     let time_zone = user.time_zone.clone();

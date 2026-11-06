@@ -72,7 +72,7 @@ async fn switch_to_approval_mode(state: &AppState) -> anyhow::Result<()> {
     .await?;
     for to in recipients {
         let email = state.mailer();
-        let domain = state.instance.domain.clone();
+        let domain = state.instance.clone();
         {
             if let Err(error) = email.send_auto_close_registrations(&to, &domain).await {
                 tracing::warn!(%error, "could not mail that registrations were closed");

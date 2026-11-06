@@ -464,7 +464,7 @@ async fn delete_actor(state: &AppState, account: &Account) -> Result<()> {
         return Ok(());
     }
 
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let key_id = crate::federation::tag::key_id_of(domain, account);
     let activity = crate::federation::activity::delete_actor(&actor_url);
@@ -513,7 +513,7 @@ pub(crate) async fn reject_follows_by(state: &AppState, account: &Account) -> Re
     if account.inbox_url.is_empty() {
         return Ok(vec![]);
     }
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let mut targets = vec![];
     // Follows *by* the remote account: Reject them, signed by the local target.
     let outgoing = sqlx::query!(
@@ -566,7 +566,7 @@ async fn sever_remote_follows(state: &AppState, account: &Account) -> Result<()>
         return Ok(());
     }
     reject_follows_by(state, account).await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
 
     // Follows *of* the remote account: Undo them, signed by the local follower.
     let incoming = sqlx::query!(

@@ -223,7 +223,7 @@ pub async fn begin_otp(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     let provisioning_uri =
-        two_factor::provisioning_uri(&secret, &user.email, &state.instance.domain);
+        two_factor::provisioning_uri(&secret, &user.email, &state.instance.local_domain);
     Ok(Json(Setup {
         qr_code: two_factor::qr_code_svg(&provisioning_uri),
         secret,
@@ -424,7 +424,7 @@ pub async fn add_webauthn_credential(
         )
     };
     let challenge = challenge.ok_or_else(error)?;
-    let rp = crate::webauthn::RelyingParty::for_domain(&state.instance.domain);
+    let rp = crate::webauthn::RelyingParty::for_domain(state.instance.web_domain());
     let new = crate::webauthn::verify_registration(&form.credential, &challenge, &rp)
         .map_err(|_| error())?;
     let _: redis::RedisResult<()> = redis::cmd("DEL").arg(&key).query_async(&mut redis).await;

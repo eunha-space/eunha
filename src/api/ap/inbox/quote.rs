@@ -116,7 +116,7 @@ pub(super) async fn process_quote(
     context: Option<&Value>,
     depth: u8,
 ) -> AppResult<()> {
-    let Some(fields) = QuoteFields::parse(object, &state.instance.domain) else {
+    let Some(fields) = QuoteFields::parse(object, state.instance.web_domain()) else {
         return Ok(());
     };
     let quote_state = if fields.deleted {
@@ -176,7 +176,7 @@ pub(super) async fn update_quote(
     context: Option<&Value>,
     explicit: bool,
 ) -> AppResult<bool> {
-    let fields = QuoteFields::parse(object, &state.instance.domain);
+    let fields = QuoteFields::parse(object, state.instance.web_domain());
     let existing = crate::quotes::find_by_status(&state.db, status_id).await?;
     let before = existing.as_ref().map(|q| (q.id, q.state));
     let account_uri = crate::quotes::account_uri(state, account_id)
@@ -687,7 +687,7 @@ pub(super) async fn handle_quote_request(
     )
     .fetch_one(&state.db)
     .await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri(
         domain,
         quoted.account_id,

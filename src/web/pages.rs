@@ -384,7 +384,7 @@ fn display_name(account: &types::Account) -> &str {
 }
 
 fn local_handle(state: &AppState, username: &str) -> String {
-    format!("{username}@{}", state.urls.local_domain)
+    format!("{username}@{}", state.instance.local_domain)
 }
 
 /// `shared/_og`, for the pages with nothing more particular to say.
@@ -423,7 +423,7 @@ pub async fn instance_head(state: &AppState, url: &str) -> Head {
         _ => {
             head.push_str(&opengraph(
                 "og:image",
-                &format!("https://{}/images/preview.png", state.urls.local_domain),
+                &format!("https://{}/images/preview.png", state.urls.web_domain),
             ));
             head.push_str(&opengraph("og:image:width", "1200"));
             head.push_str(&opengraph("og:image:height", "630"));
@@ -496,8 +496,9 @@ pub async fn account_head(state: &AppState, account: &Account, tab: &Tab) -> Hea
 
     // `AccountControllerConcern#set_link_headers`.
     let link = format!(
-        r#"<https://{domain}/.well-known/webfinger?resource=acct%3A{user}%40{domain}>; rel="lrdd"; type="application/jrd+json", <{uri}>; rel="alternate"; type="application/activity+json""#,
-        domain = state.urls.local_domain,
+        r#"<https://{web}/.well-known/webfinger?resource=acct%3A{user}%40{local}>; rel="lrdd"; type="application/jrd+json", <{uri}>; rel="alternate"; type="application/activity+json""#,
+        web = state.instance.web_domain(),
+        local = state.instance.local_domain,
         user = urlencoding::encode(&account.username),
         uri = entity.uri,
     );
@@ -767,7 +768,7 @@ pub async fn status_head(
         "application/json+oembed",
         &format!(
             "https://{}/api/oembed?format=json&url={}",
-            state.urls.local_domain,
+            state.urls.web_domain,
             urlencoding::encode(&url)
         ),
     ));
@@ -813,13 +814,13 @@ pub async fn tag_head(state: &AppState, name: &str, url: &str) -> Head {
         "application/rss+xml",
         &format!(
             "https://{}/tags/{}.rss",
-            state.urls.local_domain,
+            state.urls.web_domain,
             crate::formatter::text::escape_segment(name)
         ),
     );
     let tag_url = format!(
         "https://{}/tags/{}",
-        state.urls.local_domain,
+        state.urls.web_domain,
         crate::formatter::text::escape_segment(name)
     );
     head.push_str(&alternate("application/activity+json", &tag_url));

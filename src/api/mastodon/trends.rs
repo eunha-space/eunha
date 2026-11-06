@@ -72,7 +72,7 @@ pub async fn trending_tags(
     let languages = crate::trends::preferred_languages(&state, viewer_id, &req_headers).await;
     let tags: Vec<Tag> = tags_query(
         &state,
-        &instance.domain,
+        instance.web_domain(),
         limit,
         offset,
         viewer_id,

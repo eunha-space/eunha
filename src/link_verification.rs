@@ -248,7 +248,7 @@ async fn verify_account_links(state: &AppState, account_id: i64) -> anyhow::Resu
             None => return Ok(()),
         }
     } else {
-        format!("https://{}/@{}", state.urls.local_domain, row.username)
+        format!("https://{}/@{}", state.urls.web_domain, row.username)
     };
 
     let mut changed = false;

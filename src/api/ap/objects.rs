@@ -77,13 +77,13 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
     let public_key = crate::federation::instance_actor::public_key(state)
         .await
         .map_err(AppError::Internal)?;
-    let actor_url = crate::federation::instance_actor::actor_url(&instance.domain);
+    let actor_url = crate::federation::instance_actor::actor_url(instance.web_domain());
     let uris = &state.uris;
     let own = super::serving::AccountUris::new(
         uris,
         crate::federation::instance_actor::INSTANCE_ACTOR_ID,
         None,
-        &instance.domain,
+        instance.web_domain(),
     );
 
     let actor = json!({
@@ -92,9 +92,9 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
         "type": "Application",
         "inbox": own.uri(Own::Inbox)?,
         "outbox": own.uri(Own::Outbox)?,
-        "preferredUsername": instance.domain,
+        "preferredUsername": instance.local_domain,
         // `about_more_url(instance_actor: true)`.
-        "url": format!("https://{}/about/more?instance_actor=true", instance.domain),
+        "url": format!("https://{}/about/more?instance_actor=true", instance.web_domain()),
         "manuallyApprovesFollowers": true,
         "publicKey": {
             "id": uris.key_id("instance", "").map_err(anyhow::Error::from)?,
@@ -446,7 +446,7 @@ pub async fn actor_json(
                 json!({
                     "type": "PropertyValue",
                     "name": name,
-                    "value": crate::formatter::local_field_value(value, domain, &lookup),
+                    "value": crate::formatter::local_field_value(value, &state.urls.formatter_options(), &lookup),
                 })
             })
             .collect()
@@ -502,7 +502,7 @@ pub async fn actor_json(
         "@context": context,
         "id": actor_url,
         // `local_username_and_domain`.
-        "webfinger": format!("{}@{}", account.username, domain),
+        "webfinger": format!("{}@{}", account.username, state.instance.local_domain),
         "type": actor_type,
         "following": own.uri(Own::Following)?,
         "followers": own.uri(Own::Followers)?,
@@ -517,7 +517,7 @@ pub async fn actor_json(
             &account.display_name
         },
         "summary": if available {
-            crate::formatter::local_bio(&account.note, domain, &lookup)
+            crate::formatter::local_bio(&account.note, &state.urls.formatter_options(), &lookup)
         } else {
             String::new()
         },

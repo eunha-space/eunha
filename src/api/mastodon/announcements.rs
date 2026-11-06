@@ -93,7 +93,7 @@ pub async fn render(
             image_remote_url: row.image_remote_url.as_deref(),
             image_storage_schema_version: row.image_storage_schema_version,
         });
-        let domain = &state.instance.domain;
+        let domain = &state.instance.web_domain();
         let url = image.map(|i| i.url(&state.storage, domain, "original"));
         let static_url = image.map(|i| i.url(&state.storage, domain, "static"));
         reactions_by_ann

@@ -124,7 +124,8 @@ impl AppState {
         }
         let storage = Arc::new(Storage::from_config(&config.media_storage).await);
         let urls = Arc::new(crate::api::mastodon::convert::InstanceUrls::new(
-            config.instance.domain.clone(),
+            config.instance.local_domain.clone(),
+            config.instance.web_domain().to_owned(),
             storage.missing_avatar_url(),
             storage.missing_header_url(),
         ));
@@ -187,7 +188,7 @@ impl AppState {
             }),
         )?);
 
-        let uris = crate::api::ap::serving::uris(&config.instance.domain)?;
+        let uris = crate::api::ap::serving::uris(config.instance.web_domain())?;
         let search = if config.instance.elasticsearch.enabled {
             Some(Arc::new(crate::search::elasticsearch::Client::new(
                 &config.instance.elasticsearch,

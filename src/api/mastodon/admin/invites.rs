@@ -92,7 +92,7 @@ pub async fn list_admin_invites(
     for r in rows {
         invites.push(AdminInvite {
             id: r.id.to_string(),
-            url: super::super::invites::invite_url(&instance.domain, &r.code),
+            url: super::super::invites::invite_url(instance.web_domain(), &r.code),
             code: r.code,
             uses: r.uses,
             max_uses: r.max_uses,

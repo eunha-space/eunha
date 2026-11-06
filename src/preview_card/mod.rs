@@ -539,9 +539,7 @@ fn bad_url(state: &AppState, url: &Url) -> bool {
         Some(port) => format!("{host}:{port}"),
         None => host.to_owned(),
     };
-    let local = std::iter::once(&state.instance.domain)
-        .chain(state.instance.aliases.iter())
-        .any(|d| d.eq_ignore_ascii_case(&host));
+    let local = state.instance.is_our_host(&host);
     local || !matches!(url.scheme(), "http" | "https")
 }
 
@@ -559,7 +557,7 @@ async fn mention_urls(state: &AppState, status_id: i64) -> HashSet<String> {
     .unwrap_or_default()
     .into_iter()
     .map(|a| match a.domain {
-        None => format!("https://{}/@{}", state.instance.domain, a.username),
+        None => format!("https://{}/@{}", state.instance.web_domain(), a.username),
         Some(_) => a.url.or(a.uri).unwrap_or_default(),
     })
     .collect()
@@ -621,7 +619,7 @@ async fn resolve_account(state: &AppState, handle: &str) -> Option<LinkedAccount
     let resolved = crate::api::mastodon::statuses::resolve_mention_accounts(
         state,
         &[(username.to_lowercase(), domain)],
-        &state.instance.domain,
+        state.instance.web_domain(),
     )
     .await;
     let (_, account) = resolved.into_iter().next()?;

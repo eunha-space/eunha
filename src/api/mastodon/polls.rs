@@ -356,7 +356,7 @@ async fn federate_poll_votes(
     }
 
     let actor = crate::federation::tag::account_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         voter_id,
         voter.id_scheme,
         &voter.username,
@@ -426,7 +426,7 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
     }
 
     let Some(bundle) =
-        crate::api::ap::note::build_note(state, &state.instance.domain, status_id).await?
+        crate::api::ap::note::build_note(state, state.instance.web_domain(), status_id).await?
     else {
         return Ok(());
     };
@@ -446,7 +446,7 @@ pub(crate) async fn federate_poll_update(state: &AppState, status_id: i64) -> an
         "object": bundle.note,
     });
     let actor_url = crate::federation::tag::account_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         status.account_id,
         status.id_scheme,
         &status.username,

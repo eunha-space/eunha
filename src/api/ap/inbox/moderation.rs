@@ -96,7 +96,7 @@ pub(super) async fn handle_block(state: &AppState, activity: &Value) -> AppResul
         // `@account.block!(target_account, uri: @json['id'])`, whose
         // `set_uri` names a block that came without an id.
         let uri = activity_uri.map(str::to_owned).unwrap_or_else(|| {
-            crate::federation::relationships::generate_uri(&state.instance.domain)
+            crate::federation::relationships::generate_uri(state.instance.web_domain())
         });
         sqlx::query!(
             r#"INSERT INTO blocks (account_id, target_account_id, uri, created_at, updated_at)

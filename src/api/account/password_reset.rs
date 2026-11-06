@@ -51,7 +51,7 @@ fn render(
         "password_reset.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => &state.instance.domain,
+            domain => &state.instance.local_domain,
             mode,
             token,
             notice,

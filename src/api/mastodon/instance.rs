@@ -223,17 +223,17 @@ pub async fn get_instance_v1(
     let contact_account = fetch_contact_account(&state, &settings).await;
     let registrations = settings.registrations_mode(&instance);
 
-    let base_url = format!("https://{}", instance.domain);
+    let base_url = format!("https://{}", instance.web_domain());
     let thumbnail = crate::site_uploads::find(&state, "thumbnail").await?;
     Ok(Json(InstanceV1 {
-        uri: instance.domain.clone(),
+        uri: instance.local_domain.to_owned(),
         title: settings.site_title(&instance),
         short_description: settings.site_short_description(&instance),
         description: settings.site_description(&instance),
         email: settings.site_contact_email(&instance),
         version: crate::version::compatible_string(),
         urls: InstanceV1Urls {
-            streaming_api: streaming_api_base_url(&instance.domain),
+            streaming_api: streaming_api_base_url(instance.web_domain()),
         },
         stats: InstanceV1Stats {
             user_count,
@@ -368,7 +368,7 @@ pub async fn get_instance_v2(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
 ) -> AppResult<Json<InstanceV2>> {
-    let base_url = format!("https://{}", instance.domain);
+    let base_url = format!("https://{}", instance.web_domain());
     let settings = crate::settings::Snapshot::load(&state).await;
     let contact_account = fetch_contact_account(&state, &settings).await;
     let registrations = settings.registrations_mode(&instance);
@@ -383,7 +383,7 @@ pub async fn get_instance_v2(
     };
 
     Ok(Json(InstanceV2 {
-        domain: instance.domain.clone(),
+        domain: instance.local_domain.to_owned(),
         title: settings.site_title(&instance),
         version: crate::version::compatible_string(),
         source_url: SOURCE_URL.to_string(),
@@ -423,7 +423,7 @@ pub async fn get_instance_v2(
         languages: languages(&state),
         configuration: InstanceConfiguration {
             urls: InstanceUrls {
-                streaming: streaming_api_base_url(&instance.domain),
+                streaming: streaming_api_base_url(instance.web_domain()),
                 // `InstancePresenter#status_page_url`.
                 status: Some(settings.string("status_page_url")).filter(|u| !u.is_empty()),
                 about: Some(format!("{base_url}/about")),

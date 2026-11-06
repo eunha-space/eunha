@@ -287,7 +287,7 @@ async fn test_mail_is_delivered_later_through_the_queue() {
     let ctx = durable("jobs-mail").await;
     ctx.state
         .mailer()
-        .send_two_factor_disabled("someone@test.invalid", &ctx.domain)
+        .send_two_factor_disabled("someone@test.invalid", &ctx.state.instance)
         .await
         .unwrap();
     assert!(ctx.sent_to("someone@test.invalid").is_empty());

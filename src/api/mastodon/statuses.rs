@@ -766,7 +766,7 @@ pub async fn favourite_status(
             .await
             .unwrap_or(false)
         {
-            let domain = state.instance.domain.clone();
+            let domain = state.instance.web_domain().to_owned();
             let actor_url = crate::federation::tag::account_uri_of(&domain, &from_account);
             // `ActivityPub::LikeSerializer#id`.
             let like_id = like_id(&actor_url, favourite_id);
@@ -849,7 +849,7 @@ pub async fn unfavourite_status(
                 .await
                 .unwrap_or(false)
             {
-                let domain = state.instance.domain.clone();
+                let domain = state.instance.web_domain().to_owned();
                 let actor_url = crate::federation::tag::account_uri(
                     &domain,
                     auth.account_id,
@@ -992,7 +992,7 @@ pub async fn reblog_status(
     // `Status#store_uri`: a local boost's `uri` is `uri_for` it, the id of
     // its `Announce`.
     let boost_uri = crate::federation::tag::activity_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         boost_account.id,
         boost_account.id_scheme,
         &boost_account.username,
@@ -1082,7 +1082,7 @@ pub async fn reblog_status(
         .unwrap_or(false)
     {
         let actor_url =
-            crate::federation::tag::account_uri_of(&state.instance.domain, &boost_account);
+            crate::federation::tag::account_uri_of(state.instance.web_domain(), &boost_account);
         // `ActivityPub::AnnounceNoteSerializer`, as the outbox serves it: the
         // id `TagManager#activity_uri_for` names, addressed by `#to` and
         // `#cc`, and the booster's own followers-only post inline.
@@ -1270,7 +1270,7 @@ async fn federate_pin_change(state: &AppState, account: &Account, status: &DbSta
     let Some(status_uri) = status.uri.clone().filter(|s| !s.is_empty()) else {
         return;
     };
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let target = format!("{actor_url}/collections/featured");
     let activity = if is_add {
@@ -1840,7 +1840,9 @@ pub(crate) async fn federate_status_update(
     }
 
     let bundle =
-        match crate::api::ap::note::build_note(state, &state.instance.domain, status_id).await? {
+        match crate::api::ap::note::build_note(state, state.instance.web_domain(), status_id)
+            .await?
+        {
             Some(bundle) => bundle,
             None => return Ok(()),
         };
@@ -1861,7 +1863,7 @@ pub(crate) async fn federate_status_update(
         "cc": bundle.cc,
         "object": bundle.note,
     });
-    let key_id = crate::federation::tag::key_id_of(&state.instance.domain, account);
+    let key_id = crate::federation::tag::key_id_of(state.instance.web_domain(), account);
 
     // Reach the same audience that received the original (StatusReachFinder).
     use crate::db::models::vis;

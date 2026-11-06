@@ -115,7 +115,7 @@ pub fn processed_text(state: &AppState, object: &Value) -> String {
         spoiler_text(object),
         Some(crate::formatter::text::format(
             &link,
-            &crate::formatter::Options::new(&state.instance.domain),
+            &state.urls.formatter_options(),
         )),
     ]
     .into_iter()

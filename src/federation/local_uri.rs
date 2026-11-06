@@ -9,12 +9,7 @@ use crate::state::AppState;
 fn local_path(state: &AppState, uri: &str) -> Option<Vec<String>> {
     let url = url::Url::parse(uri).ok()?;
     let host = url.host_str()?;
-    let ours = host.eq_ignore_ascii_case(&state.instance.domain)
-        || state
-            .instance
-            .aliases
-            .iter()
-            .any(|alias| host.eq_ignore_ascii_case(alias));
+    let ours = state.instance.is_our_host(host);
     if !ours {
         return None;
     }

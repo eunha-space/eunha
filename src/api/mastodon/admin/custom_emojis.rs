@@ -51,7 +51,7 @@ async fn load(state: &AppState, id: Option<i64>) -> AppResult<Vec<AdminCustomEmo
     )
     .fetch_all(&state.db)
     .await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     Ok(rows
         .into_iter()
         .map(|r| {

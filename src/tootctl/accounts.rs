@@ -379,7 +379,7 @@ async fn rotate_keys_for_account(
     let account = load(&state.db, account_id)
         .await?
         .context("the account is gone")?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri_of(domain, &account);
     let actor = crate::api::ap::objects::actor_json(state, domain, &account)
         .await

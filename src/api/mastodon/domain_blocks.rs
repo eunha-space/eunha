@@ -144,8 +144,8 @@ async fn after_block_domain(state: &AppState, account_id: i64, domain: &str) -> 
     )
     .fetch_one(&state.db)
     .await?;
-    let my_url = tag::account_uri_of(&state.instance.domain, &me);
-    let key_id = tag::key_id_of(&state.instance.domain, &me);
+    let my_url = tag::account_uri_of(state.instance.web_domain(), &me);
+    let key_id = tag::key_id_of(state.instance.web_domain(), &me);
 
     let severs = sqlx::query_scalar!(
         r#"SELECT EXISTS (

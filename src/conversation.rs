@@ -139,7 +139,7 @@ pub async fn assign(db: &PgPool, status_id: i64) -> sqlx::Result<Option<i64>> {
 /// any other URI is found by its `uri`, or recorded.
 pub async fn from_uri(state: &AppState, uri: &str) -> sqlx::Result<Option<i64>> {
     // `OStatus::TagManager#local_id?`.
-    if uri.starts_with(&format!("tag:{}", state.instance.domain)) {
+    if uri.starts_with(&format!("tag:{}", state.instance.local_domain)) {
         let id = uri
             .split_once("objectId=")
             .and_then(|(_, rest)| rest.strip_suffix(":objectType=Conversation"))

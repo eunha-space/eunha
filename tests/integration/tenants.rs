@@ -332,8 +332,8 @@ async fn test_tenants_share_no_in_process_state() {
         !Arc::ptr_eq(&a.state.urls, &b.state.urls),
         "URLs are per tenant"
     );
-    assert_eq!(a.state.urls.local_domain, a.domain);
-    assert_eq!(b.state.urls.local_domain, b.domain);
+    assert_eq!(a.state.urls.web_domain, a.domain);
+    assert_eq!(b.state.urls.web_domain, b.domain);
 }
 
 /// Log output kept in memory, to read back what was logged and in which span.
@@ -662,7 +662,7 @@ async fn test_tenants_come_and_go_without_a_restart() {
         .states()
         .await
         .into_iter()
-        .find(|state| state.instance.domain == a.domain)
+        .find(|state| state.instance.local_domain == a.domain)
         .expect("a is running");
     let began = std::time::Instant::now();
     let reloaded = tenants

@@ -90,7 +90,7 @@ pub async fn start(
             let states = tenants.states().await;
             metrics::gauge!("eunha_serving_tenants").set(states.len() as f64);
             for state in states {
-                let tenant = state.instance.domain.clone();
+                let tenant = state.instance.local_domain.to_owned();
                 metrics::gauge!("eunha_database_pool_connections", "tenant" => tenant.clone())
                     .set(state.db.size() as f64);
                 metrics::gauge!("eunha_database_pool_idle_connections", "tenant" => tenant.clone())
@@ -191,7 +191,7 @@ pub async fn observe(state: AppState, req: Request, next: Next) -> Response {
         return next.run(req).await;
     }
     observe_for(
-        state.instance.domain.clone(),
+        state.instance.local_domain.to_owned(),
         state.metrics_in_flight,
         req,
         next,

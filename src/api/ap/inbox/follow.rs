@@ -33,7 +33,7 @@ pub(super) async fn handle_follow(
 
     // The instance actor cannot be followed (Mastodon rejects these): reply with
     // a Reject signed by the instance actor.
-    if object_uri == crate::federation::instance_actor::actor_url(&instance.domain) {
+    if object_uri == crate::federation::instance_actor::actor_url(instance.web_domain()) {
         if let Ok(follower_id) = resolve_or_fetch_remote_account(state, actor_uri).await {
             let inbox =
                 sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", follower_id,)
@@ -41,7 +41,7 @@ pub(super) async fn handle_follow(
                     .await?
                     .filter(|s| !s.is_empty());
             if let Some(inbox) = inbox {
-                let key_id = crate::federation::instance_actor::key_id(&instance.domain);
+                let key_id = crate::federation::instance_actor::key_id(instance.web_domain());
                 // `reject_follow_request!`: a `Reject` of a
                 // `FollowRequest.new`, which has no id of its own.
                 if let Ok(reject) = crate::federation::relationships::reject_follow(
@@ -72,9 +72,7 @@ pub(super) async fn handle_follow(
     // resolve_or_fetch_remote_account does) rather than the `uri` column, which
     // would miss them and silently drop the follow.
     let target_id: Option<i64> = if let Ok(parsed) = url::Url::parse(object_uri) {
-        let on_our_host = parsed
-            .host_str()
-            .is_some_and(|h| h.eq_ignore_ascii_case(&instance.domain));
+        let on_our_host = parsed.host_str().is_some_and(|h| instance.is_our_host(h));
         let segments: Vec<&str> = parsed
             .path_segments()
             .map(|s| s.collect())
@@ -198,7 +196,9 @@ pub(super) async fn handle_follow(
     let uri = Some(activity_uri)
         .filter(|uri| !uri.is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| crate::federation::relationships::generate_uri(&state.instance.domain));
+        .unwrap_or_else(|| {
+            crate::federation::relationships::generate_uri(state.instance.web_domain())
+        });
     let created = sqlx::query_scalar!(
         r#"INSERT INTO follow_requests (account_id, target_account_id, uri, created_at, updated_at)
            VALUES ($1, $2, $3, now(), now())

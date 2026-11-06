@@ -116,7 +116,7 @@ pub(super) async fn handle_feature_request(state: &AppState, activity: &Value) -
     let (Some(collection_id), Some(featured_account)) = (collection_id, featured_account) else {
         return Ok(());
     };
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor = crate::federation::tag::account_uri(
         domain,
         featured_account.id,
@@ -282,7 +282,7 @@ pub(super) async fn answer_feature_request(
     // `CollectionRawDistributionWorker` with `AddFeaturedItemSerializer`.
     if let Some(add) = crate::api::ap::collections::add_featured_item_activity(
         state,
-        &state.instance.domain,
+        state.instance.web_domain(),
         item.id,
     )
     .await?

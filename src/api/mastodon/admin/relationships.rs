@@ -168,7 +168,7 @@ pub async fn list_admin_relationships(
             .finish();
         let link = format!(
             "<https://{}{}?{query}>; rel=\"next\"",
-            state.instance.domain,
+            state.instance.web_domain(),
             uri.path()
         );
         if let Ok(value) = HeaderValue::from_str(&link) {

@@ -412,7 +412,7 @@ pub async fn build_note(
         &formatter::Options {
             preloaded_accounts: &preloaded,
             quoted_status_url: quote_url.as_deref(),
-            ..formatter::Options::new(domain)
+            ..state.urls.formatter_options()
         },
     );
     let (to, cc) = vis::audience(s.visibility, &followers_url, &mention_uris);
@@ -861,7 +861,7 @@ pub(crate) fn emoji_document(
     image: crate::custom_emoji::ImageRef<'_>,
     content_type: Option<&str>,
 ) -> Value {
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     json!({
         "id": format!("https://{domain}/emojis/{id}"),
         "type": "Emoji",

@@ -536,7 +536,8 @@ where
             run_every(&state, task.name, every, first_in, work).await;
         }
         Schedule::Cron { .. } => {
-            let cron = Cron::for_instance(&state.instance.domain, task).expect("a cron entry");
+            let cron =
+                Cron::for_instance(&state.instance.local_domain, task).expect("a cron entry");
             tracing::debug!(
                 task = task.name,
                 minute = cron.minute,

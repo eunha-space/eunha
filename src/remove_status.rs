@@ -442,7 +442,7 @@ async fn try_remove_from_remote_reach(
         return Ok(());
     }
     let id = status.id;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let key_id = format!("{actor_url}#main-key");
     let distributable = vis::distributable(status.visibility);

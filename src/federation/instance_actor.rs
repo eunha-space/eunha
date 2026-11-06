@@ -35,7 +35,7 @@ pub async fn representative(state: &AppState) -> anyhow::Result<i64> {
 /// Return the instance actor's (private_pem, public_pem), generating and
 /// persisting a keypair on first use.
 pub async fn get_or_create(state: &AppState) -> anyhow::Result<(String, String)> {
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
 
     if let Ok(key) = crate::federation::keypair::signing_key(state, INSTANCE_ACTOR_ID).await {
         if !key.public_key.is_empty() {

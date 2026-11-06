@@ -17,7 +17,10 @@ use crate::db::models;
 /// one's domain and media URLs.
 #[derive(Debug, Clone)]
 pub struct InstanceUrls {
-    /// The domain local accounts' and statuses' URLs are built on.
+    /// The domain local accounts' and statuses' URLs are built on: the web
+    /// domain.
+    pub web_domain: String,
+    /// The domain in local accounts' handles.
     pub local_domain: String,
     /// The public URL media paths hang off, without a trailing slash.
     media_base: String,
@@ -28,17 +31,28 @@ pub struct InstanceUrls {
 impl InstanceUrls {
     /// `missing_avatar` and `missing_header` are the storage's public URLs for
     /// the default images; the media base is read off the avatar's.
-    pub fn new(local_domain: String, missing_avatar: String, missing_header: String) -> Self {
+    pub fn new(
+        local_domain: String,
+        web_domain: String,
+        missing_avatar: String,
+        missing_header: String,
+    ) -> Self {
         let media_base = missing_avatar
             .strip_suffix("/avatars/original/missing.png")
             .unwrap_or_default()
             .to_string();
         Self {
+            web_domain,
             local_domain,
             media_base,
             missing_avatar,
             missing_header,
         }
+    }
+
+    /// The text formatter's options for this instance's domains.
+    pub fn formatter_options(&self) -> crate::formatter::Options<'_> {
+        crate::formatter::Options::with_domains(&self.local_domain, &self.web_domain)
     }
 
     /// Paperclip's `default_url` for a media attachment with no file
@@ -337,7 +351,7 @@ pub fn custom_emoji_entity(
     category: Option<(String, Option<i64>)>,
 ) -> types::CustomEmoji {
     let image = row.image();
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let (category, featured) = match category {
         Some((name, featured_id)) => (Some(name), Some(featured_id == Some(row.id))),
         None => (None, None),
@@ -443,11 +457,7 @@ fn status_url_from_uri(uri: &str) -> Option<String> {
 /// local bio are left unlinked here, where there is no database to look them
 /// up in; [`super::formatting::link_profile_mentions`] links them.
 fn render_account_note(urls: &InstanceUrls, a: &models::Account) -> String {
-    crate::formatter::html_aware(
-        &a.note,
-        a.domain.is_none(),
-        &crate::formatter::Options::new(&urls.local_domain),
-    )
+    crate::formatter::html_aware(&a.note, a.domain.is_none(), &urls.formatter_options())
 }
 
 /// What a viewing account knows about its relationship to the account being
@@ -581,8 +591,8 @@ pub fn account_from_db_for_viewer(
         // Local accounts: the human url is /@username; the AP uri follows the
         // account's id_scheme (/users/{username} or /ap/users/{id}).
         (
-            format!("https://{}/@{}", urls.local_domain, a.username),
-            crate::federation::tag::account_uri(&urls.local_domain, a.id, a.id_scheme, &a.username),
+            format!("https://{}/@{}", urls.web_domain, a.username),
+            crate::federation::tag::account_uri(&urls.web_domain, a.id, a.id_scheme, &a.username),
         )
     } else {
         (
@@ -667,7 +677,7 @@ pub fn account_from_db_for_viewer(
         } else {
             // `account_field_value_format`.
             super::formatting::field_values(
-                &urls.local_domain,
+                urls,
                 fields_from_db(
                     a.fields.as_ref().unwrap_or(&serde_json::json!([])),
                     a.domain.is_none(),
@@ -839,7 +849,7 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
     let unfetched = m.r#type == Some(super::media::TYPE_UNKNOWN)
         && m.file_file_name.as_deref().is_none_or(str::is_empty)
         && m.remote_url.as_deref().is_some_and(|u| !u.is_empty());
-    let proxy = |style: &str| format!("https://{}/media_proxy/{}/{style}", urls.local_domain, m.id);
+    let proxy = |style: &str| format!("https://{}/media_proxy/{}/{style}", urls.web_domain, m.id);
     types::MediaAttachment {
         id: m.id.to_string(),
         media_type: super::media::media_type_str(m.r#type).to_string(),
@@ -953,7 +963,7 @@ pub fn status_from_db_with_app(
     mentions: &[types::StatusMention],
     reblog_mentions: &[types::StatusMention],
 ) -> types::Status {
-    let content = super::formatting::status_content(&urls.local_domain, &s.text, account, mentions);
+    let content = super::formatting::status_content(urls, &s.text, account, mentions);
     let reblog_status = reblog.map(|(rs, ra, rm)| {
         Box::new(status_from_db(
             urls,
@@ -1026,7 +1036,7 @@ pub fn status_from_db_with_app(
             // boosts). Local rows may store a NULL `uri`, so never fall back to
             // the bare id.
             let base = crate::federation::tag::status_uri(
-                &urls.local_domain,
+                &urls.web_domain,
                 account.id,
                 account.id_scheme,
                 &account.username,
@@ -1048,10 +1058,7 @@ pub fn status_from_db_with_app(
                     .clone()
                     .filter(|u| !u.is_empty() && Some(u.as_str()) != s.uri.as_deref())
                     .unwrap_or_else(|| {
-                        format!(
-                            "https://{}/@{}/{}",
-                            urls.local_domain, account.username, s.id
-                        )
+                        format!("https://{}/@{}/{}", urls.web_domain, account.username, s.id)
                     }),
             )
         } else {

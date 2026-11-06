@@ -762,7 +762,7 @@ pub async fn update_credentials(
 ) -> AppResult<Json<ApiAccount>> {
     auth.require_scope("write:accounts")?;
     let account = do_update_credentials(&state, &auth, parts, UpdateEndpoint::Credentials).await?;
-    distribute_account_update(&state, &instance.domain, &account).await;
+    distribute_account_update(&state, instance.web_domain(), &account).await;
     crate::link_verification::verify(&state, auth.account_id).await;
     build_credential_account_response(&state, &auth, account).await
 }
@@ -779,11 +779,11 @@ pub async fn patch_profile(
 ) -> AppResult<Json<crate::api::mastodon::types::Profile>> {
     auth.require_scope("write:accounts")?;
     let account = do_update_credentials(&state, &auth, parts, UpdateEndpoint::Profile).await?;
-    distribute_account_update(&state, &instance.domain, &account).await;
+    distribute_account_update(&state, instance.web_domain(), &account).await;
     crate::link_verification::verify(&state, auth.account_id).await;
 
     Ok(Json(
-        build_profile(&state, &instance.domain, account.id).await?,
+        build_profile(&state, instance.web_domain(), account.id).await?,
     ))
 }
 
@@ -926,7 +926,7 @@ pub async fn get_profile(
 ) -> AppResult<Json<crate::api::mastodon::types::Profile>> {
     auth.require_scope("read:accounts")?;
     Ok(Json(
-        build_profile(&state, &instance.domain, auth.account_id).await?,
+        build_profile(&state, instance.web_domain(), auth.account_id).await?,
     ))
 }
 
@@ -974,7 +974,7 @@ async fn build_profile(
     texts.extend(fields.iter().map(|f| f.value.as_str()));
     let lookup = crate::api::mastodon::formatting::mention_lookup(state, &texts).await;
     let formatted_fields =
-        crate::api::mastodon::formatting::field_values(domain, fields.clone(), true, &lookup);
+        crate::api::mastodon::formatting::field_values(&state.urls, fields.clone(), true, &lookup);
     // `avatar_file_name.present? ? full_asset_url(…) : nil`: no picture is
     // `null` here, not the placeholder the account entity shows.
     let avatar = a.avatar_file_name.as_deref().is_some_and(|f| !f.is_empty());
@@ -984,7 +984,11 @@ async fn build_profile(
         display_name: a.display_name.clone(),
         note: a.note.clone(),
         fields,
-        formatted_note: crate::formatter::local_bio(&a.note, domain, &lookup),
+        formatted_note: crate::formatter::local_bio(
+            &a.note,
+            &state.urls.formatter_options(),
+            &lookup,
+        ),
         formatted_fields,
         avatar: avatar
             .then(|| crate::api::mastodon::convert::account_avatar_url_for(&state.urls, a)),
@@ -1033,7 +1037,7 @@ pub async fn delete_profile_avatar(
     )
     .fetch_one(&state.db)
     .await?;
-    distribute_account_update(&state, &instance.domain, &account).await;
+    distribute_account_update(&state, instance.web_domain(), &account).await;
     let mut api = account_from_db(&state.urls, &account);
     api.emojis = fetch_account_emojis(&state, &account).await;
     api.set_roles(fetch_account_roles(&state, account.id).await);
@@ -1063,7 +1067,7 @@ pub async fn delete_profile_header(
     )
     .fetch_one(&state.db)
     .await?;
-    distribute_account_update(&state, &instance.domain, &account).await;
+    distribute_account_update(&state, instance.web_domain(), &account).await;
     let mut api = account_from_db(&state.urls, &account);
     api.emojis = fetch_account_emojis(&state, &account).await;
     api.set_roles(fetch_account_roles(&state, account.id).await);

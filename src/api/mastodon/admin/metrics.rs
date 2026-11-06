@@ -684,7 +684,7 @@ async fn servers_dimension(
     .bind(tag_id)
     .fetch_all(&state.db)
     .await?;
-    let local = &state.instance.domain;
+    let local = &state.instance.local_domain;
     Ok(rows
         .iter()
         .map(|(domain, value)| {

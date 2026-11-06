@@ -414,7 +414,8 @@ pub(crate) async fn process_status(
 
     let hashtags = extract_hashtags(&text);
     let mention_handles = extract_mention_handles(&text);
-    let resolved = resolve_mention_accounts(&state, &mention_handles, &state.instance.domain).await;
+    let resolved =
+        resolve_mention_accounts(&state, &mention_handles, &state.instance.local_domain).await;
 
     // Mastodon safeguard_private_mention_quote!: a direct post that quotes
     // someone else's status must mention that author, otherwise they would be
@@ -465,7 +466,7 @@ pub(crate) async fn process_status(
     }
 
     let uri = crate::federation::tag::status_uri(
-        &state.instance.domain,
+        state.instance.web_domain(),
         account.id,
         account.id_scheme,
         &account.username,
@@ -474,7 +475,9 @@ pub(crate) async fn process_status(
     // Human permalink — always the /@username form, independent of id_scheme.
     let human_url = format!(
         "https://{}/@{}/{}",
-        state.instance.domain, account.username, status_id
+        state.instance.web_domain(),
+        account.username,
+        status_id
     );
 
     let is_reply = in_reply_to_id.is_some();
@@ -533,7 +536,7 @@ pub(crate) async fn process_status(
         let activity_uri = quoted_is_remote.then(|| {
             format!(
                 "{}/quote_requests/{}",
-                crate::federation::tag::account_uri_of(&state.instance.domain, account),
+                crate::federation::tag::account_uri_of(state.instance.web_domain(), account),
                 uuid::Uuid::new_v4()
             )
         });
@@ -701,7 +704,7 @@ pub(crate) async fn process_status(
         .await
         .unwrap_or(false)
     {
-        let domain = &state.instance.domain;
+        let domain = &state.instance.web_domain();
         let actor_url = crate::federation::tag::account_uri_of(domain, account);
         let key_id = format!("{}#main-key", actor_url);
 

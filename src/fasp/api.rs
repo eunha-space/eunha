@@ -90,7 +90,7 @@ fn target_uri(headers: &HeaderMap, uri: &Uri, state: &AppState) -> String {
     let host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
-        .unwrap_or(&state.instance.domain);
+        .unwrap_or(state.instance.web_domain());
     let path = uri.path_and_query().map_or("/", |p| p.as_str());
     format!("https://{host}{path}")
 }
@@ -297,7 +297,7 @@ async fn create_registration(state: AppState, body: Bytes) -> Response {
             "publicKey": public_key,
             "registrationCompletionUri": format!(
                 "https://{}/admin/fasp/providers/{}/registration/new",
-                state.instance.domain, provider.id
+                state.instance.web_domain(), provider.id
             ),
         })),
     )

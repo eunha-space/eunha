@@ -368,11 +368,12 @@ pub(super) async fn notify(
     .map(|id| {
         format!(
             "https://{}/@{}/{id}",
-            state.instance.domain, target.username
+            state.instance.web_domain(),
+            target.username
         )
     })
     .collect();
-    let acct = format!("@{}@{}", target.username, state.instance.domain);
+    let acct = format!("@{}@{}", target.username, state.instance.local_domain);
     // `linkify(@warning.text)`.
     let text = if text.is_empty() {
         String::new()
@@ -381,7 +382,7 @@ pub(super) async fn notify(
     };
     let email = state.mailer();
     let to = user.email.clone();
-    let domain = state.instance.domain.clone();
+    let domain = state.instance.clone();
     let kind = kind.to_owned();
     let category = category.map(str::to_owned);
     {

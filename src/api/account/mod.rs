@@ -176,7 +176,7 @@ pub async fn account_home(
         return Redirect::to("/auth/setup").into_response();
     }
 
-    let domain = instance.domain.clone();
+    let domain = instance.local_domain.to_owned();
 
     let html = templates::render(
         "account_home.html",
@@ -215,7 +215,7 @@ pub async fn login_page(
     Query(query): Query<LoginQuery>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
-    let domain = instance.domain.clone();
+    let domain = instance.local_domain.to_owned();
 
     let (notice, error) = match query.confirmed.as_deref() {
         Some("1") => (locale.t("confirm_success"), ""),
@@ -264,7 +264,7 @@ pub async fn login_post(
     Form(form): Form<LoginForm>,
 ) -> Response {
     let locale = Locale::detect(None, accept_language(&headers));
-    let domain = instance.domain.clone();
+    let domain = instance.local_domain.to_owned();
     let htmx = is_htmx(&headers);
     let ip = client_addr(client_ip);
     let user_agent = headers
@@ -671,7 +671,7 @@ pub async fn password_page(
         return to_sign_in();
     };
 
-    let domain = instance.domain.clone();
+    let domain = instance.local_domain.to_owned();
     let ok = query.ok.as_deref() == Some("1");
     let err = query.err.as_deref() == Some("1");
     let mismatch = query.mismatch.as_deref() == Some("1");
@@ -837,7 +837,7 @@ pub async fn delete_page(
         "account_delete.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => instance.domain.clone(),
+            domain => instance.local_domain.to_owned(),
             err => query.err.as_deref() == Some("1"),
             has_password => !account.encrypted_password.is_empty(),
             confirmed_and_approved => account.confirmed_and_approved,
@@ -855,7 +855,7 @@ pub async fn delete_page(
             t_warning_data_removal => locale.t("delete_warning_data_removal"),
             t_warning_caches => locale.t("delete_warning_caches"),
             username => account.username.clone(),
-            t_title => locale.t("delete_title").replace("%{acct}", &format!("{}@{}", account.username, state.instance.domain)),
+            t_title => locale.t("delete_title").replace("%{acct}", &format!("{}@{}", account.username, state.instance.local_domain)),
             t_confirm_password => locale.t("delete_confirm_password"),
             t_confirm_username => locale.t("delete_confirm_username"),
             t_confirm_username_hint => locale.t("delete_confirm_username_hint").split_once("%{username}").map(|(before, after)| [before, after]),
@@ -930,7 +930,7 @@ pub async fn delete_post(
     // `challenge_passed?`
     let passed = crate::delete_account::challenge_passed(
         &account.username,
-        &state.instance.domain,
+        state.instance.web_domain(),
         &account.encrypted_password,
         form.username.as_deref().unwrap_or(""),
         form.password.as_deref().unwrap_or(""),
@@ -1138,7 +1138,7 @@ async fn render_setup(
         "auth_setup.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => instance.domain.clone(),
+            domain => instance.local_domain.to_owned(),
             email => user.email.clone(),
             sent,
             error,

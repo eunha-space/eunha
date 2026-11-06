@@ -484,7 +484,7 @@ fn db_row_to_report(
         year,
         data,
         schema_version,
-        share_url: share_url(&state.urls.local_domain, &account.username, year, share_key),
+        share_url: share_url(&state.urls.web_domain, &account.username, year, share_key),
         account_id: account.id.to_string(),
     }
 }
@@ -890,7 +890,7 @@ pub async fn shared(
     if let Some(viewer) = signed_in {
         payload["me"] = viewer.account_id.to_string().into();
     }
-    payload["domain"] = idna::domain_to_unicode(&state.urls.local_domain).0.into();
+    payload["domain"] = idna::domain_to_unicode(&state.urls.web_domain).0.into();
     Ok(Shared::Found(Box::new(SharedReport {
         account,
         year: row.year,

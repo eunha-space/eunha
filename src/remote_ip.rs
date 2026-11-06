@@ -187,7 +187,7 @@ async fn no_access(state: &AppState, ip: IpAddr) -> bool {
     const FRESH: Duration = Duration::from_secs(10);
 
     let cache = CACHE.get_or_init(Default::default);
-    let key = state.instance.domain.clone();
+    let key = state.instance.local_domain.to_owned();
     let cached = cache.lock().ok().and_then(|c| {
         c.get(&key)
             .filter(|(at, _)| at.elapsed() < FRESH)

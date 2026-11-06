@@ -154,7 +154,8 @@ pub fn load_dir(dir: &Path) -> Result<Vec<TenantConfig>> {
         .collect()
 }
 
-/// The tenant that answers to `host`, by its domain or one of its aliases.
+/// The tenant that answers to `host`, by its domain, its web domain or one
+/// of its aliases.
 pub fn find(configs: Vec<TenantConfig>, host: &str) -> Option<TenantConfig> {
     let host = normalize_host(host);
     configs
@@ -195,21 +196,18 @@ fn normalize_host(host: &str) -> String {
 }
 
 fn instance_hosts(instance: &config::InstanceConfig) -> impl Iterator<Item = String> + '_ {
-    std::iter::once(&instance.domain)
-        .chain(instance.aliases.iter())
-        .map(|host| normalize_host(host))
+    instance.hosts().map(normalize_host)
 }
 
 fn aliases(configs: &[TenantConfig]) -> HashMap<String, String> {
     configs
         .iter()
         .flat_map(|tenant| {
-            let canonical = normalize_host(&tenant.config.instance.domain);
+            let canonical = normalize_host(&tenant.config.instance.local_domain);
             tenant
                 .config
                 .instance
-                .aliases
-                .iter()
+                .other_hosts()
                 .map(move |alias| (normalize_host(alias), canonical.clone()))
         })
         .collect()
@@ -496,7 +494,7 @@ fn plan(current: &HashMap<String, Option<u64>>, next: &[TenantConfig]) -> Plan {
     let mut plan = Plan::default();
     let mut configured = HashSet::new();
     for tenant in next {
-        let host = normalize_host(&tenant.config.instance.domain);
+        let host = normalize_host(&tenant.config.instance.local_domain);
         configured.insert(host.clone());
         match current.get(&host) {
             Some(Some(running)) if *running == fingerprint(&tenant.config) => plan.keep.push(host),
@@ -727,7 +725,7 @@ pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
 async fn start_all(configs: Vec<TenantConfig>) -> Vec<(String, TenantConfig, Result<Running>)> {
     futures::stream::iter(configs)
         .map(|tenant| async move {
-            let host = normalize_host(&tenant.config.instance.domain);
+            let host = normalize_host(&tenant.config.instance.local_domain);
             let result = start_one(&tenant).await;
             (host, tenant, result)
         })
@@ -822,13 +820,13 @@ impl Tenants {
         let mut alias_map = HashMap::new();
         let mut running = HashMap::new();
         for state in states {
-            let host = normalize_host(&state.instance.domain);
+            let host = normalize_host(&state.instance.local_domain);
             anyhow::ensure!(
                 !by_host.contains_key(&host) && !alias_map.contains_key(&host),
                 "two tenants both serve {host}"
             );
             by_host.insert(host.clone(), Slot::Serving(Tenant::new(&state, shared)));
-            for alias in &state.instance.aliases {
+            for alias in state.instance.other_hosts() {
                 let alias = normalize_host(alias);
                 anyhow::ensure!(
                     !by_host.contains_key(&alias) && !alias_map.contains_key(&alias),
@@ -926,7 +924,7 @@ impl Tenants {
             .filter(|tenant| {
                 !plan
                     .keep
-                    .contains(&normalize_host(&tenant.config.instance.domain))
+                    .contains(&normalize_host(&tenant.config.instance.local_domain))
             })
             .collect();
         for (host, tenant, result) in start_all(starting).await {
@@ -1094,7 +1092,7 @@ impl Tenants {
                         Ok(permit) => Some(permit),
                         Err(_) => {
                             if let Some(state) = tenant.extensions.get::<AppState>() {
-                                crate::telemetry::capacity_rejection(&state.instance.domain);
+                                crate::telemetry::capacity_rejection(&state.instance.local_domain);
                             }
                             return busy();
                         }

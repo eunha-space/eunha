@@ -80,7 +80,7 @@ pub async fn save(
         c.uri.clone().or_else(|| {
             c.local.then(|| {
                 crate::api::mastodon::collections::collection_uri(
-                    &state.instance.domain,
+                    state.instance.web_domain(),
                     c.account_id,
                     c.id,
                 )
@@ -91,7 +91,9 @@ pub async fn save(
         s.uri.clone().unwrap_or_else(|| {
             format!(
                 "https://{}/users/{}/statuses/{}",
-                state.instance.domain, target.username, s.id
+                state.instance.web_domain(),
+                target.username,
+                s.id
             )
         })
     };
@@ -377,7 +379,7 @@ pub async fn save(
         if collection.local {
             crate::api::mastodon::collections::distribute_collection(
                 state,
-                &state.instance.domain,
+                state.instance.web_domain(),
                 collection.id,
                 false,
             )

@@ -40,7 +40,7 @@ const NOTE_LIMIT: usize = 2_000;
 /// id, or a remote one's stored `uri`.
 pub fn uri_for(state: &AppState, account: &Account) -> String {
     if account.domain.is_none() {
-        crate::federation::tag::account_uri_of(&state.instance.domain, account)
+        crate::federation::tag::account_uri_of(state.instance.web_domain(), account)
     } else {
         account.stored_uri().unwrap_or_default().to_owned()
     }
@@ -93,7 +93,7 @@ pub async fn resolve_account(
         None => (acct.clone(), None),
     };
     let local = domain.as_deref().is_none_or(|domain| {
-        domain.eq_ignore_ascii_case(&state.instance.domain)
+        domain.eq_ignore_ascii_case(&state.instance.local_domain)
             || state
                 .instance
                 .aliases
@@ -339,7 +339,8 @@ async fn distribute_update(state: &AppState, account_id: i64) {
         return;
     };
     if let Err(error) =
-        crate::accounts::distribute_profile(state, &state.instance.domain, &account, None).await
+        crate::accounts::distribute_profile(state, state.instance.web_domain(), &account, None)
+            .await
     {
         tracing::warn!(account_id, %error, "could not distribute the profile Update");
     }

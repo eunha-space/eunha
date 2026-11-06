@@ -62,7 +62,7 @@ pub async fn get_oembed(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let base_url = format!("https://{}", instance.domain);
+    let base_url = format!("https://{}", instance.web_domain());
     let author_url = format!("{base_url}/@{}", row.username);
     let status_url = format!("{base_url}/@{}/{}", row.username, row.id);
     let display_name = if row.display_name.is_empty() {
@@ -72,7 +72,7 @@ pub async fn get_oembed(
     };
 
     let width = params.maxwidth.unwrap_or(400).min(400);
-    let handle = format!("@{}@{}", row.username, instance.domain);
+    let handle = format!("@{}@{}", row.username, instance.local_domain);
     let html = embed_html(&base_url, &status_url, &handle);
 
     Ok(Json(OEmbedResponse {
@@ -81,7 +81,7 @@ pub async fn get_oembed(
         author_name: display_name,
         author_url,
         // `OEmbedSerializer#provider_name`: the local domain.
-        provider_name: instance.domain.clone(),
+        provider_name: instance.local_domain.to_owned(),
         provider_url: base_url,
         cache_age: 86400,
         html,

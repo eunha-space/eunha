@@ -51,7 +51,7 @@ pub fn remote_field_value(value: &str, verified: bool) -> String {
 
 /// `FormattingHelper#account_field_value_format` for a field of a local
 /// account: `with_rel_me`, `with_domains`, on one line.
-pub fn local_field_value(value: &str, local_domain: &str, lookup: &[MentionTarget]) -> String {
+pub fn local_field_value(value: &str, base: &Options<'_>, lookup: &[MentionTarget]) -> String {
     text::format(
         value,
         &Options {
@@ -59,18 +59,18 @@ pub fn local_field_value(value: &str, local_domain: &str, lookup: &[MentionTarge
             with_domains: true,
             with_rel_me: true,
             lookup,
-            ..Options::new(local_domain)
+            ..base.clone()
         },
     )
 }
 
 /// `FormattingHelper#account_bio_format` for a local account.
-pub fn local_bio(note: &str, local_domain: &str, lookup: &[MentionTarget]) -> String {
+pub fn local_bio(note: &str, base: &Options<'_>, lookup: &[MentionTarget]) -> String {
     text::format(
         note,
         &Options {
             lookup,
-            ..Options::new(local_domain)
+            ..base.clone()
         },
     )
 }

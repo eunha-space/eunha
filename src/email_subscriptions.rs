@@ -490,7 +490,7 @@ pub fn unsubscribe_url(state: &AppState, id: i64, confirmation_token: &str) -> S
     };
     format!(
         "https://{}/unsubscribe?token={}",
-        state.instance.domain,
+        state.instance.web_domain(),
         urlencoding::encode(&token)
     )
 }
@@ -523,7 +523,7 @@ async fn subscription_for_token(state: &AppState, token: &str) -> anyhow::Result
 pub fn confirmation_url(state: &AppState, token: &str) -> String {
     format!(
         "https://{}/email_subscriptions/confirmation?confirmation_token={}",
-        state.instance.domain,
+        state.instance.web_domain(),
         urlencoding::encode(token)
     )
 }
@@ -543,12 +543,12 @@ async fn envelope(
             .filter(|l| !l.trim().is_empty())
             .unwrap_or_else(|| state.instance.default_locale().to_owned()),
         name: display_name(account),
-        domain: state.instance.domain.clone(),
-        list_id: format!("<{}.{}>", account.username, state.instance.domain),
+        domain: state.instance.local_domain.to_owned(),
+        list_id: format!("<{}.{}>", account.username, state.instance.local_domain),
         unsubscribe_url: unsubscribe_url(state, sub.id, &token),
         // `privacy_policy_url` since Mastodon 4.7.2 (#40486), absolute as the
         // instance entity's `privacy_policy` is; it was `privacy_policy_path`.
-        privacy_policy_url: format!("https://{}/privacy-policy", state.instance.domain),
+        privacy_policy_url: format!("https://{}/privacy-policy", state.instance.web_domain()),
         footer_text: (!footer.trim().is_empty()).then_some(footer),
     }
 }
@@ -576,7 +576,7 @@ pub async fn send_confirmation(state: &AppState, id: i64) -> anyhow::Result<()> 
         .mailer()
         .send_subscription_confirmation(
             &envelope,
-            &format!("{}@{}", account.username, state.instance.domain),
+            &format!("{}@{}", account.username, state.instance.local_domain),
             &avatar,
             &confirmation_url(state, &token),
         )
@@ -808,7 +808,7 @@ pub async fn distribute(state: &AppState, account_id: i64) -> anyhow::Result<Dis
     }
     let excerpt = truncate(&statuses[0].text, 17);
     let sign_up_url = if crate::settings::registrations_mode(state).await.enabled() {
-        format!("https://{}/auth/signup", state.instance.domain)
+        format!("https://{}/auth/signup", state.instance.web_domain())
     } else {
         "https://joinmastodon.org/".to_string()
     };
@@ -875,7 +875,7 @@ pub(crate) async fn mailed_status(
         content,
         url: format!(
             "https://{}/@{}/{}",
-            state.instance.domain,
+            state.instance.web_domain(),
             account.acct(),
             status.id
         ),

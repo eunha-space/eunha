@@ -390,7 +390,7 @@ pub async fn list_admin_tags(
 ) -> AppResult<Json<Vec<AdminTag>>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
     let limit = params.pagination.limit_clamped(100, 100);
     let max_id = params
         .pagination
@@ -460,7 +460,7 @@ pub async fn get_admin_tag(
 ) -> AppResult<Json<AdminTag>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
     let r = sqlx::query!(
         r#"SELECT id, name, trendable, usable, listable, reviewed_at,
                   COALESCE(display_name, name) AS "display_name!",
@@ -499,7 +499,7 @@ pub async fn update_admin_tag(
 ) -> AppResult<Json<AdminTag>> {
     require_permission(&state, auth.account_id, perm::MANAGE_TAXONOMIES).await?;
     let trendable_by_default = crate::settings::boolean(&state, "trendable_by_default").await;
-    let domain = &instance.domain;
+    let domain = &instance.web_domain();
     let r = sqlx::query!(
         r#"UPDATE tags SET
                trendable   = COALESCE($2, trendable),

@@ -61,7 +61,7 @@ async fn featured(state: &AppState, viewer: i64) -> anyhow::Result<Vec<i64>> {
         }
         // `TagManager#local_domain?`.
         let domain = domain.filter(|d| {
-            !d.eq_ignore_ascii_case(&state.instance.domain)
+            !d.eq_ignore_ascii_case(&state.instance.local_domain)
                 && !state
                     .instance
                     .aliases

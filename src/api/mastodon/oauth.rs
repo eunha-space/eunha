@@ -784,7 +784,7 @@ pub async fn elk_login(
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     super::extractors::Params(body): super::extractors::Params<ElkLoginBody>,
 ) -> AppResult<Json<String>> {
-    let redirect_uri = elk_redirect_uri(&body.origin, &instance.domain);
+    let redirect_uri = elk_redirect_uri(&body.origin, instance.web_domain());
     let scopes = "read write follow push";
 
     // Find or create a stable "Elk" OAuth app for this instance, keeping
@@ -838,7 +838,10 @@ pub async fn elk_login(
 
     let mut url = format!(
         "https://{}/oauth/authorize?client_id={}&redirect_uri={}&response_type=code&scope={}",
-        instance.domain, app.uid, encoded_redirect, encoded_scope,
+        instance.web_domain(),
+        app.uid,
+        encoded_redirect,
+        encoded_scope,
     );
     if force {
         url.push_str("&force_login=true");
@@ -889,7 +892,7 @@ pub async fn elk_oauth_callback(
         None => {
             tracing::warn!(
                 "elk_oauth_callback: no Elk app found for {}",
-                instance.domain
+                instance.web_domain()
             );
             return Redirect::to(&format!("{}/signin/callback?error=no_app", origin))
                 .into_response();
@@ -949,13 +952,13 @@ pub async fn elk_oauth_callback(
     }
 
     tracing::info!(
-        instance = %instance.domain,
+        instance = %instance.local_domain,
         "elk_oauth_callback: issued token, redirecting to signin/callback"
     );
     let redirect = format!(
         "{}/signin/callback?server={}&token={}",
         origin.trim_end_matches('/'),
-        instance.domain,
+        instance.web_domain(),
         token_str,
     );
     Redirect::to(&redirect).into_response()
@@ -1417,7 +1420,7 @@ async fn render_require_reauth(
     .ok()
     .flatten()
     .unwrap_or_default();
-    let handle = format!("{username}@{}", state.instance.domain);
+    let handle = format!("{username}@{}", state.instance.local_domain);
     let prompt = minijinja::Value::from_safe_string(
         locale
             .t("require_reauth_prompt_html")
@@ -1427,7 +1430,7 @@ async fn render_require_reauth(
         "authorize_reauth.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => state.instance.domain,
+            domain => state.instance.local_domain,
             prompt => prompt,
             continue_to => here,
             t_title => locale.t("require_reauth_title"),
@@ -1665,7 +1668,7 @@ async fn render_consent(
         "authorize_consent.html",
         minijinja::context! {
             lang => locale.as_str(),
-            domain => state.instance.domain,
+            domain => state.instance.local_domain,
             username => username,
             client_id => client_id,
             redirect_uri => redirect_uri,
@@ -1714,7 +1717,7 @@ fn render_authorize(
     let html = crate::templates::render(
         "authorize.html",
         minijinja::context! {
-            domain => instance.domain,
+            domain => instance.local_domain,
             app_name => app_name,
             client_id => client_id,
             redirect_uri => redirect_uri,

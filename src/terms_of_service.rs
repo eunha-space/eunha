@@ -222,7 +222,7 @@ pub async fn serialize(state: &AppState, tos: &TermsOfService) -> AppResult<Rest
     Ok(Rest {
         effective_date: effective_date_iso(tos),
         effective: tos.effective(),
-        content: crate::markdown::render_policy(&tos.text, &state.instance.domain),
+        content: crate::markdown::render_policy(&tos.text, &state.instance.local_domain),
         succeeded_by: succeeded_by(&state.db, tos).await?.map(|d| d.to_string()),
     })
 }
@@ -398,7 +398,7 @@ pub async fn flag_for_interstitial(db: &PgPool, tos: &TermsOfService) -> AppResu
 
 /// `UserMailer#terms_of_service_changed` to one user.
 pub async fn send_changed_email(state: &AppState, to: &str, tos: &TermsOfService) {
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let date = tos.usable_effective_date();
     let url = match tos.effective_date {
         Some(d) => format!("https://{domain}/terms-of-service/{d}"),
@@ -409,7 +409,7 @@ pub async fn send_changed_email(state: &AppState, to: &str, tos: &TermsOfService
         .mailer()
         .send_terms_of_service_changed(
             to,
-            domain,
+            &state.instance,
             &date.format("%b %d, %Y").to_string(),
             &url,
             &changelog,

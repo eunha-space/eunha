@@ -1279,7 +1279,7 @@ async fn self_destruct(config: config::Config) -> anyhow::Result<()> {
     if self_destruct::enabled(instance) {
         println!(
             "Self-destruct mode is already enabled for {}",
-            instance.domain
+            instance.local_domain
         );
         let db = command_database(&config).await?;
         match self_destruct::progress(&db).await? {
@@ -1301,7 +1301,7 @@ async fn self_destruct(config: config::Config) -> anyhow::Result<()> {
 
     let typed = prompt("Type in the domain of the server to confirm: ")?;
     anyhow::ensure!(
-        typed == instance.domain,
+        typed == instance.local_domain,
         "Domains do not match. Stopping self-destruct initiation."
     );
     println!(

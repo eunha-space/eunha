@@ -68,7 +68,7 @@ pub async fn signing_key(state: &AppState, on_behalf_of: Option<i64>) -> anyhow:
                 .private_key;
             return Ok(SenderKey {
                 key_id: crate::federation::tag::key_id(
-                    &state.instance.domain,
+                    state.instance.web_domain(),
                     account.id,
                     account.id_scheme,
                     &account.username,

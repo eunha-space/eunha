@@ -30,7 +30,7 @@ pub async fn resolve_instance(
 ) -> Result<Response, AppError> {
     req.extensions_mut()
         .insert(ResolvedInstance((*state.instance).clone()));
-    let span = crate::tenants::span(&state.instance.domain);
+    let span = crate::tenants::span(&state.instance.local_domain);
     Ok(next.run(req).instrument(span).await)
 }
 

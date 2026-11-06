@@ -1115,12 +1115,7 @@ pub async fn process_fetched_actor(
 /// `ActivityPub::TagManager#uri_to_actor` for a URI on this instance.
 async fn local_account(state: &AppState, uri: &str) -> Option<i64> {
     let host = ojak::origin::host_of(uri)?;
-    let ours = host.eq_ignore_ascii_case(&state.instance.domain)
-        || state
-            .instance
-            .aliases
-            .iter()
-            .any(|alias| host.eq_ignore_ascii_case(alias));
+    let ours = state.instance.is_our_host(&host);
     if !ours {
         return None;
     }
@@ -1386,7 +1381,7 @@ fn fetch_status(error: &anyhow::Error) -> Option<u16> {
 
 /// `TagManager#local_domain?`.
 fn is_local_domain(state: &AppState, domain: &str) -> bool {
-    domain.eq_ignore_ascii_case(&state.instance.domain)
+    domain.eq_ignore_ascii_case(&state.instance.local_domain)
         || state
             .instance
             .aliases

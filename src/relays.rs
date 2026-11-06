@@ -32,7 +32,7 @@ const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
 
 /// `ActivityPub::TagManager#generate_uri_for(nil)`.
 fn payload_uri(state: &AppState) -> String {
-    crate::federation::relationships::generate_uri(&state.instance.domain)
+    crate::federation::relationships::generate_uri(state.instance.web_domain())
 }
 
 /// `DeliveryFailureTracker.reset!(inbox_url)`: the relay's host is delivered
@@ -51,7 +51,7 @@ async fn deliver(
 ) -> anyhow::Result<()> {
     // `Account.representative` signs, and must have keys.
     crate::federation::instance_actor::get_or_create(state).await?;
-    let key_id = crate::federation::instance_actor::key_id(&state.instance.domain);
+    let key_id = crate::federation::instance_actor::key_id(state.instance.web_domain());
     crate::federation::delivery::deliver_to_inboxes(
         state,
         activity,
@@ -78,7 +78,7 @@ pub async fn enable(state: &AppState, id: i64) -> anyhow::Result<()> {
     .execute(&state.db)
     .await?;
     reset_delivery_tracker(state, &inbox_url).await?;
-    let actor = crate::federation::instance_actor::actor_url(&state.instance.domain);
+    let actor = crate::federation::instance_actor::actor_url(state.instance.web_domain());
     let follow = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": activity_id,
@@ -106,7 +106,7 @@ pub async fn disable(state: &AppState, id: i64) -> anyhow::Result<()> {
     .execute(&state.db)
     .await?;
     reset_delivery_tracker(state, &row.inbox_url).await?;
-    let actor = crate::federation::instance_actor::actor_url(&state.instance.domain);
+    let actor = crate::federation::instance_actor::actor_url(state.instance.web_domain());
     let undo = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": activity_id,

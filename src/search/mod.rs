@@ -41,7 +41,7 @@ pub fn is_local_domain(state: &AppState, domain: &str) -> bool {
     domain
         .strip_suffix('/')
         .unwrap_or(domain)
-        .eq_ignore_ascii_case(&state.instance.domain)
+        .eq_ignore_ascii_case(&state.instance.local_domain)
 }
 
 /// ActiveRecord's `sanitize_sql_like`: `\`, `%` and `_` escaped with `\`.

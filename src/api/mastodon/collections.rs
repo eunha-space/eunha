@@ -256,7 +256,7 @@ pub(crate) async fn render(
     let Some(c) = load_collection(state, collection_id).await? else {
         return Ok(None);
     };
-    collection_entity(state, &state.instance.domain, &c, viewer_id)
+    collection_entity(state, state.instance.web_domain(), &c, viewer_id)
         .await
         .map(Some)
 }
@@ -285,7 +285,7 @@ pub(crate) async fn tagged_collections(
     )
     .fetch_all(&state.db)
     .await?;
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     for row in rows {
         if let Some(c) = load_collection(state, row.collection_id).await? {
             by_status
@@ -330,7 +330,7 @@ pub async fn account_collections(
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(c) = load_collection(&state, id).await? {
-            out.push(collection_entity(&state, &instance.domain, &c, viewer_id).await?);
+            out.push(collection_entity(&state, instance.web_domain(), &c, viewer_id).await?);
         }
     }
 
@@ -368,7 +368,7 @@ pub async fn account_in_collections(
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(c) = load_collection(&state, id).await? {
-            out.push(collection_entity(&state, &instance.domain, &c, viewer_id).await?);
+            out.push(collection_entity(&state, instance.web_domain(), &c, viewer_id).await?);
         }
     }
 
@@ -391,7 +391,7 @@ pub async fn show_collection(
     let c = load_collection(&state, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let collection = collection_entity(&state, &instance.domain, &c, viewer_id).await?;
+    let collection = collection_entity(&state, instance.web_domain(), &c, viewer_id).await?;
 
     // accounts = [owner] + accounts of visible (pending/accepted) items.
     let items = visible_items(&state, &c, viewer_id).await?;
@@ -542,8 +542,9 @@ pub async fn create_collection(
     let c = load_collection(&state, new_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let entity = collection_entity(&state, &instance.domain, &c, Some(auth.account_id)).await?;
-    distribute_collection(&state, &instance.domain, new_id, true).await;
+    let entity =
+        collection_entity(&state, instance.web_domain(), &c, Some(auth.account_id)).await?;
+    distribute_collection(&state, instance.web_domain(), new_id, true).await;
     Ok(Json(json!({ "collection": entity })))
 }
 
@@ -641,7 +642,8 @@ pub async fn update_collection(
     {
         notify_of_collection_update(&state, id).await;
     }
-    let entity = collection_entity(&state, &instance.domain, &c, Some(auth.account_id)).await?;
+    let entity =
+        collection_entity(&state, instance.web_domain(), &c, Some(auth.account_id)).await?;
     // `UpdateCollectionService#relevant_attributes_changed?`.
     if previous.name != c.name
         || previous.description != c.description
@@ -650,7 +652,7 @@ pub async fn update_collection(
         || previous.discoverable != c.discoverable
         || previous.tag_name != c.tag_name
     {
-        distribute_collection(&state, &instance.domain, id, false).await;
+        distribute_collection(&state, instance.web_domain(), id, false).await;
     }
     Ok(Json(json!({ "collection": entity })))
 }
@@ -724,7 +726,7 @@ pub async fn delete_collection(
         .execute(&state.db)
         .await?;
     destroy_notifications(&state.db, id).await?;
-    distribute_collection_removal(&state, &instance.domain, id, auth.account_id).await;
+    distribute_collection_removal(&state, instance.web_domain(), id, auth.account_id).await;
     Ok(Json(json!({})))
 }
 
@@ -782,7 +784,7 @@ async fn add_item(
     // via a FeatureRequest -> Accept/Reject handshake.
     let is_remote = target.domain.is_some();
     let item_state: i32 = if is_remote { 0 } else { 1 };
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
 
     let owner = sqlx::query!(
         "SELECT a.id, a.username, a.id_scheme
@@ -1063,7 +1065,7 @@ pub(crate) async fn revoke_item(state: &AppState, item_id: i64) -> AppResult<()>
     {
         return Ok(());
     }
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor = crate::federation::tag::account_uri_of(domain, &signer);
     let stamp = ap_coll::feature_authorization_uri(domain, signer.id, item_id);
     let activity =
@@ -1096,7 +1098,7 @@ async fn revoke_from_local_collection(
     let Ok(key) = crate::federation::keypair::signing_key(state, signer.id).await else {
         return Ok(());
     };
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor = crate::federation::tag::account_uri_of(domain, signer);
     let stamp = ap_coll::feature_authorization_uri(domain, signer.id, item_id);
     let Some(collection) = ap_coll::load_ap_collection(state, collection_id)
@@ -1163,7 +1165,7 @@ pub(crate) async fn delete_item(state: &AppState, item_id: i64, revoke: bool) ->
     else {
         return Ok(());
     };
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let actor = crate::federation::tag::account_uri_of(domain, &owner);
     // `ActivityPub::RemoveFeaturedItemSerializer`.
     let activity = json!({
@@ -1208,7 +1210,7 @@ pub(crate) async fn distribute_collection_raw(
     else {
         return Ok(());
     };
-    let actor = crate::federation::tag::account_uri_of(&state.instance.domain, &owner);
+    let actor = crate::federation::tag::account_uri_of(state.instance.web_domain(), &owner);
     let mut inboxes = crate::federation::delivery::account_reach_inboxes(state, owner.id)
         .await
         .map_err(AppError::Internal)?;

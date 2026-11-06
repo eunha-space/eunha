@@ -109,7 +109,7 @@ async fn try_forward(
     .fetch_one(&state.db)
     .await?;
     let key_id = crate::federation::tag::key_id(
-        &state.instance.domain,
+        state.instance.web_domain(),
         account.id,
         account.id_scheme,
         &account.username,

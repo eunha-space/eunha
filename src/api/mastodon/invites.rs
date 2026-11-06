@@ -95,7 +95,7 @@ pub async fn list_invites(
         .map(|r| InviteResponse {
             bypass_approval: role_bypass || grants.contains_key(&r.id),
             grant: grants.remove(&r.id),
-            url: invite_url(&instance.domain, &r.code),
+            url: invite_url(instance.web_domain(), &r.code),
             id: r.id.to_string(),
             code: r.code,
             expires_at: r.expires_at,
@@ -173,7 +173,7 @@ pub async fn create_invite(
     Ok(Json(InviteResponse {
         grant: None,
         bypass_approval: super::signup::invite_bypasses_approval(&state, row.id).await,
-        url: invite_url(&instance.domain, &row.code),
+        url: invite_url(instance.web_domain(), &row.code),
         id: row.id.to_string(),
         code: row.code,
         expires_at: row.expires_at,

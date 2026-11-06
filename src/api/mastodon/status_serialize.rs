@@ -494,7 +494,7 @@ pub async fn fetch_statuses_tags(
     state: &AppState,
     status_id: i64,
 ) -> AppResult<Vec<super::types::StatusTag>> {
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let rows = sqlx::query!(
         r#"SELECT t.name
            FROM tags t
@@ -542,7 +542,7 @@ pub async fn fetch_status_mentions(
             },
             // `ActivityPub::TagManager#url_for`.
             url: if r.domain.is_none() {
-                format!("https://{}/@{}", state.urls.local_domain, r.username)
+                format!("https://{}/@{}", state.urls.web_domain, r.username)
             } else {
                 r.url.unwrap_or_default()
             },
@@ -558,7 +558,7 @@ pub async fn batch_statuses_tags(
     if status_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let rows = sqlx::query!(
         r#"SELECT st.status_id, t.name
            FROM tags t
@@ -612,7 +612,7 @@ pub async fn batch_status_mentions(
                 },
                 // `ActivityPub::TagManager#url_for`.
                 url: if r.domain.is_none() {
-                    format!("https://{}/@{}", state.urls.local_domain, r.username)
+                    format!("https://{}/@{}", state.urls.web_domain, r.username)
                 } else {
                     r.url.unwrap_or_default()
                 },

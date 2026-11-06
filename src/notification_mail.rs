@@ -184,7 +184,10 @@ pub async fn deliver(state: &AppState, notification_id: i64) -> anyhow::Result<(
         .clone()
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| state.instance.default_locale().into());
-    let domain = &state.instance.domain;
+    let domain = state.instance.web_domain();
+    // `Rails.configuration.x.local_domain`, which the `Message-ID` and
+    // `List-ID` name the server by.
+    let local_domain = &state.instance.local_domain;
 
     let mut status = None;
     let mut account = None;
@@ -208,7 +211,7 @@ pub async fn deliver(state: &AppState, notification_id: i64) -> anyhow::Result<(
                 .await?
                 {
                     conversation_message_id = Some(format!(
-                        "<conversation-{conversation_id}.{}@{domain}>",
+                        "<conversation-{conversation_id}.{}@{local_domain}>",
                         created_at.date()
                     ));
                 }
@@ -261,7 +264,7 @@ pub async fn deliver(state: &AppState, notification_id: i64) -> anyhow::Result<(
         button_url,
         preferences_url: format!("https://{domain}/settings"),
         unsubscribe_url: unsubscribe_url(state, n.account_id, kind).await,
-        list_id: format!("<{kind}.{}.{domain}>", me.username),
+        list_id: format!("<{kind}.{}.{local_domain}>", me.username),
         conversation_message_id,
     };
     state.email.send_notification_mail(&mail).await
@@ -374,7 +377,7 @@ pub async fn unsubscribe_url(state: &AppState, account_id: i64, kind: &str) -> S
         .unwrap_or_default();
     format!(
         "https://{}/unsubscribe?token={}&type={kind}",
-        state.instance.domain,
+        state.instance.web_domain(),
         urlencoding::encode(&user_token(state, user_id)),
     )
 }

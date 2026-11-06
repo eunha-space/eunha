@@ -886,7 +886,7 @@ async fn forward_for_reply(state: &AppState, activity: &Value, author_id: i64, s
         .fetch_one(&state.db)
         .await?;
         let key_id = crate::federation::tag::key_id(
-            &state.instance.domain,
+            state.instance.web_domain(),
             author_id,
             author.id_scheme,
             &author.username,

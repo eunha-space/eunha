@@ -177,9 +177,12 @@ impl EmailSender {
     pub async fn send_reconfirmation_instructions(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         confirm_url: &str,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let url = html_escape(confirm_url);
         let body = format!(
             "<h1>Verify email address</h1>\
@@ -372,11 +375,14 @@ impl EmailSender {
         &self,
         to: &str,
         name: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         tracked_version: &str,
         versions: &[String],
         urgent: bool,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let listed = versions
             .iter()
             .map(|v| format!("<li>Mastodon {v}</li>"))
@@ -415,11 +421,14 @@ impl EmailSender {
         &self,
         to: &str,
         name: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         branch: &str,
         end_of_support: &str,
         days_remaining: i64,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let (subject, urgency) = if days_remaining < 0 {
             (
                 format!("[{instance_domain}] Mastodon {branch} is out of support"),
@@ -459,12 +468,15 @@ impl EmailSender {
         &self,
         to: &str,
         acct: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         action: &str,
         text: &str,
         reason: Option<(&str, &[String])>,
         cited_statuses: &[String],
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let subject = match action {
             "delete_statuses" => format!("Your posts on {acct} have been removed"),
             "disable" => format!("Your account {acct} has been frozen"),
@@ -547,12 +559,16 @@ impl EmailSender {
     pub async fn send_new_report(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         report_id: i64,
         reporter: Option<&str>,
         reporter_domain: Option<&str>,
         target: &str,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("New report for {instance_domain} (#{report_id})");
         let line = match (reporter, reporter_domain) {
             (Some(reporter), _) => format!(
@@ -569,7 +585,7 @@ impl EmailSender {
             }
             (None, None) => format!("Someone has reported {}", html_escape(target)),
         };
-        let url = format!("https://{instance_domain}/admin/reports/{report_id}");
+        let url = format!("https://{web_domain}/admin/reports/{report_id}");
         let body = format!("<p>{line}</p><p><a href=\"{url}\">{url}</a></p>");
         self.send_admin(to, &subject, &body, false).await
     }
@@ -578,8 +594,11 @@ impl EmailSender {
     pub async fn send_auto_close_registrations(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let instance = html_escape(instance_domain);
         let body = format!(
             "<p>Due to a lack of recent moderator activity, registrations on {instance} have \
@@ -603,13 +622,17 @@ impl EmailSender {
     pub async fn send_new_pending_account(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         account_id: i64,
         username: &str,
         invite_request: Option<&str>,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("New account up for review on {instance_domain} ({username})");
-        let url = format!("https://{instance_domain}/admin/accounts/{account_id}");
+        let url = format!("https://{web_domain}/admin/accounts/{account_id}");
         let reason = invite_request
             .filter(|r| !r.is_empty())
             .map(|r| format!("<blockquote>{}</blockquote>", html_escape(r)))
@@ -626,10 +649,14 @@ impl EmailSender {
     pub async fn send_new_moderation_suggestions(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("New moderation suggestions available on {instance_domain}!");
-        let url = format!("https://{instance_domain}/admin/moderation_suggestions");
+        let url = format!("https://{web_domain}/admin/moderation_suggestions");
         let body = format!(
             "<p>The moderation lists your server is subscribed to have published new \
              suggestions.</p><p><a href=\"{url}\">{url}</a></p>"
@@ -641,9 +668,13 @@ impl EmailSender {
     pub async fn send_new_pending_accounts(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         accounts: &[PendingAccount],
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("New accounts up for review on {instance_domain}");
         let mut body = format!(
             "<p>New accounts have been created on {instance_domain}. As your server is \
@@ -652,10 +683,7 @@ impl EmailSender {
              the new accounts are below. You can approve or reject these applications.</p>"
         );
         for account in accounts {
-            let url = format!(
-                "https://{instance_domain}/admin/accounts/{}",
-                account.account_id
-            );
+            let url = format!("https://{web_domain}/admin/accounts/{}", account.account_id);
             let reason = account
                 .invite_request
                 .as_deref()
@@ -677,7 +705,8 @@ impl EmailSender {
     /// for.
     pub async fn send_welcome(&self, to: &str, mail: &WelcomeMail) -> anyhow::Result<()> {
         let domain = &mail.domain;
-        let web = |path: &str| format!("https://{domain}/{path}");
+        let web_domain = &mail.web_domain;
+        let web = |path: &str| format!("https://{web_domain}/{path}");
         let checklist = [
             (
                 mail.has_profile,
@@ -742,7 +771,7 @@ impl EmailSender {
                 };
                 format!(
                     "<li><a href=\"{}\">#{}</a> · {count}</li>",
-                    crate::formatter::text::tag_url(domain, name),
+                    crate::formatter::text::tag_url(web_domain, name),
                     html_escape(name)
                 )
             })
@@ -807,9 +836,13 @@ impl EmailSender {
     pub async fn send_new_trends(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         requested: &crate::trends::Requested,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("New trends up for review on {instance_domain}");
         let section = |title: &str, items: &[crate::trends::ReviewItem], path: &str| {
             if items.is_empty() {
@@ -825,7 +858,7 @@ impl EmailSender {
                     )
                 })
                 .collect();
-            let url = format!("https://{instance_domain}{path}");
+            let url = format!("https://{web_domain}{path}");
             format!("<h2>{title}</h2><ul>{list}</ul><p>View: <a href=\"{url}\">{url}</a></p>")
         };
         let body =
@@ -939,11 +972,14 @@ impl EmailSender {
     pub async fn send_terms_of_service_changed(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         date: &str,
         url: &str,
         changelog_html: &str,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let domain = html_escape(instance_domain);
         let url = html_escape(url);
         let body = format!(
@@ -969,9 +1005,12 @@ impl EmailSender {
     pub async fn send_announcement_published(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         text: &str,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
         let domain = html_escape(instance_domain);
         let body = format!(
             "<h1>{domain} service announcement</h1>\
@@ -988,12 +1027,15 @@ impl EmailSender {
     pub async fn send_appeal_decided(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         approved: bool,
         appeal_created_at: chrono::NaiveDateTime,
         strike_created_at: chrono::NaiveDateTime,
         time_zone: Option<&str>,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
         use crate::time_zones::format_with_time_zone;
         let date = appeal_created_at.format("%b %d, %Y, %H:%M");
         let appeal_date = format_with_time_zone(appeal_created_at.and_utc(), time_zone, "en");
@@ -1018,7 +1060,7 @@ impl EmailSender {
                 ),
             )
         };
-        let url = format!("https://{instance_domain}/");
+        let url = format!("https://{web_domain}/");
         let body =
             format!("<h1>{title}</h1><p>{explanation}</p><p><a href=\"{url}\">{url}</a></p>");
         self.send(to, &subject, &body).await
@@ -1030,7 +1072,7 @@ impl EmailSender {
     pub async fn send_new_appeal(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         target: &str,
         action_taken_by: &str,
         strike_created_at: chrono::NaiveDateTime,
@@ -1038,6 +1080,10 @@ impl EmailSender {
         text: &str,
         strike_id: i64,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
         let subject = format!("{target} is appealing a moderation decision on {instance_domain}");
         // `admin_mailer.new_appeal.actions`.
         let kind = match action {
@@ -1050,7 +1096,7 @@ impl EmailSender {
             _ => "a warning",
         };
         let date = strike_created_at.format("%b %d, %Y, %H:%M UTC");
-        let url = format!("https://{instance_domain}/disputes/strikes/{strike_id}");
+        let url = format!("https://{web_domain}/disputes/strikes/{strike_id}");
         let body = format!(
             "<p>{} is appealing a moderation decision by {} from {date}, which was {kind}. \
              They wrote:</p><blockquote>{}</blockquote><p>You can approve the appeal to undo \
@@ -1066,9 +1112,12 @@ impl EmailSender {
     pub async fn send_two_factor_disabled(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
     ) -> anyhow::Result<()> {
-        let url = format!("https://{instance_domain}/settings");
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
+        let url = format!("https://{web_domain}/settings");
         let body = format!(
             "<h1>2FA disabled</h1><p>Login is now possible using only e-mail address and \
              password.</p><p><a href=\"{url}\">{url}</a></p>"
@@ -1083,10 +1132,13 @@ impl EmailSender {
     pub async fn send_backup_ready(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         backup_id: i64,
     ) -> anyhow::Result<()> {
-        let url = format!("https://{instance_domain}/backups/{backup_id}/download");
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
+        let url = format!("https://{web_domain}/backups/{backup_id}/download");
         let body = format!(
             "<h1>Archive takeout</h1><p>You requested a full backup of your account.</p>\
              <p>It's now ready for download!</p>\
@@ -1102,9 +1154,12 @@ impl EmailSender {
     pub async fn send_security_notice(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         notice: SecurityNotice<'_>,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
         let (subject, title, explanation, extra): (String, &str, &str, Option<String>) =
             match notice {
                 SecurityNotice::TwoFactorEnabled => (
@@ -1174,7 +1229,7 @@ impl EmailSender {
                     ),
                 ),
             };
-        let url = format!("https://{instance_domain}/settings");
+        let url = format!("https://{web_domain}/settings");
         let extra = extra.map(|e| format!("<p>{e}</p>")).unwrap_or_default();
         let body = format!(
             "<h1>{title}</h1><p>{explanation}</p>{extra}\
@@ -1189,13 +1244,16 @@ impl EmailSender {
     pub async fn send_sign_in_alert(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         suspicious: bool,
         remote_ip: &str,
         browser: &str,
         timestamp: chrono::DateTime<chrono::Utc>,
         time_zone: Option<&str>,
     ) -> anyhow::Result<()> {
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
         let (subject, title, explanation, details, further) = if suspicious {
             (
                 "Your account has been accessed from a new IP address",
@@ -1214,7 +1272,7 @@ impl EmailSender {
                 "immediately as it may be compromised.",
             )
         };
-        let url = format!("https://{instance_domain}/account/password");
+        let url = format!("https://{web_domain}/account/password");
         let body = format!(
             "<h1>{title}</h1><p>{explanation}</p><p>{details}</p>\
              <p><strong>IP:</strong> {}<br><strong>Browser:</strong> {}<br>\
@@ -1233,14 +1291,17 @@ impl EmailSender {
     pub async fn send_sign_in_token(
         &self,
         to: &str,
-        instance_domain: &str,
+        instance: &crate::config::InstanceConfig,
         code: &str,
         remote_ip: &str,
         browser: &str,
         timestamp: chrono::DateTime<chrono::Utc>,
         time_zone: Option<&str>,
     ) -> anyhow::Result<()> {
-        let url = format!("https://{instance_domain}/account/password");
+        // `@instance`, Mastodon's `LOCAL_DOMAIN`, names the server; its
+        // links are on `WEB_DOMAIN`.
+        let web_domain = instance.web_domain();
+        let url = format!("https://{web_domain}/account/password");
         let body = format!(
             "<h1>Sign in attempt</h1>\
              <p>We detected an attempt to sign in to your account after a long time of \
@@ -1432,7 +1493,10 @@ pub struct PendingAccount {
 /// when it is sent.
 #[derive(Debug, Clone, Default)]
 pub struct WelcomeMail {
+    /// `@instance`: the local domain, the server's name.
     pub domain: String,
+    /// The web domain the mail's links are on.
+    pub web_domain: String,
     pub username: String,
     /// `@has_account_fields`: a display name, a note or an avatar.
     pub has_profile: bool,
@@ -1770,6 +1834,13 @@ mod smtp_tests {
         }
     }
 
+    fn instance(toml: &str) -> crate::config::InstanceConfig {
+        toml::from_str(&format!(
+            "{toml}\nvapid_private_key = \"\"\nvapid_public_key = \"\"\n"
+        ))
+        .unwrap()
+    }
+
     const AUTOREPLY: [(&str, &str); 3] = [
         ("Auto-Submitted", "auto-generated"),
         ("Precedence", "list"),
@@ -1781,6 +1852,29 @@ mod smtp_tests {
         ("X-Priority", "1"),
     ];
 
+    /// `@instance` is the local domain, which names the server; links are on
+    /// the web domain.
+    #[tokio::test]
+    async fn a_mail_names_the_local_domain_and_links_to_the_web_one() {
+        let sender = capturing();
+        let split = instance("domain = \"example.com\"\nweb_domain = \"social.example.com\"");
+        sender
+            .send_new_pending_account("a@example.com", &split, 7, "carol", None)
+            .await
+            .unwrap();
+        let mail = &sender.sent()[0];
+        assert_eq!(
+            mail.subject,
+            "New account up for review on example.com (carol)"
+        );
+        let body = format!("{}{}", mail.html, mail.text);
+        assert!(
+            body.contains("https://social.example.com/admin/accounts/7"),
+            "{body}"
+        );
+        assert!(!body.contains("https://example.com/"), "{body}");
+    }
+
     /// `AdminMailer` mails are text alone, with `ApplicationMailer`'s
     /// auto-reply headers, and `set_important_headers!` only on
     /// `new_critical_software_updates` and
@@ -1788,9 +1882,10 @@ mod smtp_tests {
     #[tokio::test]
     async fn admin_mail_is_text_with_its_headers() {
         let sender = capturing();
+        let x = instance(r#"domain = "x.test""#);
         for urgent in [false, true] {
             sender
-                .send_software_updates("a@example.com", "a", "x.test", "4.7.2", &[], urgent)
+                .send_software_updates("a@example.com", "a", &x, "4.7.2", &[], urgent)
                 .await
                 .unwrap();
         }
@@ -1799,7 +1894,7 @@ mod smtp_tests {
                 .send_end_of_support(
                     "a@example.com",
                     "a",
-                    "x.test",
+                    &x,
                     "4.7",
                     "2027-01-01",
                     days_remaining,
@@ -1808,7 +1903,7 @@ mod smtp_tests {
                 .unwrap();
         }
         sender
-            .send_new_report("a@example.com", "x.test", 7, Some("bob"), None, "eve")
+            .send_new_report("a@example.com", &x, 7, Some("bob"), None, "eve")
             .await
             .unwrap();
         let sent = sender.sent();

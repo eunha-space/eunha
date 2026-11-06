@@ -1012,7 +1012,7 @@ fn notification_fallback(
             false,
         )
     };
-    let base = format!("https://{}", state.urls.local_domain);
+    let base = format!("https://{}", state.urls.web_domain);
     let sign_in = |url: &str| {
         format!(
             r#"<a href="{}">Sign in to the Mastodon web app</a>"#,
@@ -1034,7 +1034,7 @@ fn notification_fallback(
                 format!("Lost connections with {target}"),
                 format!(
                     "An admin from {} has suspended {}, which means you can no longer receive updates from them or interact with them. {} to retrieve a list of the lost relationships.",
-                    h(&state.urls.local_domain),
+                    h(&state.urls.web_domain),
                     h(target),
                     sign_in(&format!("{base}/severed_relationships")),
                 ),

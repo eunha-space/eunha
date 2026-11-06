@@ -342,7 +342,7 @@ async fn perform(state: &AppState, backup_id: i64) -> AppResult<()> {
     if backup.active == Some(true) {
         if let Some(email) = backup.email {
             let sender = state.mailer();
-            let domain = state.instance.domain.clone();
+            let domain = state.instance.clone();
             {
                 if let Err(error) = sender.send_backup_ready(&email, &domain, backup_id).await {
                     tracing::warn!(%error, "could not send an archive-ready email");
@@ -571,7 +571,7 @@ async fn dump_outbox(state: &AppState, archive: &mut Archive, account: &Account)
     )
     .fetch_all(&state.db)
     .await?;
-    let domain = state.instance.domain.as_str();
+    let domain = state.instance.web_domain();
     let mut items = Vec::with_capacity(statuses.len());
     for status in &statuses {
         let item = match status.reblog_of_id {
@@ -674,7 +674,7 @@ pub(crate) async fn announce_note(
     let Some(original) = original else {
         return Ok(None);
     };
-    let domain = state.instance.domain.as_str();
+    let domain = state.instance.web_domain();
     let actor_url = crate::federation::tag::account_uri_of(domain, account);
     let followers_url = format!("{actor_url}/followers");
     let original_author = if original.domain.is_none() {
@@ -814,7 +814,7 @@ fn extname(path: &str) -> &str {
 /// What the two share is taken from the actor Eunha federates.
 async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value> {
     use crate::api::ap::context_helper::serialized_context;
-    let domain = state.instance.domain.as_str();
+    let domain = state.instance.web_domain();
     let base = crate::api::ap::objects::actor_json(state, domain, account).await?;
     let unavailable = account.is_unavailable();
     let actor_url = base["id"].as_str().unwrap_or_default().to_owned();
@@ -883,7 +883,7 @@ async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value>
 
     let mut actor = json!({
         "id": actor_url,
-        "webfinger": format!("{}@{domain}", account.username),
+        "webfinger": format!("{}@{}", account.username, state.instance.local_domain),
         "type": base["type"],
         "following": base["following"],
         "followers": base["followers"],

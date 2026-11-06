@@ -761,7 +761,7 @@ pub async fn lookup(state: &AppState, url: &str) -> anyhow::Result<String> {
     let segments = &segments[segments.len() - count..];
     let table = segments[0];
     let id = ruby_to_i(&segments[2..count - 2].concat());
-    let domain = &state.instance.domain;
+    let domain = &state.instance.web_domain();
     let page = match table {
         "accounts" => {
             let account = sqlx::query!(

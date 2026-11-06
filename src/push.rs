@@ -143,7 +143,7 @@ fn unsubscribe_url(state: &AppState, id: i64) -> String {
     let token = unsubscribe_token(state, id, chrono::Utc::now()).replace('/', "%2F");
     format!(
         "https://{}/api/web/push_subscriptions/{token}",
-        state.instance.domain
+        state.instance.web_domain()
     )
 }
 

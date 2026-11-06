@@ -356,7 +356,10 @@ pub async fn account_feed(
     element(
         &mut out,
         "description",
-        &words.account_feed(&format!("{}@{}", account.username, state.urls.local_domain)),
+        &words.account_feed(&format!(
+            "{}@{}",
+            account.username, state.instance.local_domain
+        )),
     );
     element(&mut out, "link", &link);
     out.push_str("<image>");
@@ -395,7 +398,7 @@ pub async fn tag_feed(
         "link",
         &format!(
             "https://{}/tags/{}",
-            state.urls.local_domain,
+            state.urls.web_domain,
             crate::formatter::text::escape_segment(&tag.name)
         ),
     );

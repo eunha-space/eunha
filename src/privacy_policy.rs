@@ -75,6 +75,6 @@ pub fn serialize(state: &AppState, policy: &PrivacyPolicy) -> AppResult<Rest> {
                 "%Y-%m-%dT%H:%M:%SZ"
             })
             .to_string(),
-        content: crate::markdown::render_policy(&policy.text, &state.instance.domain),
+        content: crate::markdown::render_policy(&policy.text, &state.instance.local_domain),
     })
 }

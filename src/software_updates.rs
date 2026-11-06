@@ -153,7 +153,7 @@ pub async fn check_once_for(states: &[AppState], url: &str) -> Result<()> {
     for state in states {
         if let Err(e) = record(state, &check).await {
             tracing::warn!(
-                tenant = %state.instance.domain,
+                tenant = %state.instance.local_domain,
                 error = %format!("{e:#}"),
                 "could not record update notices"
             );
@@ -347,7 +347,7 @@ async fn notify_of_updates(state: &AppState, updates: &[&AvailableUpdate]) {
             .send_software_updates(
                 &recipient.email,
                 &recipient.username,
-                &state.instance.domain,
+                &state.instance,
                 crate::version::MASTODON,
                 &versions,
                 urgent,
@@ -385,7 +385,7 @@ async fn notify_of_end_of_support(
             .send_end_of_support(
                 &recipient.email,
                 &recipient.username,
-                &state.instance.domain,
+                &state.instance,
                 branch,
                 &end_of_support,
                 days_remaining,
