@@ -51,6 +51,11 @@ enum Command {
         /// a database is behind this binary.
         #[arg(long)]
         check: bool,
+        /// Report migrations the database has applied that this binary does
+        /// not have, without applying anything. Exits non-zero if a database
+        /// is ahead of this binary.
+        #[arg(long, conflicts_with = "check")]
+        check_known: bool,
     },
     /// Rehearse this binary's pending migrations against a copy of live data.
     ///
@@ -458,8 +463,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match args.command {
-        Some(Command::Migrate { check }) => {
-            return migrate_databases(args.tenants.as_deref(), check).await;
+        Some(Command::Migrate { check, check_known }) => {
+            return migrate_databases(args.tenants.as_deref(), check, check_known).await;
         }
         Some(Command::Accounts {
             command:
@@ -823,7 +828,11 @@ fn reload_on_hangup(tenants: Arc<tenants::Tenants>, dir: PathBuf) -> anyhow::Res
 /// full config would make a deploy script's migrate step fail for want of an S3
 /// bucket, which has no bearing on whether the schema can be brought up to
 /// date.
-async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> anyhow::Result<()> {
+async fn migrate_databases(
+    tenants: Option<&std::path::Path>,
+    check: bool,
+    check_known: bool,
+) -> anyhow::Result<()> {
     type Target = (
         String,
         String,
@@ -859,7 +868,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
         )],
     };
 
-    let mut behind = false;
+    let mut failing = false;
     for (label, database_url, instance, encryptor, media_storage) in targets {
         let db = tenants::connect(
             &database_url,
@@ -869,11 +878,21 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
             },
         )
         .await?;
+        if check_known {
+            match migrate::unknown(&db).await? {
+                None => println!("{label}This binary knows every applied migration."),
+                Some(unknown) => {
+                    println!("{label}{unknown}");
+                    failing = true;
+                }
+            }
+            continue;
+        }
         match (check, migrate::pending(&db).await?) {
             (true, None) => println!("{label}Database is up to date."),
             (true, Some(pending)) => {
                 println!("{label}{pending}");
-                behind = true;
+                failing = true;
             }
             (false, _) => {
                 // Sign-ups still waiting in `eunha.pending_signups` become
@@ -939,7 +958,7 @@ async fn migrate_databases(tenants: Option<&std::path::Path>, check: bool) -> an
             }
         }
     }
-    if behind {
+    if failing {
         std::process::exit(1);
     }
     Ok(())

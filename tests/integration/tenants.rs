@@ -721,3 +721,22 @@ async fn test_tenants_come_and_go_without_a_restart() {
         "a refused reload leaves the tenants as they were"
     );
 }
+
+/// A database migrated by a newer build is ahead of this one: still served,
+/// for rollbacks, but `eunha migrate --check-known` names what this binary
+/// lacks, which is what a move to an older process is refused on.
+#[tokio::test]
+async fn test_a_database_ahead_of_the_binary_is_named_but_still_served() {
+    let ctx = TestContext::new("migrate-ahead").await;
+    assert!(eunha::migrate::unknown(&ctx.db).await.unwrap().is_none());
+    sqlx::query(
+        "INSERT INTO eunha._sqlx_migrations(version,description,success,checksum,execution_time)
+         VALUES (99999999999999,'from a newer build',true,'\\x00',0)",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let unknown = eunha::migrate::unknown(&ctx.db).await.unwrap().unwrap();
+    assert_eq!(unknown.versions, vec![99999999999999]);
+    assert!(eunha::migrate::pending(&ctx.db).await.unwrap().is_none());
+}

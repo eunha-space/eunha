@@ -105,6 +105,62 @@ pub async fn pending(db: &PgPool) -> Result<Option<Pending>> {
     Ok((!versions.is_empty()).then_some(Pending { versions }))
 }
 
+/// Migrations the database has applied that this binary does not have.
+#[derive(Debug)]
+pub struct Unknown {
+    pub versions: Vec<i64>,
+}
+
+impl std::fmt::Display for Unknown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let list = self
+            .versions
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(
+            f,
+            "{} migration(s) applied that this binary does not know: {list}",
+            self.versions.len()
+        )
+    }
+}
+
+/// Which applied migrations this binary does not have: the database is ahead
+/// of it, or was migrated by a build off another branch.
+///
+/// [`pending`] lets such a database serve, for rollbacks. This is for the
+/// times nothing forces the older binary on it — moving an instance to a
+/// process running another build — where serving it a schema it was never
+/// built against is a choice that can be refused.
+pub async fn unknown(db: &PgPool) -> Result<Option<Unknown>> {
+    let ledger_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+           SELECT 1 FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE c.relname = '_sqlx_migrations' AND n.nspname = 'eunha'
+         )",
+    )
+    .fetch_one(db)
+    .await
+    .context("looking for the migration ledger")?;
+    if !ledger_exists {
+        return Ok(None);
+    }
+    let known: std::collections::HashSet<i64> = MIGRATOR.iter().map(|m| m.version).collect();
+    let versions: Vec<i64> = sqlx::query_scalar::<_, i64>(
+        "SELECT version FROM eunha._sqlx_migrations WHERE success ORDER BY version",
+    )
+    .fetch_all(db)
+    .await
+    .context("reading the migration ledger")?
+    .into_iter()
+    .filter(|version| !known.contains(version))
+    .collect();
+    Ok((!versions.is_empty()).then_some(Unknown { versions }))
+}
+
 /// `pg_dump`, `pg_restore` and friends, from `PGBIN` when they are not on PATH.
 pub(crate) fn pg_command(name: &str) -> tokio::process::Command {
     let binary = match std::env::var("PGBIN") {

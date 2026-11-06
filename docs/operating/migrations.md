@@ -20,6 +20,14 @@ that has moved. `eunha migrate --check` answers the same question without
 applying anything, and exits non-zero when something is pending, so a deploy
 script can gate on it.
 
+A database *ahead* of its binary is served: that is a rollback, and the newer
+schema is generally still readable by the older code.
+`eunha migrate --check-known` asks the other question, whether the database has
+applied a migration this binary does not have, and exits non-zero when it has.
+Nothing forces that on a database when an instance moves to a process running
+another build, so a control plane can refuse the move on it, as it cannot
+refuse a rollback.
+
 The migrations are compiled into the binary from *migrations/*. The build script
 watches that directory, so adding or editing a migration rebuilds the binary
 that `eunha migrate` runs, without a `cargo clean` or a touched source file.
