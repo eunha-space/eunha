@@ -11,6 +11,18 @@ import { StatusCard } from '@/components/status-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 
+import { Button } from '@/components/ui/button.tsx'
+import { useTagFollow } from '../hooks/use-tag-follow.ts'
+
+function TagFollowButton({ name, token }: { name: string; token: string }) {
+  const { following, disabled, toggle } = useTagFollow(name, token)
+  return (
+    <Button size="sm" variant="outline" disabled={disabled} onClick={toggle}>
+      {following ? 'Unfollow' : 'Follow'}
+    </Button>
+  )
+}
+
 export default function TagTimeline() {
   const { name = '' } = useParams()
   const token = getToken()
@@ -35,7 +47,10 @@ export default function TagTimeline() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-4 text-xl font-bold">#{name}</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold">#{name}</h1>
+        {token && name && <TagFollowButton key={name} name={name} token={token} />}
+      </div>
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-2">
         {statuses === null && !feed.error && (

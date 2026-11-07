@@ -30,6 +30,22 @@ hashtags are shown empty to one, in authorized fetch mode, as
 `ActivityPub::CollectionsController` shows them.
 
 
+Account deletion reach
+----------------------
+
+Migration 040 enables reach tracking for newly created local accounts.
+When signed actor fetches are required, Eunha records the verified peer's
+preferred inbox host before serving the actor. Followers and enabled relays
+always receive account deletions. Among other known inboxes, Eunha includes
+hosts that fetched the actor. Eunha uses a bounded PostgreSQL set of up to
+4,096 hosts per account.
+
+Older accounts, empty histories, unsigned fetch mode, unidentifiable
+requesters, and histories that exceed the limit fall back to broad
+delivery. Deletion freezes the history before queueing notices, so later
+fetches cannot introduce an untracked recipient while deletion is in progress.
+
+
 How long a cache may keep them
 ------------------------------
 

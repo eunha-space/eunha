@@ -79,6 +79,55 @@ async fn test_self_deletion_federates_delete_actor() {
     assert_eq!(job.1, "https://remote.invalid/users/carol/inbox");
 }
 
+/// Signed fetches narrow the fan-out, with followers still receiving the Delete.
+#[tokio::test]
+async fn test_deletion_reaches_signed_fetchers_and_followers() {
+    let ctx = TestContext::with_instance("del-reach", |instance| {
+        instance.authorized_fetch = Some(json!("actors"));
+    })
+    .await;
+    let (_, fetcher, pem) = seed_remote(&ctx, "carol", "fetcher.invalid").await;
+    let (follower_id, follower, _) = seed_remote(&ctx, "dave", "follower.invalid").await;
+    seed_remote(&ctx, "eve", "unreached.invalid").await;
+    let alice_id = ctx.alice_id.parse::<i64>().unwrap();
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(follower_id)
+    .bind(alice_id)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    eunha::federation::keypair::replace_local(&ctx.state, alice_id, "test-private-key", "")
+        .await
+        .unwrap();
+
+    let response = ctx
+        .api
+        .ap_get_signed("/users/alice", &format!("{fetcher}#main-key"), &pem)
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    eunha::delete_account::call(&ctx.state, alice_id, Default::default())
+        .await
+        .unwrap();
+    let inboxes: Vec<String> = sqlx::query_scalar(
+        "SELECT payload->>'inbox' FROM eunha.ojak_queue
+         WHERE queue IN ('delivery', 'delivery-priority')
+           AND payload->'activity'->>'type' = 'Delete'
+         ORDER BY payload->>'inbox'",
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        inboxes,
+        [format!("{fetcher}/inbox"), format!("{follower}/inbox")]
+    );
+}
+
 /// An inbound `Delete(actor)` purges the remote account outright
 /// (`ActivityPub::Activity::Delete#delete_person`).
 #[tokio::test]

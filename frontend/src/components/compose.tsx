@@ -6,10 +6,21 @@ import {
   type KeyboardEvent,
   type SyntheticEvent,
 } from 'react'
-import { LockOpen, Paperclip, X } from 'lucide-react'
+import { LockOpen, Paperclip, Settings2, X } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
-import { postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
+import { getCachedInstance, getInstance, postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
+import { getPreferences } from '../security-api.ts'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.tsx'
 import { getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
 import { useMentionAutocomplete } from '../hooks/use-mention-autocomplete.ts'
 import { useEmojiAutocomplete } from '../hooks/use-emoji-autocomplete.ts'
@@ -117,6 +128,7 @@ export function Compose({
   onCancelReply,
   onPosted,
   onTypeChange,
+  onDraftChange,
   framed = true,
 }: {
   token: string
@@ -133,6 +145,7 @@ export function Compose({
   // The frame draws the title and the tint, but the mode is decided in here
   // now that the audience menu can switch it.
   onTypeChange?: (type: 'post' | 'reply' | 'message') => void
+  onDraftChange?: (dirty: boolean) => void
   framed?: boolean
 }) {
   const [text, setText] = useState(initialText)
@@ -151,6 +164,21 @@ export function Compose({
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [warningOverride, setWarningOverride] = useState<boolean>()
+  const [defaultWarning, setDefaultWarning] = useState(false)
+  const [warning, setWarning] = useState('')
+  const [sensitive, setSensitive] = useState<boolean>()
+  const [defaultSensitive, setDefaultSensitive] = useState(getMeAccount()?.defaultSensitive ?? false)
+  const warningOpen = warningOverride ?? defaultWarning
+
+  useEffect(() => {
+    let active = true
+    getPreferences(token).then((prefs) => {
+      if (active) setDefaultWarning(prefs.default_spoiler_field)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [token])
+
   const fileRef = useRef<HTMLInputElement>(null)
 
   // The account's default visibility seeds a post once it loads — but never a
@@ -158,14 +186,16 @@ export function Compose({
   // guard the default arrives a moment after mount and quietly turns a direct
   // message into whatever the account posts by default.
   useEffect(() => {
-    if (messageTo !== undefined) return
     let cancelled = false
     loadMe(token)
       .then((me) => {
         // Same trap as message mode: this lands after mount, so it has to
         // respect the parent's visibility rather than overwrite it.
         if (!cancelled && me) {
-          setVisibility(morePrivate(replyTo?.visibility, me.defaultVisibility))
+          setDefaultSensitive(me.defaultSensitive ?? false)
+          if (messageTo === undefined) {
+            setVisibility(morePrivate(replyTo?.visibility, me.defaultVisibility))
+          }
         }
       })
       .catch(() => {})
@@ -215,6 +245,13 @@ export function Compose({
     onTypeChange?.(replyTo ? 'reply' : isMessage ? 'message' : 'post')
   }, [replyTo, isMessage, onTypeChange])
 
+  useEffect(() => {
+    const seed = replyTo
+      ? statusToTextMentions(replyTo, getMeId())
+      : messageTo ? `@${messageTo.acct} ` : initialText
+    onDraftChange?.(text !== seed || !!warning || attachments.length > 0 || uploading || busy)
+  }, [onDraftChange, text, warning, attachments.length, uploading, busy, replyTo, messageTo, initialText])
+
   const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
@@ -222,8 +259,16 @@ export function Compose({
     setUploading(true)
     setError(null)
     try {
-      for (const file of files) {
-        if (attachments.length >= MAX_ATTACHMENTS) break
+      const selected = files.slice(0, MAX_ATTACHMENTS - attachments.length)
+      const instance = getCachedInstance() ?? await getInstance().catch(() => null)
+      const limits = instance?.configuration?.mediaAttachments
+      for (const file of selected) {
+        const limit = file.type.startsWith('image/') ? limits?.imageSizeLimit : limits?.videoSizeLimit
+        if (limit !== undefined && file.size > limit) {
+          throw new Error(`${file.name} exceeds the ${limit / 1024 ** 2} MiB upload limit.`)
+        }
+      }
+      for (const file of selected) {
         const media = await uploadMedia(file, token)
         setAttachments((prev) =>
           prev.length < MAX_ATTACHMENTS ? [...prev, media] : prev,
@@ -264,8 +309,13 @@ export function Compose({
         quoteApprovalPolicy:
           visibility === 'private' || visibility === 'direct' ? 'nobody' : quotePolicy,
         mediaIds: attachments.map((a) => a.id),
+        spoilerText: warningOpen ? warning.trim() : undefined,
+        sensitive,
       })
       setText('')
+      setWarning('')
+      setWarningOverride(undefined)
+      setSensitive(undefined)
       setAttachments([])
       onPosted(status)
     } catch (e) {
@@ -362,8 +412,6 @@ export function Compose({
           <ComposeAudience
             visibility={visibility}
             onVisibilityChange={setVisibility}
-            quotePolicy={quotePolicy}
-            onQuotePolicyChange={setQuotePolicy}
             text={text}
             replyTo={replyTo}
             meAcct={getMeAccount()?.acct ?? null}
@@ -379,6 +427,14 @@ export function Compose({
           </p>
         )}
 
+        {warningOpen && (
+          <Input
+            aria-label="Content warning"
+            placeholder="Content warning"
+            value={warning}
+            onChange={(event) => setWarning(event.target.value)}
+          />
+        )}
         <div className="relative flex flex-col">
           <Textarea
             ref={textareaRef}
@@ -551,6 +607,35 @@ export function Compose({
               <Paperclip />
             </Button>
             <EmojiPicker onPick={insertEmoji} />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon" aria-label="Post settings" />}
+              >
+                <Settings2 />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuCheckboxItem checked={warningOpen} onCheckedChange={setWarningOverride}>
+                  Content warning
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={sensitive ?? defaultSensitive} onCheckedChange={setSensitive}>
+                  Mark media as sensitive
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={visibility === 'private' || visibility === 'direct' ? 'nobody' : quotePolicy}
+                  onValueChange={(value) => setQuotePolicy(value as QuotePolicy)}
+                >
+                  <DropdownMenuLabel>Who can quote</DropdownMenuLabel>
+                  <DropdownMenuRadioItem value="public" disabled={visibility === 'private' || visibility === 'direct'}>
+                    Anyone
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="followers" disabled={visibility === 'private' || visibility === 'direct'}>
+                    Followers
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="nobody">Only me</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {uploading && (
               <span className="text-muted-foreground motion-safe:animate-pulse text-xs">
                 Uploading…

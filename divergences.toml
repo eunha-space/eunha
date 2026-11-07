@@ -1624,18 +1624,13 @@ since = "4.7.3"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
-id = "account-reach-filters-not-kept"
-kind = "omission"
-summary = "Keeps no bloom filter of the servers an account has reached"
-mastodon = """
-`AccountReachFilter` remembers which servers an account's posts have reached, \
-so that a deletion goes only to those."""
-eunha = """
-Builds no filters, so a deletion goes to every known inbox, as it does upstream \
-for an account without a filter."""
-why = """
-Not ported yet. It saves deliveries and changes no outcome."""
-evidence = "tests/integration/c2s/mastodon_5.rs"
+id = "account-reach-storage"
+kind = "behaviour"
+summary = "Tracks actor reach in a bounded PostgreSQL set"
+mastodon = "Stores batched inbox host observations in account reach Bloom filters."
+eunha = "Records verified inbox hosts synchronously in a bounded Eunha table and uses broad delivery for incomplete or missing histories."
+why = "An atomic database update coordinates signed fetches with account deletion without introducing Redis buffering or sharing incompatible filter bytes."
+evidence = "tests/integration/federation/account_delete.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 
@@ -1775,17 +1770,12 @@ reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
 id = "theme-color-settings-not-kept"
-kind = "omission"
-summary = "Has no `theme_color` setting"
-mastodon = """
-Adds an instance and a per-user `theme_color`, which colors Mastodon's own \
-web interface."""
-eunha = """
-Has neither; its web client has its own theming."""
-why = """
-They style Mastodon's interface, which Eunha replaces. A value already stored \
-in `settings` is kept untouched for a Mastodon on the same database."""
-evidence = "frontend/src/main.tsx"
+kind = "behaviour"
+summary = "Keeps web color palettes in the browser"
+mastodon = "Adds an instance and per-user theme_color setting for the Mastodon web interface."
+eunha = "Offers its own palettes independently of light and dark mode, stored in the browser."
+why = "Eunha's web client has its own design tokens. Shared Mastodon theme settings are preserved."
+evidence = "frontend/src/components/theme-provider.tsx"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 

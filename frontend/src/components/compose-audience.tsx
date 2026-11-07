@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { MessageCircle, Newspaper, Quote, Search } from 'lucide-react'
+import { MessageCircle, Newspaper, Search } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
-import type { QuotePolicy } from '../api.ts'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
-import { cn } from '@/lib/utils.ts'
 import { Switch } from '@/components/ui/switch.tsx'
 import {
   DropdownMenu,
@@ -103,7 +101,8 @@ function Trigger({
   people: string[]
   replyTo: mastodon.v1.Status | null | undefined
 }) {
-  if (visibility === 'public' || visibility === 'unlisted') return <>Public</>
+  if (visibility === 'public') return <>Public</>
+  if (visibility === 'unlisted') return <>Quiet public</>
 
   // A reply names the account replied to by display name, because that account
   // is in hand; a handle typed into the box is only ever a handle.
@@ -135,8 +134,6 @@ function Trigger({
 export function ComposeAudience({
   visibility,
   onVisibilityChange,
-  quotePolicy,
-  onQuotePolicyChange,
   text,
   replyTo,
   meAcct,
@@ -145,8 +142,6 @@ export function ComposeAudience({
 }: {
   visibility: Visibility
   onVisibilityChange: (v: Visibility) => void
-  quotePolicy: QuotePolicy
-  onQuotePolicyChange: (p: QuotePolicy) => void
   text: string
   replyTo?: mastodon.v1.Status | null
   meAcct: string | null
@@ -175,7 +170,6 @@ export function ComposeAudience({
           <span className="truncate">
             <Trigger visibility={visibility} people={people} replyTo={replyTo} />
           </span>
-
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" className="w-72">
@@ -207,8 +201,7 @@ export function ComposeAudience({
 
               <DropdownMenuSeparator />
 
-              {/* Both of these are properties of a public post, so a
-                  followers-only one has them off and fixed. */}
+              {/* Discoverability is fixed off for followers-only posts. */}
               <SwitchItem
                 icon={<Search />}
                 label="Discoverable in public feeds & search results"
@@ -216,36 +209,6 @@ export function ComposeAudience({
                 disabled={isFollowers}
                 onChange={setDiscoverable}
               />
-              <SwitchItem
-                icon={<Quote />}
-                label="Allow others to quote"
-                checked={quotePolicy !== 'nobody' && !isFollowers}
-                disabled={isFollowers}
-                onChange={(on) => onQuotePolicyChange(on ? 'public' : 'nobody')}
-              />
-
-              <div
-                className={cn(
-                  'grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none',
-                  quotePolicy !== 'nobody' && !isFollowers
-                    ? 'grid-rows-[1fr]'
-                    : 'grid-rows-[0fr]',
-                )}
-              >
-                <div className="overflow-hidden">
-                  <DropdownMenuRadioGroup
-                    value={quotePolicy}
-                    onValueChange={(v) => onQuotePolicyChange(v as QuotePolicy)}
-                  >
-                    <DropdownMenuLabel>Who can quote</DropdownMenuLabel>
-                    <DropdownMenuRadioItem value="public" className={leadingCheck}>Anyone</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="followers" className={leadingCheck}>
-                      Followers
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </div>
-              </div>
-
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => onVisibilityChange('direct')}>
                 <MessageCircle /> Compose a message instead

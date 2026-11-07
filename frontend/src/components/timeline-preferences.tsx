@@ -54,7 +54,14 @@ export function TimelinePreferences({ token }: { token: string }) {
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Timelines</h2>
+      <h2 className="font-semibold">Timelines and posting</h2>
+      <Label className="text-sm font-normal">
+        <Switch
+          checked={prefs.default_spoiler_field}
+          onCheckedChange={(on) => void save({ default_spoiler_field: on })}
+        />
+        Open the content warning field when composing
+      </Label>
       <div className="space-y-0.5">
         <Label className="text-sm font-normal">
           <Switch

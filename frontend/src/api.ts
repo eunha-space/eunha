@@ -101,29 +101,14 @@ export function postStatus(
     inReplyToId?: string
     quotedStatusId?: string
     mediaIds?: string[]
+    spoilerText?: string
+    sensitive?: boolean
     quoteApprovalPolicy?: QuotePolicy
   },
 ): Promise<mastodon.v1.Status> {
-  const { status, visibility, inReplyToId, quotedStatusId, mediaIds, quoteApprovalPolicy } =
-    params
-  // With media, masto requires the media-ids variant (status optional).
-  if (mediaIds && mediaIds.length > 0) {
-    return restClient(token).v1.statuses.create({
-      status,
-      visibility,
-      inReplyToId,
-      quotedStatusId,
-      mediaIds,
-      quoteApprovalPolicy,
-    })
-  }
-  return restClient(token).v1.statuses.create({
-    quoteApprovalPolicy,
-    status,
-    visibility,
-    inReplyToId,
-    quotedStatusId,
-  })
+  const { mediaIds, ...post } = params
+  const statuses = restClient(token).v1.statuses
+  return mediaIds?.length ? statuses.create({ ...post, mediaIds }) : statuses.create(post)
 }
 
 export function uploadMedia(
@@ -600,6 +585,15 @@ export async function search(
 ): Promise<mastodon.v2.Search> {
   // resolve remote accounts/statuses only for authenticated searches.
   return restClient(token).v2.search.list({ q, resolve: !!token, limit: 20 })
+}
+
+export function getTag(name: string, token: string) {
+  return restClient(token).v1.tags.$select(name).fetch()
+}
+
+export function setTagFollow(name: string, token: string, following: boolean) {
+  const tag = restClient(token).v1.tags.$select(name)
+  return following ? tag.follow() : tag.unfollow()
 }
 
 export async function getTagTimeline(

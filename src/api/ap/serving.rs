@@ -426,10 +426,18 @@ pub fn federation() -> Federation<AppState> {
                         let actor = super::objects::actor_json(ctx.data(), domain(&ctx), &account).await?;
                         // `expires_in 3.minutes, public: !(actors_require_signature? &&
                         // signed_request_account.present?)`.
-                        let signed = ctx.signer().await.is_some();
-                        let public =
-                            !(crate::settings::actors_require_signature(ctx.data()).await
-                                && signed);
+                        let signer = signer(&ctx).await;
+                        let requires_signature = crate::settings::actors_require_signature(ctx.data()).await;
+                        if !crate::delete_account::record_actor_fetch(
+                            ctx.data(),
+                            account.id,
+                            signer.as_deref().filter(|_| requires_signature),
+                        )
+                        .await?
+                        {
+                            return Ok(Found::Gone(None));
+                        }
+                        let public = !(requires_signature && signer.is_some());
                         expires_in(&ctx, Vary::Actor, 180, public).await;
                         Ok(Found::Found(actor))
                     },

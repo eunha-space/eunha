@@ -447,17 +447,3 @@ async fn a_remote_profile_path_is_a_404_for_the_web_app() {
     let response = ctx.api.get("/@nobody@remote.example/whatever", None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
-
-/// `account-reach-filters-not-kept`: a post builds no filter.
-#[tokio::test]
-async fn no_reach_filter_is_built() {
-    let ctx = TestContext::new("no-reach-filter").await;
-    ctx.api
-        .post_status(&ctx.alice_token, "reach nobody in particular", "public")
-        .await;
-    let filters: i64 = sqlx::query_scalar("SELECT count(*) FROM account_reach_filters")
-        .fetch_one(&ctx.db)
-        .await
-        .unwrap();
-    assert_eq!(filters, 0);
-}

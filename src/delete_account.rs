@@ -410,8 +410,14 @@ pub async fn call(state: &AppState, account_id: i64, options: Options) -> Result
     if let Some(event_id) = options.relationship_severance_event {
         crate::moderation::severance::record_follows_of(&state.db, event_id, account.id).await?;
     }
-    distribute_activities(state, &account, &options).await;
+    distribute_activities(state, &account, &options).await?;
     purge_content(state, &account, &options).await?;
+    if account.is_local() {
+        sqlx::query("UPDATE eunha.account_reach SET inbox_hosts = NULL, closed = true WHERE account_id = $1")
+            .bind(account_id)
+            .execute(&state.db)
+            .await?;
+    }
     fulfill_deletion_request(state, account_id).await?;
     Ok(())
 }
@@ -430,23 +436,65 @@ async fn user_unconfirmed_or_pending(state: &AppState, account_id: i64) -> Resul
 
 // ── distribute_activities! ────────────────────────────────────────────────
 
-async fn distribute_activities(state: &AppState, account: &Account, options: &Options) {
+async fn distribute_activities(
+    state: &AppState,
+    account: &Account,
+    options: &Options,
+) -> Result<()> {
     if options.skip_activitypub {
-        return;
+        return Ok(());
     }
-    let result = if account.is_local() {
-        delete_actor(state, account).await
-    } else if account.is_activitypub() {
-        sever_remote_follows(state, account).await
-    } else {
-        Ok(())
-    };
-    if let Err(e) = result {
-        tracing::warn!(account_id = account.id, error = %e, "failed to distribute account deletion activities");
+    if account.is_local() {
+        return delete_actor(state, account).await;
     }
+    if account.is_activitypub() {
+        if let Err(e) = sever_remote_follows(state, account).await {
+            tracing::warn!(account_id = account.id, error = %e, "failed to sever remote follows");
+        }
+    }
+    Ok(())
 }
 
-/// `delete_actor!` — announce the deletion to every inbox we know of. Mastodon
+/// Record the preferred inbox host of a verified actor fetch. If the requester
+/// cannot be identified, invalidate the history and deliver broadly on deletion.
+/// Returns false once deletion has frozen the reach set.
+pub(crate) async fn record_actor_fetch(
+    state: &AppState,
+    account_id: i64,
+    signer: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    let inbox: Option<String> = match signer {
+        Some(uri) => {
+            sqlx::query_scalar(
+                "SELECT COALESCE(NULLIF(shared_inbox_url, ''), inbox_url)
+             FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
+            )
+            .bind(uri)
+            .fetch_optional(&state.db)
+            .await?
+        }
+        None => None,
+    };
+    let host = inbox.as_deref().and_then(ojak::origin::host_of);
+    let closed = sqlx::query_scalar::<_, bool>(
+        "UPDATE eunha.account_reach
+         SET inbox_hosts = CASE
+             WHEN closed OR inbox_hosts IS NULL THEN inbox_hosts
+             WHEN $2::text IS NULL THEN NULL
+             WHEN $2 = ANY(inbox_hosts) THEN inbox_hosts
+             WHEN cardinality(inbox_hosts) >= 4096 THEN NULL
+             ELSE array_append(inbox_hosts, $2)
+         END
+         WHERE account_id = $1 RETURNING closed",
+    )
+    .bind(account_id)
+    .bind(host)
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(closed != Some(true))
+}
+
+/// `delete_actor!` — announce the deletion to followers, relays and known peers. Mastodon
 /// splits this into a normal-priority push to followers and relays plus a
 /// low-priority push to everyone else; Eunha's delivery queue has a single
 /// priority, so both sets are enqueued together.
@@ -457,10 +505,7 @@ async fn distribute_activities(state: &AppState, account: &Account, options: &Op
 /// combination only arises for unconfirmed/pending users, where Mastodon (and
 /// this port) skip side effects entirely.
 async fn delete_actor(state: &AppState, account: &Account) -> Result<()> {
-    if !crate::federation::keypair::has_signing_key(state, account.id)
-        .await
-        .unwrap_or(false)
-    {
+    if !crate::federation::keypair::has_signing_key(state, account.id).await? {
         return Ok(());
     }
 
@@ -469,7 +514,7 @@ async fn delete_actor(state: &AppState, account: &Account) -> Result<()> {
     let key_id = crate::federation::tag::key_id_of(domain, account);
     let activity = crate::federation::activity::delete_actor(&actor_url);
 
-    let inboxes = delete_actor_inboxes(state).await?;
+    let inboxes = delete_actor_inboxes(state, account.id).await?;
     // `always_sign`: the actor's Linked Data Signature, whatever the mode.
     let enqueued = crate::federation::delivery::deliver_to_inboxes_signed(
         state,
@@ -483,24 +528,53 @@ async fn delete_actor(state: &AppState, account: &Account) -> Result<()> {
     Ok(())
 }
 
-/// `delivery_inboxes + low_priority_delivery_inboxes`: every known remote inbox
-/// (`Account.inboxes`) plus the enabled relays.
-async fn delete_actor_inboxes(state: &AppState) -> Result<Vec<String>> {
-    let rows: Vec<String> = sqlx::query_scalar!(
-        r#"
-        SELECT DISTINCT inbox AS "inbox!" FROM (
-            SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox
+/// Followers and enabled relays always receive a Delete. Other inboxes are
+/// narrowed only when signed actor fetches provided a usable reach history.
+async fn delete_actor_inboxes(state: &AppState, account_id: i64) -> Result<Vec<String>> {
+    let hosts = sqlx::query_scalar::<_, Option<Vec<String>>>(
+        "UPDATE eunha.account_reach SET closed = true WHERE account_id = $1
+         RETURNING inbox_hosts",
+    )
+    .bind(account_id)
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    let hosts = hosts
+        .filter(|hosts| !hosts.is_empty())
+        .map(|hosts| hosts.into_iter().collect::<std::collections::HashSet<_>>());
+    let filter = if crate::settings::actors_require_signature(state).await {
+        hosts.as_ref()
+    } else {
+        None
+    };
+
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT inbox, bool_or(required) FROM (
+            SELECT COALESCE(NULLIF(a.shared_inbox_url, ''), a.inbox_url) AS inbox,
+                   EXISTS (SELECT 1 FROM follows f
+                           WHERE f.account_id = a.id AND f.target_account_id = $1) AS required
             FROM accounts a
-            WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
-            UNION
-            SELECT inbox_url FROM relays WHERE state = 2 AND inbox_url <> ''
+            WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL
+              AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
+            UNION ALL
+            SELECT inbox_url, true FROM relays WHERE state = 2
         ) reach
         WHERE inbox <> ''
-        "#,
+        GROUP BY inbox",
     )
+    .bind(account_id)
     .fetch_all(&state.db)
     .await?;
-    Ok(rows)
+    Ok(rows
+        .into_iter()
+        .filter_map(|(inbox, required)| {
+            (required
+                || filter.is_none_or(|hosts| {
+                    ojak::origin::host_of(&inbox).is_none_or(|host| hosts.contains(&host))
+                }))
+            .then_some(inbox)
+        })
+        .collect())
 }
 
 /// `RejectFollowSerializer` for each follow a remote account has of local

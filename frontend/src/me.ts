@@ -11,6 +11,7 @@ export interface MeAccount {
   id: string
   acct: string
   defaultVisibility: mastodon.v1.StatusVisibility
+  defaultSensitive?: boolean
   // For the account card in the sidebar. Cached with the rest so the card
   // renders on first paint instead of appearing a request later.
   displayName: string
@@ -45,6 +46,7 @@ function readCachedAccount(): MeAccount | null {
           defaultVisibility: isStatusVisibility(parsed.defaultVisibility)
             ? parsed.defaultVisibility
             : 'public',
+          defaultSensitive: parsed.defaultSensitive === true,
           // A record cached before these were stored still has to parse; the
           // next `loadMe` fills them in.
           displayName: parsed.displayName ?? parsed.acct,
@@ -91,6 +93,7 @@ export async function loadMe(token: string): Promise<MeAccount | null> {
       id: me.id,
       acct: me.acct,
       defaultVisibility: me.source.privacy ?? 'public',
+      defaultSensitive: me.source.sensitive ?? false,
       displayName: me.displayName || me.username,
       avatar: me.avatar,
       avatarStatic: me.avatarStatic,

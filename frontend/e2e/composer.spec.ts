@@ -75,8 +75,7 @@ const audience = (page: import('@playwright/test').Page) =>
   page.getByRole('button', { name: 'Who can see this' })
 
 // "Quiet public" is not a visibility any more: it is a public post with
-// discoverability switched off. The test is what gets *sent*, because the
-// label says "Public" either way and cannot tell you which one you picked.
+// discoverability switched off. Assert the value sent to the API.
 test('turning off discoverability posts as unlisted', async ({ page }) => {
   await signedIn(page)
   let posted: Record<string, unknown> | null = null
@@ -97,8 +96,7 @@ test('turning off discoverability posts as unlisted', async ({ page }) => {
   await expect.poll(() => posted).toMatchObject({ visibility: 'unlisted' })
 })
 
-// Followers-only posts cannot be quoted and are not discoverable, so both
-// switches are fixed off rather than merely unchecked.
+// Followers-only posts cannot be quoted by others or discovered.
 test('choosing Followers disables discoverability and quoting', async ({ page }) => {
   await signedIn(page)
   await page.goto('/')
@@ -114,10 +112,11 @@ test('choosing Followers disables discoverability and quoting', async ({ page })
     'aria-disabled',
     'true',
   )
-  await expect(
-    page.getByRole('menuitem', { name: /Allow others to quote/ }),
-  ).toHaveAttribute('aria-disabled', 'true')
-  await expect(page.getByLabel('Who can quote')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  const quotes = page.getByLabel('Who can quote')
+  await expect(quotes.getByRole('menuitemradio', { name: 'Anyone' })).toBeDisabled()
+  await expect(quotes.getByRole('menuitemradio', { name: 'Only me' })).toHaveAttribute('aria-checked', 'true')
 })
 
 // Post → message is immediate; message → post asks first, because that is the
@@ -175,6 +174,36 @@ test('a minimised composer keeps its draft', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Expand composer' }).click()
   await expect(page.getByRole('textbox')).toHaveValue('a draft worth keeping')
+})
+
+test('the warning preference opens the field and the composer keeps its draft across navigation', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/eunha/v1/preferences', (route) =>
+    route.fulfill({ json: { default_spoiler_field: true } }),
+  )
+  let posted: Record<string, unknown> | null = null
+  await page.route('**/api/v1/statuses', async (route) => {
+    posted = route.request().postDataJSON()
+    await route.fulfill({ json: { ...privateStatus, id: '9' } })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Content warning' }).fill('Plot details')
+  await page.getByPlaceholder('What would you like to say?').fill('The ending')
+  await page.getByRole('link', { name: 'Explore', exact: true }).first().click()
+  await expect(page).toHaveURL(/explore/)
+  await expect(page.getByRole('textbox', { name: 'Content warning' })).toHaveValue('Plot details')
+
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Mark media as sensitive' }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.poll(() => posted).toMatchObject({
+    status: 'The ending',
+    spoiler_text: 'Plot details',
+    sensitive: true,
+  })
 })
 
 test('the corner button opens a post directly', async ({ page }) => {
@@ -268,4 +297,59 @@ test('the writing area grows with its content and then scrolls', async ({ page }
   const full = await geometry()
   expect(full.textarea).toBeGreaterThan(grown.textarea)
   expect(full.textareaScrolls).toBe(true)
+})
+
+test('the composer rejects an oversized attachment before uploading', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/v2/instance', (route) =>
+    route.fulfill({ json: {
+      registrations: { enabled: false },
+      configuration: { media_attachments: { image_size_limit: 1024, video_size_limit: 4096 } },
+    } }),
+  )
+  let uploads = 0
+  await page.route('**/api/v2/media', (route) => {
+    uploads += 1
+    return route.abort()
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'large.png',
+    mimeType: 'image/png',
+    buffer: Buffer.alloc(1025),
+  })
+  await expect(page.getByText(/large.png exceeds/)).toBeVisible()
+  expect(uploads).toBe(0)
+})
+
+test('post menus update hashtag follows and boost preferences', async ({ page }) => {
+  await signedIn(page, [{ ...privateStatus, tags: [{ name: 'eunha', url: '/tags/eunha' }] }])
+  let followingTag = false
+  const tag = () => ({ name: 'eunha', url: '/tags/eunha', history: [], following: followingTag })
+  await page.route('**/api/v1/tags/eunha', (route) => route.fulfill({ json: tag() }))
+  await page.route('**/api/v1/tags/eunha/follow', (route) => {
+    followingTag = true
+    return route.fulfill({ json: tag() })
+  })
+  await page.route('**/api/v1/accounts/relationships?*', (route) =>
+    route.fulfill({ json: [{ id: sage.id, following: true, showing_reblogs: true }] }),
+  )
+  await page.route('**/api/v1/accounts/3/follow', (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ reblogs: false })
+    return route.fulfill({ json: { id: sage.id, following: true, showing_reblogs: false } })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Hide boosts from this account' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Show boosts from this account' })).toBeVisible()
+
+  await page.getByRole('menuitem', { name: 'Follow hashtags' }).hover()
+  await page.getByRole('menuitem', { name: 'Follow #eunha', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Unfollow #eunha', exact: true })).toBeVisible()
+
+  await page.goto('/tags/eunha')
+  await expect(page.getByRole('button', { name: 'Unfollow', exact: true })).toBeEnabled()
 })

@@ -24,7 +24,9 @@ import {
 import type { mastodon } from '../masto.ts'
 import {
   deleteStatus,
+  getRelationship,
   getStatusSource,
+  setFollow,
   getTranslationLanguages,
   translateStatus,
   setBookmark,
@@ -48,6 +50,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
 import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
@@ -59,6 +64,47 @@ import { useComposeModal } from '@/components/compose-modal.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
+
+import { useTagFollow } from '../hooks/use-tag-follow.ts'
+
+function TagFollowItem({ name, token }: { name: string; token: string }) {
+  const { following, disabled, toggle } = useTagFollow(name, token)
+  return (
+    <DropdownMenuItem disabled={disabled} closeOnClick={false} onClick={toggle}>
+      {following ? 'Unfollow' : 'Follow'} #{name}
+    </DropdownMenuItem>
+  )
+}
+
+function BoostPreferenceItem({ accountId, token }: { accountId: string; token: string }) {
+  const [showing, setShowing] = useState<boolean>()
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let active = true
+    getRelationship(accountId, token).then((relationship) => {
+      if (active && relationship?.following) setShowing(relationship.showingReblogs)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [accountId, token])
+
+  if (showing === undefined) return null
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      const relationship = await setFollow(accountId, token, true, { reblogs: !showing })
+      setShowing(relationship.showingReblogs)
+    } catch {
+      toast.error('Could not update boost preference')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <DropdownMenuItem disabled={busy} closeOnClick={false} onClick={toggle}>
+      <Repeat2 /> {showing ? 'Hide boosts from this account' : 'Show boosts from this account'}
+    </DropdownMenuItem>
+  )
+}
 
 const VISIBILITY: Record<
   string,
@@ -166,6 +212,7 @@ export function StatusCard({
   onPinChange?: () => void
 }) {
   const [status, setStatus] = useState(initial)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   // A post with a content warning starts folded, unless the reader always
   // expands them (Mastodon's `expandSpoilers`, which sets `hidden` false).
@@ -208,6 +255,7 @@ export function StatusCard({
   // where its full context lives — offer it the way Mastodon's web client does.
   const remoteUrl = status.account.acct.includes('@') ? status.url : null
   const canReport = !!token && !isOwn
+  const boostAccountId = boostedBy?.id ?? status.account.id
   const hasMenu = isOwn || canQuote || !!remoteUrl || canReport
 
   useEffect(() => {
@@ -417,7 +465,7 @@ export function StatusCard({
               </Link>
             )}
             {hasMenu && (
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger
                   aria-label="More"
                   className="hover:text-foreground ml-1"
@@ -425,6 +473,17 @@ export function StatusCard({
                   <MoreHorizontal className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {menuOpen && token && getMeId() !== boostAccountId && (
+                    <BoostPreferenceItem key={boostAccountId} accountId={boostAccountId} token={token} />
+                  )}
+                  {token && !!status.tags?.length && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Follow hashtags</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {status.tags.map(({ name }) => <TagFollowItem key={name} name={name} token={token} />)}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
                   {remoteUrl && (
                     <DropdownMenuItem
                       className="no-underline"

@@ -2,6 +2,16 @@ import { createContext, useContext, useEffect, useState } from 'react'
 
 type Theme = 'dark' | 'light' | 'system'
 
+export const PALETTES = {
+  mint: 'Mint',
+  lilac: 'Lilac',
+  ocean: 'Ocean',
+  rose: 'Rose',
+  amber: 'Amber',
+} as const
+
+export type Palette = keyof typeof PALETTES
+
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
@@ -10,11 +20,15 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme
+  palette: Palette
+  setPalette: (palette: Palette) => void
   setTheme: (theme: Theme) => void
 }
 
 const initialState: ThemeProviderState = {
   theme: 'system',
+  palette: 'mint',
+  setPalette: () => null,
   setTheme: () => null,
 }
 
@@ -29,6 +43,16 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
   )
+
+  const paletteKey = `${storageKey}-palette`
+  const [palette, setPalette] = useState<Palette>(() => {
+    const saved = localStorage.getItem(paletteKey)
+    return saved && Object.hasOwn(PALETTES, saved) ? saved as Palette : 'mint'
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.palette = palette
+  }, [palette])
 
   useEffect(() => {
     const root = window.document.documentElement
@@ -52,6 +76,11 @@ export function ThemeProvider({
 
   const value = {
     theme,
+    palette,
+    setPalette: (palette: Palette) => {
+      localStorage.setItem(paletteKey, palette)
+      setPalette(palette)
+    },
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)
