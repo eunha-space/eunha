@@ -2021,3 +2021,14 @@ why = "A hosting allowance can block growth after a warned grace period while fe
 evidence = "src/growth_limits.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "rename-unused-owner"
+kind = "addition"
+summary = "Rename an unused Owner before handing over the account"
+mastodon = "tootctl accounts has no command for renaming an unused Owner."
+eunha = "accounts rename-unused-owner changes the public username of a local Owner with a numeric actor ID and no account activity."
+why = "Hosting operators can correct the initial handle without replacing the account or its keys."
+evidence = "tests/integration/surfaces/tootctl_accounts.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

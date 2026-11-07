@@ -438,6 +438,15 @@ enum AccountsCommand {
         #[arg(long, value_name = "HOST")]
         instance: Option<String>,
     },
+    /// Change the handle of an Owner account that has never been used.
+    RenameUnusedOwner {
+        username: String,
+        new_username: String,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        instance: Option<String>,
+    },
     #[command(flatten)]
     More(eunha::tootctl::accounts::Command),
 }
@@ -621,6 +630,22 @@ async fn main() -> anyhow::Result<()> {
             let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
             let db = command_database(&config).await?;
             print_status(&accounts::batch_status(&db, &tag).await?);
+            return Ok(());
+        }
+        Some(Command::Accounts {
+            command:
+                AccountsCommand::RenameUnusedOwner {
+                    username,
+                    new_username,
+                    email,
+                    instance,
+                },
+        }) => {
+            let config = command_config(args.tenants.as_deref(), instance.as_deref())?;
+            let state = command_state(config).await?;
+            accounts::rename_unused_owner(&state, &username, &new_username, email.as_deref())
+                .await?;
+            println!("OK");
             return Ok(());
         }
         Some(Command::Accounts {

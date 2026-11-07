@@ -663,3 +663,74 @@ async fn test_cull_removes_accounts_their_servers_say_are_gone() {
     assert!(!exists(gone).await);
     assert!(exists(here).await && exists(recent).await && exists(away).await);
 }
+
+#[tokio::test]
+async fn test_rename_unused_owner_preserves_actor_and_rejects_activity() {
+    let ctx = TestContext::new("cli-rename-owner").await;
+    let (alice, bob) = ids(&ctx);
+    sqlx::query("UPDATE accounts SET id_scheme = 1 WHERE id = $1")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE users SET role_id = (SELECT id FROM user_roles WHERE name = 'Owner'),
+             sign_in_count = 0, current_sign_in_at = NULL WHERE account_id = $1",
+    )
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM oauth_access_tokens WHERE resource_owner_id = (SELECT id FROM users WHERE account_id = $1)")
+        .bind(alice)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let uri: String = sqlx::query_scalar("SELECT uri FROM accounts WHERE id = $1")
+        .bind(alice)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+
+    eunha::accounts::rename_unused_owner(&ctx.state, "alice", "gardener", None)
+        .await
+        .unwrap();
+    let renamed: (String, String, String) =
+        sqlx::query_as("SELECT username, uri, url FROM accounts WHERE id = $1")
+            .bind(alice)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(
+        renamed,
+        (
+            "gardener".into(),
+            uri,
+            format!("https://{}/@gardener", ctx.domain)
+        )
+    );
+
+    eunha::accounts::rename_unused_owner(
+        &ctx.state,
+        "alice",
+        "gardener",
+        Some("alice@test.invalid"),
+    )
+    .await
+    .unwrap();
+    assert!(eunha::accounts::rename_unused_owner(
+        &ctx.state,
+        "alice",
+        "gardener",
+        Some("bob@test.invalid"),
+    )
+    .await
+    .is_err());
+
+    follow(&ctx, bob, alice).await;
+    assert!(
+        eunha::accounts::rename_unused_owner(&ctx.state, "gardener", "new_name", None)
+            .await
+            .is_err()
+    );
+}

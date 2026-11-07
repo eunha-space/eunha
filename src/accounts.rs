@@ -271,6 +271,70 @@ pub enum Created {
     UsernameInUse,
 }
 
+/// Change the public handle of an unused Owner with a stable numeric actor ID.
+pub async fn rename_unused_owner(
+    state: &crate::state::AppState,
+    username: &str,
+    new_username: &str,
+    email: Option<&str>,
+) -> Result<()> {
+    anyhow::ensure!(
+        (1..=USERNAME_LENGTH_LIMIT).contains(&new_username.len())
+            && new_username
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_'),
+        "invalid new username"
+    );
+
+    let mut tx = state.db.begin().await?;
+    let (account_id, user_id, current_username) = sqlx::query_as::<_, (i64, i64, String)>(
+        "SELECT a.id, u.id, a.username FROM accounts a
+         JOIN users u ON u.account_id = a.id
+         JOIN user_roles r ON r.id = u.role_id
+         WHERE a.domain IS NULL
+           AND (lower(a.username) = lower($1) OR ($3 IS NOT NULL AND a.username = $4))
+           AND ($3 IS NULL OR lower(u.email) = lower($3))
+           AND a.id_scheme = $2 AND a.suspended_at IS NULL
+           AND r.name = 'Owner' AND u.current_sign_in_at IS NULL AND u.sign_in_count = 0
+         FOR UPDATE OF a, u",
+    )
+    .bind(username)
+    .bind(crate::federation::tag::NUMERIC_AP_ID)
+    .bind(email)
+    .bind(new_username)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| anyhow!("account is not an unused Owner with a numeric actor ID"))?;
+
+    // A control plane retry can arrive after the tenant commit succeeded.
+    if current_username == new_username {
+        return Ok(());
+    }
+
+    let has_activity: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM statuses WHERE account_id = $1)
+             OR EXISTS (SELECT 1 FROM follows WHERE account_id = $1 OR target_account_id = $1)
+             OR EXISTS (SELECT 1 FROM follow_requests WHERE account_id = $1 OR target_account_id = $1)
+             OR EXISTS (SELECT 1 FROM oauth_access_tokens WHERE resource_owner_id = $2)
+             OR EXISTS (SELECT 1 FROM session_activations WHERE user_id = $2)",
+    )
+    .bind(account_id)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(!has_activity, "the Owner account already has activity");
+
+    let url = format!("https://{}/@{new_username}", state.instance.web_domain());
+    sqlx::query("UPDATE accounts SET username = $2, url = $3, updated_at = now() WHERE id = $1")
+        .bind(account_id)
+        .bind(new_username)
+        .bind(url)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// `tootctl accounts create`: make a local account outside the sign-up flow.
 ///
 /// Like upstream it bypasses the registration checks — whether sign-ups are

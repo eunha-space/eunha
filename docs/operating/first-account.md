@@ -91,3 +91,17 @@ running server holds open with one of them closes at once.
 The rest of `tootctl accounts` — rotating keys, deleting, approving, culling
 and pruning, and the others — is in
 [Accounts, domains and emoji](./maintenance-commands).
+
+
+Renaming an unused Owner
+------------------------
+
+`eunha accounts rename-unused-owner OLD NEW` changes an Owner's public
+username and profile URL while keeping its numeric ActivityPub actor ID and
+keys. Use it before handing over the account. It requires a local Owner with
+a numeric actor ID, no sign-in history, and no posts, follow relationships,
+pending follow requests, sessions, or OAuth access tokens. On a shared
+runtime, pass `--tenants` and `--instance` as with account creation.
+
+For an instance managed by a separate control plane, use its Owner management
+flow so that it can update its stored username too.
