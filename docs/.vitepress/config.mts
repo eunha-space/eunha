@@ -104,7 +104,6 @@ export default defineConfig({
         text: "Design",
         items: [
           { text: "Protocol extension", link: "/design/protocol" },
-          { text: "Hosted tenancy plan", link: "/design/multitenancy" },
           { text: "Benchmarking", link: "/design/benchmarking" },
         ],
       },

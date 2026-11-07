@@ -488,14 +488,14 @@ In order of what the measurements say they are worth:
     seventh of the startup time, and no slowdown from a saturated neighbour. It
     pays for fragmentation once, where a different allocator did not recover it
     (see “Allocators”). It needs the refactor and controls in phase 4 of
-    [the multitenancy plan](./multitenancy.md), and PostgreSQL becomes the
+    [the multitenancy plan], and PostgreSQL becomes the
     limit.
 2.  **Spread idle wake-ups.** Tenants started together wake together every
     `queue_idle_poll_seconds` and open their whole pools at once. A little
     random jitter on each sleep would turn that spike into a steady trickle.
 3.  **Dormancy.** A dormant tenant costs its database on disk and nothing else,
     and wakes in 145 ms. It needs the gateway and shared workers described in
-    [the multitenancy plan](./multitenancy.md), and an admission limit on
+    [the multitenancy plan], and an admission limit on
     concurrent wakes.
 4.  **PgBouncer** once connections approach `max_connections`, in transaction
     mode with prepared statements verified against SQLx.
@@ -565,6 +565,8 @@ flagged as contended and should not be compared. Two of four runs on
 2026-09-28 were, with load averages near six: their p95 was 0.5–1.1 s against
 8 ms for the same build uncontended, and the simulator's own send rate showed
 it.
+
+[the multitenancy plan]: https://github.com/eunha-space/space/blob/main/docs/multitenancy.md
 
 ### Nothing leaves the machine
 

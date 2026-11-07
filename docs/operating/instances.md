@@ -123,8 +123,10 @@ since then, such as one fixing a mistake in the tenant's configuration, still
 takes a `SIGHUP`.
 
 This is the start of the shared-process work planned in
-the [multitenancy plan](../design/multitenancy.md); what sharing a process
+the [multitenancy plan]; what sharing a process
 saves is measured in [benchmarking](../design/benchmarking.md).
+
+[multitenancy plan]: https://github.com/eunha-space/space/blob/main/docs/multitenancy.md
 
 
 Handles on another domain
@@ -379,12 +381,8 @@ Host is rejected to protect against browser DNS rebinding. Do not forward the
 listener through a public reverse proxy or tunnel. Collect on the same machine,
 or use an SSH tunnel when collecting remotely.
 
-Each blue/green process needs its own scrape target. Eunha-space's runtime
-router enables the private listener on the slot's HTTP port plus 1,000:
-`127.0.0.1:61000` uses `127.0.0.1:62000`, and `127.0.0.1:61001` uses
-`127.0.0.1:62001`. Reserve those ports for metrics; an HTTP port above 64,535
-cannot use this mapping. Scrape the process directly, never the stable proxy,
-which alternates between processes during deployment.
+Give each blue/green process its own scrape target. Scrape each process
+directly so a proxy switching between processes does not mix their metrics.
 
 The initial metrics are:
 

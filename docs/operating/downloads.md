@@ -53,7 +53,4 @@ extracted `frontend` directory beside `eunha`, run from that directory, and
 install ffmpeg for media processing.
 
 To build the executable yourself, see
-[Building the CLI](./trying.md#building-the-cli). The hosting system's existing
-**Release** workflow remains separate: its Apple Silicon Actions artifact is
-for deploying eunha.space runtimes, while **Downloads** publishes these public
-release assets.
+[Building the CLI](./trying.md#building-the-cli).

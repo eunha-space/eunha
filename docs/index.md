@@ -56,8 +56,6 @@ Design
 
  -  [Protocol extension](./design/protocol.md): where ActivityPub scales badly
     and what Eunha designs for it.
- -  [Hosted tenancy plan](./design/multitenancy.md): the plan for hosting many
-    instances.
  -  [Benchmarking](./design/benchmarking.md): what a small instance costs, and
     what sharing a process saves.
  -  [Contributing](./contributing/index.md) and

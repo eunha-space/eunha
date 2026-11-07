@@ -127,6 +127,8 @@ Tracking Mastodon:
 Design records and handoff notes:
 
  -  *docs/design/protocol.md*: the ActivityPub extension Eunha designs.
- -  *docs/design/multitenancy.md*: the hosted tenancy plan.
+ -  The [hosted tenancy plan] is in Eunha Space.
  -  *docs/design/benchmarking.md*: measurements.
  -  *docs/contributing/next.md*: where to pick the work up.
+
+[hosted tenancy plan]: https://github.com/eunha-space/space/blob/main/docs/multitenancy.md
