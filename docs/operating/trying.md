@@ -17,9 +17,10 @@ eunha try --email you@example.com
 
 Like [Fedify CLI], this starts an account-free SSH tunnel, discovers its public
 HTTPS URL and configures the instance with it. It requires OpenSSH's `ssh`
-executable, but no tunnel account or Node.js. The helper tries Serveo and
-Pinggy, with a ten-second startup deadline for each provider and pinned SSH
-host keys. To select one explicitly:
+and `ssh-keygen` executables, but no tunnel account or Node.js. The helper
+tries Serveo and Pinggy, with a ten-second startup deadline for each provider
+and pinned SSH host keys. It uses a disposable SSH identity for the trial. To
+select a provider explicitly:
 
 ~~~~ sh
 eunha try --email you@example.com --tunnel-service serveo.net
@@ -125,8 +126,9 @@ ports. Media is served through the same public tunnel.
 Tunnel authentication, browser warning pages, provider limits or an unstable
 hostname can prevent federation. Other servers cannot click through a tunnel
 provider's consent screen or add bypass headers. Check that remote machines
-can fetch `/api/v2/instance`, `/.well-known/webfinger` for your account and its
-ActivityPub actor without such a screen. A tunnel does not guarantee that
+can fetch `/api/v2/instance`, `/.well-known/webfinger` for your account and the
+instance actor at `/actor` without such a screen. User actor fetches are signed
+by default. A tunnel does not guarantee that
 other servers will accept a trial instance.
 
 [Tailscale Funnel]: https://tailscale.com/docs/reference/tailscale-cli/funnel

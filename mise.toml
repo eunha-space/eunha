@@ -80,3 +80,11 @@ run = "node scripts/build_site_images.mjs"
 [tasks."container:build"]
 description = "Build the Eunha container image locally"
 run = "docker build --tag eunha:local ."
+
+[tasks."federation:public"]
+description = "Federate a real Eunha trial with Mastodon through public HTTPS tunnels"
+run = "python3 scripts/trial_federation_test.py"
+
+[tasks."trial:tunnels"]
+description = "Check public trial APIs, WebFinger and actors through Serveo and Pinggy"
+run = "python3 scripts/trial_tunnel_test.py"

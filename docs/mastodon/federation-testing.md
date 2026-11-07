@@ -68,3 +68,34 @@ The run also exercises what nothing else did: Eunha delivers to Mastodon's
 **shared inbox** (`https://mastodon.test/inbox`), not its per-actor one.
 Mastodon delivers to Eunha's per-actor inbox, which is its own choice when there
 is a single recipient on the far side.
+
+
+Public trial tunnels
+--------------------
+
+The local harness above uses a private Docker network. To test the actual
+[trial command](../operating/trying.md) over the internet, build the CLI and
+run the two public checks:
+
+~~~~ sh
+SQLX_OFFLINE=true mise exec -- cargo build --locked --bin eunha
+mise run trial:tunnels
+mise run federation:public
+~~~~
+
+`trial:tunnels` creates a trial for each of Serveo and Pinggy. It checks the
+instance API, owner WebFinger record and instance actor over HTTPS with no
+provider bypass headers. The instance actor publishes the key used to sign
+fetches, while a user actor requires a signed request by default. The check
+also verifies that Ctrl-C stops the trial containers and retains configuration.
+
+`federation:public` starts an isolated Mastodon alongside a real `eunha try`.
+The servers use public Serveo and Pinggy URLs and exchange signed ActivityPub
+requests. The harness resolves the accounts, follows them and checks that
+posts, favourites, boosts and deletions reach the other server. The test
+accounts and posts are temporary and separate from any existing instance.
+
+Both commands require Docker Compose, OpenSSH and working public provider
+access. They print the scratch directories, stop the tunnels and containers
+on exit, and retain the isolated volumes for diagnosis. These are manual
+checks because they depend on the public providers being available.

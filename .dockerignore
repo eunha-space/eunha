@@ -13,3 +13,6 @@ frontend/playwright-report
 .env
 .env.*
 config.toml
+
+# Trial state and credentials belong on the host.
+.eunha-try

@@ -2,7 +2,9 @@
 //!
 //! Mastodon: none
 //
-// Provider host keys: dahlia/localtunnel's service.ts (verified upstream in July 2026). Never disable host checking.
+// Serveo: port-443 fingerprint verified against https://serveo.net/docs/ in
+// November 2026. Pinggy: dahlia/localtunnel service.ts, verified July 2026.
+// Never disable host checking.
 use anyhow::{ensure, Context, Result};
 use std::path::Path;
 use std::process::Stdio;
@@ -11,7 +13,7 @@ use tokio::{
     process::{Child, Command},
 };
 
-const KNOWN_HOSTS: &str = "serveo.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDxYGqSKVwJpQD1F0YIhz+bd5lpl7YesKjtrn1QD1RjQcSj724lJdCwlv4J8PcLuFFtlAA8AbGQju7qWdMN9ihdHvRcWf0tSjZ+bzwYkxaCydq4JnCrbvLJPwLFaqV1NdcOzY2NVLuX5CfY8VTHrps49LnO0QpGaavqrbk+wTWDD9MHklNfJ1zSFpQAkSQnSNSYi/M2J3hX7P0G2R7dsUvNov+UgNKpc4n9+Lq5Vmcqjqo2KhFyHP0NseDLpgjaqGJq2Kvit3QowhqZkK4K77AA65CxZjdDfpjwZSuX075F9vNi0IFpFkGJW9KlrXzI4lIzSAjPZBURhUb8nZSiPuzj\n[free.pinggy.io]:443 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDF0YJigZJU62vn4rsKGRjIRTtMe/suc3d4YDe0iIvFzLMuaN78oxhWn9Uqefe1gN++dYVssspsgsvTXTTBcxxo3WoFeNr1z/+osJ45+Yxoa0pbaJdAwbr8CqjDa96r9/AhAXHoKncAByEOSiXfdWCXf84YC+Hu48/gZOqSZ3VqPz+nNGFByJcqYJ+jSELSqCNWVLWFxx7vH270Kymw2XkdOW47zzDNO7X4uByxHfaZMgI6phoaNglGizM0VNMQPL5GbspVGejFQE85QJbX3oF8vuCYnM+OMkwopHG+muh6Tro8+fm6G/fcmu34YJNbU3oaTdW1YPqvcKFX1AuIY9CA5lLZR9A1rOJ+fd4JEYaoTxwUN2ZPcrf7JEnvHmcV9hmupTSllJzLk4smDpl5PSknDm68/h/z/ZmaDlunGsHnn397fwCwS7sO9Q1yIuZ+Bri0td7+N2EK1mvM/qsnrSauOymcmqYVy6TLiejHdoVl8+lKqatkTxyFf/3MP8ylCKSoP0SJZratcU1n+0EciG+IjEzdPZ/1tuJZhBWqOUbYfUl+WgovH+J+AQKtoNzPP+fLtLNcmLEhx99N2y5l7A8IOlyy41Minq4N7V5X8Q7QHhEoocatNNn5JRYe/25P9aQelF0ItMD0PEmf8rIHWMqbwnwQ8pVVdDhE6mwhDskBIw==\n";
+const KNOWN_HOSTS: &str = "[serveo.net]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGX8CMtRKSA58fmA3I6oat6+7Z6VUwGbzYUE5FVrA3g1\n[free.pinggy.io]:443 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDF0YJigZJU62vn4rsKGRjIRTtMe/suc3d4YDe0iIvFzLMuaN78oxhWn9Uqefe1gN++dYVssspsgsvTXTTBcxxo3WoFeNr1z/+osJ45+Yxoa0pbaJdAwbr8CqjDa96r9/AhAXHoKncAByEOSiXfdWCXf84YC+Hu48/gZOqSZ3VqPz+nNGFByJcqYJ+jSELSqCNWVLWFxx7vH270Kymw2XkdOW47zzDNO7X4uByxHfaZMgI6phoaNglGizM0VNMQPL5GbspVGejFQE85QJbX3oF8vuCYnM+OMkwopHG+muh6Tro8+fm6G/fcmu34YJNbU3oaTdW1YPqvcKFX1AuIY9CA5lLZR9A1rOJ+fd4JEYaoTxwUN2ZPcrf7JEnvHmcV9hmupTSllJzLk4smDpl5PSknDm68/h/z/ZmaDlunGsHnn397fwCwS7sO9Q1yIuZ+Bri0td7+N2EK1mvM/qsnrSauOymcmqYVy6TLiejHdoVl8+lKqatkTxyFf/3MP8ylCKSoP0SJZratcU1n+0EciG+IjEzdPZ/1tuJZhBWqOUbYfUl+WgovH+J+AQKtoNzPP+fLtLNcmLEhx99N2y5l7A8IOlyy41Minq4N7V5X8Q7QHhEoocatNNn5JRYe/25P9aQelF0ItMD0PEmf8rIHWMqbwnwQ8pVVdDhE6mwhDskBIw==\n";
 
 struct Service {
     name: &'static str,
@@ -24,7 +26,7 @@ const SERVICES: &[Service] = &[
     Service {
         name: "serveo.net",
         host: "serveo.net",
-        ssh_port: "22",
+        ssh_port: "443",
         remote_port: 80,
         pattern: r"https://[a-z0-9-]+\.(?:serveo\.net|serveousercontent\.com)(?:/|\s|$)",
     },
@@ -44,6 +46,20 @@ fn discover(service: &Service, output: &str) -> Option<String> {
 }
 
 pub async fn open(dir: &Path, port: u16, selected: Option<&str>) -> Result<(String, Child)> {
+    let identity = dir.join("tunnel-identity");
+    if !identity.exists() {
+        let status = Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-C", "eunha-trial", "-f"])
+            .arg(&identity)
+            .stdin(Stdio::null())
+            .status()
+            .await
+            .context("install OpenSSH (ssh and ssh-keygen), or use --tailscale / --url")?;
+        ensure!(
+            status.success(),
+            "could not create a disposable tunnel identity"
+        );
+    }
     let hosts = dir.join("tunnel-known-hosts");
     std::fs::write(&hosts, KNOWN_HOSTS)?;
     let quoted = hosts
@@ -67,15 +83,22 @@ pub async fn open(dir: &Path, port: u16, selected: Option<&str>) -> Result<(Stri
                 "-o",
                 "GlobalKnownHostsFile=/dev/null",
                 "-o",
-                "BatchMode=yes",
+                "BatchMode=no",
                 "-o",
                 "IdentityAgent=none",
                 "-o",
-                "PubkeyAuthentication=no",
+                "PubkeyAuthentication=yes",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-l",
+                "eunha",
+                "-T",
                 "-o",
                 "PasswordAuthentication=no",
                 "-o",
-                "KbdInteractiveAuthentication=no",
+                "KbdInteractiveAuthentication=yes",
+                "-o",
+                "NumberOfPasswordPrompts=1",
                 "-o",
                 "ExitOnForwardFailure=yes",
                 "-o",
@@ -87,18 +110,21 @@ pub async fn open(dir: &Path, port: u16, selected: Option<&str>) -> Result<(Stri
                 "-o",
                 "UpdateHostKeys=no",
             ])
+            .arg("-i")
+            .arg(&identity)
             .arg("-o")
             .arg(format!("UserKnownHostsFile={quoted:?}"))
             .arg("-R")
             .arg(format!("{}:127.0.0.1:{port}", service.remote_port));
-        if service.name == "pinggy.io" {
-            command.arg("-t");
-        }
         command.arg(service.host);
         if service.name == "pinggy.io" {
             command.arg("x:xff");
         }
+        // Serveo's anonymous login uses a zero-prompt keyboard-interactive
+        // exchange. Permit that exchange, but refuse any actual prompt.
         let mut child = command
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .env("SSH_ASKPASS", "/usr/bin/false")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
