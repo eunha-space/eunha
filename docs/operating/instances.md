@@ -401,21 +401,29 @@ The initial metrics are:
     `eunha_database_pool_idle_connections`, open and idle application pool
     connections per tenant. When a pooled database URL is configured, these
     measure client connections to the pooler rather than PostgreSQL backends.
+ -  `ojak_delivery_attempts_total`, with canonical `tenant` and bounded
+    `outcome` (`delivered`, `failed`, `held`) labels. Successful sends include
+    redeliveries after queue acknowledgement failure. A held delivery made no
+    HTTP request. These are observations, not unique activities or a durable
+    billing ledger.
  -  `eunha_serving_tenants`, the number of tenants currently running.
 
 An alias uses its configured canonical tenant label. Arbitrary Host headers,
 raw paths, query strings, credentials and account identifiers are never metric
 labels. Unknown routes use `unmatched` and non-standard HTTP methods use
-`OTHER`. Pool and in-flight gauges are refreshed every five seconds. Metric
-series idle for fifteen minutes expire, including those of removed tenants;
-a series emitted again starts a new counter. Process restarts also reset
-counters, so calculate rates with reset-aware Prometheus functions. Histogram
-maintenance runs every five seconds, even without a collector scraping.
+`OTHER`. Pool and in-flight gauges are refreshed every five seconds. Gauge and
+histogram series idle for fifteen minutes expire, including those of removed
+tenants. Counter series remain for the process lifetime so an idle tenant
+cannot silently reset its accumulated sends. Successful-send counters are
+initialized to zero for served tenants every five seconds. Process restarts
+reset counters, so calculate rates with reset-aware Prometheus functions.
+Histogram maintenance runs every five seconds, even without a collector
+scraping.
 
 These metrics describe service work, not per-tenant CPU or memory. Those remain
-shared-process resources. Background-job and media-transfer instrumentation
-are not included yet. No Mastodon-compatible responses or database schemas
-are changed by enabling the listener.
+shared-process resources. Other background jobs and media-transfer
+instrumentation are not included yet. No Mastodon-compatible responses or
+database schemas are changed by enabling the listener.
 
 
 Email delivery

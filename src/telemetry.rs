@@ -38,7 +38,10 @@ fn recorder() -> metrics_exporter_prometheus::PrometheusRecorder {
             0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
         ])
         .expect("fixed histogram buckets are valid")
-        .idle_timeout(MetricKindMask::ALL, Some(Duration::from_secs(900)))
+        .idle_timeout(
+            MetricKindMask::GAUGE | MetricKindMask::HISTOGRAM,
+            Some(Duration::from_secs(900)),
+        )
         .build_recorder()
 }
 
@@ -91,6 +94,9 @@ pub async fn start(
             metrics::gauge!("eunha_serving_tenants").set(states.len() as f64);
             for state in states {
                 let tenant = state.instance.local_domain.to_owned();
+                // An idle tenant must export a real zero, including when its
+                // deliverer was built before the recorder was installed.
+                metrics::counter!("ojak_delivery_attempts_total", "tenant" => tenant.clone(), "outcome" => "delivered").absolute(0);
                 metrics::gauge!("eunha_database_pool_connections", "tenant" => tenant.clone())
                     .set(state.db.size() as f64);
                 metrics::gauge!("eunha_database_pool_idle_connections", "tenant" => tenant.clone())

@@ -175,6 +175,7 @@ pub type Deliverer = ojak::deliverer::Deliverer<
 /// When the HTTP client cannot be built.
 #[allow(clippy::too_many_arguments)]
 pub fn deliverer(
+    tenant: &str,
     db: sqlx::PgPool,
     encryptor: Option<crate::rails_encryption::Encryptor>,
     workers: &crate::config::WorkersConfig,
@@ -221,6 +222,7 @@ pub fn deliverer(
         client,
         config,
     )
+    .metrics(vec![metrics::Label::new("tenant", tenant.to_owned())])
     .on_failure(move |failure| {
         tracing::warn!(
             inbox = %failure.inbox,

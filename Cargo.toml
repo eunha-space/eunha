@@ -133,7 +133,7 @@ ojak-vocab = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-jsonld = { git = "https://github.com/eunha-space/ojak.git" }
 # The framework: serving, the inbox, signatures (`ojak::sig`), and queued
 # delivery, with its queue in `eunha.ojak_queue`.
-ojak = { git = "https://github.com/eunha-space/ojak.git" }
+ojak = { git = "https://github.com/eunha-space/ojak.git", features = ["metrics"] }
 ojak-postgres = { git = "https://github.com/eunha-space/ojak.git" }
 # ojak's cache (keys, activities seen, JSON-LD contexts) in each instance's
 # own Redis namespace.

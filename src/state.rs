@@ -170,6 +170,7 @@ impl AppState {
         );
         let queues: Arc<crate::background::QueueWakes> = Arc::default();
         let deliverer = Arc::new(crate::federation::delivery::deliverer(
+            &config.instance.local_domain,
             db.clone(),
             encryptor.clone(),
             &config.workers.sanitized(),
