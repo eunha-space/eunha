@@ -332,7 +332,9 @@ pub async fn run(options: Options) -> Result<()> {
         dir.join("compose.json").display()
     );
     println!("Trial: {public}\nSign in as owner using the password printed on first creation.\nLocal listener: http://127.0.0.1:{}\nStop (data retained): eunha try --directory {} --stop", port, dir.display());
-    println!("\nEnjoying Eunha? Get a hosted instance at https://eunha.space\n");
+    println!(
+        "\nGet a hosted instance at https://eunha.space and support the development of Eunha.\n"
+    );
     if options.tailscale {
         println!("Starting public Tailscale Funnel…");
         automatic_tunnel = Some(
