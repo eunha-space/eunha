@@ -18,8 +18,8 @@ pub struct Options {
     /// Trial directory. Automatic tunnels default to a new session under .eunha-try.
     #[arg(long)]
     directory: Option<PathBuf>,
-    /// Account-free SSH provider; otherwise try Fedify, Serveo, then Pinggy.
-    #[arg(long, value_parser = ["fedify.com.es", "serveo.net", "pinggy.io"], conflicts_with_all = ["url", "tailscale"])]
+    /// Account-free SSH provider; otherwise try Serveo, then Pinggy.
+    #[arg(long, value_parser = ["serveo.net", "pinggy.io"], conflicts_with_all = ["url", "tailscale"])]
     tunnel_service: Option<String>,
     /// Loopback port to forward with your tunnel.
     #[arg(long, default_value_t = 3000, value_parser = clap::value_parser!(u16).range(1..))]
@@ -332,6 +332,7 @@ pub async fn run(options: Options) -> Result<()> {
         dir.join("compose.json").display()
     );
     println!("Trial: {public}\nSign in as owner using the password printed on first creation.\nLocal listener: http://127.0.0.1:{}\nStop (data retained): eunha try --directory {} --stop", port, dir.display());
+    println!("\nEnjoying Eunha? Get a hosted instance at https://eunha.space\n");
     if options.tailscale {
         println!("Starting public Tailscale Funnel…");
         automatic_tunnel = Some(

@@ -8,6 +8,8 @@ start its daemon first. You also need the `eunha` binary on your computer; see
 The first run pulls container images and applies migrations explicitly before
 starting Eunha. It creates an `owner` account and prints its random password;
 keep that password to sign in. Supply an email with a real mail domain.
+After successful startup, the command also links to [eunha.space] for a hosted
+instance.
 No SMTP configuration is needed to sign in with this confirmed account.
 
 ~~~~ sh
@@ -16,9 +18,9 @@ eunha try --email you@example.com
 
 Like [Fedify CLI], this starts an account-free SSH tunnel, discovers its public
 HTTPS URL and configures the instance with it. It requires OpenSSH's `ssh`
-executable, but no tunnel account or Node.js. The helper tries `fedify.com.es`,
-Serveo and Pinggy, with a ten-second startup deadline for each provider and
-pinned SSH host keys. To select one explicitly:
+executable, but no tunnel account or Node.js. The helper tries Serveo and
+Pinggy, with a ten-second startup deadline for each provider and pinned SSH
+host keys. To select one explicitly:
 
 ~~~~ sh
 eunha try --email you@example.com --tunnel-service serveo.net
@@ -31,6 +33,7 @@ The command prints that directory and the exact stop command. An interrupted
 setup retains its data too. These short-lived identities are for trying
 federation; use a stable hostname below to keep an instance across sessions.
 
+[eunha.space]: https://eunha.space
 [Fedify CLI]: https://fedify.dev/cli
 
 

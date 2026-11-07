@@ -2,8 +2,7 @@
 //!
 //! Mastodon: none
 //
-// Provider host keys: Fedify's tunnelservice.ts and dahlia/localtunnel's
-// service.ts (verified upstream in July 2026). Never disable host checking.
+// Provider host keys: dahlia/localtunnel's service.ts (verified upstream in July 2026). Never disable host checking.
 use anyhow::{ensure, Context, Result};
 use std::path::Path;
 use std::process::Stdio;
@@ -12,7 +11,7 @@ use tokio::{
     process::{Child, Command},
 };
 
-const KNOWN_HOSTS: &str = "[fedify.com.es]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOepK/E2PANumZNFCicc/zv4EkyraFwqV8qveMtDC5b+\nserveo.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDxYGqSKVwJpQD1F0YIhz+bd5lpl7YesKjtrn1QD1RjQcSj724lJdCwlv4J8PcLuFFtlAA8AbGQju7qWdMN9ihdHvRcWf0tSjZ+bzwYkxaCydq4JnCrbvLJPwLFaqV1NdcOzY2NVLuX5CfY8VTHrps49LnO0QpGaavqrbk+wTWDD9MHklNfJ1zSFpQAkSQnSNSYi/M2J3hX7P0G2R7dsUvNov+UgNKpc4n9+Lq5Vmcqjqo2KhFyHP0NseDLpgjaqGJq2Kvit3QowhqZkK4K77AA65CxZjdDfpjwZSuX075F9vNi0IFpFkGJW9KlrXzI4lIzSAjPZBURhUb8nZSiPuzj\n[free.pinggy.io]:443 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDF0YJigZJU62vn4rsKGRjIRTtMe/suc3d4YDe0iIvFzLMuaN78oxhWn9Uqefe1gN++dYVssspsgsvTXTTBcxxo3WoFeNr1z/+osJ45+Yxoa0pbaJdAwbr8CqjDa96r9/AhAXHoKncAByEOSiXfdWCXf84YC+Hu48/gZOqSZ3VqPz+nNGFByJcqYJ+jSELSqCNWVLWFxx7vH270Kymw2XkdOW47zzDNO7X4uByxHfaZMgI6phoaNglGizM0VNMQPL5GbspVGejFQE85QJbX3oF8vuCYnM+OMkwopHG+muh6Tro8+fm6G/fcmu34YJNbU3oaTdW1YPqvcKFX1AuIY9CA5lLZR9A1rOJ+fd4JEYaoTxwUN2ZPcrf7JEnvHmcV9hmupTSllJzLk4smDpl5PSknDm68/h/z/ZmaDlunGsHnn397fwCwS7sO9Q1yIuZ+Bri0td7+N2EK1mvM/qsnrSauOymcmqYVy6TLiejHdoVl8+lKqatkTxyFf/3MP8ylCKSoP0SJZratcU1n+0EciG+IjEzdPZ/1tuJZhBWqOUbYfUl+WgovH+J+AQKtoNzPP+fLtLNcmLEhx99N2y5l7A8IOlyy41Minq4N7V5X8Q7QHhEoocatNNn5JRYe/25P9aQelF0ItMD0PEmf8rIHWMqbwnwQ8pVVdDhE6mwhDskBIw==\n";
+const KNOWN_HOSTS: &str = "serveo.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDxYGqSKVwJpQD1F0YIhz+bd5lpl7YesKjtrn1QD1RjQcSj724lJdCwlv4J8PcLuFFtlAA8AbGQju7qWdMN9ihdHvRcWf0tSjZ+bzwYkxaCydq4JnCrbvLJPwLFaqV1NdcOzY2NVLuX5CfY8VTHrps49LnO0QpGaavqrbk+wTWDD9MHklNfJ1zSFpQAkSQnSNSYi/M2J3hX7P0G2R7dsUvNov+UgNKpc4n9+Lq5Vmcqjqo2KhFyHP0NseDLpgjaqGJq2Kvit3QowhqZkK4K77AA65CxZjdDfpjwZSuX075F9vNi0IFpFkGJW9KlrXzI4lIzSAjPZBURhUb8nZSiPuzj\n[free.pinggy.io]:443 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDF0YJigZJU62vn4rsKGRjIRTtMe/suc3d4YDe0iIvFzLMuaN78oxhWn9Uqefe1gN++dYVssspsgsvTXTTBcxxo3WoFeNr1z/+osJ45+Yxoa0pbaJdAwbr8CqjDa96r9/AhAXHoKncAByEOSiXfdWCXf84YC+Hu48/gZOqSZ3VqPz+nNGFByJcqYJ+jSELSqCNWVLWFxx7vH270Kymw2XkdOW47zzDNO7X4uByxHfaZMgI6phoaNglGizM0VNMQPL5GbspVGejFQE85QJbX3oF8vuCYnM+OMkwopHG+muh6Tro8+fm6G/fcmu34YJNbU3oaTdW1YPqvcKFX1AuIY9CA5lLZR9A1rOJ+fd4JEYaoTxwUN2ZPcrf7JEnvHmcV9hmupTSllJzLk4smDpl5PSknDm68/h/z/ZmaDlunGsHnn397fwCwS7sO9Q1yIuZ+Bri0td7+N2EK1mvM/qsnrSauOymcmqYVy6TLiejHdoVl8+lKqatkTxyFf/3MP8ylCKSoP0SJZratcU1n+0EciG+IjEzdPZ/1tuJZhBWqOUbYfUl+WgovH+J+AQKtoNzPP+fLtLNcmLEhx99N2y5l7A8IOlyy41Minq4N7V5X8Q7QHhEoocatNNn5JRYe/25P9aQelF0ItMD0PEmf8rIHWMqbwnwQ8pVVdDhE6mwhDskBIw==\n";
 
 struct Service {
     name: &'static str,
@@ -22,13 +21,6 @@ struct Service {
     pattern: &'static str,
 }
 const SERVICES: &[Service] = &[
-    Service {
-        name: "fedify.com.es",
-        host: "fedify.com.es",
-        ssh_port: "2222",
-        remote_port: 80,
-        pattern: r"https://[a-z0-9]{16}\.fedify\.com\.es(?:/|\s|$)",
-    },
     Service {
         name: "serveo.net",
         host: "serveo.net",
@@ -173,20 +165,12 @@ mod tests {
     #[test]
     fn accepts_only_provider_urls() {
         assert_eq!(
-            discover(
-                &SERVICES[0],
-                "Ready: https://0123456789abcdef.fedify.com.es/\n"
-            )
-            .as_deref(),
-            Some("https://0123456789abcdef.fedify.com.es")
+            discover(&SERVICES[0], "Ready: https://trial.serveo.net/\n").as_deref(),
+            Some("https://trial.serveo.net")
         );
-        assert!(discover(
-            &SERVICES[0],
-            "https://0123456789abcdef.fedify.com.es.evil.example/"
-        )
-        .is_none());
+        assert!(discover(&SERVICES[0], "https://trial.serveo.net.evil.example/").is_none());
         assert!(discover(&SERVICES[0], "https://evil.example/").is_none());
-        assert!(discover(&SERVICES[1], "https://trial.serveousercontent.com/").is_some());
-        assert!(discover(&SERVICES[2], "https://trial.free.pinggy.net/").is_some());
+        assert!(discover(&SERVICES[0], "https://trial.serveousercontent.com/").is_some());
+        assert!(discover(&SERVICES[1], "https://trial.free.pinggy.net/").is_some());
     }
 }
