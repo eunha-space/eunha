@@ -3,7 +3,8 @@ Trying Eunha
 
 `eunha try` creates an isolated trial with PostgreSQL, Redis, S3-compatible
 media storage and the bundled web interface. Install Docker with Compose and
-start its daemon first. You also need the `eunha` binary on your computer.
+start its daemon first. You also need the `eunha` binary on your computer; see
+[Building the CLI](#building-the-cli) below.
 The first run pulls container images and applies migrations explicitly before
 starting Eunha. It creates an `owner` account and prints its random password;
 keep that password to sign in. Supply an email with a real mail domain.
@@ -31,6 +32,52 @@ setup retains its data too. These short-lived identities are for trying
 federation; use a stable hostname below to keep an instance across sessions.
 
 [Fedify CLI]: https://fedify.dev/cli
+
+
+Building the CLI
+----------------
+
+Build the `eunha` executable from source with [mise]. Install Git and the native
+build tools first. On Debian or Ubuntu:
+
+~~~~ sh
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config libssl-dev cmake
+~~~~
+
+On macOS, install the Xcode command-line tools and, with Homebrew, OpenSSL,
+pkg-config and CMake:
+
+~~~~ sh
+xcode-select --install
+brew install openssl@3 pkg-config cmake
+~~~~
+
+Then clone the repository and build the CLI:
+
+~~~~ sh
+git clone https://github.com/eunha-space/eunha.git
+cd eunha
+mise trust
+mise install rust
+SQLX_OFFLINE=true mise exec -- cargo build --release --locked --bin eunha
+./target/release/eunha try --email you@example.com
+~~~~
+
+`SQLX_OFFLINE=true` uses the checked-in SQL query metadata, so building does
+not need PostgreSQL or Redis running. The first release build can take several
+minutes. On macOS, if OpenSSL is not found, set
+`OPENSSL_DIR="$(brew --prefix openssl@3)"` when running the build command.
+
+The resulting binary is `target/release/eunha`. Run it by that path, or copy it
+to a directory on your `PATH`, such as `~/.local/bin`, to use `eunha` directly.
+The trial command requires Docker Compose and, for automatic public tunnels,
+OpenSSH. It gets the web frontend and ffmpeg from its container image, so you
+do not need to build the frontend or install ffmpeg on the host to try it.
+Running the server directly instead requires the
+[frontend build](../contributing/index.md#building-the-web-frontend) too.
+
+[mise]: https://mise.jdx.dev/
 
 
 Public HTTPS

@@ -11,6 +11,21 @@ Use [shadcn/ui] CLI when adding components. Don't hand-roll components.
 [shadcn/ui]: https://ui.shadcn.com
 
 
+Building the web frontend
+-------------------------
+
+For a server run directly from the checkout, build its web frontend too:
+
+~~~~ sh
+mise run frontend
+~~~~
+
+This installs the frontend dependencies and writes `frontend/dist`. Run the
+server from the repository root so it can find that directory. See
+[Building the CLI](../operating/trying.md#building-the-cli) for the Rust binary.
+`eunha try` uses the frontend in its container image instead.
+
+
 Federation
 ----------
 
