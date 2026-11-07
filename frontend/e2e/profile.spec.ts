@@ -226,3 +226,41 @@ test('cancelling the block confirmation leaves the account unblocked', async ({
   await page.getByRole('button', { name: 'More actions for @bob' }).click()
   await expect(page.getByRole('menuitem', { name: 'Block' })).toBeVisible()
 })
+
+// A locked account's follow stays a request until accepted, and clicking
+// "Requested" has to withdraw it, not send it again.
+test('a pending follow request is withdrawn from the profile', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
+  let requested = true
+  const calls: string[] = []
+  const pending = () => ({ ...relationship(false), following: false, requested })
+
+  await page.route('**/api/v1/accounts/lookup**', (route) =>
+    route.fulfill({ json: { ...account, locked: true } }),
+  )
+  await page.route('**/api/v1/accounts/verify_credentials**', (route) =>
+    route.fulfill({ json: { ...account, id: '1', username: 'alice', acct: 'alice' } }),
+  )
+  await page.route('**/api/v1/accounts/relationships**', (route) =>
+    route.fulfill({ json: [pending()] }),
+  )
+  await page.route('**/api/v1/accounts/2/statuses**', (route) => route.fulfill({ json: [] }))
+  await page.route('**/api/v1/accounts/2/follow', (route) => {
+    calls.push('follow')
+    requested = true
+    return route.fulfill({ json: pending() })
+  })
+  await page.route('**/api/v1/accounts/2/unfollow', (route) => {
+    calls.push('unfollow')
+    requested = false
+    return route.fulfill({ json: pending() })
+  })
+
+  await page.goto('/@bob')
+  await page.getByRole('button', { name: 'Requested' }).click()
+  await expect(page.getByRole('button', { name: 'Follow', exact: true })).toBeVisible()
+  expect(calls).toEqual(['unfollow'])
+})

@@ -727,7 +727,10 @@ export default function Profile() {
     if (!account || !token || !rel || relationshipBusy) return
     setRelationshipBusy(true)
     try {
-      setRel(await setFollow(account.id, token, !rel.following))
+      // A pending request is undone as a follow is: `unfollow` withdraws it,
+      // as upstream's `UnfollowService` does. Following again would only
+      // send the request once more.
+      setRel(await setFollow(account.id, token, !(rel.following || rel.requested)))
     } finally {
       setRelationshipBusy(false)
     }
@@ -1033,6 +1036,7 @@ export default function Profile() {
                     variant={rel.following || rel.requested ? 'outline' : 'default'}
                     onClick={toggleFollow}
                     disabled={relationshipBusy}
+                    title={rel.requested && !rel.following ? 'Withdraw follow request' : undefined}
                   >
                     {rel.following ? 'Following' : rel.requested ? 'Requested' : 'Follow'}
                   </Button>
