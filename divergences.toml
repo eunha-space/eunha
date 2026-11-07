@@ -1932,7 +1932,9 @@ Has only email and password, with its second factors. `users.provider`, \
 a member who has only ever signed in through one of these has to reset a \
 password before Eunha can sign them in."""
 why = """
-Not ported yet. **An instance that depends on one cannot drop Eunha in.**"""
+Left out on purpose. Eunha keeps its own accounts and signs them in itself; \
+each of these is a separate protocol with its own security surface, for few \
+instances. **An instance that depends on one cannot drop Eunha in.**"""
 evidence = "src/api/account/mod.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
@@ -1949,8 +1951,9 @@ Saves `captcha_enabled` for a Mastodon on the same database, and reads nothing \
 of it. Its sign-up is limited by the rate limits, the registration mode and \
 email blocks."""
 why = """
-Not ported yet. It would send every new member's browser to a third party, so \
-it should be chosen deliberately rather than carried over."""
+Left out on purpose. It would send every new member's browser to a third \
+party, hCaptcha; the rate limits, approval-required registrations and email \
+blocks are Eunha's answer to sign-up spam instead."""
 evidence = "src/settings.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
