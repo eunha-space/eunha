@@ -474,3 +474,33 @@ on Mastodon; it also signs Mastodon's sessions, so keep it as secret.
 *scripts/rails\_signing\_vectors.rb* prints what Mastodon makes from a given
 secret, using nothing but Ruby's standard library, for checking an instance
 against its Mastodon.
+
+
+Hosting growth decisions
+------------------------
+
+A hosting control plane may supply these optional decisions per tenant:
+
+~~~~ toml
+[limits]
+registrations = false
+media_uploads = false
+valid_until = 2000000000 # Unix seconds; the control plane renews the lease
+~~~~
+
+Absent flags allow growth. `registrations = false` closes new signups,
+including invited signups, without changing the saved registration setting.
+`media_uploads = false` returns 422 for new local media attachments, replacement
+thumbnails, profile avatars/headers and custom emoji uploads. Descriptions,
+deletions, existing media, federation and remote media fetching continue.
+Database size and delivery counts cause no automatic restriction.
+
+SIGHUP applies only these decisions in place: a tenant keeps its database pool,
+streaming connections and background jobs. Other configuration changes still
+follow the usual reload rules. A restriction whose `valid_until` is in the past
+allows growth again, even while its old TOML file remains on disk. A standalone
+operator may omit the expiry for a deliberately persistent manual restriction;
+a hosting control plane should always lease a restriction from a fresh reading.
+The control plane owns allowances, warnings, grace periods and billing policy;
+Eunha only applies the decision. See `leased-hosting-growth-limits` in the
+divergence registry.

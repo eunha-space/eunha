@@ -469,6 +469,11 @@ fn check_reloadable(at_start: &ProcessSettings, next: &ProcessSettings) -> Resul
 /// A fingerprint of a tenant's whole configuration, which a reload compares to
 /// tell whether the tenant has to be restarted.
 fn fingerprint(config: &config::Config) -> u64 {
+    // Growth decisions reload in place, preserving pools, streaming and jobs.
+    let mut config = config.clone();
+    config.limits.registrations = None;
+    config.limits.media_uploads = None;
+    config.limits.valid_until = None;
     let mut hasher = std::hash::DefaultHasher::new();
     format!("{config:?}").hash(&mut hasher);
     hasher.finish()
@@ -892,6 +897,12 @@ impl Tenants {
             .map(|host| (host.clone(), running.get(host).map(|t| t.fingerprint)))
             .collect();
         let plan = plan(&fingerprints, &configs);
+        for tenant in &configs {
+            let host = normalize_host(&tenant.config.instance.local_domain);
+            if let Some(active) = running.get(&host).filter(|_| plan.keep.contains(&host)) {
+                active.state.growth_limits.replace(&tenant.config.limits);
+            }
+        }
         let was_shared = current.by_host.len() > 1;
         let shared = configs.len() > 1;
 
@@ -1325,6 +1336,19 @@ vapid_public_key = ""
             HashMap::new(),
         );
         assert!(matches!(not_lone.lookup("localhost:3000"), Lookup::Unknown));
+    }
+
+    #[test]
+    fn growth_decisions_reload_without_restarting_a_tenant() {
+        let before = tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "");
+        let mut after = tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "");
+        after.config.limits.registrations = Some(false);
+        after.config.limits.media_uploads = Some(false);
+        after.config.limits.valid_until = Some(2000000000);
+        let current = HashMap::from([("a.example".to_owned(), Some(fingerprint(&before.config)))]);
+        let result = plan(&current, &[after]);
+        assert_eq!(result.keep, vec!["a.example"]);
+        assert!(result.restart.is_empty());
     }
 
     #[test]

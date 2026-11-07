@@ -90,6 +90,7 @@ async fn store_profile_image(
     (content_type, data): (String, Vec<u8>),
     errors: &mut ValidationErrors,
 ) -> AppResult<Option<(String, &'static str, i32)>> {
+    state.growth_limits.require_media()?;
     let mut own = ValidationErrors::default();
     profile::validate(kind, &content_type, data.len(), &mut own);
     if !own.is_empty() {

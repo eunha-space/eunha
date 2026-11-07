@@ -469,6 +469,9 @@ pub async fn register(
     sign_up_ip: Option<std::net::IpAddr>,
     app: Option<SignUpApp>,
 ) -> Result<Registered, SignupError> {
+    if !state.growth_limits.registrations() {
+        return Err(AppError::Unprocessable("Registrations are closed because this instance is over its user allowance. Its owner can review usage or upgrade the plan on eunha space.".into()).into());
+    }
     // `User#invite_code=`: the invite with that code, whatever its state.
     let invite_code = form.invite_code.as_deref().unwrap_or("").trim().to_string();
     let invite_id: Option<i64> = if invite_code.is_empty() {

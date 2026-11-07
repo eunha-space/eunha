@@ -29,6 +29,7 @@ pub mod featured_tags;
 pub mod federation;
 pub mod feed;
 pub mod formatter;
+pub mod growth_limits;
 pub mod home_feed;
 pub mod import;
 pub mod ip_cleanup;

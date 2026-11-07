@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub growth_limits: Arc<crate::growth_limits::GrowthLimits>,
     pub db: PgPool,
     /// Requests awaiting response headers; sampled only by the private metrics listener.
     pub metrics_in_flight: Arc<std::sync::atomic::AtomicU64>,
@@ -206,6 +207,7 @@ impl AppState {
             stop.clone(),
         );
         Ok(Self {
+            growth_limits: Arc::new(crate::growth_limits::GrowthLimits::new(&config.limits)),
             db,
             metrics_in_flight: Arc::default(),
             redis,

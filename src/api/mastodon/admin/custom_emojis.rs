@@ -149,6 +149,7 @@ pub async fn create_admin_custom_emoji(
 ) -> AppResult<Json<AdminCustomEmoji>> {
     require_permission(&state, auth.account_id, perm::MANAGE_CUSTOM_EMOJIS).await?;
 
+    state.growth_limits.require_media()?;
     let mut shortcode = String::new();
     let mut image: Option<(Vec<u8>, String)> = None;
     let mut visible_in_picker = true;

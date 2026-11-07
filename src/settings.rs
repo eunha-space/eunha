@@ -278,6 +278,7 @@ impl RegistrationsMode {
 /// Every stored setting, read in one query, for a request that reads several.
 #[derive(Debug, Clone, Default)]
 pub struct Snapshot {
+    registrations_allowed: Option<bool>,
     rows: HashMap<String, Option<String>>,
 }
 
@@ -288,6 +289,7 @@ impl Snapshot {
             .await
             .unwrap_or_default();
         Self {
+            registrations_allowed: Some(state.growth_limits.registrations()),
             rows: rows.into_iter().map(|r| (r.var, r.value)).collect(),
         }
     }
@@ -366,6 +368,9 @@ impl Snapshot {
     /// `Setting.registrations_mode`: saved, or `none`. A saved value Mastodon
     /// would not accept matches none of the modes, so it opens nothing.
     pub fn registrations_mode(&self, _instance: &InstanceConfig) -> RegistrationsMode {
+        if self.registrations_allowed == Some(false) {
+            return RegistrationsMode::None;
+        }
         RegistrationsMode::parse(&self.string("registrations_mode"))
             .unwrap_or(RegistrationsMode::None)
     }
@@ -373,6 +378,9 @@ impl Snapshot {
 
 /// [`Snapshot::registrations_mode`] for a caller that reads nothing else.
 pub async fn registrations_mode(state: &AppState) -> RegistrationsMode {
+    if !state.growth_limits.registrations() {
+        return RegistrationsMode::None;
+    }
     registrations_mode_in(&state.db, &state.instance).await
 }
 
@@ -388,6 +396,7 @@ pub async fn registrations_mode_in(
             .ok()
             .flatten();
     let snapshot = Snapshot {
+        registrations_allowed: None,
         rows: stored
             .map(|raw| ("registrations_mode".to_owned(), raw))
             .into_iter()
@@ -426,6 +435,7 @@ mod tests {
     #[test]
     fn a_saved_blank_is_nil_and_a_missing_row_the_default() {
         let snapshot = Snapshot {
+            registrations_allowed: None,
             rows: [("site_title".to_owned(), Some(String::new()))]
                 .into_iter()
                 .collect(),
@@ -438,6 +448,7 @@ mod tests {
     #[test]
     fn values_decode_as_yaml() {
         let snapshot = Snapshot {
+            registrations_allowed: None,
             rows: [
                 ("trends".to_owned(), Some("--- false\n".to_owned())),
                 (

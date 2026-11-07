@@ -349,6 +349,14 @@ pub const DEFAULT_PROCESS_MAX_TENANTS: usize = 50;
 /// needs no `[limits]` section.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct LimitsConfig {
+    /// Control-plane growth decisions. Defaults allow growth; the optional
+    /// Unix-second lease makes restrictions expire when observations go stale.
+    #[serde(default)]
+    pub registrations: Option<bool>,
+    #[serde(default)]
+    pub media_uploads: Option<bool>,
+    #[serde(default)]
+    pub valid_until: Option<i64>,
     /// Requests this instance may have in flight at once. Past it, a request
     /// is answered at once with 503 and `Retry-After` rather than queued, so an
     /// instance being flooded cannot slow the others down. Unset, a lone

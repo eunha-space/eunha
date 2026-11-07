@@ -458,6 +458,7 @@ async fn create(
     delay: bool,
 ) -> Result<Response, MediaError> {
     auth.require_scope("write:media")?;
+    state.growth_limits.require_media()?;
     let params = media_params(parts);
     let kind = params
         .file
@@ -1339,6 +1340,9 @@ async fn update(
         .await
         .map_err(|_| MediaError::Invalid("could not read the parameters".into()))?;
     let params = media_params(parts);
+    if params.thumbnail.is_some() || params.file.is_some() {
+        state.growth_limits.require_media()?;
+    }
     let kind = attachment.r#type.unwrap_or(TYPE_IMAGE);
 
     if let Some(thumbnail) = &params.thumbnail {

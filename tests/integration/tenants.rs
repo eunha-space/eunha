@@ -740,3 +740,94 @@ async fn test_a_database_ahead_of_the_binary_is_named_but_still_served() {
     assert_eq!(unknown.versions, vec![99999999999999]);
     assert!(eunha::migrate::pending(&ctx.db).await.unwrap().is_none());
 }
+
+#[tokio::test]
+async fn hosting_growth_limits_block_only_signup_and_local_uploads() {
+    let ctx = TestContext::with_config("growth-limits", |config| {
+        config.limits.registrations = Some(false);
+        config.limits.media_uploads = Some(false);
+        config.limits.valid_until = Some(chrono::Utc::now().timestamp() + 300);
+    })
+    .await;
+    let signup=ctx.sign_up(&json!({"username":"newperson","email":"new@example.com","password":"long-enough-password","agreement":true})).await;
+    assert_eq!(signup.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(signup.text().await.unwrap().contains("user allowance"));
+    for path in ["/api/v1/media", "/api/v2/media"] {
+        let response = ctx
+            .api
+            .post_multipart_file(
+                path,
+                &ctx.alice_token,
+                "image.png",
+                "image/png",
+                vec![0],
+                &[],
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.text().await.unwrap().contains("media allowance"));
+    }
+    for field in ["avatar", "header"] {
+        let form = reqwest::multipart::Form::new().part(
+            field,
+            reqwest::multipart::Part::bytes(vec![0])
+                .file_name("image.png")
+                .mime_str("image/png")
+                .unwrap(),
+        );
+        let response = ctx
+            .api
+            .http
+            .patch(ctx.api.url("/api/v1/accounts/update_credentials"))
+            .header("host", &ctx.domain)
+            .bearer_auth(&ctx.alice_token)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.text().await.unwrap().contains("media allowance"));
+    }
+    crate::helpers::make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    let emoji = ctx
+        .api
+        .http
+        .post(ctx.api.url("/api/v1/admin/custom_emojis"))
+        .header("host", &ctx.domain)
+        .bearer_auth(&ctx.alice_token)
+        .multipart(reqwest::multipart::Form::new().text("shortcode", "testquota"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(emoji.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(emoji.text().await.unwrap().contains("media allowance"));
+    let text = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status":"Text still works","visibility":"public"}),
+        )
+        .await;
+    assert_eq!(text.status(), StatusCode::OK);
+    let profile = ctx
+        .api
+        .patch_multipart(
+            "/api/v1/accounts/update_credentials",
+            &ctx.alice_token,
+            &[("display_name", "Still editing text")],
+        )
+        .await;
+    assert_eq!(profile.status(), StatusCode::OK);
+    assert_eq!(
+        ctx.api.get("/api/v2/instance", None).await.status(),
+        StatusCode::OK
+    );
+    ctx.state
+        .growth_limits
+        .replace(&eunha::config::LimitsConfig::default());
+    let signup=ctx.sign_up(&json!({"username":"newperson","email":"new@example.com","password":"long-enough-password","agreement":true})).await;
+    assert_eq!(signup.status(), StatusCode::OK);
+    assert!(!ctx.state.db.is_closed());
+    assert!(!ctx.state.stop.is_cancelled());
+}
