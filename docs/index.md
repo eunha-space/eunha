@@ -16,6 +16,8 @@ implementation detail, and Eunha may contain behavioral differences.
 Running Eunha
 -------------
 
+ -  [Download Eunha](./operating/downloads.md): ready-made macOS and Linux
+    binaries.
  -  [Try Eunha](./operating/trying.md): an isolated trial with a public HTTPS
     tunnel.
  -  [Container images](./operating/containers.md): GitHub Actions builds,

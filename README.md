@@ -16,7 +16,8 @@ implementation detail, and Eunha may contain behavioral differences.
 Try Eunha
 ---------
 
-With Docker Compose and OpenSSH installed:
+[Download Eunha](./docs/operating/downloads.md) for macOS or Linux. With Docker
+Compose and OpenSSH installed:
 
 ~~~~ sh
 eunha try --email you@example.com

@@ -3,8 +3,9 @@ Trying Eunha
 
 `eunha try` creates an isolated trial with PostgreSQL, Redis, S3-compatible
 media storage and the bundled web interface. Install Docker with Compose and
-start its daemon first. You also need the `eunha` binary on your computer; see
-[Building the CLI](#building-the-cli) below.
+start its daemon first. Get the `eunha` binary from
+[GitHub Releases](./downloads.md), or see [Building the CLI](#building-the-cli)
+below.
 The first run pulls container images and applies migrations explicitly before
 starting Eunha. It creates an `owner` account and prints its random password;
 keep that password to sign in. Supply an email with a real mail domain.

@@ -57,3 +57,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=eunha-amd64
           cache-to: type=gha,mode=max,scope=eunha-amd64
+
+      - name: Verify anonymous pull access
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          anonymous_config=$(mktemp -d)
+          trap 'rm -rf "$anonymous_config"' EXIT
+          docker --config "$anonymous_config" manifest inspect "$IMAGE:sha-$GITHUB_SHA" >/dev/null

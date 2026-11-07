@@ -1,0 +1,156 @@
+# Public downloads are independent of release.yml, whose artifact contract is
+# consumed by the hosting control plane.
+name: Downloads
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: downloads-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the web client
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile && pnpm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: download-frontend
+          path: frontend/dist
+          if-no-files-found: error
+
+  binaries:
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: macos-arm64
+          - runner: macos-15-intel
+            platform: macos-amd64
+          - runner: ubuntu-22.04
+            platform: linux-amd64
+          - runner: ubuntu-22.04-arm
+            platform: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      SQLX_OFFLINE: "true"
+      OPENSSL_STATIC: "1"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: downloads-${{ matrix.platform }}
+      - name: Native dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev cmake
+          echo "OPENSSL_LIB_DIR=$(pkg-config --variable=libdir openssl)" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$(pkg-config --variable=includedir openssl)" >> "$GITHUB_ENV"
+      - name: Native dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: Build the executable
+        run: cargo build --release --locked --bin eunha
+      - name: Smoke test the executable
+        run: |
+          target/release/eunha --help
+          target/release/eunha try --help
+      - name: Check OpenSSL is static (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ldd target/release/eunha | tee dependencies.txt
+          if grep -Eq 'lib(ssl|crypto)\.so' dependencies.txt; then
+            echo "::error::download must not require a host OpenSSL installation"
+            exit 1
+          fi
+      - name: Check only system libraries are dynamic (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          otool -L target/release/eunha
+          if otool -L target/release/eunha | tail -n +2 | grep -Ev '^[[:space:]]+/(usr/lib|System/Library)/'; then
+            echo "::error::download links a non-system library"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: download-frontend
+          path: package/frontend/dist
+      - name: Package the binary and frontend
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          cp target/release/eunha package/eunha
+          cp LICENSE package/LICENSE
+          git rev-parse HEAD > package/REVISION
+          tar -czf "eunha-${PLATFORM}.tar.gz" -C package eunha frontend LICENSE REVISION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: download-${{ matrix.platform }}
+          path: eunha-*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: binaries
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: download-*-*
+          merge-multiple: true
+          path: downloads
+      - name: Checksums
+        working-directory: downloads
+        run: sha256sum eunha-*.tar.gz > SHA256SUMS
+      - name: Publish downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            tag="$REF_NAME"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --verify-tag --title "Eunha $tag" --generate-notes
+            fi
+          else
+            tag=nightly
+            # Never move a tagged stable release. This is a development channel.
+            git tag -f "$tag" "$GITHUB_SHA"
+            git push --force origin "refs/tags/$tag"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --prerelease --latest=false --title "Eunha nightly" --notes "Development downloads from main. See REVISION inside each archive for its source commit."
+            fi
+          fi
+          gh release upload "$tag" downloads/eunha-*.tar.gz downloads/SHA256SUMS --clobber

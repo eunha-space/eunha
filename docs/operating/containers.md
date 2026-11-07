@@ -7,7 +7,9 @@ build without publishing. Other runs publish to `ghcr.io/<owner>/<repository>`;
 for this repository, `ghcr.io/eunha-space/eunha`. The workflow uses the built-in
 `GITHUB_TOKEN` with `packages: write`, so no registry secret is needed. If a
 package already exists, grant this repository Actions access to it. To allow
-anonymous pulls, make the package public in its GitHub package settings.
+anonymous pulls, the Eunha container package is public. The workflow checks
+that the published image manifest is accessible with an empty Docker
+configuration, so a private-package regression fails publication checks.
 
 Images currently target `linux/amd64`. The image includes the Rust server,
 built web frontend, migrations, CA certificates and ffmpeg. Compilation uses
