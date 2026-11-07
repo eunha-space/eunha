@@ -6,6 +6,7 @@ import {
   Bookmark,
   Compass,
   Globe,
+  Hash,
   MessageCircle,
   Home,
   Info,
@@ -190,6 +191,7 @@ function useNavItems(
     { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
     { to: '/messages', icon: MessageCircle, label: 'Messages' },
     { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
+    { to: '/followed_tags', icon: Hash, label: 'Followed hashtags' },
     ...moderation,
   ]
 }

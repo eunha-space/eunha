@@ -1987,8 +1987,8 @@ id = "web-client-covers-less-than-the-api"
 kind = "omission"
 summary = "The web client has no pages for several features the API serves"
 mastodon = """
-Its web UI has lists, filters and their settings, followed hashtags, scheduled \
-posts, collections, per-account domain blocks, the notification policy and \
+Its web UI has lists, filters and their settings, scheduled posts, collections, \
+per-account domain blocks, the notification policy and \
 filtered requests, private notes and Web Push."""
 eunha = """
 Serves the API for all of them, for third-party clients, but its web client has \

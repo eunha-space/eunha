@@ -11,6 +11,7 @@ import PublicTimeline from './pages/PublicTimeline.tsx'
 import Notifications from './pages/Notifications.tsx'
 import FollowRequests from './pages/FollowRequests.tsx'
 import SearchPage from './pages/Search.tsx'
+import FollowedTags from './pages/FollowedTags.tsx'
 import TagTimeline from './pages/TagTimeline.tsx'
 import AccountList from './pages/AccountList.tsx'
 import StatusReactions from './pages/StatusReactions.tsx'
@@ -142,6 +143,7 @@ const routes = [
   { path: '/explore/links', element: <Explore /> },
   { path: '/blocked', element: <BlockedAccounts /> },
   { path: '/muted', element: <BlockedAccounts /> },
+  { path: '/followed_tags', element: <FollowedTags /> },
   { path: '/tags/:name', element: <TagTimeline /> },
   // Moderation, at Mastodon's own admin paths so the links its notifications
   // and emails carry — `/admin/reports/:id`, `/admin/accounts/:id` — land on

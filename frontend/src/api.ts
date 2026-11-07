@@ -587,6 +587,10 @@ export async function search(
   return restClient(token).v2.search.list({ q, resolve: !!token, limit: 20 })
 }
 
+export function getFollowedTags(token: string): mastodon.Paginator<mastodon.v1.Tag[]> {
+  return restClient(token).v1.followedTags.list({ limit: 40 })
+}
+
 export function getTag(name: string, token: string) {
   return restClient(token).v1.tags.$select(name).fetch()
 }
