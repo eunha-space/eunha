@@ -13,6 +13,21 @@ It's not Eunha's goal to completely mimic Mastodon's feature set or its
 implementation detail, and Eunha may contain behavioral differences.
 
 
+Try Eunha
+---------
+
+With Docker Compose and OpenSSH installed:
+
+~~~~ sh
+eunha try --email you@example.com
+~~~~
+
+This creates a trial instance and an account-free public HTTPS tunnel for
+ActivityPub. It prints the instance URL and owner password. Ctrl-C stops the
+trial while retaining its data. [The trial guide](./docs/operating/trying.md)
+also covers Tailscale Funnel, ngrok and other tunnels.
+
+
 Documentation
 -------------
 

@@ -8,3 +8,6 @@ seoulearth_*
 .DS_Store
 *.rdb
 benchmark-results/
+
+# Local trial credentials and configuration
+/.eunha-try/

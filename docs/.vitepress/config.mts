@@ -19,6 +19,7 @@ export default defineConfig({
       {
         text: "Running Eunha",
         items: [
+          { text: "Try Eunha", link: "/operating/trying" },
           { text: "Container images", link: "/operating/containers" },
           { text: "The first account", link: "/operating/first-account" },
           { text: "Migrations", link: "/operating/migrations" },

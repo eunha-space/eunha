@@ -4,6 +4,9 @@
 //! Mastodon: lib/mastodon/cli/main.rb, lib/mastodon/cli/accounts.rb
 //! Mastodon: lib/mastodon/cli/search.rb
 
+mod trial_tunnel;
+mod try_instance;
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use eunha::{accounts, config, import, migrate, software_updates, telemetry, tenants, version};
@@ -35,6 +38,8 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Try Eunha with Docker and an automatic public HTTPS tunnel.
+    Try(try_instance::Options),
     /// Apply pending database migrations and exit.
     ///
     /// Separate from serving on purpose: a migration takes as long as it takes,
@@ -440,6 +445,15 @@ enum AccountsCommand {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if let Some(Command::Try(options)) = args.command {
+        anyhow::ensure!(
+            args.tenants.is_none()
+                && args.bind_address.is_none()
+                && args.metrics_bind_address.is_none(),
+            "try manages its own isolated configuration; use try --port for its listener"
+        );
+        return try_instance::run(options).await;
+    }
 
     tracing_subscriber::registry()
         .with(
@@ -463,6 +477,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match args.command {
+        Some(Command::Try(_)) => unreachable!(),
         Some(Command::Migrate { check, check_known }) => {
             return migrate_databases(args.tenants.as_deref(), check, check_known).await;
         }

@@ -16,6 +16,8 @@ implementation detail, and Eunha may contain behavioral differences.
 Running Eunha
 -------------
 
+ -  [Try Eunha](./operating/trying.md): an isolated trial with a public HTTPS
+    tunnel.
  -  [Container images](./operating/containers.md): GitHub Actions builds,
     image tags and running the image.
  -  [The first account](./operating/first-account.md): creating an instance's
