@@ -320,11 +320,13 @@ impl Snapshot {
         self.get(var).as_i64()
     }
 
-    /// `Setting.site_title`: saved, or `config/settings.yml`'s `Mastodon`.
-    /// The instance configuration is not read: `eunha settings import-config`
-    /// copies what it said into the settings once.
-    pub fn site_title(&self, _instance: &InstanceConfig) -> String {
-        self.string("site_title")
+    /// Use the web hostname until the operator saves a site title.
+    pub fn site_title(&self, instance: &InstanceConfig) -> String {
+        if self.rows.contains_key("site_title") {
+            self.string("site_title")
+        } else {
+            instance.web_domain().to_owned()
+        }
     }
 
     /// `Setting.site_short_description`, blank until saved.

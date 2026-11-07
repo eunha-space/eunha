@@ -2032,3 +2032,14 @@ why = "Hosting operators can correct the initial handle without replacing the ac
 evidence = "tests/integration/surfaces/tootctl_accounts.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "hostname-default-site-title"
+kind = "behaviour"
+summary = "Use the web hostname as the default site title"
+mastodon = "Instances without a saved site title display Mastodon."
+eunha = "Instances without a saved site title display their web hostname."
+why = "An instance has an identifiable name before its operator configures one."
+evidence = "tests/integration/c2s/server_admin/mod.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

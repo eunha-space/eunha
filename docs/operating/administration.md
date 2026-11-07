@@ -91,6 +91,8 @@ not shown the rows.
 | `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                                      |
 | `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                                 |
 
+Until you save a site title, Eunha displays the instance’s web hostname.
+
 The rest are saved for a Mastodon on the same database and read by nothing in
 Eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
 `mascot`, `preview_sensitive_media` and `captcha_enabled` (Eunha has no

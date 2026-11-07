@@ -305,11 +305,10 @@ async fn test_settings_drive_the_instance() {
     assert_eq!(nodeinfo["openRegistrations"], true);
 }
 
-/// With nothing saved, the site is what `config/settings.yml` makes it, as
-/// Mastodon has it: titled `Mastodon`, registrations closed, no contact,
-/// whatever the instance configuration says.
+/// With nothing saved, the web hostname is the title. Other settings keep
+/// their Mastodon defaults.
 #[tokio::test]
-async fn test_site_settings_default_to_mastodons() {
+async fn test_site_settings_use_hostname_until_a_title_is_saved() {
     let ctx = TestContext::new("srv-settings-defaults").await;
     sqlx::query("DELETE FROM settings")
         .execute(&ctx.db)
@@ -317,14 +316,14 @@ async fn test_site_settings_default_to_mastodons() {
         .unwrap();
 
     let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
-    assert_eq!(v2["title"], "Mastodon");
+    assert_eq!(v2["title"], ctx.domain);
     assert_eq!(v2["description"], "");
     assert_eq!(v2["contact"]["email"], "");
     // `has_one :account` with none set is sent as `null`, not left out.
     assert_eq!(v2["contact"].get("account"), Some(&Value::Null));
     assert_eq!(v2["registrations"]["enabled"], false);
     let v1 = json_ok(ctx.api.get("/api/v1/instance", None).await).await;
-    assert_eq!(v1["title"], "Mastodon");
+    assert_eq!(v1["title"], ctx.domain);
     assert_eq!(v1["registrations"], false);
     let about = json_ok(
         ctx.api
@@ -411,7 +410,7 @@ async fn test_migrate_imports_the_configuration_once_when_owed() {
         .unwrap();
     assert_eq!(nothing, None, "nothing owed");
     let v2 = json_ok(ctx.api.get("/api/v2/instance", None).await).await;
-    assert_eq!(v2["title"], "Mastodon");
+    assert_eq!(v2["title"], ctx.domain);
 
     // What migration 023 leaves for a database that was serving.
     sqlx::query("INSERT INTO eunha.site_settings_import DEFAULT VALUES")
