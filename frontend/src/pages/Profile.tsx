@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Ban,
@@ -21,6 +21,7 @@ import {
   deleteFeaturedTag,
   deleteProfileAvatar,
   deleteProfileHeader,
+  getAccountFeaturedTags,
   getAccountStatuses,
   getCurrentAccount,
   getFeaturedTags,
@@ -38,6 +39,15 @@ import { getToken } from '../auth.ts'
 import { withoutMessages } from '../lib/statuses.ts'
 import { useInfiniteFeed } from '../hooks/use-infinite-feed.ts'
 import { TopBar } from '@/components/top-bar.tsx'
+import {
+  ActivityFilterBar,
+  FeaturedPane,
+  MediaGrid,
+  offeredViews,
+  ProfileTabs,
+  profileView,
+  useActivityFilters,
+} from '@/components/profile-tabs.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
@@ -597,9 +607,17 @@ function offersEmailSubscriptions(account: mastodon.v1.Account): boolean {
 }
 
 export default function Profile() {
-  const { acct = '' } = useParams()
+  const { acct = '', tagged } = useParams()
   const handle = acct.replace(/^@/, '')
   const token = getToken()
+  const { pathname } = useLocation()
+  const view = profileView(pathname)
+  // `/@acct/with_replies` is the activity tab with replies, whatever the
+  // switch says.
+  const repliesForced = /\/with_replies\/?$/.test(pathname)
+  const [filters, setFilters] = useActivityFilters()
+  const replies = repliesForced || filters.replies
+  const [featuredTags, setFeaturedTags] = useState<mastodon.v1.FeaturedTag[]>([])
 
   const [account, setAccount] = useState<mastodon.v1.Account | null>(null)
   const [rel, setRel] = useState<mastodon.v1.Relationship | null>(null)
@@ -622,10 +640,19 @@ export default function Profile() {
   const avatar = useAnimatedImage(account?.avatar, account?.avatarStatic)
   const headerSrc = useAnimatedHeader(account?.header, account?.headerStatic)
 
+  // Upstream's activity tab: `exclude_replies` and `exclude_reblogs` from the
+  // switches, and `tagged` from a featured hashtag. The other tabs page their
+  // own statuses.
   const feed = useInfiniteFeed<mastodon.v1.Status>(
     (maxId) =>
-      account ? getAccountStatuses(account.id, token ?? undefined, maxId) : Promise.resolve([]),
-    [account?.id, token],
+      account && view === 'activity'
+        ? getAccountStatuses(account.id, token ?? undefined, maxId, {
+            excludeReplies: !replies,
+            excludeReblogs: !filters.boosts,
+            tagged,
+          })
+        : Promise.resolve([]),
+    [account?.id, token, view, replies, filters.boosts, tagged],
     `profile:${handle}`,
   )
   const statuses = withoutMessages(feed.items)
@@ -636,9 +663,17 @@ export default function Profile() {
   // pinning, so the section above it agrees with the menu that changed it.
   const loadPinned = useCallback(() => {
     if (!account) return
-    getPinnedStatuses(account.id, token ?? undefined)
+    getPinnedStatuses(account.id, token ?? undefined, tagged)
       .then(setPinned)
       .catch(() => setPinned([]))
+  }, [account, token, tagged])
+
+  useEffect(() => {
+    setFeaturedTags([])
+    if (!account) return
+    getAccountFeaturedTags(account.id, token ?? undefined)
+      .then(setFeaturedTags)
+      .catch(() => {})
   }, [account, token])
 
   useEffect(() => {
@@ -1142,7 +1177,25 @@ export default function Profile() {
             />
           )}
 
+          {/* Upstream sends a visitor of a hidden tab back to the profile. */}
+          {!offeredViews(account).includes(view) && (
+            <Navigate to={`/@${account.acct}`} replace />
+          )}
+          <ProfileTabs account={account} />
+          {view === 'media' && <MediaGrid account={account} token={token ?? undefined} />}
+          {view === 'featured' && (
+            <FeaturedPane account={account} token={token ?? undefined} isSelf={isSelf} />
+          )}
+          {view === 'activity' && (
           <div className="space-y-2">
+            <ActivityFilterBar
+              account={account}
+              filters={filters}
+              onChange={setFilters}
+              repliesForced={repliesForced}
+              featuredTags={featuredTags}
+              tagged={tagged}
+            />
             {!!pinned?.length && (
               <section className="space-y-1">
                 <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-semibold">
@@ -1188,6 +1241,7 @@ export default function Profile() {
               hasItems={!!statuses?.length}
             />
           </div>
+          )}
         </>
       )}
       {account && token && !isSelf && (

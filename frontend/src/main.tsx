@@ -211,6 +211,11 @@ const routes = [
   { path: '/:acct', element: <Profile /> },
   // Static second segments outrank the dynamic `:id` thread route, so these
   // win over `/:acct/:id` (status ids are numeric and never collide).
+  // The profile's tabs, at Mastodon's paths.
+  { path: '/:acct/with_replies', element: <Profile /> },
+  { path: '/:acct/media', element: <Profile /> },
+  { path: '/:acct/featured', element: <Profile /> },
+  { path: '/:acct/tagged/:tagged', element: <Profile /> },
   { path: '/:acct/followers', element: <AccountList /> },
   { path: '/:acct/following', element: <AccountList /> },
   { path: '/:acct/:id', element: <StatusThread /> },

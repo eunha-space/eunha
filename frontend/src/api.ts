@@ -252,12 +252,61 @@ export function lookupAccount(
   return restClient(token).v1.accounts.lookup({ acct })
 }
 
+// What a profile's tabs ask for: the activity tab's filters and featured
+// hashtag (`tagged`), or the media tab's `onlyMedia`.
+export interface AccountStatusesFilter {
+  excludeReplies?: boolean
+  excludeReblogs?: boolean
+  onlyMedia?: boolean
+  tagged?: string
+}
+
 export async function getAccountStatuses(
   id: string,
   token?: string,
   maxId?: string,
+  filter: AccountStatusesFilter = {},
 ): Promise<mastodon.v1.Status[]> {
-  return restClient(token).v1.accounts.$select(id).statuses.list({ limit: 40, maxId })
+  return restClient(token).v1.accounts.$select(id).statuses.list({ limit: 40, maxId, ...filter })
+}
+
+// The hashtags an account features, which its activity tab offers as filters.
+export async function getAccountFeaturedTags(
+  id: string,
+  token?: string,
+): Promise<mastodon.v1.FeaturedTag[]> {
+  return restClient(token).v1.accounts.$select(id).featuredTags.list()
+}
+
+// The accounts an account endorses: the featured tab's "Profiles".
+export async function getEndorsements(
+  id: string,
+  token?: string,
+): Promise<mastodon.v1.Account[]> {
+  return restClient(token).v1.accounts.$select(id).endorsements.list({ limit: 40 })
+}
+
+// A collection as `GET /api/v1/accounts/:id/collections` lists it.
+export interface AccountCollection {
+  id: string
+  name: string
+  description: string | null
+  discoverable: boolean
+  item_count: number
+}
+
+// An account's collections: the discoverable ones, or all of them to their
+// owner. masto.js has no binding for collections yet.
+export async function getAccountCollections(
+  id: string,
+  token?: string,
+): Promise<AccountCollection[]> {
+  const res = await fetch(`${window.location.origin}/api/v1/accounts/${id}/collections`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) return []
+  const body = (await res.json()) as { collections?: AccountCollection[] }
+  return body.collections ?? []
 }
 
 // Report an account, optionally naming posts of theirs and the rules they
@@ -369,8 +418,9 @@ export async function translateStatus(
 export async function getPinnedStatuses(
   id: string,
   token?: string,
+  tagged?: string,
 ): Promise<mastodon.v1.Status[]> {
-  return restClient(token).v1.accounts.$select(id).statuses.list({ pinned: true })
+  return restClient(token).v1.accounts.$select(id).statuses.list({ pinned: true, tagged })
 }
 
 // Pinning is capped at five by the server, and it refuses a boost or someone
