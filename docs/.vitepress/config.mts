@@ -17,111 +17,87 @@ export default defineConfig({
     ],
     sidebar: [
       {
+        text: "Getting started",
+        items: [
+          { text: "Download Eunha", link: "/operating/downloads" },
+          { text: "Try Eunha", link: "/operating/trying" },
+          { text: "Container images", link: "/operating/containers" },
+          { text: "The first account", link: "/operating/first-account" },
+        ],
+      },
+      {
         text: "Running Eunha",
         items: [
-          {
-            text: "Getting started",
-            collapsed: false,
-            items: [
-              { text: "Download Eunha", link: "/operating/downloads" },
-              { text: "Try Eunha", link: "/operating/trying" },
-              { text: "Container images", link: "/operating/containers" },
-              { text: "The first account", link: "/operating/first-account" },
-            ],
-          },
-          {
-            text: "Deployment and upgrades",
-            collapsed: false,
-            items: [
-              { text: "Migrations", link: "/operating/migrations" },
-              { text: "Importing a Mastodon instance", link: "/operating/importing" },
-              { text: "Several instances in one process", link: "/operating/instances" },
-              { text: "Shared Redis", link: "/operating/redis" },
-              { text: "The job queue", link: "/operating/jobs" },
-              { text: "Update notices", link: "/operating/update-notices" },
-              { text: "Self-destruct", link: "/operating/self-destruct" },
-            ],
-          },
-          {
-            text: "Instance administration",
-            collapsed: false,
-            items: [
-              { text: "Administration", link: "/operating/administration" },
-              { text: "Invites", link: "/operating/invites" },
-              { text: "Moderation", link: "/operating/moderation" },
-              { text: "Rate limits", link: "/operating/rate-limits" },
-              { text: "Terms of service and privacy policy", link: "/operating/terms-of-service" },
-              { text: "Maintenance commands", link: "/operating/maintenance" },
-              { text: "Accounts, domains and emoji", link: "/operating/maintenance-commands" },
-            ],
-          },
-          {
-            text: "Member accounts and data",
-            collapsed: false,
-            items: [
-              { text: "Account security", link: "/operating/accounts" },
-              { text: "Account moves", link: "/operating/account-moves" },
-              { text: "Data export and import", link: "/operating/import-export" },
-              { text: "Email subscriptions", link: "/operating/email-subscriptions" },
-            ],
-          },
-          {
-            text: "Content and integrations",
-            collapsed: false,
-            items: [
-              { text: "Media", link: "/operating/media" },
-              { text: "Image viewer", link: "/operating/media-viewer" },
-              { text: "Preview cards", link: "/operating/preview-cards" },
-              { text: "Remote replies", link: "/operating/remote-replies" },
-              { text: "Search", link: "/operating/search" },
-              { text: "Translation", link: "/operating/translation" },
-              { text: "Auxiliary service providers", link: "/operating/fasp" },
-            ],
-          },
+          { text: "Migrations", link: "/operating/migrations" },
+          { text: "Importing a Mastodon instance", link: "/operating/importing" },
+          { text: "Several instances in one process", link: "/operating/instances" },
+          { text: "Shared Redis", link: "/operating/redis" },
+          { text: "The job queue", link: "/operating/jobs" },
+          { text: "Update notices", link: "/operating/update-notices" },
+          { text: "Self-destruct", link: "/operating/self-destruct" },
+        ],
+      },
+      {
+        text: "Instance administration",
+        items: [
+          { text: "Administration", link: "/operating/administration" },
+          { text: "Invites", link: "/operating/invites" },
+          { text: "Moderation", link: "/operating/moderation" },
+          { text: "Rate limits", link: "/operating/rate-limits" },
+          { text: "Terms of service and privacy policy", link: "/operating/terms-of-service" },
+          { text: "Maintenance commands", link: "/operating/maintenance" },
+          { text: "Accounts, domains and emoji", link: "/operating/maintenance-commands" },
+        ],
+      },
+      {
+        text: "Member accounts and data",
+        items: [
+          { text: "Account security", link: "/operating/accounts" },
+          { text: "Account moves", link: "/operating/account-moves" },
+          { text: "Data export and import", link: "/operating/import-export" },
+          { text: "Email subscriptions", link: "/operating/email-subscriptions" },
+        ],
+      },
+      {
+        text: "Content and integrations",
+        items: [
+          { text: "Media", link: "/operating/media" },
+          { text: "Image viewer", link: "/operating/media-viewer" },
+          { text: "Preview cards", link: "/operating/preview-cards" },
+          { text: "Remote replies", link: "/operating/remote-replies" },
+          { text: "Search", link: "/operating/search" },
+          { text: "Translation", link: "/operating/translation" },
+          { text: "Auxiliary service providers", link: "/operating/fasp" },
         ],
       },
       {
         text: "Mastodon compatibility",
         items: [
-          {
-            text: "Upstream releases and differences",
-            collapsed: false,
-            items: [
-              { text: "Tracking Mastodon", link: "/mastodon/tracking" },
-              { text: "Deliberate divergences", link: "/mastodon/divergences" },
-              { text: "Outstanding from 5.0.0-beta.1", link: "/mastodon/5.0.0-beta.1" },
-            ],
-          },
-          {
-            text: "ActivityPub federation",
-            collapsed: false,
-            items: [
-              { text: "Signing keys", link: "/mastodon/signing-keys" },
-              { text: "HTTP signatures", link: "/mastodon/http-signatures" },
-              { text: "Remote actors", link: "/mastodon/remote-actors" },
-              { text: "What other servers fetch", link: "/mastodon/serving" },
-              { text: "Inbound statuses", link: "/mastodon/inbound-statuses" },
-              { text: "Quotes", link: "/mastodon/quotes" },
-            ],
-          },
-          {
-            text: "Posts and client APIs",
-            collapsed: false,
-            items: [
-              { text: "Posting and editing", link: "/mastodon/statuses" },
-              { text: "Content formatting", link: "/mastodon/formatting" },
-              { text: "Streaming", link: "/mastodon/streaming" },
-            ],
-          },
-          {
-            text: "Compatibility testing",
-            collapsed: false,
-            items: [
-              { text: "API entity parity", link: "/mastodon/entity-parity" },
-              { text: "Differential testing", link: "/mastodon/differential-testing" },
-              { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },
-            ],
-          },
+          { text: "Tracking Mastodon", link: "/mastodon/tracking" },
+          { text: "Deliberate divergences", link: "/mastodon/divergences" },
+          { text: "Outstanding from 5.0.0-beta.1", link: "/mastodon/5.0.0-beta.1" },
+          { text: "API entity parity", link: "/mastodon/entity-parity" },
+          { text: "Differential testing", link: "/mastodon/differential-testing" },
+          { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },
+        ],
+      },
+      {
+        text: "ActivityPub federation",
+        items: [
+          { text: "Signing keys", link: "/mastodon/signing-keys" },
+          { text: "HTTP signatures", link: "/mastodon/http-signatures" },
+          { text: "Remote actors", link: "/mastodon/remote-actors" },
+          { text: "What other servers fetch", link: "/mastodon/serving" },
+          { text: "Inbound statuses", link: "/mastodon/inbound-statuses" },
+          { text: "Quotes", link: "/mastodon/quotes" },
+        ],
+      },
+      {
+        text: "Posts and client APIs",
+        items: [
+          { text: "Posting and editing", link: "/mastodon/statuses" },
+          { text: "Content formatting", link: "/mastodon/formatting" },
+          { text: "Streaming", link: "/mastodon/streaming" },
         ],
       },
       {
