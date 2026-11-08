@@ -748,40 +748,21 @@ each, interleaved:
 Every activity was accepted in every run, and the actor documents fetched
 matched the accounts created one for one.
 
-Most of the cost was not reading documents but reading their contexts:
-normalising a four-field `Like` took 370 µs, nearly all of it processing the
-ActivityStreams context from scratch, and ojak's own context, parsed from a
-string, on top. Ojak now keeps processed contexts in a cache its caller
-supplies, bounded in the inbox, and the same `Like` takes 25 µs; every
-document in ojak's corpus of real servers' documents normalises exactly as it
-did uncached. That is the middle column.
-
-The right column is what Eunha now does. Its one listener reads the activity as
-its sender wrote it, as Mastodon reads it, and never read the normalised form;
-[the protocol design](./protocol#json-ld-in-shape-never-in-processing) had
-already said Eunha does not process JSON-LD. Ojak's inbox is told not to
-(`read_inbox_as_written`), which also stops it refusing an activity whose
-context cannot be processed. The cache stays in ojak for whatever does
-normalise.
+Caching processed contexts accounted for most of the latency improvement.
+Eunha reads ordinary activities as sent, matching Mastodon and avoiding
+normalization work its listener did not use. The
+[protocol design](./protocol#json-ld-in-shape-never-in-processing) describes
+the exception for Linked Data signatures.
 
 The about 74 MiB of allocated memory that a burst of new actors leaves behind
 is the same in all three, and is addressed below.
 
 ### 2026-09-28: What ojak remembers
 
-What was left behind was ojak's in-memory key-value store, one for the
-process. It removed an expired entry only when that entry's own key was asked
-for again, which for an actor seen once or an activity processed once is never,
-so it grew for as long as the process ran. And most of it was remote keys held
-twice: each new actor's key was cached for an hour although Eunha had already
-stored it with the account, and hands it back from there through `known_key`.
-
-Ojak now sweeps expired entries as the store is written to, bounds it
-(`with_capacity`), and leaves a key that Eunha keeps to Eunha. What remains is
-what ojak should remember — the IDs of activities received, for a day, so that
-a redelivery is dropped — at about 280 bytes each; Eunha bounds the store at
-100,000 entries, about 28 MiB for the whole process. Same spike, 120 seconds
-after the queue drained, against the build before it in the same session:
+The in-memory store retained expired entries and duplicated remote keys
+already stored with accounts. After bounding the store and reusing those
+keys, Eunha kept up to 100,000 deduplication entries, about 28 MiB per process.
+These readings were taken 120 seconds after the same spike drained:
 
 |                               |   Before | After (2 runs) |
 | ----------------------------- | -------: | -------------: |
