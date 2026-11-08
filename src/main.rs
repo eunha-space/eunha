@@ -792,16 +792,30 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let configs = match &args.tenants {
-        Some(dir) => tenants::load_dir(dir)?,
+        Some(dir) => {
+            let configs = tenants::load_dir(dir)?;
+            // An empty directory serves 421 until a reload brings it
+            // tenants, but the listener has to be somewhere meanwhile.
+            anyhow::ensure!(
+                !configs.is_empty() || args.bind_address.is_some(),
+                "no tenant configuration (*.toml) in {} to take a bind_address from: pass \
+                 --bind-address to serve it with no tenants",
+                dir.display()
+            );
+            configs
+        }
         None => vec![tenants::TenantConfig {
             source: "config.toml".to_string(),
             config: config::Config::from_env()?,
         }],
     };
     let tenants = Arc::new(tenants::start(configs).await?);
-    let bind_address = args
-        .bind_address
-        .unwrap_or_else(|| tenants.bind_address().to_string());
+    let bind_address = match args.bind_address {
+        Some(address) => address,
+        None => tenants
+            .bind_address()
+            .context("no tenant names a bind_address; pass --bind-address")?,
+    };
     let serving = tenants.states().await.len();
     if let Some(dir) = args.tenants {
         reload_on_hangup(tenants.clone(), dir)?;
@@ -908,6 +922,14 @@ async fn migrate_databases(
         )],
     };
 
+    if let (Some(dir), true) = (tenants, targets.is_empty()) {
+        // A process with no instances yet, which a release migrates before
+        // switching to it like any other.
+        println!(
+            "No tenant configuration (*.toml) in {}; nothing to migrate.",
+            dir.display()
+        );
+    }
     let mut failing = false;
     for (label, database_url, instance, encryptor, media_storage) in targets {
         let db = tenants::connect(

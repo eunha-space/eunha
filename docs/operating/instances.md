@@ -47,6 +47,14 @@ than per instance. Three things follow from that:
 `eunha --tenants <dir> migrate` migrates every tenant's database, and
 `--check` exits non-zero if any of them is behind.
 
+A directory may be empty, so that a process can be started before its first
+instance is created and keep running after its last one leaves. Nothing then
+names a `bind_address`, so serving it takes `--bind-address`, which places
+the listener whatever the files say. Until a `SIGHUP` brings it tenants, it
+answers every request with 421, as it does a host no tenant serves, and
+`migrate` has nothing to do and succeeds. A command that names an instance
+with `--instance` still fails when no file serves it.
+
 Sharing a process also means sharing its capacity, and these limits keep one
 instance from taking more than its share:
 
@@ -108,10 +116,14 @@ kill -HUP <pid>
 
 A reload is all or nothing. It is refused, and the running tenants left as they
 were, when the directory could not have been started as it stands — a domain
-served twice, too many tenants, pools past their budget, no tenants at all — or
-when it would change what the process set up when it started: `bind_address`
-and `process_delivery_concurrency` take a restart. A
-tenant that fails to start does not fail the reload; its host answers 503.
+served twice, too many tenants, pools past their budget — or when it would
+change what the process set up when it started: `bind_address` and
+`process_delivery_concurrency` take a restart. A process that started with no
+tenants takes both from the first reload that brings some, as if they had been
+there from the start, and holds to them from then on. A tenant that fails to
+start does not fail the reload; its host answers 503. A reload that leaves the
+directory empty stops every tenant, and the process answers 421 until the next
+one.
 
 A tenant that could not start, at a reload or when the process started, is tried
 again every 15 seconds, so a host that comes up before its PostgreSQL recovers

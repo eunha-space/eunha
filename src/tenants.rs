@@ -126,7 +126,9 @@ pub struct TenantConfig {
     pub config: config::Config,
 }
 
-/// Every `*.toml` in `dir`, one tenant each, in file-name order.
+/// Every `*.toml` in `dir`, one tenant each, in file-name order — none, when
+/// the directory has none, which a process serves by answering 421 to every
+/// host until a reload brings it tenants.
 ///
 /// Each file is read on its own, without the environment: an environment
 /// variable belongs to the whole process, and letting it override one tenant's
@@ -138,11 +140,6 @@ pub fn load_dir(dir: &Path) -> Result<Vec<TenantConfig>> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
         .collect::<Vec<_>>();
     paths.sort();
-    anyhow::ensure!(
-        !paths.is_empty(),
-        "no tenant configuration (*.toml) in {}",
-        dir.display()
-    );
     paths
         .into_iter()
         .map(|path| {
@@ -223,8 +220,11 @@ struct ProcessSettings {
 
 /// What belongs to the process rather than to any one tenant, which every
 /// tenant therefore has to agree on — and no two tenants may serve one host.
-fn process_settings(configs: &[TenantConfig]) -> Result<ProcessSettings> {
-    let first = configs.first().context("no tenants to serve")?;
+/// No tenants agree on nothing: `None`.
+fn process_settings(configs: &[TenantConfig]) -> Result<Option<ProcessSettings>> {
+    let Some(first) = configs.first() else {
+        return Ok(None);
+    };
     let delivery_concurrency = first
         .config
         .workers
@@ -282,12 +282,12 @@ fn process_settings(configs: &[TenantConfig]) -> Result<ProcessSettings> {
             }
         }
     }
-    Ok(ProcessSettings {
+    Ok(Some(ProcessSettings {
         bind_address: first.config.bind_address.clone(),
         delivery_concurrency,
         max_tenants: first.config.limits.max_tenants(),
         database_connections: first.config.limits.process_database_connections,
-    })
+    }))
 }
 
 /// Whether the process can take these tenants on at all: no more than its
@@ -659,10 +659,11 @@ pub struct Tenants {
     /// Every route the process serves, built once and shared by every tenant.
     router: Router,
     registry: RwLock<Arc<Registry>>,
-    /// What the process was set up with when it started. The listener, the
-    /// resolver's private networks and the delivery budget are fixed from then
-    /// on, so a reload may not change them.
-    settings: ProcessSettings,
+    /// What the process was set up with when it started — or, when it started
+    /// with no tenants, by the first reload that brought some, as if they had
+    /// been there from the start. The listener and the delivery budget are
+    /// fixed from then on, so a reload may not change them.
+    settings: Mutex<Option<ProcessSettings>>,
     /// What each started tenant runs, by host. A reload holds it throughout,
     /// so that reloads happen one at a time.
     running: tokio::sync::Mutex<HashMap<String, Running>>,
@@ -682,7 +683,8 @@ enum Lookup<'a> {
 /// its signing keys, its background tasks and its router.
 ///
 /// Nothing starts unless the process can hold all of them — see [`admit`] and
-/// [`check_database_servers`]. Past that, a lone tenant whose database is
+/// [`check_database_servers`]. None at all is no error: the process answers
+/// 421 to every host until a reload brings it tenants. Past that, a lone tenant whose database is
 /// behind this binary, or that cannot start, stops the process, as a single
 /// instance always has. Among several it is left out — its host answers 503
 /// until [`Tenants::retry_unavailable`] starts it — and the others serve: one
@@ -690,9 +692,13 @@ enum Lookup<'a> {
 pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
     let alias_map = aliases(&configs);
     let settings = process_settings(&configs)?;
-    admit(&configs, &settings)?;
-    check_database_servers(&configs).await?;
-    crate::federation::delivery::set_process_delivery_concurrency(settings.delivery_concurrency);
+    if let Some(settings) = &settings {
+        admit(&configs, settings)?;
+        check_database_servers(&configs).await?;
+        crate::federation::delivery::set_process_delivery_concurrency(
+            settings.delivery_concurrency,
+        );
+    }
     let lone = configs.len() == 1;
     let mut by_host = HashMap::new();
     let mut running = HashMap::new();
@@ -719,7 +725,7 @@ pub async fn start(configs: Vec<TenantConfig>) -> Result<Tenants> {
     Ok(Tenants {
         router: crate::build_app(),
         registry: RwLock::new(Arc::new(Registry::with_aliases(by_host, alias_map))),
-        settings,
+        settings: Mutex::new(settings),
         running: tokio::sync::Mutex::new(running),
         waiting: Mutex::new(waiting),
     })
@@ -809,8 +815,7 @@ impl Tenants {
     /// `bind_address` — for embedding Eunha and for tests, which bring their own
     /// databases up. Nothing is connected, checked or spawned here.
     pub fn from_states(bind_address: &str, states: Vec<AppState>) -> Result<Self> {
-        let first = states.first().context("no tenants to serve")?;
-        let settings = ProcessSettings {
+        let settings = states.first().map(|first| ProcessSettings {
             bind_address: bind_address.to_string(),
             delivery_concurrency: first
                 .config
@@ -819,7 +824,7 @@ impl Tenants {
                 .process_delivery_concurrency,
             max_tenants: first.config.limits.max_tenants(),
             database_connections: first.config.limits.process_database_connections,
-        };
+        });
         let shared = states.len() > 1;
         let mut by_host = HashMap::new();
         let mut alias_map = HashMap::new();
@@ -851,15 +856,18 @@ impl Tenants {
         Ok(Self {
             router: crate::build_app(),
             registry: RwLock::new(Arc::new(Registry::with_aliases(by_host, alias_map))),
-            settings,
+            settings: Mutex::new(settings),
             running: tokio::sync::Mutex::new(running),
             waiting: Mutex::new(HashMap::new()),
         })
     }
 
-    /// The address every tenant agreed to be served on.
-    pub fn bind_address(&self) -> &str {
-        &self.settings.bind_address
+    /// The address every tenant agreed to be served on, or `None` while the
+    /// process has never had a tenant to name one.
+    pub fn bind_address(&self) -> Option<String> {
+        self.settings()
+            .as_ref()
+            .map(|settings| settings.bind_address.clone())
     }
 
     /// Every tenant that is running, in no particular order.
@@ -878,17 +886,34 @@ impl Tenants {
     ///
     /// Nothing changes unless the whole set could have been started — the same
     /// agreement, ceiling and database checks as [`start`] — and it leaves the
-    /// listener, the private networks and the delivery budget as the process
-    /// started with. A tenant that then fails to start does not fail the
-    /// reload: its host answers 503 until [`Tenants::retry_unavailable`] or the
-    /// next reload starts it.
+    /// listener and the delivery budget as the process started with. A process
+    /// that started with no tenants takes those from the first reload that
+    /// brings some, and holds to them from then on. A tenant that then fails
+    /// to start does not fail the reload: its host answers 503 until
+    /// [`Tenants::retry_unavailable`] or the next reload starts it. No tenants
+    /// at all stops every one, and every host answers 421.
     pub async fn reload(&self, configs: Vec<TenantConfig>) -> Result<Reloaded> {
         let alias_map = aliases(&configs);
         let mut running = self.running.lock().await;
         let next = process_settings(&configs)?;
-        check_reloadable(&self.settings, &next)?;
-        admit(&configs, &next)?;
-        check_database_servers(&configs).await?;
+        let adopting = match (self.settings().as_ref(), &next) {
+            (Some(at_start), Some(next)) => {
+                check_reloadable(at_start, next)?;
+                false
+            }
+            (None, Some(_)) => true,
+            (_, None) => false,
+        };
+        if let Some(next) = &next {
+            admit(&configs, next)?;
+            check_database_servers(&configs).await?;
+        }
+        if let Some(next) = next.filter(|_| adopting) {
+            crate::federation::delivery::set_process_delivery_concurrency(
+                next.delivery_concurrency,
+            );
+            *self.settings() = Some(next);
+        }
 
         let current = self.current();
         let fingerprints = current
@@ -1049,6 +1074,10 @@ impl Tenants {
                 tracing::info!(?started, "tenants that could not start have now started");
             }
         }
+    }
+
+    fn settings(&self) -> std::sync::MutexGuard<'_, Option<ProcessSettings>> {
+        self.settings.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<String, Waiting>> {
@@ -1223,8 +1252,10 @@ vapid_public_key = ""
         Tenants {
             router,
             registry: RwLock::new(Arc::new(registry(hosts))),
-            settings: process_settings(&[tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "")])
-                .unwrap(),
+            settings: Mutex::new(
+                process_settings(&[tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "")])
+                    .unwrap(),
+            ),
             running: tokio::sync::Mutex::new(HashMap::new()),
             waiting: Mutex::new(HashMap::new()),
         }
@@ -1387,7 +1418,9 @@ vapid_public_key = ""
     #[test]
     fn a_reload_may_not_change_what_the_process_set_up_when_it_started() {
         let settings = |bind: &str, allowed: &[&str], extra: &str| {
-            process_settings(&[tenant("a.toml", "a.example", bind, allowed, extra)]).unwrap()
+            process_settings(&[tenant("a.toml", "a.example", bind, allowed, extra)])
+                .unwrap()
+                .unwrap()
         };
         let at_start = settings("127.0.0.1:3000", &[], "");
         check_reloadable(
@@ -1424,7 +1457,7 @@ vapid_public_key = ""
             tenant("a.toml", "a.example", "127.0.0.1:3000", &[], ""),
             tenant("b.toml", "b.example", "127.0.0.1:3000", &[], ""),
         ];
-        let settings = process_settings(&agreeing).unwrap();
+        let settings = process_settings(&agreeing).unwrap().unwrap();
         assert_eq!(settings.bind_address, "127.0.0.1:3000");
         assert_eq!(settings.delivery_concurrency, 256);
 
@@ -1490,7 +1523,7 @@ vapid_public_key = ""
     #[test]
     fn a_process_refuses_more_tenants_than_its_ceiling() {
         let lone = [tenant("a.toml", "a.example", "127.0.0.1:3000", &[], "")];
-        let settings = process_settings(&lone).unwrap();
+        let settings = process_settings(&lone).unwrap().unwrap();
         assert_eq!(settings.max_tenants, config::DEFAULT_PROCESS_MAX_TENANTS);
         admit(&lone, &settings).unwrap();
 
@@ -1500,7 +1533,7 @@ vapid_public_key = ""
             tenant("b.toml", "b.example", "127.0.0.1:3000", &[], ceiling),
             tenant("c.toml", "c.example", "127.0.0.1:3000", &[], ceiling),
         ];
-        let settings = process_settings(&three).unwrap();
+        let settings = process_settings(&three).unwrap().unwrap();
         let error = admit(&three, &settings)
             .err()
             .map(|e| format!("{e:#}"))
@@ -1540,7 +1573,7 @@ vapid_public_key = ""
         };
 
         let over = pair(30);
-        let error = admit(&over, &process_settings(&over).unwrap())
+        let error = admit(&over, &process_settings(&over).unwrap().unwrap())
             .err()
             .map(|e| format!("{e:#}"))
             .unwrap_or_default();
@@ -1550,7 +1583,7 @@ vapid_public_key = ""
         );
 
         let exact = pair(40);
-        admit(&exact, &process_settings(&exact).unwrap()).unwrap();
+        admit(&exact, &process_settings(&exact).unwrap().unwrap()).unwrap();
     }
 
     #[test]
@@ -1631,6 +1664,135 @@ vapid_public_key = ""
             error.contains("a.toml") && error.contains("b.toml"),
             "{error}"
         );
+    }
+
+    /// A tenant whose database cannot be reached, so that it is left
+    /// unavailable rather than started, and nothing is connected to.
+    fn unreachable(source: &str, domain: &str, bind: &str, extra: &str) -> TenantConfig {
+        let mut tenant = tenant(source, domain, bind, &[], extra);
+        tenant.config.database_url = "not a database url".into();
+        tenant
+    }
+
+    async fn status(t: &Tenants, host: &str) -> StatusCode {
+        t.dispatch(request(host)).await.status()
+    }
+
+    /// A runtime is started before its first instance is created, and every
+    /// instance may leave it, so a directory with nothing in it is no error.
+    #[test]
+    fn an_empty_directory_is_no_tenants() {
+        let dir = std::env::temp_dir().join(format!(
+            "eunha-empty-tenants-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("README"), "not a tenant").unwrap();
+        let loaded = load_dir(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(loaded.unwrap().is_empty());
+        assert!(process_settings(&[]).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_process_with_no_tenants_answers_421_to_every_host() {
+        let t = start(Vec::new()).await.unwrap();
+        assert_eq!(t.bind_address(), None, "--bind-address has to say");
+        for host in ["seoul.earth", "localhost:3000", ""] {
+            assert_eq!(
+                status(&t, host).await,
+                StatusCode::MISDIRECTED_REQUEST,
+                "{host:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_reload_adopts_what_the_process_owns() {
+        let t = start(Vec::new()).await.unwrap();
+        let bind = "127.0.0.1:3000";
+        let deliveries = "[workers]\nprocess_delivery_concurrency = 32";
+        let reloaded = t
+            .reload(vec![
+                unreachable("a.toml", "a.example", bind, deliveries),
+                unreachable("b.toml", "b.example", bind, deliveries),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(reloaded.unavailable, ["a.example", "b.example"]);
+        assert_eq!(t.bind_address().as_deref(), Some(bind));
+        assert_eq!(t.settings().as_ref().unwrap().delivery_concurrency, 32);
+        assert_eq!(
+            status(&t, "a.example").await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            status(&t, "elsewhere.example").await,
+            StatusCode::MISDIRECTED_REQUEST
+        );
+
+        // From then on, as if they had been there from the start.
+        for (next, setting) in [
+            (
+                unreachable("a.toml", "a.example", "127.0.0.1:3001", deliveries),
+                "bind_address",
+            ),
+            (
+                unreachable("a.toml", "a.example", bind, ""),
+                "process_delivery_concurrency",
+            ),
+        ] {
+            let error = t
+                .reload(vec![next])
+                .await
+                .err()
+                .map(|e| format!("{e:#}"))
+                .unwrap_or_default();
+            assert!(
+                error.contains(setting) && error.contains("restart"),
+                "{error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reload_to_no_tenants_stops_them_all_and_serves_on() {
+        let bind = "127.0.0.1:3000";
+        let t = start(Vec::new()).await.unwrap();
+        t.reload(vec![
+            unreachable("a.toml", "a.example", bind, ""),
+            unreachable("b.toml", "b.example", bind, ""),
+        ])
+        .await
+        .unwrap();
+
+        let reloaded = t.reload(Vec::new()).await.unwrap();
+        assert_eq!(reloaded.stopped, ["a.example", "b.example"]);
+        assert!(t.waiting().is_empty(), "nothing left to retry");
+        assert_eq!(
+            status(&t, "a.example").await,
+            StatusCode::MISDIRECTED_REQUEST
+        );
+
+        // What the process took on stays with it: the listener has not moved.
+        assert_eq!(t.bind_address().as_deref(), Some(bind));
+        let moved = t
+            .reload(vec![unreachable(
+                "a.toml",
+                "a.example",
+                "127.0.0.1:3001",
+                "",
+            )])
+            .await;
+        assert!(moved
+            .err()
+            .is_some_and(|e| format!("{e:#}").contains("bind_address")));
+        let back = t
+            .reload(vec![unreachable("a.toml", "a.example", bind, "")])
+            .await
+            .unwrap();
+        assert_eq!(back.unavailable, ["a.example"]);
     }
 
     #[test]
