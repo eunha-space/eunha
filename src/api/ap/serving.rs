@@ -268,6 +268,18 @@ pub fn federation() -> Federation<AppState> {
         .inbox("actor", "/users/{username}/inbox")
         .inbox("actor_by_id", "/ap/users/{id}/inbox")
         .inbox("instance", "/actor/inbox")
+        .inbox_recipient(|ctx: Ctx, recipient: ActorRef| async move {
+            let scheme = match recipient.kind.as_str() {
+                "actor" => Scheme::Username,
+                "actor_by_id" => Scheme::Id,
+                "instance" => return Ok::<_, AppError>(true),
+                _ => return Ok(false),
+            };
+            match scheme.account(&ctx, &recipient.identifier).await? {
+                Some(account) => account_accepts_federation(&ctx, &account).await,
+                None => Ok(false),
+            }
+        })
         .shared_inbox("/inbox")
         // Every tenant fetches with its own fetcher (`fetcher_for`) and
         // caches in its own Redis namespace (`kv_for`); the fetcher and store
@@ -410,24 +422,16 @@ pub fn federation() -> Federation<AppState> {
                         let Some(account) = scheme.account(&ctx, &identifier).await? else {
                             return Ok::<_, AppError>(Found::NotFound);
                         };
-                        // `permanently_unavailable?`: unavailable with nothing
-                        // left to undo is gone.
-                        if account.is_unavailable() {
-                            let reversible = sqlx::query_scalar!(
-                                r#"SELECT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1) AS "e!""#,
-                                account.id,
-                            )
-                            .fetch_one(&ctx.data().db)
-                            .await?;
-                            if !reversible {
-                                return Ok(Found::Gone(None));
-                            }
+                        if !account_accepts_federation(&ctx, &account).await? {
+                            return Ok(Found::Gone(None));
                         }
-                        let actor = super::objects::actor_json(ctx.data(), domain(&ctx), &account).await?;
+                        let actor =
+                            super::objects::actor_json(ctx.data(), domain(&ctx), &account).await?;
                         // `expires_in 3.minutes, public: !(actors_require_signature? &&
                         // signed_request_account.present?)`.
                         let signer = signer(&ctx).await;
-                        let requires_signature = crate::settings::actors_require_signature(ctx.data()).await;
+                        let requires_signature =
+                            crate::settings::actors_require_signature(ctx.data()).await;
                         if !crate::delete_account::record_actor_fetch(
                             ctx.data(),
                             account.id,
@@ -528,8 +532,9 @@ pub fn federation() -> Federation<AppState> {
                     &scheme.kind("followers_synchronization"),
                     &scheme.template("/followers_synchronization"),
                     move |ctx: Ctx, values: Values| async move {
-                        let Some(account) =
-                            scheme.account(&ctx, values.single().unwrap_or_default()).await?
+                        let Some(account) = scheme
+                            .account(&ctx, values.single().unwrap_or_default())
+                            .await?
                         else {
                             return Ok::<_, AppError>(Found::NotFound);
                         };
@@ -1018,6 +1023,21 @@ enum Scheme {
     Username,
     /// `/ap/users/{id}`, Mastodon's `numeric_ap_id`.
     Id,
+}
+
+// Mastodon's `permanently_unavailable?` treats an unavailable account
+// with no reversible deletion as gone.
+async fn account_accepts_federation(ctx: &Ctx, account: &Account) -> AppResult<bool> {
+    if !account.is_unavailable() {
+        return Ok(true);
+    }
+    let reversible = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM account_deletion_requests WHERE account_id = $1) AS "e!""#,
+        account.id,
+    )
+    .fetch_one(&ctx.data().db)
+    .await?;
+    Ok(reversible)
 }
 
 impl Scheme {

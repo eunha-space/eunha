@@ -5,6 +5,14 @@ Eunha defaults to draft-cavage for outgoing federation requests, matching
 Mastodon 4.7. It can also send and verify RFC 9421 signatures. See Ojak's
 guides to [sending] and [the inbox] for signature negotiation and verification.
 
+For personal inbox POSTs, Eunha checks that the local account exists and
+can receive federation without rendering the actor or recording an actor
+fetch. Duplicate delivery checks are scoped to each inbox.
+
+Eunha resolves delivery destinations before stripping blind addressing
+(`bto` and `bcc`) and attaching document signatures. Ojak also checks
+embedded portable object proofs before dispatching incoming activities.
+
 [sending]: https://ojak.dev/guide/sending
 [the inbox]: https://ojak.dev/guide/inbox
 

@@ -994,6 +994,8 @@ async fn enqueue(
         return Ok(0);
     }
 
+    let mut activity = activity;
+    ojak::deliverer::redact_blind_recipients(&mut activity)?;
     // Sign once, before the fan-out: every inbox receives the same bytes, and
     // the proof travels with the activity rather than with the connection.
     let activity = if prove {
