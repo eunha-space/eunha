@@ -1,6 +1,7 @@
 // Standard Mastodon OAuth `authorization_code` flow, run client-side via
 // masto.js against Eunha's existing endpoints. No backend changes required.
 import { oauthClient, restClient } from './masto.ts'
+import { disableBrowserPush } from './lib/browser-push.ts'
 import { clearMe, loadMe, type MeAccount } from './me.ts'
 
 // `admin:read` and `admin:write` are what the moderation pages call the admin
@@ -73,8 +74,11 @@ export function getToken(): string | null {
   return getSavedAccounts().find((entry) => entry.account.id === id)?.token ?? null
 }
 
-export function logout() {
+export async function logout() {
   const id = localStorage.getItem(ACTIVE_ACCOUNT_KEY)
+  const token = getToken()
+  if (id && token) await disableBrowserPush(id, token).catch(() => {})
+
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(
     getSavedAccounts().filter((entry) => entry.account.id !== id),
   ))

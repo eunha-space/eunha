@@ -8,10 +8,7 @@ import type { mastodon } from '../masto.ts'
  * Mastodon 5.0 puts these between the text and the footer: things worth
  * knowing before you post that are not errors and must not stop you posting.
  * Each one names a consequence rather than a rule.
- *
- * Upstream has a fourth — a guess at the post's language disagreeing with the
- * picker. Eunha's composer has no language picker to disagree with, so there
- * is nothing to offer to change.
+
  */
 export function ComposeHints({
   replyTo,

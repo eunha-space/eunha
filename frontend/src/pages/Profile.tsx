@@ -29,6 +29,7 @@ import {
   getPinnedStatuses,
   getRelationship,
   lookupAccount,
+  setAccountNote,
   setBlock,
   setFollow,
   setMute,
@@ -606,6 +607,52 @@ function offersEmailSubscriptions(account: mastodon.v1.Account): boolean {
   return extra.emailSubscriptions === true || extra.email_subscriptions === true
 }
 
+function PrivateNote({ accountId, token, note, onSaved }: {
+  accountId: string
+  token: string
+  note: string
+  onSaved: (relationship: mastodon.v1.Relationship) => void
+}) {
+  const [draft, setDraft] = useState<string>()
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (draft === undefined) return
+    setSaving(true)
+    try {
+      onSaved(await setAccountNote(accountId, token, draft))
+      setDraft(undefined)
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="mt-3 space-y-2 rounded-md border p-3 text-sm">
+      <h2 className="font-medium">Private note</h2>
+      {draft === undefined ? (
+        <>
+          {note && <p className="break-words whitespace-pre-wrap">{note}</p>}
+          <Button variant="outline" size="sm" onClick={() => setDraft(note)}>
+            {note ? 'Edit note' : 'Add note'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <Textarea aria-label="Private note" value={draft} maxLength={2000} disabled={saving}
+            onChange={(event) => setDraft(event.target.value)} />
+          <div className="flex gap-2">
+            <Button size="sm" disabled={saving} onClick={save}>Save note</Button>
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => setDraft(undefined)}>Cancel</Button>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 export default function Profile() {
   const { acct = '', tagged } = useParams()
   const handle = acct.replace(/^@/, '')
@@ -1113,6 +1160,9 @@ export default function Profile() {
               </div>
             )}
           </div>
+          {token && rel && !isSelf && (
+            <PrivateNote key={account.id} accountId={account.id} token={token} note={rel.note ?? ''} onSaved={setRel} />
+          )}
           {imageError && (
             <p className="text-destructive mt-2 text-sm">{imageError}</p>
           )}

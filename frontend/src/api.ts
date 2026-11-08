@@ -103,12 +103,14 @@ export function postStatus(
     mediaIds?: string[]
     spoilerText?: string
     sensitive?: boolean
+    language?: string
+    poll?: { options: string[]; expiresIn: number; multiple: boolean }
     quoteApprovalPolicy?: QuotePolicy
   },
 ): Promise<mastodon.v1.Status> {
-  const { mediaIds, ...post } = params
+  const { mediaIds, poll, ...post } = params
   const statuses = restClient(token).v1.statuses
-  return mediaIds?.length ? statuses.create({ ...post, mediaIds }) : statuses.create(post)
+  return mediaIds?.length ? statuses.create({ ...post, mediaIds }) : statuses.create({ ...post, poll })
 }
 
 export function uploadMedia(
@@ -142,6 +144,15 @@ export function setReblog(token: string, id: string, on: boolean) {
 export function setBookmark(token: string, id: string, on: boolean) {
   const s = restClient(token).v1.statuses.$select(id)
   return on ? s.bookmark() : s.unbookmark()
+}
+
+export async function getDefaultPostLanguage(token: string) {
+  const preferences = await restClient(token).v1.preferences.fetch()
+  return preferences['posting:default:language']
+}
+
+export function setDefaultPostLanguage(token: string, language: string) {
+  return restClient(token).v1.accounts.updateCredentials({ source: { language } })
 }
 
 export function getCurrentAccount(token: string): Promise<mastodon.v1.AccountCredentials> {
@@ -450,10 +461,14 @@ export function getStatusSource(
 
 export function updateStatus(
   id: string,
-  params: { status: string; spoilerText?: string },
+  params: { status: string; spoilerText?: string; language?: string },
   token: string,
 ): Promise<mastodon.v1.Status> {
   return restClient(token).v1.statuses.$select(id).update(params)
+}
+
+export function setAccountNote(id: string, token: string, comment: string) {
+  return restClient(token).v1.accounts.$select(id).note.create({ comment })
 }
 
 export async function getRelationship(

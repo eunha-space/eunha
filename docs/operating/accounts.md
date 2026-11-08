@@ -564,7 +564,24 @@ privacy section uses both.
  -  `time_zone` is the zone the times in mail are written in (see
     [Time zones](#time-zones)).
  -  `aggregate_reblogs` (on unless turned off) groups boosts in the home
-    timeline and lists (see [Followed hashtags
+    timeline and lists (see [Post language and web management
+
+   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+The web composer starts with the account's effective posting language.
+The language picker changes the current draft, and a separate setting
+changes the account default. The post editor starts with the original post's
+language. The picker ranks languages selected frequently in this browser.
+Language detection runs locally and offers a suggestion without changing
+the draft. The composer also shows the character count and can create polls.
+
+The signed-in web client can manage lists, collections, keyword filters,
+personal domain blocks, notification requests and notification policy.
+A profile's private note is visible only to the signed-in account that
+wrote it. Browser notifications are available in supported browsers over
+HTTPS when the instance has a Web Push key.
+
+Followed hashtags
 
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

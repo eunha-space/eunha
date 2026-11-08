@@ -6,10 +6,10 @@ import {
   type KeyboardEvent,
   type SyntheticEvent,
 } from 'react'
-import { LockOpen, Paperclip, Settings2, X } from 'lucide-react'
+import { ChartBar, LockOpen, Paperclip, Settings2, X } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
-import { getCachedInstance, getInstance, postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
+import { getCachedInstance, getDefaultPostLanguage, getInstance, postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
 import { getPreferences } from '../security-api.ts'
 import {
   DropdownMenu,
@@ -39,6 +39,10 @@ import { QuotedPost } from '@/components/quoted-post.tsx'
 import { ComposeAudience } from '@/components/compose-audience.tsx'
 import { ComposeHints } from '@/components/compose-hints.tsx'
 import { cn } from '@/lib/utils.ts'
+
+import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
+import { ComposePoll, type PollDraft } from '@/components/compose-poll.tsx'
+import { countGraphemes, countPostCharacters, guessPostLanguage, postLanguageName } from '@/lib/post-language.ts'
 
 const MAX_ATTACHMENTS = 4
 
@@ -179,6 +183,34 @@ export function Compose({
     return () => { active = false }
   }, [token])
 
+  const [defaultLanguage, setDefaultLanguage] = useState('')
+  const [languageOverride, setLanguageOverride] = useState<string>()
+  const [languageGuess, setLanguageGuess] = useState<string>()
+  const [poll, setPoll] = useState<PollDraft>()
+  const language = languageOverride ?? defaultLanguage
+  const limits = getCachedInstance()?.configuration?.statuses
+  const postLength = countPostCharacters(text, warningOpen ? warning.trim() : '', limits?.charactersReservedPerUrl)
+  const maxPostLength = limits?.maxCharacters ?? 500
+
+  useEffect(() => {
+    let active = true
+    getDefaultPostLanguage(token).then((value) => {
+      if (active) setDefaultLanguage(value ?? '')
+    }).catch(() => {})
+    return () => { active = false }
+  }, [token])
+
+  useEffect(() => {
+    let active = true
+    setLanguageGuess(undefined)
+    const timer = window.setTimeout(() => {
+      guessPostLanguage(text).then((guess) => {
+        if (active) setLanguageGuess(guess)
+      }).catch(() => {})
+    }, 500)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [text])
+
   const fileRef = useRef<HTMLInputElement>(null)
 
   // The account's default visibility seeds a post once it loads — but never a
@@ -249,13 +281,13 @@ export function Compose({
     const seed = replyTo
       ? statusToTextMentions(replyTo, getMeId())
       : messageTo ? `@${messageTo.acct} ` : initialText
-    onDraftChange?.(text !== seed || !!warning || attachments.length > 0 || uploading || busy)
-  }, [onDraftChange, text, warning, attachments.length, uploading, busy, replyTo, messageTo, initialText])
+    onDraftChange?.(text !== seed || !!warning || !!languageOverride || !!poll || attachments.length > 0 || uploading || busy)
+  }, [onDraftChange, text, warning, languageOverride, poll, attachments.length, uploading, busy, replyTo, messageTo, initialText])
 
   const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
-    if (files.length === 0) return
+    if (files.length === 0 || poll || quoteOf) return
     setUploading(true)
     setError(null)
     try {
@@ -299,6 +331,12 @@ export function Compose({
     setBusy(true)
     setError(null)
     try {
+      const options = poll?.options.map((option) => option.trim()).filter(Boolean)
+      if (options && (options.length < 2 || new Set(options).size !== options.length
+          || options.some((option) => countGraphemes(option) > 50))) {
+        setError('Enter 2–4 distinct poll options, each at most 50 characters.')
+        return
+      }
       const status = await postStatus(token, {
         status: text,
         visibility,
@@ -311,11 +349,15 @@ export function Compose({
         mediaIds: attachments.map((a) => a.id),
         spoilerText: warningOpen ? warning.trim() : undefined,
         sensitive,
+        language: language || undefined,
+        poll: poll && options ? { ...poll, options } : undefined,
       })
       setText('')
       setWarning('')
       setWarningOverride(undefined)
       setSensitive(undefined)
+      setPoll(undefined)
+      setLanguageOverride(undefined)
       setAttachments([])
       onPosted(status)
     } catch (e) {
@@ -592,21 +634,34 @@ export function Compose({
           onChange={onFiles}
         />
 
+        {poll && <ComposePoll poll={poll} onChange={setPoll} onRemove={() => setPoll(undefined)} />}
         <ComposeHints replyTo={replyTo} attachments={attachments} />
+        {languageGuess && language && languageGuess !== language && (
+          <Button type="button" size="sm" variant="ghost" className="self-start"
+            onClick={() => setLanguageOverride(languageGuess)}>
+            Switch post language to {postLanguageName(languageGuess)}?
+          </Button>
+        )}
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="ghost"
               size="icon"
               aria-label="Add media"
-              disabled={uploading || attachments.length >= MAX_ATTACHMENTS}
+              disabled={uploading || !!poll || !!quoteOf || attachments.length >= MAX_ATTACHMENTS}
               onClick={() => fileRef.current?.click()}
             >
               <Paperclip />
             </Button>
             <EmojiPicker onPick={insertEmoji} />
+            <Button type="button" variant="ghost" size="icon" aria-label="Add a poll"
+              disabled={busy || uploading || !!poll || !!quoteOf || attachments.length > 0}
+              onClick={() => setPoll({ options: ['', ''], expiresIn: 86400, multiple: false })}>
+              <ChartBar />
+            </Button>
+            <PostLanguagePicker value={language} onChange={setLanguageOverride} disabled={busy} />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon" aria-label="Post settings" />}
@@ -642,14 +697,21 @@ export function Compose({
               </span>
             )}
           </div>
-          <Button
-            size="sm"
-            disabled={busy || !canPost}
-            onClick={submit}
-            title={`${label} (⌘/Ctrl + Enter)`}
-          >
-            {label}
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <span aria-label="Post character count" className={cn(
+              'text-muted-foreground text-xs tabular-nums', postLength > maxPostLength && 'text-destructive',
+            )}>
+              {postLength}/{maxPostLength}
+            </span>
+            <Button
+              size="sm"
+              disabled={busy || !canPost}
+              onClick={submit}
+              title={`${label} (⌘/Ctrl + Enter)`}
+            >
+              {label}
+            </Button>
+          </div>
         </div>
     </CardContent>
   )

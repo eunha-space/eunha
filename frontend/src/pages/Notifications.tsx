@@ -340,6 +340,9 @@ export default function Notifications() {
       <div className="column-frame">
         <ColumnHeader title="Notifications" />
         <div className="space-y-2 p-3">
+          <Button variant="outline" size="sm" render={<Link to="/notifications/requests" />}>
+            Notification requests and policy
+          </Button>
           <NotificationsFeed />
         </div>
       </div>

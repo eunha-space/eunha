@@ -1,6 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
+import Collections from './pages/Collections.tsx'
+import Filters from './pages/Filters.tsx'
+import Lists from './pages/Lists.tsx'
+import NotificationRequests from './pages/NotificationRequests.tsx'
+import DomainBlocks from './pages/DomainBlocks.tsx'
 import Home from './pages/Home.tsx'
 import AuthorizeInteraction from './pages/AuthorizeInteraction.tsx'
 import Callback from './pages/Callback.tsx'
@@ -117,6 +122,7 @@ const routes = [
   { path: '/share', element: <Share /> },
   { path: '/local', element: <PublicTimeline /> },
   { path: '/public', element: <PublicTimeline /> },
+  { path: '/notifications/requests', element: <NotificationRequests /> },
   { path: '/notifications', element: <Notifications /> },
   { path: '/follow-requests', element: <FollowRequests /> },
   // Mastodon's address for it, which its notification emails link.
@@ -132,6 +138,7 @@ const routes = [
   { path: '/invite-tree', element: <InviteTree /> },
   { path: '/invites', element: <Invites /> },
   { path: '/signup', element: <Signup /> },
+  { path: '/filters', element: <Filters /> },
   { path: '/settings', element: <Settings /> },
   // Mastodon's import and export pages, at its paths.
   { path: '/settings/export', element: <ImportExport /> },
@@ -142,7 +149,12 @@ const routes = [
   { path: '/explore/tags', element: <Explore /> },
   { path: '/explore/links', element: <Explore /> },
   { path: '/blocked', element: <BlockedAccounts /> },
+  { path: '/domain_blocks', element: <DomainBlocks /> },
   { path: '/muted', element: <BlockedAccounts /> },
+  { path: '/collections', element: <Collections /> },
+  { path: '/collections/:id', element: <Collections /> },
+  { path: '/lists', element: <Lists /> },
+  { path: '/lists/:id', element: <Lists /> },
   { path: '/followed_tags', element: <FollowedTags /> },
   { path: '/tags/:name', element: <TagTimeline /> },
   // Moderation, at Mastodon's own admin paths so the links its notifications

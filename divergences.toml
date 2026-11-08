@@ -1983,21 +1983,13 @@ since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
-id = "web-client-covers-less-than-the-api"
-kind = "omission"
-summary = "The web client has no pages for several features the API serves"
-mastodon = """
-Its web UI has lists, filters and their settings, scheduled posts, collections, \
-per-account domain blocks, the notification policy and \
-filtered requests, private notes and Web Push."""
-eunha = """
-Serves the API for all of them, for third-party clients, but its web client has \
-no pages for them. A profile's featured tab lists its collections without \
-opening them."""
-why = """
-Eunha's first promise is the database and the API; its web client is its own \
-and grows separately. Not ported yet."""
-evidence = "frontend/src/main.tsx"
+id = "post-language-frequency-in-browser"
+kind = "behaviour"
+summary = "Ranks frequently used post languages with browser-local history"
+mastodon = "Stores counts of language selections in the account's web settings."
+eunha = "Stores per-account selection counts in the browser. The default post language is stored on the account."
+why = "The standalone web client can rank languages without a synchronized web settings blob."
+evidence = "frontend/src/components/post-language-picker.tsx"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
 

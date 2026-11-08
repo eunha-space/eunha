@@ -70,6 +70,7 @@ export default function BlockedAccounts() {
         <NavLink to="/blocked" className={cls}>
           Blocked
         </NavLink>
+        <NavLink to="/domain_blocks" className={cls}>Domains</NavLink>
         <NavLink to="/muted" className={cls}>
           Muted
         </NavLink>

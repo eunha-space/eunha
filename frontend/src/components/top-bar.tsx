@@ -11,6 +11,7 @@ import {
   Home,
   Info,
   Laptop,
+  List,
   LogIn,
   LogOut,
   Moon,
@@ -140,9 +141,8 @@ function useNavItems(
   invites: { count: number | null; hasAvailable: boolean },
 ): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
-  // custom feeds; Eunha has none, and copying the shape around an absent
-  // feature leaves a rail that is mostly empty. What Eunha has instead is
-  // home and local timelines, which were a tab strip inside the column — a leftover
+  // custom feeds. Eunha also links home and local timelines, which were a
+  // tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
   // is the community rather than a curiosity. So they live here. Local and
   // federated are shown as Mastodon shows its live feeds: to whoever the
@@ -191,6 +191,7 @@ function useNavItems(
     { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
     { to: '/messages', icon: MessageCircle, label: 'Messages' },
     { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
+    { to: '/lists', icon: List, label: 'Lists', matchAlso: (path) => path.startsWith('/lists/') },
     { to: '/followed_tags', icon: Hash, label: 'Followed hashtags' },
     ...moderation,
   ]
@@ -304,8 +305,8 @@ function AccountCard({
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => {
-              logout()
+            onClick={async () => {
+              await logout()
               clearMe()
               location.assign('/')
             }}
@@ -341,8 +342,8 @@ function AuthButton({
       <Button
         variant="ghost"
         size={size}
-        onClick={() => {
-          logout()
+        onClick={async () => {
+          await logout()
           clearMe()
           location.assign('/')
         }}

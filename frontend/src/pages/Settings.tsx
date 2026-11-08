@@ -10,6 +10,9 @@ import {
   setOwnEmailSubscriptions,
   type OwnEmailSubscriptions,
 } from '../eunha-api.ts'
+import { getCurrentAccount, setDefaultPostLanguage } from '../api.ts'
+import { BrowserPushSettings } from '@/components/browser-push-settings.tsx'
+import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { beginLogin, getToken, logout } from '../auth.ts'
 import { isAdvancedLayout, setAdvancedLayout } from '../lib/panes.ts'
 import { clearMe, getMeAccount } from '../me.ts'
@@ -63,7 +66,7 @@ function DeleteAccount({ token }: { token: string }) {
       // The account is marked deleted the moment that returns, so this token
       // is already dead — drop the local session rather than let the next
       // request fail on its own.
-      logout()
+      await logout()
       clearMe()
       setConfirming(false)
       toast.success('Your account was successfully deleted')
@@ -211,6 +214,39 @@ function EmailSubscriptions({ token }: { token: string }) {
   )
 }
 
+function PostingLanguageSettings({ token }: { token: string }) {
+  const [language, setLanguage] = useState<string>()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getCurrentAccount(token).then((account) => {
+      if (active) setLanguage(account.source.language ?? '')
+    }).catch(() => {})
+    return () => { active = false }
+  }, [token])
+
+  if (language === undefined) return null
+
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">Default post language</h2>
+      <PostLanguagePicker label="Default post language" allowDefault value={language} disabled={saving}
+        onChange={async (value) => {
+          setSaving(true)
+          try {
+            const account = await setDefaultPostLanguage(token, value)
+            setLanguage(account.source.language ?? '')
+          } catch {
+            toast.error('Could not save the default post language')
+          } finally {
+            setSaving(false)
+          }
+        }} />
+    </section>
+  )
+}
+
 export default function Settings() {
   const { palette, setPalette } = useTheme()
   const token = getToken()
@@ -259,7 +295,21 @@ export default function Settings() {
 
           <MailPreferences token={token} />
 
+          <BrowserPushSettings token={token} />
+
           <TimelinePreferences token={token} />
+
+          <PostingLanguageSettings token={token} />
+
+          <section className="space-y-2 rounded-lg border p-4">
+            <h2 className="font-semibold">Collections</h2>
+            <Button variant="outline" size="sm" render={<Link to="/collections" />}>Manage collections</Button>
+          </section>
+
+          <section className="space-y-2 rounded-lg border p-4">
+            <h2 className="font-semibold">Content filters</h2>
+            <Button variant="outline" size="sm" render={<Link to="/filters" />}>Manage filters</Button>
+          </section>
 
           <section className="space-y-2 rounded-lg border p-4">
             <h2 className="font-semibold">Appearance</h2>

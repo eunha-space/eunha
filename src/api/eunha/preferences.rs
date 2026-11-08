@@ -32,6 +32,8 @@ pub fn routes() -> Router {
     Router::new()
         .route("/api/eunha/v1/preferences", get(show).patch(update))
         .route("/api/eunha/v1/preferences/time_zones", get(time_zones))
+        .route("/api/eunha/v1/preferences/languages", get(languages))
+        .route("/api/eunha/v1/preferences/push_key", get(push_key))
 }
 
 /// The `notification_emails.*` settings that are on or off: the
@@ -356,4 +358,19 @@ pub async fn time_zones(
 ) -> AppResult<Json<Vec<crate::time_zones::Choice>>> {
     signed_in(auth, "read:accounts")?;
     Ok(Json(crate::time_zones::choices(chrono::Utc::now())))
+}
+
+// The post language picker uses the same codes the status API accepts.
+async fn languages() -> Json<&'static [(&'static str, &'static str, &'static str)]> {
+    Json(crate::languages::SUPPORTED_LOCALES)
+}
+
+async fn push_key(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+) -> AppResult<Json<serde_json::Value>> {
+    signed_in(auth, "push")?;
+    Ok(Json(serde_json::json!({
+        "public_key": crate::push::get_vapid_public_key(&state),
+    })))
 }

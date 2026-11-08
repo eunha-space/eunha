@@ -61,6 +61,7 @@ import { RelativeTime } from '@/components/relative-time.tsx'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { PreviewCard } from '@/components/preview-card.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
+import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
@@ -228,6 +229,7 @@ export function StatusCard({
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const [editSpoiler, setEditSpoiler] = useState('')
+  const [editLanguage, setEditLanguage] = useState('')
   const [saving, setSaving] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [showFiltered, setShowFiltered] = useState(false)
@@ -317,6 +319,7 @@ export function StatusCard({
       const src = await getStatusSource(status.id, token)
       setEditText(src.text)
       setEditSpoiler(src.spoilerText)
+      setEditLanguage(status.language ?? '')
       setEditing(true)
     } catch {
       // ignore
@@ -329,7 +332,7 @@ export function StatusCard({
     try {
       const updated = await updateStatus(
         status.id,
-        { status: editText, spoilerText: editSpoiler },
+        { status: editText, spoilerText: editSpoiler, language: editLanguage || undefined },
         token,
       )
       setStatus(updated)
@@ -546,6 +549,7 @@ export function StatusCard({
               className="resize-y"
             />
             <div className="flex gap-2">
+              <PostLanguagePicker value={editLanguage} onChange={setEditLanguage} disabled={saving} />
               <Button size="sm" disabled={saving || !editText.trim()} onClick={saveEdit}>
                 Save
               </Button>

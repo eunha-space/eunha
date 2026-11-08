@@ -353,3 +353,53 @@ test('post menus update hashtag follows and boost preferences', async ({ page })
   await page.goto('/tags/eunha')
   await expect(page.getByRole('button', { name: 'Unfollow', exact: true })).toBeEnabled()
 })
+
+test('the composer suggests a language and publishes a poll with the selected language', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/v1/preferences', (route) =>
+    route.fulfill({ json: { 'posting:default:language': 'en' } }),
+  )
+  await page.route('**/api/eunha/v1/preferences/languages', (route) =>
+    route.fulfill({ json: [['en', 'English', 'English'], ['ko', 'Korean', '한국어']] }),
+  )
+  let posted: Record<string, unknown> | null = null
+  await page.route('**/api/v1/statuses', (route) => {
+    posted = route.request().postDataJSON()
+    return route.fulfill({ json: { ...privateStatus, id: '9' } })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  const language = page.getByRole('button', { name: 'Post language', exact: true })
+  await expect(language).toHaveText('English')
+  await page.getByPlaceholder('What would you like to say?').fill('오늘은 서울의 날씨가 정말 좋네요. 여러분은 주말에 무엇을 하실 건가요?')
+  await expect(page.getByRole('button', { name: /Switch post language to Korean/ })).toBeVisible()
+  await expect(language).toHaveText('English')
+  await language.click()
+  await page.getByRole('textbox', { name: 'Search languages' }).fill('한국어')
+  await page.getByRole('button', { name: 'Korean · 한국어' }).click()
+  await expect(language).toHaveText('Korean')
+
+  await page.getByRole('button', { name: 'Add a poll' }).click()
+  await expect(page.getByRole('button', { name: 'Add media' })).toBeDisabled()
+  await page.getByRole('textbox', { name: 'Poll option 1' }).fill('산책')
+  await page.getByRole('textbox', { name: 'Poll option 2' }).fill('독서')
+  await page.getByRole('switch', { name: 'Allow multiple choices' }).click()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.poll(() => posted).toMatchObject({
+    language: 'ko',
+    poll: { options: ['산책', '독서'], expires_in: 86400, multiple: true },
+  })
+})
+
+test('the character counter uses graphemes, the URL budget and the content warning', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/eunha/v1/preferences', (route) =>
+    route.fulfill({ json: { default_spoiler_field: true } }),
+  )
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Content warning' }).fill('CW')
+  await page.getByPlaceholder('What would you like to say?').fill('👩‍💻 https://example.com/long-path')
+  await expect(page.getByLabel('Post character count')).toHaveText('27/500')
+})

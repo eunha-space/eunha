@@ -358,7 +358,7 @@ function CollectionList({ collections }: { collections: AccountCollection[] }) {
     <ul className="divide-y rounded-lg border">
       {collections.map((c) => (
         <li key={c.id} className="space-y-0.5 px-3 py-2">
-          <p className="text-sm font-medium">{c.name}</p>
+          <Link className="text-sm font-medium" to={`/collections/${c.id}`}>{c.name}</Link>
           {c.description && <p className="text-muted-foreground text-xs">{c.description}</p>}
           <p className="text-muted-foreground text-xs">
             {c.item_count === 1 ? '1 account' : `${c.item_count} accounts`}
