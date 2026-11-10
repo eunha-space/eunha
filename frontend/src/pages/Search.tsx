@@ -1,38 +1,43 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { MastoHttpError } from 'masto'
+import { toast } from 'sonner'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
 import { search } from '../api.ts'
-import { getToken } from '../auth.ts'
+import { beginLogin, getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 
 export default function Search() {
   const [params, setParams] = useSearchParams()
+  const { pathname, search: queryString } = useLocation()
   const q = params.get('q') ?? ''
   const token = getToken()
 
   const [input, setInput] = useState(q)
   const [results, setResults] = useState<mastodon.v2.Search | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
   useEffect(() => setInput(q), [q])
 
   useEffect(() => {
+    setResults(null)
+    setError(null)
     if (!q.trim()) {
-      setResults(null)
+      setLoading(false)
       return
     }
     let cancelled = false
     setLoading(true)
-    setError(null)
     search(q, token ?? undefined)
       .then((r) => !cancelled && setResults(r))
-      .catch((e) => !cancelled && setError(String(e)))
+      .catch((e) => !cancelled && setError(e))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
@@ -44,6 +49,7 @@ export default function Search() {
     setParams(input.trim() ? { q: input.trim() } : {})
   }
 
+  const needsSignIn = !!token && error instanceof MastoHttpError && error.statusCode === 401
   const empty =
     results != null &&
     results.accounts.length === 0 &&
@@ -62,7 +68,17 @@ export default function Search() {
         />
       </form>
 
-      {error && <p className="text-destructive text-sm">{error}</p>}
+      {needsSignIn ? (
+        <div className="mb-4 space-y-2">
+          <p className="text-muted-foreground text-sm">Sign in again to search for remote accounts and posts.</p>
+          <Button
+            size="sm"
+            onClick={() => beginLogin(false, pathname + queryString).catch(() => toast.error('Could not start sign-in'))}
+          >
+            Sign in again
+          </Button>
+        </div>
+      ) : error != null && <p className="text-destructive text-sm">{String(error)}</p>}
       {loading && <p className="text-muted-foreground text-sm">Searching…</p>}
 
       {results && (

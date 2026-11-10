@@ -278,9 +278,11 @@ to switch to it. It asks with `force_login=true`, so the authorization page
 always asks; when the browser is still signed in to the account pages, use the
 page's logout to sign in as the other account. Signing in again to the same
 account replaces its saved token. Only completed OAuth logins are saved in the
-switcher. Legacy `eunha:token` logins are no longer read or migrated; sign in
-again. Tokens live only in `eunha:accounts`, and `eunha:active-account` selects
-the account used for API requests.
+switcher. If a password reset revokes the saved token, search offers **Sign in
+again**. Completing OAuth from there returns to the same search. Legacy
+`eunha:token` logins are no longer read or migrated; sign in again. Tokens live
+only in `eunha:accounts`, and `eunha:active-account` selects the account used
+for API requests.
 
 Accounts and their OAuth tokens are kept in this browser's local storage, scoped
 to the instance's origin. Switching reloads the home page and clears the
