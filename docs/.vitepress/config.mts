@@ -126,7 +126,7 @@ export default defineConfig({
     ],
     footer: {
       message:
-        'Licensed under the <a href="https://github.com/limeburst/eunha/blob/main/LICENSE">GNU AGPL-3.0</a>. Not affiliated with Mastodon gGmbH.',
+        'Licensed under the <a href="https://github.com/limeburst/eunha/blob/main/LICENSE">MIT License</a>. Not affiliated with Mastodon gGmbH.',
     },
   },
 });

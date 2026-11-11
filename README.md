@@ -50,4 +50,8 @@ See [*Contributing*](./docs/contributing/index.md).
 License
 -------
 
-[GNU AGPL-3.0](./LICENSE).
+[MIT](./LICENSE).
+
+The files copied from Mastodon keep Mastodon's license, the GNU AGPL-3.0:
+the schema snapshots in *mastodon/*, and the terms of service and privacy
+policy templates in *src/templates/*.
