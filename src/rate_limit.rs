@@ -33,7 +33,7 @@ use crate::{
 
 /// `I18n.t('errors.429')`, in `I18n.default_locale`: both the throttled
 /// responder and `Api::ErrorHandling` run outside the controller's
-/// `set_locale`. Eunha has the message in English and Korean, and gives any
+/// `set_locale`. eunha has the message in English and Korean, and gives any
 /// other locale the English one (`rate-limit-message-in-english-and-korean`).
 #[must_use]
 pub fn too_many_requests(default_locale: &str) -> &'static str {
@@ -227,7 +227,7 @@ struct Facts {
     /// `params.dig('user', 'email')`, canonicalized (`normalized_email`).
     email: Option<String>,
     /// Whether the form signs in: an email, a password or a pending
-    /// sign-in, as Eunha's authorization page tells a sign-in from its
+    /// sign-in, as eunha's authorization page tells a sign-in from its
     /// buttons.
     credentials: bool,
     /// `session[:attempt_user_id]`.
@@ -260,7 +260,7 @@ impl Facts {
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
     }
 
-    /// `POST /auth/sign_in`, which Eunha takes at `/account/login` and, with
+    /// `POST /auth/sign_in`, which eunha takes at `/account/login` and, with
     /// a password or a pending sign-in, at `/oauth/authorize`.
     fn sign_in(&self) -> bool {
         self.post()
@@ -269,13 +269,13 @@ impl Facts {
                 || (self.path == "/oauth/authorize" && self.credentials))
     }
 
-    /// `PUT /auth/setup`, which Eunha's form also takes as a `POST`.
+    /// `PUT /auth/setup`, which eunha's form also takes as a `POST`.
     fn auth_setup(&self) -> bool {
         (self.put_or_patch() || self.post()) && self.path_matches("/auth/setup")
     }
 
     /// `PUT /auth` and `PUT /auth/password`: a password changed, which
-    /// Eunha's account page posts to `/account/password`.
+    /// eunha's account page posts to `/account/password`.
     fn password_change(&self) -> bool {
         (self.put_or_patch() && (self.path_matches("/auth") || self.path_matches("/auth/password")))
             || (self.post() && self.path == "/account/password")
@@ -758,7 +758,7 @@ mod tests {
     fn the_message_is_in_the_default_locale() {
         assert_eq!(too_many_requests("en"), "Too many requests");
         assert_eq!(too_many_requests("ko"), "요청 횟수 제한에 도달했습니다");
-        // A locale Eunha has no text in reads in English.
+        // A locale eunha has no text in reads in English.
         assert_eq!(too_many_requests("de"), "Too many requests");
     }
 

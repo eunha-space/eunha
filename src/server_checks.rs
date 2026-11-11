@@ -157,7 +157,7 @@ async fn software_version(state: &AppState) -> Result<Outcome> {
     Ok(pending(json!({ "reason": reason }), severity))
 }
 
-/// `SidekiqProcessRunner`, for a queue Sidekiq is not behind. Every Eunha
+/// `SidekiqProcessRunner`, for a queue Sidekiq is not behind. Every eunha
 /// process works every queue, so there is no configuration to read; what can
 /// still go wrong is that nothing is working a queue, and that shows as jobs
 /// long due in it with none being run.
@@ -188,7 +188,7 @@ async fn sidekiq_process(state: &AppState) -> Result<Outcome> {
 }
 
 /// `MediaPrivacyRunner#run_s3`: whether asking the media bucket for a listing
-/// gets one, which would let anyone enumerate every upload. Eunha keeps media
+/// gets one, which would let anyone enumerate every upload. eunha keeps media
 /// in object storage only, so `run_default` has nothing to look at.
 async fn media_privacy(state: &AppState) -> Outcome {
     match media_listing_exposed(state).await {
@@ -245,7 +245,7 @@ const INDEXES: [Index; 5] = [
 ];
 
 /// `ElasticSearchRunner#run`. Its `reset_chewy` reason is about Chewy's own
-/// system index, which Eunha does not keep.
+/// system index, which eunha does not keep.
 async fn elastic_search(state: &AppState) -> Outcome {
     let Some(client) = state.search.as_deref() else {
         return ok();

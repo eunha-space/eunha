@@ -235,7 +235,7 @@ pub fn media_thumbnail_original_url(
     ))
 }
 
-/// Until it named its files as Paperclip does, Eunha kept an upload's small
+/// Until it named its files as Paperclip does, eunha kept an upload's small
 /// style as `small.<ext>` and recorded that name in `thumbnail_file_name`,
 /// beside an original named `original.<ext>`: that name, for such a row.
 fn legacy_small(m: &models::MediaAttachment) -> Option<&str> {
@@ -341,7 +341,7 @@ impl EmojiRow {
 
 /// `REST::CustomEmojiSerializer` for `row`: a local emoji's `original` and
 /// `static` styles where Paperclip keeps them, and a remote one's URL as it
-/// was stored, since Eunha keeps no copy of a remote emoji's image
+/// was stored, since eunha keeps no copy of a remote emoji's image
 /// (`remote-account-images-not-downloaded`). `category` and `featured` are
 /// there when the category was loaded and the emoji has one — the
 /// category's name and its `featured_emoji_id`.
@@ -843,7 +843,7 @@ pub fn media_from_db(urls: &InstanceUrls, m: &models::MediaAttachment) -> types:
     // not know (`unknown`): from a domain blocked with `reject_media`, or of a
     // type it does not take. `REST::MediaAttachmentSerializer` points its
     // `url` and `preview_url` at the media proxy (`needs_redownload?`) and
-    // gives `meta` as it is stored. Eunha shows other remote attachments from
+    // gives `meta` as it is stored. eunha shows other remote attachments from
     // their own servers, keeping no copies (a recorded divergence); one of
     // these it must not, and the proxy has nothing to give for it.
     let unfetched = m.r#type == Some(super::media::TYPE_UNKNOWN)

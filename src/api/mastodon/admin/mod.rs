@@ -147,9 +147,9 @@ pub(crate) async fn require_permission(
 mod metrics;
 pub use metrics::*;
 
-/// `SoftwareVersionsDimension`: Eunha's version as the instance API gives
+/// `SoftwareVersionsDimension`: eunha's version as the instance API gives
 /// it, PostgreSQL's, the Redis-compatible store's, the search cluster's when
-/// search is on and answers, and FFmpeg's when `ffprobe` runs. Eunha has no
+/// search is on and answers, and FFmpeg's when `ffprobe` runs. eunha has no
 /// Ruby and no libvips to report.
 pub(super) async fn software_versions(state: &AppState) -> AppResult<Vec<serde_json::Value>> {
     let version = |key: &str, human_key: &str, value: Option<String>| serde_json::json!({ "key": key, "human_key": human_key, "value": value, "human_value": value });

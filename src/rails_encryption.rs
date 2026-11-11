@@ -2,7 +2,7 @@
 //!
 //! Mastodon keeps local accounts' private keys in `keypairs.private_key`,
 //! declared `encrypts :private_key`, so the column holds a Rails message
-//! envelope rather than a PEM. Eunha has to speak that format in both
+//! envelope rather than a PEM. eunha has to speak that format in both
 //! directions: to sign with keys written by a Mastodon it replaced, and to
 //! leave keys a Mastodon could pick up if it were pointed back at the database.
 //!

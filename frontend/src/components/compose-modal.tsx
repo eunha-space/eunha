@@ -121,7 +121,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                 minimized
                   ? 'left-1/2 bottom-3 -translate-x-1/2 w-[min(20rem,calc(100vw-1.5rem))] rounded-xl'
                   : 'left-1/2 bottom-3 -translate-x-1/2 max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] rounded-xl',
-                // Motion Eunha adds: upstream swaps the panel in with none.
+                // Motion eunha adds: upstream swaps the panel in with none.
                 closing
                   ? 'motion-safe:animate-out motion-safe:fade-out motion-safe:zoom-out-95 motion-safe:slide-out-to-bottom-2 motion-safe:duration-150'
                   : 'motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200',

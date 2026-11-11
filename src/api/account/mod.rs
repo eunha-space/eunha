@@ -810,7 +810,7 @@ pub struct DeleteQuery {
     pub err: Option<String>,
 }
 
-/// Eunha's counterpart to Mastodon's `/settings/delete`.
+/// eunha's counterpart to Mastodon's `/settings/delete`.
 pub async fn delete_page(
     state: AppState,
     axum::extract::Extension(ResolvedInstance(instance)): axum::extract::Extension<

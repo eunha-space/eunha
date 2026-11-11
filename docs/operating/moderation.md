@@ -3,10 +3,10 @@ Moderation
 
 Moderation follows Mastodon's admin API: the same endpoints, the same
 permission checks, and the same rows written to the same tables. A database
-moderated from Eunha reads the same in Mastodon's admin interface, and the
-other way round. Eunha's web client has a moderation section under `/admin`
+moderated from eunha reads the same in Mastodon's admin interface, and the
+other way round. eunha's web client has a moderation section under `/admin`
 built on that API. What Mastodon offers only in its own server-rendered admin
-pages, Eunha serves over REST endpoints of its own, at the paths Mastodon's
+pages, eunha serves over REST endpoints of its own, at the paths Mastodon's
 admin API would use; see [the moderation tools](#the-moderation-tools) below.
 
 
@@ -81,7 +81,7 @@ account also does the following:
 A remote server marking one of its own actors `suspended` suspends it here
 too, with a remote origin, and lifting it there lifts it here.
 
-Eunha used to serve `/silence`, `/suspend` and `/sensitive` routes of its
+eunha used to serve `/silence`, `/suspend` and `/sensitive` routes of its
 own. They are gone: Mastodon has no such routes, and clients use the action
 endpoint.
 
@@ -195,7 +195,7 @@ not the scheme's own. A block on `example.com` covers
 `https://a.example.com/inbox` but not `https://example.com:8443/inbox`, and a
 block on `example.com:8443` covers only that server. Mastodon checks nothing
 at delivery, and never has these inboxes to deliver to once the block has
-suspended their accounts; Eunha checks them as well, for the inboxes no
+suspended their accounts; eunha checks them as well, for the inboxes no
 account stands for (a [recorded
 divergence](../mastodon/divergences)).
 
@@ -229,7 +229,7 @@ as on Mastodon. On an instance with open registrations, a user awaiting
 approval who confirms is approved then, unless a block asks for approval
 (`grant_approval_on_confirmation?`).
 
-Eunha records the address each account signed up from (`users.sign_up_ip`)
+eunha records the address each account signed up from (`users.sign_up_ip`)
 and each password sign-in to the web (`login_activities`), which the admin
 API reports and filters by. A `no_access` IP block answers every request
 from its range with a 403.
@@ -325,7 +325,7 @@ Trends are scored as Mastodon scores them. Each use is counted as it
 happens: the distinct people using a hashtag or link each day go into
 its history in Redis, and every hashtag, link and post used today is
 noted. Every five minutes, starting four minutes after the instance
-starts, Eunha rescores what trended before and what was used today, and keeps
+starts, eunha rescores what trended before and what was used today, and keeps
 the result in `tag_trends`, `preview_card_trends` and `status_trends`:
 
  -  a hashtag or link scores once five people use it in a day and more
@@ -343,7 +343,7 @@ recognizes, an article with a title, a description, an image and a
 publisher name.
 
 Every six hours (and soon after a restart, once six hours have passed since
-the last time), unless `trendable_by_default` is on or trends are off, Eunha
+the last time), unless `trendable_by_default` is on or trends are off, eunha
 looks for trends awaiting review that score above the allowed trend
 ranked third in their language. It marks each one as asked about and
 mails every moderator with `manage_taxonomies` who has trend emails on.
@@ -353,9 +353,9 @@ The moderation tools
 --------------------
 
 Mastodon has these as pages of its own web admin, with no API behind them.
-Eunha serves each over REST, asking for the permission Mastodon's policy asks
+eunha serves each over REST, asking for the permission Mastodon's policy asks
 for and writing the audit log entries Mastodon's controllers write. The web
-client's moderation section is built on them. They are Eunha's own surface,
+client's moderation section is built on them. They are eunha's own surface,
 recorded as `moderation-tools-rest-api` in *divergences.toml*; no Mastodon
 client calls them.
 
@@ -481,14 +481,14 @@ the moderator to outrank the user. Each is logged.
 Changes from earlier versions
 -----------------------------
 
-Up to and including migration 015, Eunha:
+Up to and including migration 015, eunha:
 
  -  turned a self-deletion into a suspension. It now records
     `requested_deletion_at`, as Mastodon 4.7 does;
  -  treated `/enable` as an unsuspension;
  -  let any role positioned at 100 or above use every admin endpoint.
 
-Report categories and IP block severities Eunha stored in its own numbering
+Report categories and IP block severities eunha stored in its own numbering
 are converted by migration 015. Domain block severities cannot be converted
 automatically; see
 [migrations](./migrations#domain-blocks-written-before-migration-015).

@@ -3,10 +3,10 @@ Protocol extension
 
 This file records design decisions for an ActivityPub extension aimed at the
 places the protocol scales badly. It is a design record, not a description of
-what Eunha does today: most of what follows is unbuilt, and the sections say
+what eunha does today: most of what follows is unbuilt, and the sections say
 which is which. Nothing here is a divergence from Mastodon in the
 `divergences.toml` sense — those are behavioural differences inside the API
-Eunha reproduces, whereas this is a layer above it that degrades to plain
+eunha reproduces, whereas this is a layer above it that degrades to plain
 ActivityPub for peers that ignore it.
 
 The rule the rest of the file follows: an extension must be invisible to a peer
@@ -62,7 +62,7 @@ What already helps
 ------------------
 
 Some of the cost is Mastodon's architecture rather than ActivityPub's design,
-and Eunha already avoids parts of it. These exist today.
+and eunha already avoids parts of it. These exist today.
 
  -  **Remote media is not re-hosted.** Ingest stores `remote_url` and serves the
     origin's URL to clients (`src/api/ap/inbox/create.rs`). Mastodon downloads
@@ -104,23 +104,23 @@ they were going to fetch anyway, so this is safe to emit unilaterally.
 
 Three separate things get called JSON-LD and only one of them is dangerous.
 
-The `@context` key is a namespacing convention. Eunha emits it, inlines its term
+The `@context` key is a namespacing convention. eunha emits it, inlines its term
 definitions (`src/api/ap/note.rs`), and never resolves it. This stays.
 
-Eunha uses `read_inbox_as_written` for ordinary inbox traffic. That matches
+eunha uses `read_inbox_as_written` for ordinary inbox traffic. That matches
 how Mastodon reads activities and avoids the normalization cost measured in
 [benchmarking](./benchmarking).
 
-For Eunha's own proofs, the design uses JCS (RFC 8785) through
+For eunha's own proofs, the design uses JCS (RFC 8785) through
 `eddsa-jcs-2022`. Relay interoperability also requires Mastodon's
 `RsaSignature2017`. For activities accepted on that signature, Ojak verifies
 and normalizes the signed graph using bundled and, when needed, bounded
 remote contexts. See
-[Eunha's relay behavior](../mastodon/http-signatures#linked-data-signatures)
+[eunha's relay behavior](../mastodon/http-signatures#linked-data-signatures)
 and [Ojak's inbox guide].
 
 Extension terms are defined inline in `@context`, never hosted. Publishing a
-context document at a Eunha URL would mean other implementations' processors
+context document at a eunha URL would mean other implementations' processors
 fetch a file from us indefinitely, and any downtime would silently change how
 our posts are interpreted on servers we never hear from. Pure liability.
 
@@ -140,7 +140,7 @@ processor would call the documents equivalent.
 
 Three consequences, all of which bite the embedded-object design specifically:
 
- -  **Embedded objects must keep their `@context`.** Eunha strips it from
+ -  **Embedded objects must keep their `@context`.** eunha strips it from
     embedded objects today, which is correct AP practice and asserted in
     `src/federation/activity.rs`'s tests. An object signed while served
     standalone was signed *with* its context, so a proof-carrying embed has to
@@ -175,7 +175,7 @@ misbehaviour detectable after the fact rather than prevented. A witness quorum
 avoids the single authority and requires several organisations to exist, stay
 online, and be governed; nobody has shipped it.
 
-Eunha takes the DNS-rooted option with a signed continuity chain: the account
+eunha takes the DNS-rooted option with a signed continuity chain: the account
 document lives at a hostname, and each `alsoKnownAs` link is signed by the
 previous identity key. Losing a domain costs a name and a discovery path, not
 the validity of a single post. Recovery is an offline key the user may hold; a
@@ -257,7 +257,7 @@ does.
 Where the code goes
 -------------------
 
-**A module in Eunha first, a separate crate later, and not in ojak.**
+**A module in eunha first, a separate crate later, and not in ojak.**
 
 Ojak implements ActivityPub as it is specified: draft-cavage, RFC 9421,
 FEP-8b32. The line is not *general versus ours* — we would want other servers to
@@ -267,14 +267,14 @@ ojak is delivered to ojak's users, and they should not take delivery of our
 experiments.
 
 That gives a promotion rule: a piece graduates into ojak when something that is
-not Eunha implements it. A second implementation is what turns a design into a
+not eunha implements it. A second implementation is what turns a design into a
 specification, whatever the document is called.
 
 Ojak needs no extension points for this. Its signature and proof primitives,
 `ojak::sig`, are standalone and do no I/O, and composition
-already happens in Eunha, which tries the HTTP Signature and falls back to the
+already happens in eunha, which tries the HTTP Signature and falls back to the
 integrity proof itself (`src/api/ap/inbox.rs`). An extension supplies a third
-primitive and Eunha composes three instead of two. No hooks, no inversion of
+primitive and eunha composes three instead of two. No hooks, no inversion of
 control.
 
 A test that answers the boundary question by compiling rather than by argument:
@@ -298,13 +298,13 @@ append, query, persist, retention                   eunha
 Keep the module's imports to `ojak::*` and std — no `AppState`, no sqlx types
 in signatures — so extraction is a `git mv` and a `Cargo.toml` entry rather than
 a refactor. When it is extracted, name the crate after the protocol rather than
-after Eunha: a second implementer should be able to adopt it without adopting
+after eunha: a second implementer should be able to adopt it without adopting
 our branding.
 
-**Eunha will not author a FEP for this.** The process carries a political
+**eunha will not author a FEP for this.** The process carries a political
 overhead we are not taking on, and the fediverse's real extensions have largely
 spread without it: `toot:`, Litepub, and Misskey's `_misskey_quote` — which
-Eunha already emits — became de-facto standards by being implemented and
+eunha already emits — became de-facto standards by being implemented and
 written down, not by being ratified.
 
 What that costs is review. A FEP puts a design in front of people who find its
@@ -321,7 +321,7 @@ versioned alongside the code implementing it. This file is a design record; that
 would be a specification, and it is a different document.
 
 The namespace matters more without a FEP, because nothing else hands us an
-identifier. Choose one named after the protocol rather than after Eunha, keep it
+identifier. Choose one named after the protocol rather than after eunha, keep it
 stable, and define its terms inline the way `note_context()` already does.
 
 

@@ -112,7 +112,7 @@ async fn trial_image(requested: &str) -> Result<String> {
         println!("Using the previously built {local} image.");
         return Ok(local.to_owned());
     }
-    println!("The published image is unavailable. Building Eunha from public source; the first build can take several minutes…");
+    println!("The published image is unavailable. Building eunha from public source; the first build can take several minutes…");
     let built = Command::new("docker")
         .args([
             "build",
@@ -140,7 +140,7 @@ primary_key = "{primary_key}"
 key_derivation_salt = "{salt}"
 [instance]
 domain = {domain:?}
-title = "Eunha trial"
+title = "eunha trial"
 registrations_open = false
 vapid_private_key = {vapid_private:?}
 vapid_public_key = {vapid_public:?}
@@ -333,7 +333,7 @@ pub async fn run(options: Options) -> Result<()> {
     );
     println!("Trial: {public}\nSign in as owner using the password printed on first creation.\nLocal listener: http://127.0.0.1:{}\nStop (data retained): eunha try --directory {} --stop", port, dir.display());
     println!(
-        "\nGet a hosted instance at https://eunha.space and support the development of Eunha.\n"
+        "\nGet a hosted instance at https://eunha.space and support the development of eunha.\n"
     );
     if options.tailscale {
         println!("Starting public Tailscale Funnel…");

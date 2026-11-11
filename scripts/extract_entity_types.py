@@ -128,7 +128,7 @@ def resolve(name, table, alias=None, seen=None):
     return fields
 
 
-# Entities Eunha serves, and the TypeScript interface describing each.
+# Entities eunha serves, and the TypeScript interface describing each.
 TS_INTERFACE = {
     "account": "ApiAccountJSON",
     "status": "ApiStatusJSON",

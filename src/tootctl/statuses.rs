@@ -1,7 +1,7 @@
 //! `tootctl statuses`: `Mastodon::CLI::Statuses`.
 //!
 //! The working tables `tootctl` creates in `public` and leaves behind for
-//! `--continue` are Eunha's alone, so they are made in the `eunha` schema.
+//! `--continue` are eunha's alone, so they are made in the `eunha` schema.
 //!
 //! Mastodon: lib/mastodon/cli/statuses.rb
 
@@ -209,7 +209,7 @@ async fn remove_statuses(
 
 /// `Statuses#remove_orphans_media_attachments`:
 /// `MediaAttachment.unattached.created_before(options[:days].pred.days.ago)`,
-/// each destroyed with its files. Eunha keeps a scheduled post's media in the
+/// each destroyed with its files. eunha keeps a scheduled post's media in the
 /// post's `params` rather than in `scheduled_status_id`, so those count as
 /// attached too, as the daily vacuum counts them.
 async fn remove_orphan_media(
@@ -278,7 +278,7 @@ async fn remove_orphan_media(
 /// `Statuses#remove_orphans_conversations`: the conversations no status is
 /// in. `tootctl` builds an index on `statuses.conversation_id` for this and
 /// drops it after; the schema of the tracked release already has one,
-/// `index_statuses_on_conversation_id`, so Eunha builds none.
+/// `index_statuses_on_conversation_id`, so eunha builds none.
 async fn remove_orphan_conversations(
     state: &AppState,
     options: &RemoveOptions,

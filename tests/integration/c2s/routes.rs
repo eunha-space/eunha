@@ -35,7 +35,7 @@ const MASTODON_UPDATES: &[&str] = &[
     "/api/v2/notifications/policy",
 ];
 
-/// Eunha's REST forms of Mastodon's admin `resources`, whose `update` Rails
+/// eunha's REST forms of Mastodon's admin `resources`, whose `update` Rails
 /// would route the same way.
 const ADMIN_RESOURCE_UPDATES: &[&str] = &[
     "/api/v1/admin/custom_emojis/1",
@@ -115,7 +115,7 @@ async fn routes_mastodon_lacks_are_not_answered() {
     }
 }
 
-/// `namespace :web` is Mastodon's own web UI's; Eunha serves none of it
+/// `namespace :web` is Mastodon's own web UI's; eunha serves none of it
 /// (`mastodon-web-ui-endpoints-not-served` in divergences.toml) but the
 /// unsubscribe a push names, which c2s::push tests.
 #[tokio::test]

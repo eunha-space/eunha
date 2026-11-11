@@ -1,7 +1,7 @@
 Rate limits
 ===========
 
-Eunha limits requests as Mastodon does, in two ways: the `Rack::Attack`
+eunha limits requests as Mastodon does, in two ways: the `Rack::Attack`
 throttles every request passes (*config/initializers/rack\_attack.rb*), and
 the `RateLimiter` families that count what an account creates through the API
 (*app/lib/rate\_limiter.rb*). Both are counted in Redis under the instance's
@@ -53,12 +53,12 @@ with the dots and any `+tag` taken out of its local part, so that
 Mastodon 4.7.3.
 
 Mastodon's sign-in, password and setup pages are its own server-rendered
-ones; Eunha's are at other paths, so the throttles count Eunha's: a sign-in is
+ones; eunha's are at other paths, so the throttles count eunha's: a sign-in is
 `POST /account/login`, or `POST /oauth/authorize` with an email, a password or
 a pending second-factor step; a password change is `POST /account/password`;
 and `/auth/setup` is counted for a `POST` as for a `PUT`. A pending sign-in's
 user, which Mastodon keeps in the session as `attempt_user_id`, is the one
-Eunha keeps for the form's `attempt` token. The streaming API is not
+eunha keeps for the form's `attempt` token. The streaming API is not
 throttled, as Mastodon's separate streaming server is not.
 
 The counts are kept where Mastodon's `Rails.cache` keeps them, in the
@@ -115,7 +115,7 @@ remaining, and
 and so is one a family refuses, with the family's. The message is
 Mastodon's `errors.429` in the instance's `default_locale`, whatever the
 request asked for, as Mastodon gives it outside any controller's locale:
-Eunha has it in English and Korean (요청 횟수 제한에 도달했습니다), and gives
+eunha has it in English and Korean (요청 횟수 제한에 도달했습니다), and gives
 any other locale the English one.
 
 
@@ -123,7 +123,7 @@ Turning them off
 ----------------
 
 `rate_limits = false` in `[limits]` turns both off for an instance, for a
-load test or a deployment that limits requests in front of Eunha instead.
-Mastodon has no such switch, and Eunha's own tests are the reason it has one:
+load test or a deployment that limits requests in front of eunha instead.
+Mastodon has no such switch, and eunha's own tests are the reason it has one:
 they come from one address and post far more than a person does, so each test
 instance has the limits off but for the tests of the limits themselves.

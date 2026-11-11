@@ -210,7 +210,7 @@ pub struct Head {
 }
 
 /// What `og:*` and the rest say about a page, in the instance's default
-/// locale. Eunha's server-side text is in English and Korean.
+/// locale. eunha's server-side text is in English and Korean.
 pub struct Words {
     korean: bool,
 }
@@ -582,7 +582,7 @@ fn media_url(media: &MediaAttachment) -> Option<&str> {
     media.url.as_deref().or(media.remote_url.as_deref())
 }
 
-/// `statuses/_og_image`. Eunha has no `/media/:id/player` to offer as a player
+/// `statuses/_og_image`. eunha has no `/media/:id/player` to offer as a player
 /// card, so a video or an audio file is a large summary.
 fn og_image(
     entity: &types::Status,
@@ -665,7 +665,7 @@ fn interaction_counter(kind: &str, count: i64) -> Value {
 }
 
 /// `render_seo_schema`: `SEO::SocialMediaPostingSerializer`, without the
-/// players' `embedUrl`, which Eunha has no page for.
+/// players' `embedUrl`, which eunha has no page for.
 fn seo_schema(state: &AppState, entity: &types::Status) -> Value {
     let handle = local_handle(state, &entity.account.username);
     let mut schema = json!({
@@ -806,7 +806,7 @@ pub async fn status_head(
     })
 }
 
-/// `tags/show`, whose feed link Eunha points at the feed; Mastodon's names the
+/// `tags/show`, whose feed link eunha points at the feed; Mastodon's names the
 /// tag's page.
 pub async fn tag_head(state: &AppState, name: &str, url: &str) -> Head {
     let mut page = instance_head(state, url).await;

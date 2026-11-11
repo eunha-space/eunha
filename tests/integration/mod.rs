@@ -1,6 +1,6 @@
-//! Eunha integration test suite.
+//! eunha integration test suite.
 //!
-//! These tests run against a live HTTP server. By default they spin up Eunha
+//! These tests run against a live HTTP server. By default they spin up eunha
 //! on a random port, but the C2S tests can be pointed at any
 //! Mastodon-compatible server:
 //!
@@ -12,7 +12,7 @@
 //!   C2S_BOB_ID=<account-id> \
 //!   cargo test --test integration
 //!
-//! When those env vars are absent the harness bootstraps Eunha automatically
+//! When those env vars are absent the harness bootstraps eunha automatically
 //! using DATABASE_URL.
 //!
 //! Layout:

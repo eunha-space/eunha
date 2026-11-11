@@ -1,7 +1,7 @@
 //! Local signing keys, in both the places Mastodon has kept them.
 //!
 //! Mastodon 4.7.0 moved them from `accounts.private_key` into the `keypairs`
-//! table, encrypted at rest. Eunha has to read either, move one to the other,
+//! table, encrypted at rest. eunha has to read either, move one to the other,
 //! and leave rows a Mastodon pointed at the same database could still use.
 
 use eunha::federation::keypair;

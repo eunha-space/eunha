@@ -346,7 +346,7 @@ fn split_acct(acct: &str) -> (String, String) {
     )
 }
 
-/// `with_redis_lock`, as Eunha takes its locks: retried briefly, then done
+/// `with_redis_lock`, as eunha takes its locks: retried briefly, then done
 /// without, rather than holding up the inbox.
 async fn acquire_lock(state: &AppState, name: &str) -> Option<crate::redis_lock::RedisLock> {
     for attempt in 0..40 {
@@ -764,7 +764,7 @@ impl Processor<'_> {
         } else {
             header_url.unwrap_or_default()
         };
-        // `@account.avatar = nil if @account.avatar_remote_url.blank?`. Eunha
+        // `@account.avatar = nil if @account.avatar_remote_url.blank?`. eunha
         // shows a remote account's image from where its server keeps it, and
         // forgets a copy Mastodon made of an image that has since changed, so
         // that a Mastodon sharing this database fetches the new one.

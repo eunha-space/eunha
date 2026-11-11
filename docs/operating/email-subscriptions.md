@@ -3,7 +3,7 @@ Email subscriptions
 
 Mastodon 4.7 lets chosen local accounts put a form on their profile that a
 visitor without an account fills in to receive the account's public posts by
-email. Eunha implements it on Mastodon's own `email_subscriptions` table, with
+email. eunha implements it on Mastodon's own `email_subscriptions` table, with
 the same switches.
 
 
@@ -13,7 +13,7 @@ Turning it on
 Three things have to agree before an account can be subscribed to:
 
 1.  The instance offers the feature. Mastodon's `DISABLE_EMAIL_SUBSCRIPTIONS`
-    environment variable is Eunha's per-instance `email_subscriptions` flag,
+    environment variable is eunha's per-instance `email_subscriptions` flag,
     on by default:
 
     ~~~~ toml
@@ -34,7 +34,7 @@ Three things have to agree before an account can be subscribed to:
 
 3.  The account may and wants to. Its role must carry
     `manage_email_subscriptions` (1 << 22), and its user must have turned
-    the feature on. Eunha has no role editor (see [Invites](./invites.md)), so
+    the feature on. eunha has no role editor (see [Invites](./invites.md)), so
     granting the permission is an `UPDATE`:
 
     ~~~~
@@ -48,7 +48,7 @@ Three things have to agree before an account can be subscribed to:
 
 While all three hold, the account's API entity carries
 `"email_subscriptions": true` (and `false` for every other account; the
-attribute is absent while the feature is off), and Eunha's profile page shows
+attribute is absent while the feature is off), and eunha's profile page shows
 signed-out visitors the form. Every serialized account carries the
 attribute, as with Mastodon's serializer: the account endpoints, and the
 accounts embedded in statuses and notifications.
@@ -109,7 +109,7 @@ newsletters page, Mastodon's `Setting.email_footer_text`.
 The admin API
 -------------
 
-Mastodon's admin pages for this are web forms; Eunha's admin is a single-page
+Mastodon's admin pages for this are web forms; eunha's admin is a single-page
 app, so it serves what they do under `/api/v1/admin/email_subscriptions` (the
 `email-subscriptions-rest-api` divergence). Every call needs
 `manage_settings`, which is upstream's `EmailSubscriptionPolicy`, and the

@@ -4,7 +4,7 @@
 //! channels, and the other Rails publishers that render for one account —
 //! notifications, conversations and announcements.
 //!
-//! Eunha's feeds are built elsewhere (`crate::feed`); this only decides, for
+//! eunha's feeds are built elsewhere (`crate::feed`); this only decides, for
 //! the accounts and lists somebody is streaming, what Mastodon would have
 //! pushed to them. That is decided per subscriber rather than per follower,
 //! which gives the same messages, since Mastodon only pushes to a timeline

@@ -53,7 +53,7 @@ idle_timeout_seconds = 10
 
 [instance]
 domain = "127.0.0.1:$port"
-title = "Eunha benchmark"
+title = "eunha benchmark"
 description = ""
 short_description = ""
 contact_email = "user1@bench.invalid"

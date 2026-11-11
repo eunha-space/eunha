@@ -131,7 +131,7 @@ impl Account {
     ///
     /// Since 4.7.0 an account whose handle cannot be verified keeps its actor
     /// id but has its username replaced with a marker no server could issue.
-    /// Eunha never writes one, but a database imported from Mastodon can
+    /// eunha never writes one, but a database imported from Mastodon can
     /// contain them, and they must not be shown as if they were real handles.
     pub fn has_invalid_handle(&self) -> bool {
         self.username.starts_with("! ")

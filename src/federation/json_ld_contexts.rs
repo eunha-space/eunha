@@ -4,7 +4,7 @@
 //!
 //! Mastodon turns a signed activity into RDF with the contexts it preloads
 //! and fetches any other, keeping what it fetched in `Rails.cache` for 30
-//! days under `jsonld:context:<url>`. Eunha keeps it in Redis under the same
+//! days under `jsonld:context:<url>`. eunha keeps it in Redis under the same
 //! name, behind the instance's key prefix (`AppState::federation_kv`), with
 //! ojak's `contexts::fetch_cached`: a GET asking for `application/ld+json`,
 //! taken only as a `200` of that type up to a megabyte, through the

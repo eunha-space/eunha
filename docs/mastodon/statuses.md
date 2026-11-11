@@ -85,7 +85,7 @@ not sensitive again, edit it as the instance actor (`Account.representative`).
 A remote post's history is recorded from its `Update`s; see
 [inbound statuses](./inbound-statuses#attachments-and-polls).
 
-Eunha recorded histories another way until migration 033; see
+eunha recorded histories another way until migration 033; see
 [migrations](../operating/migrations#edit-histories-written-before-migration-033).
 
 
@@ -148,7 +148,7 @@ URI, except that an account boosting its own followers-only post sends the
 post along, which its followers could not fetch otherwise. Undoing the boost
 sends an `Undo` with the id `{actor}#announces/{id}/undo`, addressed to the
 public, carrying that `Announce` with the boosted post named by its URI
-(`UndoAnnounceSerializer`). Eunha left local boosts' `uri` empty until
+(`UndoAnnounceSerializer`). eunha left local boosts' `uri` empty until
 migration 036; see
 [migrations](../operating/migrations#local-boosts-before-migration-036).
 
@@ -182,12 +182,12 @@ Every account the API renders carries `feature_approval`, and its
 `current_user` says where the signed-in viewer stands, as
 `Account#feature_policy_for_account` decides: `automatic`, `manual`,
 `missing` for a remote account that federated no policy, `unknown` for a
-policy with a flag Eunha does not know, or `denied`, which is also the answer
+policy with a flag eunha does not know, or `denied`, which is also the answer
 to nobody signed in. A local account allows everyone unless it is locked, when
 only its followers and itself, or nobody when it is not discoverable.
 
-Eunha renders accounts in many places that do not know who is asking, so, as
+eunha renders accounts in many places that do not know who is asking, so, as
 Mastodon's `StatusCacheHydrator#hydrate_account` sets the field on a payload
-rendered once, Eunha sets it on each response for its viewer: every account
+rendered once, eunha sets it on each response for its viewer: every account
 object in it, embedded in a post, a notification or a list, is answered with
 one query for the follows in both directions.

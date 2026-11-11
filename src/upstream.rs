@@ -1,7 +1,7 @@
 //! Reads the upstream Mastodon repository: releases, migration lists, and the
-//! `db/schema.rb` that defines the schema Eunha must reproduce.
+//! `db/schema.rb` that defines the schema eunha must reproduce.
 //!
-//! Eunha promises a database a real Mastodon can be pointed at, so upstream's
+//! eunha promises a database a real Mastodon can be pointed at, so upstream's
 //! own schema definition is the only authority worth checking against. Rather
 //! than vendoring a copy that silently rots, this module fetches it from GitHub
 //! for whichever tag is being asked about.
@@ -330,7 +330,7 @@ pub async fn schema_rb_version(tag: &str) -> Result<String> {
     Ok(rest[..end].trim().replace('_', ""))
 }
 
-/// The reference schema Eunha is checked against: what Mastodon's own
+/// The reference schema eunha is checked against: what Mastodon's own
 /// ActiveRecord builds from its `db/schema.rb`, introspected once and recorded
 /// here.
 ///

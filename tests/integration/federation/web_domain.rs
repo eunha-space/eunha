@@ -1,5 +1,5 @@
 //! An instance whose handles are on one domain and whose pages on another:
-//! Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN`, Eunha's `domain` and
+//! Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN`, eunha's `domain` and
 //! `web_domain`.
 
 use serde_json::Value;

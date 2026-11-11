@@ -1369,7 +1369,7 @@ pub async fn authorize_form(
 }
 
 /// `session[:require_reauth_for]`, `session[:registration_app_id]` and
-/// `session[:created_by_app_id]`, which Eunha, having no session store, keeps
+/// `session[:created_by_app_id]`, which eunha, having no session store, keeps
 /// in cookies. Only the browser's own sign-in steps are at stake in them.
 const REQUIRE_REAUTH_COOKIE: &str = "oauth_require_reauth_for";
 pub(crate) const REGISTRATION_APP_COOKIE: &str = "oauth_registration_app";
@@ -2005,7 +2005,7 @@ async fn check_password(
 /// `ApplicationController#require_functional!`, which the authorization
 /// page's every action runs for a signed-in user: nothing for a functional
 /// one; the two-factor setup the role requires (`mfa_setup_path(oauth:
-/// true)`, Eunha's sign-in setup step, which comes back to the page); the
+/// true)`, eunha's sign-in setup step, which comes back to the page); the
 /// account page (`edit_user_registration_path`) for one confirmed but
 /// otherwise not functional — pending approval, a memorial or moved; and
 /// `auth/setup` for an unconfirmed address, the page kept to come back to.

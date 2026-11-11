@@ -436,7 +436,7 @@ pub struct ReportActionForm {
 /// `Admin::Reports::ActionsController#create`: removing or marking sensitive
 /// what the report cites (`Admin::ModerationAction`), or limiting or
 /// suspending its account (`Admin::AccountAction`). A spam report's account
-/// is not notified. Eunha's own endpoint; see `moderation-tools-rest-api`.
+/// is not notified. eunha's own endpoint; see `moderation-tools-rest-api`.
 pub async fn report_moderation_action(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,

@@ -3,7 +3,7 @@ Terms of service and privacy policy
 
 Both documents work the way Mastodon's do, from the same storage: terms of
 service are versions in the `terms_of_services` table, and the privacy policy is
-the `site_terms` setting. An instance moved onto Eunha from Mastodon keeps both
+the `site_terms` setting. An instance moved onto eunha from Mastodon keeps both
 without doing anything.
 
 
@@ -20,7 +20,7 @@ version effective on that date. Both are Mastodon's
 
  -  `content` is the text with `%{domain}` replaced by the instance's domain,
     rendered from Markdown with HTML escaped and images left as written, which
-    is what Redcarpet's `escape_html` and `no_images` do. Eunha renders with
+    is what Redcarpet's `escape_html` and `no_images` do. eunha renders with
     pulldown-cmark, which accepts the same Markdown Redcarpet does without
     extensions; the two differ in whitespace in the HTML they emit, not in what
     it says.
@@ -79,18 +79,18 @@ instead, and the web client shows them the new terms the next time they open
 it, until they have opened the terms page. A version is distributed once:
 `notification_sent_at` records it, and the endpoints refuse to send again.
 
-Mastodon serves the interstitial by replacing its web pages; Eunha's web client
+Mastodon serves the interstitial by replacing its web pages; eunha's web client
 asks `/api/eunha/v1/terms_of_service/interstitial` instead (the
-`terms-of-service-interstitial-api` divergence). Clients other than Eunha's own
+`terms-of-service-interstitial-api` divergence). Clients other than eunha's own
 see neither, as with Mastodon.
 
 The mails go out one at a time from the server process, through the same
-sender as every other Eunha mail, in English.
+sender as every other eunha mail, in English.
 
 ### Terms from the instance configuration
 
-Before Eunha read the table, an instance's terms were the `terms_of_service`
-text in its configuration, served as effective on 2025-01-01. Eunha no longer
+Before eunha read the table, an instance's terms were the `terms_of_service`
+text in its configuration, served as effective on 2025-01-01. eunha no longer
 reads it: with nothing published, `/api/v1/instance/terms_of_service` is a 404
 and `urls.terms_of_service` is null, as in Mastodon.
 The import `eunha migrate` runs once for an instance that was already
@@ -108,7 +108,7 @@ Privacy policy
 `GET /api/v1/instance/privacy_policy` serves `site_terms` when it is set, as
 Mastodon does, rendered the same way as the terms, and when it is blank the
 policy Mastodon ships (*config/templates/privacy-policy.md*), dated 2022-10-07
-as upstream dates it. The configuration's `privacy_policy`, where Eunha kept
+as upstream dates it. The configuration's `privacy_policy`, where eunha kept
 the policy before, is read only by that import, which copies it into a
 `site_terms` nobody has saved.
 
@@ -132,5 +132,5 @@ What is not here
 ----------------
 
 Mastodon's sign-up form asks new users to agree to the terms and privacy policy
-(`agreement`) and, when `min_age` is set, for a date of birth. Eunha's sign-up
+(`agreement`) and, when `min_age` is set, for a date of birth. eunha's sign-up
 does not enforce either yet; that belongs to sign-up rather than to the terms.

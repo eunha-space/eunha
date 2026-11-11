@@ -1635,7 +1635,7 @@ async fn proxy(
             )
         } else if remote_url.is_some() && media.r#type != Some(TYPE_UNKNOWN) {
             // `redownload!`, which fetches the file and sends the viewer to
-            // the copy. Eunha keeps no copies (a recorded divergence), so the
+            // the copy. eunha keeps no copies (a recorded divergence), so the
             // viewer is sent to where the copy would have come from.
             if small {
                 media

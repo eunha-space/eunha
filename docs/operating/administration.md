@@ -4,7 +4,7 @@ Administration
 Mastodon's web admin has pages for running the server as well as moderating
 it: the server settings, rules, roles, announcements, the servers it federates
 with, relays, invites, webhooks, follow recommendations, software updates and
-the dashboard. None of them has an API upstream. Eunha serves each over REST
+the dashboard. None of them has an API upstream. eunha serves each over REST
 endpoints of its own, at the paths Mastodon's admin API would use, asking for
 the permission Mastodon's policy asks for and writing the audit log entries
 Mastodon's controllers write. The web client's administration pages under
@@ -43,7 +43,7 @@ picture, `/images/preview.png`, and describes it, where Mastodon names and
 describes its mascots; with no app icon, it names the frontend's
 `/icons/android-chrome-<size>x<size>.png` at each Android size. Both are cut
 from the brand symbol by `mise run site:images`. The `icon_url` key of the
-instance configuration, which Eunha showed before it had uploads, is no longer
+instance configuration, which eunha showed before it had uploads, is no longer
 read, and a server that finds it set warns.
 
 ### What the settings drive
@@ -91,11 +91,11 @@ not shown the rows.
 | `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                                      |
 | `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                                 |
 
-Until you save a site title, Eunha displays the instance’s web hostname.
+Until you save a site title, eunha displays the instance’s web hostname.
 
 The rest are saved for a Mastodon on the same database and read by nothing in
-Eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
-`mascot`, `preview_sensitive_media` and `captcha_enabled` (Eunha has no
+eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,
+`mascot`, `preview_sensitive_media` and `captcha_enabled` (eunha has no
 CAPTCHA).
 
 ### Settings and the instance configuration
@@ -108,9 +108,9 @@ lets its holder sign up, but approves them only if whoever wrote it may bypass
 approval (see [invites](./invites)). `site_contact_username` may name a remote
 account (`@name@domain`).
 
-Eunha's instance configuration carried the title, descriptions, contact
+eunha's instance configuration carried the title, descriptions, contact
 address, whether registrations are open, the privacy policy and the terms of
-service before Eunha read the settings, and served them until an administrator
+service before eunha read the settings, and served them until an administrator
 saved the settings. It no longer reads them. An instance upgrading has them
 copied into the database once, by the first `eunha migrate` of the release
 that stopped reading them (see [migrations](./migrations#site-settings)). The
@@ -134,7 +134,7 @@ safe to run again:
 | `registrations_open = false`                             | `registrations_mode` `none`                                  |
 | `registrations_open = true`, `approval_required = true`  | `registrations_mode` `approved`                              |
 | `registrations_open = true`, `approval_required = false` | `registrations_mode` `open`                                  |
-| the local account with the highest role                  | `site_contact_username`, the contact Eunha showed by default |
+| the local account with the highest role                  | `site_contact_username`, the contact eunha showed by default |
 
 and, while nothing is published, publishes `terms_of_service` as the version it
 was served as (see
@@ -174,7 +174,7 @@ disable_automatic_switching_to_approved_registrations = true
 
 A moderator counts as active by `users.current_sign_in_at` alone, as in
 Mastodon. Signing in on the authorization page sets it (and counts the sign-in),
-and every authenticated request, Eunha's own client's included, moves it again
+and every authenticated request, eunha's own client's included, moves it again
 once it is a day old (`UserTrackingConcern`), keeping the previous one in
 `last_sign_in_at`. Such a request also counts a confirmed user towards the day's
 logins in Redis (`activity:logins:<day>`), as Mastodon's `ActivityTracker` does,
@@ -183,7 +183,7 @@ ago (see [accounts](./accounts.md)).
 
 ### Activity counts
 
-Eunha keeps Mastodon's `ActivityTracker` counters in Redis, a key per day named
+eunha keeps Mastodon's `ActivityTracker` counters in Redis, a key per day named
 by the day's midnight in UTC, each kept six months: the users who signed in
 (`activity:logins:<day>`), sign-ups (`activity:accounts:local:<day>`), local
 public and unlisted posts, boosts included (`activity:statuses:local:<day>`),
@@ -204,7 +204,7 @@ They are what the numbers that sound like activity are made of:
     `POST /api/v1/admin/measures` add up the days asked for, and the same
     number of days before them.
 
-Counting starts when Eunha does: a database imported from Mastodon brings no
+Counting starts when eunha does: a database imported from Mastodon brings no
 history unless its Redis comes along.
 
 ### The dashboard's metrics
@@ -235,7 +235,7 @@ Mastodon:
     (or 12 months) before the end, and gives each cohort's periods as
     `YYYY-MM-DDT00:00:00+00:00` and its rate unrounded.
 
-`software_versions` lists Eunha's version string (under `mastodon`),
+`software_versions` lists eunha's version string (under `mastodon`),
 PostgreSQL's, the Redis-compatible store's (Redis, Valkey or Dragonfly), the
 search cluster's when search is on, and FFmpeg's when `ffprobe` runs; there is
 no Ruby or libvips to list. `space_usage` lists the database, the store's
@@ -243,8 +243,8 @@ memory when the Redis is the instance's alone (see [Redis](./redis)), the
 media (attachments, custom emoji, preview cards, avatars and headers, archive
 takeouts and site uploads), and the instance's search indexes.
 
-Mastodon caches each answer for five minutes; Eunha computes it every time.
-Asked without a range, Eunha covers the last week, where Mastodon fails.
+Mastodon caches each answer for five minutes; eunha computes it every time.
+Asked without a range, eunha covers the last week, where Mastodon fails.
 
 ### Content retention
 
@@ -271,7 +271,7 @@ positive number of days keeps everything.
     deleted, and imports past their time are cleared away (see [imports and
     exports](./import-export.md)).
 
-Eunha does not cache remote media itself, so the media retention matters only
+eunha does not cache remote media itself, so the media retention matters only
 for a database that came from Mastodon. The [maintenance
 commands](./maintenance) do the same on demand, with their own thresholds.
 
@@ -313,7 +313,7 @@ addresses for a year:
  -  IP blocks whose expiry has passed are deleted.
 
 Mastodon reads the year from `IP_RETENTION_PERIOD` and
-`SESSION_RETENTION_PERIOD`; Eunha keeps the default year and has no setting for
+`SESSION_RETENTION_PERIOD`; eunha keeps the default year and has no setting for
 either.
 
 ### Other clean-ups
@@ -562,7 +562,7 @@ blocks, is blocked by, mutes, dismissed, or whose domain the user blocks. The
 list is shuffled, and keeps its order for a quarter of an hour, so paging
 through it with `offset` sees one list, as Mastodon's cached list does.
 Mastodon's similar-profiles source needs Elasticsearch and its FASP source a
-FASP provider; Eunha has neither, as a Mastodon without them has neither.
+FASP provider; eunha has neither, as a Mastodon without them has neither.
 
 Once a day, at a time of its own between 06:00 and 09:59 UTC, each instance
 refreshes the recommendations as Mastodon's
@@ -593,7 +593,7 @@ Donation campaigns
 Mastodon's web interface can show a donation banner, which it asks for at
 `GET /api/v1/donation_campaigns`. Without a campaign API configured the answer
 is `204 No Content`, and no banner is shown. To ask one, as Mastodon's
-`DONATION_CAMPAIGNS_URL` and `DONATION_CAMPAIGNS_ENVIRONMENT` do (which Eunha
+`DONATION_CAMPAIGNS_URL` and `DONATION_CAMPAIGNS_ENVIRONMENT` do (which eunha
 also reads from the environment):
 
 ~~~~ toml
@@ -602,7 +602,7 @@ api_url = "https://api.joinmastodon.org/v1/donations/campaigns/active"
 environment = "production"  # optional
 ~~~~
 
-For a signed-in user, Eunha asks the API with `platform=web`, the
+For a signed-in user, eunha asks the API with `platform=web`, the
 `environment`, the user's interface locale, and a seed from 0 to 99 that the
 user's account id always gives (Ruby's `Random.new(id).rand(100)`, so a user
 gets the same seed from Mastodon); any query the URL had is replaced. A `200`
@@ -628,7 +628,7 @@ favourited and most replied are left empty, as Mastodon leaves them); the
 posts of the year and the follows made in it; and the hashtag used most, more
 than once, by its display name. The API answers with the report's accounts
 (for schema 2, its owner; for a Mastodon 2024 report, the accounts it names)
-and its posts. Reports Eunha made before migration 033 were labelled schema 1;
+and its posts. Reports eunha made before migration 033 were labelled schema 1;
 see [migrations](./migrations). Each report gets a random share key, and the
 API's `share_url` is the page that shows it to anyone with the link, at
 Mastodon's address:
@@ -641,7 +641,7 @@ API, serialized for no viewer, with the instance's `domain`. It is marked
 `noindex` and cached publicly for ten minutes. A wrong share key, year or
 account, or an account that is unconfirmed or awaiting approval, is a `404`; a
 suspended account is a `403` while the suspension can be undone and a `410`
-once it cannot. Eunha's web app draws the report its own way; what that changes
+once it cannot. eunha's web app draws the report its own way; what that changes
 from Mastodon's page, and what limited federation mode does to it, is recorded
 as the `shared-wrapstodon-page` divergence.
 
@@ -691,7 +691,7 @@ Mastodon's dashboard shows above its charts: how many reports are unresolved,
 users await approval, hashtags await review and appeals await a decision, and
 the system checks the role may see, each with its message and where to act on
 it. The web client's dashboard shows each count to a role that may act on it.
-The checks are Mastodon's, less the two for services Eunha does not use
+The checks are Mastodon's, less the two for services eunha does not use
 (Elasticsearch and Sidekiq):
 
  -  `software_version_check`, and its critical and patch variants, while the
@@ -706,12 +706,12 @@ The checks are Mastodon's, less the two for services Eunha does not use
 Mail
 ----
 
-Eunha's mail is shaped as Mastodon's mailers send theirs. What the staff are
+eunha's mail is shaped as Mastodon's mailers send theirs. What the staff are
 told (new reports, appeals, accounts and trends to review, closed
 registrations, software updates and the end of support) is plain text alone,
 as `AdminMailer`'s templates are; every other mail is `multipart/alternative`,
 its text beside its HTML. The text is made from the HTML, and the wording is
-Eunha's own, in English and Korean, rather than Mastodon's translations.
+eunha's own, in English and Korean, rather than Mastodon's translations.
 
 Every mail but those to an account about itself (`UserMailer`, a
 `Devise::Mailer`) carries `ApplicationMailer`'s

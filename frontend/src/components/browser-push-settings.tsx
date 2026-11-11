@@ -45,7 +45,7 @@ export function BrowserPushSettings({ token }: { token: string }) {
   return (
     <section className="space-y-2 rounded-lg border p-4">
       <h2 className="font-semibold">Browser notifications</h2>
-      <p className="text-muted-foreground text-sm">Receive alerts for this account when Eunha is closed.</p>
+      <p className="text-muted-foreground text-sm">Receive alerts for this account when eunha is closed.</p>
       <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(() =>
         state.enabled ? disableBrowserPush(id, token) : enableBrowserPush(id, token))}>
         {state.enabled ? 'Disable on this browser' : 'Enable on this browser'}

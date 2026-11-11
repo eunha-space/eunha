@@ -1,9 +1,9 @@
-//! A relayed activity's Linked Data Signature checked over a context Eunha
+//! A relayed activity's Linked Data Signature checked over a context eunha
 //! does not ship, fetched from a fake remote server and cached as Mastodon's
 //! document loader fetches and caches it (`JsonLdHelper#load_jsonld_context`),
 //! and checked before an FEP-8b32 proof whose key the fake server publishes.
 //!
-//! A test binary of its own because it has to let Eunha fetch from
+//! A test binary of its own because it has to let eunha fetch from
 //! 127.0.0.1, which is process-wide; the main suite checks that a context on
 //! a private address is refused.
 

@@ -3,7 +3,7 @@
 //! A single Application actor served at `https://{domain}/actor`, used to sign
 //! outbound authorized-fetch GET requests (and to be dereferenced by remote
 //! servers verifying those signatures). Mastodon stores this actor as a
-//! reserved `accounts` row with id `-99`; Eunha follows that shape so restored
+//! reserved `accounts` row with id `-99`; eunha follows that shape so restored
 //! Mastodon databases can keep their existing instance actor keypair.
 //!
 //! Mastodon: app/controllers/instance_actors_controller.rb

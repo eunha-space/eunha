@@ -2,7 +2,7 @@
 //!
 //! Mastodon serves these as web settings pages (`Settings::ExportsController`
 //! and `Settings::Exports::*`, `Settings::ImportsController`,
-//! `BackupsController`), and has no API for them. Eunha's settings are part
+//! `BackupsController`), and has no API for them. eunha's settings are part
 //! of a single-page app, so they are served here (the
 //! `data-portability-rest-api` divergence). The work is
 //! [`crate::portability`]; these only translate.

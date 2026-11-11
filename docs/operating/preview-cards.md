@@ -2,7 +2,7 @@ Preview cards
 =============
 
 A post that links somewhere gets a preview card: the page's title,
-description and image, shown under the post. Eunha builds cards as
+description and image, shown under the post. eunha builds cards as
 Mastodon's `FetchLinkCardService` does, into the same `preview_cards` and
 `preview_cards_statuses` rows, so a Mastodon booted on the database shows
 the same cards, and the same images. How the web client draws a card, and
@@ -86,7 +86,7 @@ Differences from Mastodon
 -------------------------
 
  -  Mastodon guesses a page's character set with ICU before believing the
-    `Content-Type`. Eunha takes a byte-order mark, then UTF-8 when the bytes
+    `Content-Type`. eunha takes a byte-order mark, then UTF-8 when the bytes
     are UTF-8, then the header's charset, then a `<meta charset>`, and only
     then guesses.
  -  URLs are normalized by the WHATWG URL standard rather than Addressable,

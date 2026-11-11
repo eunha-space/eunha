@@ -1,4 +1,4 @@
-//! Eunha's web frontend, and the pages served beside it.
+//! eunha's web frontend, and the pages served beside it.
 //!
 //! Mastodon: app/controllers/custom_css_controller.rb
 //! Mastodon: app/controllers/wrapstodon_controller.rb
@@ -13,7 +13,7 @@
 pub mod pages;
 pub mod rss;
 
-/// Serves Eunha's own web frontend: a React Router (Vite) single-page app that
+/// Serves eunha's own web frontend: a React Router (Vite) single-page app that
 /// is a first-party client of the Mastodon Client-to-Server (C2S) REST API.
 ///
 /// The built SPA lives in `frontend/dist`. Static assets (hashed JS/CSS, fonts,
@@ -152,7 +152,7 @@ async fn intent(state: &AppState, query: Option<&str>) -> Response {
 }
 
 /// `ManifestsController#show`: `ManifestSerializer`, without Mastodon's
-/// `related_applications`, which would offer an Eunha's visitors Mastodon's
+/// `related_applications`, which would offer an eunha's visitors Mastodon's
 /// apps in place of the page.
 async fn manifest(state: &AppState) -> Response {
     let settings = crate::settings::Snapshot::load(state).await;
@@ -479,7 +479,7 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
     let Ok(html) = tokio::fs::read_to_string(format!("{DIST}/index.html")).await else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            "The Eunha web frontend is not built yet.",
+            "The eunha web frontend is not built yet.",
         )
             .into_response();
     };
@@ -491,7 +491,7 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
         None => site_title,
     };
     let mut html = html.replace(
-        "<title>Eunha</title>",
+        "<title>eunha</title>",
         &format!("<title>{}</title>", escape_html_text(&title)),
     );
 

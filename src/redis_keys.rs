@@ -5,7 +5,7 @@
 
 /// Per-instance Redis key namespace.
 ///
-/// The separator is added by Eunha so an operator supplies an opaque tenant
+/// The separator is added by eunha so an operator supplies an opaque tenant
 /// name (`example`), while the corresponding Redis ACL pattern is the
 /// unambiguous `~example:*`. Colons in the prefix are rejected because they
 /// make it too easy to configure overlapping ACL patterns accidentally.

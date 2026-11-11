@@ -1,6 +1,6 @@
 //! `tootctl media`: `Mastodon::CLI::Media`, against the instance's bucket.
 //!
-//! Eunha keeps no copies of other servers' media
+//! eunha keeps no copies of other servers' media
 //! (`remote-account-images-not-downloaded`), so `remove` only ever finds the
 //! copies a Mastodon sharing the database made, and `refresh`, which
 //! downloads them again, is not offered (`maintenance-commands-in-eunha-terms`).
@@ -37,7 +37,7 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Fetch remote media files. Not offered: Eunha keeps no copies of
+    /// Fetch remote media files. Not offered: eunha keeps no copies of
     /// remote media.
     Refresh {
         #[arg(long)]
@@ -155,7 +155,7 @@ pub async fn run(state: &AppState, command: Command) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `tootctl media refresh`, which Eunha does not offer.
+/// `tootctl media refresh`, which eunha does not offer.
 pub fn refresh() -> anyhow::Result<()> {
     anyhow::bail!(
         "eunha keeps no copies of remote media, so there is nothing to download again; \
@@ -554,7 +554,7 @@ fn stem(name: &str) -> &str {
 ///
 /// Paperclip's `variant?` takes a file of the same name, or of the same
 /// stem with the extension of one of the attachment's styles; this takes any
-/// extension, so it keeps what it is unsure of. Eunha once kept an upload's
+/// extension, so it keeps what it is unsure of. eunha once kept an upload's
 /// small style under its thumbnail's name (`files/…/small/`) and a video's
 /// upload under `files/…/source/` while it waited to be transcoded; both
 /// belong to an attachment that is still there.

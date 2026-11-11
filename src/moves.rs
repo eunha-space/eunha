@@ -17,7 +17,7 @@
 //! followers of the old account follow the new one, and local accounts'
 //! notes, blocks and mutes of the old account carry over to it.
 //!
-//! Mastodon serves all of this from web settings forms. Eunha's client is a
+//! Mastodon serves all of this from web settings forms. eunha's client is a
 //! single-page app, so it is served over REST (see the `account-moves-rest-api`
 //! divergence), answering with the same validation messages.
 //!

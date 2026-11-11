@@ -91,7 +91,7 @@ pub async fn get_oembed(
 }
 
 /// `OEmbedSerializer#html`: a link to the post, which `embed.js` replaces with
-/// the embed page where scripts run. It says Eunha where Mastodon says Mastodon.
+/// the embed page where scripts run. It says eunha where Mastodon says Mastodon.
 fn embed_html(base_url: &str, status_url: &str, handle: &str) -> String {
     format!(
         concat!(
@@ -104,7 +104,7 @@ fn embed_html(base_url: &str, status_url: &str, handle: &str) -> String {
             r#"sans-serif; font-size: 14px; justify-content: center; letter-spacing: 0.25px; "#,
             r#"line-height: 20px; padding: 24px; text-decoration: none;">"#,
             r#"<div style="color: #787588; margin-top: 16px;">Post by {handle}</div>"#,
-            r#"<div style="font-weight: bold;">View on Eunha</div></a></blockquote> "#,
+            r#"<div style="font-weight: bold;">View on eunha</div></a></blockquote> "#,
             r#"<script data-allowed-prefixes="{base_url}/" async src="{base_url}/embed.js"></script>"#,
         ),
         status_url = status_url,

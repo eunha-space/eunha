@@ -4,7 +4,7 @@
 //! their role asks for when they have none.
 //!
 //! Mastodon keeps the pending sign-in in the session (`attempt_user_id` and
-//! `attempt_user_updated_at`). Eunha's sign-in forms have no session, so the
+//! `attempt_user_updated_at`). eunha's sign-in forms have no session, so the
 //! pending sign-in lives in Redis under a random token the form carries, and
 //! expires after an hour. As in Mastodon, a change to the user in between
 //! (`users.updated_at`) sends the person back to the password.
@@ -599,7 +599,7 @@ async fn valid_webauthn_credential(
     }
 }
 
-/// `on_authentication_success`, as far as Eunha's sign-in needs it: the
+/// `on_authentication_success`, as far as eunha's sign-in needs it: the
 /// second-factor attempts forgotten, the sign-in recorded, and the user told
 /// if it looks like someone else (`SuspiciousSignInDetector`).
 async fn on_authentication_success(

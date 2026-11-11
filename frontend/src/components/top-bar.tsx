@@ -141,7 +141,7 @@ function useNavItems(
   invites: { count: number | null; hasAvailable: boolean },
 ): NavItem[] {
   // The rail lists the places you read. On Mastodon that middle section is
-  // custom feeds. Eunha also links home and local timelines, which were a
+  // custom feeds. eunha also links home and local timelines, which were a
   // tab strip inside the column — a leftover
   // from a thinner sidebar, and on a small invite-only server the local feed
   // is the community rather than a curiosity. So they live here. Local and
@@ -199,7 +199,7 @@ function useNavItems(
 
 // The server's name leads, not the software's. Mastodon 5.0 demotes its own
 // logo so an instance reads as itself with a "powered by" line underneath;
-// Eunha has always shown the instance title here, and this gives it the weight
+// eunha has always shown the instance title here, and this gives it the weight
 // that decision implies.
 function ServerMark({
   title,
@@ -221,7 +221,7 @@ function ServerMark({
       )}
       <span className="min-w-0">
         <span className="block truncate text-lg font-semibold">{title}</span>
-        <span className="text-muted-foreground block text-xs">powered by Eunha</span>
+        <span className="text-muted-foreground block text-xs">powered by eunha</span>
       </span>
     </Link>
   )
@@ -652,7 +652,7 @@ function TopBarInner({
 
 // The site title the server put in `<title>`, read when the app loads: once a
 // page has set its own title, `document.title` no longer says it.
-const serverTitle = document.title === 'Eunha' ? null : document.title
+const serverTitle = document.title === 'eunha' ? null : document.title
 
 // `title` is the page's, for the browser tab only; the rail and the mobile
 // header always name the server.

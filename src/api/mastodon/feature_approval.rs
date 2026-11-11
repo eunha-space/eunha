@@ -3,7 +3,7 @@
 //! Mastodon's `REST::AccountSerializer` answers it from `current_user`, for
 //! every account it renders, wherever that account sits in the response, and
 //! `StatusCacheHydrator#hydrate_account` sets it again on a payload rendered
-//! once and handed to many receivers. Eunha renders accounts in many places
+//! once and handed to many receivers. eunha renders accounts in many places
 //! that do not know the viewer, so, as the hydrator does, it is set on what
 //! was rendered: once per response, for every account object in it.
 //!

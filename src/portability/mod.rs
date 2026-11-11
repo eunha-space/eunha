@@ -7,7 +7,7 @@
 //! This is not `eunha import-mastodon` (*src/import.rs*), which moves a
 //! whole instance's database; this is one account's lists and archive.
 //!
-//! Mastodon serves all of it from web forms. Eunha's client is a single-page
+//! Mastodon serves all of it from web forms. eunha's client is a single-page
 //! app, so it is served over REST under `/api/eunha/v1/` (the
 //! `data-portability-rest-api` divergence); the handlers are in
 //! *src/api/eunha/portability.rs*.

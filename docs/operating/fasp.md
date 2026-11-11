@@ -4,10 +4,10 @@ Auxiliary service providers
 A Fediverse Auxiliary Service Provider (FASP) is a service a server hands work
 to that it cannot do well alone: finding accounts it has never heard of,
 recommending whom to follow, noticing what is trending. Mastodon talks to
-them as an experimental feature, and Eunha ports that implementation — its
+them as an experimental feature, and eunha ports that implementation — its
 tables, its endpoints, its wire formats and its signatures — so that a
-provider written against Mastodon works against Eunha unchanged. The protocol
-is specified in the [FASP specifications]; where the two disagree, Eunha
+provider written against Mastodon works against eunha unchanged. The protocol
+is specified in the [FASP specifications]; where the two disagree, eunha
 follows Mastodon's code.
 
 [FASP specifications]: https://github.com/mastodon/fediverse_auxiliary_service_provider_specifications
@@ -17,7 +17,7 @@ Turning it on
 -------------
 
 Mastodon reads `EXPERIMENTAL_FEATURES=fasp` from its environment. Instances
-sharing a process share an environment, so Eunha reads the list from each
+sharing a process share an environment, so eunha reads the list from each
 instance's `[instance]` table, and a `SIGHUP` reload picks up a change:
 
 ~~~~ toml
@@ -35,7 +35,7 @@ Registering a provider
 
 A provider registers itself: it is given the instance's address, and posts its
 name, base URL, its own identifier for the server and its Ed25519 public key to
-`POST /api/fasp/registration`. Eunha records it unconfirmed with a new Ed25519
+`POST /api/fasp/registration`. eunha records it unconfirmed with a new Ed25519
 key pair of its own, and answers with the provider's id here, its public key,
 and the page that finishes the registration,
 `https://<domain>/admin/fasp/providers/<id>/registration/new`.
@@ -72,10 +72,10 @@ them with Linzer:
 
  -  A request covers `@method`, `@target-uri` and `content-digest`, and every
     request carries a `Content-Digest` (RFC 9530), an empty body's included.
-    Eunha's requests are keyed by the identifier the provider gave; a
+    eunha's requests are keyed by the identifier the provider gave; a
     provider's are keyed by its id here, must be no more than five minutes old,
     and must come from a confirmed provider.
- -  An answer covers `@status` and `content-digest`, without a `keyid`. Eunha
+ -  An answer covers `@status` and `content-digest`, without a `keyid`. eunha
     signs each answer its provider API gives — refusals excepted, as Rails skips
     the signing for those — and refuses an answer from a provider whose
     `Content-Digest` is missing or not exactly its body's, or whose signature
@@ -106,7 +106,7 @@ With the data sharing capability, a provider subscribes to events with
 `account` or `content`, a `subscriptionType` of `lifecycle` or `trends`, a
 `maxBatchSize`, and for trends a `threshold` whose `timeframe` (minutes),
 `shares`, `likes` and `replies` default to 15, 3, 3 and 3 — and withdraws one
-with `DELETE …/event_subscriptions/:id`. Eunha then posts announcements to the
+with `DELETE …/event_subscriptions/:id`. eunha then posts announcements to the
 provider's `/data_sharing/v0/announcements`:
 
  -  a status is announced as `new`, `update` and `delete` when it is public and
@@ -116,15 +116,15 @@ provider's `/data_sharing/v0/announcements`:
  -  a status is announced as `trending` when a favourite, boost or reply brings
     what it has had within the subscription's timeframe to its threshold.
 
-The hooks sit where Eunha creates, edits and deletes statuses — posting,
+The hooks sit where eunha creates, edits and deletes statuses — posting,
 scheduled posts, boosts, and what arrives over federation — where it favourites
 them, and where it creates accounts, updates a profile and deletes an account.
-Eunha does not yet record the `discoverable` and `indexable` flags remote
+eunha does not yet record the `discoverable` and `indexable` flags remote
 actors publish, so for now only local accounts and their posts qualify.
 
 A provider asks for what already exists with
 `POST /api/fasp/data_sharing/v0/backfill_requests`, naming a category and a
-`maxCount` (100 when not given). Eunha announces the newest batch at once —
+`maxCount` (100 when not given). eunha announces the newest batch at once —
 discoverable accounts other than the instance actor, or public statuses that are
 not boosts by indexable accounts — saying whether more are left, and announces
 each next one when the provider posts to

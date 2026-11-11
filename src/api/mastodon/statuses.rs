@@ -651,7 +651,7 @@ pub struct DeleteStatusParams {
 /// `Api::V1::StatusesController#destroy`: the status rendered as it was, then
 /// discarded with its boosts and unpinned, and removed by
 /// `RemovalWorker`, which keeps its media for a redraft unless
-/// `delete_media` is given. Eunha removes it before answering.
+/// `delete_media` is given. eunha removes it before answering.
 pub async fn delete_status(
     state: AppState,
     Path(id): Path<i64>,

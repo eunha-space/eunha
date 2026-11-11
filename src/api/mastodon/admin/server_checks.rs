@@ -83,7 +83,7 @@ fn data_str<'a>(data: &'a Value, key: &str) -> &'a str {
     data[key].as_str().unwrap_or_default()
 }
 
-/// `admin_server_check_lead`, with the commands Eunha's own.
+/// `admin_server_check_lead`, with the commands eunha's own.
 fn lead(check: &Check) -> Option<String> {
     if check.status == status::ERROR {
         return Some(data_str(&check.data, "error").to_owned());
@@ -127,7 +127,7 @@ fn lead(check: &Check) -> Option<String> {
             data_str(data, "mismatched_indexes_str")
         ),
         (_, "preset") => {
-            "Your Elasticsearch cluster has more than one node, but Eunha is not configured to use them"
+            "Your Elasticsearch cluster has more than one node, but eunha is not configured to use them"
                 .to_owned()
         }
         (_, "preset_single_node") => {

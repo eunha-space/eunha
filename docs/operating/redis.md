@@ -1,7 +1,7 @@
 Shared Redis
 ============
 
-Eunha uses unprefixed Redis keys by default, which is appropriate when an
+eunha uses unprefixed Redis keys by default, which is appropriate when an
 instance has a dedicated Redis process. A pooled deployment must give every
 instance a unique prefix and a Redis user restricted to that prefix:
 
@@ -10,9 +10,9 @@ redis_url = "redis://tenant-example:password@redis-pool:6379/0"
 redis_key_prefix = "tenant-example"
 ~~~~
 
-The prefix may contain ASCII letters, digits, hyphens and underscores. Eunha
+The prefix may contain ASCII letters, digits, hyphens and underscores. eunha
 adds the separating colon, so the ACL key pattern for the example is
-`~tenant-example:*`. Every Redis key Eunha owns — feeds (`feed:home:<id>`,
+`~tenant-example:*`. Every Redis key eunha owns — feeds (`feed:home:<id>`,
 `feed:list:<id>`) and the boosts each feed tracks (`feed:home:<id>:reblogs` and
 `feed:home:<id>:reblogs:<status>`, likewise for lists), ActivityPub and
 preview card locks and the lock an unfollow takes on the two accounts
@@ -38,7 +38,7 @@ the translation service, the JSON-LD contexts fetched to check Linked Data
 signatures (`jsonld:context:<url>`), what ojak remembers for the inbox (the
 activities already processed, `ojak:inbox:<origin>:<id>:<digest>`, for a day;
 and the remote keys
-Eunha does not store in `accounts`, `ojak:key:<key id>`, for an hour), the
+eunha does not store in `accounts`, `ojak:key:<key id>`, for an hour), the
 search index queues
 (`chewy:queue:<Index>`, see [search](./search)), the counts that limit how many
 new remote
@@ -63,7 +63,7 @@ connections listen on. Pub/sub channels have ACL patterns of their own, so the
 tenant user needs `&tenant-example:*` as well as `~tenant-example:*`.
 
 Do not treat a prefix as authorization. Give each instance a distinct Redis
-user, the matching key pattern, and only the commands Eunha uses:
+user, the matching key pattern, and only the commands eunha uses:
 
 ~~~~
 +get +set +setex +exists +fcall +zadd +zremrangebyrank +zrem +zcard
@@ -84,7 +84,7 @@ queues, and is only used when Elasticsearch is enabled.
 The hosting provisioner installs the fixed `eunha_compare_delete` function used
 for lock release. Tenant users receive `FCALL`, but not `EVAL`, `EVALSHA`,
 `SCRIPT` or `FUNCTION`, so a compromised credential cannot submit arbitrary Lua
-to the shared event loop. Dedicated Redis remains zero-configuration: Eunha
+to the shared event loop. Dedicated Redis remains zero-configuration: eunha
 falls back to its existing inline script when the named function is absent.
 `INFO` is optional; without it the admin API gives the Redis version as
 null. Process-wide memory from `INFO memory` is never exposed when a key
@@ -99,7 +99,7 @@ Redis.
 Feeds, the remembered oEmbed endpoints, and ojak's JSON-LD contexts and inbox
 records use `redis_url`; they are bounded cache state. The feeds are Mastodon's
 keys and nothing else, so a Mastodon process given the same Redis and prefix
-reads and writes the same feeds. Eunha once also kept a marker beside each feed
+reads and writes the same feeds. eunha once also kept a marker beside each feed
 it had built, `feed:home:<id>:populated` and `feed:list:<id>:populated`;
 nothing reads those any more, and each is a few bytes, so they can be left, or
 removed with

@@ -4,7 +4,7 @@ Streaming
 Mastodon's streaming API is a separate Node server, *streaming/index.js*, that
 the Rails app talks to through Redis: Rails publishes `{event, payload}`
 messages on `timeline:*` channels, and the streaming server passes them to the
-connections that subscribed. Eunha serves both halves, through Redis as
+connections that subscribed. eunha serves both halves, through Redis as
 Mastodon does, with the same channels and the same messages:
 
  -  *src/streaming.rs* is the bus: `PUBLISH` on the `timeline:*` channels,
@@ -58,7 +58,7 @@ Every connection needs an access token: the `Authorization` header, else the
 `access_token` parameter, else the `Sec-WebSocket-Protocol` header, whose first
 protocol the WebSocket then echoes back. The token must be unrevoked, and its
 user neither disabled nor suspended; the streaming server does not look at a
-token's expiry, and neither does Eunha (Eunha issues none that expire). A
+token's expiry, and neither does eunha (eunha issues none that expire). A
 WebSocket that fails this is answered before the upgrade, with 401 and the
 reason in `X-Error-Message`; an event stream with 401 and `{"error": …}`.
 

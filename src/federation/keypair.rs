@@ -22,7 +22,7 @@ pub const MAIN_KEY_FRAGMENT: &str = "#main-key";
 const TYPE_RSA: i32 = 0;
 const TYPE_ED25519: i32 = 1;
 
-/// The fragment Eunha gives an account's Ed25519 assertion key.
+/// The fragment eunha gives an account's Ed25519 assertion key.
 ///
 /// Distinct from `#main-key`, which is the RSA key that signs HTTP requests:
 /// the two live side by side, and a Multikey published under this fragment is

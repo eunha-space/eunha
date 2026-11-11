@@ -1,4 +1,4 @@
-//! Eunha's version, and the Mastodon release it implements.
+//! eunha's version, and the Mastodon release it implements.
 //!
 //! Both halves come from `Cargo.toml`'s `version`, which carries the target
 //! Mastodon release as semver build metadata (`0.2.0+mastodon.4.7.0`).
@@ -7,7 +7,7 @@
 //!
 //! Mastodon: lib/mastodon/version.rb
 
-/// Eunha's own version, without the `+mastodon.x.y.z` build metadata.
+/// eunha's own version, without the `+mastodon.x.y.z` build metadata.
 pub const EUNHA: &str = env!("EUNHA_VERSION");
 
 /// The full version, as releases are tagged: `0.2.0+mastodon.4.7.0`.

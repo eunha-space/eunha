@@ -433,7 +433,7 @@ async fn test_media_attach_to_status() {
     );
 }
 
-/// Migration 035 gives the rows Eunha wrote with its old type numbers
+/// Migration 035 gives the rows eunha wrote with its old type numbers
 /// Mastodon's, telling them apart by content type, and leaves Mastodon's own.
 #[tokio::test]
 async fn test_migration_033_swaps_only_the_media_types_eunha_wrote() {
@@ -446,13 +446,13 @@ async fn test_migration_033_swaps_only_the_media_types_eunha_wrote() {
     // file_meta, type after)
     type Row<'a> = (i32, Option<&'a str>, bool, &'a str, Option<&'a str>, i32);
     let rows: [Row; 11] = [
-        // Eunha's audio, read by Mastodon as unknown
+        // eunha's audio, read by Mastodon as unknown
         (3, Some("audio/mpeg"), false, "", None, 4),
-        // Eunha's audio upload still waiting to be transcoded
+        // eunha's audio upload still waiting to be transcoded
         (3, None, true, "", None, 4),
-        // Eunha's unknown remote attachment, read by Mastodon as audio
+        // eunha's unknown remote attachment, read by Mastodon as audio
         (4, Some("application/pdf"), false, remote, None, 3),
-        // Eunha's record of one from a `reject_media` domain
+        // eunha's record of one from a `reject_media` domain
         (4, None, false, remote, Some(focus), 3),
         (4, None, false, remote, None, 3),
         // Mastodon's unknown: a remote attachment it never downloaded

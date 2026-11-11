@@ -1,24 +1,24 @@
-Eunha
+eunha
 =====
 
 Rust re-implementation of Mastodon, with drop-in database compatibility.
 
-Eunha aims for 100% Mastodon database schema compatibility, so that Eunha can
+eunha aims for 100% Mastodon database schema compatibility, so that eunha can
 be a drop-in replacement on top of your existing Mastodon database.
 
-We track the latest Mastodon release, and provide migration path from old Eunha
+We track the latest Mastodon release, and provide migration path from old eunha
 database schema to updated Mastodon database schema.
 
-It's not Eunha's goal to completely mimic Mastodon's feature set or its
-implementation detail, and Eunha may contain behavioral differences.
+It's not eunha's goal to completely mimic Mastodon's feature set or its
+implementation detail, and eunha may contain behavioral differences.
 
 
-Running Eunha
+Running eunha
 -------------
 
- -  [Download Eunha](./operating/downloads.md): ready-made macOS and Linux
+ -  [Download eunha](./operating/downloads.md): ready-made macOS and Linux
     binaries.
- -  [Try Eunha](./operating/trying.md): an isolated trial with a public HTTPS
+ -  [Try eunha](./operating/trying.md): an isolated trial with a public HTTPS
     tunnel.
  -  [Container images](./operating/containers.md): GitHub Actions builds,
     image tags and running the image.
@@ -46,7 +46,7 @@ Mastodon compatibility
  -  [API entity parity](./mastodon/entity-parity.md),
     [differential testing](./mastodon/differential-testing.md) and
     [federating with a live Mastodon](./mastodon/federation-testing.md): the
-    harnesses that check Eunha against upstream.
+    harnesses that check eunha against upstream.
  -  [Deliberate divergences](./mastodon/divergences.md) from Mastodon, and what
     is [outstanding from 5.0.0-beta.1](./mastodon/5.0.0-beta.1.md).
 
@@ -55,7 +55,7 @@ Design
 ------
 
  -  [Protocol extension](./design/protocol.md): where ActivityPub scales badly
-    and what Eunha designs for it.
+    and what eunha designs for it.
  -  [Benchmarking](./design/benchmarking.md): what a small instance costs, and
     what sharing a process saves.
  -  [Contributing](./contributing/index.md) and

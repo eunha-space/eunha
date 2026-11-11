@@ -1,5 +1,5 @@
 // Standard Mastodon OAuth `authorization_code` flow, run client-side via
-// masto.js against Eunha's existing endpoints. No backend changes required.
+// masto.js against eunha's existing endpoints. No backend changes required.
 import { oauthClient, restClient } from './masto.ts'
 import { disableBrowserPush } from './lib/browser-push.ts'
 import { clearMe, loadMe, type MeAccount } from './me.ts'
@@ -99,7 +99,7 @@ async function ensureClient(): Promise<ClientCreds> {
   if (existing && existing.scopes === SCOPES) return existing
 
   const app = await restClient().v1.apps.create({
-    clientName: 'Eunha Web',
+    clientName: 'eunha Web',
     redirectUris: redirectUri(),
     scopes: SCOPES,
     website: window.location.origin,

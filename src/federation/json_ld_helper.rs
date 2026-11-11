@@ -3,7 +3,7 @@
 //! Mastodon dispatches on what a peer sent rather than on what it means, so
 //! it reads the raw JSON: `type` may be a string or an array, `actor` an IRI
 //! or an embedded object, `url` a string, a `Link` or a list of either. These
-//! read a [`serde_json::Value`] with the same semantics, so that Eunha answers
+//! read a [`serde_json::Value`] with the same semantics, so that eunha answers
 //! as Mastodon does for the same document.
 //!
 //! Where Mastodon's Ruby would raise on a shape it does not expect — the `id`

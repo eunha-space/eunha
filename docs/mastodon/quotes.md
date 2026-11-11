@@ -1,7 +1,7 @@
 Quotes
 ======
 
-Eunha keeps quotes in Mastodon's `quotes` table and moves them through the
+eunha keeps quotes in Mastodon's `quotes` table and moves them through the
 states Mastodon does: `pending`, `accepted`, `rejected`, `revoked` and
 `deleted`. The model's own rules live in *src/quotes.rs* (`Quote#accept!`,
 `Quote#reject!`, the counter they move, `TagManager#approval_uri_for`,

@@ -1474,7 +1474,7 @@ async fn test_an_edit_silences_the_mentions_it_drops() {
     assert_eq!(mentions(&ctx).await, [("bob".to_owned(), false)]);
 }
 
-/// Migration 034: a local post's history as Eunha wrote it — each edit
+/// Migration 034: a local post's history as eunha wrote it — each edit
 /// recording the version it replaced, stamped with that version's own time —
 /// gains its current version as the last row; a history as Mastodon wrote
 /// it, ending with the current version at `edited_at`, is left alone.
@@ -1495,7 +1495,7 @@ async fn test_migration_appends_the_current_version_to_eunha_histories() {
     .execute(&ctx.db)
     .await
     .unwrap();
-    // Eunha's shape: v1 at created_at, v2 at the first edit; v3 is the post.
+    // eunha's shape: v1 at created_at, v2 at the first edit; v3 is the post.
     // Mastodon's: v1 at created_at, v2 at edited_at, which is the post.
     for (status_id, text, after) in [
         (eunha_written, "eunha v1", "0 hours"),
@@ -1621,7 +1621,7 @@ async fn test_status_history_keeps_each_versions_descriptions() {
 ///
 /// Upstream's `StatusEditSerializer#content` is `status_content_format(object)`
 /// — the same helper a status goes through — so a past version's newlines and
-/// links come back as markup. Eunha used to clean the stored source text for
+/// links come back as markup. eunha used to clean the stored source text for
 /// historical entries and render only the current one, which returned a past
 /// version as one run-on line with a bare URL in it. The count assertion above
 /// could not see that, which is how it lasted.

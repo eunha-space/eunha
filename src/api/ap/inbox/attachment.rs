@@ -1,5 +1,5 @@
 //! Pure helpers for parsing ActivityPub attachment/media JSON into the shapes
-//! Eunha stores and serves. No I/O or database access — every function here is
+//! eunha stores and serves. No I/O or database access — every function here is
 //! a pure transformation of `serde_json` values.
 //!
 //! Mastodon: app/lib/activitypub/parser/media_attachment_parser.rb

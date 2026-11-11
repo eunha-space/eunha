@@ -333,7 +333,7 @@ async fn test_a_signed_post_from_elsewhere_needs_a_reason_to_be_taken() {
     assert_eq!(taken, 0);
 }
 
-/// The key Eunha marks a relayed activity with.
+/// The key eunha marks a relayed activity with.
 fn eunha_through_relay() -> &'static str {
     "eunha:requestedThroughRelay"
 }

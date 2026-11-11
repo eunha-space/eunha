@@ -295,7 +295,7 @@ pub fn attachment_keys(id: i64, file: Option<&str>, thumbnail: Option<&str>) -> 
             }
         }
     }
-    // Eunha once kept an upload's small style as `small.<ext>`, recorded as
+    // eunha once kept an upload's small style as `small.<ext>`, recorded as
     // its thumbnail.
     if let Some(name) = thumbnail.filter(|n| !n.is_empty()) {
         let key = format!("media_attachments/files/{partition}/small/{name}");

@@ -1,4 +1,4 @@
-Downloading Eunha
+Downloading eunha
 =================
 
 Download a ready-made executable from [GitHub Releases]. The **Downloads**

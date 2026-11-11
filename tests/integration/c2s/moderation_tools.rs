@@ -1,5 +1,5 @@
 //! The moderation tools Mastodon has only as server-rendered admin pages, as
-//! Eunha serves them over REST: report and account notes, the audit log,
+//! eunha serves them over REST: report and account notes, the audit log,
 //! warning presets, username blocks, strikes and appeals, an account's posts
 //! and relationships, and managing a user.
 
@@ -1007,7 +1007,7 @@ async fn test_user_access_management() {
     let token = token.expect("a confirmation token is sent");
     // `pending_reconfirmation?` picks the reconfirmation template.
     let mail = ctx
-        .mail_to("Bob.New@test.invalid", "Eunha: Confirm email for")
+        .mail_to("Bob.New@test.invalid", "eunha: Confirm email for")
         .await
         .expect("the reconfirmation mail");
     assert!(mail.html.contains(&format!("/auth/confirm?token={token}")));

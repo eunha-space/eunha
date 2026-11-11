@@ -311,7 +311,7 @@ fn document(channel: String) -> String {
 }
 
 fn generator() -> String {
-    format!("Eunha v{}", crate::version::EUNHA)
+    format!("eunha v{}", crate::version::EUNHA)
 }
 
 async fn items(

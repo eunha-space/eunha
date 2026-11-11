@@ -3,7 +3,7 @@ Signing keys
 
 Mastodon keeps local accounts' signing keys in `keypairs`, with the private half
 encrypted the way Rails encrypts columns. Since 5.0 there is nowhere else: the
-old `accounts.private_key` column is gone. Eunha needs the same secrets that
+old `accounts.private_key` column is gone. eunha needs the same secrets that
 Mastodon requires, and reads and writes that form:
 
 ~~~~

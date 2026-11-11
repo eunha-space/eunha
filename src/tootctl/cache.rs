@@ -8,7 +8,7 @@ use crate::state::AppState;
 pub enum Command {
     /// Clear out the cache storage.
     ///
-    /// Deletes what Eunha keeps where Mastodon keeps `Rails.cache`, under the
+    /// Deletes what eunha keeps where Mastodon keeps `Rails.cache`, under the
     /// instance's Redis key prefix only.
     Clear,
     /// Update hard-cached counters.
@@ -60,10 +60,10 @@ pub async fn run(state: &AppState, command: Command) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The key families Eunha keeps where Mastodon would use `Rails.cache`.
+/// The key families eunha keeps where Mastodon would use `Rails.cache`.
 ///
 /// Mastodon's cache store namespaces every entry under `cache:`, and
-/// `Rails.cache.clear` deletes that namespace. Eunha writes some of its
+/// `Rails.cache.clear` deletes that namespace. eunha writes some of its
 /// entries there under Mastodon's own names, and others, which Mastodon reads
 /// from its cache by these names, without the namespace; each is something
 /// worked out again, or fetched again, when it is missing.

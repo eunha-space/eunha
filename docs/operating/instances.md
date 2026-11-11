@@ -16,7 +16,7 @@ base_url = "https://r2.eunha.space"
 The prefix is an ownership boundary for object layout, not authorization;
 bucket credentials can still access other prefixes in the same bucket.
 
-Every Eunha process serves a registry of instances and hands each request to
+Every eunha process serves a registry of instances and hands each request to
 one of them by its `Host` header. Run without arguments, it serves the single
 instance in `config.toml` and the environment, as it always has, and answers
 whatever host it is asked by. Given a directory, it serves one instance per
@@ -35,7 +35,7 @@ than per instance. Three things follow from that:
  -  **Tenant files are read on their own.** Environment variables belong to the
     process, so none of them overrides a tenant's file.
  -  **Every tenant must agree on what the process owns:** `bind_address`,
-    because there is one listener. Eunha refuses to start otherwise, and when
+    because there is one listener. eunha refuses to start otherwise, and when
     two files claim one domain. `allowed_private_networks` is each tenant's
     own: every instance has its own SSRF-guarded client, which reaches only
     the private networks its own file names.
@@ -75,7 +75,7 @@ instance from taking more than its share:
     limit on open files: deliveries in flight, connections kept for reuse,
     database and Redis connections. A service launchd starts has a soft
     limit of 256 unless its plist sets another, which a fan-out passes, so
-    Eunha raises its own soft limit to the hard one at startup — 92,160 on
+    eunha raises its own soft limit to the hard one at startup — 92,160 on
     macOS — and warns if that is still under 4,096.
 
 And a process refuses to start with more than it can hold, before any instance
@@ -84,7 +84,7 @@ is started:
  -  **At most 50 instances**, or `process_max_tenants` in `[limits]`. Every
     instance in a process goes down with it, so this is how many one crash
     may take — a decision about the failure domain, not merely about density.
- -  **Pools that fit their database server.** Eunha asks each PostgreSQL
+ -  **Pools that fit their database server.** eunha asks each PostgreSQL
     server its instances use how many connections it accepts —
     `max_connections` less the reserved ones — and refuses when their
     `database_pool.max_connections` add up to more. Overrun, that budget
@@ -146,7 +146,7 @@ Handles on another domain
 
 An instance's accounts may have handles on one domain while it is served from
 another: `@alice@example.com`, with the server at `social.example.com`. These
-are Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN`, and Eunha's `domain` and
+are Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN`, and eunha's `domain` and
 `web_domain`:
 
 ~~~~ toml
@@ -156,7 +156,7 @@ web_domain = "social.example.com"
 ~~~~
 
 A Mastodon `.env.production` sets them as `LOCAL_DOMAIN` and `WEB_DOMAIN`,
-which Eunha reads too. Without `web_domain` the instance is served from
+which eunha reads too. Without `web_domain` the instance is served from
 `domain`, as it always was.
 
 What each one is used for follows Mastodon:
@@ -171,7 +171,7 @@ What each one is used for follows Mastodon:
     hashtag links, the streaming API, OAuth, and the links in emails.
     Passkeys are registered for it.
 
-Eunha answers on both, and on any aliases, so WebFinger for
+eunha answers on both, and on any aliases, so WebFinger for
 `acct:alice@example.com` works whichever host it reaches. Most operators serve
 something else at `example.com` and send its WebFinger to the instance instead:
 
@@ -217,7 +217,7 @@ A new instance starts with Mastodon's defaults (titled `Mastodon`,
 registrations closed) until an administrator saves the settings, or a hosting
 console writes them.
 
-Older Eunha read `title`, `description`, `short_description`, `contact_email`,
+Older eunha read `title`, `description`, `short_description`, `contact_email`,
 `registrations_open`, `approval_required`, `privacy_policy` and
 `terms_of_service` from `[instance]`. They are read no longer, and a server
 that finds them set logs a warning. `eunha migrate --tenants <dir>` copies them
@@ -235,7 +235,7 @@ Authorized fetch and limited federation
 ---------------------------------------
 
 Mastodon reads these deployment modes from its environment. Instances sharing
-a process share its environment too, so Eunha reads them from each instance's
+a process share its environment too, so eunha reads them from each instance's
 `[instance]` table instead, and a `SIGHUP` reload picks up a change to them:
 
 ~~~~ toml
@@ -279,14 +279,14 @@ when fetching a link preview.
 `force_default_locale` is Mastodon's `FORCE_DEFAULT_LOCALE`, which a lone
 instance configured from the environment also takes, forced only by the value
 `true` as Mastodon's check is. When it is on, a request's `Accept-Language` is
-not asked: Eunha reads every request as asking for the default locale, so the
+not asked: eunha reads every request as asking for the default locale, so the
 locale a web sign-up saves, the language a translation is into, trends, an
 email subscription and the server-rendered pages (which speak English or
 Korean) all take `default_locale` unless a `lang` parameter or the user's own
 locale names another, as `Localized` does.
 
 `experimental_features` turns on what Mastodon keeps behind
-`EXPERIMENTAL_FEATURES`; the one Eunha knows, `fasp`, is described under
+`EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under
 [auxiliary service providers](./fasp).
 
 Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that
@@ -327,7 +327,7 @@ Translation
 -----------
 
 Mastodon reads its machine translation service from `DEEPL_API_KEY`,
-`DEEPL_PLAN`, `LIBRE_TRANSLATE_ENDPOINT` and `LIBRE_TRANSLATE_API_KEY`. Eunha
+`DEEPL_PLAN`, `LIBRE_TRANSLATE_ENDPOINT` and `LIBRE_TRANSLATE_API_KEY`. eunha
 reads the same settings from each instance's `[instance.translation]` table,
 so instances sharing a process can use different services, or none:
 
@@ -461,7 +461,7 @@ secret_key_base = "…the 128 hex characters from .env.production…"
 
 In the environment of a lone instance, `INSTANCE__SECRET_KEY_BASE` or
 Mastodon's own `SECRET_KEY_BASE` sets it, so a copied *.env.production* is
-enough. With it, Eunha signs and digests what Mastodon 4.7.1 does with it,
+enough. With it, eunha signs and digests what Mastodon 4.7.1 does with it,
 byte for byte, and reads what that Mastodon handed out before the switch:
 
  -  async refresh ids, Rails' `message_verifier('async_refreshes')`;
@@ -474,9 +474,9 @@ byte for byte, and reads what that Mastodon handed out before the switch:
  -  the token in a Web Push's `Unsubscribe-URL`,
     `generate_token_for(:unsubscribe)`, good for 48 hours.
 
-Without it, each of these uses a scheme of Eunha's own (the divergences that
+Without it, each of these uses a scheme of eunha's own (the divergences that
 name `secret_key_base`), and what Mastodon issued is not recognised. What
-Eunha issued under those schemes keeps working after the secret is
+eunha issued under those schemes keeps working after the secret is
 configured, so it can be added at any time. Changing or removing it
 invalidates whatever was signed with it, as rotating `SECRET_KEY_BASE` does
 on Mastodon; it also signs Mastodon's sessions, so keep it as secret.
@@ -512,5 +512,5 @@ allows growth again, even while its old TOML file remains on disk. A standalone
 operator may omit the expiry for a deliberately persistent manual restriction;
 a hosting control plane should always lease a restriction from a fresh reading.
 The control plane owns allowances, warnings, grace periods and billing policy;
-Eunha only applies the decision. See `leased-hosting-growth-limits` in the
+eunha only applies the decision. See `leased-hosting-growth-limits` in the
 divergence registry.

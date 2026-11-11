@@ -22,7 +22,7 @@ to an account someone follows, or addressed to a local account; a private
 one from a followed account, or passed on by one, or addressed to a local
 account; a direct one
 only addressed to a local account. Anything fetched on purpose is taken, and
-so is anything delivered to a local account's own inbox, whose owner Eunha
+so is anything delivered to a local account's own inbox, whose owner eunha
 remembers on the job (Mastodon's `delivered_to_account_id`).
 
 Every account already known in the audience, and the owner of the inbox it
@@ -86,7 +86,7 @@ left from before, answers 422.
 
 Mastodon resolves a context URL of ours, `/contexts/{account}-{status}`, by
 looking the second half up as the conversation's id while the URL carries
-the root status's id there; Eunha does the same, so such a URL rarely finds
+the root status's id there; eunha does the same, so such a URL rarely finds
 the conversation, and the reply joins its thread's instead.
 
 
@@ -218,7 +218,7 @@ their meta. The API, as Mastodon's does for an attachment it has no file for,
 points their `url` and `preview_url` at `/media_proxy/:id/original` and
 `/media_proxy/:id/small`, as it does for any remote attachment of a type it
 does not know; every other remote attachment is shown from its own server,
-since Eunha keeps no copies.
+since eunha keeps no copies.
 
 `/media_proxy/:id` gives an attachment only to a viewer who may see its post
 (`MediaAttachmentPolicy#download?`, `StatusPolicy#show?` for the bearer of the
@@ -226,7 +226,7 @@ token, if any), or, once the post is discarded, to a moderator who handles
 reports; anyone else gets a 404, and in limited federation mode no one signed
 out gets anything. It answers with a 302 to the file, the thumbnail for
 `/small` when there is one. For an attachment with no file, where Mastodon
-would fetch it and send the viewer to its copy, Eunha sends the viewer to the
+would fetch it and send the viewer to its copy, eunha sends the viewer to the
 remote URL (its thumbnail's for `/small`); for one of a type Mastodon does not
 take, whose download fails, it answers 404; and for one from a `reject_media`
 domain, which Mastodon does not fetch, it sends the viewer to Paperclip's

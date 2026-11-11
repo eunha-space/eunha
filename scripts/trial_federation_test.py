@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise a real `eunha try` and Mastodon through public HTTPS tunnels.
 
-Requires Docker Compose, OpenSSH and a built Eunha binary. Credentials stay in
+Requires Docker Compose, OpenSSH and a built eunha binary. Credentials stay in
 memory or the private scratch directory; they are never printed. No existing
 instance or account is used. All containers and tunnels stop on exit; volumes
 and private configuration are retained for diagnosis.
@@ -87,7 +87,7 @@ def main():
         return command(['docker', 'compose', '-f', str(compose_file), *parts], input)
 
     try:
-        print('Starting a real Eunha trial through Pinggy…', flush=True)
+        print('Starting a real eunha trial through Pinggy…', flush=True)
         trial = subprocess.Popen([
             str(Path(args.binary).absolute()), 'try', '--email', 'trial@gmail.com',
             '--directory', str(trial_dir), '--port', str(args.trial_port),
@@ -181,7 +181,7 @@ JOIN accounts ON accounts.id = users.account_id CROSS JOIN app WHERE accounts.us
         command(['docker', 'compose', '-f', str(trial_dir / 'compose.json'), 'exec', '-T', 'postgres',
                  'psql', '-q', '-v', 'ON_ERROR_STOP=1', '-U', 'eunha', '-d', 'eunha'], sql)
         eunha_domain = trial_url.removeprefix('https://')
-        eunha = Server('Eunha trial', f'http://127.0.0.1:{args.trial_port}', token, {'Host': eunha_domain})
+        eunha = Server('eunha trial', f'http://127.0.0.1:{args.trial_port}', token, {'Host': eunha_domain})
         # Confirm the peer is publicly reachable before interpreting an AP
         # resolution failure as a server bug.
         with urllib.request.urlopen(mastodon_url + '/api/v2/instance', timeout=20) as response:

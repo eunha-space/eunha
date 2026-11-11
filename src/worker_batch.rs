@@ -3,7 +3,7 @@
 //! still running. The refresh is finished when the batch's last job leaves it.
 //!
 //! Sidekiq's client middleware adds a job to the batch that is current when
-//! the job is pushed, and Sidekiq hands a job its `jid`. Eunha's jobs have
+//! the job is pushed, and Sidekiq hands a job its `jid`. eunha's jobs have
 //! neither, so a job that belongs to a batch carries the batch's id and a
 //! `jid` of its own in its arguments, and is added to the batch before it is
 //! queued — a job run at once could otherwise leave the batch before it

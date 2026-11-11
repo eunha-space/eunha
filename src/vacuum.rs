@@ -213,7 +213,7 @@ pub async fn vacuum_media_attachments(state: &AppState, days: Option<i64>) -> an
     // `orphaned_media_attachments`: `unattached.created_before(TTL.ago)`.
     loop {
         let rows = sqlx::query!(
-            // Eunha keeps a scheduled post's media in its `params` rather
+            // eunha keeps a scheduled post's media in its `params` rather
             // than in `scheduled_status_id`, so those count as attached too.
             r#"SELECT m.id, m.file_file_name FROM media_attachments m
                WHERE m.status_id IS NULL AND m.scheduled_status_id IS NULL

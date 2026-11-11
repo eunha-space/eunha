@@ -1,10 +1,10 @@
-//! Portable actors and objects (FEP-ef61), as Eunha meets them: accounts and
+//! Portable actors and objects (FEP-ef61), as eunha meets them: accounts and
 //! statuses on other servers whose ids are `ap://did:key:…` rather than
 //! `https://…`.
 //!
 //! A portable id names a key, not a host, so nothing about it says where to
 //! send a request. Ojak fetches it from the gateways it hints at and keeps
-//! only a copy whose proof by the key holds. Eunha stores it by its
+//! only a copy whose proof by the key holds. eunha stores it by its
 //! canonical id, gives it the first gateway's host as its domain, which is
 //! also where its WebFinger address lives, and keeps its inbox as the
 //! `https` URL at that gateway, so that delivering to it is delivering to

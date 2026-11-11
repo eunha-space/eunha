@@ -2,7 +2,7 @@
 //! `settings` table as YAML, with `config/settings.yml`'s defaults for the
 //! ones never set.
 //!
-//! Eunha's instance configuration file carries some of what Mastodon keeps
+//! eunha's instance configuration file carries some of what Mastodon keeps
 //! here: the title, the descriptions, the contact address and whether
 //! registrations are open. For those the configuration stands where
 //! `config/settings.yml` stands in Mastodon: it is the default, and a value an

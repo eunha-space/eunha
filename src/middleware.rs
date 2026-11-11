@@ -918,7 +918,7 @@ pub fn open_without_user(method: &axum::http::Method, path: &str, limited: bool)
         "/api/v1/apps" | "/api/v1/accounts" => method == Method::POST,
         // `Api::V1::Peers::SearchController`, unless in limited federation mode.
         "/api/v1/peers/search" => !limited,
-        // Eunha's sign-in helpers for Elk, which come before any token.
+        // eunha's sign-in helpers for Elk, which come before any token.
         "/api/{server}/login" | "/api/{server}/oauth/{origin}" => true,
         // `Api::V1::Instances::BaseController`, unless in limited federation mode.
         _ if path.starts_with("/api/v1/instance/") => !limited,

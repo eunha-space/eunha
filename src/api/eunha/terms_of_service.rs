@@ -1,11 +1,11 @@
-//! The terms of service interstitial, for Eunha's own web client.
+//! The terms of service interstitial, for eunha's own web client.
 //!
 //! When an administrator notifies users of new terms, Mastodon mails the
 //! users active in the past year and flags the rest
 //! (`users.require_tos_interstitial`); its web app then shows a flagged user
 //! the terms in place of any page (`WebAppControllerConcern#
 //! redirect_to_tos_interstitial!`) until they open `/terms-of-service`, which
-//! clears the flag. Eunha's web app is a client of the API, so it asks here
+//! clears the flag. eunha's web app is a client of the API, so it asks here
 //! instead; see the `terms-of-service-interstitial-api` divergence.
 //!
 //! Mastodon: app/controllers/concerns/web_app_controller_concern.rb

@@ -142,7 +142,7 @@ jobs:
           if [ "$REF_TYPE" = tag ]; then
             tag="$REF_NAME"
             if ! gh release view "$tag" >/dev/null 2>&1; then
-              gh release create "$tag" --verify-tag --title "Eunha $tag" --generate-notes
+              gh release create "$tag" --verify-tag --title "eunha $tag" --generate-notes
             fi
           else
             tag=nightly
@@ -150,7 +150,7 @@ jobs:
             git tag -f "$tag" "$GITHUB_SHA"
             git push --force origin "refs/tags/$tag"
             if ! gh release view "$tag" >/dev/null 2>&1; then
-              gh release create "$tag" --prerelease --latest=false --title "Eunha nightly" --notes "Development downloads from main. See REVISION inside each archive for its source commit."
+              gh release create "$tag" --prerelease --latest=false --title "eunha nightly" --notes "Development downloads from main. See REVISION inside each archive for its source commit."
             fi
           fi
           gh release upload "$tag" downloads/eunha-*.tar.gz downloads/SHA256SUMS --clobber

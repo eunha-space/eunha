@@ -3,7 +3,7 @@ The job queue
 
 Mastodon hands its background work to Sidekiq: a mail to send in two
 minutes, a remote account to refresh, a provider to tell about a new post.
-Eunha keeps the same work in a table of its own, `eunha.jobs`, so that a job
+eunha keeps the same work in a table of its own, `eunha.jobs`, so that a job
 queued by one process is run by whichever process gets to it first, and a
 restart loses none of it.
 
@@ -103,7 +103,7 @@ Inbound activities
 An activity posted to an inbox is checked while its sender waits — its
 signature or proof, its actor, the domain blocks — and answered `202`; what
 it does is done by an `ActivityPub::ProcessingWorker` job on the `ingress`
-queue, retried eight times, as Mastodon queues it. Before 029, Eunha kept
+queue, retried eight times, as Mastodon queues it. Before 029, eunha kept
 these in a queue of their own, `eunha.inbox_jobs`; migration 029 hands
 whatever was waiting there to `eunha.jobs`, an activity that had failed for
 good to the dead set, and drops it. Its `[workers] inbox_workers`,
@@ -152,7 +152,7 @@ same kind of schedule:
     it.
  -  A `cron:` entry runs at its time of day on the UTC clock. Where
     *sidekiq.yml* picks the minute and hour at random each time Sidekiq boots,
-    Eunha picks them from the same ranges once for the instance, from a hash
+    eunha picks them from the same ranges once for the instance, from a hash
     of its domain: every process serving the instance, and every restart,
     agrees on the time, and instances on one host spread out over the range.
     The time each one picked is logged at debug level when the instance
@@ -177,7 +177,7 @@ task, named by its *sidekiq.yml* key:
 
 The tasks:
 
-| *sidekiq.yml* entry                            | Mastodon's schedule                   | Eunha                                                           |
+| *sidekiq.yml* entry                            | Mastodon's schedule                   | eunha                                                           |
 | ---------------------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
 | `scheduled_statuses_scheduler`                 | every 5 minutes                       | when the next scheduled post falls due; one process at a time   |
 | `trends_refresh_scheduler`                     | every 5 minutes, first after 4        | the same                                                        |
@@ -187,7 +187,7 @@ The tasks:
 | `follow_recommendations_scheduler`             | daily, at a random 06:00–09:59        | daily, at the instance's own time in 06:00–09:59 UTC            |
 | `user_cleanup_scheduler`                       | daily, at a random 04:00–06:59        | daily, at the instance's own time in 04:00–06:59 UTC            |
 | `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
-| `pghero_scheduler`                             | daily at 00:00                        | not run: Eunha has no PgHero                                    |
+| `pghero_scheduler`                             | daily at 00:00                        | not run: eunha has no PgHero                                    |
 | `instance_refresh_scheduler`                   | on the hour                           | on the hour, UTC                                                |
 | `accounts_statuses_cleanup_scheduler`          | every minute                          | the same                                                        |
 | `suspended_user_cleanup_scheduler`             | every minute                          | when the next deletion request falls due; one process at a time |
@@ -203,7 +203,7 @@ A self-destructing instance runs `self_destruct_scheduler`, every minute, and
 nothing else, as Mastodon replaces its schedule with it. The announcements
 `ScheduledStatusesScheduler` publishes and unpublishes are looked at every
 minute (`eunha_scheduled_announcements`). Failed deliveries a week old are
-pruned every hour, as Eunha's own task.
+pruned every hour, as eunha's own task.
 
 When each task last ran, and whether one is running:
 

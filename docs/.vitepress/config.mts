@@ -4,7 +4,7 @@ import { defineConfig } from "vitepress";
 // site/, which the Pages workflow deploys with this build copied under it.
 export default defineConfig({
   base: "/docs/",
-  title: "Eunha",
+  title: "eunha",
   description: "Mastodon, reimplemented in Rust",
   lang: "en",
   cleanUrls: true,
@@ -19,14 +19,14 @@ export default defineConfig({
       {
         text: "Getting started",
         items: [
-          { text: "Download Eunha", link: "/operating/downloads" },
-          { text: "Try Eunha", link: "/operating/trying" },
+          { text: "Download eunha", link: "/operating/downloads" },
+          { text: "Try eunha", link: "/operating/trying" },
           { text: "Container images", link: "/operating/containers" },
           { text: "The first account", link: "/operating/first-account" },
         ],
       },
       {
-        text: "Running Eunha",
+        text: "Running eunha",
         items: [
           { text: "Migrations", link: "/operating/migrations" },
           { text: "Importing a Mastodon instance", link: "/operating/importing" },

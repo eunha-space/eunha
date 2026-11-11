@@ -1,4 +1,4 @@
-Trying Eunha
+Trying eunha
 ============
 
 `eunha try` creates an isolated trial with PostgreSQL, Redis, S3-compatible
@@ -7,7 +7,7 @@ start its daemon first. Get the `eunha` binary from
 [GitHub Releases](./downloads.md), or see [Building the CLI](#building-the-cli)
 below.
 The first run pulls container images and applies migrations explicitly before
-starting Eunha. It creates an `owner` account and prints its random password;
+starting eunha. It creates an `owner` account and prints its random password;
 keep that password to sign in. Supply an email with a real mail domain.
 No SMTP configuration is needed to sign in with this confirmed account.
 
@@ -119,7 +119,7 @@ eunha try --url https://your-name.loca.lt --email you@example.com
 
 Any other HTTPS reverse proxy works with `--url`. Forward to
 `http://127.0.0.1:3000`. The proxy sets the configured public Host header
-before forwarding to Eunha. The helper publishes
+before forwarding to eunha. The helper publishes
 only this loopback listener; databases and object storage have no published
 ports. Media is served through the same public tunnel.
 
@@ -156,7 +156,7 @@ not finished. If a password was lost, use the
 `docker compose -f .eunha-try/compose.json run --rm web ./eunha accounts modify owner --reset-password`.
 
 Use `--directory PATH` for another trial, `--port PORT` for another loopback
-port (and forward that port), and `--image IMAGE` to choose the initial Eunha
+port (and forward that port), and `--image IMAGE` to choose the initial eunha
 image. The default image is `ghcr.io/eunha-space/eunha:main`, which currently
 requires an amd64-capable container runtime. If that published image cannot
 be pulled, the helper builds the public repository's `main` using Docker and

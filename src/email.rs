@@ -1,4 +1,4 @@
-//! Sending mail: the SMTP sender, the mail queue, and the mails Eunha writes.
+//! Sending mail: the SMTP sender, the mail queue, and the mails eunha writes.
 //!
 //! Mastodon: app/mailers/application_mailer.rb, app/mailers/user_mailer.rb
 //! Mastodon: app/mailers/admin_mailer.rb, app/mailers/notification_mailer.rb
@@ -58,7 +58,7 @@ pub struct MailDeliveryJob {
     pub subject: String,
     /// Empty for a mail that is text alone.
     pub html: String,
-    /// The `text/plain` part; one queued before Eunha wrote it has it made
+    /// The `text/plain` part; one queued before eunha wrote it has it made
     /// from the HTML when it is delivered.
     #[serde(default)]
     pub text: Option<String>,
@@ -193,7 +193,7 @@ impl EmailSender {
         );
         self.send(
             to,
-            &format!("Eunha: Confirm email for {instance_domain}"),
+            &format!("eunha: Confirm email for {instance_domain}"),
             &body,
         )
         .await
@@ -210,7 +210,7 @@ impl EmailSender {
         let name = html_escape(name);
         let (subject, body) = if locale == "ko" {
             (
-                "Eunha: 비밀번호 재설정 안내".to_string(),
+                "eunha: 비밀번호 재설정 안내".to_string(),
                 format!(
                     "<h1>비밀번호 재설정</h1>\
                      <p>안녕하세요 {name},</p>\
@@ -222,7 +222,7 @@ impl EmailSender {
             )
         } else {
             (
-                "Eunha: Reset password instructions".to_string(),
+                "eunha: Reset password instructions".to_string(),
                 format!(
                     "<h1>Password reset</h1>\
                      <p>Hi {name},</p>\
@@ -368,7 +368,7 @@ impl EmailSender {
     ///
     /// Mastodon's `AdminMailer#new_software_updates` and
     /// `#new_critical_software_updates`. The wording differs because the
-    /// subject is not Eunha's own version: Eunha reproduces a Mastodon
+    /// subject is not eunha's own version: eunha reproduces a Mastodon
     /// release's schema and API, and it is that release which has been
     /// superseded.
     pub async fn send_software_updates(
@@ -402,10 +402,10 @@ impl EmailSender {
 
         let body = format!(
             "<p>Hi {name},</p>\
-             <p>{instance_domain} runs Eunha, which implements Mastodon \
+             <p>{instance_domain} runs eunha, which implements Mastodon \
              {tracked_version}. Newer Mastodon releases are available:</p>\
              <ul>{listed}</ul>{urgency}\
-             <p>Adopting one of them means a newer Eunha, not a Mastodon \
+             <p>Adopting one of them means a newer eunha, not a Mastodon \
              upgrade. Nothing here updates itself.</p>"
         );
 
@@ -449,9 +449,9 @@ impl EmailSender {
 
         let body = format!(
             "<p>Hi {name},</p>\
-             <p>{instance_domain} runs Eunha, which implements Mastodon \
+             <p>{instance_domain} runs eunha, which implements Mastodon \
              {branch}.</p>{urgency}\
-             <p>An Eunha that tracks a supported Mastodon release is the way \
+             <p>An eunha that tracks a supported Mastodon release is the way \
              out of this; see the project's release notes.</p>"
         );
 
@@ -729,7 +729,7 @@ impl EmailSender {
             (
                 false,
                 "Mastodon apps",
-                "Download the official Mastodon apps, which work with Eunha.",
+                "Download the official Mastodon apps, which work with eunha.",
                 None,
             ),
         ]
@@ -786,14 +786,14 @@ impl EmailSender {
             ),
             (
                 "Build your audience in confidence",
-                "Eunha provides you with a unique possibility of managing your audience \
-                 without middlemen. Eunha deployed on your own infrastructure allows you to \
+                "eunha provides you with a unique possibility of managing your audience \
+                 without middlemen. eunha deployed on your own infrastructure allows you to \
                  follow and be followed from any other server in the fediverse and is under no \
                  one's control but yours.",
             ),
             (
                 "Moderating the way it should be",
-                "Eunha puts decision making back in your hands. Each server creates their own \
+                "eunha puts decision making back in your hands. Each server creates their own \
                  rules and regulations, which are enforced locally and not top-down like \
                  corporate social media, making it the most flexible in responding to the needs \
                  of different groups of people. Join a server with the rules you agree with, or \
@@ -801,10 +801,10 @@ impl EmailSender {
             ),
             (
                 "Unparalleled creativity",
-                "Eunha supports audio, video and picture posts, accessibility descriptions, \
+                "eunha supports audio, video and picture posts, accessibility descriptions, \
                  polls, content warnings, animated avatars, custom emojis, thumbnail crop \
                  control, and more, to help you express yourself online. Whether you're \
-                 publishing your art, your music, or your podcast, Eunha is there for you.",
+                 publishing your art, your music, or your podcast, eunha is there for you.",
             ),
         ]
         .into_iter()
@@ -829,7 +829,7 @@ impl EmailSender {
             more_follows = web("explore/suggestions"),
             more_tags = web("explore/tags"),
         );
-        self.send(to, "Welcome to Eunha", &body).await
+        self.send(to, "Welcome to eunha", &body).await
     }
 
     /// `AdminMailer#new_trends`.
@@ -1122,7 +1122,7 @@ impl EmailSender {
             "<h1>2FA disabled</h1><p>Login is now possible using only e-mail address and \
              password.</p><p><a href=\"{url}\">{url}</a></p>"
         );
-        self.send(to, "Eunha: Two-factor authentication disabled", &body)
+        self.send(to, "eunha: Two-factor authentication disabled", &body)
             .await
     }
 
@@ -1163,7 +1163,7 @@ impl EmailSender {
         let (subject, title, explanation, extra): (String, &str, &str, Option<String>) =
             match notice {
                 SecurityNotice::TwoFactorEnabled => (
-                    "Eunha: Two-factor authentication enabled".into(),
+                    "eunha: Two-factor authentication enabled".into(),
                     "2FA enabled",
                     "Two-factor authentication has been enabled for your account.",
                     Some(
@@ -1172,19 +1172,19 @@ impl EmailSender {
                     ),
                 ),
                 SecurityNotice::TwoFactorRecoveryCodesChanged => (
-                    "Eunha: Two-factor recovery codes re-generated".into(),
+                    "eunha: Two-factor recovery codes re-generated".into(),
                     "2FA recovery codes changed",
                     "The previous recovery codes have been invalidated and new ones generated.",
                     None,
                 ),
                 SecurityNotice::WebauthnEnabled => (
-                    "Eunha: Security key authentication enabled".into(),
+                    "eunha: Security key authentication enabled".into(),
                     "Security keys enabled",
                     "Security key authentication has been enabled for your account.",
                     Some("Your security key can now be used for login.".into()),
                 ),
                 SecurityNotice::WebauthnDisabled => (
-                    "Eunha: Authentication with security keys disabled".into(),
+                    "eunha: Authentication with security keys disabled".into(),
                     "Security keys disabled",
                     "Authentication with security keys has been disabled for your account.",
                     Some(
@@ -1194,19 +1194,19 @@ impl EmailSender {
                     ),
                 ),
                 SecurityNotice::WebauthnCredentialAdded(nickname) => (
-                    "Eunha: New security key".into(),
+                    "eunha: New security key".into(),
                     "A new security key has been added",
                     "The following security key has been added to your account",
                     Some(format!("<strong>{}</strong>", html_escape(nickname))),
                 ),
                 SecurityNotice::WebauthnCredentialDeleted(nickname) => (
-                    "Eunha: Security key deleted".into(),
+                    "eunha: Security key deleted".into(),
                     "One of your security keys has been deleted",
                     "The following security key has been deleted from your account",
                     Some(format!("<strong>{}</strong>", html_escape(nickname))),
                 ),
                 SecurityNotice::EmailChanged(new_email) => (
-                    "Eunha: Email changed".into(),
+                    "eunha: Email changed".into(),
                     "New email address",
                     "The email address for your account is being changed to:",
                     Some(format!(
@@ -1218,7 +1218,7 @@ impl EmailSender {
                     )),
                 ),
                 SecurityNotice::PasswordChange => (
-                    "Eunha: Password changed".into(),
+                    "eunha: Password changed".into(),
                     "Password changed",
                     "The password for your account has been changed.",
                     Some(
@@ -1343,7 +1343,7 @@ impl EmailSender {
 
     /// An `AdminMailer` mail: text alone, as its templates are, with
     /// `ApplicationMailer#set_autoreply_headers!`, and, when `important`,
-    /// `AdminMailer#set_important_headers!`. `html` is the body Eunha writes,
+    /// `AdminMailer#set_important_headers!`. `html` is the body eunha writes,
     /// which the text is made from.
     async fn send_admin(
         &self,
@@ -1616,7 +1616,7 @@ fn autoreply_headers() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The `text/plain` part of a mail Eunha writes in HTML: its text, a
+/// The `text/plain` part of a mail eunha writes in HTML: its text, a
 /// paragraph, heading, list or quotation to a block of its own, a line
 /// break kept, a list item marked `*`, an image left out, and a link that
 /// does not read as its own address followed by the address.
@@ -1764,7 +1764,7 @@ fn subscription_footer(envelope: &SubscriptionEnvelope) -> String {
         "<p><small>You're receiving this email because you opted into email updates \
          from {name}. Don't want to receive these emails? \
          <a href=\"{unsubscribe}\">Unsubscribe</a></small></p>\
-         <p><small>Emails are sent from {domain}, a server powered by Eunha. To \
+         <p><small>Emails are sent from {domain}, a server powered by eunha. To \
          understand how this server processes your personal data, refer to the \
          <a href=\"{privacy}\">Privacy Policy</a>.</small></p>",
         name = html_escape(&envelope.name),

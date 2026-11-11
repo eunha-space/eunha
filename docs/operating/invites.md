@@ -60,7 +60,7 @@ The count is the limit; there is no allowance to keep books on, because the
 codes themselves are the allowance. `manage_invites` is what it takes to hand
 them out, and listing your own invites takes no permission at all — a member who
 cannot create one still has to be able to read what they were given, which is
-where Eunha parts company with `InvitesController#index`.
+where eunha parts company with `InvitesController#index`.
 
 
 Every invite
@@ -168,6 +168,6 @@ staff grants from self-created codes, so legacy invites retain role-based
 review.
 
 Switching back to Mastodon preserves codes, ownership, usage, expiry and
-lineage. Mastodon ignores Eunha’s grant metadata and determines approval from
+lineage. Mastodon ignores eunha’s grant metadata and determines approval from
 the inviter’s current role again. The public schema stays compatible; the
 automatic approval of staff-granted codes is a deliberate behavioral divergence.
