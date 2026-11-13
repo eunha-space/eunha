@@ -4,6 +4,7 @@ const SECOND = 1000
 const MINUTE = 60 * SECOND
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
+const WEEK = 7 * DAY
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
@@ -25,8 +26,16 @@ export function formatRelativeTime(date: Date, now = new Date()) {
   if (abs < MINUTE) return rtf.format(Math.round(diff / SECOND), 'second')
   if (abs < HOUR) return rtf.format(Math.round(diff / MINUTE), 'minute')
   if (abs < DAY) return rtf.format(Math.round(diff / HOUR), 'hour')
+  if (abs < WEEK) return rtf.format(Math.round(diff / DAY), 'day')
 
-  return rtf.format(Math.round(diff / DAY), 'day')
+  // Past a week a count of days stops meaning anything ("1,463 days ago"),
+  // so show the date, as Mastodon's web UI does: "Mar 5", or "Mar 5, 2022"
+  // outside the current year.
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+  })
 }
 
 export function RelativeTime({ value }: { value: string | Date }) {
