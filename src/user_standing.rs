@@ -73,19 +73,15 @@ impl UserStanding {
         user_id: Option<i64>,
         account_id: Option<i64>,
     ) -> sqlx::Result<Option<Self>> {
+        // `eunha.user_standings` (migration 041) is the one place these
+        // facts are written, so SQL filters on `functional` agree with this.
         let row = sqlx::query!(
-            r#"SELECT u.confirmed_at IS NOT NULL AS "confirmed!", u.approved, u.disabled,
-                      (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL)
-                        AS "unavailable!",
-                      a.requested_deletion_at IS NOT NULL AS "deleted!",
-                      a.memorial, a.moved_to_account_id IS NOT NULL AS "moved!",
-                      (COALESCE(r.require_2fa, false) AND NOT u.otp_required_for_login
-                       AND NOT EXISTS (SELECT 1 FROM webauthn_credentials w
-                                       WHERE w.user_id = u.id)) AS "missing_2fa!"
-               FROM users u
-               JOIN accounts a ON a.id = u.account_id
-               LEFT JOIN user_roles r ON r.id = COALESCE(u.role_id, -99)
-               WHERE ($1::bigint IS NULL OR u.id = $1) AND ($2::bigint IS NULL OR u.account_id = $2)
+            r#"SELECT confirmed AS "confirmed!", approved AS "approved!",
+                      disabled AS "disabled!", unavailable AS "unavailable!",
+                      deleted AS "deleted!", memorial AS "memorial!", moved AS "moved!",
+                      missing_2fa AS "missing_2fa!"
+               FROM eunha.user_standings
+               WHERE ($1::bigint IS NULL OR user_id = $1) AND ($2::bigint IS NULL OR account_id = $2)
                LIMIT 1"#,
             user_id,
             account_id,

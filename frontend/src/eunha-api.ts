@@ -34,28 +34,62 @@ async function eunhaFetch(
   return res
 }
 
-export interface InviteTreeAccount {
+/**
+ * One place in the invite tree. A `member` is named; a `former_member` (an
+ * inviter no longer a member) or `hidden_member` (a member who hides their
+ * network) is an anonymous place that keeps the branch below it together.
+ */
+export interface InviteTreeMember {
   id: string
-  username: string
-  acct: string
-  display_name: string
-  avatar: string
+  kind: 'member' | 'former_member' | 'hidden_member'
+  parent_id: string | null
+  username?: string
+  acct?: string
+  display_name?: string
+  avatar?: string
   avatar_static?: string
-  invited_at: string
-  root_reason?: 'no_recorded_inviter' | 'inviter_unavailable' | 'lineage_unavailable'
-}
-
-export interface InviteNode extends InviteTreeAccount {
-  children: InviteNode[]
+  joined_at?: string
+  root_reason?: 'no_recorded_inviter' | 'lineage_unavailable'
 }
 
 export interface InviteTree {
-  roots: InviteNode[]
+  /** Parents before children; otherwise in joining order. */
+  members: InviteTreeMember[]
+  /** Local members on the instance, whichever view was asked for. */
   total: number
 }
 
-export async function getInviteTree(token: string): Promise<InviteTree> {
-  const res = await eunhaFetch('/api/eunha/v1/invite_tree', token)
+export interface InviteNode extends InviteTreeMember {
+  children: InviteNode[]
+}
+
+/** Nest a flat tree, iteratively, keeping the server's order. */
+export function nestInviteTree(members: InviteTreeMember[]): InviteNode[] {
+  const nodes = new Map<string, InviteNode>()
+  const roots: InviteNode[] = []
+  for (const member of members) {
+    const node: InviteNode = { ...member, children: [] }
+    nodes.set(member.id, node)
+    const parent = member.parent_id ? nodes.get(member.parent_id) : undefined
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+/**
+ * `scope: 'branch'` is the viewer's line up to a root and everyone below
+ * them. The browser revalidates with the tree's ETag, so an unchanged tree
+ * costs a 304.
+ */
+export async function getInviteTree(
+  token: string,
+  scope: 'branch' | 'all' = 'all',
+): Promise<InviteTree> {
+  const res = await eunhaFetch(
+    `/api/eunha/v1/invite_tree${scope === 'branch' ? '?scope=branch' : ''}`,
+    token,
+  )
   return res.json() as Promise<InviteTree>
 }
 
@@ -79,6 +113,13 @@ export interface Invite {
   created_at: string
   bypass_approval: boolean
   grant: { id: string; created_at: string; granted_by: string | null } | null
+  /** Who signed up with it: members by name unless they hide their network. */
+  joined: {
+    accounts: { id: string; acct: string }[]
+    hidden: number
+    /** Sign-ups still awaiting confirmation or approval. */
+    pending: number
+  }
 }
 
 export interface CreateInviteParams {
@@ -107,14 +148,50 @@ export async function createInvite(
   return invite
 }
 
-export interface GrantInvitesParams {
-  /** Whose account to mint them into; omit for every local member. */
-  account_id?: string
+export type GrantInvitesParams = (
+  | { /** Whose account to mint them into. */ account_id: string; all?: never }
+  | { /** Every eligible local member; must be said explicitly. */ all: true; account_id?: never }
+) & {
   count: number
   /** Uses per code; 1 by default. */
   max_uses?: number
   /** Seconds until expiry; omit for never. */
   expires_in?: number
+}
+
+/** One staff handout, as `GET /api/eunha/v1/invite_grants` lists it. */
+export interface InviteGrantSummary {
+  id: string
+  created_at: string
+  granted_by: string | null
+  revoked_at: string | null
+  revoked_by: string | null
+  expires_at: string | null
+  /** The member's handle when the grant went to one member. */
+  recipient: string | null
+  recipients: number
+  links: number
+  uses: number
+  available: number
+}
+
+export async function getInviteGrants(
+  token: string,
+  maxId?: string,
+): Promise<InviteGrantSummary[]> {
+  const query = maxId ? `?max_id=${encodeURIComponent(maxId)}` : ''
+  const res = await eunhaFetch(`/api/eunha/v1/invite_grants${query}`, token)
+  return res.json()
+}
+
+/** Expire a handout's links that can still be used; every row stays. */
+export async function revokeInviteGrant(token: string, id: string): Promise<{ expired: number }> {
+  const res = await eunhaFetch(`/api/eunha/v1/invite_grants/${encodeURIComponent(id)}/revoke`, token, {
+    method: 'POST',
+    body: '{}',
+  })
+  window.dispatchEvent(new Event(INVITES_CHANGED))
+  return res.json()
 }
 
 export async function getGrantRecipients(token: string): Promise<{ id: string; acct: string }[]> {

@@ -61,13 +61,13 @@ test('the composer’s @mention suggestions show still avatars', async ({ page }
 
 test('the invite tree shows still avatars', async ({ page }) => {
   await signIn(page)
-  await page.route('**/api/eunha/v1/invite_tree', (r) => r.fulfill({ json: { total: 1, roots: [{
-    id: '1', username: 'alice', acct: 'alice', display_name: 'Alice',
+  await page.route('**/api/eunha/v1/invite_tree*', (r) => r.fulfill({ json: { total: 1, members: [{
+    id: '1', kind: 'member', parent_id: null, username: 'alice', acct: 'alice', display_name: 'Alice',
     avatar: '/media/alice.gif', avatar_static: '/media/alice.png',
-    invited_at: '2026-01-01T00:00:00.000Z', root_reason: 'no_recorded_inviter', children: [],
+    joined_at: '2026-01-01T00:00:00.000Z', root_reason: 'no_recorded_inviter',
   }] } }))
   await page.goto('/invite-tree')
-  const image = page.getByRole('list', { name: 'Invite lineage' }).locator('img').first()
+  const image = page.getByRole('tree', { name: 'Invite lineage' }).locator('img').first()
   await expect(image).toHaveAttribute('src', '/media/alice.png')
   await image.hover()
   await expect(image).toHaveAttribute('src', '/media/alice.gif')

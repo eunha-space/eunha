@@ -50,11 +50,35 @@ async function signIn(page: Page, permissions = (1 << 11) | (1 << 16)) {
   await page.route('**/api/eunha/v1/terms_of_service/interstitial', r => r.fulfill({ status: 204 }))
 }
 
-const invite = { id: '10', code: 'abc', url: 'https://example.invalid/signup?invite=abc',
+const invite = { id: '10', code: 'abc', url: 'https://example.invalid/invite/abc',
   uses: 0, max_uses: 1, expires_at: null, expired: false, valid_for_use: true,
-  bypass_approval: true, grant: null, autofollow: false, comment: null, created_at: '2026-01-01T00:00:00Z' }
-const member = { id: '1', username: 'alice', acct: 'alice', display_name: 'Alice', avatar: '',
-  invited_at: '2026-01-01T00:00:00Z', children: [] }
+  bypass_approval: true, grant: null, autofollow: false, comment: null, created_at: '2026-01-01T00:00:00Z',
+  joined: { accounts: [], hidden: 0, pending: 0 } }
+type Nested = { id: string; kind?: string; children?: Nested[]; [key: string]: unknown }
+const member: Nested = { id: '1', kind: 'member', username: 'alice', acct: 'alice', display_name: 'Alice', avatar: '',
+  joined_at: '2026-01-01T00:00:00Z', children: [] }
+/** The server's flat shape: parents first, each naming its parent. */
+function flat(roots: Nested[], parent: string | null = null): object[] {
+  return roots.flatMap(({ children = [], ...node }) => [
+    { kind: 'member', ...node, parent_id: parent },
+    ...flat(children, node.id),
+  ])
+}
+/** What `?scope=branch` serves: the viewer's line and everyone below. */
+function branchOf(members: { id: string; parent_id: string | null }[], me: string) {
+  const parents = new Map(members.map(m => [m.id, m.parent_id]))
+  const keep = new Set<string>()
+  for (let at: string | null | undefined = me; at; at = parents.get(at)) keep.add(at)
+  const below = new Set([me])
+  for (const m of members) if (m.parent_id && below.has(m.parent_id)) { below.add(m.id); keep.add(m.id) }
+  return members.filter(m => keep.has(m.id))
+}
+async function serveTree(page: Page, total: number, roots: Nested[]) {
+  const members = flat(roots) as { id: string; parent_id: string | null }[]
+  await page.route('**/api/eunha/v1/invite_tree*', r => r.fulfill({ json: {
+    total, members: new URL(r.request().url()).searchParams.get('scope') === 'branch' ? branchOf(members, '1') : members,
+  } }))
+}
 
 test('personal invites retain revoked history and distinguish fully used links', async ({ page }) => {
   await signIn(page, 1 << 16)
@@ -78,7 +102,11 @@ test('grant recipients are explicit and bulk grants show their reach', async ({ 
   await page.route('**/api/eunha/v1/invite_grants/recipients', r => r.fulfill({ json: [member] }))
   await page.route('**/api/v1/admin/invites**', r => r.fulfill({ json: [] }))
   let submitted: unknown
-  await page.route('**/api/eunha/v1/invite_grants', r => { submitted = r.request().postDataJSON(); return r.fulfill({ json: { granted: 1, accounts: 1 } }) })
+  await page.route('**/api/eunha/v1/invite_grants', r => {
+    if (r.request().method() === 'GET') return r.fulfill({ json: [] })
+    submitted = r.request().postDataJSON()
+    return r.fulfill({ json: { granted: 1, accounts: 1 } })
+  })
   await page.goto('/admin/invites')
   const review = page.getByRole('button', { name: 'Review grant', exact: true })
   await expect(review).toBeDisabled()
@@ -92,7 +120,7 @@ test('grant recipients are explicit and bulk grants show their reach', async ({ 
   await expect.poll(() => submitted).toBeUndefined()
   await expect(page.getByText('No staff approval needed. Email confirmation required.', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Grant 2 invites', exact: true }).click()
-  await expect.poll(() => submitted).toEqual({ count: 2, max_uses: 1, expires_in: 604800 })
+  await expect.poll(() => submitted).toEqual({ all: true, count: 2, max_uses: 1, expires_in: 604800 })
 
 })
 
@@ -102,6 +130,7 @@ test('grant member lookup failure disables grants and offers retry', async ({ pa
   let failed = true
   await page.route('**/api/eunha/v1/invite_grants/recipients', r => failed ? r.fulfill({ status: 500 }) : r.fulfill({ json: [member] }))
   await page.route('**/api/v1/admin/invites**', r => r.fulfill({ json: [] }))
+  await page.route('**/api/eunha/v1/invite_grants', r => r.fulfill({ json: [] }))
   await page.goto('/admin/invites?grant_to=1')
   await expect(page.getByText('Could not load members.', { exact: false })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Review grant', exact: true })).toBeDisabled()
@@ -112,6 +141,7 @@ test('grant member lookup failure disables grants and offers retry', async ({ pa
 
 test('admin invite list exposes URLs and respects validity', async ({ page }) => {
   await signIn(page)
+  await page.route('**/api/eunha/v1/invite_grants', r => r.fulfill({ json: [] }))
   await page.route('**/api/v1/admin/invites**', r => r.fulfill({ json: [
     { ...invite, account: null }, { ...invite, id: '11', uses: 1, valid_for_use: false, account: null },
   ] }))
@@ -123,18 +153,18 @@ test('admin invite list exposes URLs and respects validity', async ({ page }) =>
   await expect(page.getByRole('link', { name: 'Create invite', exact: true })).toBeVisible()
 })
 
-const tree = { total: 5, roots: [{ ...member, id: '0', acct: 'founder', username: 'founder', display_name: 'Founder',
+const tree: Nested[] = [{ ...member, id: '0', acct: 'founder', username: 'founder', display_name: 'Founder',
   root_reason: 'no_recorded_inviter', children: [{ ...member, children: [
     { ...member, id: '2', acct: 'bob', username: 'bob', display_name: 'Bob', children: [
       { ...member, id: '4', acct: 'carol', username: 'carol', display_name: 'Carol' },
     ] },
-  ] }, { ...member, id: '3', acct: 'sibling', username: 'sibling', display_name: 'Sibling' }] }] }
+  ] }, { ...member, id: '3', acct: 'sibling', username: 'sibling', display_name: 'Sibling' }] }]
 
 test('tree starts with my ancestry and supports collapse, search and finding me', async ({ page }) => {
   await signIn(page)
-  await page.route('**/api/eunha/v1/invite_tree', r => r.fulfill({ json: tree }))
+  await serveTree(page, 5, tree)
   await page.goto('/invite-tree')
-  const lineage = page.getByRole('list', { name: 'Invite lineage' })
+  const lineage = page.getByRole('tree', { name: 'Invite lineage' })
   await expect(lineage.getByRole('link', { name: 'Founder @founder' })).toBeVisible()
   await expect(lineage.getByRole('link', { name: 'Bob @bob' })).toBeVisible()
   await expect(lineage.getByRole('link', { name: 'Sibling @sibling' })).toHaveCount(0)
@@ -149,20 +179,23 @@ test('tree starts with my ancestry and supports collapse, search and finding me'
   await page.getByRole('button', { name: 'Find me' }).click()
   await expect(page.getByLabel('Search members')).toHaveValue('')
   await expect(page.locator('#invite-member-1')).toBeFocused()
+  await expect(page).toHaveURL(/member=1/)
+  await page.getByRole('button', { name: 'Whole instance' }).click()
   await expect(page.getByRole('button', { name: 'Whole instance' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page).toHaveURL(/view=all/)
   await expect(lineage.getByRole('link', { name: 'Sibling @sibling' })).toBeVisible()
   await lineage.getByRole('link', { name: 'Hand out invites to @alice' }).click()
   await expect(page).toHaveURL(/\/admin\/invites\?grant_to=1$/)
 })
 
-test('tree explains unavailable ancestry and keeps a deep search usable on mobile', async ({ page }) => {
+test('tree keeps a former member\'s branch and a deep search usable on mobile', async ({ page }) => {
   await signIn(page, 1 << 16)
   await page.setViewportSize({ width: 390, height: 844 })
-  let chain = { ...member, id: '20', acct: 'last', username: 'last', display_name: 'Last' }
+  let chain: Nested = { ...member, id: '20', acct: 'last', username: 'last', display_name: 'Last' }
   for (let i = 19; i >= 0; i--) chain = { ...member, id: String(i), acct: `member${i}`, username: `member${i}`, display_name: `Member ${i}`, children: [chain] }
-  await page.route('**/api/eunha/v1/invite_tree', r => r.fulfill({ json: { total: 21, roots: [{ ...chain, root_reason: 'inviter_unavailable' }] } }))
+  await serveTree(page, 21, [{ id: 'former-1', kind: 'former_member', children: [chain] }])
   await page.goto('/invite-tree')
-  await expect(page.getByText('Inviter is unavailable in this view', { exact: true })).toBeVisible()
+  await expect(page.getByText('A former member', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Whole instance' }).click()
   await page.getByLabel('Search members').fill('last')
   await expect(page.getByRole('link', { name: 'Last @last' })).toBeVisible()
@@ -174,7 +207,9 @@ test('tree explains unavailable ancestry and keeps a deep search usable on mobil
 test('tree empty search and load failure have clear recovery states', async ({ page }) => {
   await signIn(page)
   let failed = true
-  await page.route('**/api/eunha/v1/invite_tree', r => failed ? r.fulfill({ status: 500 }) : r.fulfill({ json: tree }))
+  const members = flat(tree) as { id: string; parent_id: string | null }[]
+  await page.route('**/api/eunha/v1/invite_tree*', r => failed ? r.fulfill({ status: 500 })
+    : r.fulfill({ json: { total: 5, members: branchOf(members, '1') } }))
   await page.goto('/invite-tree')
   await expect(page.getByRole('alert')).toContainText('Could not load the invite tree')
   failed = false
@@ -284,7 +319,8 @@ test('failed grant can be retried from review without changing the recipient', a
   await page.route('**/api/v1/admin/invites**', r => r.fulfill({ json: [] }))
   await page.route('**/api/eunha/v1/invite_grants/recipients', r => r.fulfill({ json: [member] }))
   let failed = true
-  await page.route('**/api/eunha/v1/invite_grants', r => failed ? r.fulfill({ status: 500 }) : r.fulfill({ json: { granted: 3, accounts: 1 } }))
+  await page.route('**/api/eunha/v1/invite_grants', r => r.request().method() === 'GET' ? r.fulfill({ json: [] })
+    : failed ? r.fulfill({ status: 500 }) : r.fulfill({ json: { granted: 3, accounts: 1 } }))
   await page.goto('/admin/invites?grant_to=1')
   await page.getByRole('button', { name: 'Review grant' }).click()
   const grant = page.getByRole('button', { name: 'Grant 3 invites', exact: true })
@@ -367,4 +403,90 @@ test('invite menu survives navigation and failed refreshes, then updates availab
   mode = 'empty'
   await page.evaluate(() => window.dispatchEvent(new Event('eunha:invites-changed')))
   await expect(link).toHaveCount(0)
+})
+
+test('hidden members keep their branch without a name, and the tree works from the keyboard', async ({ page }) => {
+  await signIn(page, 0)
+  await serveTree(page, 4, [{ ...member, children: [
+    { id: 'hidden-1', kind: 'hidden_member', children: [
+      { ...member, id: '4', acct: 'carol', username: 'carol', display_name: 'Carol' },
+    ] },
+    { ...member, id: '5', acct: 'dave', username: 'dave', display_name: 'Dave' },
+  ] }])
+  await page.goto('/invite-tree?view=all')
+  const lineage = page.getByRole('tree', { name: 'Invite lineage' })
+  await expect(lineage.getByText('A member who hides their network')).toBeVisible()
+  await expect(lineage.getByText('2 direct invitees, 3 in all')).toBeVisible()
+  await page.locator('#invite-member-1').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('#invite-member-hidden-1')).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await expect(lineage.getByRole('link', { name: 'Carol @carol' })).toBeVisible()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('#invite-member-4')).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.locator('#invite-member-hidden-1')).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(page.locator('#invite-member-5')).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/@dave$/)
+})
+
+test('a link to a member in the tree opens the way to them', async ({ page }) => {
+  await signIn(page, 0)
+  await serveTree(page, 5, tree)
+  await page.goto('/invite-tree?view=all&member=4')
+  await expect(page.locator('#invite-member-4')).toBeFocused()
+  await expect(page.getByRole('link', { name: 'Carol @carol' })).toBeVisible()
+})
+
+test("Mastodon's invite link opens sign-up with the code, and a pasted link keeps only the code", async ({ page }) => {
+  await page.route('**/api/v2/instance', r => r.fulfill({ json: instance }))
+  const asked: string[] = []
+  await page.route('**/api/eunha/v1/invite?*', r => {
+    asked.push(new URL(r.request().url()).searchParams.get('invite') ?? '')
+    return r.fulfill({ json: { valid: true, bypass_approval: true, autofollow: false,
+      inviter: { id: '1', acct: 'alice', display_name: 'Alice' } } })
+  })
+  await page.goto('/invite/Abc23xyz')
+  await expect(page.getByLabel('Invite code')).toHaveValue('Abc23xyz')
+  await expect(page.getByText('Invited by @alice.', { exact: false })).toBeVisible()
+  const field = page.getByLabel('Invite code')
+  await field.evaluate((el) => {
+    const data = new DataTransfer()
+    data.setData('text', 'https://example.invalid/invite/Pq7rStuv')
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  await expect(field).toHaveValue('Pq7rStuv')
+  await expect.poll(() => asked.at(-1)).toBe('Pq7rStuv')
+})
+
+test('each link says who joined through it', async ({ page }) => {
+  await signIn(page, 0)
+  await page.route('**/api/v1/invites', r => r.fulfill({ json: [{ ...invite, uses: 1, max_uses: 3,
+    joined: { accounts: [{ id: '2', acct: 'bob' }], hidden: 1, pending: 1 } }] }))
+  await page.goto('/invites')
+  await page.getByText('Manage links').click()
+  await expect(page.getByRole('link', { name: '@bob' }).first()).toBeVisible()
+  await expect(page.getByText('1 member who hides their network').first()).toBeVisible()
+  await expect(page.getByText(/1 not finished joining/).first()).toBeVisible()
+})
+
+test('staff review handouts and revoke one', async ({ page }) => {
+  await signIn(page)
+  await page.route('**/api/v1/admin/invites**', r => r.fulfill({ json: [] }))
+  await page.route('**/api/eunha/v1/invite_grants/recipients', r => r.fulfill({ json: [member] }))
+  let revoked = false
+  const grant = { id: '7', created_at: '2026-01-01T00:00:00', granted_by: 'alice', revoked_by: null,
+    expires_at: null, recipient: 'bob', recipients: 1, links: 2, uses: 1, available: 1 }
+  await page.route('**/api/eunha/v1/invite_grants', r => r.fulfill({ json: [
+    revoked ? { ...grant, revoked_at: '2026-01-02T00:00:00', revoked_by: 'alice', available: 0 } : { ...grant, revoked_at: null },
+  ] }))
+  await page.route('**/api/eunha/v1/invite_grants/7/revoke', r => { revoked = true; return r.fulfill({ json: { expired: 1 } }) })
+  await page.goto('/admin/invites')
+  const handouts = page.getByRole('region', { name: 'Handouts' })
+  await expect(handouts.getByText('2 links to @bob')).toBeVisible()
+  await handouts.getByRole('button', { name: 'Revoke' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Revoke' }).click()
+  await expect(handouts.getByText(/Revoked by @alice/)).toBeVisible()
 })

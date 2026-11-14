@@ -6,6 +6,7 @@
 //! Mastodon: app/controllers/auth/registrations_controller.rb
 //! Mastodon: app/controllers/auth/confirmations_controller.rb
 //! Mastodon: app/controllers/api/v1/emails/confirmations_controller.rb
+//! Mastodon: app/controllers/api/v1/invites_controller.rb, app/helpers/registration_helper.rb
 
 use crate::{
     crypto,
@@ -51,6 +52,75 @@ pub async fn invite_lookup(
             "acct": row.get::<String, _>("username"),
             "display_name": row.get::<String, _>("display_name"),
         }
+    })))
+}
+
+/// `GET /invite/:invite_code`, Mastodon's `public_invite` link.
+///
+/// Asked for as JSON (`req.format == :json`: a `.json` suffix or an `Accept`
+/// that names JSON), it is `Api::V1::InvitesController#show`, which the apps
+/// open an invite link with: 404 for no such code, 401 for one not good for
+/// use, 403 when `allowed_registration?` refuses, and otherwise the code and
+/// where the instance's API is. Anything else is `Auth::RegistrationsController
+/// #new` with the code filled in, which here is the web client's sign-up page.
+pub async fn public_invite(
+    state: AppState,
+    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
+    axum::extract::Path(code): axum::extract::Path<String>,
+    client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
+    viewer: Option<Extension<crate::middleware::AuthenticatedUser>>,
+    request: axum::extract::Request,
+) -> Response {
+    let accepts_json = request
+        .headers()
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|accept| accept.split(',').next())
+        .is_some_and(|first| first.trim().starts_with("application/json"));
+    let (code, json) = match code.strip_suffix(".json") {
+        Some(code) => (code.to_string(), true),
+        None => (code, accepts_json),
+    };
+    if !json {
+        let uri = request.uri().clone();
+        return crate::web::serve(state, uri, viewer.map(|Extension(v)| v)).await;
+    }
+    invite_show(
+        &state,
+        &instance,
+        &code,
+        client_ip.and_then(|Extension(c)| c.0),
+    )
+    .await
+    .into_response()
+}
+
+async fn invite_show(
+    state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    code: &str,
+    ip: Option<std::net::IpAddr>,
+) -> AppResult<Json<serde_json::Value>> {
+    // `Invite.find_by!(code:)`.
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM invites WHERE code = $1)")
+        .bind(code)
+        .fetch_one(&state.db)
+        .await?;
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+    // `check_valid_usage!`, before registrations are asked about at all.
+    if validate_invite(state, code).await.is_err() {
+        return Err(AppError::UnauthorizedMsg("This invite is not valid".into()));
+    }
+    // `allowed_registration?`: the invite is good, so only an IP block on
+    // signing up (or a full instance, as for every sign-up here) refuses.
+    if !state.growth_limits.registrations() || crate::remote_ip::sign_up_blocked(state, ip).await {
+        return Err(AppError::Forbidden);
+    }
+    Ok(Json(serde_json::json!({
+        "invite_code": code,
+        "instance_api_url": format!("https://{}/api/v2/instance", instance.web_domain()),
     })))
 }
 
@@ -151,6 +221,15 @@ async fn validate_invite(state: &AppState, code: &str) -> Result<i64, &'static s
         return Err("err_invalid_invite");
     }
     Ok(inv.id)
+}
+
+async fn is_granted_invite(state: &AppState, invite_id: i64) -> AppResult<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM eunha.granted_invites WHERE invite_id = $1)",
+    )
+    .bind(invite_id)
+    .fetch_one(&state.db)
+    .await?)
 }
 
 /// Staff grants authorize admission; other codes use Mastodon's
@@ -314,6 +393,9 @@ impl<'de> Deserialize<'de> for Acceptance {
 pub enum SignupError {
     App(AppError),
     Invalid(crate::email_subscriptions::ValidationErrors),
+    /// A staff-granted invite was used up while this sign-up was being
+    /// saved; [`register`] retries, so no response is ever made of it.
+    GrantedInviteUsedUp,
 }
 
 impl From<AppError> for SignupError {
@@ -333,6 +415,10 @@ impl IntoResponse for SignupError {
         match self {
             Self::App(error) => error.into_response(),
             Self::Invalid(errors) => errors.into_response(),
+            Self::GrantedInviteUsedUp => {
+                AppError::Unprocessable("This invite was just used. Please try again.".into())
+                    .into_response()
+            }
         }
     }
 }
@@ -449,6 +535,7 @@ pub struct Registered {
 
 /// The app a sign-up came through: `doorkeeper_token.application`, and the
 /// scopes its token is issued with (`@app.scopes`).
+#[derive(Clone)]
 pub struct SignUpApp {
     pub id: i64,
     pub scopes: String,
@@ -458,11 +545,31 @@ pub struct SignUpApp {
 /// user and its account saved together, unconfirmed, as `User.create!` saves
 /// them — the account with its signing key, the user with its
 /// `confirmation_token`, approval (`set_approved`), address and reason
-/// (`user_invite_requests`), the invite's use counted (`counter_cache: :uses`),
+/// (`user_invite_requests`), the invite's use counted (`increment_invite_uses`),
 /// and, for an app, the access token it is handed back — in one transaction;
 /// then, as the commit's callbacks do, `account.created` and the confirmation
 /// mail.
 pub async fn register(
+    state: &AppState,
+    instance: &crate::config::InstanceConfig,
+    form: &ApiCreateAccountForm,
+    sign_up_ip: Option<std::net::IpAddr>,
+    app: Option<SignUpApp>,
+) -> Result<Registered, SignupError> {
+    // A staff-granted code that another sign-up used up between the check
+    // and the insert: start again, and this time it is a code no longer good
+    // for use, which Mastodon's rules then decide for exactly as they would
+    // for someone who arrived after it was used.
+    for _ in 0..2 {
+        match register_once(state, instance, form, sign_up_ip, app.clone()).await {
+            Err(SignupError::GrantedInviteUsedUp) => continue,
+            result => return result,
+        }
+    }
+    Err(AppError::Unprocessable("This invite was just used. Please try again.".into()).into())
+}
+
+async fn register_once(
     state: &AppState,
     instance: &crate::config::InstanceConfig,
     form: &ApiCreateAccountForm,
@@ -569,7 +676,9 @@ pub async fn register(
     validate_reason(
         &mut errors,
         form.reason.as_deref(),
-        reason_required(state, instance, invite_id.filter(|_| valid_invitation)).await,
+        // `!invite&.bypass_approval?`: the invite the code names, whether
+        // or not it is still good for use.
+        reason_required(state, instance, invite_id).await,
     );
 
     // `EmailMxValidator`, then `UserEmailValidator` unless the invite is good.
@@ -660,6 +769,23 @@ pub async fn register(
         _ => SignupError::App(AppError::Internal(e)),
     })?;
     if let Some(id) = invite_id {
+        // eunha's staff grants admit without review, so their `max_uses` is
+        // an admission limit: check it again under the row's lock, where
+        // a sign-up racing this one waits. Other codes are counted as
+        // Mastodon's `increment_invite_uses` counts them, unconditionally.
+        if valid_invitation && is_granted_invite(state, id).await? {
+            let still_good: bool = sqlx::query_scalar(
+                "SELECT (max_uses IS NULL OR uses < max_uses)
+                        AND (expires_at IS NULL OR expires_at >= now())
+                 FROM invites WHERE id = $1 FOR UPDATE",
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !still_good {
+                return Err(SignupError::GrantedInviteUsedUp);
+            }
+        }
         sqlx::query!(
             "UPDATE invites SET uses = uses + 1, updated_at = now() WHERE id = $1",
             id

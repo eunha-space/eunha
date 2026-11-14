@@ -79,7 +79,7 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
     setError(null)
     try {
       const r = await grantInvites(token, {
-        account_id: recipient === 'everyone' ? undefined : recipient,
+        ...(recipient === 'everyone' ? { all: true as const } : { account_id: recipient }),
         count: number,
         max_uses: 1,
         expires_in: expiry === '0' ? undefined : Number(expiry),

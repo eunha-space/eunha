@@ -33,6 +33,13 @@ invites also bypass review, independently of the receiving member’s role: the
 grant is staff’s approval to admit those people. Email confirmation is still
 required; expired, exhausted or unavailable invites cannot admit anyone.
 
+Because a granted link admits without review, its last use is checked again
+while the sign-up is saved, under a lock on the invite: two people signing up
+with one single-use link at the same moment cannot both get in. The one who
+loses is treated exactly as Mastodon treats a used-up code — refused on an
+invite-only instance, queued for review on one that approves sign-ups. Codes
+members make themselves are counted as Mastodon counts them.
+
 
 Handing them out
 ----------------
@@ -42,19 +49,32 @@ flatten the invite tree: every arrival would be a child of the admin rather than
 of whoever actually brought them. So an admin can mint codes **into a member's
 own account** instead — `POST /api/eunha/v1/invite_grants`, and the “Hand out
 invites” form under **Moderation → Invites**, for one member or all eligible
-local users at once. They appear on that member's page to copy and pass on, and
-a signup through one lands under them. The form creates one single-use link per
-person, accepts 1–25 people per member, defaults to seven days, and asks staff
-to review the recipients, total links and expiry before granting. It has no
-member note or approval selector. Bulk grants include confirmed, approved,
-functional local users, staff included, at submission time; remote, disabled,
-suspended, deleted, memorial and moved accounts are excluded, as are users
-whose role requires two-factor authentication they have not set up. Future
-users need another grant.
+local users at once. Granting to everyone has to be asked for with `all=true`;
+a request that names nobody is refused rather than read as everybody. They
+appear on that member's page to copy and pass on, and a signup through one
+lands under them. The form creates one single-use link per person, accepts 1–25
+people per member, defaults to seven days, and asks staff to review the
+recipients, total links and expiry before granting. It has no member note or
+approval selector. Bulk grants include confirmed, approved, functional local
+users, staff included, at submission time; remote, disabled, suspended,
+deleted, memorial and moved accounts are excluded, as are users whose role
+requires two-factor authentication they have not set up. Future users need
+another grant.
 
 Repeated grants add links without replacing earlier ones. Each handout has its
 own identity, grant date, staff sender and expiry. A transaction writes all
 invite rows and their grant metadata together; no partial allowance is reported.
+A code that happens to collide with an existing one is drawn again, as
+Mastodon's `Invite#set_code` does.
+
+**Handouts**, on the same page, lists every grant newest first
+(`GET /api/eunha/v1/invite_grants`): who gave it, to whom, how many links were
+used and are still available. **Revoke**
+(`POST /api/eunha/v1/invite_grants/:id/revoke`) expires the grant's links that
+can still be used, the way revoking one invite does, and records who revoked it.
+Rows, use counts and the tree stay. This list is the record of staff admitting
+people through other members; it is not written to Mastodon's audit log, whose
+page could not show an entry about a target Mastodon has no class for.
 
 The count is the limit; there is no allowance to keep books on, because the
 codes themselves are the allowance. `manage_invites` is what it takes to hand
@@ -86,15 +106,32 @@ explains automatic following when enabled. Approval guidance and the reason
 field follow the inviter's current bypass permission, not merely the presence
 of a code, except that staff-granted links always bypass review.
 `/api/eunha/v1/invite?invite=CODE` serves this public resolution;
-registration checks the code again when submitted. New links open the web
-client at `/signup?invite=CODE`; existing `/auth/signup` links continue to work.
+registration checks the code again when submitted.
+
+Links are Mastodon's: `https://DOMAIN/invite/CODE`, which opens the sign-up page
+with the code filled in. Links Mastodon handed out keep working after a move to
+eunha, and links handed out here keep working after a move back. The same path
+asked for as JSON (an `Accept: application/json` header, or `/invite/CODE.json`)
+answers as Mastodon's `Api::V1::InvitesController#show` does for the apps: the
+code and the instance's API URL, 404 for an unknown code, 401 for one no longer
+good for use, 403 when sign-ups from the address are blocked. Older
+`/signup?invite=CODE` and `/auth/signup?invite=CODE` links continue to work, and
+pasting a whole link into the invite code field keeps only the code.
 
 
 Managing links
 --------------
 
 Personal and admin lists distinguish available, fully used, expired and
-unavailable codes using the server's validity checks. Expiring a personal link
+unavailable codes using the server's validity checks. Who counts as able to use
+an invite (`User#functional?`) is defined once, in the `eunha.user_standings`
+view, which the inviter check, the grant recipients and the admin list share.
+
+Each personal link also says who joined through it: members by name, members who
+hide their network only as a count, and sign-ups still awaiting confirmation or
+approval as a separate count. Mastodon counts a use when the account is created
+and never gives it back, so a sign-up that is never confirmed (and is cleaned up
+after a week) still used the link; the count shows why. Expiring a personal link
 retains its row, note and usage history. Only usable links offer Copy and Expire
 (or Revoke); admin lists expose the complete signup URL as well.
 
@@ -109,19 +146,35 @@ Exploring the tree
 ------------------
 
 The invite tree is available to signed-in members. It starts with **My branch**,
-showing the member's ancestors and invitees; **Whole instance** shows the full
-forest. **Find me** reveals and focuses the signed-in member. Branch controls
-are separate from profile links, and **Collapse all** folds the view. Searching
-usernames and display names keeps matching members' ancestors visible and
-searches the selected view.
+showing the member's ancestors and invitees (`?scope=branch`, served as just
+that); **Whole instance** shows the full forest. **Find me** reveals and focuses
+the signed-in member. The view, the search and the member in focus are kept in
+the page's address, so a link can point at one member's place. **Collapse all**
+folds the view. Searching usernames and display names keeps matching members'
+ancestors visible and searches the selected view. The tree follows the WAI-ARIA
+tree pattern: arrow keys move between members and open or close branches, Home
+and End jump to the ends, and Enter opens a member's profile.
 
-Each member shows a direct invitee count and their join date. A root is labeled
-**No inviter recorded**, **Inviter is unavailable in this view**, or **Earlier
-lineage is unavailable**; it does not necessarily mean an uninvited signup.
-Pending, unconfirmed, suspended and deleted members remain excluded. Cyclic
-lineage from damaged or imported data is broken into visible branches so no
-member silently disappears. Staff with `manage_invites` can open a preselected
-grant form from a member's row; both pages link to each other.
+Each member shows their direct invitees, everyone below them in all, and their
+join date. Pending, unconfirmed, suspended and deleted members are not listed.
+An inviter who is not a member any more — deleted, suspended, or otherwise gone
+— is shown as **A former member**, one anonymous place their invitees stay
+under, rather than splitting the branch into roots. A member who hides their
+network (Mastodon's *hide your follows and followers* setting) is shown as **A
+member who hides their network**, without name, picture or date, to everyone
+but themselves and staff with `manage_invites`; their branch stays in place. A
+root is labeled **No inviter recorded** or, for cyclic lineage from damaged or
+imported data, **Earlier lineage is unavailable**; cycles are broken into
+visible branches so no member silently disappears.
+
+The lineage `eunha.invite_lineage` keeps across a deletion is written by eunha's
+account deletion. A deletion done while the database is run by Mastodon removes
+the link for good, as Mastodon itself would.
+
+The server sends the tree as a flat list in which parents precede their
+children, with an `ETag`, so neither end walks a long chain recursively and an
+unchanged tree is answered with 304. Staff with `manage_invites` can open a
+preselected grant form from a member's row; both pages link to each other.
 
 
 Finding your invites
@@ -161,8 +214,11 @@ member’s tree row.
 Database compatibility
 ----------------------
 
-Migration 028 adds only `eunha.invite_grants` and `eunha.granted_invites`.
-Mastodon’s `public.invites`, `users.invite_id` and role tables remain unchanged.
+Migration 028 adds only `eunha.invite_grants` and `eunha.granted_invites`;
+migration 041 adds the grant's `revoked_at` and `revoked_by_account_id` and the
+`eunha.user_standings` view. Mastodon’s `public.invites`, `users.invite_id` and
+role tables remain unchanged: revoking a grant only sets `expires_at`, as
+Mastodon's own `Expireable#expire!` does.
 No previous invites are backfilled: existing rows cannot reliably distinguish
 staff grants from self-created codes, so legacy invites retain role-based
 review.

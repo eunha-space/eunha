@@ -138,6 +138,7 @@ const routes = [
   { path: '/invite-tree', element: <InviteTree /> },
   { path: '/invites', element: <Invites /> },
   { path: '/signup', element: <Signup /> },
+  { path: '/invite/:code', element: <Signup /> },
   { path: '/filters', element: <Filters /> },
   { path: '/settings', element: <Settings /> },
   // Mastodon's import and export pages, at its paths.

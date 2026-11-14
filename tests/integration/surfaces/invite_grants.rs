@@ -53,7 +53,8 @@ async fn test_grant_mints_codes_into_a_members_account() {
         assert_eq!(invite["max_uses"].as_i64(), Some(1));
         assert_eq!(invite["uses"].as_i64(), Some(0));
         assert!(invite["expires_at"].is_null());
-        assert!(invite["url"].as_str().unwrap().contains("invite="));
+        // Mastodon's `public_invite_url`.
+        assert!(invite["url"].as_str().unwrap().contains("/invite/"));
     }
 
     // Reading what you were given is not permission to make your own.
@@ -81,7 +82,7 @@ async fn test_grant_to_everyone() {
         .post_json(
             "/api/eunha/v1/invite_grants",
             Some(&ctx.alice_token),
-            &json!({"count": 1, "max_uses": 5}),
+            &json!({"all": true, "count": 1, "max_uses": 5}),
         )
         .await
         .json()
@@ -189,19 +190,20 @@ async fn test_granted_code_nests_the_signup_under_its_holder() {
         .json()
         .await
         .unwrap();
-    let roots = tree["roots"].as_array().unwrap();
-    let bob = roots
+    let carol = tree["members"]
+        .as_array()
+        .unwrap()
         .iter()
-        .find(|n| n["id"].as_str() == Some(ctx.bob_id.as_str()))
-        .expect("bob should be a root");
-    assert!(
-        bob["children"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|n| n["username"].as_str() == Some("carol")),
+        .find(|n| n["username"].as_str() == Some("carol"))
+        .expect("carol should be in the tree");
+    assert_eq!(
+        carol["parent_id"], ctx.bob_id,
         "carol should hang under bob, whose code she used",
     );
+    // And bob's own list says who came through the link.
+    let invite = &invites_of(&ctx, &ctx.bob_token).await[0];
+    assert_eq!(invite["joined"]["accounts"][0]["acct"], "carol");
+    assert_eq!(invite["joined"]["pending"], 0);
 }
 
 /// Only `manage_invites` (which `administrator` includes) may hand invites out;
@@ -223,7 +225,11 @@ async fn test_grant_requires_manage_invites() {
     );
     assert_eq!(
         ctx.api
-            .post_json("/api/eunha/v1/invite_grants", None, &json!({"count": 1}),)
+            .post_json(
+                "/api/eunha/v1/invite_grants",
+                None,
+                &json!({"all": true, "count": 1}),
+            )
             .await
             .status(),
         StatusCode::UNAUTHORIZED,
@@ -238,13 +244,16 @@ async fn test_grant_bounds_and_unknown_account() {
     make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
 
     for body in [
-        json!({"count": 0}),
-        json!({"count": 26}),
-        json!({"count": 1, "max_uses": 0}),
-        json!({"count": 1, "max_uses": 101}),
-        json!({"count": 1, "expires_in": -1}),
-        json!({"count": 1, "expires_in": i64::MAX}),
+        json!({"all": true, "count": 0}),
+        json!({"all": true, "count": 26}),
+        json!({"all": true, "count": 1, "max_uses": 0}),
+        json!({"all": true, "count": 1, "max_uses": 101}),
+        json!({"all": true, "count": 1, "expires_in": -1}),
+        json!({"all": true, "count": 1, "expires_in": i64::MAX}),
         json!({"account_id": "", "count": 1}),
+        // Naming nobody is not naming everybody.
+        json!({"count": 1}),
+        json!({"account_id": ctx.bob_id, "all": true, "count": 1}),
     ] {
         assert_eq!(
             ctx.api
@@ -513,7 +522,7 @@ async fn test_grant_recipients_match_bulk_eligibility_and_require_staff() {
         .post_json(
             "/api/eunha/v1/invite_grants",
             Some(&ctx.alice_token),
-            &json!({"count": 3}),
+            &json!({"all": true, "count": 3}),
         )
         .await
         .json()
@@ -522,4 +531,137 @@ async fn test_grant_recipients_match_bulk_eligibility_and_require_staff() {
     assert_eq!(response["accounts"], 1);
     assert_eq!(response["granted"], 3);
     assert!(invites_of(&ctx, &ctx.bob_token).await.is_empty());
+}
+
+/// Staff can review every handout and take one back. Revoking expires the
+/// links still usable, as revoking one invite does, and keeps every row.
+#[tokio::test]
+async fn test_grants_are_listed_and_revocable() {
+    let ctx = TestContext::new("invite-grant-revoke").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    ctx.api
+        .post_json(
+            "/api/eunha/v1/invite_grants",
+            Some(&ctx.alice_token),
+            &json!({"account_id": ctx.bob_id, "count": 2}),
+        )
+        .await;
+
+    // Members cannot see the record.
+    assert_eq!(
+        ctx.api
+            .get("/api/eunha/v1/invite_grants", Some(&ctx.bob_token))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN,
+    );
+    let grants: Vec<Value> = ctx
+        .api
+        .get("/api/eunha/v1/invite_grants", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(grants.len(), 1);
+    let grant = &grants[0];
+    assert_eq!(grant["granted_by"], "alice");
+    assert_eq!(grant["recipient"], "bob");
+    assert_eq!(grant["recipients"], 1);
+    assert_eq!(grant["links"], 2);
+    assert_eq!(grant["available"], 2);
+    assert!(grant["revoked_at"].is_null());
+
+    let id = grant["id"].as_str().unwrap();
+    assert_eq!(
+        ctx.api
+            .post_json(
+                &format!("/api/eunha/v1/invite_grants/{id}/revoke"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await
+            .status(),
+        StatusCode::FORBIDDEN,
+    );
+    let revoked: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/eunha/v1/invite_grants/{id}/revoke"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(revoked["expired"], 2);
+
+    let grants: Vec<Value> = ctx
+        .api
+        .get("/api/eunha/v1/invite_grants", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(grants[0]["available"], 0);
+    assert_eq!(grants[0]["revoked_by"], "alice");
+    let invites = invites_of(&ctx, &ctx.bob_token).await;
+    assert_eq!(invites.len(), 2, "revoking keeps the rows");
+    assert!(invites.iter().all(|i| i["valid_for_use"] == false));
+
+    assert_eq!(
+        ctx.api
+            .post_json(
+                "/api/eunha/v1/invite_grants/999999/revoke",
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+    );
+}
+
+/// A staff-granted single-use link admits one person without review, however
+/// many use it at once: the second is treated as Mastodon treats anyone with a
+/// used-up code, which on an invite-only instance is a refusal.
+#[tokio::test]
+async fn test_a_granted_link_admits_one_person_at_once() {
+    let ctx = TestContext::new("invite-grant-race").await;
+    make_admin(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    crate::helpers::set_setting(&ctx.db, "registrations_mode", "none").await;
+    ctx.api
+        .post_json(
+            "/api/eunha/v1/invite_grants",
+            Some(&ctx.alice_token),
+            &json!({"account_id": ctx.bob_id, "count": 1}),
+        )
+        .await;
+    let code = invites_of(&ctx, &ctx.bob_token).await[0]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let body = |name: &str| {
+        json!({
+            "username": name,
+            "email": format!("{name}@example.com"),
+            "password": "a-long-enough-password",
+            "agreement": true,
+            "invite_code": code,
+        })
+    };
+    let (one, two, three) = (body("racer1"), body("racer2"), body("racer3"));
+    let (a, b, c) = tokio::join!(ctx.sign_up(&one), ctx.sign_up(&two), ctx.sign_up(&three));
+    let admitted = [a.status(), b.status(), c.status()]
+        .iter()
+        .filter(|s| **s == StatusCode::OK)
+        .count();
+    assert_eq!(admitted, 1, "{:?}", [a.status(), b.status(), c.status()]);
+    let uses: i32 = sqlx::query_scalar("SELECT uses FROM invites WHERE code = $1")
+        .bind(&code)
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(uses, 1);
 }

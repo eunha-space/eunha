@@ -9,6 +9,7 @@ import {
   type AdminInvite,
 } from '../../admin-server-api.ts'
 import { InviteGrantForm } from '@/components/invite-grant-form.tsx'
+import { InviteGrantHistory } from '@/components/invite-grant-history.tsx'
 import { getToken } from '../../auth.ts'
 import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
@@ -34,6 +35,7 @@ export default function AdminInvites() {
   const [page, setPage] = useState(1)
   const [invites, setInvites] = useState<AdminInvite[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [granted, setGranted] = useState(0)
 
   const load = () => {
     if (!token) return
@@ -78,7 +80,8 @@ export default function AdminInvites() {
         </>
       }
     >
-      <InviteGrantForm onGranted={load} />
+      <InviteGrantForm onGranted={() => { load(); setGranted((n) => n + 1) }} />
+      <InviteGrantHistory refresh={granted} />
       <div className="mb-3 flex gap-3">
         <Button render={<Link to="/invites" />}>Create invite</Button>
         <Button variant="outline" render={<Link to="/invite-tree" />}>Invite tree</Button>

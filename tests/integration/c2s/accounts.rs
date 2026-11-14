@@ -4151,8 +4151,8 @@ async fn test_delete_account_preserves_invite_lineage() {
         "invitee should still point at its inviter"
     );
 
-    // Bob is still a member of the tree (promoted to a root, since a suspended
-    // inviter is not itself listed).
+    // Bob is still a member of the tree, under an anonymous former member,
+    // since a deleted inviter is not itself listed.
     let tree: Value = ctx
         .api
         .get("/api/eunha/v1/invite_tree", Some(&ctx.bob_token))
@@ -4160,11 +4160,17 @@ async fn test_delete_account_preserves_invite_lineage() {
         .json()
         .await
         .unwrap();
-    let roots = tree["roots"].as_array().unwrap();
-    assert!(
-        roots.iter().any(|n| n["id"] == ctx.bob_id.as_str()),
-        "invitee should still appear in the invite tree: {tree}"
-    );
+    let members = tree["members"].as_array().unwrap();
+    let bob = members
+        .iter()
+        .find(|n| n["id"] == ctx.bob_id.as_str())
+        .unwrap_or_else(|| panic!("invitee should still appear in the invite tree: {tree}"));
+    let parent = members
+        .iter()
+        .find(|n| n["id"] == bob["parent_id"])
+        .expect("bob's place keeps a parent");
+    assert_eq!(parent["kind"], "former_member");
+    assert!(!tree.to_string().contains(&format!("\"{}\"", ctx.alice_id)));
 }
 
 /// DELETE /api/v1/accounts with wrong password returns 401.

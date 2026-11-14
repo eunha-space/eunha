@@ -30,6 +30,25 @@ pub struct InviteResponse {
     pub valid_for_use: bool,
     pub bypass_approval: bool,
     pub grant: Option<InviteGrant>,
+    /// Who signed up with it. eunha's own addition, as is this endpoint.
+    pub joined: InviteUsage,
+}
+
+/// The people behind `uses`, as the invite tree would show them: members by
+/// name unless they hide their network, then only counted; sign-ups still
+/// awaiting confirmation or approval counted apart, because they have not
+/// joined yet (and Mastodon never gives their use back if they never do).
+#[derive(Debug, Default, Serialize)]
+pub struct InviteUsage {
+    pub accounts: Vec<JoinedAccount>,
+    pub hidden: i64,
+    pub pending: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JoinedAccount {
+    pub id: String,
+    pub acct: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,9 +109,11 @@ pub async fn list_invites(
             )
         })
         .collect();
+    let mut usage = invite_usage(&state, rows.iter().map(|r| r.id).collect()).await?;
     let invites = rows
         .into_iter()
         .map(|r| InviteResponse {
+            joined: usage.remove(&r.id).unwrap_or_default(),
             bypass_approval: role_bypass || grants.contains_key(&r.id),
             grant: grants.remove(&r.id),
             url: invite_url(instance.web_domain(), &r.code),
@@ -113,6 +134,10 @@ pub async fn list_invites(
 
     Ok(Json(invites))
 }
+
+/// How many fresh codes to try before giving up on a collision. With 57^8
+/// possible codes, even a second attempt is vanishingly rare.
+pub(crate) const CODE_ATTEMPTS: usize = 8;
 
 /// Mastodon Invite::COMMENT_SIZE_LIMIT.
 const COMMENT_SIZE_LIMIT: usize = 420;
@@ -151,26 +176,36 @@ pub async fn create_invite(
         )));
     }
 
-    let code = generate_code();
     let expires_at = req
         .expires_in
         .map(|s| chrono::Utc::now().naive_utc() + chrono::Duration::seconds(s));
 
-    let row = sqlx::query!(
-        r#"INSERT INTO invites (code, user_id, max_uses, expires_at, autofollow, comment, created_at, updated_at)
-           VALUES ($1, (SELECT id FROM users WHERE account_id = $2), $3, $4, $5, $6, now(), now())
-           RETURNING id, code, expires_at, max_uses, uses, autofollow, comment, created_at"#,
-        code,
-        auth.account_id,
-        req.max_uses,
-        expires_at,
-        req.autofollow,
-        comment,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    // `Invite#set_code` samples until no invite has the code. A collision
+    // here is the same retry, with the unique index deciding.
+    let mut row = None;
+    for _ in 0..CODE_ATTEMPTS {
+        row = sqlx::query!(
+            r#"INSERT INTO invites (code, user_id, max_uses, expires_at, autofollow, comment, created_at, updated_at)
+               VALUES ($1, (SELECT id FROM users WHERE account_id = $2), $3, $4, $5, $6, now(), now())
+               ON CONFLICT (code) DO NOTHING
+               RETURNING id, code, expires_at, max_uses, uses, autofollow, comment, created_at"#,
+            generate_code(),
+            auth.account_id,
+            req.max_uses,
+            expires_at,
+            req.autofollow,
+            comment,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if row.is_some() {
+            break;
+        }
+    }
+    let row = row.ok_or_else(|| AppError::Internal(anyhow::anyhow!("no free invite code")))?;
 
     Ok(Json(InviteResponse {
+        joined: InviteUsage::default(),
         grant: None,
         bypass_approval: super::signup::invite_bypasses_approval(&state, row.id).await,
         url: invite_url(instance.web_domain(), &row.code),
@@ -232,6 +267,40 @@ pub async fn delete_invite(
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+/// [`InviteUsage`] for each of `invite_ids`, from `users.invite_id`.
+async fn invite_usage(
+    state: &AppState,
+    invite_ids: Vec<i64>,
+) -> AppResult<std::collections::HashMap<i64, InviteUsage>> {
+    let rows: Vec<(i64, i64, String, bool, bool)> = sqlx::query_as(
+        "SELECT u.invite_id, a.id, a.username,
+                (u.confirmed_at IS NOT NULL AND u.approved) AS joined,
+                COALESCE(a.hide_collections, false) AS hidden
+         FROM public.users u JOIN public.accounts a ON a.id = u.account_id
+         WHERE u.invite_id = ANY($1)
+           AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
+         ORDER BY u.created_at",
+    )
+    .bind(&invite_ids)
+    .fetch_all(&state.db)
+    .await?;
+    let mut usage: std::collections::HashMap<i64, InviteUsage> = Default::default();
+    for (invite_id, account_id, username, joined, hidden) in rows {
+        let entry = usage.entry(invite_id).or_default();
+        if !joined {
+            entry.pending += 1;
+        } else if hidden {
+            entry.hidden += 1;
+        } else {
+            entry.accounts.push(JoinedAccount {
+                id: account_id.to_string(),
+                acct: username,
+            });
+        }
+    }
+    Ok(usage)
+}
+
 /// Mastodon's `InvitePolicy#create?`: `role.can?(:invite_users)`.
 ///
 /// The permission is on the everyone role by default (`Flags::DEFAULT`), so out
@@ -254,8 +323,11 @@ pub fn generate_code() -> String {
         .collect()
 }
 
+/// `public_invite_url(invite_code:)`, Mastodon's `/invite/:invite_code`, so a
+/// link handed out here keeps working if the instance goes back to Mastodon,
+/// and links Mastodon handed out keep working here.
 pub fn invite_url(domain: &str, code: &str) -> String {
-    format!("https://{domain}/signup?invite={code}")
+    format!("https://{domain}/invite/{code}")
 }
 
 /// `Invite#valid_for_use?`'s `user&.functional?`.

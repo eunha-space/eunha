@@ -247,3 +247,137 @@ async fn test_role_permissions_are_computed() {
         "administrator should compute to UserRole::Flags::ALL",
     );
 }
+
+/// Mastodon's invite link, `/invite/:invite_code`, and the JSON the apps read
+/// from it (`Api::V1::InvitesController#show`): 404 for no such code, 401 for
+/// one not good for use, 403 for a sign-up IP block, and otherwise the code and
+/// the instance's API. Links handed out point there too.
+#[tokio::test]
+async fn test_public_invite_link_is_mastodons() {
+    let ctx = TestContext::new("invite-public-link").await;
+    let invite: Value = ctx
+        .api
+        .post_json("/api/v1/invites", Some(&ctx.alice_token), &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let code = invite["code"].as_str().unwrap().to_string();
+    assert!(
+        invite["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/invite/{code}")),
+        "{invite}",
+    );
+
+    let json_get = |path: String| {
+        let api = &ctx.api;
+        async move {
+            api.http
+                .get(api.url(&path))
+                .header("host", &api.host)
+                .header("accept", "application/json")
+                .send()
+                .await
+                .unwrap()
+        }
+    };
+
+    let ok = json_get(format!("/invite/{code}")).await;
+    assert_eq!(ok.status(), StatusCode::OK);
+    let body: Value = ok.json().await.unwrap();
+    assert_eq!(body["invite_code"], code.as_str());
+    assert!(body["instance_api_url"]
+        .as_str()
+        .unwrap()
+        .ends_with("/api/v2/instance"));
+    // The `.json` suffix asks the same, whatever the Accept header says.
+    let suffixed = ctx.api.get(&format!("/invite/{code}.json"), None).await;
+    assert_eq!(suffixed.status(), StatusCode::OK);
+    assert_eq!(
+        suffixed.json::<Value>().await.unwrap()["invite_code"],
+        code.as_str()
+    );
+
+    let missing = json_get("/invite/nosuchcode".into()).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        missing.json::<Value>().await.unwrap()["error"],
+        "Record not found"
+    );
+
+    ctx.api
+        .delete(
+            &format!("/api/v1/invites/{}", invite["id"].as_str().unwrap()),
+            &ctx.alice_token,
+        )
+        .await;
+    let expired = json_get(format!("/invite/{code}")).await;
+    assert_eq!(expired.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        expired.json::<Value>().await.unwrap()["error"],
+        "This invite is not valid"
+    );
+
+    // A browser gets the sign-up page, not JSON.
+    let page = ctx.api.get(&format!("/invite/{code}"), None).await;
+    assert!(!page
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .starts_with("application/json"),);
+}
+
+/// What `GET /api/v1/invites` adds about each link: who joined with it, by name
+/// unless they hide their network, and how many have not finished joining.
+#[tokio::test]
+async fn test_invites_say_who_joined() {
+    let ctx = TestContext::new("invite-joined").await;
+    let invite: Value = ctx
+        .api
+        .post_json("/api/v1/invites", Some(&ctx.alice_token), &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id: i64 = invite["id"].as_str().unwrap().parse().unwrap();
+    sqlx::query("UPDATE users SET invite_id = $1 WHERE account_id = $2")
+        .bind(id)
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let usage = joined(&ctx.api, &ctx.alice_token).await;
+    assert_eq!(usage["accounts"][0]["acct"], "bob");
+    assert_eq!(usage["hidden"], 0);
+
+    sqlx::query("UPDATE accounts SET hide_collections = true WHERE id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let usage = joined(&ctx.api, &ctx.alice_token).await;
+    assert!(usage["accounts"].as_array().unwrap().is_empty());
+    assert_eq!(usage["hidden"], 1);
+
+    sqlx::query("UPDATE users SET approved = false WHERE account_id = $1")
+        .bind(ctx.bob_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let usage = joined(&ctx.api, &ctx.alice_token).await;
+    assert_eq!(usage["hidden"], 0);
+    assert_eq!(usage["pending"], 1);
+}
+
+async fn joined(api: &crate::helpers::ApiClient, token: &str) -> Value {
+    let list: Vec<Value> = api
+        .get("/api/v1/invites", Some(token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    list[0]["joined"].clone()
+}

@@ -65,11 +65,14 @@ kind = "addition"
 summary = "Exposes who invited whom"
 mastodon = "Records `users.invite_id` but offers no API for the resulting tree."
 eunha = """
-Serves `/api/eunha/v1/invite_tree`, and keeps `eunha.invite_lineage` so the \
-lineage survives the inviter's account being deleted. Roots explain missing \
-ancestry without identifying excluded inviters; cyclic lineage retains every \
-visible member. The web client supports branch navigation and ancestry-preserving \
-search."""
+Serves `/api/eunha/v1/invite_tree` (the whole instance, or `?scope=branch` \
+for the viewer's line), and keeps `eunha.invite_lineage` so the lineage \
+survives the inviter's account being deleted. An inviter who is no longer a \
+member, or a member who hides their network (`accounts.hide_collections`), is \
+an anonymous place that keeps the branch below it; cyclic lineage retains \
+every visible member. `GET /api/v1/invites` reports who joined through each \
+link under the same rules. The web client supports branch navigation, \
+ancestry-preserving search and keyboard navigation."""
 why = """
 An instance that grew by invitation has a shape worth seeing. It is served under \
 `/api/eunha/` rather than `/api/v1/`, so no Mastodon client can mistake it for \
@@ -251,10 +254,16 @@ way to give somebody an invite, and `InvitesController#index` refuses the list \
 to anyone who may not create one."""
 eunha = """
 Serves `POST /api/eunha/v1/invite_grants`, which creates codes owned by a named \
-member — or by every eligible local member — for anyone holding `manage_invites`. \
-Each new grant has metadata in the eunha schema and bypasses staff approval, \
-without changing the member’s role. Listing owned invites needs no permission. \
-Legacy and self-created codes retain role-based approval."""
+member — or, asked for with `all`, by every eligible local member — for anyone \
+holding `manage_invites`, who can also list handouts and revoke one (expiring \
+its usable codes). Each new grant has metadata in the eunha schema, not in \
+`admin_action_logs`, and bypasses staff approval, without changing the \
+member’s role. Because it admits without review, a granted code's last use is \
+checked again under its row lock, so a single-use grant admits one person even \
+when several sign up at once; a racer who loses is then treated as Mastodon \
+treats a used-up code. Listing owned invites needs no permission. Legacy and \
+self-created codes retain role-based approval and Mastodon's unconditional \
+`increment_invite_uses`."""
 why = """
 An instance that wants to say 'you may bring two people' has nothing in \
 Mastodon to say it with. Taking `invite_users` away leaves the admin as the \

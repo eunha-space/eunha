@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { getInstance } from '../api.ts'
 import { signUp, resolveInvite, type InviteResolution } from '../eunha-api.ts'
+import { inviteCodeFrom } from '../lib/invites.ts'
 import { beginLogin } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -20,7 +21,9 @@ interface RegistrationExtras {
 
 export default function Signup() {
   const [params] = useSearchParams()
-  const inviteFromUrl = params.get('invite')?.trim() ?? ''
+  // `/invite/:code` is Mastodon's link; `/signup?invite=` eunha's older one.
+  const { code: codeFromPath } = useParams()
+  const inviteFromUrl = (codeFromPath ?? params.get('invite') ?? '').trim()
 
   const [registrationsOpen, setRegistrationsOpen] = useState<boolean | null>(null)
   const [approvalRequired, setApprovalRequired] = useState(false)
@@ -152,6 +155,15 @@ export default function Signup() {
                   required
                   autoComplete="off"
                   onChange={(e) => setInvite(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData('text')
+                    const code = inviteCodeFrom(pasted)
+                    if (code !== pasted.trim()) {
+                      e.preventDefault()
+                      setInvite(code)
+                    }
+                  }}
+                  onBlur={() => setInvite((current) => inviteCodeFrom(current))}
                 />
               </div>
             )}

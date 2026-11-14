@@ -116,7 +116,29 @@ function InviteRow({
         )}
         {invite.autofollow && <span>New members follow you</span>}
       </div>
+      <JoinedThrough invite={invite} />
     </div>
+  )
+}
+
+/** Who came through a link, as the invite tree would show them. */
+function JoinedThrough({ invite }: { invite: Invite }) {
+  const { accounts, hidden, pending } = invite.joined ?? { accounts: [], hidden: 0, pending: 0 }
+  if (!accounts.length && !hidden && !pending) return null
+  return (
+    <p className="text-muted-foreground text-xs">
+      {(accounts.length > 0 || hidden > 0) && <>
+        Joined:{' '}
+        {accounts.map((account, i) => (
+          <span key={account.id}>
+            {i > 0 && ', '}
+            <Link to={`/@${account.acct}`}>@{account.acct}</Link>
+          </span>
+        ))}
+        {hidden > 0 && `${accounts.length ? ', ' : ''}${hidden} ${hidden === 1 ? 'member who hides' : 'members who hide'} their network`}
+      </>}
+      {pending > 0 && `${accounts.length || hidden ? ' · ' : ''}${pending} not finished joining (awaiting confirmation or approval)`}
+    </p>
   )
 }
 

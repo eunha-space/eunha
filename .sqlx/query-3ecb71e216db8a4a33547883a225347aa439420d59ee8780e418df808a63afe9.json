@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO invites (code, user_id, max_uses, expires_at, autofollow, comment, created_at, updated_at)\n           VALUES ($1, (SELECT id FROM users WHERE account_id = $2), $3, $4, $5, $6, now(), now())\n           RETURNING id, code, expires_at, max_uses, uses, autofollow, comment, created_at",
+  "query": "INSERT INTO invites (code, user_id, max_uses, expires_at, autofollow, comment, created_at, updated_at)\n               VALUES ($1, (SELECT id FROM users WHERE account_id = $2), $3, $4, $5, $6, now(), now())\n               ON CONFLICT (code) DO NOTHING\n               RETURNING id, code, expires_at, max_uses, uses, autofollow, comment, created_at",
   "describe": {
     "columns": [
       {
@@ -113,5 +113,5 @@
       false
     ]
   },
-  "hash": "f51f33c611b4e14bbf1c31f635fc23dbac62314d7296689239e183496d8d5fe9"
+  "hash": "3ecb71e216db8a4a33547883a225347aa439420d59ee8780e418df808a63afe9"
 }

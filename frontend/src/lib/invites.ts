@@ -25,3 +25,22 @@ export function availableInviteCount(invites: Invite[]): number | null {
     ? usable.length
     : null
 }
+
+/**
+ * The code in what someone typed or pasted: a bare code, or an invite link in
+ * either Mastodon's form (`/invite/CODE`) or the sign-up page's (`?invite=`).
+ */
+export function inviteCodeFrom(input: string): string {
+  const text = input.trim()
+  if (!/^https?:\/\/|^\/|\?invite=|\/invite\//.test(text)) return text
+  try {
+    const url = new URL(text, window.location.origin)
+    const query = url.searchParams.get('invite') ?? url.searchParams.get('invite_code')
+    if (query) return query.trim()
+    const path = url.pathname.match(/\/invite\/([^/]+)\/?$/)
+    if (path) return decodeURIComponent(path[1]).replace(/\.json$/, '')
+  } catch {
+    // Not a link after all.
+  }
+  return text
+}
