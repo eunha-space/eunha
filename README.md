@@ -47,8 +47,7 @@ See [*Contributing*](./docs/contributing/index.md).
 License
 -------
 
-[MIT](./LICENSE).
-
-The files copied from Mastodon keep Mastodon's license, the GNU AGPL-3.0:
-the schema snapshots in *mastodon/*, and the terms of service and privacy
-policy templates in *src/templates/*.
+eunha is licensed under the [GNU Affero General Public License
+v3.0](./LICENSE), the same license as Mastodon. It includes files copied from
+Mastodon: the schema snapshots in *mastodon/*, and the terms of service and
+privacy policy templates in *src/templates/*.
