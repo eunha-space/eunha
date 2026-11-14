@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react'
+import { getToken } from '../auth.ts'
 
 /**
  * Feed backed by a masto paginator, for endpoints whose cursor lives only in
@@ -14,11 +15,30 @@ import { useCallback, useEffect, useRef, useState, type DependencyList } from 'r
  * The paginator is reopened whenever `deps` change; a run that is superseded
  * (or unmounted) stops writing state.
  */
+/**
+ * The newest items each restorable list showed last, as `useInfiniteFeed`
+ * keeps them: shown at once on the next visit while the first page reloads.
+ */
+const recentLists = new Map<string, unknown[]>()
+const RECENT_ITEMS = 40
+
 export function useInfinitePaginator<T>(
   open: () => AsyncIterable<T[]>,
   deps: DependencyList,
+  restorationId?: string,
 ) {
-  const [items, setItems] = useState<T[] | null>(null)
+  const recentKey = restorationId ? JSON.stringify([getToken(), restorationId, deps]) : null
+  const [items, setItems] = useState<T[] | null>(
+    () => ((recentKey ? recentLists.get(recentKey) : undefined) as T[] | undefined) ?? null,
+  )
+  const latestItems = useRef(items)
+  latestItems.current = items
+  useEffect(() => () => {
+    if (!recentKey || !latestItems.current) return
+    recentLists.delete(recentKey)
+    recentLists.set(recentKey, latestItems.current.slice(0, RECENT_ITEMS))
+    if (recentLists.size > 30) recentLists.delete(recentLists.keys().next().value!)
+  }, [recentKey])
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [done, setDone] = useState(false)
@@ -33,7 +53,8 @@ export function useInfinitePaginator<T>(
 
   useEffect(() => {
     const run = ++runRef.current
-    setItems(null)
+    // What this list held last, if anything, until the first page replaces it.
+    setItems(((recentKey ? recentLists.get(recentKey) : undefined) as T[] | undefined) ?? null)
     setError(null)
     setDone(false)
     setLoadingMore(false)
@@ -60,7 +81,7 @@ export function useInfinitePaginator<T>(
       runRef.current++
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, [...deps, recentKey])
 
   const loadMore = useCallback(async () => {
     const iter = iterRef.current

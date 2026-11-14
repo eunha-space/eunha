@@ -156,6 +156,7 @@ export function MessagesFeed() {
   const feed = useInfinitePaginator<mastodon.v1.Conversation>(
     () => getConversations(token ?? ''),
     [token],
+    'messages',
   )
   const conversations = feed.items
 
