@@ -341,20 +341,18 @@ pub async fn notify_staff(state: &AppState, report_id: i64, target_id: i64) {
                 None => (Some(report.reporter_username.clone()), None),
                 Some(d) => (None, Some(d.clone())),
             };
-            if let Err(error) = state
-                .mailer()
-                .send_new_report(
-                    &recipient.email,
-                    &state.instance,
+            crate::admin_digest::alert(
+                &state,
+                staff_id,
+                &recipient.email,
+                crate::admin_digest::Alert::Report {
                     report_id,
-                    reporter.as_deref(),
-                    reporter_domain.as_deref(),
-                    &target,
-                )
-                .await
-            {
-                tracing::warn!(%error, "could not mail staff about a report");
-            }
+                    reporter,
+                    reporter_domain,
+                    target,
+                },
+            )
+            .await;
         }
     }
     .await;

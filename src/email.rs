@@ -570,21 +570,7 @@ impl EmailSender {
         let instance_domain = instance.local_domain.as_str();
         let web_domain = instance.web_domain();
         let subject = format!("New report for {instance_domain} (#{report_id})");
-        let line = match (reporter, reporter_domain) {
-            (Some(reporter), _) => format!(
-                "{} has reported {}",
-                html_escape(reporter),
-                html_escape(target)
-            ),
-            (None, Some(domain)) => {
-                format!(
-                    "Someone from {} has reported {}",
-                    html_escape(domain),
-                    html_escape(target)
-                )
-            }
-            (None, None) => format!("Someone has reported {}", html_escape(target)),
-        };
+        let line = report_line(reporter, reporter_domain, target);
         let url = format!("https://{web_domain}/admin/reports/{report_id}");
         let body = format!("<p>{line}</p><p><a href=\"{url}\">{url}</a></p>");
         self.send_admin(to, &subject, &body, false).await
@@ -697,6 +683,91 @@ impl EmailSender {
                 html_escape(account.sign_up_ip.as_deref().unwrap_or("")),
             ));
         }
+        self.send_admin(to, &subject, &body, false).await
+    }
+
+    /// The summary of a staff member's held alerts (see
+    /// [`crate::admin_digest`]): each report, appeal and account awaiting
+    /// review in the order they came in, worded as their own mails word them,
+    /// sent as an `AdminMailer` mail is.
+    pub async fn send_admin_digest(
+        &self,
+        to: &str,
+        instance: &crate::config::InstanceConfig,
+        alerts: &[crate::admin_digest::Alert],
+    ) -> anyhow::Result<()> {
+        use crate::admin_digest::Alert;
+        let instance_domain = instance.local_domain.as_str();
+        let web_domain = instance.web_domain();
+        let count = |f: fn(&Alert) -> bool| alerts.iter().filter(|a| f(a)).count();
+        let counts = digest_counts(
+            count(|a| matches!(a, Alert::Report { .. })),
+            count(|a| matches!(a, Alert::Appeal { .. })),
+            count(|a| matches!(a, Alert::PendingAccount { .. })),
+        );
+        let subject = format!("New for review on {instance_domain}: {counts}");
+        let mut body = format!(
+            "<p>Since the last email, these came in on {} for you to review:</p>",
+            html_escape(instance_domain)
+        );
+        for alert in alerts {
+            let entry = match alert {
+                Alert::Report {
+                    report_id,
+                    reporter,
+                    reporter_domain,
+                    target,
+                } => {
+                    let url = format!("https://{web_domain}/admin/reports/{report_id}");
+                    format!(
+                        "<p>Report #{report_id}: {}<br><a href=\"{url}\">{url}</a></p>",
+                        report_line(reporter.as_deref(), reporter_domain.as_deref(), target)
+                    )
+                }
+                Alert::Appeal {
+                    strike_id,
+                    target,
+                    action_taken_by,
+                    strike_created_at,
+                    action,
+                    text,
+                } => {
+                    let url = format!("https://{web_domain}/disputes/strikes/{strike_id}");
+                    format!(
+                        "<p>Appeal: {} is appealing a moderation decision by {} from {}, \
+                         which was {}. They wrote:</p><blockquote>{}</blockquote>\
+                         <p><a href=\"{url}\">{url}</a></p>",
+                        html_escape(target),
+                        html_escape(action_taken_by),
+                        strike_created_at.format("%b %d, %Y, %H:%M UTC"),
+                        appeal_action(action),
+                        html_escape(text).replace('\n', "<br>"),
+                    )
+                }
+                Alert::PendingAccount {
+                    account_id,
+                    username,
+                    invite_request,
+                } => {
+                    let url = format!("https://{web_domain}/admin/accounts/{account_id}");
+                    let reason = invite_request
+                        .as_deref()
+                        .filter(|r| !r.is_empty())
+                        .map(|r| format!("<blockquote>{}</blockquote>", html_escape(r)))
+                        .unwrap_or_default();
+                    format!(
+                        "<p>Account up for review: <strong>{}</strong></p>{reason}\
+                         <p><a href=\"{url}\">{url}</a></p>",
+                        html_escape(username)
+                    )
+                }
+            };
+            body.push_str(&entry);
+        }
+        body.push_str(
+            "<p>You get at most one email like this an hour. The first new item after a \
+             quiet hour is emailed at once.</p>",
+        );
         self.send_admin(to, &subject, &body, false).await
     }
 
@@ -1085,16 +1156,7 @@ impl EmailSender {
         let instance_domain = instance.local_domain.as_str();
         let web_domain = instance.web_domain();
         let subject = format!("{target} is appealing a moderation decision on {instance_domain}");
-        // `admin_mailer.new_appeal.actions`.
-        let kind = match action {
-            "delete_statuses" => "to delete their posts",
-            "disable" => "to freeze their account",
-            "mark_statuses_as_sensitive" => "to mark their posts as sensitive",
-            "sensitive" => "to mark their account as sensitive",
-            "silence" => "to limit their account",
-            "suspend" => "to suspend their account",
-            _ => "a warning",
-        };
+        let kind = appeal_action(action);
         let date = strike_created_at.format("%b %d, %Y, %H:%M UTC");
         let url = format!("https://{web_domain}/disputes/strikes/{strike_id}");
         let body = format!(
@@ -1517,6 +1579,63 @@ pub fn html_escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// `admin_mailer.new_report.body` and `body_remote`: who reported whom.
+fn report_line(reporter: Option<&str>, reporter_domain: Option<&str>, target: &str) -> String {
+    match (reporter, reporter_domain) {
+        (Some(reporter), _) => format!(
+            "{} has reported {}",
+            html_escape(reporter),
+            html_escape(target)
+        ),
+        (None, Some(domain)) => format!(
+            "Someone from {} has reported {}",
+            html_escape(domain),
+            html_escape(target)
+        ),
+        (None, None) => format!("Someone has reported {}", html_escape(target)),
+    }
+}
+
+/// `admin_mailer.new_appeal.actions`: what a strike's action did, for a
+/// sentence about appealing it.
+fn appeal_action(action: &str) -> &'static str {
+    match action {
+        "delete_statuses" => "to delete their posts",
+        "disable" => "to freeze their account",
+        "mark_statuses_as_sensitive" => "to mark their posts as sensitive",
+        "sensitive" => "to mark their account as sensitive",
+        "silence" => "to limit their account",
+        "suspend" => "to suspend their account",
+        _ => "a warning",
+    }
+}
+
+/// "3 reports, 1 appeal": how many of each, the nonzero ones only.
+fn digest_counts(reports: usize, appeals: usize, accounts: usize) -> String {
+    let plural = |n: usize, one: &str, many: &str| {
+        if n == 1 {
+            format!("1 {one}")
+        } else {
+            format!("{n} {many}")
+        }
+    };
+    let mut parts = Vec::new();
+    if reports > 0 {
+        parts.push(plural(reports, "report", "reports"));
+    }
+    if appeals > 0 {
+        parts.push(plural(appeals, "appeal", "appeals"));
+    }
+    if accounts > 0 {
+        parts.push(plural(
+            accounts,
+            "account up for review",
+            "accounts up for review",
+        ));
+    }
+    parts.join(", ")
 }
 
 /// What every email to a subscriber carries besides its body.

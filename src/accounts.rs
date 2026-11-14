@@ -1357,7 +1357,8 @@ pub async fn enable(state: &crate::state::AppState, user_id: i64) -> Result<()> 
 
 /// `User#prepare_new_user!`, the part eunha has: `BootstrapTimelineWorker`,
 /// which follows the inviter when the invite says to and tells staff, the
-/// welcome mail an hour later, and the `account.approved` webhook.
+/// welcome mail an hour later when `welcome_email` is on, and the
+/// `account.approved` webhook.
 pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
     // Approved and confirmed, the account joins `Account.searchable`.
     crate::search::elasticsearch::indexing::account(state, account_id).await;
@@ -1370,14 +1371,16 @@ pub async fn prepare_new_user(state: &crate::state::AppState, account_id: i64) {
     .ok()
     .flatten();
     let invite_id = user.as_ref().and_then(|u| u.invite_id);
+    let welcome_email = crate::settings::boolean(state, "welcome_email").await;
     // `ActivityTracker.increment('activity:accounts:local')` and
     // `ActivityTracker.record('activity:logins', id)`.
     crate::activity_tracker::increment(state, crate::activity_tracker::ACCOUNTS_LOCAL).await;
     if let Some(user) = &user {
         crate::activity_tracker::record(state, crate::activity_tracker::LOGINS, user.id).await;
     }
-    // `UserMailer.welcome(self).deliver_later(wait: 1.hour)`.
-    if let Some(user) = &user {
+    // `UserMailer.welcome(self).deliver_later(wait: 1.hour)`, when the
+    // instance sends welcome mail at all.
+    if let Some(user) = user.as_ref().filter(|_| welcome_email) {
         crate::jobs::push_in(state, WELCOME_DELAY, WelcomeMailJob { user_id: user.id }).await;
     }
     // `TriggerWebhookWorker.perform_async('account.approved', ...)`
@@ -1442,8 +1445,14 @@ impl crate::jobs::Job for WelcomeMailJob {
 }
 
 /// `UserMailer#welcome`: nothing for a user gone in the meantime, nor, as
-/// `active_for_authentication?` holds it back, for a memorial account.
+/// `active_for_authentication?` holds it back, for a memorial account. Unlike
+/// Mastodon, eunha sends it only while the `welcome_email` setting is on,
+/// which it is not unless an administrator turns it on; one queued before it
+/// was turned off is not sent.
 pub async fn send_welcome(state: &crate::state::AppState, user_id: i64) -> Result<()> {
+    if !crate::settings::boolean(state, "welcome_email").await {
+        return Ok(());
+    }
     let Some(user) = sqlx::query!(
         r#"SELECT u.email, a.id AS account_id, a.username, a.memorial,
                   (a.display_name <> '' OR a.note <> ''
@@ -1779,19 +1788,17 @@ pub async fn notify_staff_about_pending_account(state: &crate::state::AppState, 
             ) {
                 continue;
             }
-            if let Err(error) = state
-                .mailer()
-                .send_new_pending_account(
-                    &recipient.email,
-                    &state.instance,
+            crate::admin_digest::alert(
+                state,
+                staff_id,
+                &recipient.email,
+                crate::admin_digest::Alert::PendingAccount {
                     account_id,
-                    &account.username,
-                    account.invite_request.as_deref(),
-                )
-                .await
-            {
-                tracing::warn!(%error, "could not mail staff about a pending account");
-            }
+                    username: account.username.clone(),
+                    invite_request: account.invite_request.clone(),
+                },
+            )
+            .await;
         }
         Ok(())
     }

@@ -18,6 +18,18 @@ async fn set_preferences(ctx: &TestContext, body: Value) {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
+/// Turn on the notification mails eunha leaves off by default, which
+/// Mastodon has on: follows, mentions, quotes and follow requests.
+async fn opt_in(ctx: &TestContext) {
+    set_preferences(
+        ctx,
+        json!({ "notification_emails": {
+            "follow": true, "mention": true, "quote": true, "follow_request": true,
+        } }),
+    )
+    .await;
+}
+
 /// Give a background task the time it would take to mail, then say whether
 /// nothing reached `address` with `subject`.
 async fn nothing_mailed(ctx: &TestContext, subject: &str) -> bool {
@@ -36,9 +48,22 @@ fn unsubscribe_path(ctx: &TestContext, mail: &eunha::email::SentMail) -> String 
         .to_owned()
 }
 
+/// Unlike Mastodon, eunha mails no notification until the member asks for it.
+#[tokio::test]
+async fn test_no_notification_mail_by_default() {
+    let ctx = TestContext::new("notifmail-default").await;
+    ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
+    ctx.api
+        .post_status(&ctx.bob_token, "@alice hello", "public")
+        .await;
+    assert!(nothing_mailed(&ctx, "is now following you").await);
+    assert!(nothing_mailed(&ctx, "You were mentioned").await);
+}
+
 #[tokio::test]
 async fn test_follow_mail_and_its_headers() {
     let ctx = TestContext::new("notifmail-follow").await;
+    opt_in(&ctx).await;
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
 
     let mail = ctx
@@ -102,6 +127,7 @@ async fn test_favourites_are_mailed_only_when_asked_for() {
 #[tokio::test]
 async fn test_mention_mail_writes_the_time_in_the_users_zone() {
     let ctx = TestContext::new("notifmail-mention").await;
+    opt_in(&ctx).await;
     set_preferences(&ctx, json!({ "time_zone": "Asia/Seoul" })).await;
     ctx.api
         .post_status(&ctx.bob_token, "@alice are you there?", "public")
@@ -117,6 +143,7 @@ async fn test_mention_mail_writes_the_time_in_the_users_zone() {
 #[tokio::test]
 async fn test_no_mail_while_online_unless_always() {
     let ctx = TestContext::new("notifmail-online").await;
+    opt_in(&ctx).await;
     let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
     // A web push subscription counts as being online.
     sqlx::query(
@@ -145,6 +172,7 @@ async fn test_no_mail_while_online_unless_always() {
 async fn test_no_mail_while_streaming_the_users_own_stream() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let ctx = TestContext::new("notifmail-streaming").await;
+    opt_in(&ctx).await;
     let url = format!(
         "{}/api/v1/streaming?stream=user:notification&access_token={}",
         ctx.api.base_url.replace("http://", "ws://"),
@@ -198,6 +226,7 @@ async fn test_no_mail_while_streaming_the_users_own_stream() {
 #[tokio::test]
 async fn test_no_mail_for_a_disabled_user() {
     let ctx = TestContext::new("notifmail-disabled").await;
+    opt_in(&ctx).await;
     sqlx::query("UPDATE users SET disabled = true WHERE account_id = $1")
         .bind(ctx.alice_id.parse::<i64>().unwrap())
         .execute(&ctx.db)
@@ -217,6 +246,7 @@ async fn test_unsubscribe_link_with_a_signed_global_id() {
         ));
     })
     .await;
+    opt_in(&ctx).await;
     let secret = ctx.state.instance.secret_key_base.clone().unwrap();
     let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
@@ -266,6 +296,7 @@ async fn test_unsubscribe_link_with_a_signed_global_id() {
 #[tokio::test]
 async fn test_unsubscribe_link_turns_the_type_off() {
     let ctx = TestContext::new("notifmail-unsubscribe").await;
+    opt_in(&ctx).await;
     ctx.api.follow(&ctx.bob_token, &ctx.alice_id).await;
     let mail = ctx
         .mail_to(ALICE, "is now following you")

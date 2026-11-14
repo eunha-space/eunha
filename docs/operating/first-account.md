@@ -32,8 +32,9 @@ What a new account sets off
 ---------------------------
 
 With `--confirmed`, the account is confirmed straight away. One that is also
-approved is then welcomed as any new user is (`User#prepare_new_user!`): a
-welcome mail is queued to go an hour later, and everyone whose role may manage
+approved is then welcomed as any new user is (`User#prepare_new_user!`): when
+the `welcome_email` setting is on, a welcome mail is queued to go an hour
+later, and everyone whose role may manage
 users is told of the sign-up with an `admin.sign_up` notification. An owner
 created on an empty instance is the only one who may, and nobody is told of
 their own sign-up, so nobody hears of it. An account not yet approved is mailed

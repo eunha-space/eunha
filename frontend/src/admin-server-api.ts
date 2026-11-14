@@ -59,6 +59,7 @@ export interface AdminSettings {
   opt_in_server_directory: boolean
   opt_in_server_recommendation: boolean
   postpone_confirmation_emails: boolean
+  welcome_email: boolean
   theme_color: string
   app_icon: SiteUpload | null
   favicon: SiteUpload | null

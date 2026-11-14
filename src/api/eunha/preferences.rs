@@ -148,12 +148,30 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
         auto_play: user_setting_bool(settings, "web.auto_play", false),
         notification_emails: NotificationEmails {
-            follow: bool_of("notification_emails.follow", true),
-            reblog: bool_of("notification_emails.reblog", false),
-            favourite: bool_of("notification_emails.favourite", false),
-            mention: bool_of("notification_emails.mention", true),
-            quote: bool_of("notification_emails.quote", true),
-            follow_request: bool_of("notification_emails.follow_request", true),
+            follow: bool_of(
+                "notification_emails.follow",
+                crate::notification_mail::default_for("follow"),
+            ),
+            reblog: bool_of(
+                "notification_emails.reblog",
+                crate::notification_mail::default_for("reblog"),
+            ),
+            favourite: bool_of(
+                "notification_emails.favourite",
+                crate::notification_mail::default_for("favourite"),
+            ),
+            mention: bool_of(
+                "notification_emails.mention",
+                crate::notification_mail::default_for("mention"),
+            ),
+            quote: bool_of(
+                "notification_emails.quote",
+                crate::notification_mail::default_for("quote"),
+            ),
+            follow_request: bool_of(
+                "notification_emails.follow_request",
+                crate::notification_mail::default_for("follow_request"),
+            ),
             report: bool_of("notification_emails.report", true),
             pending_account: bool_of("notification_emails.pending_account", true),
             trends: bool_of("notification_emails.trends", true),

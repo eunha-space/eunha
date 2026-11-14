@@ -349,6 +349,8 @@ async fn test_resetting_a_password_signs_the_account_out_everywhere() {
 #[tokio::test]
 async fn test_without_confirmed_the_account_waits_for_its_link() {
     let ctx = TestContext::new("accounts-create-unconfirmed").await;
+    // Welcome mail shows the confirmed account was prepared as a new user.
+    crate::helpers::set_setting(&ctx.db, "welcome_email", "--- true\n").await;
     let password = create(
         &ctx,
         CreateOptions {
@@ -395,12 +397,13 @@ async fn test_without_confirmed_the_account_waits_for_its_link() {
 }
 
 /// A confirmed, approved account is prepared as a new user is: welcomed by
-/// mail, and announced with `admin.sign_up` to everyone who may manage users.
+/// mail when the instance sends welcome mail, and announced with `admin.sign_up` to everyone who may manage users.
 #[tokio::test]
 async fn test_a_confirmed_account_is_welcomed_and_announced_to_staff() {
     let ctx = TestContext::new("accounts-create-welcome").await;
     let alice: i64 = ctx.alice_id.parse().unwrap();
     crate::helpers::make_admin(&ctx.db, alice).await;
+    crate::helpers::set_setting(&ctx.db, "welcome_email", "--- true\n").await;
 
     create(&ctx, owner("gardener")).await.unwrap();
     let gardener = account_id(&ctx, "gardener").await.unwrap();
@@ -693,4 +696,27 @@ async fn test_unconfirmed_accounts_are_cleaned_up_after_a_week() {
     );
     assert_eq!(account_id(&ctx, "stale").await, None);
     assert!(account_id(&ctx, "fresh").await.is_some());
+}
+
+/// Welcome mail is off unless an administrator turns `welcome_email` on: a
+/// new account is neither mailed nor queued a welcome.
+#[tokio::test]
+async fn test_no_welcome_mail_by_default() {
+    let ctx = TestContext::new("accounts-create-no-welcome").await;
+    create(&ctx, owner("seedling")).await.unwrap();
+    account_id(&ctx, "seedling").await.unwrap();
+    eunha::jobs::make_due(&ctx.state).await.unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(ctx
+        .sent_to("seedling@example.com")
+        .iter()
+        .all(|mail| !mail.subject.starts_with("Welcome")));
+    assert!(eunha::jobs::queued(
+        &ctx.state,
+        "ActionMailer::MailDeliveryJob(UserMailer#welcome)"
+    )
+    .await
+    .unwrap()
+    .is_empty());
 }

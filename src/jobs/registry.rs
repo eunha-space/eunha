@@ -43,6 +43,7 @@ fn workers() -> Vec<Entry> {
         entry::<super::Probe>(),
         entry::<super::UniqueProbe>(),
         entry::<crate::email::MailDeliveryJob>(),
+        entry::<crate::admin_digest::AdminDigestJob>(),
         entry::<crate::notification_mail::NotificationMailJob>(),
         entry::<crate::remove_status::RemovalWorker>(),
         entry::<crate::api::mastodon::polls::PollExpirationNotifyWorker>(),

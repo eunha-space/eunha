@@ -70,6 +70,8 @@ const KEYS: &[(&str, Kind)] = &[
     ("opt_in_server_directory", Kind::Boolean),
     ("opt_in_server_recommendation", Kind::Boolean),
     ("postpone_confirmation_emails", Kind::Boolean),
+    // eunha's: whether new members get `UserMailer#welcome`.
+    ("welcome_email", Kind::Boolean),
     ("theme_color", Kind::Text),
     ("app_icon", Kind::Upload),
     ("favicon", Kind::Upload),

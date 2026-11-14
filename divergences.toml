@@ -2035,3 +2035,61 @@ why = "An instance has an identifiable name before its operator configures one."
 evidence = "tests/integration/c2s/server_admin/mod.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "staff-alert-digests"
+kind = "behaviour"
+summary = "Mail staff at most once an hour about reports, appeals and accounts awaiting review"
+mastodon = """
+Mails every staff member who has not opted out once per report \
+(`AdminMailer#new_report`), per appeal (`#new_appeal`) and per sign-up \
+awaiting approval (`#new_pending_account`), as each comes in."""
+eunha = """
+Mails the first of these in a quiet hour at once, as Mastodon does, then holds \
+whatever comes in for that staff member during the next hour and sends it as \
+one summary when the hour ends. A summary starts another hour; an hour with \
+nothing held ends quietly. The per-kind opt-outs apply as before."""
+why = """
+A burst of reports or sign-ups, as a spam wave brings, otherwise sends each \
+moderator one mail apiece. The first alert still arrives at once, so a lone \
+urgent report is not delayed, and the dashboard and web push still show each \
+one as it comes."""
+evidence = "tests/integration/c2s/admin_digest.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "welcome-mail-off-by-default"
+kind = "behaviour"
+summary = "Send the welcome mail only when an administrator turns it on"
+mastodon = "Sends every new user `UserMailer#welcome` an hour after their account is ready."
+eunha = """
+Sends it only while the `welcome_email` site setting is on, which it is not \
+unless an administrator turns it on under Registrations in the admin settings. \
+A welcome queued before the setting was turned off is not sent."""
+why = """
+The welcome mail is the one mail a new member gets without asking or acting \
+for it. Leaving it to each instance keeps eunha's mail to what members need \
+or asked for."""
+evidence = "tests/integration/surfaces/accounts_commands.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "notification-mail-off-by-default"
+kind = "behaviour"
+summary = "Mail no notifications until a member turns them on"
+mastodon = """
+`UserSettings` has notification mail for follows, mentions, quotes and follow \
+requests on by default, and for favourites and boosts off."""
+eunha = """
+Has every `notification_emails.<type>` for these off by default. A member who \
+saved a choice keeps it, so a member imported from Mastodon who never changed \
+the setting stops getting these mails until they turn them on."""
+why = """
+Members already get these notifications in the app and by web push. Mail by \
+default mostly reaches people who did not ask for it, and costs the instance \
+its sending reputation."""
+evidence = "tests/integration/c2s/notification_emails.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

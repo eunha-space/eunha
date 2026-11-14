@@ -143,22 +143,20 @@ async fn notify_staff(state: &AppState, strike: &Strike, target_id: i64, text: &
             ) {
                 continue;
             }
-            if let Err(error) = state
-                .mailer()
-                .send_new_appeal(
-                    &recipient.email,
-                    &state.instance,
-                    &target,
-                    &issuer,
-                    strike_created_at,
-                    kind,
-                    &text,
+            crate::admin_digest::alert(
+                &state,
+                staff_id,
+                &recipient.email,
+                crate::admin_digest::Alert::Appeal {
                     strike_id,
-                )
-                .await
-            {
-                tracing::warn!(%error, "could not send a new appeal email");
-            }
+                    target: target.clone(),
+                    action_taken_by: issuer.clone(),
+                    strike_created_at,
+                    action: kind.to_owned(),
+                    text: text.clone(),
+                },
+            )
+            .await;
         }
     }
     .await;

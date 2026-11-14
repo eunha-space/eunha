@@ -255,13 +255,34 @@ it names are grouped under the account they belong to. A domain blocked with
 `reject_reports` is ignored.
 
 Staff whose role carries `manage_reports` get an `admin.report` notification
-and an email, the email unless they turned report emails off. They hear
-nothing about a second report while an earlier one about the same account
-is still open.
+and an email, the email unless they turned report emails off; the email may
+come in a [staff alert digest](#staff-alert-digests). They hear nothing about
+a second report while an earlier one about the same account is still open.
 
 Server rules come from the `rules` table. `/api/v1/instance/rules` serves
 them, and so do both versions of `/api/v1/instance`. They are edited as
 [server rules](./administration#server-rules).
+
+
+Staff alert digests
+-------------------
+
+Mastodon mails each staff member once per report, appeal and sign-up awaiting
+approval. eunha mails the first of these in a quiet hour at once, then holds
+what comes in for that staff member over the next hour and sends it as one
+summary, *New for review on …*, when the hour ends. The summary lists each
+item with its link, in the order they came in, and starts another hour, so a
+busy stretch makes one mail an hour; an hour with nothing held ends quietly,
+and the next alert is again mailed at once.
+
+Each staff member has an hour of their own, and the opt-outs (`report`,
+`appeal`, `pending_account`) still decide what reaches them at all. The
+in-app `admin.report` and `admin.sign_up` notifications and web push are not
+held. The hour is the coordination Redis key
+`admin_digest:<account_id>:window`, and the held alerts the set
+`admin_digest:<account_id>:held`; if Redis cannot be reached, the alert is
+mailed at once. The summary is sent by `Eunha::AdminDigestWorker` on the
+`mailers` queue.
 
 
 Webhooks
@@ -431,7 +452,8 @@ Every account action records a strike. The account sees its strikes at
 the `moderation_warning` notification links. A strike can be appealed once,
 within 20 days, with at most 2,000 characters, even from a frozen login.
 Staff with `manage_appeals` see any strike, are mailed about each new appeal
-unless they turned appeal emails off, and decide it at
+unless they turned appeal emails off (perhaps in a [staff alert
+digest](#staff-alert-digests)), and decide it at
 `/api/v1/admin/disputes/appeals`.
 
 Approving an appeal undoes the strike as far as it can be undone: it unfreezes

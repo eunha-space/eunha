@@ -802,8 +802,8 @@ When a notification reaches a member, eunha mails it where Mastodon's
     policy filtered;
  -  only the types `NotificationMailer` has: `follow`, `follow_request`,
     `mention`, `quote`, `favourite` and `reblog`, each when the member has
-    `notification_emails.<type>` on — by default all but `favourite` and
-    `reblog`;
+    `notification_emails.<type>` on — by default none of them, where
+    Mastodon has all but `favourite` and `reblog` on;
  -  only while nothing of the member's is listening — no streaming connection
     subscribed to their `user` or `user:notification` stream, and no web push
     subscription — unless they set `always_send_emails`;

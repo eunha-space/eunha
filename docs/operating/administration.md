@@ -84,6 +84,7 @@ not shown the rows.
 | `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                                                         |
 | `authorized_fetch`                                               | `none`, `actors` (the default) or `all`: which fetches must be signed, unless the instance configuration decides |
 | `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up)                                  |
+| `welcome_email`                                                  | eunha's: send new users the welcome mail an hour after joining; off unless turned on                             |
 | `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo                                                                                |
 | `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                                          |
 | `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December                                     |

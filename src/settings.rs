@@ -35,6 +35,7 @@ pub fn default(var: &str) -> Value {
         "theme" => Value::from("default"),
         "theme_color" => Value::from("indigo"),
         "postpone_confirmation_emails"
+        | "welcome_email"
         | "opt_in_server_directory"
         | "opt_in_server_recommendation" => Value::from(false),
         "show_domain_blocks" | "show_domain_blocks_rationale" => Value::from("disabled"),

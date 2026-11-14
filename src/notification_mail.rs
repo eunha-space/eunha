@@ -35,16 +35,26 @@ pub const NON_EMAIL_TYPES: &[&str] = &[
     "collection_update",
 ];
 
-/// The types `NotificationMailer` has an action for, with
-/// `UserSettings`' default for each `notification_emails.<type>`.
+/// The types `NotificationMailer` has an action for, with the default for
+/// each `notification_emails.<type>`. Mastodon's `UserSettings` has follow,
+/// mention, quote and follow request on; eunha has them all off, so that a
+/// member gets notification mail only by asking for it.
 pub const MAILED_TYPES: &[(&str, bool)] = &[
-    ("follow", true),
+    ("follow", false),
     ("reblog", false),
     ("favourite", false),
-    ("mention", true),
-    ("quote", true),
-    ("follow_request", true),
+    ("mention", false),
+    ("quote", false),
+    ("follow_request", false),
 ];
+
+/// The default for `notification_emails.<kind>`, for one of [`MAILED_TYPES`].
+pub fn default_for(kind: &str) -> bool {
+    MAILED_TYPES
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .is_some_and(|(_, default)| *default)
+}
 
 /// The types a link in a mail can unsubscribe from:
 /// `UnsubscriptionsController#email_type_from_param`, and `quote`, whose
@@ -80,11 +90,11 @@ impl crate::jobs::Job for NotificationMailJob {
 
 /// `notification_emails.<kind>` for a member, with its default.
 pub fn wants(settings: Option<&str>, kind: &str) -> bool {
-    let default = MAILED_TYPES
-        .iter()
-        .find(|(k, _)| *k == kind)
-        .is_some_and(|(_, default)| *default);
-    crate::accounts::user_setting_bool(settings, &format!("notification_emails.{kind}"), default)
+    crate::accounts::user_setting_bool(
+        settings,
+        &format!("notification_emails.{kind}"),
+        default_for(kind),
+    )
 }
 
 /// `NotifyService#send_email! if email_needed?`, for a notification just
@@ -414,14 +424,24 @@ pub async fn unsubscribe(state: &AppState, user_id: i64, kind: &str) -> anyhow::
 mod tests {
     use super::wants;
 
+    /// Every type is off until chosen, unlike `UserSettings`, which has
+    /// follows, mentions, quotes and requests on.
     #[test]
-    fn defaults_follow_user_settings() {
-        assert!(wants(None, "follow"));
-        assert!(wants(None, "mention"));
-        assert!(wants(None, "quote"));
-        assert!(wants(None, "follow_request"));
-        assert!(!wants(None, "favourite"));
-        assert!(!wants(None, "reblog"));
+    fn every_type_is_off_until_chosen() {
+        for kind in [
+            "follow",
+            "mention",
+            "quote",
+            "follow_request",
+            "favourite",
+            "reblog",
+        ] {
+            assert!(!wants(None, kind), "{kind}");
+        }
+        assert!(wants(
+            Some(r#"{"notification_emails.follow":true}"#),
+            "follow"
+        ));
         assert!(!wants(
             Some(r#"{"notification_emails.follow":false}"#),
             "follow"
