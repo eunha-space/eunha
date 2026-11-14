@@ -86,17 +86,19 @@ function signupBeforeRequest(evt) {
   document.getElementById('signup-btn').disabled = true;
 }
 function signupAfterRequest(evt) {
-  document.getElementById('signup-btn').disabled = false;
-  if (evt.detail.successful) {
+  var xhr = evt.detail.xhr;
+  if (xhr.status >= 200 && xhr.status < 300) {
     // Signed in and on to /auth/setup, by the HX-Redirect that answered.
+    // htmx follows HX-Redirect before it sets `successful`, so the status
+    // decides; the button stays disabled while the next page loads.
     return;
-  } else {
-    try {
-      var err = JSON.parse(evt.detail.xhr.responseText);
-      showError(err.error || _msgs.serverError);
-    } catch(e) {
-      showError(_msgs.serverError);
-    }
+  }
+  document.getElementById('signup-btn').disabled = false;
+  try {
+    var err = JSON.parse(xhr.responseText);
+    showError(err.error || _msgs.serverError);
+  } catch(e) {
+    showError(_msgs.serverError);
   }
 }
 function showError(msg) {
