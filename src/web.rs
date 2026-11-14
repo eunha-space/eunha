@@ -4,6 +4,7 @@
 //! Mastodon: app/controllers/wrapstodon_controller.rb
 //! Mastodon: app/views/wrapstodon/show.html.haml
 //! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
+//! Mastodon: app/views/layouts/application.html.haml
 //! Mastodon: app/controllers/remote_accounts_controller.rb
 //! Mastodon: app/controllers/health_controller.rb
 //! Mastodon: app/controllers/intents_controller.rb
@@ -488,7 +489,7 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
     let site_title = settings.site_title(&state.instance);
     let title = match &page.title {
         Some(title) => format!("{title} - {site_title}"),
-        None => site_title,
+        None => site_title.clone(),
     };
     let mut html = html.replace(
         "<title>eunha</title>",
@@ -498,6 +499,13 @@ async fn serve_page(state: &AppState, page: Page) -> Response {
     // What Mastodon's layout adds to the head from the settings: the uploaded
     // favicon in its sizes, and the custom stylesheet named by its digest.
     let mut head = page.head;
+    // The site's name apart from the page's: `<title>` on a profile says the
+    // profile first, and the web app names the server in its rail from this
+    // until `/api/v2/instance` answers.
+    head.push_str(&format!(
+        r#"<meta name="application-name" content="{}" />"#,
+        escape_html_attribute(&site_title)
+    ));
     head.push_str(r#"<link rel="manifest" href="/manifest.json" />"#);
     if let Ok(Some(favicon)) = crate::site_uploads::find(state, "favicon").await {
         for size in crate::site_uploads::FAVICON_SIZES {

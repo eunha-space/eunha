@@ -705,9 +705,11 @@ function TopBarInner({
   )
 }
 
-// The site title the server put in `<title>`, read when the app loads: once a
-// page has set its own title, `document.title` no longer says it.
-const serverTitle = document.title === 'eunha' ? null : document.title
+// The site title the server wrote into the page, read when the app loads.
+// Not `<title>`: on a profile or a post that names the page first, and the
+// rail would show the page's name until `/api/v2/instance` answered.
+const serverTitle =
+  document.querySelector<HTMLMetaElement>('meta[name="application-name"]')?.content || null
 
 // `title` is the page's, for the browser tab only; the rail and the mobile
 // header always name the server.
