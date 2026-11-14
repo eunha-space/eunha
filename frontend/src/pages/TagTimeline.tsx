@@ -30,6 +30,7 @@ export default function TagTimeline() {
   const feed = useInfiniteFeed<mastodon.v1.Status>(
     (maxId) => getTagTimeline(name, token ?? undefined, maxId),
     [name, token],
+    'timeline:tag',
   )
   const subscribeTag = useCallback(
     (client: mastodon.streaming.Client) => client.hashtag.subscribe({ tag: name }),

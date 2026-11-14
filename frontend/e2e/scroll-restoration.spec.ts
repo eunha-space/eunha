@@ -57,14 +57,19 @@ const status = (id: string, content: string, pinned: boolean) => ({
   pinned,
 })
 
+const FEEDS = {
+  timeline: { path: '/local', route: '**/api/v1/timelines/public**' },
+  'profile posts': { path: '/@alice', route: '**/api/v1/accounts/1/statuses**' },
+  'hashtag timeline': { path: '/tags/rusty', route: '**/api/v1/timelines/tag/rusty**' },
+}
+
 for (const mobile of [false, true]) {
-  for (const profile of [false, true]) {
-    test(`back restores paginated ${profile ? 'profile posts' : 'timeline'} and scroll on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
+  for (const [feed, { path, route: feedRoute }] of Object.entries(FEEDS)) {
+    test(`back restores paginated ${feed} and scroll on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
       if (mobile) await page.setViewportSize({ width: 390, height: 844 })
       await page.route('**/api/v2/instance', r => r.fulfill({ json: { title: 'Example', domain: 'example.invalid', registrations: { enabled: false } } }))
       await page.route('**/api/v1/accounts/lookup**', r => r.fulfill({ json: account }))
       let feedRequests = 0
-      const feedRoute = profile ? '**/api/v1/accounts/1/statuses**' : '**/api/v1/timelines/public**'
       await page.route(feedRoute, r => {
         const url = new URL(r.request().url())
         if (url.searchParams.has('pinned')) return r.fulfill({ json: [] })
@@ -74,7 +79,6 @@ for (const mobile of [false, true]) {
       })
       await page.route('**/api/v1/statuses/*/context', r => r.fulfill({ json: { ancestors: [], descendants: [] } }))
       await page.route('**/api/v1/statuses/10', r => r.fulfill({ json: status('10', 'Post 10', false) }))
-      const path = profile ? '/@alice' : '/local'
       await page.goto(path)
       const post = page.locator('a[href="/@alice/10"]').first()
       await expect(page.getByText('Post 40', { exact: true })).toBeVisible()
