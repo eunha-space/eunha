@@ -16,10 +16,12 @@ implementation detail, and eunha may contain behavioral differences.
 Running eunha
 -------------
 
+ -  [social.eunha.social]: sign up on the public
+    instance that runs eunha; the easiest way to try it.
  -  [Download eunha](./operating/downloads.md): ready-made macOS and Linux
     binaries.
- -  [Try eunha](./operating/trying.md): an isolated trial with a public HTTPS
-    tunnel.
+ -  [Try eunha yourself](./operating/trying.md): an isolated trial with a
+    public HTTPS tunnel.
  -  [Container images](./operating/containers.md): GitHub Actions builds,
     image tags and running the image.
  -  [The first account](./operating/first-account.md): creating an instance's
@@ -34,6 +36,8 @@ Running eunha
  -  [Invites](./operating/invites.md): who may invite, and handing invites out
     to members.
  -  [Update notices](./operating/update-notices.md): the optional update check.
+
+[social.eunha.social]: https://social.eunha.social
 
 
 Mastodon compatibility
