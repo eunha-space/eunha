@@ -149,3 +149,28 @@ for (const [role, permissions, shown] of [
     await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(shown ? 1 : 0)
   })
 }
+
+// Signed in, the rail is a few labelled groups rather than one long run:
+// where you go most, then Feeds, then You.
+test('signed in, the rail groups its rows under Feeds and You', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
+  await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/notifications/unread_count**', (r) => r.fulfill({ json: { count: 0 } }))
+  await page.route('**/api/v1/accounts/verify_credentials**', (r) => r.fulfill({ json: {
+    id: '1', acct: 'alice', username: 'alice', display_name: 'Alice', avatar: '',
+    source: { privacy: 'public' },
+  } }))
+  await liveFeedAccess(page, 'public')
+  await page.goto('/')
+
+  const rail = page.locator('aside.sidebar-frame')
+  const links = (name?: string) =>
+    (name ? rail.getByRole('group', { name }) : rail.getByRole('group').first())
+      .getByRole('link')
+  await expect(links()).toHaveText(['Home', 'Notifications', 'Messages', 'Search', 'Explore'])
+  await expect(links('Feeds')).toHaveText(['Local', 'Federated', 'Lists', 'Followed hashtags'])
+  await expect(links('You')).toHaveText(['Saved'])
+})

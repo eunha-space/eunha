@@ -50,6 +50,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -134,12 +135,16 @@ function liveFeedAccess(): { local?: string; remote?: string } {
   return configuration?.timelinesAccess?.liveFeeds ?? {}
 }
 
-function useNavItems(
+// A run of rows in the rail. The first group has no heading; the others are
+// labelled so a long rail reads as a few short lists.
+type NavGroup = { label?: string; items: NavItem[] }
+
+function useNavGroups(
   token: string | null,
   unread: number,
   account: MeAccount | null,
   invites: { count: number | null; hasAvailable: boolean },
-): NavItem[] {
+): NavGroup[] {
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds. eunha also links home and local timelines, which were a
   // tab strip inside the column — a leftover
@@ -155,13 +160,17 @@ function useNavItems(
     : []
   if (!token) {
     return [
-      // Signed out, "/" *is* the local timeline, so that row owns both paths.
-      ...(local
-        ? [{ to: '/local', icon: Users, label: 'Local', matchAlso: (p: string) => p === '/' }]
-        : []),
-      ...federated,
-      { to: '/explore', icon: Compass, label: 'Explore' },
-      { to: '/about', icon: Info, label: 'About' },
+      {
+        items: [
+          // Signed out, "/" *is* the local timeline, so that row owns both paths.
+          ...(local
+            ? [{ to: '/local', icon: Users, label: 'Local', matchAlso: (p: string) => p === '/' }]
+            : []),
+          ...federated,
+          { to: '/explore', icon: Compass, label: 'Explore' },
+          { to: '/about', icon: Info, label: 'About' },
+        ],
+      },
     ]
   }
   // Moderation appears for a role that can open at least one of its pages —
@@ -178,23 +187,43 @@ function useNavItems(
           },
         ]
       : []
-  return [
-    { to: '/', end: true, icon: Home, label: 'Home' },
-    ...(local ? [{ to: '/local', icon: Users, label: 'Local' }] : []),
-    ...federated,
-    ...(invites.hasAvailable || moderation.length > 0 ? [{
-      to: '/invites', icon: Ticket,
-      label: 'Invite people', inviteCount: invites.count,
-    }] : []),
-    { to: '/search', icon: Search, label: 'Search' },
-    { to: '/explore', icon: Compass, label: 'Explore' },
-    { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
-    { to: '/messages', icon: MessageCircle, label: 'Messages' },
-    { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
-    { to: '/lists', icon: List, label: 'Lists', matchAlso: (path) => path.startsWith('/lists/') },
-    { to: '/followed_tags', icon: Hash, label: 'Followed hashtags' },
-    ...moderation,
+  const groups: NavGroup[] = [
+    // Where you go most: your timeline, what is waiting for you, and finding
+    // things.
+    {
+      items: [
+        { to: '/', end: true, icon: Home, label: 'Home' },
+        { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
+        { to: '/messages', icon: MessageCircle, label: 'Messages' },
+        { to: '/search', icon: Search, label: 'Search' },
+        { to: '/explore', icon: Compass, label: 'Explore' },
+      ],
+    },
+    // The other timelines you can read.
+    {
+      label: 'Feeds',
+      items: [
+        ...(local ? [{ to: '/local', icon: Users, label: 'Local' }] : []),
+        ...federated,
+        { to: '/lists', icon: List, label: 'Lists', matchAlso: (path) => path.startsWith('/lists/') },
+        { to: '/followed_tags', icon: Hash, label: 'Followed hashtags' },
+      ],
+    },
+    // What is yours to keep or give out.
+    {
+      label: 'You',
+      items: [
+        { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
+        ...(invites.hasAvailable || moderation.length > 0 ? [{
+          to: '/invites', icon: Ticket,
+          label: 'Invite people', inviteCount: invites.count,
+        }] : []),
+      ],
+    },
+    // Staff tools, set apart at the end.
+    { items: moderation },
   ]
+  return groups.filter((group) => group.items.length > 0)
 }
 
 // The server's name leads, not the software's. Mastodon 5.0 demotes its own
@@ -388,7 +417,7 @@ function DesktopRail({
   const { openCompose } = useComposeModal()
   const unread = useUnreadNotifications(token)
   const inviteCount = useAvailableInvites(token)
-  const navItems = useNavItems(token, unread, account, inviteCount)
+  const navGroups = useNavGroups(token, unread, account, inviteCount)
   const { pathname } = useLocation()
 
   return (
@@ -404,26 +433,43 @@ function DesktopRail({
             <PenLine className="size-5" /> New post
           </button>
         )}
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              cn(
-                navLink,
-                (isActive || item.matchAlso?.(pathname)) && activeNavLink,
-              )
-            }
+        {navGroups.map((group, index) => (
+          <div
+            key={group.label ?? index}
+            role="group"
+            aria-label={group.label}
+            className={cn('flex flex-col gap-0.5', index > 0 && 'mt-4')}
           >
-            <item.icon className="size-5" /> {item.label}
-            <InviteCount count={item.inviteCount} />
-            {item.badge ? (
-              <span className="ml-auto">
-                <Badge count={item.badge} />
+            {group.label && (
+              <span
+                aria-hidden
+                className="text-muted-foreground px-3 pb-1 text-xs font-medium tracking-wide uppercase"
+              >
+                {group.label}
               </span>
-            ) : null}
-          </NavLink>
+            )}
+            {group.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  cn(
+                    navLink,
+                    (isActive || item.matchAlso?.(pathname)) && activeNavLink,
+                  )
+                }
+              >
+                <item.icon className="size-5" /> {item.label}
+                <InviteCount count={item.inviteCount} />
+                {item.badge ? (
+                  <span className="ml-auto">
+                    <Badge count={item.badge} />
+                  </span>
+                ) : null}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
 
@@ -468,7 +514,7 @@ function MobileDrawer({
   const location = useLocation()
   const unread = useUnreadNotifications(token)
   const inviteCount = useAvailableInvites(token)
-  const navItems = useNavItems(token, unread, account, inviteCount)
+  const navGroups = useNavGroups(token, unread, account, inviteCount)
   const close = () => setOpenMobile(false)
   const isActive = (to: string, end?: boolean) =>
     end
@@ -481,9 +527,9 @@ function MobileDrawer({
         <ServerMark title={title} icon={icon} onNavigate={close} />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            {token && (
+        {token && (
+          <SidebarGroup className="pb-0">
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={() => {
@@ -495,25 +541,34 @@ function MobileDrawer({
                   <span>New post</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+        {navGroups.map((group, index) => (
+          <SidebarGroup key={group.label ?? index}>
+            {group.label && (
+              <SidebarGroupLabel className="tracking-wide uppercase">{group.label}</SidebarGroupLabel>
             )}
-            {navItems.map((item) => (
-              <SidebarMenuItem key={item.to}>
-                <SidebarMenuButton
-                  isActive={
-                    isActive(item.to, item.end) || !!item.matchAlso?.(location.pathname)
-                  }
-                  onClick={close}
-                  render={<NavLink to={item.to} end={item.end} />}
-                >
-                  <item.icon />
-                  <span>{item.label}</span>
-                  <InviteCount count={item.inviteCount} />
-                  {item.badge ? <Badge count={item.badge} /> : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+            <SidebarMenu>
+              {group.items.map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton
+                    isActive={
+                      isActive(item.to, item.end) || !!item.matchAlso?.(location.pathname)
+                    }
+                    onClick={close}
+                    render={<NavLink to={item.to} end={item.end} />}
+                  >
+                    <item.icon />
+                    <span>{item.label}</span>
+                    <InviteCount count={item.inviteCount} />
+                    {item.badge ? <Badge count={item.badge} /> : null}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
       <SidebarFooter>
         <div className="flex flex-col gap-3">

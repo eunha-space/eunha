@@ -180,8 +180,9 @@ preselected grant form from a member's row; both pages link to each other.
 Finding your invites
 --------------------
 
-Signed-in members have **Invite people** beside **Local** in the desktop sidebar
-and mobile navigation drawer when they have a usable invite link. Moderators
+Signed-in members have **Invite people** under **You**, beside **Saved**, in
+the desktop sidebar and mobile navigation drawer when they have a usable
+invite link. Moderators
 and admins with access to Moderation always see the entry, including when no
 links are usable or availability cannot be loaded. For regular members the
 entry is hidden while availability is unknown or no links can be used, even

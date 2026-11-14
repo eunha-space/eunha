@@ -61,6 +61,11 @@ it is `authenticated`, and otherwise only a role whose permissions carry the
 so a role with only `administrator`, which the server lets read the feeds, is
 not shown the rows.
 
+Signed in, the sidebar groups its rows. Home, Notifications, Messages,
+Search and Explore come first, under **New post**; **Feeds** holds Local,
+Federated, Lists and Followed hashtags; **You** holds Saved and Invite people;
+and Moderation, for staff, comes last on its own.
+
 | Setting                                                          | What reads it                                                                                                    |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title                                       |
