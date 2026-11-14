@@ -6,6 +6,7 @@ mod announcements;
 mod auto_close_registrations;
 mod dashboard;
 mod follow_recommendations;
+mod hosted;
 mod instances;
 mod invites;
 mod relays;

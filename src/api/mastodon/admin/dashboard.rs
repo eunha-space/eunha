@@ -164,9 +164,13 @@ pub async fn get_admin_dashboard(
     // `Admin::SystemCheck::ACTIVE_CHECKS`, in order, without the
     // Elasticsearch and Sidekiq checks, which have nothing to look at here.
     let mut system_checks = vec![];
-    system_checks.extend(software_version_check(&state, &acting).await?);
-    system_checks.extend(media_privacy_check(&state, &acting).await);
-    system_checks.extend(database_schema_check(&state, &acting).await);
+    // A hosted instance's administrators are told only what they can act on:
+    // its software, storage and database are its host's.
+    if !state.instance.hosted {
+        system_checks.extend(software_version_check(&state, &acting).await?);
+        system_checks.extend(media_privacy_check(&state, &acting).await);
+        system_checks.extend(database_schema_check(&state, &acting).await);
+    }
     system_checks.extend(rules_check(&state, &acting).await?);
     Ok(Json(Dashboard {
         pending_appeals_count: counts.appeals,

@@ -2093,3 +2093,43 @@ its sending reputation."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "hosted-instances"
+kind = "addition"
+summary = "Hide the server from the administrators of an instance a hosting service runs"
+mastodon = """
+Shows every administrator the software updates and server health pages, the \
+dashboard's system checks, software versions and space usage, and mails them \
+update and end-of-support notices; any operator with the configuration can \
+turn on self-destruct."""
+eunha = """
+With `[instance] hosted = true`, runs no update check, answers 404 for the \
+software updates and server health endpoints and leaves them out of the \
+admin navigation, runs no scheduled health checks, keeps only the rules check \
+on the dashboard, leaves out its software and space usage, and ignores \
+`self_destruct`."""
+why = """
+On a hosted instance the host keeps the software, the machines and the \
+instance's lifetime. Its administrators cannot act on notices about them, and \
+closing the instance must go through the host's own durable deprovisioning."""
+evidence = "tests/integration/c2s/server_admin/hosted.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "hosting-provider-credit"
+kind = "addition"
+summary = "Credit the instance's hosting provider on its About page"
+mastodon = "Has no notion of a hosting provider, and credits none."
+eunha = """
+With `[instance.hosting_provider]` (a `name` and an optional `url`), shows \
+"Hosted by" that name on the About page, read from \
+`GET /api/eunha/v1/instance`, which anyone may read."""
+why = """
+A hosting service can say who runs the machines without changing \
+`/api/v2/instance`, which Mastodon clients parse, or taking the administrators' \
+own contact and description."""
+evidence = "tests/integration/c2s/server_admin/hosted.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

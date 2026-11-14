@@ -13,7 +13,9 @@ nothing does by default. The notices are shown to the administrators on the
 admin software updates page, recorded for a Mastodon that may later boot on the
 database, and mailed to the instance's own administrators — who on a hosted
 instance cannot act on them, because only whoever runs the binary can take a
-release up. Operators who want the end-of-support warning name the server:
+release up. An instance configured as [hosted](./hosted.md) asks nothing even
+when a server is named. Operators who want the end-of-support warning name the
+server:
 
 ~~~~ toml
 software_update_url = "https://api.joinmastodon.org/update-check"

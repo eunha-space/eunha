@@ -12,6 +12,9 @@ This cannot be undone. Remote servers delete what they know of the accounts,
 but the instance's own data is left as it was, so an instance that went on
 serving afterwards would be out of step with everyone else.
 
+A [hosted](./hosted.md) instance cannot self-destruct: it ignores the value, and
+`eunha self-destruct` refuses it, since closing it is the host's to do.
+
 
 Starting it
 -----------

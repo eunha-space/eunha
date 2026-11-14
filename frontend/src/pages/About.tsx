@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Code, FileText, Network, Shield, Ticket } from 'lucide-react'
 
-import { getInstance } from '../api.ts'
+import { getHostingProvider, getInstance, type HostingProvider } from '../api.ts'
 import { getToken } from '../auth.ts'
 import type { mastodon } from '../masto.ts'
 import { TopBar } from '@/components/top-bar.tsx'
@@ -22,10 +22,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // page, rather than a stack of empty headings.
 export default function About() {
   const [instance, setInstance] = useState<mastodon.v2.Instance | null>(null)
+  const [host, setHost] = useState<HostingProvider | null>(null)
   const token = getToken()
 
   useEffect(() => {
     getInstance().then(setInstance).catch(() => {})
+    getHostingProvider().then(setHost).catch(() => {})
   }, [])
 
   if (!instance) {
@@ -60,6 +62,18 @@ export default function About() {
             {instance.domain} · running eunha {__COMMIT_HASH__} ·{' '}
             {instance.version}
           </p>
+          {host && (
+            <p className="text-muted-foreground text-sm">
+              Hosted by{' '}
+              {host.url ? (
+                <a href={host.url} className="text-primary" rel="noopener" target="_blank">
+                  {host.name}
+                </a>
+              ) : (
+                host.name
+              )}
+            </p>
+          )}
         </section>
 
         <Section title="Signing up">

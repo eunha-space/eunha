@@ -1338,6 +1338,11 @@ fn command_config(
 async fn self_destruct(config: config::Config) -> anyhow::Result<()> {
     use eunha::self_destruct::{self, Progress};
     let instance = &config.instance;
+    anyhow::ensure!(
+        !instance.hosted,
+        "{} is hosted; close it through its hosting service instead",
+        instance.local_domain
+    );
     if self_destruct::enabled(instance) {
         println!(
             "Self-destruct mode is already enabled for {}",

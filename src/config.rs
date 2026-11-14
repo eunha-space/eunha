@@ -507,6 +507,20 @@ pub struct InstanceConfig {
     /// act on none that arrives (docs/mastodon/serving.md).
     #[serde(default)]
     pub disable_followers_synchronization: bool,
+    /// eunha's: the instance is run by a hosting service (eunha space),
+    /// which keeps its software, machines and lifetime. Its administrators
+    /// are then shown nothing about those, which they cannot act on: no
+    /// update check or update and end-of-support notices, no Server health
+    /// page or dashboard warnings about the server, no software versions or
+    /// space usage on the dashboard; and `self_destruct` is ignored, as
+    /// closing the instance is the hosting service's to do
+    /// (docs/operating/hosted.md).
+    #[serde(default)]
+    pub hosted: bool,
+    /// eunha's: who hosts the instance, credited on its About page as
+    /// "Hosted by …" (`[instance.hosting_provider]`). Unset, no credit.
+    #[serde(default)]
+    pub hosting_provider: Option<HostingProvider>,
     /// Mastodon's `SECRET_KEY_BASE`. With it, async refresh ids, the signed
     /// GlobalIDs in unsubscribe links and password reset digests are made and
     /// read exactly as that Mastodon makes them, so what it handed out keeps
@@ -558,6 +572,16 @@ pub struct DonationCampaignsConfig {
     /// `DONATION_CAMPAIGNS_ENVIRONMENT`: sent along as `environment`.
     #[serde(default)]
     pub environment: Option<String>,
+}
+
+/// A hosting provider's credit on the About page.
+#[derive(Debug, Clone, Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct HostingProvider {
+    /// The name shown, as in "Hosted by eunha space".
+    pub name: String,
+    /// Where the name links, when it is an `https://` or `http://` address.
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 /// Mastodon's `config/translation.yml`. DeepL wins when both are set, as

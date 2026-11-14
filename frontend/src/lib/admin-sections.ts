@@ -6,6 +6,8 @@ export interface AdminSection {
   permission: Permission
   /** The experimental feature the section needs on, as Mastodon's navigation hides FASP. */
   feature?: 'fasp' | 'moderation_subscriptions'
+  /** Left out on an instance a hosting service runs, whose server is not the administrators' to tend. */
+  server?: true
 }
 
 /**
@@ -51,8 +53,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     label: 'Follow recommendations',
     permission: 'manage_taxonomies',
   },
-  { to: '/admin/software_updates', label: 'Software updates', permission: 'view_devops' },
-  { to: '/admin/server_checks', label: 'Server health', permission: 'view_dashboard' },
+  { to: '/admin/software_updates', label: 'Software updates', permission: 'view_devops', server: true },
+  { to: '/admin/server_checks', label: 'Server health', permission: 'view_dashboard', server: true },
 ]
 
 /** The first section this role may open, for `/admin` and the rail's link. */

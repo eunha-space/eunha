@@ -7,6 +7,7 @@ use axum::{routing::get, Router};
 pub mod account_email;
 pub mod email_subscriptions;
 pub mod health;
+pub mod instance;
 pub mod invite_grants;
 pub mod invite_tree;
 pub mod portability;
@@ -19,6 +20,7 @@ pub mod two_factor;
 pub fn router() -> Router {
     Router::new()
         .route("/api/eunha/v1/health", get(health::health))
+        .route("/api/eunha/v1/instance", get(instance::show))
         .route(
             "/api/eunha/v1/invite",
             get(crate::api::mastodon::signup::invite_lookup),

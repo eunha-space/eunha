@@ -54,6 +54,10 @@ pub fn value(instance: &InstanceConfig) -> String {
 /// as signing this instance's domain. A value signed under the VAPID key is
 /// read either way, so configuring `secret_key_base` later keeps it.
 pub fn enabled(instance: &InstanceConfig) -> bool {
+    // A hosted instance is closed by its host, never by this mode.
+    if instance.hosted {
+        return false;
+    }
     let Some(value) = instance
         .self_destruct
         .as_deref()

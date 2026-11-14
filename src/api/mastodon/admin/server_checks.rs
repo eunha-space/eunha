@@ -168,6 +168,11 @@ pub async fn list_server_checks(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> AppResult<Json<Vec<ServerCheck>>> {
+    // A hosted instance's server is its host's to watch: the page is not
+    // there, which is how the web client knows to leave it out.
+    if state.instance.hosted {
+        return Err(AppError::NotFound);
+    }
     auth.require_scope("admin:read")?;
     let acting = role::acting(&state.db, auth.account_id).await?;
     role::authorize(acting.can(&[flag::VIEW_DASHBOARD]))?;
@@ -199,6 +204,9 @@ async fn set_ignored(
     key: String,
     ignored: bool,
 ) -> AppResult<Json<Value>> {
+    if state.instance.hosted {
+        return Err(AppError::NotFound);
+    }
     auth.require_scope("admin:write")?;
     let acting = role::acting(&state.db, auth.account_id).await?;
     role::authorize(server_checks::authorized(&key, &acting))?;

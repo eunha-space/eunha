@@ -910,8 +910,9 @@ pub async fn api_gates(req: Request, next: Next) -> Response {
 pub fn open_without_user(method: &axum::http::Method, path: &str, limited: bool) -> bool {
     use axum::http::Method;
     match path {
-        // `Api::V2::InstancesController` and its v1 subclass.
-        "/api/v1/instance" | "/api/v2/instance" => true,
+        // `Api::V2::InstancesController` and its v1 subclass, and eunha's
+        // additions to what they say for its About page.
+        "/api/v1/instance" | "/api/v2/instance" | "/api/eunha/v1/instance" => true,
         // `Api::OEmbedController`.
         "/api/oembed" => true,
         // `Api::V1::AppsController` and `Api::V1::AccountsController#create`.

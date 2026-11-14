@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 
 import { can, type Permission } from '../../admin-api.ts'
-import { faspEnabled, moderationSubscriptionsEnabled } from '../../admin-server-api.ts'
+import { faspEnabled, instanceHosted, moderationSubscriptionsEnabled } from '../../admin-server-api.ts'
 import { ADMIN_SECTIONS, type AdminSection } from '../../lib/admin-sections.ts'
 import { beginLogin, getToken } from '../../auth.ts'
 import { getMeAccount, loadMe } from '../../me.ts'
@@ -58,6 +58,23 @@ function useFeatures(permissions: number | null): { fasp: boolean; lists: boolea
     }
   }, [token, allowed])
   return features
+}
+
+/** Whether a hosting service runs the instance (see [`instanceHosted`]). */
+export function useHosted(): boolean {
+  const token = getToken()
+  const [hosted, setHosted] = useState(false)
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    instanceHosted(token).then((h) => {
+      if (!cancelled) setHosted(h)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+  return hosted
 }
 
 const tab =
@@ -122,6 +139,7 @@ export function AdminLayout({
   }
 
   const features = useFeatures(permissions)
+  const hosted = useHosted()
   const sections =
     permissions === null
       ? []
@@ -129,7 +147,8 @@ export function AdminLayout({
           (s) =>
             can(permissions, s.permission) &&
             (s.feature !== 'fasp' || features.fasp) &&
-            (s.feature !== 'moderation_subscriptions' || features.lists),
+            (s.feature !== 'moderation_subscriptions' || features.lists) &&
+            !(s.server && hosted),
         )
 
   return (

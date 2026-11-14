@@ -332,6 +332,10 @@ async fn elastic_search(state: &AppState) -> Outcome {
 
 /// `Scheduler::ServerChecksScheduler#perform`.
 pub async fn run_scheduled(state: &AppState) -> Result<()> {
+    // Nobody is shown what they would find on a hosted instance.
+    if state.instance.hosted {
+        return Ok(());
+    }
     for key in KEYS.into_iter().filter(|key| is_async(key)) {
         // A run another process has under way, unless it is long dead.
         let started = sqlx::query_scalar!(

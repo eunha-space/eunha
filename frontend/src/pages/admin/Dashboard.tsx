@@ -13,7 +13,7 @@ import {
 } from '../../admin-api.ts'
 import { getDashboard, type SystemCheck } from '../../admin-server-api.ts'
 import { getToken } from '../../auth.ts'
-import { AdminError, AdminLayout, useRolePermissions } from '@/components/admin/admin-layout.tsx'
+import { AdminError, AdminLayout, useHosted, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import {
   Table,
@@ -33,12 +33,13 @@ const MEASURES: { key: string; label: string; href?: string }[] = [
   { key: 'resolved_reports', label: 'Reports resolved', href: '/admin/reports?resolved=true' },
 ]
 
-const DIMENSIONS: { key: string; label: string }[] = [
+/** `server` marks what a hosted instance's administrators are not shown. */
+const DIMENSIONS: { key: string; label: string; server?: true }[] = [
   { key: 'sources', label: 'Sign-up sources' },
   { key: 'languages', label: 'Top active languages' },
   { key: 'servers', label: 'Top active servers' },
-  { key: 'software_versions', label: 'Software' },
-  { key: 'space_usage', label: 'Space usage' },
+  { key: 'software_versions', label: 'Software', server: true },
+  { key: 'space_usage', label: 'Space usage', server: true },
 ]
 
 const DAY = 24 * 60 * 60 * 1000
@@ -227,6 +228,7 @@ function RetentionTable({ cohorts }: { cohorts: Cohort[] }) {
 export default function Dashboard() {
   const token = getToken()
   const permissions = useRolePermissions() ?? 0
+  const hosted = useHosted()
   const [measures, setMeasures] = useState<Measure[]>([])
   const [dimensions, setDimensions] = useState<Dimension[]>([])
   const [cohorts, setCohorts] = useState<Cohort[]>([])
@@ -338,7 +340,7 @@ export default function Dashboard() {
           ))}
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
-          {DIMENSIONS.map((d) => (
+          {DIMENSIONS.filter((d) => !(d.server && hosted)).map((d) => (
             <DimensionCard key={d.key} dimension={byKey(dimensions, d.key)} label={d.label} />
           ))}
         </div>

@@ -35,6 +35,7 @@ export default defineConfig({
           { text: "The job queue", link: "/operating/jobs" },
           { text: "Update notices", link: "/operating/update-notices" },
           { text: "Self-destruct", link: "/operating/self-destruct" },
+          { text: "Hosted instances", link: "/operating/hosted" },
         ],
       },
       {

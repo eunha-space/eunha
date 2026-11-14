@@ -3,7 +3,7 @@
 // relays, invites, webhooks, follow recommendations, software updates and the
 // dashboard), as eunha serves it under `/api/v1/admin/`. Kept apart from
 // `admin-api.ts`, which is Mastodon's own admin API, over the same transport.
-import { json, query, request, type ActionLog, type Account, type Measure, type Permission } from './admin-api.ts'
+import { AdminApiError, json, query, request, type ActionLog, type Account, type Measure, type Permission } from './admin-api.ts'
 import { INVITES_CHANGED } from './eunha-api.ts'
 
 // ── Server settings ─────────────────────────────────────────────────────────
@@ -640,6 +640,22 @@ export function applyModerationSuggestion(
     `/api/v1/admin/moderation_suggestions/${id}/apply`,
     confirmations,
   )
+}
+
+let hostedProbe: Promise<boolean> | null = null
+
+/**
+ * Whether a hosting service (eunha space) runs the instance, which the
+ * Server health endpoint says by answering 404 to anyone signed in. Its
+ * administrators are then shown nothing about the server itself. Asked once
+ * per page load.
+ */
+export function instanceHosted(token: string): Promise<boolean> {
+  hostedProbe ??= request(token, 'GET', '/api/v1/admin/server_checks').then(
+    () => false,
+    (e) => e instanceof AdminApiError && e.status === 404,
+  )
+  return hostedProbe
 }
 
 let faspProbe: Promise<boolean> | null = null

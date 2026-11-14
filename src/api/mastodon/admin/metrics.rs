@@ -557,6 +557,8 @@ pub async fn get_dimensions(
             "languages" => languages_dimension(&state, &window, limit, locale).await?,
             "sources" => sources_dimension(&state, &window, limit, locale).await?,
             "servers" => servers_dimension(&state, &window, limit, None).await?,
+            // A hosted instance's machines are its host's to watch.
+            "space_usage" | "software_versions" if state.instance.hosted => continue,
             "space_usage" => super::space_usage(&state, locale).await?,
             "software_versions" => super::software_versions(&state).await?,
             "tag_servers" => {

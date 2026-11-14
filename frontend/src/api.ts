@@ -330,6 +330,20 @@ export interface InstanceRule {
   hint?: string
 }
 
+export interface HostingProvider {
+  name: string
+  url: string | null
+}
+
+// Who hosts the instance, when its configuration credits anyone: eunha's own
+// addition to what `/api/v2/instance` says. Public.
+export async function getHostingProvider(): Promise<HostingProvider | null> {
+  const res = await fetch(`${window.location.origin}/api/eunha/v1/instance`)
+  if (!res.ok) return null
+  const body = (await res.json()) as { hosting_provider?: HostingProvider | null }
+  return body.hosting_provider ?? null
+}
+
 // The server's rules. Public, and empty on a server that has written none —
 // which is how the report flow knows to leave the rule step out.
 export async function getInstanceRules(): Promise<InstanceRule[]> {

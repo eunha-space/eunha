@@ -966,6 +966,8 @@ impl TestContext {
                 disallow_unauthenticated_api_access: false,
                 disable_automatic_switching_to_approved_registrations: false,
                 disable_followers_synchronization: false,
+                hosted: false,
+                hosting_provider: None,
                 translation: Default::default(),
                 secret_key_base: None,
                 self_destruct: None,

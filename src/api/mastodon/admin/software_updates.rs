@@ -20,11 +20,12 @@ use crate::{
 
 /// `SoftwareUpdate.check_enabled?`: an update server is configured.
 pub(crate) fn check_enabled(state: &AppState) -> bool {
-    state
-        .config
-        .software_update_url
-        .as_deref()
-        .is_some_and(|url| !url.is_empty())
+    !state.instance.hosted
+        && state
+            .config
+            .software_update_url
+            .as_deref()
+            .is_some_and(|url| !url.is_empty())
 }
 
 /// `Gem::Version#<=>`, near enough for release numbers: numeric segments by
