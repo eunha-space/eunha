@@ -875,3 +875,72 @@ async fn a_token_is_taken_from_one_method_only() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+/// eunha's own web app signs in with the instance's own application: one
+/// public client for its callback, made once, which the authorization page
+/// answers at once and whose code PKCE alone exchanges.
+#[tokio::test]
+async fn the_web_app_signs_in_without_being_asked_to_authorize() {
+    let ctx = TestContext::new("oauth-web-app").await;
+    let web_app = || async {
+        let resp = ctx.api.get("/api/eunha/v1/web_app", None).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        resp.json::<Value>().await.unwrap()
+    };
+    let first = web_app().await;
+    assert_eq!(first, web_app().await);
+    assert!(first.get("client_secret").is_none());
+    let client_id = first["client_id"].as_str().unwrap().to_owned();
+    let callback = format!("https://{}/auth/callback", ctx.domain);
+    assert_eq!(first["redirect_uri"], callback);
+    let scopes = first["scopes"].as_str().unwrap().to_owned();
+    assert!(scopes.contains("admin:write"));
+
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    let cookie =
+        crate::helpers::account_session_cookie(&ctx.api, "alice@test.invalid", PASSWORD).await;
+    let at_once = ctx
+        .api
+        .http
+        .get(ctx.api.url(&format!(
+            "/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={}&scope={}&code_challenge={challenge}&code_challenge_method=S256",
+            urlencoding::encode(&callback),
+            urlencoding::encode(&scopes),
+        )))
+        .header("host", &ctx.api.host)
+        .header("cookie", cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(at_once.status(), StatusCode::FOUND);
+    let code = param(&location(&at_once), "code").expect("a code at once");
+
+    let exchange = |verifier: &'static str| {
+        let (code, callback, client_id) = (code.clone(), callback.clone(), client_id.clone());
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .post_form(
+                    "/oauth/token",
+                    None,
+                    &[
+                        ("grant_type", "authorization_code"),
+                        ("code", &code),
+                        ("redirect_uri", &callback),
+                        ("client_id", &client_id),
+                        ("code_verifier", verifier),
+                    ],
+                )
+                .await
+        }
+    };
+    assert_eq!(
+        exchange("not-the-verifier").await.status(),
+        StatusCode::BAD_REQUEST
+    );
+    let token = exchange(verifier).await;
+    assert_eq!(token.status(), StatusCode::OK);
+    let token: Value = token.json().await.unwrap();
+    assert_eq!(token["scope"], scopes);
+}

@@ -16,6 +16,7 @@ pub mod sessions;
 pub mod statuses_cleanup;
 pub mod terms_of_service;
 pub mod two_factor;
+pub mod web_app;
 
 pub fn router() -> Router {
     Router::new()
@@ -26,6 +27,7 @@ pub fn router() -> Router {
             get(crate::api::mastodon::signup::invite_lookup),
         )
         .route("/api/eunha/v1/invite_tree", get(invite_tree::invite_tree))
+        .route("/api/eunha/v1/web_app", get(web_app::show))
         .route(
             "/api/eunha/v1/terms_of_service/interstitial",
             get(terms_of_service::show).delete(terms_of_service::dismiss),

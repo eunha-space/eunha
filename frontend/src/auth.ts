@@ -1,6 +1,6 @@
-// Standard Mastodon OAuth `authorization_code` flow, run client-side via
-// masto.js against eunha's existing endpoints. No backend changes required.
-import { oauthClient, restClient } from './masto.ts'
+// Standard Mastodon OAuth `authorization_code` flow, run client-side against
+// eunha's own endpoints, with PKCE.
+import { restClient } from './masto.ts'
 import { disableBrowserPush } from './lib/browser-push.ts'
 import { clearMe, loadMe, type MeAccount } from './me.ts'
 
@@ -13,6 +13,7 @@ const CLIENT_KEY = 'eunha:client'
 const ACTIVE_ACCOUNT_KEY = 'eunha:active-account'
 const ACCOUNTS_KEY = 'eunha:accounts'
 const RETURN_PATH_KEY = 'eunha:return-path'
+const VERIFIER_KEY = 'eunha:code-verifier'
 
 export interface SavedAccount {
   token: string
@@ -56,7 +57,8 @@ window.addEventListener('storage', (event) => {
 
 interface ClientCreds {
   client_id: string
-  client_secret: string
+  // None for the instance's own app, which is public: PKCE proves the code.
+  client_secret?: string
   // What the app was registered for. An authorization may not ask for more
   // than that, so an app registered before the scopes grew is registered again.
   scopes?: string
@@ -93,10 +95,22 @@ function storedClient(): ClientCreds | null {
   return raw ? (JSON.parse(raw) as ClientCreds) : null
 }
 
-// Register a first-party OAuth app for this instance once, then reuse it.
+// The instance's own app (`GET /api/eunha/v1/web_app`), which the
+// authorization page answers at once, when it is for this origin. Elsewhere,
+// as on a development server, an app registered for this browser once and
+// then reused, which the page asks the person to authorize.
 async function ensureClient(): Promise<ClientCreds> {
+  const own = await fetch('/api/eunha/v1/web_app', { headers: { Accept: 'application/json' } })
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null) as { client_id?: string, redirect_uri?: string, scopes?: string } | null
+  if (own?.client_id && own.redirect_uri === redirectUri() && own.scopes === SCOPES) {
+    const creds: ClientCreds = { client_id: own.client_id, scopes: SCOPES }
+    localStorage.setItem(CLIENT_KEY, JSON.stringify(creds))
+    return creds
+  }
+
   const existing = storedClient()
-  if (existing && existing.scopes === SCOPES) return existing
+  if (existing?.client_secret && existing.scopes === SCOPES) return existing
 
   const app = await restClient().v1.apps.create({
     clientName: 'eunha',
@@ -116,6 +130,18 @@ async function ensureClient(): Promise<ClientCreds> {
   return creds
 }
 
+function base64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+// A PKCE verifier kept for the callback, and its `S256` challenge.
+async function codeChallenge(): Promise<string> {
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
+  sessionStorage.setItem(VERIFIER_KEY, verifier)
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  return base64url(new Uint8Array(digest))
+}
+
 // Kick off login: register (or reuse) the app, then send the browser to the
 // server-rendered authorize page. (masto.js doesn't navigate the browser.)
 export async function beginLogin(addAccount = false, returnPath?: string) {
@@ -126,6 +152,8 @@ export async function beginLogin(addAccount = false, returnPath?: string) {
     redirect_uri: redirectUri(),
     response_type: 'code',
     scope: SCOPES,
+    code_challenge: await codeChallenge(),
+    code_challenge_method: 'S256',
   })
   const authorize = `/oauth/authorize?${params}`
   if (!addAccount) {
@@ -164,14 +192,20 @@ export async function completeLogin(code: string): Promise<void> {
   const creds = storedClient()
   if (!creds) throw new Error('missing client credentials')
 
-  const token = await oauthClient().token.create({
-    grantType: 'authorization_code',
-    clientId: creds.client_id,
-    clientSecret: creds.client_secret,
-    redirectUri: redirectUri(),
+  const verifier = sessionStorage.getItem(VERIFIER_KEY)
+  sessionStorage.removeItem(VERIFIER_KEY)
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: creds.client_id,
+    redirect_uri: redirectUri(),
     code,
     scope: SCOPES,
   })
+  if (creds.client_secret) body.set('client_secret', creds.client_secret)
+  if (verifier) body.set('code_verifier', verifier)
+  const res = await fetch('/oauth/token', { method: 'POST', body })
+  if (!res.ok) throw new Error(`token exchange failed: ${res.status}`)
+  const token = { accessToken: ((await res.json()) as { access_token: string }).access_token }
   // Verify before replacing the active session, so a failed login preserves it.
   const me = await restClient(token.accessToken).v1.accounts.verifyCredentials()
   const account: MeAccount = {

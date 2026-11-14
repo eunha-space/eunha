@@ -160,15 +160,24 @@ when none are given; and a website, if any, an `http` or `https` URL.
 A signed-out browser is asked to sign in on the authorization page itself,
 where Mastodon sends it to its sign-in page. The form names the client as
 what signing in continues to, except the instance's own web app (a redirect
-URI of `/auth/callback` on one of the instance's hosts), which registers
-itself from the browser as `eunha`. Signing in starts a session and
-comes back to the page with a 302. A signed-in user is shown Mastodon's
-choice: the client's name, the permissions it asks for grouped as Mastodon
-groups them, and **Authorize** and **Deny**, with who is signed in and a
-logout that comes back to the page. The page answers at once, without asking,
-for the instance's own app (`superapp`), and for a confidential client the
-user already holds an unrevoked token of with the same scopes, unless the
-request says `force_login=true`.
+URI of `/auth/callback` on one of the instance's hosts). Signing in starts a
+session and comes back to the page with a 302. A signed-in user is shown
+Mastodon's choice: the client's name, the permissions it asks for grouped as
+Mastodon groups them, and **Authorize** and **Deny**, with who is signed in and
+a logout that comes back to the page. The page answers at once, without asking,
+for the instance's own app (`superapp`), and for a confidential client the user
+already holds an unrevoked token of with the same scopes, unless the request
+says `force_login=true`.
+
+eunha's web app signs in with the instance's own app, so a new member is not
+asked to authorize the site they just joined. `GET /api/eunha/v1/web_app`
+answers its `client_id`, `redirect_uri` and `scopes`, making the application
+the first time it is asked: a `superapp` named `eunha`, public
+(`confidential = false`, so it has no secret to share among browsers), whose
+only redirect URI is `https://{web_domain}/auth/callback`. The web app proves
+each code its own with PKCE (`S256`). Served from another origin, as on a
+development server, the web app registers an app of its own from the browser
+instead, which the page asks the person to authorize.
 
 `prompt=login` asks for a fresh sign-in: a browser already signed in is asked to
 log out and continue, and the page goes on once a session has begun since it
@@ -321,8 +330,8 @@ signing in then lands there rather than on `/account`.
 `GET /api/eunha/v1/sessions` lists them, newest activity first, with the
 browser and platform Mastodon would name and which one the asking token
 belongs to; `DELETE /api/eunha/v1/sessions/:id` ends one. eunha's own web
-client signs in through OAuth rather than a session, so it appears among the
-authorized apps below.
+client signs in through OAuth rather than a session, with the instance's own
+app, which the authorized apps below do not offer to revoke.
 
 
 Authorized apps and sign-in history
