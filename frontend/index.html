@@ -8,8 +8,9 @@
     <link rel="icon" type="image/svg+xml" href="/eunha-symbol-dark.svg" media="(prefers-color-scheme: dark)" />
     <title>eunha</title>
     <script>
-      // Set the theme class before first paint to avoid a flash (matches
-      // ThemeProvider's storageKey "eunha-theme").
+      // Set the theme class and the palette before first paint to avoid a
+      // flash (matches ThemeProvider's storageKey "eunha-theme" and its
+      // PALETTES; an unknown palette is left for ThemeProvider to reset).
       (function () {
         try {
           var t = localStorage.getItem('eunha-theme') || 'system'
@@ -18,6 +19,9 @@
             (t === 'system' &&
               matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.classList.add(dark ? 'dark' : 'light')
+          var p = localStorage.getItem('eunha-theme-palette')
+          if (['mint', 'lilac', 'ocean', 'rose', 'amber'].indexOf(p) >= 0)
+            document.documentElement.dataset.palette = p
         } catch (e) {}
       })()
     </script>

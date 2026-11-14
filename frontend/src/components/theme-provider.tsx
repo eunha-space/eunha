@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 
 type Theme = 'dark' | 'light' | 'system'
 
+// index.html repeats these keys to set the palette before first paint.
 export const PALETTES = {
   mint: 'Mint',
   lilac: 'Lilac',

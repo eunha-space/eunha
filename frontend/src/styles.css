@@ -29,6 +29,8 @@
   --popover-foreground: var(--brand-navy);
   --primary: oklch(0.521 0.090 176.7);
   --primary-foreground: var(--brand-cream);
+  /* Lilac darkened until it clears 3:1 on a card, as the mint above is. */
+  --complement: oklch(0.49 0.15 297);
   --secondary: oklch(0.944 0.017 88.0);
   --secondary-foreground: var(--brand-navy);
   --muted: oklch(0.944 0.017 88.0);
@@ -94,6 +96,7 @@
   --popover-foreground: var(--brand-cream);
   --primary: var(--brand-mint);
   --primary-foreground: var(--brand-navy);
+  --complement: var(--brand-lilac);
   --secondary: oklch(0.225 0.058 253.4);
   --secondary-foreground: var(--brand-cream);
   --muted: oklch(0.225 0.058 253.4);
@@ -119,28 +122,40 @@
   --sidebar-ring: var(--brand-mint);
 }
 
+/* Each palette has a primary and a complement: the second colour that marks a
+   state apart from the primary, as lilac does beside mint in the logo (a
+   bookmark beside a boost). Mint keeps the defaults above. */
 :root[data-palette="lilac"] {
   --palette-light: oklch(0.49 0.15 297);
   --palette-dark: var(--brand-lilac);
+  --palette-complement-light: oklch(0.521 0.090 176.7);
+  --palette-complement-dark: var(--brand-mint);
 }
 
 :root[data-palette="ocean"] {
   --palette-light: oklch(0.49 0.14 250);
   --palette-dark: oklch(0.79 0.10 240);
+  --palette-complement-light: oklch(0.55 0.15 40);
+  --palette-complement-dark: oklch(0.80 0.11 45);
 }
 
 :root[data-palette="rose"] {
   --palette-light: oklch(0.49 0.15 10);
   --palette-dark: oklch(0.78 0.12 10);
+  --palette-complement-light: oklch(0.521 0.090 176.7);
+  --palette-complement-dark: var(--brand-mint);
 }
 
 :root[data-palette="amber"] {
   --palette-light: oklch(0.48 0.10 65);
   --palette-dark: oklch(0.84 0.12 80);
+  --palette-complement-light: oklch(0.49 0.15 297);
+  --palette-complement-dark: var(--brand-lilac);
 }
 
 :root[data-palette]:not([data-palette="mint"]) {
   --primary: var(--palette-light);
+  --complement: var(--palette-complement-light);
   --sidebar-primary: var(--primary);
   --ring: var(--primary);
   --sidebar-ring: var(--primary);
@@ -148,6 +163,7 @@
 
 :root.dark[data-palette]:not([data-palette="mint"]) {
   --primary: var(--palette-dark);
+  --complement: var(--palette-complement-dark);
 }
 
 @theme inline {
@@ -168,6 +184,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-complement: var(--complement);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
