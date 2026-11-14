@@ -59,7 +59,7 @@
       <button type="submit" id="signup-btn">{% if approval_required and not invite %}{{ t_apply_for_account }}{% else %}{{ t_create_account }}{% endif %}</button>
     </form>
   </div>
-  <p class="footer">{{ t_already_account }} <a href="/auth/sign_in">{{ t_sign_in }}</a></p>
+  <p class="footer">{{ t_already_account }} <a href="/account/login">{{ t_sign_in }}</a></p>
   {% else %}
   <p class="closed-msg">{{ t_registrations_closed }}</p>
   <form method="GET" action="/auth/signup">

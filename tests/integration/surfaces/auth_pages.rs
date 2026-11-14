@@ -247,3 +247,34 @@ async fn test_email_confirmation_redirects_to_sign_in() {
         "the sign-in page should explain the stale link",
     );
 }
+
+/// Mastodon's own paths to the sign-in and sign-up forms, which apps and other
+/// servers' pages link to, land on eunha's forms; and the sign-up form's own
+/// "Already have an account?" link goes straight to the sign-in form.
+#[tokio::test]
+async fn test_mastodon_sign_in_and_sign_up_paths_reach_the_forms() {
+    let ctx = TestContext::new("auth-mastodon-paths").await;
+    for (path, location) in [
+        ("/auth/sign_in", "/account/login"),
+        ("/auth/sign_in?confirmed=1", "/account/login?confirmed=1"),
+        ("/auth/sign_up", "/auth/signup"),
+        ("/auth/sign_up?invite=abc", "/auth/signup?invite=abc"),
+    ] {
+        let response = ctx.api.get(path, None).await;
+        assert_eq!(response.status(), StatusCode::FOUND, "{path}");
+        assert_eq!(
+            response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok()),
+            Some(location),
+            "{path}",
+        );
+    }
+
+    let signup = ctx.api.get("/auth/signup", None).await;
+    assert_eq!(signup.status(), StatusCode::OK);
+    let body = signup.text().await.unwrap();
+    assert!(body.contains(r#"<a href="/account/login">"#), "{body}");
+    assert!(!body.contains("/auth/sign_in"));
+}

@@ -74,7 +74,10 @@ The OAuth authorization page and the account pages (`/account/login`) take the
 password, then ask for the second factor when the user has one: a code from the
 app or a recovery code, or a security key. Mastodon keeps that half-finished
 sign-in in its session; eunha keeps it in Redis under a random token the form
-carries (`sign_in_attempt:*`), for an hour. As upstream does:
+carries (`sign_in_attempt:*`), for an hour. Mastodon's own paths to the forms,
+`/auth/sign_in` and `/auth/sign_up`, redirect to `/account/login` and
+`/auth/signup` with a `302`, so apps and links made for Mastodon reach them.
+As upstream does:
 
  -  a change to the user in between (`users.updated_at`) sends the person back
     to the password;

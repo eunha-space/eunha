@@ -124,6 +124,21 @@ async fn invite_show(
     })))
 }
 
+/// `GET /auth/sign_up`, Devise's `new_user_registration_path`: eunha's form is
+/// at `/auth/signup`, so this sends the browser there with its query (an
+/// invite code, a language).
+pub async fn mastodon_sign_up(uri: axum::http::Uri) -> Response {
+    let location = match uri.query() {
+        Some(query) if !query.is_empty() => format!("/auth/signup?{query}"),
+        _ => "/auth/signup".to_owned(),
+    };
+    (
+        axum::http::StatusCode::FOUND,
+        [(axum::http::header::LOCATION, location)],
+    )
+        .into_response()
+}
+
 pub async fn signup_get(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,

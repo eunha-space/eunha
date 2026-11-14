@@ -35,6 +35,9 @@ pub fn router() -> Router {
     Router::new()
         .route("/account", get(account_home))
         .route("/account/login", get(login_page).post(login_post))
+        // Mastodon's own path to the sign-in form, which other servers'
+        // pages, clients and old links send people to.
+        .route("/auth/sign_in", get(mastodon_sign_in))
         .route("/auth", post(registration_post))
         .route(
             "/auth/setup",
@@ -465,6 +468,21 @@ fn stored_location(headers: &HeaderMap) -> Option<String> {
         .find_map(|part| part.trim().strip_prefix(&format!("{RETURN_TO_COOKIE}=")))?;
     let path = urlencoding::decode(value).ok()?.into_owned();
     (path.starts_with('/') && !path.starts_with("//") && !path.contains('\\')).then_some(path)
+}
+
+/// `GET /auth/sign_in`, Devise's `new_user_session_path`: eunha's sign-in
+/// form is at `/account/login`, so this sends the browser there, keeping the
+/// query the form reads.
+async fn mastodon_sign_in(uri: axum::http::Uri) -> Response {
+    let location = match uri.query() {
+        Some(query) if !query.is_empty() => format!("/account/login?{query}"),
+        _ => "/account/login".to_owned(),
+    };
+    (
+        axum::http::StatusCode::FOUND,
+        [(header::LOCATION, location)],
+    )
+        .into_response()
 }
 
 /// The account pages' own redirect to the sign-in page when no one is signed

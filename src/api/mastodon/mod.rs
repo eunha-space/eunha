@@ -1455,6 +1455,8 @@ pub fn router() -> Router {
         // Account registration (Mastodon C2S API)
         .route("/api/v1/accounts", post(signup::api_create_account))
         .route("/auth/signup", get(signup::signup_get))
+        // Mastodon's own path to the sign-up form.
+        .route("/auth/sign_up", get(signup::mastodon_sign_up))
         .route("/invite/{code}", get(signup::public_invite))
         // Email confirmation
         .route("/auth/confirm", get(signup::confirm_email))
