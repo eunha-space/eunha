@@ -424,7 +424,13 @@ export function StatusCard({
         {boostedBy && (
           <p className="text-muted-foreground flex items-center gap-1 text-xs">
             <Repeat2 className="size-3.5" />
-            <DisplayName account={boostedBy} /> boosted
+            <Link
+              to={`/@${boostedBy.acct}`}
+              className="text-muted-foreground font-medium no-underline hover:underline"
+            >
+              <DisplayName account={boostedBy} />
+            </Link>{' '}
+            boosted
           </p>
         )}
         <div className="@container flex items-center gap-2 text-sm">
