@@ -83,7 +83,7 @@ export async function getHomeTimeline(
   maxId?: string,
 ): Promise<mastodon.v1.Status[]> {
   // The paginator is awaitable and resolves to the first page.
-  return restClient(token).v1.timelines.home.list({ limit: 40, maxId })
+  return restClient(token).v1.timelines.home.list({ limit: maxId ? 40 : 20, maxId })
 }
 
 // masto declares `QuoteApprovalPolicy` twice: the entity's — public,
@@ -545,7 +545,7 @@ export async function getPublicTimeline(
   token?: string,
   maxId?: string,
 ): Promise<mastodon.v1.Status[]> {
-  return restClient(token).v1.timelines.public.list({ local, limit: 40, maxId })
+  return restClient(token).v1.timelines.public.list({ local, limit: maxId ? 40 : 20, maxId })
 }
 
 // Direct-message threads. Paginated by the id of each conversation's last

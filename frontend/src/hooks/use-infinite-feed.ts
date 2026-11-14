@@ -5,6 +5,16 @@ import { getToken } from '../auth.ts'
 const savedFeeds = new Map<string, { items: { id: string }[]; done: boolean }>()
 
 /**
+ * The newest page each feed showed last, whatever history entry showed it.
+ * `savedFeeds` brings a feed back exactly on Back and Forward; this lets a
+ * fresh visit — clicking Home in the sidebar — show what was there a moment ago
+ * at once and swap in the server's answer when it arrives, instead of
+ * blanking the column to "Loading…" for the length of a request.
+ */
+const recentFeeds = new Map<string, { id: string }[]>()
+const RECENT_ITEMS = 40
+
+/**
  * Cursor-paginated feed backed by Mastodon's `max_id` pagination. `fetchPage`
  * returns one page; passing the last item's id fetches older items. The feed
  * resets and reloads whenever `deps` change.
@@ -19,8 +29,12 @@ export function useInfiniteFeed<T extends { id: string }>(
   const cacheKey = restorationId
     ? JSON.stringify([location.key, getToken(), restorationId, deps])
     : null
+  const recentKey = restorationId ? JSON.stringify([getToken(), restorationId, deps]) : null
   const restored = navigationType === 'POP' && cacheKey ? savedFeeds.get(cacheKey) : undefined
-  const [items, setItems] = useState<T[] | null>(() => (restored?.items as T[] | undefined) ?? null)
+  const recent = recentKey ? recentFeeds.get(recentKey) : undefined
+  const [items, setItems] = useState<T[] | null>(
+    () => (restored?.items as T[] | undefined) ?? (recent as T[] | undefined) ?? null,
+  )
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [done, setDone] = useState(restored?.done ?? false)
@@ -35,11 +49,16 @@ export function useInfiniteFeed<T extends { id: string }>(
   const latest = useRef({ items, done })
   latest.current = { items, done }
   useEffect(() => () => {
+    if (recentKey && latest.current.items) {
+      recentFeeds.delete(recentKey)
+      recentFeeds.set(recentKey, latest.current.items.slice(0, RECENT_ITEMS))
+      if (recentFeeds.size > 30) recentFeeds.delete(recentFeeds.keys().next().value!)
+    }
     if (!cacheKey || !latest.current.items) return
     savedFeeds.delete(cacheKey)
     savedFeeds.set(cacheKey, { items: latest.current.items, done: latest.current.done })
     if (savedFeeds.size > 30) savedFeeds.delete(savedFeeds.keys().next().value!)
-  }, [cacheKey])
+  }, [cacheKey, recentKey])
 
   useEffect(() => {
     const run = ++runRef.current
@@ -53,7 +72,10 @@ export function useInfiniteFeed<T extends { id: string }>(
       return () => { runRef.current++ }
     }
     let cancelled = false
-    setItems(null)
+    // Show what this feed held last while the request is out; the first page
+    // that comes back replaces it.
+    const recentItems = recentKey ? recentFeeds.get(recentKey) : undefined
+    setItems((recentItems as T[] | undefined) ?? null)
     setError(null)
     setDone(false)
     busyRef.current = true
@@ -75,7 +97,7 @@ export function useInfiniteFeed<T extends { id: string }>(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, cacheKey])
+  }, [...deps, cacheKey, recentKey])
 
   const loadMore = useCallback(async () => {
     const cur = itemsRef.current
