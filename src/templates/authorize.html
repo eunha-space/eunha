@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ t_sign_in_to }} {{ domain }}</title>
+<title>{{ t_sign_in_to }}</title>
 <script>(function(){var t=localStorage.getItem('eunha-theme')||'system';var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light')})();</script>
 <link rel="stylesheet" href="/auth.css">
 </head>
@@ -14,8 +14,8 @@
     &nbsp;·&nbsp;
     {% if lang == "ko" %}<a href="{{ toggle_ko_url }}">KO</a>{% else %}<span class="lang-active">KO</span>{% endif %}
   </div>
-  <h1>{{ t_sign_in_to }} {{ domain }}</h1>
-  <p class="sub">{{ t_authorize }} <strong>{{ app_name }}</strong></p>
+  <h1>{{ t_sign_in_to }}</h1>
+  {% if continue_to %}<p class="sub">{{ continue_to }}</p>{% endif %}
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <form method="POST" action="/oauth/authorize">
     <input type="hidden" name="client_id" value="{{ client_id }}">

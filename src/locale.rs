@@ -45,10 +45,10 @@ impl Locale {
     pub fn t(self, key: &str) -> &'static str {
         match (self, key) {
             // ── authorize page ───────────────────────────────────────────────
-            (Self::En, "sign_in_to") => "Sign in to",
-            (Self::Ko, "sign_in_to") => "로그인",
-            (Self::En, "authorize") => "Authorize",
-            (Self::Ko, "authorize") => "인증",
+            (Self::En, "sign_in_to") => "Sign in to %{domain}",
+            (Self::Ko, "sign_in_to") => "%{domain}에 로그인",
+            (Self::En, "continue_to_html") => "to continue to %{client_name}",
+            (Self::Ko, "continue_to_html") => "%{client_name}(으)로 계속하려면",
             // ── doorkeeper.authorizations.new ────────────────────────────────
             (Self::En, "authorization_required") => "Authorization required",
             (Self::Ko, "authorization_required") => "승인 필요",

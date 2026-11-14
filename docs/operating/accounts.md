@@ -155,7 +155,10 @@ scopes among those Doorkeeper is configured with, separated by spaces, `read`
 when none are given; and a website, if any, an `http` or `https` URL.
 
 A signed-out browser is asked to sign in on the authorization page itself,
-where Mastodon sends it to its sign-in page; signing in starts a session and
+where Mastodon sends it to its sign-in page. The form names the client as
+what signing in continues to, except the instance's own web app (a redirect
+URI of `/auth/callback` on one of the instance's hosts), which registers
+itself from the browser as `eunha`. Signing in starts a session and
 comes back to the page with a 302. A signed-in user is shown Mastodon's
 choice: the client's name, the permissions it asks for grouped as Mastodon
 groups them, and **Authorize** and **Deny**, with who is signed in and a

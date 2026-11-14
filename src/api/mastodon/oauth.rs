@@ -1696,6 +1696,17 @@ fn escape_html(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// Whether `redirect_uri` is this instance's own web app's callback
+/// (*frontend/src/auth.ts*), which registers itself from the browser.
+fn is_own_web_app(instance: &crate::config::InstanceConfig, redirect_uri: &str) -> bool {
+    url::Url::parse(redirect_uri).is_ok_and(|url| {
+        url.path() == "/auth/callback"
+            && url
+                .host_str()
+                .is_some_and(|host| instance.is_our_host(host))
+    })
+}
+
 /// The sign-in form of the authorization page.
 #[allow(clippy::too_many_arguments)]
 fn render_authorize(
@@ -1714,11 +1725,19 @@ fn render_authorize(
     );
     let (toggle_en_url, toggle_ko_url) = (format!("{base}&lang=en"), format!("{base}&lang=ko"));
     let signup_url = format!("/auth/signup?lang={}", locale.as_str());
+    // Signing in to the site's own web app is just signing in: only another
+    // app is named, as what the sign-in continues to.
+    let continue_to = (!is_own_web_app(instance, redirect_uri)).then(|| {
+        minijinja::Value::from_safe_string(locale.t("continue_to_html").replace(
+            "%{client_name}",
+            &format!("<strong>{}</strong>", escape_html(app_name)),
+        ))
+    });
     let html = crate::templates::render(
         "authorize.html",
         minijinja::context! {
             domain => instance.local_domain,
-            app_name => app_name,
+            continue_to => continue_to,
             client_id => client_id,
             redirect_uri => redirect_uri,
             scope => scope,
@@ -1729,8 +1748,7 @@ fn render_authorize(
             toggle_ko_url => toggle_ko_url,
             registrations_open => instance.registrations_open,
             signup_url => signup_url,
-            t_sign_in_to => locale.t("sign_in_to"),
-            t_authorize => locale.t("authorize"),
+            t_sign_in_to => locale.t("sign_in_to").replace("%{domain}", &instance.local_domain),
             t_email => locale.t("email"),
             t_password => locale.t("password"),
             t_sign_in => locale.t("sign_in"),

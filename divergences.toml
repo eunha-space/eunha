@@ -1078,9 +1078,10 @@ which redirects to the sign-in page (`new_user_session_url`) with the page \
 stored to come back to (`store_current_location`); signing in returns there, \
 to authorize or deny."""
 eunha = """
-Answers with a sign-in form on the authorization page, with the client's \
-name, a language switch and the sign-up link, and keeps the request in the \
-form. Signing in there starts a session and redirects (`302`) back to the \
+Answers with a sign-in form on the authorization page, naming the client \
+as what signing in continues to (unless it is the instance's own web app, \
+which is just the site), with a language switch and the sign-up link, and \
+keeps the request in the form. Signing in there starts a session and redirects (`302`) back to the \
 page, which then asks to authorize or deny, or answers at once, as \
 Mastodon's does; the consent page's logout comes back to it signed out."""
 why = """

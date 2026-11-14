@@ -99,7 +99,7 @@ async function ensureClient(): Promise<ClientCreds> {
   if (existing && existing.scopes === SCOPES) return existing
 
   const app = await restClient().v1.apps.create({
-    clientName: 'eunha Web',
+    clientName: 'eunha',
     redirectUris: redirectUri(),
     scopes: SCOPES,
     website: window.location.origin,

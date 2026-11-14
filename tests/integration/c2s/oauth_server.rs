@@ -109,6 +109,51 @@ async fn register_app(ctx: &TestContext, redirect_uris: &str) -> (String, String
     )
 }
 
+/// The sign-in form names an app as what signing in continues to, but not
+/// the instance's own web app, which is just the site being signed in to.
+#[tokio::test]
+async fn the_sign_in_form_names_only_another_app() {
+    let ctx = TestContext::new("oauth-sign-in-names").await;
+    let own = format!("https://{}/auth/callback", ctx.api.host);
+    let sign_in_page = |client_id: String, redirect_uri: String, lang: &'static str| {
+        let ctx = &ctx;
+        async move {
+            ctx.api
+                .http
+                .get(ctx.api.url(&format!(
+                    "/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={}&scope=read&lang={lang}",
+                    urlencoding::encode(&redirect_uri)
+                )))
+                .header("host", &ctx.api.host)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap()
+        }
+    };
+
+    let (other, _) = register_app(&ctx, CALLBACK).await;
+    let page = sign_in_page(other.clone(), CALLBACK.into(), "en").await;
+    assert!(
+        page.contains("to continue to <strong>oauth flow</strong>"),
+        "{page}"
+    );
+    let page = sign_in_page(other, CALLBACK.into(), "ko").await;
+    assert!(
+        page.contains("<strong>oauth flow</strong>(으)로 계속하려면"),
+        "{page}"
+    );
+    assert!(page.contains("에 로그인</h1>"), "{page}");
+
+    let (web, _) = register_app(&ctx, &own).await;
+    let page = sign_in_page(web, own, "en").await;
+    assert!(page.contains(r#"name="password""#), "{page}");
+    assert!(!page.contains("continue to"), "{page}");
+    assert!(!page.contains("oauth flow"), "{page}");
+}
+
 /// Press the authorization page's authorize button as alice, signed in,
 /// with these fields besides the client's.
 async fn authorize(
