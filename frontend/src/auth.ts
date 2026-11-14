@@ -127,8 +127,28 @@ export async function beginLogin(addAccount = false, returnPath?: string) {
     response_type: 'code',
     scope: SCOPES,
   })
-  if (addAccount) params.set('force_login', 'true')
-  window.location.assign(`/oauth/authorize?${params}`)
+  const authorize = `/oauth/authorize?${params}`
+  if (!addAccount) {
+    window.location.assign(authorize)
+    return
+  }
+  // Adding an account: the browser is most likely still signed in to the
+  // account pages as the current account, and the authorization page would
+  // only offer to authorize that account again. Sign the browser out of those
+  // pages first; the logout's `continue` brings it on to the authorization
+  // page, which then asks for the other account's email and password. This
+  // ends only the cookie session, not the tokens saved in the switcher.
+  params.set('force_login', 'true')
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = '/account/logout'
+  const input = document.createElement('input')
+  input.type = 'hidden'
+  input.name = 'continue'
+  input.value = `/oauth/authorize?${params}`
+  form.append(input)
+  document.body.append(form)
+  form.submit()
 }
 
 // Where to go once signed in: the page that asked for it, which is always one
