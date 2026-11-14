@@ -45,10 +45,7 @@ pub fn is_verifiable(value: &str) -> bool {
         return false;
     };
     // Reject IDN/punycode hosts — Mastodon skips these (normalized_host != host).
-    if !host.is_ascii() || host.starts_with("xn--") || host.contains(".xn--") {
-        return false;
-    }
-    true
+    host.is_ascii() && !host.starts_with("xn--") && !host.contains(".xn--")
 }
 
 /// The `href` of every `<a>`/`<link>` element that carries `rel="me"`
