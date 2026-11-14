@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   Bell,
   Check,
@@ -388,10 +388,11 @@ function AuthButton({
   )
 }
 
+// The sign-up form is a server page, as Mastodon's is, so apps and links
+// made for Mastodon reach the same one.
 function SignUpButton({ className }: { className?: string }) {
-  const navigate = useNavigate()
   return (
-    <Button className={className} onClick={() => navigate('/signup')}>
+    <Button className={className} onClick={() => window.location.assign('/auth/signup')}>
       <UserPlus /> Create account
     </Button>
   )
@@ -602,7 +603,6 @@ function MobileHeader({
   registrationsOpen: boolean
 }) {
   const { openCompose } = useComposeModal()
-  const navigate = useNavigate()
 
   return (
     // Even padding rather than the old `pb-2` with none above: the bar's rule
@@ -623,7 +623,7 @@ function MobileHeader({
         ) : (
           <>
             {registrationsOpen && (
-              <Button size="sm" onClick={() => navigate('/signup')}>
+              <Button size="sm" onClick={() => window.location.assign('/auth/signup')}>
                 <UserPlus /> Create account
               </Button>
             )}

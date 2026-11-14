@@ -64,23 +64,22 @@ async fn test_an_invite_wants_a_functional_inviter() {
         .json()
         .await
         .unwrap();
+    // `Api::V1::InvitesController#show`, which asks `valid_for_use?`.
     let lookup = |code: String| {
         let api = &ctx.api;
         async move {
-            api.get(&format!("/api/eunha/v1/invite?invite={code}"), None)
+            api.get(&format!("/invite/{code}.json"), None)
                 .await
-                .json::<Value>()
-                .await
-                .unwrap()
+                .status()
         }
     };
     let code = invite["code"].as_str().unwrap().to_owned();
-    assert_eq!(lookup(code.clone()).await["valid"], true);
+    assert_eq!(lookup(code.clone()).await, StatusCode::OK);
     sqlx::query("UPDATE user_roles SET require_2fa = true WHERE id = -99")
         .execute(&ctx.db)
         .await
         .unwrap();
-    assert_eq!(lookup(code).await["valid"], false);
+    assert_eq!(lookup(code).await, StatusCode::UNAUTHORIZED);
 }
 
 /// Invite with max_uses and expires_in round-trips those fields.
@@ -320,14 +319,12 @@ async fn test_public_invite_link_is_mastodons() {
         "This invite is not valid"
     );
 
-    // A browser gets the sign-up page, not JSON.
+    // A browser is sent to the sign-up form, not given JSON.
     let page = ctx.api.get(&format!("/invite/{code}"), None).await;
-    assert!(!page
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .starts_with("application/json"),);
+    assert_eq!(
+        page.headers().get("location").and_then(|v| v.to_str().ok()),
+        Some(format!("/auth/signup?invite={code}").as_str()),
+    );
 }
 
 /// What `GET /api/v1/invites` adds about each link: who joined with it, by name

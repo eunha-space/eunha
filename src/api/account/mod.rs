@@ -446,11 +446,16 @@ pub(crate) fn sign_in_redirect(path: &str) -> Response {
 
 /// A `302` to `target`, with `return_to` kept as the page to come back to
 /// (`store_location_for`).
-pub(crate) fn redirect_storing_location(target: &str, return_to: &str) -> Response {
-    let cookie = format!(
+/// The cookie that has signing in go on to `return_to`.
+pub(crate) fn return_to_cookie(return_to: &str) -> String {
+    format!(
         "{RETURN_TO_COOKIE}={}; HttpOnly; SameSite=Lax; Path=/",
         urlencoding::encode(return_to)
-    );
+    )
+}
+
+pub(crate) fn redirect_storing_location(target: &str, return_to: &str) -> Response {
+    let cookie = return_to_cookie(return_to);
     (
         axum::http::StatusCode::FOUND,
         [
@@ -461,7 +466,7 @@ pub(crate) fn redirect_storing_location(target: &str, return_to: &str) -> Respon
         .into_response()
 }
 
-fn stored_location(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn stored_location(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     let value = cookie_header
         .split(';')

@@ -229,43 +229,6 @@ export async function deleteInvite(token: string, id: string): Promise<void> {
   window.dispatchEvent(new Event(INVITES_CHANGED))
 }
 
-// ── Sign up ─────────────────────────────────────────────────────────────────
-// POST /auth is the web sign-up, Mastodon's Auth::RegistrationsController: the
-// new user is saved unconfirmed and signed in, and waits on /auth/setup for the
-// link mailed to them. (POST /api/v1/accounts is for apps, with a
-// client-credentials token.)
-
-export interface SignUpParams {
-  username: string
-  email: string
-  password: string
-  locale?: string
-  invite_code?: string
-  reason?: string
-  /** `agreement`: the terms of service and privacy policy were accepted. */
-  agreement: boolean
-  /** ISO 8601, asked for when the instance sets `registrations.min_age`. */
-  date_of_birth?: string
-}
-
-export async function signUp(params: SignUpParams): Promise<void> {
-  const res = await fetch(`${window.location.origin}/auth`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-  if (!res.ok) {
-    let message = `Sign up failed (${res.status})`
-    try {
-      const body = (await res.json()) as { error?: string }
-      if (body.error) message = body.error
-    } catch {
-      // keep the status-based fallback
-    }
-    throw new Error(message)
-  }
-}
-
 // ── Account deletion ───────────────────────────────────────────────────────
 // Mastodon deletes accounts through a web form (`/settings/delete`) and has no
 // REST equivalent, so `DELETE /api/v1/accounts` is eunha's own. It runs the
@@ -476,18 +439,4 @@ export async function confirmImport(token: string, id: string): Promise<BulkImpo
 
 export async function cancelImport(token: string, id: string): Promise<void> {
   await eunhaFetch(`/api/eunha/v1/imports/${id}`, token, { method: 'DELETE' })
-}
-
-export interface InviteResolution {
-  valid: boolean
-  reason?: string
-  bypass_approval?: boolean
-  autofollow?: boolean
-  inviter?: { id: string; acct: string; display_name: string }
-}
-
-export async function resolveInvite(code: string, signal?: AbortSignal): Promise<InviteResolution> {
-  const res = await fetch(`/api/eunha/v1/invite?invite=${encodeURIComponent(code)}`, { signal })
-  if (!res.ok) throw new Error('Could not check this invite. Please try again.')
-  return res.json()
 }

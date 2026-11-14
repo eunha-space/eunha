@@ -30,7 +30,7 @@ import TermsOfService from './pages/TermsOfService.tsx'
 import PrivacyPolicy from './pages/PrivacyPolicy.tsx'
 import InviteTree from './pages/InviteTree.tsx'
 import Invites from './pages/Invites.tsx'
-import Signup from './pages/Signup.tsx'
+import { SignUpForm, Start } from './pages/Start.tsx'
 import Settings from './pages/Settings.tsx'
 import ImportExport from './pages/ImportExport.tsx'
 import AdminIndex from './pages/admin/AdminIndex.tsx'
@@ -137,8 +137,11 @@ const routes = [
   { path: '/terms', element: <Navigate to="/terms-of-service" replace /> },
   { path: '/invite-tree', element: <InviteTree /> },
   { path: '/invites', element: <Invites /> },
-  { path: '/signup', element: <Signup /> },
-  { path: '/invite/:code', element: <Signup /> },
+  // The sign-up form is the server's, at `/auth/signup`.
+  { path: '/signup', element: <SignUpForm /> },
+  { path: '/invite/:code', element: <SignUpForm /> },
+  // Mastodon's `start`, where signing in after confirming an address lands.
+  { path: '/start', element: <Start /> },
   { path: '/filters', element: <Filters /> },
   { path: '/settings', element: <Settings /> },
   // Mastodon's import and export pages, at its paths.

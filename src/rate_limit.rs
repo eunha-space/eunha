@@ -297,7 +297,7 @@ fn id(id: Option<i64>) -> Option<String> {
 
 /// Mastodon's throttles, in the order it declares them: a request is
 /// counted by each until one has had too many.
-static THROTTLES: [Throttle; 20] = [
+static THROTTLES: [Throttle; 21] = [
     Throttle {
         name: "throttle_authenticated_api",
         limit: 1_500,
@@ -376,6 +376,13 @@ static THROTTLES: [Throttle; 20] = [
             r.ip.clone()
                 .filter(|_| r.post() && r.path == "/api/v1/apps")
         },
+    },
+    // eunha's own: the sign-up form asking about a username as it is typed.
+    Throttle {
+        name: "throttle_username_checks/ip",
+        limit: 100,
+        period: 300,
+        discriminator: |r| r.ip.clone().filter(|_| r.path == "/auth/signup/username"),
     },
     Throttle {
         name: "throttle_sign_up_attempts/ip",

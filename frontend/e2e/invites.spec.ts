@@ -7,29 +7,6 @@ const instance = {
   registrations: { enabled: true, approval_required: true, reason_required: true },
 }
 
-for (const bypass of [false, true]) {
-  test(`invite signup respects approval bypass ${bypass}`, async ({ page }) => {
-    await page.route('**/api/v2/instance', r => r.fulfill({ json: instance }))
-    await page.route('**/api/eunha/v1/invite?*', r => r.fulfill({ json: {
-      valid: true, bypass_approval: bypass, autofollow: true,
-      inviter: { id: '1', acct: 'alice', display_name: 'Alice' },
-    } }))
-    await page.goto('/signup?invite=valid')
-    await expect(page.getByText('Invited by @alice.', { exact: false })).toBeVisible()
-    await expect(page.getByLabel('Why do you want to join?')).toHaveCount(bypass ? 0 : 1)
-    await expect(page.locator('form').getByRole('button', { name: bypass ? 'Create account' : 'Apply for an account', exact: true })).toBeVisible()
-  })
-}
-
-test('expired invite is explained before submitting signup', async ({ page }) => {
-  await page.route('**/api/v2/instance', r => r.fulfill({ json: instance }))
-  await page.route('**/api/eunha/v1/invite?*', r => r.fulfill({ json: { valid: false, reason: 'err_invite_expired' } }))
-  await page.goto('/signup?invite=expired')
-  await expect(page.getByText('This invite has expired.')).toBeVisible()
-  await page.getByRole('checkbox').check()
-  await expect(page.getByRole('button', { name: 'Apply for an account' })).toBeDisabled()
-})
-
 async function signIn(page: Page, permissions = (1 << 11) | (1 << 16)) {
   await page.addInitScript(() => {
     const account = { id: '1', acct: 'alice' }
@@ -438,27 +415,6 @@ test('a link to a member in the tree opens the way to them', async ({ page }) =>
   await page.goto('/invite-tree?view=all&member=4')
   await expect(page.locator('#invite-member-4')).toBeFocused()
   await expect(page.getByRole('link', { name: 'Carol @carol' })).toBeVisible()
-})
-
-test("Mastodon's invite link opens sign-up with the code, and a pasted link keeps only the code", async ({ page }) => {
-  await page.route('**/api/v2/instance', r => r.fulfill({ json: instance }))
-  const asked: string[] = []
-  await page.route('**/api/eunha/v1/invite?*', r => {
-    asked.push(new URL(r.request().url()).searchParams.get('invite') ?? '')
-    return r.fulfill({ json: { valid: true, bypass_approval: true, autofollow: false,
-      inviter: { id: '1', acct: 'alice', display_name: 'Alice' } } })
-  })
-  await page.goto('/invite/Abc23xyz')
-  await expect(page.getByLabel('Invite code')).toHaveValue('Abc23xyz')
-  await expect(page.getByText('Invited by @alice.', { exact: false })).toBeVisible()
-  const field = page.getByLabel('Invite code')
-  await field.evaluate((el) => {
-    const data = new DataTransfer()
-    data.setData('text', 'https://example.invalid/invite/Pq7rStuv')
-    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  })
-  await expect(field).toHaveValue('Pq7rStuv')
-  await expect.poll(() => asked.at(-1)).toBe('Pq7rStuv')
 })
 
 test('each link says who joined through it', async ({ page }) => {

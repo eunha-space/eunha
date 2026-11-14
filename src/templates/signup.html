@@ -10,55 +10,68 @@
 <body class="centered">
 <div class="card">
   <div class="lang">
-    {% if lang == "ko" %}<span class="lang-active">EN</span>{% else %}<a href="{{ toggle_en_url }}">EN</a>{% endif %}
+    {% if lang == "en" %}<span class="lang-active">EN</span>{% else %}<a href="{{ toggle_en_url }}">EN</a>{% endif %}
     &nbsp;·&nbsp;
-    {% if lang == "ko" %}<a href="{{ toggle_ko_url }}">KO</a>{% else %}<span class="lang-active">KO</span>{% endif %}
+    {% if lang == "ko" %}<span class="lang-active">KO</span>{% else %}<a href="{{ toggle_ko_url }}">KO</a>{% endif %}
   </div>
   <h1>{{ t_create_account }}</h1>
   <p class="sub">{{ instance_domain }}{% if instance_title %} · {{ instance_title }}{% endif %}</p>
 
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
-  {% if pending %}
-  <div class="pending-msg">{{ t_pending_approval }}</div>
-  {% elif show_form %}
-  <div id="signup-error" class="error" style="display:none"></div>
-  <div id="signup-check-email" class="check-email-msg" style="display:none">{{ t_check_email }}</div>
-  <div id="signup-msgs" style="display:none"
-       data-pw-mismatch="{{ t_err_password_mismatch }}"
-       data-server-error="{{ t_err_server }}"></div>
-  <div id="signup-form-wrap">
-    <form
-      hx-post="/auth"
-      hx-swap="none"
-      hx-on::before-request="signupBeforeRequest(event)"
-      hx-on::after-request="signupAfterRequest(event)"
-    >
-      <input type="hidden" name="locale" value="{{ lang }}">
-      {% if invite %}<input type="hidden" name="invite_code" value="{{ invite }}">{% endif %}
-      <label for="username">{{ t_username }}</label>
-      <input type="text" id="username" name="username" required autocomplete="off"
-             pattern="[a-zA-Z0-9_]+" title="Letters, numbers, and underscores only">
-      <label for="email">{{ t_email }}</label>
-      <input type="email" id="email" name="email" required autocomplete="username">
-      <label for="password">{{ t_password }}</label>
-      <input type="password" id="password" name="password" required
-             minlength="8" autocomplete="new-password">
-      <label for="password_confirmation">{{ t_confirm_password }}</label>
-      <input type="password" id="password_confirmation"
-             required minlength="8" autocomplete="new-password">
-      {% if min_age is not none %}
-      <label for="date_of_birth">{{ t_date_of_birth }}</label>
-      <input type="date" id="date_of_birth" name="date_of_birth" required autocomplete="bday">
-      {% endif %}
-      {% if approval_required and not invite %}
-      <label for="reason">{{ t_reason }}</label>
-      <textarea id="reason" name="reason" maxlength="420"{% if reason_required %} required{% endif %} placeholder="{{ t_reason_hint }}"></textarea>
-      {% endif %}
-      <label class="agreement"><input type="checkbox" name="agreement" value="1" required> {{ agreement_html | safe }}</label>
-      <button type="submit" id="signup-btn">{% if approval_required and not invite %}{{ t_apply_for_account }}{% else %}{{ t_create_account }}{% endif %}</button>
-    </form>
-  </div>
+  {% if show_form %}
+  {% if invited_by %}
+  <div class="notice" role="status">{{ invited_by }}{% if invite_autofollow %} {{ t_invite_autofollow }}{% endif %}{% if ask_reason %} {{ t_invite_review }}{% endif %}</div>
+  {% endif %}
+  <div id="signup-error" class="error" role="alert" hidden></div>
+  <form id="signup-form" method="POST" action="/auth{% if post_lang %}?lang={{ post_lang }}{% endif %}" novalidate
+        data-pw-mismatch="{{ t_err_password_mismatch }}"
+        data-server-error="{{ t_err_server }}"
+        data-available="{{ t_username_available }}">
+    {% if invite %}<input type="hidden" name="invite_code" value="{{ invite }}">{% endif %}
+    <label for="username">{{ t_username }}</label>
+    <input type="text" id="username" name="username" required autocomplete="off"
+           autocapitalize="none" spellcheck="false" maxlength="30"
+           pattern="[a-zA-Z0-9_]+" title="Letters, numbers, and underscores only"
+           aria-describedby="username-handle username-error username-ok">
+    <p class="field-note" id="username-handle" hidden>{{ t_handle_hint }} <strong>@<span id="username-handle-name"></span>@{{ instance_domain }}</strong></p>
+    <p class="field-note field-error" id="username-error" hidden></p>
+    <p class="field-note field-ok" id="username-ok" hidden></p>
+
+    <label for="email">{{ t_email }}</label>
+    <input type="email" id="email" name="email" required autocomplete="username"
+           aria-describedby="email-error">
+    <p class="field-note field-error" id="email-error" hidden></p>
+
+    <label for="password">{{ t_password }}</label>
+    <input type="password" id="password" name="password" required minlength="8" maxlength="72"
+           autocomplete="new-password" aria-describedby="password-error">
+    <p class="field-note field-error" id="password-error" hidden></p>
+
+    <label for="password_confirmation">{{ t_confirm_password }}</label>
+    <input type="password" id="password_confirmation" required minlength="8" maxlength="72"
+           autocomplete="new-password" aria-describedby="password_confirmation-error">
+    <p class="field-note field-error" id="password_confirmation-error" hidden></p>
+
+    {% if min_age is not none %}
+    <label for="date_of_birth">{{ t_date_of_birth }}</label>
+    <input type="date" id="date_of_birth" name="date_of_birth" required autocomplete="bday"
+           aria-describedby="date_of_birth-error">
+    <p class="field-note field-error" id="date_of_birth-error" hidden></p>
+    {% endif %}
+
+    {% if ask_reason %}
+    <label for="reason">{{ t_reason }}</label>
+    <textarea id="reason" name="reason" maxlength="420"{% if reason_required %} required{% endif %}
+              placeholder="{{ t_reason_hint }}" aria-describedby="reason-error"></textarea>
+    <p class="field-note field-error" id="reason-error" hidden></p>
+    {% endif %}
+
+    <label class="agreement"><input type="checkbox" id="agreement" name="agreement" value="1" required> {{ agreement_html | safe }}</label>
+    <p class="field-note field-error" id="agreement-error" hidden></p>
+
+    <button type="submit" id="signup-btn">{% if ask_reason %}{{ t_apply_for_account }}{% else %}{{ t_create_account }}{% endif %}</button>
+  </form>
   <p class="footer">{{ t_already_account }} <a href="/account/login">{{ t_sign_in }}</a></p>
   {% else %}
   <p class="closed-msg">{{ t_registrations_closed }}</p>
@@ -70,42 +83,129 @@
   </form>
   {% endif %}
 </div>
-<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
 <script>
-var _el = document.getElementById('signup-msgs');
-var _msgs = { pwMismatch: _el.dataset.pwMismatch, serverError: _el.dataset.serverError };
-function signupBeforeRequest(evt) {
-  var p = document.getElementById('password').value;
-  var c = document.getElementById('password_confirmation').value;
-  if (p !== c) {
-    showError(_msgs.pwMismatch);
-    evt.preventDefault();
-    return;
+(function () {
+  var form = document.getElementById('signup-form');
+  if (!form) return;
+  var msgs = form.dataset;
+  var general = document.getElementById('signup-error');
+  var button = document.getElementById('signup-btn');
+  var username = document.getElementById('username');
+
+  // The line under a field: what is wrong with it, or nothing.
+  function note(name, text) {
+    var el = document.getElementById(name + '-error');
+    if (!el) return false;
+    el.textContent = text || '';
+    el.hidden = !text;
+    var input = document.getElementById(name);
+    if (input) input.setAttribute('aria-invalid', text ? 'true' : 'false');
+    return true;
   }
-  document.getElementById('signup-error').style.display = 'none';
-  document.getElementById('signup-btn').disabled = true;
-}
-function signupAfterRequest(evt) {
-  var xhr = evt.detail.xhr;
-  if (xhr.status >= 200 && xhr.status < 300) {
-    // Signed in and on to /auth/setup, by the HX-Redirect that answered.
-    // htmx follows HX-Redirect before it sets `successful`, so the status
-    // decides; the button stays disabled while the next page loads.
-    return;
+  function showGeneral(text) {
+    general.textContent = text || '';
+    general.hidden = !text;
   }
-  document.getElementById('signup-btn').disabled = false;
-  try {
-    var err = JSON.parse(xhr.responseText);
-    showError(err.error || _msgs.serverError);
-  } catch(e) {
-    showError(_msgs.serverError);
+
+  // The handle the username makes, and whether it can be had, as it is typed.
+  var handle = document.getElementById('username-handle');
+  var handleName = document.getElementById('username-handle-name');
+  var ok = document.getElementById('username-ok');
+  var timer = null;
+  var asked = null;
+  function checkUsername() {
+    var value = username.value.trim();
+    handleName.textContent = value;
+    handle.hidden = !value;
+    ok.hidden = true;
+    clearTimeout(timer);
+    if (!value) { note('username', ''); return; }
+    if (!/^[A-Za-z0-9_]+$/.test(value)) {
+      note('username', username.title || '');
+      return;
+    }
+    note('username', '');
+    timer = setTimeout(function () {
+      asked = value;
+      fetch('/auth/signup/username?username=' + encodeURIComponent(value), {
+        headers: { Accept: 'application/json' }
+      })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (body) {
+          if (!body || asked !== username.value.trim()) return;
+          var problems = (body.details && body.details.username) || [];
+          if (problems.length) {
+            note('username', problems.map(function (p) { return p.description; }).join(', '));
+          } else {
+            ok.textContent = msgs.available;
+            ok.hidden = false;
+          }
+        })
+        .catch(function () {});
+    }, 350);
   }
-}
-function showError(msg) {
-  var el = document.getElementById('signup-error');
-  el.textContent = msg;
-  el.style.display = 'block';
-}
+  username.addEventListener('input', checkUsername);
+
+  var confirmation = document.getElementById('password_confirmation');
+  confirmation.addEventListener('input', function () { note('password_confirmation', ''); });
+  ['email', 'password', 'date_of_birth', 'reason', 'agreement'].forEach(function (name) {
+    var input = document.getElementById(name);
+    if (input) input.addEventListener('input', function () { note(name, ''); });
+  });
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    showGeneral('');
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
+    }
+    if (document.getElementById('password').value !== confirmation.value) {
+      note('password_confirmation', msgs.pwMismatch);
+      confirmation.focus();
+      return;
+    }
+    button.disabled = true;
+    // `HX-Request` asks `POST /auth` to say where to go next rather than
+    // send the browser there, which may be an app's own address.
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'HX-Request': 'true', Accept: 'application/json' },
+      body: new URLSearchParams(new FormData(form))
+    })
+      .then(function (res) {
+        if (res.ok) {
+          // Signed in, and on to `/auth/setup` or the app that sent them;
+          // the button stays disabled while the next page loads.
+          location.assign(res.headers.get('HX-Redirect') || '/auth/setup');
+          return;
+        }
+        button.disabled = false;
+        return res.json().then(function (body) {
+          var details = body.details || {};
+          var left = [];
+          var first = null;
+          Object.keys(details).forEach(function (name) {
+            var text = details[name].map(function (p) { return p.description; }).join(', ');
+            if (note(name, text)) {
+              if (!first) first = name;
+            } else {
+              left.push(text);
+            }
+          });
+          if (left.length || !first) showGeneral(left.length ? body.error : (body.error || msgs.serverError));
+          if (first) {
+            if (first === 'username') ok.hidden = true;
+            document.getElementById(first).focus();
+          }
+        });
+      })
+      .catch(function () {
+        button.disabled = false;
+        showGeneral(msgs.serverError);
+      });
+  });
+})();
 </script>
 </body>
 </html>

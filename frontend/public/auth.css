@@ -112,6 +112,7 @@ label {
 input[type='text'],
 input[type='email'],
 input[type='password'],
+input[type='date'],
 textarea {
   width: 100%;
   padding: 0.55rem 0.75rem;
@@ -230,6 +231,28 @@ button.danger,
 
 .actions form + form button {
   margin-top: 0.6rem;
+}
+
+/* A line under a sign-up field: what it will look like, or what is wrong
+   with it. */
+.field-note {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.field-note.field-error {
+  color: var(--destructive);
+}
+
+.field-note.field-ok {
+  color: var(--primary);
+}
+
+input[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--destructive);
 }
 
 /* Explanatory copy above a form, e.g. the account deletion warnings */

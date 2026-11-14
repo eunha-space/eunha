@@ -127,12 +127,6 @@ impl Locale {
             (Self::Ko, "sign_in") => "로그인",
             (Self::En, "invalid_credentials") => "Invalid email or password.",
             (Self::Ko, "invalid_credentials") => "이메일 또는 비밀번호가 올바르지 않습니다.",
-            (Self::En, "check_email") => {
-                "Check your email and click the confirmation link to activate your account."
-            }
-            (Self::Ko, "check_email") => {
-                "이메일을 확인하여 인증 링크를 클릭해 계정을 활성화하세요."
-            }
             // ── auth.setup ───────────────────────────────────────────────────
             (Self::En, "setup_title_wait") => "Keep an eye on your inbox",
             (Self::Ko, "setup_title_wait") => "수신함을 지켜봐 주세요",
@@ -313,6 +307,16 @@ impl Locale {
             (Self::Ko, "reason") => "가입 이유를 알려주세요",
             (Self::En, "reason_hint") => "Tell us a bit about yourself.",
             (Self::Ko, "reason_hint") => "간단히 소개해 주세요.",
+            (Self::En, "handle_hint") => "Your handle will be",
+            (Self::Ko, "handle_hint") => "내 핸들은 다음과 같습니다:",
+            (Self::En, "username_available") => "Available",
+            (Self::Ko, "username_available") => "사용할 수 있습니다",
+            (Self::En, "invited_by") => "Invited by %{acct}.",
+            (Self::Ko, "invited_by") => "%{acct} 님의 초대입니다.",
+            (Self::En, "invite_autofollow") => "You will follow them once you join.",
+            (Self::Ko, "invite_autofollow") => "가입하면 초대한 분을 팔로우하게 됩니다.",
+            (Self::En, "invite_review") => "An admin will review your application.",
+            (Self::Ko, "invite_review") => "관리자가 가입 신청을 검토합니다.",
             (Self::En, "pending_approval") => {
                 "Your account is pending approval. You will be notified once approved."
             }

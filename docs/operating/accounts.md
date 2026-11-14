@@ -359,6 +359,19 @@ sends the confirmation link at last. Every hour, staff who take the
 the last one they were told about (`PendingAccountsNotificationScheduler`,
 `pending_accounts_notification_scheduler:resume_at_user_id` in Redis).
 
+There is one sign-up form, server-rendered at `/auth/signup` as Mastodon's
+is, so the web app's **Create account**, Mastodon's `/auth/sign_up`, invite
+links and the web app's old `/signup` all reach it. It asks only what the
+instance needs: a date of birth when `Setting.min_age` is set, a reason when
+sign-ups are reviewed and the invite, if any, does not skip review, and
+agreement to the terms of service only when there are any (the privacy policy
+otherwise). It shows the handle the username will make, `@username@domain`,
+and checks the username as it is typed against
+`GET /auth/signup/username?username=`, which answers with the same `details`
+a sign-up would (an empty object when nothing is wrong) and is limited to 100
+checks per address every five minutes. A refused sign-up shows each problem
+under its field. The form needs no script from elsewhere.
+
 The sign-up and sign-in forms mark the email field with
 `autocomplete="username"`, because the email address is the login identifier
 password managers should save. The public handle on the sign-up form uses
@@ -396,13 +409,19 @@ There are two ways in, as on Mastodon:
     the link leads to the sign-in page with a confirmation result, even when
     another account is already signed in. This keeps the account switcher's
     current account from hiding the result and lets the user sign in to the
-    newly confirmed account.
+    newly confirmed account. Signing in there goes on into the web app at
+    `/start`, Mastodon's first stop after confirming, which signs the web app
+    in and lands on the home timeline; a browser already on its way to an
+    app's authorization page goes there instead.
  -  `POST /auth`, which the sign-up page posts to (form-encoded or JSON, no
     token). The new user is signed in and sent to `/auth/setup`, Mastodon's
     `Auth::SetupController`: it names the address the link went to and lets the
     user correct it and have the link sent again. An unconfirmed user who signs
     in later is sent there too, from the sign-in page or the authorization
     page an app sends them to, and so is one who opens the account pages.
+    The sign-up form posts it with `HX-Request: true`, which has it answer
+    `200` with the next page in `HX-Redirect` rather than redirect, since
+    that page may be an app's own address.
 
 `POST /api/v1/emails/confirmations` is Mastodon's: for the app the user signed
 up through, while the address awaits confirmation, it sends the link again,

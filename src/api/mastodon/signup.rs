@@ -30,7 +30,8 @@ pub struct SignUpQuery {
     lang: Option<String>,
 }
 
-/// Resolve an invite for the SPA using the same checks as registration.
+/// `GET /api/eunha/v1/invite?invite=`: whether a code is good for use, who
+/// made it and what it does, by the same checks as registration.
 pub async fn invite_lookup(
     state: AppState,
     Query(q): Query<SignUpQuery>,
@@ -62,13 +63,12 @@ pub async fn invite_lookup(
 /// open an invite link with: 404 for no such code, 401 for one not good for
 /// use, 403 when `allowed_registration?` refuses, and otherwise the code and
 /// where the instance's API is. Anything else is `Auth::RegistrationsController
-/// #new` with the code filled in, which here is the web client's sign-up page.
+/// #new` with the code filled in: a redirect to the sign-up form.
 pub async fn public_invite(
     state: AppState,
     Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     axum::extract::Path(code): axum::extract::Path<String>,
     client_ip: Option<Extension<crate::remote_ip::ClientIp>>,
-    viewer: Option<Extension<crate::middleware::AuthenticatedUser>>,
     request: axum::extract::Request,
 ) -> Response {
     let accepts_json = request
@@ -82,8 +82,12 @@ pub async fn public_invite(
         None => (code, accepts_json),
     };
     if !json {
-        let uri = request.uri().clone();
-        return crate::web::serve(state, uri, viewer.map(|Extension(v)| v)).await;
+        // `Auth::RegistrationsController#new` with the code filled in.
+        return Redirect::to(&format!(
+            "/auth/signup?invite={}",
+            urlencoding::encode(&code)
+        ))
+        .into_response();
     }
     invite_show(
         &state,
@@ -145,57 +149,143 @@ pub async fn signup_get(
     Query(q): Query<SignUpQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let invite = q.invite.as_deref().unwrap_or("").trim().to_string();
+    // Someone with only the link may paste the whole of it.
+    let invite = invite_code_from(q.invite.as_deref().unwrap_or(""));
     let accept_lang = headers.get("accept-language").and_then(|v| v.to_str().ok());
     let locale = crate::locale::Locale::detect(q.lang.as_deref(), accept_lang);
     let instance = crate::settings::Snapshot::load(&state)
         .await
         .amend(&instance);
 
-    let invite_id = if invite.is_empty() {
+    let invite_check = if invite.is_empty() {
         None
     } else {
-        validate_invite(&state, &invite).await.ok()
+        Some(validate_invite(&state, &invite).await)
+    };
+    let invitation = match invite_check {
+        Some(Ok(id)) => invitation(&state, id).await,
+        _ => None,
     };
     let form = FormRequirements {
+        // A language picked on the form is the account's; otherwise
+        // `POST /auth` goes by the browser's, from every language Mastodon
+        // offers.
+        picked_language: q.lang.is_some().then(|| locale.as_str()),
         min_age: crate::settings::min_age(&state.db).await,
-        reason_required: reason_required(&state, &instance, invite_id).await,
+        ask_reason: instance.approval_required
+            && !invitation.as_ref().is_some_and(|i| i.bypasses_approval),
+        reason_required: reason_required(&state, &instance, invitation.as_ref().map(|i| i.id))
+            .await,
         terms_of_service: crate::terms_of_service::live_first(&state)
             .await
             .ok()
             .flatten()
             .is_some(),
     };
-
-    if !instance.registrations_open {
-        if invite.is_empty() {
-            return render(&instance, &invite, false, false, None, locale, &form);
-        }
-        if let Err(msg) = validate_invite(&state, &invite).await {
-            return render(
-                &instance,
-                &invite,
-                false,
-                false,
-                Some(locale.t(msg)),
-                locale,
-                &form,
-            );
-        }
-    }
-
-    render(&instance, &invite, true, false, None, locale, &form)
+    let error = match invite_check {
+        Some(Err(msg)) => Some(locale.t(msg)),
+        _ => None,
+    };
+    let show_form = instance.registrations_open || invitation.is_some();
+    render(
+        &instance,
+        &invite,
+        show_form,
+        error,
+        invitation.as_ref(),
+        locale,
+        &form,
+    )
 }
 
 /// What the sign-up form asks for beyond the basics.
 struct FormRequirements {
+    /// The language picked on the form, to save as the account's.
+    picked_language: Option<&'static str>,
     /// `Setting.min_age`: a date of birth, checked against it.
     min_age: Option<u32>,
+    /// Whether to ask why they want to join: the instance reviews sign-ups
+    /// and the invite, if any, does not skip that.
+    ask_reason: bool,
     /// `User#invite_text_required?`.
     reason_required: bool,
     /// Whether there are terms of service to agree to besides the privacy
     /// policy (`auth.user_agreement_html` or `user_privacy_agreement_html`).
     terms_of_service: bool,
+}
+
+/// An invite good for use, as the sign-up form describes it.
+struct Invitation {
+    id: i64,
+    /// The inviter's username.
+    inviter: String,
+    autofollow: bool,
+    bypasses_approval: bool,
+}
+
+async fn invitation(state: &AppState, invite_id: i64) -> Option<Invitation> {
+    let (autofollow, inviter) = sqlx::query_as::<_, (bool, String)>(
+        "SELECT i.autofollow, a.username
+         FROM invites i
+         JOIN users u ON u.id = i.user_id
+         JOIN accounts a ON a.id = u.account_id
+         WHERE i.id = $1",
+    )
+    .bind(invite_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()?;
+    Some(Invitation {
+        id: invite_id,
+        inviter,
+        autofollow,
+        bypasses_approval: invite_bypasses_approval(state, invite_id).await,
+    })
+}
+
+/// The code in what someone typed or pasted: a bare code, or an invite link
+/// in Mastodon's form (`/invite/CODE`) or the sign-up form's (`?invite=CODE`).
+fn invite_code_from(input: &str) -> String {
+    let text = input.trim();
+    if !(text.contains("/invite/") || text.contains("invite=") || text.contains("invite_code=")) {
+        return text.to_owned();
+    }
+    let link = text.split('#').next().unwrap_or_default();
+    let (path, query) = link.split_once('?').unwrap_or((link, ""));
+    for pair in query.split('&') {
+        if let Some(("invite" | "invite_code", value)) = pair.split_once('=') {
+            if let Ok(value) = urlencoding::decode(value) {
+                if !value.trim().is_empty() {
+                    return value.trim().to_owned();
+                }
+            }
+        }
+    }
+    match path.rsplit_once("/invite/") {
+        Some((_, code)) if !code.trim_end_matches('/').is_empty() => {
+            let code = code.trim_end_matches('/');
+            code.strip_suffix(".json").unwrap_or(code).to_owned()
+        }
+        _ => text.to_owned(),
+    }
+}
+
+/// `GET /auth/signup/username?username=`: what the sign-up form would say
+/// about a username, so the form can say it while it is being typed.
+pub async fn username_check(
+    state: AppState,
+    Query(q): Query<UsernameQuery>,
+) -> AppResult<Json<serde_json::Value>> {
+    let mut errors = crate::email_subscriptions::ValidationErrors::default();
+    validate_username(&state, &mut errors, q.username.trim()).await?;
+    Ok(Json(errors.body()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsernameQuery {
+    #[serde(default)]
+    username: String,
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -463,6 +553,57 @@ fn validate_password(errors: &mut crate::email_subscriptions::ValidationErrors, 
     }
 }
 
+/// The account's validations of its username: present, not taken (whatever
+/// the case), of the right characters and length, and not reserved.
+async fn validate_username(
+    state: &AppState,
+    errors: &mut crate::email_subscriptions::ValidationErrors,
+    username: &str,
+) -> Result<(), sqlx::Error> {
+    if username.is_empty() {
+        errors.add_as("username", "Username", "blank", "can't be blank");
+    } else {
+        // `UniqueUsernameValidator`, which ignores case.
+        let taken = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL
+               ) AS "e!""#,
+            username,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            errors.add_as("username", "Username", "taken", "has already been taken");
+        }
+        if !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            errors.add_as(
+                "username",
+                "Username",
+                "invalid",
+                "must contain only letters, numbers and underscores",
+            );
+        }
+        if username.chars().count() > 30 {
+            errors.add_as(
+                "username",
+                "Username",
+                "too_long",
+                "is too long (maximum is 30 characters)",
+            );
+        }
+        // `UnreservedUsernameValidator`.
+        if crate::moderation::signup::username_blocked(state, username, false).await {
+            let (attribute, label, key, message) =
+                crate::moderation::signup::Refusal::UsernameReserved.detail();
+            errors.add_as(attribute, label, key, message);
+        }
+    }
+    Ok(())
+}
+
 /// `UserInviteRequest`'s validations on its text, filed under `reason`
 /// (`'invite_request.text': :reason`): present when it is required, and at
 /// most 420 characters.
@@ -645,47 +786,7 @@ async fn register_once(
     validate_password(&mut errors, &form.password);
 
     // The account's, filed under `username` (`'account.username': :username`).
-    if username.is_empty() {
-        errors.add_as("username", "Username", "blank", "can't be blank");
-    } else {
-        // `UniqueUsernameValidator`, which ignores case.
-        let taken = sqlx::query_scalar!(
-            r#"SELECT EXISTS (
-                 SELECT 1 FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL
-               ) AS "e!""#,
-            username,
-        )
-        .fetch_one(&state.db)
-        .await?;
-        if taken {
-            errors.add_as("username", "Username", "taken", "has already been taken");
-        }
-        if !username
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
-            errors.add_as(
-                "username",
-                "Username",
-                "invalid",
-                "must contain only letters, numbers and underscores",
-            );
-        }
-        if username.chars().count() > 30 {
-            errors.add_as(
-                "username",
-                "Username",
-                "too_long",
-                "is too long (maximum is 30 characters)",
-            );
-        }
-        // `UnreservedUsernameValidator`.
-        if crate::moderation::signup::username_blocked(state, &username, false).await {
-            let (attribute, label, key, message) =
-                crate::moderation::signup::Refusal::UsernameReserved.detail();
-            errors.add_as(attribute, label, key, message);
-        }
-    }
+    validate_username(state, &mut errors, &username).await?;
 
     // The invite request's text.
     validate_reason(
@@ -970,8 +1071,13 @@ pub struct ConfirmQuery {
 /// link sent within `confirm_within`, then `after_confirmation_path_for`: the
 /// app the user signed up through, at its first redirect URI as it stands,
 /// when the link asks to go back to it (`redirect_to_app`); otherwise the
-/// sign-in page with the confirmation result, even with a browser session.
-pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Response {
+/// sign-in page with the confirmation result, even with a browser session,
+/// from which signing in goes on into the web app.
+pub async fn confirm_email(
+    state: AppState,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<ConfirmQuery>,
+) -> Response {
     let user = sqlx::query!(
         r#"SELECT u.id, a.redirect_uri AS "redirect_uri?"
            FROM users u
@@ -1013,7 +1119,18 @@ pub async fn confirm_email(state: AppState, Query(q): Query<ConfirmQuery>) -> Re
         .await
         .unwrap_or(false);
     if approved {
-        Redirect::to("/account/login?confirmed=1").into_response()
+        // Signing in from here goes on into the web app (Mastodon's `start`),
+        // unless the browser was already on its way somewhere, such as an
+        // app's authorization page.
+        let mut response = Redirect::to("/account/login?confirmed=1").into_response();
+        if crate::api::account::stored_location(&headers).is_none() {
+            if let Ok(cookie) = crate::api::account::return_to_cookie("/start").parse() {
+                response
+                    .headers_mut()
+                    .append(axum::http::header::SET_COOKIE, cookie);
+            }
+        }
+        response
     } else {
         Redirect::to("/account/login?confirmed=pending").into_response()
     }
@@ -1144,21 +1261,21 @@ fn render(
     instance: &crate::config::InstanceConfig,
     invite: &str,
     show_form: bool,
-    pending: bool,
     error: Option<&'static str>,
+    invitation: Option<&Invitation>,
     locale: crate::locale::Locale,
     form: &FormRequirements,
 ) -> Response {
+    // Only a code good for use goes along with the sign-up; with another, the
+    // form is the one anyone would get.
+    let invite = if invitation.is_some() { invite } else { "" };
     let enc_invite = urlencoding::encode(invite);
-    let toggle_en_url = if invite.is_empty() {
-        "/auth/signup?lang=en".to_string()
-    } else {
-        format!("/auth/signup?invite={}&lang=en", enc_invite)
-    };
-    let toggle_ko_url = if invite.is_empty() {
-        "/auth/signup?lang=ko".to_string()
-    } else {
-        format!("/auth/signup?invite={}&lang=ko", enc_invite)
+    let toggle_url = |lang: &str| {
+        if invite.is_empty() {
+            format!("/auth/signup?lang={lang}")
+        } else {
+            format!("/auth/signup?invite={enc_invite}&lang={lang}")
+        }
     };
     // `auth.user_agreement_html`, or `user_privacy_agreement_html` when there
     // are no terms of service.
@@ -1175,21 +1292,30 @@ fn render(
     } else {
         locale.t("agree_privacy").replace("%{privacy}", &privacy)
     };
+    let invited_by = invitation.map(|i| {
+        locale
+            .t("invited_by")
+            .replace("%{acct}", &format!("@{}", i.inviter))
+    });
     let html = templates::render(
         "signup.html",
         minijinja::context! {
             instance_title => &instance.title,
             instance_domain => &instance.local_domain,
             show_form,
-            pending,
-            approval_required => instance.approval_required,
+            post_lang => form.picked_language,
+            ask_reason => form.ask_reason,
             invite,
             error,
+            invited_by,
+            invite_autofollow => invitation.is_some_and(|i| i.autofollow),
             lang => locale.as_str(),
-            toggle_en_url => toggle_en_url,
-            toggle_ko_url => toggle_ko_url,
+            toggle_en_url => toggle_url("en"),
+            toggle_ko_url => toggle_url("ko"),
             t_create_account => locale.t("create_account"),
             t_username => locale.t("username"),
+            t_handle_hint => locale.t("handle_hint"),
+            t_username_available => locale.t("username_available"),
             t_email => locale.t("email"),
             t_password => locale.t("password"),
             t_confirm_password => locale.t("confirm_password"),
@@ -1198,19 +1324,49 @@ fn render(
             t_registrations_closed => locale.t("registrations_closed"),
             t_invite_code => locale.t("invite_code"),
             t_continue_btn => locale.t("continue_btn"),
+            t_invite_autofollow => locale.t("invite_autofollow"),
+            t_invite_review => locale.t("invite_review"),
             t_reason => locale.t("reason"),
             t_reason_hint => locale.t("reason_hint"),
-            t_pending_approval => locale.t("pending_approval"),
             t_apply_for_account => locale.t("apply_for_account"),
-            t_check_email => locale.t("check_email"),
             t_err_password_mismatch => locale.t("err_password_mismatch"),
             t_err_server => locale.t("err_server"),
             min_age => form.min_age,
             reason_required => form.reason_required,
-            terms_of_service => form.terms_of_service,
             t_date_of_birth => locale.t("date_of_birth"),
             agreement_html,
         },
     );
     Html(html).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::invite_code_from;
+
+    #[test]
+    fn a_pasted_invite_link_gives_its_code() {
+        for (input, code) in [
+            ("abcd1234", "abcd1234"),
+            ("  abcd1234 ", "abcd1234"),
+            ("https://example.com/invite/abcd1234", "abcd1234"),
+            ("https://example.com/invite/abcd1234/", "abcd1234"),
+            ("https://example.com/invite/abcd1234.json", "abcd1234"),
+            ("/invite/abcd1234", "abcd1234"),
+            (
+                "https://example.com/auth/signup?invite=abcd1234",
+                "abcd1234",
+            ),
+            (
+                "https://example.com/auth/signup?lang=ko&invite=abcd1234#x",
+                "abcd1234",
+            ),
+            (
+                "https://example.com/signup?invite_code=abcd1234",
+                "abcd1234",
+            ),
+        ] {
+            assert_eq!(invite_code_from(input), code, "{input}");
+        }
+    }
 }

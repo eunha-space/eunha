@@ -100,23 +100,25 @@ invites are still made on the invite page.
 Joining through an invite
 -------------------------
 
-The signup page checks the code before submission and explains whether it is
-expired, fully used, or unavailable. A valid code identifies its inviter and
-explains automatic following when enabled. Approval guidance and the reason
-field follow the inviter's current bypass permission, not merely the presence
-of a code, except that staff-granted links always bypass review.
-`/api/eunha/v1/invite?invite=CODE` serves this public resolution;
+The sign-up form, `/auth/signup`, checks the code when it opens and says
+whether it is expired, fully used, or unavailable; a code no longer good is
+not sent along with the sign-up. A valid code names its inviter and says when
+the new account will follow them. The reason field and the review notice
+follow the inviter's current bypass permission, not merely the presence of a
+code, except that staff-granted links always bypass review.
+`/api/eunha/v1/invite?invite=CODE` answers the same about a code, as JSON;
 registration checks the code again when submitted.
 
-Links are Mastodon's: `https://DOMAIN/invite/CODE`, which opens the sign-up page
-with the code filled in. Links Mastodon handed out keep working after a move to
-eunha, and links handed out here keep working after a move back. The same path
-asked for as JSON (an `Accept: application/json` header, or `/invite/CODE.json`)
-answers as Mastodon's `Api::V1::InvitesController#show` does for the apps: the
-code and the instance's API URL, 404 for an unknown code, 401 for one no longer
-good for use, 403 when sign-ups from the address are blocked. Older
-`/signup?invite=CODE` and `/auth/signup?invite=CODE` links continue to work, and
-pasting a whole link into the invite code field keeps only the code.
+Links are Mastodon's: `https://DOMAIN/invite/CODE`, which a browser is
+redirected from to the sign-up form with the code filled in. Links Mastodon
+handed out keep working after a move to eunha, and links handed out here keep
+working after a move back. The same path asked for as JSON (an
+`Accept: application/json` header, or `/invite/CODE.json`) answers as
+Mastodon's `Api::V1::InvitesController#show` does for the apps: the code and
+the instance's API URL, 404 for an unknown code, 401 for one no longer good for
+use, 403 when sign-ups from the address are blocked. Older
+`/signup?invite=CODE` links reach the same form, and pasting a whole link into
+the invite code field keeps only the code.
 
 
 Managing links

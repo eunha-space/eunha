@@ -27,6 +27,7 @@ mod schema_compatibility;
 mod self_destruct;
 mod sessions;
 mod sign_up;
+mod sign_up_form;
 mod signup_approval;
 mod signup_requirements;
 mod software_updates;
