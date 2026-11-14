@@ -15,9 +15,9 @@ license and a `REVISION` file identifying its source commit.
 The macOS package is built and tested on macOS 15. There is no Intel Mac
 package; on an Intel Mac, use the [container image](./containers.md) or build
 from source. Linux packages are built on Ubuntu 22.04 and require glibc 2.35 or
-newer; Alpine's musl environment is not supported by these downloads. OpenSSL is linked statically, so a separate
-OpenSSL installation is not needed to run them. Windows users can use Linux
-through WSL2 with Docker integration.
+newer; Alpine's musl environment is not supported by these downloads. OpenSSL
+is linked statically, so a separate OpenSSL installation is not needed to run
+them. Windows users can use Linux through WSL2 with Docker integration.
 
 [GitHub Releases]: https://github.com/eunha-space/eunha/releases
 
