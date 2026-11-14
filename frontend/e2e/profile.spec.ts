@@ -264,3 +264,49 @@ test('a pending follow request is withdrawn from the profile', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Follow', exact: true })).toBeVisible()
   expect(calls).toEqual(['unfollow'])
 })
+
+// eunha holds only what has federated of a remote account, so its profile
+// links to the full one on the account's own server — for signed-out
+// visitors too, who have no other actions in the menu.
+test('a remote profile links to its original page', async ({ page }) => {
+  const remote = {
+    ...account,
+    id: '3',
+    acct: 'carol@remote.example',
+    username: 'carol',
+    display_name: 'Carol',
+    url: 'https://remote.example/@carol',
+    uri: 'https://remote.example/users/carol',
+  }
+  await page.route('**/api/v1/accounts/lookup**', (route) =>
+    route.fulfill({ json: remote }),
+  )
+  await page.route('**/api/v1/accounts/3/statuses**', (route) =>
+    route.fulfill({ json: [] }),
+  )
+
+  await page.goto('/@carol@remote.example')
+  await page
+    .getByRole('button', { name: 'More actions for @carol@remote.example' })
+    .click()
+  const original = page.getByRole('menuitem', { name: 'Open original page' })
+  await expect(original).toHaveAttribute('href', 'https://remote.example/@carol')
+  await expect(original).toHaveAttribute('target', '_blank')
+  // Signed out, there is nothing else to do with the account here.
+  await expect(page.getByRole('menuitem', { name: 'Mute' })).toBeHidden()
+})
+
+test('a local profile has no original page to link to', async ({ page }) => {
+  await page.route('**/api/v1/accounts/lookup**', (route) =>
+    route.fulfill({ json: account }),
+  )
+  await page.route('**/api/v1/accounts/2/statuses**', (route) =>
+    route.fulfill({ json: [] }),
+  )
+
+  await page.goto('/@bob')
+  await expect(page.getByText('@bob', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'More actions for @bob' }),
+  ).toBeHidden()
+})

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   Ban,
   CheckCircle2,
+  ExternalLink,
   Flag,
   MessageCircle,
   ImageUp,
@@ -851,6 +852,71 @@ export default function Profile() {
   }
 
   const isSelf = account != null && account.id === selfId
+  // A remote account's own server has the full profile; eunha shows only
+  // what has federated here.
+  const remoteUrl = account?.acct.includes('@') ? account.url : null
+  const signedInOther = !!token && !!rel && !isSelf
+  const actionsMenu = account && (signedInOther || remoteUrl) && (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`More actions for @${account.acct}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-auto">
+        {signedInOther && rel && (
+          <>
+            <DropdownMenuItem
+              onClick={() => openCompose({ messageTo: account })}
+            >
+              <MessageCircle /> Message
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={toggleMute}
+              disabled={relationshipBusy}
+            >
+              <VolumeX /> {rel.muting ? 'Unmute' : 'Mute'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant={rel.blocking ? undefined : 'destructive'}
+              onClick={() =>
+                rel.blocking ? toggleBlock() : setConfirmingBlock(true)
+              }
+              disabled={relationshipBusy}
+            >
+              <Ban /> {rel.blocking ? 'Unblock' : 'Block'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => setReporting(true)}
+            >
+              <Flag /> Report account
+            </DropdownMenuItem>
+          </>
+        )}
+        {remoteUrl && (
+          <DropdownMenuItem
+            className="no-underline"
+            render={
+              <a
+                href={remoteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
+          >
+            <ExternalLink /> Open original page
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
   const applyUpdatedAccount = (updated: mastodon.v1.Account) => {
     setAccount((current) =>
@@ -1084,7 +1150,8 @@ export default function Profile() {
                 </Button>
               </div>
             )}
-            {token && rel && !isSelf && (
+            {!signedInOther && actionsMenu}
+            {signedInOther && rel && (
               <div className="flex flex-col items-end gap-2">
                 <div className="flex items-center gap-2">
                   <Button
@@ -1096,47 +1163,7 @@ export default function Profile() {
                   >
                     {rel.following ? 'Following' : rel.requested ? 'Requested' : 'Follow'}
                   </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          aria-label={`More actions for @${account.acct}`}
-                        >
-                          <MoreHorizontal />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end" className="w-auto">
-                      <DropdownMenuItem
-                        onClick={() => openCompose({ messageTo: account })}
-                      >
-                        <MessageCircle /> Message
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={toggleMute}
-                        disabled={relationshipBusy}
-                      >
-                        <VolumeX /> {rel.muting ? 'Unmute' : 'Mute'}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant={rel.blocking ? undefined : 'destructive'}
-                        onClick={() =>
-                          rel.blocking ? toggleBlock() : setConfirmingBlock(true)
-                        }
-                        disabled={relationshipBusy}
-                      >
-                        <Ban /> {rel.blocking ? 'Unblock' : 'Block'}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setReporting(true)}
-                      >
-                        <Flag /> Report account
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {actionsMenu}
                 </div>
                 {rel.muting && (
                   <p className="text-muted-foreground max-w-64 text-right text-xs">
