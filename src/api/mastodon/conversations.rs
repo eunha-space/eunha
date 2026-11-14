@@ -107,7 +107,7 @@ pub async fn get_conversations(
     let rows = crate::api::mastodon::timelines::newest_first(min_id, rows);
 
     if rows.is_empty() {
-        return Ok((HeaderMap::new(), Json(vec![])));
+        return Ok((HeaderMap::new(), Json(Vec::<Conversation>::new())).into_response());
     }
 
     // Collect all unique participant account IDs across all conversations
@@ -331,7 +331,19 @@ pub async fn get_conversations(
         &uri,
         bounds.as_ref().map(|(n, o)| (n.as_str(), o.as_str())),
     );
-    Ok((resp_headers, Json(result)))
+    // `feature_approval.current_user` as it is rendered, so the response is
+    // not read back to set it.
+    let mut accounts = Vec::new();
+    let mut statuses = Vec::new();
+    for conversation in result.iter_mut() {
+        accounts.extend(conversation.accounts.iter_mut());
+        statuses.extend(conversation.last_status.as_mut());
+    }
+    super::feature_approval::hydrate_entities(&state, auth.account_id, accounts, statuses).await;
+    let mut resp = (resp_headers, Json(result)).into_response();
+    resp.extensions_mut()
+        .insert(super::feature_approval::Hydrated);
+    Ok(resp)
 }
 
 // ── DELETE /api/v1/conversations/:id ─────────────────────────────────────

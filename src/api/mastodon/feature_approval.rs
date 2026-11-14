@@ -49,13 +49,30 @@ pub struct Hydrated;
 /// their tagged collections. A response made of nothing else can then be
 /// marked [`Hydrated`].
 pub async fn hydrate_statuses(state: &AppState, viewer: i64, statuses: &mut [Status]) {
+    hydrate_entities(state, viewer, Vec::new(), statuses.iter_mut().collect()).await;
+}
+
+/// [`hydrate_statuses`] for a response that carries accounts of its own
+/// beside its statuses, as a conversation does its participants.
+pub async fn hydrate_entities(
+    state: &AppState,
+    viewer: i64,
+    mut accounts: Vec<&mut Account>,
+    mut statuses: Vec<&mut Status>,
+) {
     let mut ids = Vec::new();
-    for status in statuses.iter() {
+    for account in &accounts {
+        collect_account(account, &mut ids);
+    }
+    for status in &statuses {
         collect_status(status, &mut ids);
     }
     let Some(answers) = answers(state, viewer, ids).await else {
         return;
     };
+    for account in accounts.iter_mut() {
+        apply_account(account, &answers);
+    }
     for status in statuses.iter_mut() {
         apply_status(status, &answers);
     }
