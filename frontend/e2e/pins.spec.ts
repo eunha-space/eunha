@@ -86,6 +86,51 @@ test('a profile shows pinned posts above the timeline', async ({ page }) => {
   await expect(pinned).not.toContainText('ordinary post')
 })
 
+// Upstream shows only the newest pin until the reader asks for the rest, so
+// an account with many pins does not bury its recent posts.
+test('a profile shows one pin until all are asked for', async ({ page }) => {
+  await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
+  await page.route('**/api/v1/accounts/1/statuses**', (route) =>
+    route.fulfill({ json: [status('9', 'ordinary post', false)] }),
+  )
+  await page.route('**/api/v1/accounts/1/statuses?pinned=true**', (route) =>
+    route.fulfill({
+      json: [
+        status('3', 'newest pin', true),
+        status('2', 'middle pin', true),
+        status('1', 'oldest pin', true),
+      ],
+    }),
+  )
+
+  await page.goto('/@alice')
+
+  const pinned = page.locator('section', { hasText: 'Pinned' })
+  await expect(pinned).toContainText('newest pin')
+  await expect(pinned).not.toContainText('middle pin')
+  await expect(pinned).not.toContainText('oldest pin')
+  await expect(page.getByText('ordinary post')).toBeVisible()
+
+  await pinned.getByRole('button', { name: 'View all pinned posts' }).click()
+  await expect(pinned).toContainText('middle pin')
+  await expect(pinned).toContainText('oldest pin')
+  await expect(pinned.getByRole('button', { name: 'View all pinned posts' })).toHaveCount(0)
+})
+
+test('a profile with one pin has no button for the rest', async ({ page }) => {
+  await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
+  await page.route('**/api/v1/accounts/1/statuses**', (route) =>
+    route.fulfill({ json: [status('9', 'ordinary post', false)] }),
+  )
+  await page.route('**/api/v1/accounts/1/statuses?pinned=true**', (route) =>
+    route.fulfill({ json: [status('1', 'the pinned one', true)] }),
+  )
+
+  await page.goto('/@alice')
+  await expect(page.getByText('the pinned one')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'View all pinned posts' })).toHaveCount(0)
+})
+
 test('a profile with no pins has no pinned heading', async ({ page }) => {
   await page.route('**/api/v1/accounts/lookup**', (route) => route.fulfill({ json: account }))
   await page.route('**/api/v1/accounts/1/statuses**', (route) =>

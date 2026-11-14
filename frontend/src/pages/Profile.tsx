@@ -679,6 +679,7 @@ export default function Profile() {
   const [reporting, setReporting] = useState(false)
   const { openCompose } = useComposeModal()
   const [pinned, setPinned] = useState<mastodon.v1.Status[] | null>(null)
+  const [showAllPinned, setShowAllPinned] = useState(false)
   const [imageBusy, setImageBusy] = useState<'avatar' | 'header' | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null)
@@ -704,10 +705,11 @@ export default function Profile() {
   )
   const statuses = withoutMessages(feed.items)
 
-  // Pins come back in one response (there can be at most five) and are ordered
-  // by when they were pinned, so they are fetched apart from the timeline feed
-  // rather than paged with it. `loadPinned` is also what a card calls after
-  // pinning, so the section above it agrees with the menu that changed it.
+  // Pins come back in one response (five at most for a local account, however
+  // many a remote one features) and are ordered by when they were pinned, so
+  // they are fetched apart from the timeline feed rather than paged with it.
+  // `loadPinned` is also what a card calls after pinning, so the section above
+  // it agrees with the menu that changed it.
   const loadPinned = useCallback(() => {
     if (!account) return
     getPinnedStatuses(account.id, token ?? undefined, tagged)
@@ -727,6 +729,13 @@ export default function Profile() {
     setPinned(null)
     loadPinned()
   }, [loadPinned])
+
+  // Upstream's `usePinnedStatusIds`: only the newest pin is shown until the
+  // reader asks for the rest, so a profile with many pins does not push its
+  // recent posts out of sight. Another profile starts collapsed again.
+  useEffect(() => setShowAllPinned(false), [account?.id])
+  const shownPinned =
+    pinned && !showAllPinned ? pinned.slice(0, 1) : pinned
 
   // Mastodon's profile page carries `<meta name="robots" content="noindex,
   // noarchive">` for an account whose owner asked search engines to stay
@@ -1256,7 +1265,7 @@ export default function Profile() {
                   <Pin className="size-3.5" /> Pinned
                 </h2>
                 <TimelineStack>
-                  {pinned.map((s) => (
+                  {shownPinned?.map((s) => (
                     <StatusCard
                       key={s.id}
                       status={s}
@@ -1266,6 +1275,16 @@ export default function Profile() {
                     />
                   ))}
                 </TimelineStack>
+                {pinned.length > 1 && !showAllPinned && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowAllPinned(true)}
+                  >
+                    <Pin /> View all pinned posts
+                  </Button>
+                )}
               </section>
             )}
             {statuses === null && !error && (
