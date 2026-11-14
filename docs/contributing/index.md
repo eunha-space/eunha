@@ -67,12 +67,14 @@ Back and forward navigation restore the window's scroll position for each
 history entry. New navigation starts at the top. Restoration waits for
 asynchronously loaded content and stops when the reader interacts with the page.
 
-Timeline and profile post feeds retain their loaded pages and pagination state
-when opening a post, so returning can restore a position beyond the first page
-without fetching those pages again. These snapshots are scoped to the history
-entry, account token and feed parameters, live only in memory, and retain at
-most thirty feeds. A fresh visit loads current posts; reloading the browser
-clears the snapshots. Profile details and pinned posts still refresh on return.
+Timeline, profile post and notification feeds retain their loaded pages and
+pagination state when opening a post, so returning can restore a position
+beyond the first page without fetching those pages again. These snapshots are
+scoped to the history entry, account token and feed parameters, live only in
+memory, and retain at most thirty feeds. A fresh visit, such as choosing
+Notifications in the sidebar again, shows the newest forty items the feed held
+last while it loads current ones; reloading the browser clears the snapshots.
+Profile details and pinned posts still refresh on return.
 
 
 Web client tests

@@ -217,6 +217,7 @@ export function NotificationsFeed() {
   const feed = useInfiniteFeed<mastodon.v1.Notification>(
     (maxId) => (token ? getNotifications(token, maxId) : Promise.resolve([])),
     [token],
+    'notifications',
   )
   const { mutate } = feed
 
