@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ids.id AS \"id!\",\n                  EXISTS (SELECT 1 FROM favourites f\n                          WHERE f.account_id = $1 AND f.status_id = ids.id) AS \"favourited!\",\n                  EXISTS (SELECT 1 FROM statuses r\n                          WHERE r.account_id = $1 AND r.reblog_of_id = ids.id\n                            AND r.deleted_at IS NULL) AS \"reblogged!\",\n                  EXISTS (SELECT 1 FROM bookmarks b\n                          WHERE b.account_id = $1 AND b.status_id = ids.id) AS \"bookmarked!\",\n                  EXISTS (SELECT 1 FROM conversation_mutes cm\n                          WHERE cm.account_id = $1\n                            AND cm.conversation_id = s.conversation_id) AS \"muted!\",\n                  EXISTS (SELECT 1 FROM status_pins p\n                          WHERE p.account_id = $1 AND p.status_id = ids.id) AS \"pinned!\",\n                  EXISTS (SELECT 1 FROM follows f\n                          WHERE f.account_id = $1\n                            AND f.target_account_id = COALESCE(o.account_id, s.account_id)) AS \"follows_author!\",\n                  EXISTS (SELECT 1 FROM follows f\n                          WHERE f.account_id = COALESCE(o.account_id, s.account_id)\n                            AND f.target_account_id = $1) AS \"author_follows!\"\n           FROM unnest($2::bigint[]) AS ids(id)\n           LEFT JOIN statuses s ON s.id = ids.id\n           LEFT JOIN statuses o ON o.id = s.reblog_of_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "favourited!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "reblogged!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "bookmarked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "muted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "pinned!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "follows_author!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "author_follows!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "104d6f8428de701a8a858bbe9f9fa9d96bfa64b14dc61dba203c15673270590b"
+}

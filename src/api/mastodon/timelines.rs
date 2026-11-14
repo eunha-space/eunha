@@ -7,7 +7,7 @@
 use axum::{
     extract::{Extension, Path, Query},
     http::{header, HeaderMap, Uri},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
@@ -166,7 +166,7 @@ pub async fn public_timeline(
     )
     .await?;
     if reach.nothing {
-        return Ok(with_pagination_link(&req_headers, &uri, vec![]));
+        return Ok(with_pagination_link(&req_headers, &uri, vec![]).into_response());
     }
     let (local_only, remote_only) = (reach.local_only, reach.remote_only);
     let only_media = q.only_media.unwrap_or(false);
@@ -274,9 +274,7 @@ pub async fn public_timeline(
     };
 
     let statuses = newest_first(min_id, statuses);
-    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
-    let resp = with_pagination_link(&req_headers, &uri, result);
-    Ok(resp)
+    render_timeline(&state, &req_headers, &uri, statuses, viewer_id).await
 }
 
 // ── GET /api/v1/timelines/home ────────────────────────────────────────────
@@ -351,8 +349,8 @@ pub async fn home_timeline(
         feed_statuses(&state, &ids).await?
     };
 
-    let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
-    let mut resp = with_pagination_link(&req_headers, &uri, result).into_response();
+    let mut resp =
+        render_timeline(&state, &req_headers, &uri, statuses, Some(auth.account_id)).await?;
     // `add_async_refresh_header(account_home_feed.async_refresh, retry_seconds:
     // 5)`, and `206` while `regenerating?`.
     let refresh = crate::home_feed::async_refresh(&state, auth.account_id).await;
@@ -464,9 +462,7 @@ pub async fn list_timeline(
     .await;
     let statuses = feed_statuses(&state, &ids).await?;
 
-    let result = build_status_list_with_filters(&state, statuses, Some(auth.account_id)).await?;
-    let resp = with_pagination_link(&req_headers, &uri, result);
-    Ok(resp)
+    render_timeline(&state, &req_headers, &uri, statuses, Some(auth.account_id)).await
 }
 
 // ── GET /api/v1/timelines/tag/:hashtag ───────────────────────────────────
@@ -538,7 +534,7 @@ pub async fn tag_timeline(
     )
     .await?;
     if reach.nothing {
-        return Ok(with_pagination_link(&req_headers, &uri, vec![]));
+        return Ok(with_pagination_link(&req_headers, &uri, vec![]).into_response());
     }
     let (local_only, remote_only) = (reach.local_only, reach.remote_only);
     let only_media = q.only_media.unwrap_or(false);
@@ -634,9 +630,7 @@ pub async fn tag_timeline(
         .fetch_all(&state.db)
         .await?;
     let statuses = newest_first(min_id, statuses);
-    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
-    let resp = with_pagination_link(&req_headers, &uri, result);
-    Ok(resp)
+    render_timeline(&state, &req_headers, &uri, statuses, viewer_id).await
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -657,12 +651,27 @@ pub(crate) async fn compute_filter_results(
     statuses: &[DbStatus],
 ) -> std::collections::HashMap<i64, serde_json::Value> {
     let mut result = std::collections::HashMap::new();
+    let proper_ids: Vec<i64> = statuses
+        .iter()
+        .map(|s| s.reblog_of_id.unwrap_or(s.id))
+        .collect();
+    let mut all_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
+    all_ids.extend(&proper_ids);
+    // The viewer's unexpired filters, each with its keywords and whichever
+    // of these statuses it names, in one query.
     let Ok(filters) = sqlx::query!(
         r#"SELECT cf.id, cf.phrase AS title, cf.context, cf.expires_at,
-                  CASE cf.action WHEN 1 THEN 'hide' WHEN 2 THEN 'blur' ELSE 'warn' END AS "filter_action!"
+                  CASE cf.action WHEN 1 THEN 'hide' WHEN 2 THEN 'blur' ELSE 'warn' END AS "filter_action!",
+                  ARRAY(SELECT k.keyword FROM custom_filter_keywords k
+                        WHERE k.custom_filter_id = cf.id ORDER BY k.id) AS "keywords!",
+                  ARRAY(SELECT k.whole_word FROM custom_filter_keywords k
+                        WHERE k.custom_filter_id = cf.id ORDER BY k.id) AS "whole_words!",
+                  ARRAY(SELECT fs.status_id FROM custom_filter_statuses fs
+                        WHERE fs.custom_filter_id = cf.id AND fs.status_id = ANY($2)) AS "status_ids!"
            FROM custom_filters cf
            WHERE cf.account_id = $1 AND (cf.expires_at IS NULL OR cf.expires_at > now())"#,
         viewer_id,
+        &all_ids,
     )
     .fetch_all(db)
     .await
@@ -672,70 +681,56 @@ pub(crate) async fn compute_filter_results(
     if filters.is_empty() {
         return result;
     }
-    let filter_ids: Vec<i64> = filters.iter().map(|f| f.id).collect();
 
     // `CustomFilterKeyword#to_regex`, unioned per filter.
-    let mut regexes: std::collections::HashMap<i64, regex::Regex> = Default::default();
-    {
-        let keywords = sqlx::query!(
-            "SELECT custom_filter_id, keyword, whole_word FROM custom_filter_keywords WHERE custom_filter_id = ANY($1)",
-            &filter_ids,
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_default();
-        let mut parts: std::collections::HashMap<i64, Vec<String>> = Default::default();
-        for kw in keywords {
-            let escaped = regex::escape(&kw.keyword);
-            let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
-            let expr = if kw.whole_word {
-                format!(
-                    "{}{}{}",
-                    if word(kw.keyword.chars().next()) {
-                        r"\b"
-                    } else {
-                        ""
-                    },
-                    escaped,
-                    if word(kw.keyword.chars().last()) {
-                        r"\b"
-                    } else {
-                        ""
-                    },
-                )
-            } else {
-                escaped
-            };
-            parts.entry(kw.custom_filter_id).or_default().push(expr);
+    let mut regexes: std::collections::HashMap<i64, std::sync::Arc<regex::Regex>> =
+        Default::default();
+    for f in &filters {
+        let exprs: Vec<String> = f
+            .keywords
+            .iter()
+            .zip(&f.whole_words)
+            .map(|(keyword, &whole_word)| {
+                let escaped = regex::escape(keyword);
+                let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+                if whole_word {
+                    format!(
+                        "{}{}{}",
+                        if word(keyword.chars().next()) {
+                            r"\b"
+                        } else {
+                            ""
+                        },
+                        escaped,
+                        if word(keyword.chars().last()) {
+                            r"\b"
+                        } else {
+                            ""
+                        },
+                    )
+                } else {
+                    escaped
+                }
+            })
+            .collect();
+        if exprs.is_empty() {
+            continue;
         }
-        for (id, exprs) in parts {
-            if let Ok(re) = regex::Regex::new(&format!("(?i){}", exprs.join("|"))) {
-                regexes.insert(id, re);
-            }
+        if let Some(re) = keyword_regex(&format!("(?i){}", exprs.join("|"))) {
+            regexes.insert(f.id, re);
         }
     }
-
-    let proper_ids: Vec<i64> = statuses
+    let filtered_statuses: std::collections::HashSet<(i64, i64)> = filters
         .iter()
-        .map(|s| s.reblog_of_id.unwrap_or(s.id))
+        .flat_map(|f| f.status_ids.iter().map(move |&sid| (f.id, sid)))
         .collect();
-    let mut all_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
-    all_ids.extend(&proper_ids);
-    let filtered_statuses: Vec<(i64, i64)> = sqlx::query!(
-        "SELECT custom_filter_id, status_id FROM custom_filter_statuses WHERE custom_filter_id = ANY($1) AND status_id = ANY($2)",
-        &filter_ids,
-        &all_ids,
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|r| (r.custom_filter_id, r.status_id))
-    .collect();
 
     // `Status#searchable_text`: content warning, plain text, poll options and
     // media descriptions of the proper post.
-    let texts: std::collections::HashMap<i64, String> = sqlx::query!(
+    let texts: std::collections::HashMap<i64, String> = if regexes.is_empty() {
+        Default::default()
+    } else {
+        sqlx::query!(
         r#"SELECT s.id AS "id!", s.spoiler_text AS "spoiler_text!", s.text AS "text!", (s.local OR a.domain IS NULL) AS "local!",
                   COALESCE((SELECT string_agg(o, E'\n\n') FROM unnest(p.options) o), '') AS "poll!",
                   COALESCE((SELECT string_agg(m.description, E'\n\n'
@@ -767,7 +762,8 @@ pub(crate) async fn compute_filter_results(
             .join("\n\n");
         (r.id, text)
     })
-    .collect();
+    .collect()
+    };
 
     for s in statuses {
         let proper = s.reblog_of_id.unwrap_or(s.id);
@@ -808,6 +804,28 @@ pub(crate) async fn compute_filter_results(
         }
     }
     result
+}
+
+/// A filter's keyword regex, compiled once per distinct pattern and kept, as
+/// the same filters are read on every page of every timeline. The pattern is
+/// the whole key, so a changed keyword is simply another entry; the cache is
+/// emptied when it grows past what any set of active filters needs.
+fn keyword_regex(pattern: &str) -> Option<std::sync::Arc<regex::Regex>> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    const CAPACITY: usize = 4096;
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, Arc<regex::Regex>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(re) = cache.lock().ok()?.get(pattern) {
+        return Some(re.clone());
+    }
+    let re = Arc::new(regex::Regex::new(pattern).ok()?);
+    let mut cache = cache.lock().ok()?;
+    if cache.len() >= CAPACITY {
+        cache.clear();
+    }
+    cache.insert(pattern.to_owned(), re.clone());
+    Some(re)
 }
 
 /// The statuses as the API renders them for `viewer_id`, each with the
@@ -970,6 +988,33 @@ async fn build_status_list(
     Ok(result)
 }
 
+/// A page of a timeline as the API answers it: rendered for `viewer_id`,
+/// with the viewer's filter matches and `feature_approval.current_user` set
+/// as it is rendered, so the response is not read back to set it, and the
+/// pagination `Link`.
+async fn render_timeline(
+    state: &AppState,
+    req_headers: &HeaderMap,
+    uri: &Uri,
+    statuses: Vec<DbStatus>,
+    viewer_id: Option<i64>,
+) -> AppResult<Response> {
+    let mut result = build_status_list_with_filters(state, statuses, viewer_id).await?;
+    let hydrated = match viewer_id {
+        Some(viewer) => {
+            super::feature_approval::hydrate_statuses(state, viewer, &mut result).await;
+            true
+        }
+        None => false,
+    };
+    let mut resp = with_pagination_link(req_headers, uri, result).into_response();
+    if hydrated {
+        resp.extensions_mut()
+            .insert(super::feature_approval::Hydrated);
+    }
+    Ok(resp)
+}
+
 fn with_pagination_link(
     req_headers: &HeaderMap,
     uri: &Uri,
@@ -1029,7 +1074,7 @@ pub async fn link_timeline(
     .await?
     .ok_or(AppError::NotFound)?;
     if reach.nothing {
-        return Ok(with_pagination_link(&headers, &uri, vec![]));
+        return Ok(with_pagination_link(&headers, &uri, vec![]).into_response());
     }
 
     let viewer_id = auth.map(|Extension(u)| u.account_id);
@@ -1110,6 +1155,5 @@ pub async fn link_timeline(
         statuses.reverse();
     }
 
-    let result = build_status_list_with_filters(&state, statuses, viewer_id).await?;
-    Ok(with_pagination_link(&headers, &uri, result))
+    render_timeline(&state, &headers, &uri, statuses, viewer_id).await
 }

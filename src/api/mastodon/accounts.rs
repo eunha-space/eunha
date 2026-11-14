@@ -1434,22 +1434,33 @@ pub async fn batch_noindex(
     if account_ids.is_empty() {
         return std::collections::HashMap::new();
     }
-    let site_default = crate::settings::boolean(state, "noindex").await;
-    sqlx::query!(
-        "SELECT account_id, settings FROM users WHERE account_id = ANY($1::bigint[])",
+    // `Setting.noindex` comes along with the users, as an array so that a
+    // missing row (the default) and a stored null can be told apart.
+    let rows = sqlx::query!(
+        r#"SELECT u.account_id, u.settings,
+                  (SELECT ARRAY[s.value] FROM settings s WHERE s.var = 'noindex') AS "site_noindex: Vec<Option<String>>"
+           FROM users u WHERE u.account_id = ANY($1::bigint[])"#,
         account_ids,
     )
     .fetch_all(&state.db)
     .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|r| {
-        (
-            r.account_id,
-            crate::accounts::user_setting_bool(r.settings.as_deref(), "noindex", site_default),
-        )
-    })
-    .collect()
+    .unwrap_or_default();
+    let Some(first) = rows.first() else {
+        return std::collections::HashMap::new();
+    };
+    let stored = first
+        .site_noindex
+        .as_ref()
+        .map(|values| values.first().cloned().flatten());
+    let site_default = crate::settings::boolean_from_stored("noindex", stored);
+    rows.into_iter()
+        .map(|r| {
+            (
+                r.account_id,
+                crate::accounts::user_setting_bool(r.settings.as_deref(), "noindex", site_default),
+            )
+        })
+        .collect()
 }
 
 /// Convert a slice of DB accounts to API accounts with profile emojis and roles populated.

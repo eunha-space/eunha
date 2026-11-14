@@ -1,0 +1,93 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cf.id, cf.phrase AS title, cf.context, cf.expires_at,\n                  CASE cf.action WHEN 1 THEN 'hide' WHEN 2 THEN 'blur' ELSE 'warn' END AS \"filter_action!\",\n                  ARRAY(SELECT k.keyword FROM custom_filter_keywords k\n                        WHERE k.custom_filter_id = cf.id ORDER BY k.id) AS \"keywords!\",\n                  ARRAY(SELECT k.whole_word FROM custom_filter_keywords k\n                        WHERE k.custom_filter_id = cf.id ORDER BY k.id) AS \"whole_words!\",\n                  ARRAY(SELECT fs.status_id FROM custom_filter_statuses fs\n                        WHERE fs.custom_filter_id = cf.id AND fs.status_id = ANY($2)) AS \"status_ids!\"\n           FROM custom_filters cf\n           WHERE cf.account_id = $1 AND (cf.expires_at IS NULL OR cf.expires_at > now())",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "phrase"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "context",
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "context"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Timestamp",
+        "origin": {
+          "Table": {
+            "table": "custom_filters",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "filter_action!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "keywords!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "whole_words!",
+        "type_info": "BoolArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "status_ids!",
+        "type_info": "Int8Array",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9dc715e5b23e334e5b0016234c9cd668a7240eb8fb21652313e1377f799743e2"
+}

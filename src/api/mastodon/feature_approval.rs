@@ -20,6 +20,7 @@ use axum::response::Response;
 use serde_json::Value;
 
 use super::convert::{feature_policy_for_viewer, AccountViewerContext};
+use super::types::{Account, Status};
 use crate::middleware::AuthenticatedUser;
 use crate::state::AppState;
 
@@ -32,8 +33,98 @@ const MAX_BODY: usize = 16 * 1024 * 1024;
 pub async fn hydrate(state: &AppState, viewer: i64, value: &mut Value) {
     let mut ids = Vec::new();
     collect(value, &mut ids);
-    if ids.is_empty() {
+    if let Some(answers) = answers(state, viewer, ids).await {
+        apply(value, &answers);
+    }
+}
+
+/// Marks a response whose accounts were already hydrated as they were
+/// rendered, by [`hydrate_statuses`], so [`for_viewer`] passes it on without
+/// reading it back.
+#[derive(Debug, Clone, Copy)]
+pub struct Hydrated;
+
+/// [`hydrate`] on statuses before they are serialized: every account they
+/// carry, boosted and quoted posts' and moved accounts included, and those in
+/// their tagged collections. A response made of nothing else can then be
+/// marked [`Hydrated`].
+pub async fn hydrate_statuses(state: &AppState, viewer: i64, statuses: &mut [Status]) {
+    let mut ids = Vec::new();
+    for status in statuses.iter() {
+        collect_status(status, &mut ids);
+    }
+    let Some(answers) = answers(state, viewer, ids).await else {
         return;
+    };
+    for status in statuses.iter_mut() {
+        apply_status(status, &answers);
+    }
+}
+
+fn collect_status(status: &Status, ids: &mut Vec<i64>) {
+    collect_account(&status.account, ids);
+    status
+        .tagged_collections
+        .iter()
+        .for_each(|c| collect(c, ids));
+    if let Some(reblog) = status.reblog.as_deref() {
+        collect_status(reblog, ids);
+    }
+    if let Some(quoted) = status
+        .quote
+        .as_ref()
+        .and_then(|q| q.quoted_status.as_deref())
+    {
+        collect_status(quoted, ids);
+    }
+}
+
+fn collect_account(account: &Account, ids: &mut Vec<i64>) {
+    if let Ok(id) = account.id.parse() {
+        ids.push(id);
+    }
+    if let Some(moved) = account.moved.as_deref() {
+        collect_account(moved, ids);
+    }
+}
+
+fn apply_status(status: &mut Status, answers: &HashMap<i64, &'static str>) {
+    apply_account(&mut status.account, answers);
+    status
+        .tagged_collections
+        .iter_mut()
+        .for_each(|c| apply(c, answers));
+    if let Some(reblog) = status.reblog.as_deref_mut() {
+        apply_status(reblog, answers);
+    }
+    if let Some(quoted) = status
+        .quote
+        .as_mut()
+        .and_then(|q| q.quoted_status.as_deref_mut())
+    {
+        apply_status(quoted, answers);
+    }
+}
+
+fn apply_account(account: &mut Account, answers: &HashMap<i64, &'static str>) {
+    if let Some(answer) = account.id.parse().ok().and_then(|id: i64| answers.get(&id)) {
+        account.feature_approval.current_user = (*answer).to_owned();
+    }
+    if let Some(moved) = account.moved.as_deref_mut() {
+        apply_account(moved, answers);
+    }
+}
+
+/// `feature_approval.current_user` for each of the accounts `ids`, as
+/// `viewer` reads them; `None` when there is nothing to answer or the
+/// database would not say.
+async fn answers(
+    state: &AppState,
+    viewer: i64,
+    mut ids: Vec<i64>,
+) -> Option<HashMap<i64, &'static str>> {
+    if ids.is_empty() {
+        return None;
     }
     ids.sort_unstable();
     ids.dedup();
@@ -55,7 +146,7 @@ pub async fn hydrate(state: &AppState, viewer: i64, value: &mut Value) {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!(%error, "could not read feature policies for the viewer");
-            return;
+            return None;
         }
     };
     let answers: HashMap<i64, &'static str> = rows
@@ -76,7 +167,7 @@ pub async fn hydrate(state: &AppState, viewer: i64, value: &mut Value) {
             (row.id, answer)
         })
         .collect();
-    apply(value, &answers);
+    Some(answers)
 }
 
 /// The id of `object` when it is an account: the one entity with a
@@ -129,6 +220,9 @@ pub async fn for_viewer(req: Request, next: Next) -> Response {
     let (Some(state), Some(viewer)) = (state, viewer) else {
         return response;
     };
+    if response.extensions().get::<Hydrated>().is_some() {
+        return response;
+    }
     let is_json = response
         .headers()
         .get(header::CONTENT_TYPE)

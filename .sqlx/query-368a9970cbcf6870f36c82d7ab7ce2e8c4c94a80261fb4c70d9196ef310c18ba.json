@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id, settings FROM users WHERE account_id = ANY($1::bigint[])",
+  "query": "SELECT u.account_id, u.settings,\n                  (SELECT ARRAY[s.value] FROM settings s WHERE s.var = 'noindex') AS \"site_noindex: Vec<Option<String>>\"\n           FROM users u WHERE u.account_id = ANY($1::bigint[])",
   "describe": {
     "columns": [
       {
@@ -24,6 +24,12 @@
             "name": "settings"
           }
         }
+      },
+      {
+        "ordinal": 2,
+        "name": "site_noindex: Vec<Option<String>>",
+        "type_info": "TextArray",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -33,8 +39,9 @@
     },
     "nullable": [
       false,
-      true
+      true,
+      null
     ]
   },
-  "hash": "d5fd96c3d33d88fbd7aebd4d327c053a6b70b668a608bba0ba9cf96292a1cee0"
+  "hash": "368a9970cbcf6870f36c82d7ab7ce2e8c4c94a80261fb4c70d9196ef310c18ba"
 }

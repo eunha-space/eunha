@@ -106,6 +106,21 @@ pub async fn get_in(db: &sqlx::PgPool, var: &str) -> Value {
     }
 }
 
+/// [`get`] for a value already read alongside something else: `stored` is
+/// `None` when the settings table has no row for `var`, as
+/// `(SELECT ARRAY[value] FROM settings WHERE var = …)` answers.
+pub fn from_stored(var: &str, stored: Option<Option<String>>) -> Value {
+    match stored {
+        Some(raw) => decode(var, raw.as_deref()),
+        None => default(var),
+    }
+}
+
+/// [`boolean`] for a value read as [`from_stored`] takes it.
+pub fn boolean_from_stored(var: &str, stored: Option<Option<String>>) -> bool {
+    as_boolean(from_stored(var, stored))
+}
+
 /// [`get`] as a string, `""` for anything else.
 pub async fn string(state: &AppState, var: &str) -> String {
     as_string(get(state, var).await)

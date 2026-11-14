@@ -1910,141 +1910,71 @@ pub(crate) async fn federate_status_update(
     Ok(())
 }
 
-/// Batch-fetch viewer context for a list of status IDs in 5 queries.
-/// Returns a map from status_id → StatusViewerContext.
+/// Batch-fetch viewer context for a list of status IDs, in one query.
+/// Returns a map from status_id → StatusViewerContext, with an entry for
+/// every requested id.
 pub(super) async fn batch_viewer_contexts(
     state: &AppState,
     viewer_id: i64,
     status_ids: &[i64],
 ) -> AppResult<std::collections::HashMap<i64, super::convert::StatusViewerContext>> {
     use super::convert::StatusViewerContext;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     if status_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let fav_set: HashSet<i64> = sqlx::query_scalar!(
-        "SELECT status_id FROM favourites WHERE account_id = $1 AND status_id = ANY($2::bigint[])",
-        viewer_id,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
-
-    let reb_set: HashSet<i64> = sqlx::query_scalar!(
-        r#"SELECT reblog_of_id as "reblog_of_id!: i64" FROM statuses
-           WHERE account_id = $1 AND reblog_of_id = ANY($2::bigint[]) AND deleted_at IS NULL"#,
-        viewer_id,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
-
-    let book_set: HashSet<i64> = sqlx::query_scalar!(
-        "SELECT status_id FROM bookmarks WHERE account_id = $1 AND status_id = ANY($2::bigint[])",
-        viewer_id,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
-
-    let mute_set: HashSet<i64> = sqlx::query_scalar!(
-        "SELECT s.id FROM statuses s JOIN conversation_mutes cm ON cm.conversation_id = s.conversation_id WHERE cm.account_id = $1 AND s.id = ANY($2::bigint[])",
-        viewer_id, status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
-
-    let pin_set: HashSet<i64> = sqlx::query_scalar!(
-        "SELECT status_id FROM status_pins WHERE account_id = $1 AND status_id = ANY($2::bigint[])",
-        viewer_id,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
-
     // The follow flags feed `quote_policy_for_account`, which a boost answers
     // for the post it boosts (`object.proper`), so a boost maps to that
-    // post's author.
-    let status_author_rows = sqlx::query!(
-        r#"SELECT s.id AS "status_id!", COALESCE(o.account_id, s.account_id) AS "account_id!"
-           FROM statuses s LEFT JOIN statuses o ON o.id = s.reblog_of_id
-           WHERE s.id = ANY($1::bigint[])"#,
+    // post's author. A status that is gone has no author and no flags.
+    let rows = sqlx::query!(
+        r#"SELECT ids.id AS "id!",
+                  EXISTS (SELECT 1 FROM favourites f
+                          WHERE f.account_id = $1 AND f.status_id = ids.id) AS "favourited!",
+                  EXISTS (SELECT 1 FROM statuses r
+                          WHERE r.account_id = $1 AND r.reblog_of_id = ids.id
+                            AND r.deleted_at IS NULL) AS "reblogged!",
+                  EXISTS (SELECT 1 FROM bookmarks b
+                          WHERE b.account_id = $1 AND b.status_id = ids.id) AS "bookmarked!",
+                  EXISTS (SELECT 1 FROM conversation_mutes cm
+                          WHERE cm.account_id = $1
+                            AND cm.conversation_id = s.conversation_id) AS "muted!",
+                  EXISTS (SELECT 1 FROM status_pins p
+                          WHERE p.account_id = $1 AND p.status_id = ids.id) AS "pinned!",
+                  EXISTS (SELECT 1 FROM follows f
+                          WHERE f.account_id = $1
+                            AND f.target_account_id = COALESCE(o.account_id, s.account_id)) AS "follows_author!",
+                  EXISTS (SELECT 1 FROM follows f
+                          WHERE f.account_id = COALESCE(o.account_id, s.account_id)
+                            AND f.target_account_id = $1) AS "author_follows!"
+           FROM unnest($2::bigint[]) AS ids(id)
+           LEFT JOIN statuses s ON s.id = ids.id
+           LEFT JOIN statuses o ON o.id = s.reblog_of_id"#,
+        viewer_id,
         status_ids,
     )
     .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
+    .await?;
 
-    let status_to_author: HashMap<i64, i64> = status_author_rows
+    Ok(rows
         .into_iter()
-        .map(|r| (r.status_id, r.account_id))
-        .collect();
-
-    let author_ids: Vec<i64> = status_to_author
-        .values()
-        .cloned()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let viewer_follows_set: HashSet<i64> = if !author_ids.is_empty() {
-        sqlx::query_scalar!(
-            "SELECT target_account_id FROM follows WHERE account_id = $1 AND target_account_id = ANY($2::bigint[])",
-            viewer_id, &author_ids,
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
-    } else {
-        HashSet::new()
-    };
-
-    let author_follows_set: HashSet<i64> = if !author_ids.is_empty() {
-        sqlx::query_scalar!(
-            "SELECT account_id FROM follows WHERE account_id = ANY($1::bigint[]) AND target_account_id = $2",
-            &author_ids, viewer_id,
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
-    } else {
-        HashSet::new()
-    };
-
-    let mut result = HashMap::with_capacity(status_ids.len());
-    for &id in status_ids {
-        let author_id = status_to_author.get(&id).cloned().unwrap_or(0);
-        result.insert(
-            id,
-            StatusViewerContext {
-                account_id: viewer_id,
-                follows_author: viewer_follows_set.contains(&author_id),
-                author_follows: author_follows_set.contains(&author_id),
-                favourited: fav_set.contains(&id),
-                reblogged: reb_set.contains(&id),
-                bookmarked: book_set.contains(&id),
-                muted: mute_set.contains(&id),
-                pinned: pin_set.contains(&id),
-            },
-        );
-    }
-    Ok(result)
+        .map(|r| {
+            (
+                r.id,
+                StatusViewerContext {
+                    account_id: viewer_id,
+                    follows_author: r.follows_author,
+                    author_follows: r.author_follows,
+                    favourited: r.favourited,
+                    reblogged: r.reblogged,
+                    bookmarked: r.bookmarked,
+                    muted: r.muted,
+                    pinned: r.pinned,
+                },
+            )
+        })
+        .collect())
 }
 
 /// Fully serialize a single status for an optional viewer.
