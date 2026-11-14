@@ -16,17 +16,14 @@ implementation detail, and eunha may contain behavioral differences.
 Try eunha
 ---------
 
-[Download eunha](./docs/operating/downloads.md) for macOS or Linux. With Docker
-Compose and OpenSSH installed:
+The easiest way to try eunha is to [sign up at social.eunha.social][signup],
+a Mastodon-compatible instance that runs on eunha. Any Mastodon app works
+with it, and it federates with the rest of the fediverse.
 
-~~~~ sh
-eunha try --email you@example.com
-~~~~
+To run a trial instance of your own instead, see [the trial
+guide](./docs/operating/trying.md).
 
-This creates a trial instance and an account-free public HTTPS tunnel for
-ActivityPub. It prints the instance URL and owner password. Ctrl-C stops the
-trial while retaining its data. [The trial guide](./docs/operating/trying.md)
-also covers Tailscale Funnel, ngrok and other tunnels.
+[signup]: https://social.eunha.social
 
 
 Documentation
