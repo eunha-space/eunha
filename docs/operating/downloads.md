@@ -2,20 +2,20 @@ Downloading eunha
 =================
 
 Download a ready-made executable from [GitHub Releases]. The **Downloads**
-workflow builds macOS and Linux packages for both Apple Silicon/ARM64 and
-Intel/AMD64. Each archive includes `eunha`, the web frontend, the license and a
-`REVISION` file identifying its source commit.
+workflow builds packages for macOS on Apple Silicon and for Linux on both
+Intel/AMD64 and ARM64. Each archive includes `eunha`, the web frontend, the
+license and a `REVISION` file identifying its source commit.
 
 | Platform             | Archive                    |
 | -------------------- | -------------------------- |
 | macOS, Apple Silicon | `eunha-macos-arm64.tar.gz` |
-| macOS, Intel         | `eunha-macos-amd64.tar.gz` |
 | Linux, Intel/AMD     | `eunha-linux-amd64.tar.gz` |
 | Linux, ARM64         | `eunha-linux-arm64.tar.gz` |
 
-The macOS packages are built and tested on macOS 15. Linux packages are built
-on Ubuntu 22.04 and require glibc 2.35 or newer; Alpine's musl environment is
-not supported by these downloads. OpenSSL is linked statically, so a separate
+The macOS package is built and tested on macOS 15. There is no Intel Mac
+package; on an Intel Mac, use the [container image](./containers.md) or build
+from source. Linux packages are built on Ubuntu 22.04 and require glibc 2.35 or
+newer; Alpine's musl environment is not supported by these downloads. OpenSSL is linked statically, so a separate
 OpenSSL installation is not needed to run them. Windows users can use Linux
 through WSL2 with Docker integration.
 
