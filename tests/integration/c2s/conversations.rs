@@ -693,3 +693,80 @@ async fn test_conversation_ids_are_per_row_not_per_conversation() {
         "deleting one row should leave exactly the other",
     );
 }
+
+/// A conversation's last status is rendered as any status is
+/// (`REST::StatusSerializer`): with the posting application for its author,
+/// the viewer's matching filters and the post it quotes.
+#[tokio::test]
+async fn test_conversation_last_status_is_a_full_status() {
+    let ctx = TestContext::new("conv-full-status").await;
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+
+    let quoted = ctx
+        .api
+        .post_status(&ctx.bob_token, "worth quoting", "public")
+        .await;
+    let quoted_id: i64 = quoted["id"].as_str().unwrap().parse().unwrap();
+
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v2/filters",
+            Some(&ctx.alice_token),
+            &json!({
+                "title": "spoilers",
+                "context": ["home"],
+                "keywords_attributes": [{"keyword": "spoiler", "whole_word": true}]
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let dm = ctx
+        .api
+        .post_status(&ctx.alice_token, "@bob a spoiler for you", "direct")
+        .await;
+    let dm_id: i64 = dm["id"].as_str().unwrap().parse().unwrap();
+    sqlx::query(
+        "INSERT INTO quotes (status_id, quoted_status_id, account_id, quoted_account_id, state, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 1, now(), now())",
+    )
+    .bind(dm_id)
+    .bind(quoted_id)
+    .bind(alice)
+    .bind(ctx.bob_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let convs: Vec<Value> = ctx
+        .api
+        .get("/api/v1/conversations", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(convs.len(), 1, "{convs:?}");
+    let last = &convs[0]["last_status"];
+    assert_eq!(last["id"], dm["id"]);
+    assert!(
+        last["application"]["name"].is_string(),
+        "application: {}",
+        last["application"]
+    );
+    assert_eq!(last["filtered"][0]["filter"]["title"], "spoilers", "{last}");
+    assert_eq!(last["filtered"][0]["keyword_matches"], json!(["spoiler"]));
+    assert_eq!(
+        last["quote"]["quoted_status"]["id"], quoted["id"],
+        "quote: {}",
+        last["quote"]
+    );
+    // The participants are whole accounts, counts included.
+    let bob = convs[0]["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == ctx.bob_id.as_str())
+        .expect("bob among the participants");
+    assert_eq!(bob["statuses_count"], 1);
+}
