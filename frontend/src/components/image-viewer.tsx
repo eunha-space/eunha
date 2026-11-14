@@ -15,7 +15,7 @@ function ImageSlide({ image, original }: { image: ViewerImage; original: boolean
   const [failed, setFailed] = useState(false)
   return (
     <>
-      {!loaded && !failed && <p role="status" className="absolute text-sm text-white/70">Loading image…</p>}
+      {!loaded && !failed && <p role="status" className="absolute text-sm text-muted-foreground">Loading image…</p>}
       {failed ? <p role="alert" className="p-6 text-center text-sm">Could not load this image. You can try opening the original.</p> : (
         <img src={image.url} alt={image.description || 'Image attachment'}
           draggable={false} onLoad={() => setLoaded(true)} onError={() => setFailed(true)}
@@ -57,6 +57,7 @@ export function ImageViewer({ images, selected, onSelect, onClose, returnFocus }
   }, [selected, images.length, onSelect])
   if (!image) return null
   const original = originalFor === image.id
+  const dismiss = () => { setOriginalFor(null); onClose() }
   const change = (next: number) => {
     if (next < 0 || next >= images.length) return
     setOriginalFor(null)
@@ -66,28 +67,32 @@ export function ImageViewer({ images, selected, onSelect, onClose, returnFocus }
 
   return (
     <Dialog open={selected !== null} onOpenChange={open => {
-      if (!open) { setOriginalFor(null); onClose() }
+      if (!open) dismiss()
     }}>
       <DialogContent showCloseButton={false} initialFocus={close} finalFocus={returnFocus}
-        className="flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none bg-black p-0 text-white ring-0 sm:max-w-none"
+        className="dark flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
         onClick={event => event.stopPropagation()}>
-        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-white/15 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <DialogTitle className="text-sm">Image {index + 1} of {images.length}</DialogTitle>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="hover:bg-white/15 hover:text-white"
+            <Button variant="ghost" size="icon"
               aria-label={original ? 'Fit image to screen' : 'View image at original size'}
               onClick={() => {
                 setOriginalFor(original ? null : image.id)
                 stage.current?.scrollTo(0, 0)
               }}>{original ? <Minimize /> : <ZoomIn />}</Button>
-            <Button variant="ghost" size="icon" className="hover:bg-white/15 hover:text-white"
+            <Button variant="ghost" size="icon"
               aria-label="Open original image in a new tab"
               render={<a href={image.url} target="_blank" rel="noopener noreferrer" />}><ExternalLink /></Button>
-            <DialogClose render={<Button ref={close} variant="ghost" size="icon" className="hover:bg-white/15 hover:text-white" aria-label="Close image viewer" />}><X /></DialogClose>
+            <DialogClose render={<Button ref={close} variant="ghost" size="icon" aria-label="Close image viewer" />}><X /></DialogClose>
           </div>
         </header>
         <div className="relative min-h-0 flex-1">
           <div ref={stage} className={`absolute inset-0 overflow-auto overscroll-contain ${original ? '' : 'flex items-center justify-center p-2 sm:p-4'}`}
+            onClick={event => {
+              // The picture fills the screen, so the space around it stands in for a backdrop.
+              if (!(event.target instanceof HTMLImageElement)) dismiss()
+            }}
             onTouchStart={event => {
               const point = event.touches[0]
               touch.current = event.touches.length === 1 && point ? { x: point.clientX, y: point.clientY } : null
@@ -104,13 +109,13 @@ export function ImageViewer({ images, selected, onSelect, onClose, returnFocus }
             <ImageSlide key={image.id} image={image} original={original} />
           </div>
         </div>
-        <footer className="shrink-0 border-t border-white/15 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <footer className="shrink-0 border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {images.length > 1 && <div className="mb-2 flex items-center justify-center gap-4">
-            <Button size="sm" variant="ghost" className="hover:bg-white/15 hover:text-white" aria-label="Previous image" disabled={index === 0} onClick={() => change(index - 1)}><ChevronLeft /> Previous</Button>
+            <Button size="sm" variant="ghost" aria-label="Previous image" disabled={index === 0} onClick={() => change(index - 1)}><ChevronLeft /> Previous</Button>
             <span aria-live="polite" className="text-xs tabular-nums">{index + 1} / {images.length}</span>
-            <Button size="sm" variant="ghost" className="hover:bg-white/15 hover:text-white" aria-label="Next image" disabled={index === images.length - 1} onClick={() => change(index + 1)}>Next <ChevronRight /></Button>
+            <Button size="sm" variant="ghost" aria-label="Next image" disabled={index === images.length - 1} onClick={() => change(index + 1)}>Next <ChevronRight /></Button>
           </div>}
-          <DialogDescription className="max-h-[20dvh] overflow-auto whitespace-pre-wrap text-center text-sm text-white/80">
+          <DialogDescription className="max-h-[20dvh] overflow-auto whitespace-pre-wrap text-center text-sm">
             {image.description || 'No image description provided.'}
           </DialogDescription>
         </footer>

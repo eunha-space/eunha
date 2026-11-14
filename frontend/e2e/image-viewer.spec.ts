@@ -66,6 +66,32 @@ test('images open in-app with gallery navigation and return keyboard focus', asy
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
+test('clicking the picture keeps the viewer open and clicking around it closes it', async ({ page }) => {
+  await setup(page)
+  const trigger = page.getByRole('button', { name: 'View image: A green landscape' })
+  await trigger.click()
+  const viewer = page.getByRole('dialog')
+  const picture = viewer.getByRole('img', { name: 'A green landscape' })
+  await picture.click()
+  await expect(viewer).toBeVisible()
+  const bounds = (await picture.boundingBox())!
+  const header = (await viewer.locator('header').boundingBox())!
+  await page.mouse.click(bounds.x + bounds.width / 2, Math.max(header.y + header.height + 2, bounds.y - 4))
+  await expect(viewer).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+})
+
+test('the viewer uses the eunha navy and cream palette in light mode', async ({ page }) => {
+  await setup(page)
+  await page.getByRole('button', { name: 'View image: A blue portrait' }).click()
+  const colors = await page.getByRole('dialog').evaluate(element => {
+    const style = getComputedStyle(element)
+    return { background: style.backgroundColor, color: style.color }
+  })
+  expect(colors.background).toBe('oklch(0.177 0.059 255.6)')
+  expect(colors.color).toBe('oklch(0.968 0.013 86.8)')
+})
+
 test('sensitive images must be revealed before the viewer opens', async ({ page }) => {
   await setup(page, { sensitive: true })
   await expect(page.getByRole('button', { name: 'View image: A blue portrait' })).toHaveCount(0)

@@ -14,6 +14,9 @@ scrollable area; **Fit image to screen** returns to the fitted view. Swiping
 between images is disabled while viewing original size so scrolling can pan the
 picture.
 
-Close the viewer with its close button or Escape. Keyboard focus returns to the
+Close the viewer with its close button, Escape, or by clicking anywhere around
+the picture; clicking the picture itself keeps it open. The viewer always uses
+eunha's dark navy and cream colours, whichever theme the rest of the client is
+in, so pictures are shown against a dark surround. Keyboard focus returns to the
 image that opened it. **Open original image in a new tab** remains an explicit
 action, including when an image fails to load.
