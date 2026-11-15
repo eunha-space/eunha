@@ -244,7 +244,7 @@ pub async fn edit_status(
     // `@status.quote_approval_policy = @options[:quote_approval_policy] if
     // @options[:quote_approval_policy].present?`, then `downgrade_quote_policy`
     // for a post only some may see.
-    let new_quote_policy = match form
+    let assigned_quote_policy = match form
         .quote_approval_policy
         .as_deref()
         .filter(|p| !p.is_empty())
@@ -253,11 +253,15 @@ pub async fn edit_status(
             .ok_or_else(|| AppError::Unprocessable("Record invalid".into()))?,
         None => status.quote_approval_policy,
     };
+    // `downgrade_quote_policy` is a `before_validation` callback, so it runs
+    // in `save!`, after `significant_changes?` has seen the policy assigned:
+    // a policy asked for on a post only some may see makes the edit, and is
+    // then saved as none.
     let new_quote_policy = if matches!(
         status.visibility,
         crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
     ) {
-        new_quote_policy
+        assigned_quote_policy
     } else {
         0
     };
@@ -268,7 +272,7 @@ pub async fn edit_status(
         || new_spoiler != status.spoiler_text
         || new_sensitive != status.sensitive
         || new_language != status.language
-        || new_quote_policy != status.quote_approval_policy
+        || assigned_quote_policy != status.quote_approval_policy
         || status.ordered_media_attachment_ids.as_ref() != Some(&next_media)
         || media_changed
         || poll_changed;

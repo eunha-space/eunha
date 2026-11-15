@@ -57,7 +57,9 @@ attachments' `description` and `focus` (`x,y`, each read as `to_f`). A poll
 given is validated as on posting, its votes reset when its options or
 multiplicity change, and it ends `expires_in` from now.
 
-An edit that changes nothing is no edit: the post is answered as it was. One
+An edit that changes nothing is no edit: the post is answered as it was. A
+quote policy asked of a post only some may see is a change, though the edit
+then saves it as none (`downgrade_quote_policy` runs only on saving). One
 that does is validated as a new post is (text required unless the post now
 has media or quotes, its length, disallowed hashtags), and nothing of a
 refused edit is kept.

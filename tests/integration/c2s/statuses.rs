@@ -1295,6 +1295,43 @@ async fn test_edit_reblog_returns_422() {
     assert_eq!(edit_resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// `significant_changes?` sees the quote policy as it was assigned, before
+/// `save!` downgrades it for a post only some may see: asking a
+/// followers-only post for a public policy is an edit, saved with none.
+#[tokio::test]
+async fn test_a_quote_policy_asked_of_a_private_post_is_an_edit() {
+    let ctx = TestContext::new("edit-private-quote-policy").await;
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "followers only", "private")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    let edited: Value = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.alice_token),
+            &json!({"status": "followers only", "quote_approval_policy": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(edited["edited_at"].is_string(), "{edited}");
+    assert_eq!(edited["quote_approval"]["automatic"], json!([]));
+    let history: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{id}/history"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(history.as_array().map(Vec::len), Some(2));
+}
+
 /// Editing a status changes its content.
 #[tokio::test]
 async fn test_edit_status_changes_content() {
