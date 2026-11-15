@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
-import { getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
+import { getDefaultQuotePolicy, getDefaultVisibility, getMeAccount, getMeId, loadMe } from '../me.ts'
 import { useMentionAutocomplete } from '../hooks/use-mention-autocomplete.ts'
 import { useEmojiAutocomplete } from '../hooks/use-emoji-autocomplete.ts'
 import { insertShortcode, insertUnicodeEmoji } from '../hooks/use-custom-emojis.ts'
@@ -163,7 +163,8 @@ export function Compose({
       ? 'direct'
       : morePrivate(quoteFloor, morePrivate(replyTo?.visibility, getDefaultVisibility())),
   )
-  const [quotePolicy, setQuotePolicy] = useState<QuotePolicy>('public')
+  // Mastodon's `quote_policy`, which starts at the account's default.
+  const [quotePolicy, setQuotePolicy] = useState<QuotePolicy>(getDefaultQuotePolicy)
   // Derived, not stored — picking Direct in the audience menu *is* switching to
   // a message, and a reply stays a reply either way.
   const isMessage = !replyTo && visibility === 'direct'
@@ -228,6 +229,7 @@ export function Compose({
         // respect the parent's visibility rather than overwrite it.
         if (!cancelled && me) {
           setDefaultSensitive(me.defaultSensitive ?? false)
+          setQuotePolicy(me.defaultQuotePolicy ?? 'public')
           if (messageTo === undefined) {
             setVisibility(morePrivate(quoteFloor, morePrivate(replyTo?.visibility, me.defaultVisibility)))
           }
@@ -362,6 +364,7 @@ export function Compose({
       setPoll(undefined)
       setLanguageOverride(undefined)
       setAttachments([])
+      setQuotePolicy(getDefaultQuotePolicy())
       onPosted(status)
     } catch (e) {
       setError(String(e))

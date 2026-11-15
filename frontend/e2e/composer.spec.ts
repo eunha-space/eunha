@@ -403,3 +403,27 @@ test('the character counter uses graphemes, the URL budget and the content warni
   await page.getByPlaceholder('What would you like to say?').fill('👩‍💻 https://example.com/long-path')
   await expect(page.getByLabel('Post character count')).toHaveText('27/500')
 })
+
+// Mastodon's `default_quote_policy`: a new post lets quote whom the account
+// says by default, not always anyone.
+test('a new post starts with the account’s default quote policy', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/v1/accounts/verify_credentials**', (r) =>
+    r.fulfill({ json: { ...me, source: { privacy: 'public', quote_policy: 'followers' } } }),
+  )
+  let posted: Record<string, unknown> | null = null
+  await page.route('**/api/v1/statuses', async (route) => {
+    posted = route.request().postDataJSON()
+    await route.fulfill({ json: { ...privateStatus, id: '9' } })
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  await expect(
+    page.getByLabel('Who can quote').getByRole('menuitemradio', { name: 'Followers' }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
+  await page.getByPlaceholder('What would you like to say?').fill('for followers to quote')
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.poll(() => posted).toMatchObject({ quote_approval_policy: 'followers' })
+})

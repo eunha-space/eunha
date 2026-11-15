@@ -3,6 +3,7 @@
 import { getToken } from './auth.ts'
 import { getCurrentAccount } from './api.ts'
 import type { mastodon } from './masto.ts'
+import type { QuotePolicy } from './api.ts'
 
 const ID_KEY = 'eunha:me-id'
 const ACCOUNT_KEY = 'eunha:me-account'
@@ -12,6 +13,9 @@ export interface MeAccount {
   acct: string
   defaultVisibility: mastodon.v1.StatusVisibility
   defaultSensitive?: boolean
+  // Who may quote a new post unless the composer says otherwise: the
+  // account's `source[quote_policy]`, Mastodon's `default_quote_policy`.
+  defaultQuotePolicy?: QuotePolicy
   // For the account card in the sidebar. Cached with the rest so the card
   // renders on first paint instead of appearing a request later.
   displayName: string
@@ -47,6 +51,9 @@ function readCachedAccount(): MeAccount | null {
             ? parsed.defaultVisibility
             : 'public',
           defaultSensitive: parsed.defaultSensitive === true,
+          defaultQuotePolicy: isQuotePolicy(parsed.defaultQuotePolicy)
+            ? parsed.defaultQuotePolicy
+            : undefined,
           // A record cached before these were stored still has to parse; the
           // next `loadMe` fills them in.
           displayName: parsed.displayName ?? parsed.acct,
@@ -72,6 +79,10 @@ function isStatusVisibility(
   )
 }
 
+function isQuotePolicy(value: unknown): value is QuotePolicy {
+  return value === 'public' || value === 'followers' || value === 'nobody'
+}
+
 export function getMeId(): string | null {
   return cachedId
 }
@@ -84,6 +95,10 @@ export function getDefaultVisibility(): mastodon.v1.StatusVisibility {
   return cachedAccount?.defaultVisibility ?? 'public'
 }
 
+export function getDefaultQuotePolicy(): QuotePolicy {
+  return cachedAccount?.defaultQuotePolicy ?? 'public'
+}
+
 export async function loadMe(token: string): Promise<MeAccount | null> {
   try {
     const me = await getCurrentAccount(token)
@@ -94,6 +109,11 @@ export async function loadMe(token: string): Promise<MeAccount | null> {
       acct: me.acct,
       defaultVisibility: me.source.privacy ?? 'public',
       defaultSensitive: me.source.sensitive ?? false,
+      // masto files `quote_policy` under the account rather than its source.
+      defaultQuotePolicy: (() => {
+        const policy = (me.source as unknown as { quotePolicy?: unknown }).quotePolicy
+        return isQuotePolicy(policy) ? policy : 'public'
+      })(),
       displayName: me.displayName || me.username,
       avatar: me.avatar,
       avatarStatic: me.avatarStatic,
