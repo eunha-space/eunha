@@ -1682,3 +1682,31 @@ async fn test_domain_block_rules_keep_the_port() {
     assert!(!blocked("ported.test:443").await);
     assert!(!blocked("https://ported.test:8080/users/a").await);
 }
+
+/// Approving a trending status answers it as `REST::Admin::Trends::StatusSerializer`
+/// renders it for the reviewer, the controller's `current_user`: with their
+/// own flags.
+#[tokio::test]
+async fn test_reviewed_trending_status_is_rendered_for_the_reviewer() {
+    let ctx = TestContext::new("mod-trends-status-viewer").await;
+    make_admin(&ctx).await;
+    let post = ctx
+        .api
+        .post_status(&ctx.bob_token, "worth a trend", "public")
+        .await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!(
+                "/api/v1/admin/trends/statuses/{}/approve",
+                post["id"].as_str().unwrap()
+            ),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let approved: Value = resp.json().await.unwrap();
+    assert_eq!(approved["favourited"], json!(false), "{approved}");
+    assert_eq!(approved["requires_review"], json!(false), "{approved}");
+}

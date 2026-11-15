@@ -618,26 +618,36 @@ pub async fn get_status(
         application,
     )
     .await?;
-    // `filtered`: `current_user.account.status_matches_filters(object)`,
-    // every filter the viewer has that matches, whatever its context.
     if let Some(viewer_id) = viewer_id {
-        let matches = super::timelines::compute_filter_results(
-            &state.db,
-            viewer_id,
-            std::slice::from_ref(&status),
-        )
-        .await;
-        if let Some(serde_json::Value::Array(found)) = matches.get(&status.id) {
-            s.filtered = Some(found.clone());
-        }
-        if let Some(reblog) = s.reblog.as_mut() {
-            let reblog_id = reblog.id.parse().unwrap_or(0);
-            if let Some(serde_json::Value::Array(found)) = matches.get(&reblog_id) {
-                reblog.filtered = Some(found.clone());
-            }
-        }
+        apply_filters(&state, viewer_id, &status, &mut s).await;
     }
     Ok(Json(s))
+}
+
+/// `filtered`: `current_user.account.status_matches_filters(object)`, every
+/// filter the viewer has that matches, whatever its context, on a status
+/// rendered alone and on the post it boosts.
+pub(crate) async fn apply_filters(
+    state: &AppState,
+    viewer_id: i64,
+    status: &DbStatus,
+    s: &mut super::types::Status,
+) {
+    let matches = super::timelines::compute_filter_results(
+        &state.db,
+        viewer_id,
+        std::slice::from_ref(status),
+    )
+    .await;
+    if let Some(serde_json::Value::Array(found)) = matches.get(&status.id) {
+        s.filtered = Some(found.clone());
+    }
+    if let Some(reblog) = s.reblog.as_mut() {
+        let reblog_id = reblog.id.parse().unwrap_or(0);
+        if let Some(serde_json::Value::Array(found)) = matches.get(&reblog_id) {
+            reblog.filtered = Some(found.clone());
+        }
+    }
 }
 
 // ── DELETE /api/v1/statuses/:id ────────────────────────────────────────────
@@ -1997,6 +2007,19 @@ pub async fn serialize_status(
         None => None,
     };
     build_status(state, status, &account, media, reblog, viewer_ctx).await
+}
+
+/// [`serialize_status`] for a signed-in viewer, with the viewer's matching
+/// filters in `filtered`: what `REST::StatusSerializer` renders with a
+/// `current_user` and no `StatusRelationshipsPresenter`.
+pub async fn serialize_status_for_viewer(
+    state: &AppState,
+    status: &DbStatus,
+    viewer_id: i64,
+) -> AppResult<super::types::Status> {
+    let mut s = serialize_status(state, status, Some(viewer_id)).await?;
+    apply_filters(state, viewer_id, status, &mut s).await;
+    Ok(s)
 }
 
 pub async fn build_viewer_context(

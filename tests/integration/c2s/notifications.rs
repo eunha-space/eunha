@@ -2606,3 +2606,74 @@ async fn test_notification_status_carries_its_quote() {
         .unwrap();
     assert_eq!(quoted(&favourites[0]).as_deref(), Some(original_id));
 }
+
+/// `GET /api/v1/notifications/:id` renders its status for the recipient, the
+/// controller's `current_user`, as the streaming API's copy is rendered for
+/// them by `NotifyService`: their own flags, and the quote as they see it.
+#[tokio::test]
+async fn test_single_notification_status_is_rendered_for_the_recipient() {
+    let ctx = TestContext::new("notif-show-viewer").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "the quoted post", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    ctx.api
+        .post_json(
+            &format!("/api/v1/statuses/{quote_id}/favourite"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    let notifications: Vec<Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let favourite = notifications
+        .iter()
+        .find(|n| n["type"] == "favourite")
+        .expect("a favourite notification");
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/mute", ctx.alice_id),
+            Some(&ctx.bob_token),
+            &json!({"notifications": false}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let single: Value = ctx
+        .api
+        .get(
+            &format!(
+                "/api/v1/notifications/{}",
+                favourite["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status = &single["status"];
+    assert_eq!(status["favourited"], json!(false), "{single}");
+    assert_eq!(status["filtered"], json!([]), "{status}");
+    assert_eq!(status["quote"]["state"], "muted_account", "{status}");
+}

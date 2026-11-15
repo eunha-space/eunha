@@ -33,8 +33,7 @@ use super::{
     convert::{account_from_db, status_from_db},
     status_serialize::{
         batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
-        batch_status_mentions, batch_status_polls, batch_statuses_tags, build_status,
-        fetch_reblog_data, fetch_status_media, hydrate_status_stats,
+        batch_status_mentions, batch_status_polls, batch_statuses_tags, hydrate_status_stats,
     },
     types::{
         Notification, NotificationGroup, NotificationGroupsResponse, NotificationPagination,
@@ -2515,7 +2514,7 @@ pub async fn get_notification_request(
     .fetch_one(&state.db)
     .await?;
 
-    let last_status = fetch_last_status(&state, r.last_status_id).await;
+    let last_status = fetch_last_status(&state, r.last_status_id, auth.account_id).await;
     let mut api_account = super::convert::account_from_db(&state.urls, &acc);
     api_account.emojis = fetch_account_emojis(&state, &acc).await;
     api_account.set_roles({
@@ -2536,9 +2535,12 @@ pub async fn get_notification_request(
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/// `NotificationRequestSerializer#last_status`, rendered for `viewer_id`,
+/// the request's recipient.
 async fn fetch_last_status(
     state: &AppState,
     last_status_id: Option<i64>,
+    viewer_id: i64,
 ) -> Option<super::types::Status> {
     let status_id = last_status_id?;
     let s = sqlx::query_as!(
@@ -2549,17 +2551,7 @@ async fn fetch_last_status(
     .fetch_optional(&state.db)
     .await
     .ok()??;
-    let account = sqlx::query_as!(
-        crate::db::models::Account,
-        "SELECT * FROM accounts WHERE id = $1",
-        s.account_id,
-    )
-    .fetch_one(&state.db)
-    .await
-    .ok()?;
-    let media = fetch_status_media(state, s.id).await.ok()?;
-    let reblog = fetch_reblog_data(state, &s).await.ok()?;
-    build_status(state, &s, &account, media, reblog, None)
+    super::statuses::serialize_status_for_viewer(state, &s, viewer_id)
         .await
         .ok()
 }
@@ -2626,16 +2618,10 @@ async fn build_notification(
         .await?;
 
         if let Some(s) = s {
-            let account = sqlx::query_as!(
-                Account,
-                "SELECT * FROM accounts WHERE id = $1",
-                s.account_id
-            )
-            .fetch_one(&state.db)
-            .await?;
-            let media = fetch_status_media(state, s.id).await?;
-            let reblog = fetch_reblog_data(state, &s).await?;
-            Some(build_status(state, &s, &account, media, reblog, None).await?)
+            // For the recipient: the `current_user` of
+            // `NotificationsController#show`, and the account
+            // `NotifyService#push_to_streaming_api!` renders it for.
+            Some(super::statuses::serialize_status_for_viewer(state, &s, n.account_id).await?)
         } else {
             None
         }

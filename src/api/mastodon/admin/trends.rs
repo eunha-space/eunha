@@ -243,11 +243,9 @@ async fn review_status(
     )
     .fetch_one(&state.db)
     .await?;
-    let media = super::super::status_serialize::fetch_status_media(state, s.id).await?;
-    let reblog = super::super::status_serialize::fetch_reblog_data(state, &s).await?;
+    // Rendered for the reviewer, the controller's `current_user`.
     let status =
-        super::super::status_serialize::build_status(state, &s, &account, media, reblog, None)
-            .await?;
+        super::super::statuses::serialize_status_for_viewer(state, &s, auth.account_id).await?;
     let pending = s.trendable.is_none() && account.reviewed_at.is_none();
     Ok(Json(merge(status, json!({ "requires_review": pending }))))
 }
