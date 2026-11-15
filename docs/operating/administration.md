@@ -65,9 +65,9 @@ one until an administrator saves `public`. A visitor who opens `/public` while
 it is not `public` is sent to `/`.
 
 Signed in, the sidebar groups its rows. Home, Notifications, Messages,
-Search and Explore come first, under **New post**; **Feeds** holds Local,
-Federated, Lists and Followed hashtags; **You** holds Saved and Invite people;
-and Moderation, for staff, comes last on its own.
+Search and Explore come first; **Feeds** holds Local, Federated, Lists and
+Followed hashtags; **You** holds Saved and Invite people, followed by the
+**New post** button; and Moderation, for staff, comes last on its own.
 
 | Setting                                                          | What reads it                                                                                                    |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |

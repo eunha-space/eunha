@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   Bell,
@@ -70,6 +70,9 @@ import { DisplayName } from '@/components/emoji.tsx'
 const navLink =
   'text-muted-foreground hover:text-foreground hover:bg-muted/60 flex w-full items-center gap-3 rounded-full px-3 py-2 text-[0.95rem] font-medium no-underline'
 const activeNavLink = 'bg-muted text-foreground font-semibold'
+
+// The group the New post button follows, in the rail and the drawer.
+const YOU_GROUP = 'You'
 
 type IconType = React.ComponentType<{ className?: string }>
 type NavItem = {
@@ -211,7 +214,7 @@ function useNavGroups(
     },
     // What is yours to keep or give out.
     {
-      label: 'You',
+      label: YOU_GROUP,
       items: [
         { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
         ...(invites.hasAvailable || moderation.length > 0 ? [{
@@ -426,51 +429,52 @@ function DesktopRail({
       <ServerMark title={title} icon={icon} />
 
       <nav className="mt-5 flex flex-col gap-0.5">
-        {/* Composing leads the rail as a row rather than a filled button —
-            5.0's "New post". It reads as the first thing you can do here
-            instead of an ornament floating under the navigation. */}
-        {token && (
-          <button type="button" className={navLink} onClick={() => openCompose()}>
-            <PenLine className="size-5" /> New post
-          </button>
-        )}
         {navGroups.map((group, index) => (
-          <div
-            key={group.label ?? index}
-            role="group"
-            aria-label={group.label}
-            className={cn('flex flex-col gap-0.5', index > 0 && 'mt-4')}
-          >
-            {group.label && (
-              <span
-                aria-hidden
-                className="text-muted-foreground px-3 pb-1 text-xs font-medium tracking-wide uppercase"
-              >
-                {group.label}
-              </span>
+          <Fragment key={group.label ?? index}>
+            <div
+              role="group"
+              aria-label={group.label}
+              className={cn('flex flex-col gap-0.5', index > 0 && 'mt-4')}
+            >
+              {group.label && (
+                <span
+                  aria-hidden
+                  className="text-muted-foreground px-3 pb-1 text-xs font-medium tracking-wide uppercase"
+                >
+                  {group.label}
+                </span>
+              )}
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      navLink,
+                      (isActive || item.matchAlso?.(pathname)) && activeNavLink,
+                    )
+                  }
+                >
+                  <item.icon className="size-5" /> {item.label}
+                  <InviteCount count={item.inviteCount} />
+                  {item.badge ? (
+                    <span className="ml-auto">
+                      <Badge count={item.badge} />
+                    </span>
+                  ) : null}
+                </NavLink>
+              ))}
+            </div>
+            {/* Composing closes the member's own rows as a filled button, under
+                You and above the staff tools, so it stands apart from the
+                navigation without leading it. */}
+            {token && group.label === YOU_GROUP && (
+              <Button size="lg" className="mt-4 w-full rounded-full" onClick={() => openCompose()}>
+                <PenLine /> New post
+              </Button>
             )}
-            {group.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    navLink,
-                    (isActive || item.matchAlso?.(pathname)) && activeNavLink,
-                  )
-                }
-              >
-                <item.icon className="size-5" /> {item.label}
-                <InviteCount count={item.inviteCount} />
-                {item.badge ? (
-                  <span className="ml-auto">
-                    <Badge count={item.badge} />
-                  </span>
-                ) : null}
-              </NavLink>
-            ))}
-          </div>
+          </Fragment>
         ))}
       </nav>
 
@@ -528,47 +532,46 @@ function MobileDrawer({
         <ServerMark title={title} icon={icon} onNavigate={close} />
       </SidebarHeader>
       <SidebarContent>
-        {token && (
-          <SidebarGroup className="pb-0">
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
+        {navGroups.map((group, index) => (
+          <Fragment key={group.label ?? index}>
+            <SidebarGroup>
+              {group.label && (
+                <SidebarGroupLabel className="tracking-wide uppercase">{group.label}</SidebarGroupLabel>
+              )}
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      isActive={
+                        isActive(item.to, item.end) || !!item.matchAlso?.(location.pathname)
+                      }
+                      onClick={close}
+                      render={<NavLink to={item.to} end={item.end} />}
+                    >
+                      <item.icon />
+                      <span>{item.label}</span>
+                      <InviteCount count={item.inviteCount} />
+                      {item.badge ? <Badge count={item.badge} /> : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+            {token && group.label === YOU_GROUP && (
+              <div className="px-2 pb-2">
+                <Button
+                  size="lg"
+                  className="w-full rounded-full"
                   onClick={() => {
                     close()
                     openCompose()
                   }}
                 >
-                  <PenLine />
-                  <span>New post</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
-        {navGroups.map((group, index) => (
-          <SidebarGroup key={group.label ?? index}>
-            {group.label && (
-              <SidebarGroupLabel className="tracking-wide uppercase">{group.label}</SidebarGroupLabel>
+                  <PenLine /> New post
+                </Button>
+              </div>
             )}
-            <SidebarMenu>
-              {group.items.map((item) => (
-                <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton
-                    isActive={
-                      isActive(item.to, item.end) || !!item.matchAlso?.(location.pathname)
-                    }
-                    onClick={close}
-                    render={<NavLink to={item.to} end={item.end} />}
-                  >
-                    <item.icon />
-                    <span>{item.label}</span>
-                    <InviteCount count={item.inviteCount} />
-                    {item.badge ? <Badge count={item.badge} /> : null}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
+          </Fragment>
         ))}
       </SidebarContent>
       <SidebarFooter>
