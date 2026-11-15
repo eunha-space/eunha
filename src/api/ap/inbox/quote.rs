@@ -406,12 +406,17 @@ async fn verify(
     // `fetch_quoted_post_if_needed!`
     if quote.quoted_status_id.is_none() {
         if let Some(uri) = quoted_uri {
-            // A quoted post whose server does not answer is verified later
-            // (`fetch_and_verify_quote` rescues `HTTP_CONNECTION_ERRORS`
-            // into a `RefetchAndVerifyQuoteWorker`).
+            // A quoted post whose server does not answer is kept as
+            // `@fetching_error`, and verifying goes on to the stamp. It is
+            // raised again only `if @quote.status.nil?`, of the quoting post,
+            // which is never nil, so it is never tried again for itself: only
+            // a stamp that cannot be fetched is.
             let found = match find_or_fetch_status(state, uri, embedded_quote, depth).await {
                 Ok(found) => found,
-                Err(error) if super::fetch::unanswered(&error) => return Ok(true),
+                Err(error) if super::fetch::unanswered(&error) => {
+                    tracing::debug!(uri, %error, "quoted post not fetched");
+                    None
+                }
                 Err(error) => return Err(error),
             };
             if let Some(found) = found {

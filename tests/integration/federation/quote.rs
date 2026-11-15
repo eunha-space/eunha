@@ -1626,3 +1626,24 @@ async fn test_an_implicit_update_that_reaccepts_a_quote_is_broadcast() {
             .unwrap();
     assert_eq!(updates, 1);
 }
+
+/// A quoted post whose server does not answer is not tried again for
+/// itself: `VerifyQuoteService` keeps the error, raises it again only if the
+/// quoting post is missing, which it never is, and goes on to the stamp,
+/// which there is none of.
+#[tokio::test]
+async fn test_an_unreachable_quoted_post_without_a_stamp_is_not_retried() {
+    let r = Requested::new("quote-unreachable-unstamped").await;
+    let mut create = r.create(1);
+    create["object"]["quote"] = json!("https://dave.invalid/users/dave/statuses/7");
+    r.send(&create).await;
+    let quoting = r.status(1).await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 0);
+    let retries: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::RefetchAndVerifyQuoteWorker'",
+    )
+    .fetch_one(&r.ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(retries, 0);
+}

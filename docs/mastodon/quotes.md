@@ -114,6 +114,12 @@ back to pending, and if it is then accepted again, that is a move all the same.
 The retries wait in the [job queue](../operating/jobs.md), so a restart does
 not lose them.
 
+A quoted post whose server does not answer is not tried again for itself:
+`VerifyQuoteService` keeps the error and goes on to the stamp, and raises it
+again only if the quoting post (`@quote.status`, not the quoted one) is
+missing, which it never is. Without a stamp the quote stays pending; with one,
+the stamp is fetched, and retried if it cannot be, as above.
+
 Mastodon 4.7.1 also has a `QuoteRefreshWorker`, to verify a stamp again a
 week after it was last checked, but nothing schedules it
 (`Quote#schedule_refresh_if_stale!` has no caller), so it has no counterpart
