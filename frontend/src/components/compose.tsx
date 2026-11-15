@@ -326,13 +326,14 @@ export function Compose({
       prev.map((a) => (a.id === id ? { ...a, description } : a)),
     )
 
+  // Mastodon's `submitCompose`: a post needs text — its content warning
+  // counts — or media. A quote alone is a blank post, as upstream has it.
+  const canPost =
+    ((warningOpen ? warning : '') + text).trim().length > 0 || attachments.length > 0
+  const submittable = canPost && !uploading
+
   const submit = async () => {
-    if (
-      (!text.trim() && attachments.length === 0 && !quoteOf) ||
-      busy ||
-      uploading
-    )
-      return
+    if (!submittable || busy) return
     setBusy(true)
     setError(null)
     try {
@@ -426,8 +427,6 @@ export function Compose({
     if (!e.defaultPrevented) emojiSuggestions.onKeyDown(e)
   }
 
-  const canPost =
-    (text.trim().length > 0 || attachments.length > 0 || !!quoteOf) && !uploading
 
   const content = (
     // A column that fills whatever it is given, so the textarea below can take
@@ -711,7 +710,7 @@ export function Compose({
             </span>
             <Button
               size="sm"
-              disabled={busy || !canPost}
+              disabled={busy || !submittable}
               onClick={submit}
               title={`${label} (⌘/Ctrl + Enter)`}
             >
