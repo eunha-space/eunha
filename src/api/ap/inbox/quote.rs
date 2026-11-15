@@ -651,6 +651,21 @@ async fn reject(state: &AppState, quote: &mut Quote, saved: &mut Saved) -> AppRe
     Ok(())
 }
 
+/// `ActivityPub::TagManager#uri_to_resource(uri, Status)`, of a status not
+/// deleted: a local one by its path, `/@{username}/{id}` as much as its id,
+/// and any other by its URI without a fragment.
+async fn status_from_uri(state: &AppState, uri: &str) -> AppResult<Option<i64>> {
+    let Some(id) = crate::federation::local_uri::status(state, uri).await else {
+        return Ok(None);
+    };
+    Ok(sqlx::query_scalar!(
+        "SELECT id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?)
+}
+
 /// A status by `uri`, fetched (bounded) when it is not here
 /// (`uri_to_resource`, then `FetchRemoteStatusService`).
 async fn find_or_fetch_status(
@@ -659,13 +674,7 @@ async fn find_or_fetch_status(
     prefetched: Option<Value>,
     depth: u8,
 ) -> AppResult<Option<i64>> {
-    if let Some(id) = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-        uri,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    {
+    if let Some(id) = status_from_uri(state, uri).await? {
         return Ok(Some(id));
     }
     // `raise Mastodon::RecursionLimitExceededError if @depth >
@@ -762,13 +771,16 @@ pub(super) async fn handle_quote_request(
 
     // `return if quoted_status.nil? || !quoted_status.account.local? ||
     // !quoted_status.distributable? || quoted_status.reblog?`
+    let Some(quoted_id) = status_from_uri(state, object_uri).await? else {
+        return Ok(());
+    };
     let Some(quoted) = sqlx::query!(
         r#"SELECT s.id, s.account_id, s.quote_approval_policy, s.visibility, s.reblog_of_id,
                   a.username, a.id_scheme,
                   (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!"
            FROM statuses s JOIN accounts a ON a.id = s.account_id
-           WHERE s.uri = $1 AND s.deleted_at IS NULL AND a.domain IS NULL"#,
-        object_uri,
+           WHERE s.id = $1 AND a.domain IS NULL"#,
+        quoted_id,
     )
     .fetch_optional(&state.db)
     .await?
@@ -867,12 +879,7 @@ pub(super) async fn handle_quote_request(
     }
 
     // `accept_quote_request!`: the quoting post, known, inlined, or fetched.
-    let mut quoting_id = sqlx::query_scalar!(
-        "SELECT id FROM statuses WHERE uri = $1 AND deleted_at IS NULL",
-        instrument_uri,
-    )
-    .fetch_optional(&state.db)
-    .await?;
+    let mut quoting_id = status_from_uri(state, instrument_uri).await?;
     if quoting_id.is_none() {
         // `import_instrument`
         if let Some(instrument) = activity.get("instrument").filter(|i| i.is_object()) {

@@ -43,7 +43,8 @@ pub async fn account(state: &AppState, uri: &str) -> Option<i64> {
     }
 }
 
-/// The status a URI names, local or already known, deleted ones included.
+/// The status a URI names, local or already known (by the URI without its
+/// fragment), deleted ones included.
 pub async fn status(state: &AppState, uri: &str) -> Option<i64> {
     match local_path(state, uri) {
         Some(path) => {
@@ -64,11 +65,15 @@ pub async fn status(state: &AppState, uri: &str) -> Option<i64> {
             .ok()
             .flatten()
         }
-        None => sqlx::query_scalar!("SELECT id FROM statuses WHERE uri = $1", uri)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten(),
+        // `klass.find_by(uri: uri.split('#').first)`.
+        None => sqlx::query_scalar!(
+            "SELECT id FROM statuses WHERE uri = $1",
+            uri.split('#').next().unwrap_or_default()
+        )
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten(),
     }
 }
 

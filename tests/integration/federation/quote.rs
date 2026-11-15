@@ -1772,3 +1772,42 @@ async fn test_an_inlined_stamp_fails_the_activity() {
     assert_eq!(text, "carol quotes");
     assert_eq!(queued_activities(&r.ctx).await, 2);
 }
+
+/// Posts are found as `TagManager#uri_to_resource` finds them: a local one
+/// by any URL that shows it, `/@alice/{id}` as much as its id, and a remote
+/// one by its URI without a fragment.
+#[tokio::test]
+async fn test_quoted_posts_are_found_as_uri_to_resource_finds_them() {
+    let r = Requested::new("quote-uri-to-resource").await;
+    let original_id: i64 = sqlx::query_scalar("SELECT id FROM statuses WHERE uri = $1")
+        .bind(&r.original_uri)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    r.send(&r.create(1)).await;
+    let quoting = r.status(1).await;
+    // Asked for by the post's web URL.
+    let mut request = r.request(&format!("{}/statuses/1", r.carol_uri));
+    request["object"] = json!(format!("https://{}/@alice/{original_id}", r.ctx.domain));
+    r.send(&request).await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
+
+    // A remote post quoted with a fragment is the one we hold.
+    let carol_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
+        .bind(&r.carol_uri)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    let own = format!("{}/statuses/100", r.carol_uri);
+    let own_id = seed_remote_status(&r.ctx.db, carol_id, &own).await;
+    let mut create = r.create(2);
+    create["object"]["quote"] = json!(format!("{own}#quoted"));
+    r.send(&create).await;
+    let quoted: Option<i64> =
+        sqlx::query_scalar("SELECT quoted_status_id FROM quotes WHERE status_id = $1")
+            .bind(r.status(2).await)
+            .fetch_one(&r.ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(quoted, Some(own_id));
+}

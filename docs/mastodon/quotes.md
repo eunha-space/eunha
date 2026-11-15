@@ -53,25 +53,27 @@ a `Tombstone`, and verified as `ActivityPub::VerifyQuoteService` verifies it:
 the quoted post is fetched if need be, a self-quote is accepted, and a
 `quoteAuthorization` stamp is fetched and accepted only if it is a
 `QuoteAuthorization` on its author's host naming both posts. A stamp that is
-gone rejects the quote. A stamp is only looked at if it starts with `http://`
-or `https://`, in those letters, and is not on the web domain, its port
-included, as `unsupported_uri_scheme?` and `TagManager#local_url?` have it; an
-`Accept`'s `result` is held to the same scheme test. A stamp inlined as an
-object (or anything but a string) is one Mastodon fails on, testing its scheme:
-the `Create` fails before the post is created, and an edit before any of it is
-kept, each to be tried again. A quote of a local post waits for its
-`QuoteRequest`, which is accepted when the requester may quote the post and the
-quoting post's quote names it, and answered at the requester's own inbox; a
-requester with no inbox, or an author with no key, is not answered, but the
-quote is accepted all the same. One whose quoting post cannot be found, or
-quotes nothing, fails and is tried again, as Mastodon's raises calling `quote`
-on it. An edit that changes the quoted post replaces the quote, and a changed
-stamp sends it back to pending. A quote an edit adds is pending, even of a
-`Tombstone`, as `update_quote!` creates it with no state; only a replaced one
-is `deleted`. A changed quote is not itself a change to the post, as
-`update_quote!` runs after Mastodon has decided whether the edit changed
-anything: an edit that changes only its quote records no version, and is
-neither shown again in timelines nor forwarded.
+gone rejects the quote. The posts a quote or a `QuoteRequest` names are found
+as `TagManager#uri_to_resource` finds them: a local one by any URL that shows
+it (`/@alice/{id}` too), and a remote one by its URI less any fragment. A stamp
+is only looked at if it starts with `http://` or `https://`, in those letters,
+and is not on the web domain, its port included, as `unsupported_uri_scheme?`
+and `TagManager#local_url?` have it; an `Accept`'s `result` is held to the same
+scheme test. A stamp inlined as an object (or anything but a string) is one
+Mastodon fails on, testing its scheme: the `Create` fails before the post is
+created, and an edit before any of it is kept, each to be tried again. A quote
+of a local post waits for its `QuoteRequest`, which is accepted when the
+requester may quote the post and the quoting post's quote names it, and
+answered at the requester's own inbox; a requester with no inbox, or an author
+with no key, is not answered, but the quote is accepted all the same. One whose
+quoting post cannot be found, or quotes nothing, fails and is tried again, as
+Mastodon's raises calling `quote` on it. An edit that changes the quoted post
+replaces the quote, and a changed stamp sends it back to pending. A quote an
+edit adds is pending, even of a `Tombstone`, as `update_quote!` creates it with
+no state; only a replaced one is `deleted`. A changed quote is not itself a
+change to the post, as `update_quote!` runs after Mastodon has decided whether
+the edit changed anything: an edit that changes only its quote records no
+version, and is neither shown again in timelines nor forwarded.
 
 The `quotes_count` of the quoted post moves as `Quote`'s callbacks move it: up
 by one when a quote is created accepted or becomes accepted, down by one when an

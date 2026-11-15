@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.account_id, s.quote_approval_policy, s.visibility, s.reblog_of_id,\n                  a.username, a.id_scheme,\n                  (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS \"unavailable!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.uri = $1 AND s.deleted_at IS NULL AND a.domain IS NULL",
+  "query": "SELECT s.id, s.account_id, s.quote_approval_policy, s.visibility, s.reblog_of_id,\n                  a.username, a.id_scheme,\n                  (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS \"unavailable!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1 AND a.domain IS NULL",
   "describe": {
     "columns": [
       {
@@ -89,7 +89,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -103,5 +103,5 @@
       null
     ]
   },
-  "hash": "cf6351baca3ebf0768a38c51d2717e8a99cdcf6114689508da88f18f99933a3c"
+  "hash": "f27104c38af6735232d37034726345706ec1bff70cc36c55dc9f0aaf0d3b17ff"
 }
