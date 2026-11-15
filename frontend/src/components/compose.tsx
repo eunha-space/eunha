@@ -276,6 +276,17 @@ export function Compose({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageTo?.id])
 
+  // Mastodon's `quoteCompose` carries the quoted post's content warning over
+  // to the quote, unless the draft has one of its own.
+  useEffect(() => {
+    const quotedWarning = quoteOf?.spoilerText
+    if (!quotedWarning) return
+    setWarningOverride(true)
+    setWarning((current) => current || quotedWarning)
+    // Once per quoted post, not on each of its re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteOf?.id])
+
   const label = replyTo ? 'Reply' : isMessage ? 'Send' : quoteOf ? 'Quote' : 'Publish'
 
   useEffect(() => {
@@ -286,8 +297,10 @@ export function Compose({
     const seed = replyTo
       ? statusToTextMentions(replyTo, getMeId())
       : messageTo ? `@${messageTo.acct} ` : initialText
-    onDraftChange?.(text !== seed || !!warning || !!languageOverride || !!poll || attachments.length > 0 || uploading || busy)
-  }, [onDraftChange, text, warning, languageOverride, poll, attachments.length, uploading, busy, replyTo, messageTo, initialText])
+    // A warning carried over from the quoted post is the seed, not a change.
+    const seedWarning = quoteOf?.spoilerText ?? ''
+    onDraftChange?.(text !== seed || warning !== seedWarning || !!languageOverride || !!poll || attachments.length > 0 || uploading || busy)
+  }, [onDraftChange, text, warning, languageOverride, poll, attachments.length, uploading, busy, replyTo, messageTo, initialText, quoteOf?.spoilerText])
 
   const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])

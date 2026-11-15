@@ -131,7 +131,7 @@ test('the quoted author can remove their post from a quote, after confirming', a
     return r.fulfill({ json: { ...quoting, quote: { state: 'revoked', quoted_status: null } } })
   })
   await page.goto('/@bob/10')
-  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Remove my post from @bob’s post' }).click()
   await expect(page.getByText('This action cannot be undone.')).toBeVisible()
   await page.getByRole('button', { name: 'Remove post' }).click()
@@ -145,7 +145,7 @@ test('a quote of your post is not offered for removal to its own author', async 
   await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: quoting }))
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@alice/10')
-  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: /Remove my post/ })).toHaveCount(0)
 })
 
@@ -175,7 +175,7 @@ test('quoting a post opens the composer with the post in it', async ({ page }) =
   await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: post }))
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
-  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await expect(page.getByText('Quoting this post')).toBeVisible()
@@ -201,7 +201,7 @@ async function openPost(page: Page, post: Record<string, unknown>) {
   await page.route(`**/api/v1/statuses/${post.id}`, (r) => r.fulfill({ json: post }))
   await page.route(`**/api/v1/statuses/${post.id}/context`, (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto(`/@${(post.account as { acct: string }).acct}/${post.id}`)
-  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
 }
 
 test('a post the reader may not quote says why, and cannot be chosen', async ({ page }) => {
@@ -235,7 +235,7 @@ test('a post without a quote policy for the reader fetches one when the menu ope
   })
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
-  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: 'Quote' })).not.toHaveAttribute('aria-disabled', 'true')
   expect(fetches).toBe(2)
 })
@@ -394,4 +394,12 @@ test('a quote needs something said, its content warning included', async ({ page
   await page.keyboard.press('Escape')
   await page.getByRole('textbox', { name: 'Content warning' }).fill('Spoilers')
   await expect(publish).toBeEnabled()
+})
+
+test('a quote carries the quoted post’s content warning over', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { spoiler_text: 'Spoilers ahead', quote_approval: approval('automatic') }))
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByRole('textbox', { name: 'Content warning' })).toHaveValue('Spoilers ahead')
+  await expect(page.getByRole('button', { name: 'Quote', exact: true })).toBeEnabled()
 })
