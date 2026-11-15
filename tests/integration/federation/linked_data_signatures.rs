@@ -407,3 +407,50 @@ async fn test_a_relayed_post_is_checked_against_the_authors_keypair() {
         .unwrap();
     assert_eq!(taken, 1, "bob's stored keypair verified the signature");
 }
+
+/// A Follow of alice by bob, signed by mallory on bob's own server, is not
+/// bob's: Mastodon holds the signer to be the actor
+/// (`ProcessCollectionService#different_actor?`) and, without bob's Linked
+/// Data signature, drops it. Signed by bob, it is taken.
+#[tokio::test]
+async fn test_another_account_on_the_actors_server_does_not_speak_for_it() {
+    let ctx = TestContext::new("signer-is-actor").await;
+    let (bob_id, bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
+    let (_, mallory, mallory_key) = seed_remote(&ctx, "mallory", "bob.invalid").await;
+    let alice = format!("https://{}/users/alice", ctx.domain);
+    let follow = |n: u32| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{bob}/follows/{n}"),
+            "type": "Follow",
+            "actor": bob,
+            "object": alice,
+        })
+    };
+    let follows = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM follows WHERE account_id = $1")
+            .bind(bob_id)
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap()
+    };
+
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &follow(1),
+            &format!("{mallory}#main-key"),
+            &mallory_key,
+        )
+        .await;
+    assert_eq!(resp.status(), 202);
+    assert_eq!(follows().await, 0, "mallory cannot follow as bob");
+
+    let resp = ctx
+        .api
+        .post_signed("/inbox", &follow(2), &format!("{bob}#main-key"), &bob_key)
+        .await;
+    assert_eq!(resp.status(), 202);
+    assert_eq!(follows().await, 1);
+}

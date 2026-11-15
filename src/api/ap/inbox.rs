@@ -159,8 +159,11 @@ pub(super) async fn acquire_lockable_or_retry(
 /// Ojak's inbox (`super::serving`) has already done what this handler used
 /// to: refused a suspended domain's activities before fetching a key for
 /// them, verified the HTTP Signature or, failing it, an FEP-8b32 proof,
-/// accepted and dropped a Delete it could not verify, and checked that the
-/// actor and the activity are on the sender's origin. `activity` is the one
+/// accepted and dropped a Delete it could not verify, and held the actor to
+/// be the signer: any other signer, on the actor's server or not, passed the
+/// activity on, and it was taken on the actor's own proof or Linked Data
+/// signature, or as the actor's server serves it, as Mastodon's
+/// `ProcessCollectionService#different_actor?` has it. `activity` is the one
 /// the sender sent, with anything embedded that the sender could not vouch
 /// for reduced to its id, so a handler that reads an embedded object reads
 /// one its sender owns and fetches anything else.
