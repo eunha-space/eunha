@@ -440,14 +440,16 @@ async fn verify(
             // raised again only `if @quote.status.nil?`, of the quoting post,
             // which is never nil, so it is never tried again for itself: only
             // a stamp that cannot be fetched is.
-            let found = match find_or_fetch_status(state, uri, embedded_quote, depth).await {
-                Ok(found) => found,
-                Err(error) if super::fetch::unanswered(&error) => {
-                    tracing::debug!(uri, %error, "quoted post not fetched");
-                    None
-                }
-                Err(error) => return Err(error),
-            };
+            let on_behalf_of = local_follower(state, quote.account_id).await?;
+            let found =
+                match find_or_fetch_status(state, uri, embedded_quote, depth, on_behalf_of).await {
+                    Ok(found) => found,
+                    Err(error) if super::fetch::unanswered(&error) => {
+                        tracing::debug!(uri, %error, "quoted post not fetched");
+                        None
+                    }
+                    Err(error) => return Err(error),
+                };
             if let Some(found) = found {
                 quote = set_quoted_status(state, quote, found, saved).await?;
             }
@@ -469,7 +471,8 @@ async fn verify(
     // rejects the quote. Whoever the stamp names as its author is checked
     // below, as Mastodon checks it, not by the fetch.
     use crate::federation::json_ld::{fetch_resource, RaiseOn};
-    let json = match fetch_resource(state, &approval_uri, None, RaiseOn::Temporary).await {
+    let on_behalf_of = local_follower(state, quote.account_id).await?;
+    let json = match fetch_resource(state, &approval_uri, on_behalf_of, RaiseOn::Temporary).await {
         Ok(Some(json)) => json,
         Ok(None) => {
             // `return quote.reject! if @json.nil?`
@@ -666,6 +669,7 @@ async fn find_or_fetch_status(
     uri: &str,
     prefetched: Option<Value>,
     depth: u8,
+    on_behalf_of: Option<i64>,
 ) -> AppResult<Option<i64>> {
     if let Some(id) = status_from_uri(state, uri).await? {
         return Ok(Some(id));
@@ -675,12 +679,32 @@ async fn find_or_fetch_status(
     if depth >= super::fetch::MAX_FETCH_DEPTH {
         return Ok(None);
     }
-    match prefetched {
-        Some(body) => {
-            super::fetch::fetch_remote_status_at_depth(state, uri, Some(body), depth + 1).await
-        }
-        None => super::fetch::fetch_remote_status_at_depth(state, uri, None, depth + 1).await,
-    }
+    Ok(Box::pin(super::fetch_remote_status_with(
+        state,
+        uri,
+        super::FetchOptions {
+            prefetched_body: prefetched,
+            on_behalf_of,
+            depth: depth + 1,
+            ..Default::default()
+        },
+    ))
+    .await?
+    .map(|(id, _)| id))
+}
+
+/// `@quote.account.followers.local.first`: the local account that last
+/// followed the quoting account, on whose behalf what verifying a quote
+/// needs is fetched; the instance actor when there is none.
+async fn local_follower(state: &AppState, account_id: i64) -> AppResult<Option<i64>> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT f.account_id FROM follows f JOIN accounts a ON a.id = f.account_id
+           WHERE f.target_account_id = $1 AND a.domain IS NULL
+           ORDER BY f.id DESC LIMIT 1"#,
+        account_id,
+    )
+    .fetch_optional(&state.db)
+    .await?)
 }
 
 /// `@quote.update(quoted_status: status) if status.present? &&

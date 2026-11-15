@@ -295,3 +295,63 @@ async fn test_a_stamp_with_its_author_in_an_array_leaves_the_quote_pending() {
     .await;
     assert_eq!(state, 0);
 }
+
+async fn follow(ctx: &TestContext, follower: &str, base: &str, name: &str) {
+    let target: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
+        .bind(format!("{base}/users/{name}"))
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(follower.parse::<i64>().unwrap())
+    .bind(target)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+}
+
+/// The quoted post and the stamp are fetched on behalf of the local account
+/// that last followed the quoting one (`followers.local.first`, the newest
+/// follow first), and signed with its key.
+#[tokio::test]
+async fn test_a_quote_is_verified_on_behalf_of_a_local_follower() {
+    let (ctx, remote, base) = context("verify-on-behalf").await;
+    remote.put("/notes/other", note(&base, "eve", "other", None, None));
+    store(&ctx, &base, "other").await;
+    for account in [&ctx.alice_id, &ctx.bob_id] {
+        let (private_pem, public_pem) = ojak::sig::signature::generate_rsa_keypair(
+            &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+        )
+        .unwrap();
+        eunha::federation::keypair::replace_local(
+            &ctx.state,
+            account.parse().unwrap(),
+            &private_pem,
+            &public_pem,
+        )
+        .await
+        .unwrap();
+    }
+    follow(&ctx, &ctx.bob_id, &base, "eve").await;
+    follow(&ctx, &ctx.alice_id, &base, "eve").await;
+    remote.put("/notes/p", note(&base, "fay", "p", None, None));
+    remote.put(
+        "/notes/q",
+        note(&base, "eve", "q", Some("p"), Some("/stamps/1")),
+    );
+    remote.put("/stamps/1", stamp(&base, "/stamps/1", "q", "p"));
+    let quoting = store(&ctx, &base, "q").await;
+    assert_eq!(quote_state(&ctx, quoting).await, 1);
+    let alice_key = format!("https://{}/users/alice#main-key", ctx.domain);
+    for path in ["/notes/p", "/stamps/1"] {
+        let signatures = remote.signatures(path);
+        assert!(
+            signatures.iter().all(|s| s.contains(&alice_key)),
+            "{path}: {signatures:?}"
+        );
+    }
+}

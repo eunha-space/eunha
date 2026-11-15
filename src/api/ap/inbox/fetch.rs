@@ -55,27 +55,6 @@ pub async fn fetch_remote_status_prefetched(
 /// processed (`VerifyQuoteService::MAX_SYNCHRONOUS_DEPTH`).
 pub(super) const MAX_FETCH_DEPTH: u8 = 2;
 
-/// [`fetch_remote_status`] at `depth` in a chain of quotes, with the object
-/// already in hand when `prefetched`.
-pub(super) async fn fetch_remote_status_at_depth(
-    state: &AppState,
-    uri: &str,
-    prefetched: Option<Value>,
-    depth: u8,
-) -> AppResult<Option<i64>> {
-    Ok(Box::pin(fetch_remote_status_with(
-        state,
-        uri,
-        FetchOptions {
-            prefetched_body: prefetched,
-            depth,
-            ..FetchOptions::default()
-        },
-    ))
-    .await?
-    .map(|(id, _)| id))
-}
-
 /// `::FetchRemoteStatusService#call` (not the `ActivityPub::` one): the
 /// document at `url`, found as `FetchResourceService` finds it — which
 /// follows a page's link to its ActivityPub object, and gives nothing for a
