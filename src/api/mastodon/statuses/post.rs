@@ -950,8 +950,9 @@ pub(crate) async fn quote_allowed(
             vis::PRIVATE => own || relation.follows_author || relation.mentioned,
             _ => own || !relation.blocked,
         };
+    // `quote_policy_for_account` denies a direct post, not a limited one,
+    // which `Quote#validate_visibility` refuses later unless it is one's own.
     let policy_denies = quoted.visibility == vis::DIRECT
-        || quoted.visibility == vis::LIMITED
         || crate::db::models::quote_policy::for_account(
             quoted.quote_approval_policy,
             own,

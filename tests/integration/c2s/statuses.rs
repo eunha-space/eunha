@@ -7164,6 +7164,24 @@ async fn test_someone_elses_followers_only_post_cannot_be_quoted() {
     assert_eq!(quotes, 0);
 }
 
+/// `quote_policy_for_account` denies a direct post, not a limited one: a
+/// limited post its reader is mentioned in gets past the controller's
+/// `quote?`, and is refused by the quote's own validation instead.
+#[tokio::test]
+async fn test_a_limited_post_is_refused_by_the_quote_not_its_policy() {
+    let ctx = TestContext::new("quote-remote-limited").await;
+    let quoted = remote_quotable_post(&ctx, 4).await;
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "quoting", "quoted_status_id": quoted.to_string(), "visibility": "private"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 /// Quoting increments quotes_count on the original status.
 #[tokio::test]
 async fn test_quote_post_increments_quotes_count() {
