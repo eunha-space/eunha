@@ -81,6 +81,31 @@ export async function logout() {
   const token = getToken()
   if (id && token) await disableBrowserPush(id, token).catch(() => {})
 
+  // Mastodon's `logOut` signs the browser out of the server too
+  // (`DELETE /auth/sign_out`), which ends the session and its token. Without
+  // that, the authorization page would still know this browser and sign it
+  // straight back in. So revoke this account's token, and end the account
+  // pages' cookie session. Neither may keep the browser signed in when it
+  // fails, as for an account just deleted, whose token is already dead.
+  const client = storedClient()
+  await Promise.allSettled([
+    token && client
+      ? fetch('/oauth/revoke', {
+          method: 'POST',
+          body: new URLSearchParams({
+            client_id: client.client_id,
+            ...(client.client_secret ? { client_secret: client.client_secret } : {}),
+            token,
+          }),
+        })
+      : null,
+    fetch('/account/logout', {
+      method: 'POST',
+      headers: { 'HX-Request': 'true' },
+      credentials: 'same-origin',
+    }),
+  ])
+
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(
     getSavedAccounts().filter((entry) => entry.account.id !== id),
   ))

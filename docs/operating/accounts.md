@@ -308,8 +308,13 @@ Other tabs on the same origin follow the switch. Theme and layout preferences
 remain shared.
 
 **Sign out** removes only the current account from this browser and selects a
-remaining account, if there is one. It does not revoke the OAuth authorization;
-use **Authorized apps** to revoke it on the server.
+remaining account, if there is one. As Mastodon's web client does, it also signs
+the browser out of the server: it revokes the current account's token
+(`POST /oauth/revoke`) and ends the account pages' cookie session
+(`POST /account/logout`), so the next **Sign in** asks for an email and
+password again instead of signing straight back in. The cookie session ends
+even when it belongs to another account that stays in the switcher; that
+account's token is its own and keeps working.
 
 
 Sessions

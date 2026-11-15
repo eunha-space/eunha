@@ -17,15 +17,33 @@ test('switching resets the profile and sign-out removes only the selected accoun
     const account = route.request().headers().authorization === 'Bearer bob-token' ? bob : alice
     return route.fulfill({ json: { ...account, username: account.acct, display_name: account.displayName, source: { privacy: 'public' } } })
   })
+  const revoked: string[] = []
+  await page.route('**/oauth/revoke', (route) => {
+    revoked.push(new URLSearchParams(route.request().postData() ?? '').get('token') ?? '')
+    return route.fulfill({ json: {} })
+  })
+  let loggedOut = 0
+  await page.route('**/account/logout', (route) => {
+    loggedOut += 1
+    return route.fulfill({ body: '' })
+  })
   await page.reload()
+  await page.evaluate(() => localStorage.setItem('eunha:client', JSON.stringify({ client_id: 'web' })))
   await page.getByRole('button', { name: 'Account menu' }).click()
   await page.getByRole('menuitem', { name: '@bob', exact: true }).click()
   await expect.poll(() => page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBe('2')
   await expect(page.getByText('Bob', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Account menu' }).click()
-  await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click()
+  // Signing out reloads the page once the server has signed the browser out.
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.getByRole('menuitem', { name: 'Sign out', exact: true }).click(),
+  ])
   await expect.poll(() => page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBe('1')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('eunha:accounts') ?? '[]').length)).toBe(1)
+  // Signed out of the server too, so that signing in asks for a password again.
+  expect(revoked).toEqual(['bob-token'])
+  expect(loggedOut).toBe(1)
 })
 
 test('a legacy standalone token does not sign the browser in', async ({ page }) => {
