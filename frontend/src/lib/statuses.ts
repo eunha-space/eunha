@@ -58,8 +58,12 @@ export function quoteItemState(
   if (!isPublic && !isMine) {
     return { title: 'Quote', meta: 'Private posts cannot be quoted', disabled: true }
   }
-  if ((currentUser === 'automatic' || currentUser === 'manual') && (isPublic || isMineAndPrivate)) {
+  if (currentUser === 'automatic' && (isPublic || isMineAndPrivate)) {
     return { title: 'Quote', disabled: false }
+  }
+  // The quote will wait for the author to approve it.
+  if (currentUser === 'manual' && (isPublic || isMineAndPrivate)) {
+    return { title: 'Request to quote', meta: 'Author will manually review', disabled: false }
   }
   if (isLoggedIn) {
     return {

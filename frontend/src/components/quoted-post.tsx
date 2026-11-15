@@ -5,6 +5,7 @@ import type { mastodon } from '../masto.ts'
 import { getCachedInstance, getRelationship, getStatus } from '../api.ts'
 import { getMeId } from '../me.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
@@ -85,6 +86,25 @@ function useQuotedStatus(quote: Quote, token?: string): mastodon.v1.Status | nul
   return fetched?.id === id ? fetched.status : undefined
 }
 
+// Mastodon's "Learn more" beside "Post pending", which says why it waits.
+function PendingInfo() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={<Button variant="link" size="sm" className="h-auto p-0 text-xs" />}
+      >
+        Learn more
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 text-xs">
+        <p>
+          On Mastodon, you can control whether someone can quote you. This post is pending
+          while we're getting the original author's approval.
+        </p>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function QuotePlaceholder({
   quote,
   message,
@@ -98,6 +118,7 @@ function QuotePlaceholder({
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 rounded-md border px-3 py-2 text-xs">
       <span>{message ?? QUOTE_PLACEHOLDER[quote?.state ?? ''] ?? 'Post unavailable'}</span>
+      {!message && quote?.state === 'pending' && <PendingInfo />}
       {onShow && (
         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShow}>
           Show anyway

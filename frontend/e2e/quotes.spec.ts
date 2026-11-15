@@ -365,3 +365,19 @@ test('a quote of a limited account the reader follows is shown', async ({ page }
     status('20', { ...carol, limited: true }, { content: '<p>Limited words</p>' }) } })])
   await expect(page.getByText('Limited words')).toBeVisible()
 })
+
+test('a post whose author reviews quotes offers to request one', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { quote_approval: approval('manual', [], ['public']) }))
+  const item = page.getByRole('menuitem', { name: /Request to quote/ })
+  await expect(item).toContainText('Author will manually review')
+  await item.click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+})
+
+test('a pending quote explains itself on Learn more', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'pending', quoted_status: null } })])
+  await expect(page.getByText('Post pending')).toBeVisible()
+  await page.getByRole('button', { name: 'Learn more' }).click()
+  await expect(page.getByText(/This post is pending while we're getting the original author's approval/)).toBeVisible()
+})

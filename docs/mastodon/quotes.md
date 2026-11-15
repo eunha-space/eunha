@@ -26,7 +26,10 @@ post's `quote_approval.current_user` is `automatic` or `manual` and the post
 is public or unlisted, or is your own followers-only post, which it quotes
 to your followers alone; otherwise it is disabled and says why (“Private posts
 cannot be quoted”, “Only followers can quote this post”, or “You are not
-allowed to quote this post”), as Mastodon's boost menu does. Posts from the
+allowed to quote this post”), as Mastodon's boost menu does. Where the
+author reviews quotes by hand (`manual`) it reads “Request to quote”, with
+“Author will manually review” under it, and a pending quote says “Post
+pending” with a “Learn more” that says why. Posts from the
 public and hashtag streams carry a policy written for no one, which the web
 client drops, as Mastodon's does, and fetches afresh when the menu opens.
 
