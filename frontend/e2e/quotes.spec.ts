@@ -165,3 +165,18 @@ test('a quote notification says once where to remove the quote', async ({ page }
   await expect(page.getByText('quoted your post').first()).toBeVisible()
   await expect(page.getByText('Want to remove your quoted post?')).toHaveCount(0)
 })
+
+test('quoting a post opens the composer with the post in it', async ({ page }) => {
+  await signedIn(page)
+  const post = status('10', bob, {
+    card: { ...card, authors: [{ name: 'Bob', url: '', account: bob }] },
+    quote_approval: { automatic: ['public'], manual: [], current_user: 'automatic' },
+  })
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: post }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@bob/10')
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await expect(page.getByText('Quoting this post')).toBeVisible()
+})
